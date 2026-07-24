@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Taskboard — a second app on Peek's channel</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #171a21;
+        --line: #262b36;
+        --text: #e6e8ee;
+        --dim: #8b93a7;
+        --accent: #6ea8fe;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      h1 { font-size: 16px; margin: 0; font-weight: 600; }
+      h1 span { color: var(--dim); font-weight: 400; }
+      label { color: var(--dim); font-size: 12px; }
+      input[type="text"] {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 6px;
+        padding: 7px 10px;
+        font: inherit;
+      }
+      #channel { width: 330px; font-family: ui-monospace, monospace; font-size: 12px; }
+      #status { font-size: 12px; margin-left: auto; }
+      #status.ok { color: #5ec27a; }
+      #status.bad { color: #e5798b; }
+      main { display: grid; grid-template-columns: 1fr 380px; gap: 20px; padding: 20px 24px; align-items: start; }
+      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      .panel > h2 {
+        margin: 0; padding: 11px 15px; font-size: 12px; font-weight: 600;
+        color: var(--dim); text-transform: uppercase; letter-spacing: .06em;
+        border-bottom: 1px solid var(--line);
+      }
+      ul { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
+      .task { display: flex; gap: 11px; padding: 12px 15px; border-bottom: 1px solid var(--line); }
+      .task.mine { background: #1b2130; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex: none; }
+      .who { font-weight: 600; font-size: 13px; }
+      .who em { color: var(--accent); font-style: normal; font-weight: 400; font-size: 11px; }
+      .body { margin: 2px 0 4px; }
+      .meta { color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace; }
+      .empty { padding: 24px 15px; color: var(--dim); }
+      form { display: flex; gap: 8px; padding: 12px 15px; border-top: 1px solid var(--line); }
+      form input { flex: 1; }
+      button {
+        background: var(--accent); color: #0b1020; border: 0; border-radius: 6px;
+        padding: 7px 16px; font: inherit; font-weight: 600; cursor: pointer;
+      }
+      pre {
+        margin: 0; padding: 14px 15px; font-size: 11px; line-height: 1.45;
+        color: var(--dim); overflow-x: auto; max-height: 40vh;
+        font-family: ui-monospace, monospace;
+      }
+      .note { padding: 13px 15px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); }
+      .note b { color: var(--text); font-weight: 600; }
+      code { font-family: ui-monospace, monospace; color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Taskboard <span>— a different app, same channel</span></h1>
+      <div>
+        <label for="channel">channel</label><br />
+        <input id="channel" type="text" value="b902211d-628f-4880-a4bf-5d17e75a1d81" />
+      </div>
+      <div>
+        <label>identity</label><br />
+        <span id="pubkey" style="font-family: ui-monospace, monospace; font-weight: 600"></span>
+      </div>
+      <div id="status">starting…</div>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>Tasks · <span id="count">0</span> events</h2>
+        <ul id="tasks"></ul>
+        <form id="compose">
+          <input id="text" type="text" placeholder="Add a task — it appears in Peek as a message" autocomplete="off" />
+          <button type="submit">Publish</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Raw events from the relay</h2>
+        <pre id="raw"></pre>
+        <div class="note">
+          <b>No integration exists between these two apps.</b> No shared database,
+          no API call, no webhook. They agree on one relay and one channel UUID,
+          and both speak <code>kind:9</code>. Peek renders these as chat messages;
+          this renders them as tasks.
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./bundle.js"></script>
+  </body>
+</html>
