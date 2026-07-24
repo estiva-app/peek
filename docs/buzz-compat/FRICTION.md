@@ -17,7 +17,22 @@ Legend — **Impact:** `blocker` (cannot proceed) · `lossy` (works, data is los
 
 These cost real debugging time. None were visible from reading the source.
 
-### A1. Historical data cannot be backfilled — **blocker (for backfill only)**
+### A1. Historical data cannot be backfilled — **decided: not a problem for Peek**
+
+> **Ruling (2026-07-24): no migration. Peek starts fresh on Nostr.** This
+> downgrades A1 from a blocker to a documented constraint. The handling below
+> stays as-is — it is the correct behavior for any out-of-window message
+> regardless — but nothing is now blocked by it.
+>
+> Two consequences that follow from the ruling and are easy to trip over:
+>
+> 1. **Seeded demo data will not publish.** `dev/seedDemo` writes historical
+>    dates, so every seeded message is outside the window and gets skipped. A
+>    demo that needs Peek content visible in Buzz has to use freshly sent
+>    messages (or shift the seed dates to now).
+> 2. **It remains an open ecosystem question, just not ours.** Any business
+>    adopting NfB later will want to import history from whatever they use
+>    today. See the spec note below.
 
 `MAX_TIMESTAMP_DRIFT_SECS = 900` (`handlers/ingest.rs:1480`) rejects any event
 whose `created_at` is more than **±15 minutes** from server time. Hard-coded, no
@@ -33,12 +48,17 @@ every other app reading it. Container events (channel create, membership,
 profile) legitimately use `Date.now()`, since they describe state being
 established now, which keeps old topics publishable.
 
-**Open question for the spec:** NfB RFC §1.2 makes Files "shared evolving
-histories". A protocol that cannot express "this happened last year" cannot
-represent an imported history at all. Either NfB needs a signed
-`original_timestamp` concept distinct from `created_at`, or migration from any
-existing tool is impossible by construction. **This deserves to be an explicit
-RFC decision.**
+**Open question for the spec — still open, despite the ruling above.** Peek not
+needing migration settles Peek, not the ecosystem. NfB RFC §1.2 makes Files
+"shared evolving histories", and a protocol that cannot express "this happened
+last year" cannot represent an imported history at all. Any org adopting NfB
+with existing data in Slack, Notion or Linear hits this on day one.
+
+Either NfB defines a signed `original_timestamp` distinct from `created_at`, or
+"no migration from existing tools, ever" becomes a property of the protocol by
+accident rather than by choice. **Worth an explicit RFC decision either way** —
+deciding "we don't support import" is a perfectly good answer, but it should be
+a decision.
 
 ### A2. `HTTP 200` does not mean accepted — **papercut, high blast radius**
 
