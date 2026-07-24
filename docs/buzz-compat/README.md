@@ -10,6 +10,7 @@ end — see [INTEROP_PROOF.md](INTEROP_PROOF.md) §0.
 
 | If you want to… | Read |
 | --- | --- |
+| **Run it on your machine** | **[RUNNING.md](RUNNING.md)** |
 | Know whether this actually works | [INTEROP_PROOF.md](INTEROP_PROOF.md) §0 |
 | Know what to build next | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) |
 | Understand how Buzz's protocol works | [BUZZ_PROTOCOL_MODEL.md](BUZZ_PROTOCOL_MODEL.md) |
