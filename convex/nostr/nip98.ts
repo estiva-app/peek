@@ -20,12 +20,16 @@
  * - **No loopback aliasing.** `localhost`, `127.0.0.1` and `::1` are distinct
  *   hosts to the verifier (deliberately — it is the row-zero community binding).
  *   The `u` tag must use the same host string as the request's Host header.
- * - **Single use.** Each auth event id is recorded in a Redis seen-set
- *   (`check_nip98_replay`, bridge.rs:135); replaying one is rejected. Build a
- *   fresh header for every request — never cache it.
+ * - **Single use, and "fresh" is not enough.** Each auth event id is recorded in
+ *   a Redis seen-set (`check_nip98_replay`, bridge.rs:135). Rebuilding the header
+ *   per request does *not* guarantee a new id: `created_at` has one-second
+ *   resolution, so two requests with the same URL, method and body inside the
+ *   same second produce a byte-identical event and the second is rejected with
+ *   `NIP-98: replay detected`. Verified against the live relay. Hence the
+ *   `nonce` tag below — it is what makes each auth event unique.
  */
 import { sha256 } from '@noble/hashes/sha256'
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils'
+import { bytesToHex, randomBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { KIND, type NostrTag, type UnsignedEvent } from './events'
 import { signEvent } from './sign'
 
@@ -62,10 +66,17 @@ export function buildAuthEvent(args: {
   body?: string
   /** Override for tests; defaults to now. */
   nowMs?: number
+  /** Override for tests; defaults to random. Must differ per request. */
+  nonce?: string
 }): UnsignedEvent & { id: string; sig: string } {
   const tags: NostrTag[] = [
     ['u', normalizeUrl(args.url)],
     ['method', args.method.toUpperCase()],
+    // Uniqueness, not security: without it, two identical requests in the same
+    // second collide on the event id and the relay rejects the second as a
+    // replay. The verifier ignores tags it does not know (it looks up `u`,
+    // `method` and `payload` by name), so this is safe to add.
+    ['nonce', args.nonce ?? bytesToHex(randomBytes(16))],
   ]
   if (args.body !== undefined) {
     tags.push(['payload', bytesToHex(sha256(utf8ToBytes(args.body)))])
