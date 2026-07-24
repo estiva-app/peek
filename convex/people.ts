@@ -17,6 +17,10 @@ export const list = query({
     const out = []
     for (const u of users) {
       if (u._id === me) continue
+      // Identities that arrived from the relay are not Peek members — they have
+      // no account here. Their messages still render (the author lookup is by
+      // id), but they do not belong in the workspace directory.
+      if (u.isExternal) continue
       out.push({
         id: u.seedKey ?? (u._id as string),
         name: u.name,

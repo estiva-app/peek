@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as desk from "../desk.js";
 import type * as dev_bulk from "../dev/bulk.js";
 import type * as dev_seedDates from "../dev/seedDates.js";
@@ -23,6 +24,7 @@ import type * as nostr_keys from "../nostr/keys.js";
 import type * as nostr_nip98 from "../nostr/nip98.js";
 import type * as nostr_publish from "../nostr/publish.js";
 import type * as nostr_sign from "../nostr/sign.js";
+import type * as nostr_sync from "../nostr/sync.js";
 import type * as people from "../people.js";
 import type * as readState from "../readState.js";
 import type * as replies from "../replies.js";
@@ -39,6 +41,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  crons: typeof crons;
   desk: typeof desk;
   "dev/bulk": typeof dev_bulk;
   "dev/seedDates": typeof dev_seedDates;
@@ -53,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   "nostr/nip98": typeof nostr_nip98;
   "nostr/publish": typeof nostr_publish;
   "nostr/sign": typeof nostr_sign;
+  "nostr/sync": typeof nostr_sync;
   people: typeof people;
   readState: typeof readState;
   replies: typeof replies;

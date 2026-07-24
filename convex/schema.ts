@@ -62,6 +62,11 @@ export default defineSchema({
     /** AES-GCM-encrypted secret key (convex/nostr/keys.ts). Never returned to
      *  the client. PoC-grade custody — see the plan's §6.1. */
     nostrSecretKey: v.optional(v.string()),
+    /** True for identities that arrived FROM the relay rather than signing up
+     *  to Peek — someone using a different app on a shared channel. They have
+     *  no Peek account, so they never get a secret key and are excluded from
+     *  the People directory. */
+    isExternal: v.optional(v.boolean()),
   })
     .index('email', ['email'])
     .index('phone', ['phone'])
@@ -83,6 +88,9 @@ export default defineSchema({
      *  at create time, carried as the `h` tag on every event in the channel.
      *  Absent on topics created before Nostr emission was wired up. */
     channelUuid: v.optional(v.string()),
+    /** Sync cursor: the newest `created_at` (Nostr seconds) already projected
+     *  from the relay into `messages`. Absent means "never synced". */
+    nostrSyncedAt: v.optional(v.number()),
   }).index('by_channelUuid', ['channelUuid']),
 
   // §2.3 — invitees; membership drives the members pill, not participation

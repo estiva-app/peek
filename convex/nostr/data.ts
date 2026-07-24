@@ -110,6 +110,123 @@ export const markMessagePublished = internalMutation({
   },
 })
 
+// ── Read path (Stage 2): projecting relay events back into Convex ───────────
+
+/** Every topic that has a channel on the relay, with its sync cursor. */
+export const listSyncableTopics = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('topics').collect()
+    return rows
+      .filter((t) => t.channelUuid)
+      .map((t) => ({
+        topicId: t._id,
+        channelUuid: t.channelUuid!,
+        since: t.nostrSyncedAt ?? null,
+      }))
+  },
+})
+
+/** Peek users that can sign — the read path borrows one to authenticate. */
+export const listLocalUsersWithKeys = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('users').collect()
+    return rows
+      .filter((u) => u.nostrPubkey && u.nostrSecretKey && !u.isExternal)
+      .map((u) => ({ nostrPubkey: u.nostrPubkey!, nostrSecretKey: u.nostrSecretKey! }))
+  },
+})
+
+/** Pubkeys belonging to Peek's own users — everything else is foreign. */
+export const listLocalPubkeys = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('users').collect()
+    return rows.filter((u) => u.nostrPubkey && !u.isExternal).map((u) => u.nostrPubkey!)
+  },
+})
+
+/**
+ * Resolve a relay pubkey to a Peek user, creating an external placeholder if
+ * this is someone Peek has never seen.
+ *
+ * `name` is required on `users`, so a display name is always written: the
+ * kind:0 `display_name` when the relay has one, otherwise a truncated pubkey.
+ * Never mints key material — Peek does not custody keys for people who are not
+ * its users.
+ */
+export const resolveExternalUser = internalMutation({
+  args: { nostrPubkey: v.string(), displayName: v.optional(v.string()) },
+  handler: async (ctx, { nostrPubkey, displayName }) => {
+    const existing = await ctx.db
+      .query('users')
+      .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', nostrPubkey))
+      .unique()
+    if (existing) {
+      // Adopt a real name once the relay learns one, but never overwrite a
+      // Peek user's own name with relay metadata.
+      if (displayName && existing.isExternal && existing.name !== displayName) {
+        await ctx.db.patch(existing._id, { name: displayName })
+      }
+      return existing._id
+    }
+    return ctx.db.insert('users', {
+      name: displayName || `nostr:${nostrPubkey.slice(0, 8)}`,
+      nostrPubkey,
+      isExternal: true,
+    })
+  },
+})
+
+/**
+ * Insert a message projected from the relay, keyed on its Nostr event id.
+ *
+ * Idempotent: the event id is the hash of the event's own content, so the same
+ * event can never produce two rows no matter how often it is polled.
+ */
+export const importMessage = internalMutation({
+  args: {
+    topicId: v.id('topics'),
+    authorId: v.id('users'),
+    body: v.string(),
+    createdAt: v.number(),
+    nostrEventId: v.string(),
+  },
+  handler: async (ctx, { topicId, authorId, body, createdAt, nostrEventId }) => {
+    const existing = await ctx.db
+      .query('messages')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    if (existing) return { inserted: false }
+    await ctx.db.insert('messages', {
+      parentKind: 'topic',
+      parentId: topicId as string,
+      authorId,
+      body,
+      createdAt,
+      // The event id doubles as the stable client key, so the seam's id
+      // contract holds for imported rows exactly as it does for Peek's own.
+      seedKey: nostrEventId,
+      nostrEventId,
+      nostrPublishedAt: Date.now(),
+    })
+    return { inserted: true }
+  },
+})
+
+export const setTopicSyncCursor = internalMutation({
+  args: { topicId: v.id('topics'), nostrSyncedAt: v.number() },
+  handler: async (ctx, { topicId, nostrSyncedAt }) => {
+    const t = await ctx.db.get(topicId)
+    // Only ever move forward, so an out-of-order run cannot rewind the cursor
+    // and re-import everything.
+    if (t && (t.nostrSyncedAt ?? 0) < nostrSyncedAt) {
+      await ctx.db.patch(topicId, { nostrSyncedAt })
+    }
+  },
+})
+
 /** Topic members, for publishing kind:9000 membership events. */
 export const getTopicMemberIds = internalQuery({
   args: { topicId: v.id('topics') },
