@@ -25,6 +25,36 @@ in your normal Windows browser — Windows can reach these ports, verified.
 
 ---
 
+## One-time setup (only on a brand-new local database)
+
+**Skip this if you have already done it once.** It is needed only the first time
+a fresh local Convex deployment is created — including after deleting
+`~/peek-app/.convex`.
+
+Peek's sign-in needs JWT signing keys. They live in the deployment, not in the
+code, so a new local deployment starts without them and sign-in fails with:
+
+```
+Uncaught Error: Missing environment variable `JWT_PRIVATE_KEY`
+```
+
+Generate them once (Convex must be running — step 1 below):
+
+```bash
+cd ~/peek-app && CONVEX_AGENT_MODE=anonymous \
+  npx @convex-dev/auth --skip-git-check --web-server-url http://localhost:5173
+```
+
+It prints a wall of setup advice about files that already exist — ignore that,
+it is just being thorough. What matters is that it sets `JWT_PRIVATE_KEY`,
+`JWKS` and `SITE_URL`. Confirm with:
+
+```bash
+CONVEX_AGENT_MODE=anonymous npx convex env list
+```
+
+---
+
 ## Starting from scratch (after a reboot)
 
 Each of these needs **its own terminal tab**, left running. Order matters only
@@ -142,6 +172,7 @@ CONVEX_AGENT_MODE=anonymous npx convex env set NOSTR_RELAY_URL http://localhost:
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Peek page is blank / spinner forever | Convex (#1) isn't running | Start it; wait for `Convex functions ready!` |
+| Sign-in fails: `Missing environment variable JWT_PRIVATE_KEY` | Fresh local deployment has no auth keys | Run the one-time setup above |
 | `permission denied … docker.sock` | Terminal opened before Docker Desktop was installed | Close the terminal, open a new one |
 | Relay `curl` fails | Docker Desktop not started | Start it, wait for the whale icon, retry `./bin/just relay` |
 | Taskboard says *relay error* | Relay isn't running, or the channel box is empty/wrong | Check #3, re-copy a `channelUuid` |
