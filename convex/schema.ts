@@ -56,10 +56,17 @@ export default defineSchema({
     avatarStorageId: v.optional(v.id('_storage')),
     /** Stable key for idempotent seeding ('you', 'alice', …). Fixture-only. */
     seedKey: v.optional(v.string()),
+    // ── Nostr identity (docs/buzz-compat/IMPLEMENTATION_PLAN.md §3.1) ──
+    /** 64-char lowercase hex x-only public key. Absent until first minted. */
+    nostrPubkey: v.optional(v.string()),
+    /** AES-GCM-encrypted secret key (convex/nostr/keys.ts). Never returned to
+     *  the client. PoC-grade custody — see the plan's §6.1. */
+    nostrSecretKey: v.optional(v.string()),
   })
     .index('email', ['email'])
     .index('phone', ['phone'])
-    .index('by_seedKey', ['seedKey']),
+    .index('by_seedKey', ['seedKey'])
+    .index('by_nostrPubkey', ['nostrPubkey']),
 
   // §2.2 — isResolved is DERIVED (§4.1), never stored
   topics: defineTable({
@@ -72,7 +79,11 @@ export default defineSchema({
      *  optimistic id so the local copy and the record are the same object.
      *  Absent on records created server-side only. */
     seedKey: v.optional(v.string()),
-  }),
+    /** NIP-29 channel UUID for this topic on the relay — `crypto.randomUUID()`
+     *  at create time, carried as the `h` tag on every event in the channel.
+     *  Absent on topics created before Nostr emission was wired up. */
+    channelUuid: v.optional(v.string()),
+  }).index('by_channelUuid', ['channelUuid']),
 
   // §2.3 — invitees; membership drives the members pill, not participation
   topicMembers: defineTable({
@@ -119,9 +130,16 @@ export default defineSchema({
     fileAttachments: v.optional(v.array(fileAttachment)),
     /** Stable client key — mock or client-generated message id (see topics). */
     seedKey: v.optional(v.string()),
+    /** The Nostr event id this message was published as (sha256 of the event's
+     *  own content, so it cannot be pre-computed from `seedKey`). Set by the
+     *  publish action on relay acceptance; absent means "not published yet or
+     *  publish failed". */
+    nostrEventId: v.optional(v.string()),
+    nostrPublishedAt: v.optional(v.number()),
   })
     .index('by_parent', ['parentKind', 'parentId'])
-    .index('by_seedKey', ['seedKey']),
+    .index('by_seedKey', ['seedKey'])
+    .index('by_nostrEventId', ['nostrEventId']),
 
   // §2.6 — replyCount is DERIVED (§4.2); isNew is DERIVED via readState (§4.3)
   replies: defineTable({
