@@ -1,0 +1,16 @@
+[workspace]
+
+[package]
+name = "buzz-verify"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Absolute paths into a local clone of github.com/block/buzz — these crates are
+# not published to crates.io. Adjust both if your checkout lives elsewhere.
+buzz-core = { path = "/home/miky/buzz/crates/buzz-core" }
+buzz-sdk  = { path = "/home/miky/buzz/crates/buzz-sdk" }
+nostr     = { version = "0.44", features = ["nip44", "nip98"] }
+serde_json = "1"
+uuid      = { version = "1", features = ["v4", "serde"] }
+chrono    = "0.4"

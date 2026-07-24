@@ -1,0 +1,76 @@
+{
+  "derivation": {
+    "peek_user_id": "jd7a8f2k3m9p0q1r2s3t4u5v6w",
+    "derived_pubkey": "714902a6e7b9a991fe77ebd9cc4dad01b6474afdf58048277e1ec6b9cde567e8",
+    "peek_topic_id": "kx91m2n3b4v5c6x7z8a9s0d1f2",
+    "derived_channel_uuid": "7b32200c-e4c0-4216-b79a-8490fc05e0bd",
+    "peek_message_id": "mg55h6j7k8l9z0x1c2v3b4n5m6",
+    "nostr_event_id": "4f0edeb3b732fa1c44c4dbd26563b4acad022ffeb469ccfdb2aeb02088a92546"
+  },
+  "channel_event": {
+    "pubkey": "714902a6e7b9a991fe77ebd9cc4dad01b6474afdf58048277e1ec6b9cde567e8",
+    "created_at": 1753300100,
+    "kind": 9007,
+    "tags": [
+      [
+        "h",
+        "7b32200c-e4c0-4216-b79a-8490fc05e0bd"
+      ],
+      [
+        "name",
+        "Onboarding redesign"
+      ],
+      [
+        "visibility",
+        "open"
+      ],
+      [
+        "channel_type",
+        "stream"
+      ]
+    ],
+    "content": "",
+    "id": "e6fb22b28309ae82d34f5f28c38a572bf84dab47fb6bad8f4fe001e9638e87b8",
+    "sig": "16d037cf3c9e8ad8e4d720913f20c019a1a80b18d45f79e48532ce822f830b385296e32c5b870fff2bdf2335a3f4125fbbc882ad6a96c13ee4cbc6230cefaa21"
+  },
+  "message_event": {
+    "pubkey": "714902a6e7b9a991fe77ebd9cc4dad01b6474afdf58048277e1ec6b9cde567e8",
+    "created_at": 1753300200,
+    "kind": 9,
+    "tags": [
+      [
+        "h",
+        "7b32200c-e4c0-4216-b79a-8490fc05e0bd"
+      ]
+    ],
+    "content": "The new sign-up flow drops a step. Worth a look before Friday.",
+    "id": "4f0edeb3b732fa1c44c4dbd26563b4acad022ffeb469ccfdb2aeb02088a92546",
+    "sig": "afffc43cde567903723d71aded7958f86a16c4a49b39b7b2a1c3bf24a4263d174f92ba02f0d2f7e56c66ee9830c27398d7f902d4d26332b5be3c64ae3b6db467"
+  },
+  "gaps": [
+    {
+      "field": "users.<key material>",
+      "detail": "Peek has no keypairs at all. This probe derives sk = sha256(\"peek:probe:user:\"+_id), which means the relay would hold a key Peek can mint for any user — no user consent, no key custody, no recovery. Real interop needs a genuine key story first."
+    },
+    {
+      "field": "topics._id → h tag",
+      "detail": "Peek ids are opaque Convex ids, not UUIDs. Derived channel UUID 7b32200c-e4c0-4216-b79a-8490fc05e0bd from a hash. Two Peek deployments would derive the same UUID for different topics only if ids collide, but nothing ties this UUID to a channel Buzz already knows."
+    },
+    {
+      "field": "topics.<visibility>",
+      "detail": "Peek topics have no visibility/private flag and no workspace scope; \"open\" is invented here."
+    },
+    {
+      "field": "messages.highlightType",
+      "detail": "\"insight\" has no Buzz equivalent on kind:9 and no registered kind. Dropped."
+    },
+    {
+      "field": "messages.createdAt",
+      "detail": "Peek stores ms; Nostr created_at is seconds. Sub-second ordering is lost, and Peek sorts by createdAt — two messages in the same second become order-ambiguous on the relay."
+    },
+    {
+      "field": "messages._id / seedKey",
+      "detail": "Peek's stable id (m_1753300200000_1) is discarded: a Nostr event id is the hash of its own content. Peek would need to store the returned event id to keep the two in sync."
+    }
+  ]
+}
