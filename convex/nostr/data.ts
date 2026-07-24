@@ -127,6 +127,27 @@ export const listSyncableTopics = internalQuery({
   },
 })
 
+/**
+ * Human-readable list of which topic maps to which relay channel.
+ *
+ * Exists purely so you can find a channel id without squinting at
+ * `npx convex data topics`:
+ *
+ *   npx convex run nostr/data:listChannels
+ */
+export const listChannels = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('topics').collect()
+    return rows
+      .map((t) => ({
+        topic: t.title,
+        channelUuid: t.channelUuid ?? '(not published yet — post a message in it)',
+      }))
+      .sort((a, b) => a.topic.localeCompare(b.topic))
+  },
+})
+
 /** Peek users that can sign — the read path borrows one to authenticate. */
 export const listLocalUsersWithKeys = internalQuery({
   args: {},
