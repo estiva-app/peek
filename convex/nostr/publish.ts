@@ -34,6 +34,26 @@ interface Identity {
  */
 const NOT_A_MEMBER = 'restricted: not a channel member'
 
+/**
+ * The relay rejects any event whose `created_at` is more than ±15 minutes from
+ * server time — `MAX_TIMESTAMP_DRIFT_SECS` in `handlers/ingest.rs:1480`,
+ * hard-coded and applied to every ingested event, not just NIP-98 auth.
+ *
+ * Consequence: **Peek's existing history cannot be backfilled with its real
+ * timestamps.** Live traffic is unaffected. Rather than falsify `created_at` to
+ * sneak old messages past the check — which would corrupt the shared record for
+ * every other app reading it — out-of-window messages are skipped and logged.
+ *
+ * Container events (channel create, membership, profile) are different: they
+ * describe state we are establishing *now*, so they legitimately carry the
+ * current time and an old topic can still be published.
+ */
+const MAX_DRIFT_MS = 900_000
+
+function withinDriftWindow(createdAtMs: number): boolean {
+  return Math.abs(createdAtMs - Date.now()) <= MAX_DRIFT_MS
+}
+
 /** Fetch or mint a user's keypair, returning the decrypted secret. */
 async function identityFor(
   ctx: { runQuery: any; runMutation: any },
@@ -88,7 +108,10 @@ async function ensureChannel(
 
   const res = await publishEvent(
     signEvent(
-      buildCreateChannel(creator.pubkey, topic.createdAt, {
+      // Date.now(), not topic.createdAt: we are creating this channel on the
+      // relay now, and a Peek topic older than 15 minutes would otherwise be
+      // rejected by the drift check and could never be published at all.
+      buildCreateChannel(creator.pubkey, Date.now(), {
         channelUuid: uuid,
         name: topic.title,
         visibility: 'open',
@@ -148,6 +171,17 @@ export const publishMessage = internalAction({
       const m = await ctx.runQuery(internal.nostr.data.getMessageContext, { messageId })
       if (!m) return // DM, huddle, or deleted — out of scope for Stage 1
       if (m.alreadyPublished) return // idempotent: never publish the same row twice
+
+      // Checked before signing so old rows cost nothing and the reason is
+      // legible, rather than surfacing as the relay's generic drift rejection.
+      if (!withinDriftWindow(m.createdAt)) {
+        console.warn(
+          `[nostr] message ${messageId} skipped: createdAt is outside the relay's ±15min ` +
+            `window, and rewriting it would falsify the shared record. Backfill needs a ` +
+            `separate decision — see docs/buzz-compat/FRICTION.md.`,
+        )
+        return
+      }
 
       const author = await identityFor(ctx, m.authorId)
 
