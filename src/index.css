@@ -48,20 +48,23 @@
 .tiptap li p {
   margin: 0 !important;
 }
-/* Headline (`# `) and subheading (`## `) — modest chat-scale sizes.
-   Bottom spacing: the sent card's segment container already adds a 4px flex
-   gap, the composer stacks blocks with none — so the composer carries the
-   full 8px and the sent card only the missing 4px, landing both at 8px. */
+/* Headline (`# `) and subheading (`## `) — chat scale, not document scale
+   (body is 14px): headline 16px, subheading 14px; both 600. The subheading
+   reads as "bold text on its own line" and earns its hierarchy from the
+   heading margins. Spacing rule: a heading binds to what FOLLOWS it — 12px
+   above, 8px below, both totals identical in the composer and the sent
+   card (the sent card's segment container contributes a 4px flex gap; the
+   composer stacks blocks with none, so it carries the full values). */
 .tiptap h1,
 [data-message-body] h1 {
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.3;
   font-weight: 600;
   margin: 0;
 }
 .tiptap h2,
 [data-message-body] h2 {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.3;
   font-weight: 600;
   margin: 0;
@@ -84,15 +87,29 @@
 [data-message-body] h2 {
   color: var(--text-primary);
 }
-/* Composer-only segment boundaries: the sent card separates block segments
-   with a 4px flex gap (heading-above, list-above/below/between). The
-   composer stacks blocks with no gap, so it carries the same 4px as
-   margins. Plain line-to-line stays flush — the sent card joins those
-   lines into one <br>-separated paragraph. Heading-BELOW spacing is
-   handled above (composer 8px vs sent 4px + gap); adjacent-margin
-   collapsing keeps heading→block at 8px here too. */
+/* Heading-above spacing: 12px total on both sides. Sibling selectors leave
+   a first-line heading with no dead air at the top of the card/composer. */
 .tiptap * + h1,
-.tiptap * + h2,
+.tiptap * + h2 {
+  margin-top: 12px !important; /* composer has no flex gap — full 12px */
+}
+[data-message-body] * + h1,
+[data-message-body] * + h2 {
+  margin-top: 8px; /* + the sent card's 4px flex gap = 12px */
+}
+/* Heading directly after a heading: the sent card's flex container doesn't
+   collapse margins (prev mb 4 + gap 4 + mt would stack), while the composer's
+   block flow collapses to 12 — trim the sent side so both read 12px. */
+[data-message-body] :is(h1, h2) + :is(h1, h2) {
+  margin-top: 4px;
+}
+/* Composer-only list boundaries: the sent card separates block segments
+   with a 4px flex gap (list-above/below/between). The composer stacks
+   blocks with no gap, so it carries the same 4px as margins. Plain
+   line-to-line stays flush — the sent card joins those lines into one
+   <br>-separated paragraph. Heading-BELOW spacing is handled above
+   (composer 8px vs sent 4px + gap); adjacent-margin collapsing keeps
+   heading→block at 8px here too. */
 .tiptap :is(p, h1, h2, ul, ol) + :is(ul, ol),
 .tiptap :is(ul, ol) + p {
   margin-top: 4px !important;
