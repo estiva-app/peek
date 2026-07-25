@@ -257,6 +257,10 @@ export const addTopicsToOpenWork = mutation({
       .query('deskOpenWork')
       .withIndex('by_user', (q) => q.eq('userId', you._id))
       .collect()
+    // Strictly increasing timestamps: a batch inserted within one millisecond
+    // would tie on addedAt and sort back to click order, flipping rows the
+    // client's optimistic overlay showed newest-first (a visible swap).
+    let addedAt = Date.now()
     for (const key of topicKeys) {
       const topic = (await resolveTarget(ctx, 'topic', key)) as Doc<'topics'> | null
       if (!topic) continue
@@ -265,7 +269,7 @@ export const addTopicsToOpenWork = mutation({
         userId: you._id,
         kind: 'topic',
         targetId: topic._id as string,
-        addedAt: Date.now(),
+        addedAt: addedAt++,
       })
     }
   },
