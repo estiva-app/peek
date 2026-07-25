@@ -7,31 +7,43 @@ against [NIP_SURVEY.md](NIP_SURVEY.md) and what already runs.
 **Question it answers:** can we demonstrate more of NfB by building demo apps
 against *existing* NIPs, instead of inventing new ones first?
 
-**Short answer: yes for three of the five, with zero new NIPs.** And the two
-that are blocked are blocked on the *same* thing — which is a useful signal
-about what the first NfB NIP should actually be.
+**Short answer: all five are buildable.** Three need zero new kinds. The other
+two need one kind we would be proposing anyway — and since we own every app in
+the demo, we can define it, patch it into the relay in two files, and show it
+working. The demo becomes the proposal.
 
 ---
 
-## One thing to be clear about first
+## The premise (settled 2026-07-25)
 
-Every scenario is set in apps you do not control: Meet, Figma, Linear, Claude,
-GitHub, Posthog, Intercom. **You cannot make real Figma publish Nostr events.**
+**We build look-alike stand-ins, not integrations.** Small apps that *look* like
+Meet, Figma, Linear and Claude, to show how it would work if tools like those
+were on Nostr. Nobody is trying to make the real products speak the protocol.
 
-So "build the demo" always means building a **stand-in** — your own small app
-playing Figma's role, publishing and reading the same events a real integration
-would. That is honest and it still proves the protocol claim, but it proves
-*"an app in this ecosystem can do X"*, not *"Figma does X"*.
+The events, signatures and relay are **real**; the app chrome is a facsimile.
+The claim being demonstrated is *"if these tools were on Nostr, this is what you
+would get"* — which is exactly what the RFC argues, so the stand-in is not a
+compromise, it is the correct artifact.
 
-Worth deciding explicitly, because it changes what you are making:
+### Why this changes what is buildable
 
-- **A video/storyboard** — visual fidelity matters, working protocol does not.
-  The Figma mockups are already the right artifact.
-- **A working proof** — stand-in apps with your own UI, real events, real relay.
-  Less pretty, far more convincing to anyone technical.
+If we own every app in the demo, the only gatekeeper left is **the relay's kind
+allowlist**. `required_scope_for_kind` (`handlers/ingest.rs:198`) returns `Err`
+for unknown kinds and the relay rejects them — and NIP-89's `31989`/`31990` are
+**not** in Buzz's registry, so even a ratified NIP is refused today.
 
-The two are not exclusive. The strongest version films the *working* parts and
-mocks the rest — and the mapping below says which is which.
+But adding a kind to Buzz is small. It needs:
+
+1. `crates/buzz-core/src/kind.rs` — a constant and an `ALL_KINDS` entry
+2. `crates/buzz-relay/src/handlers/ingest.rs` — one `required_scope_for_kind` arm
+
+The `event.rs` / `feed.rs` references only control which kinds appear in a
+channel *timeline*; they are not needed for a kind to be accepted and stored.
+
+**So nothing below is blocked by protocol invention.** The real question per
+scenario becomes: *does it use a ratified NIP, or a kind we are proposing?* Both
+are demonstrable; only the second needs a small relay patch — and that patch is
+itself the artifact you would send upstream.
 
 ---
 
@@ -70,9 +82,11 @@ comments land on the canvas.*
   `linear-widget/sticky-hybrid` component — project title, status, PEE-127…130 —
   is a NIP-89 handler rendering an addressable event. **Nobody has this, not even
   Buzz**, so building it is genuinely novel.
-- **The sub-agent call — ❌ blocked.** Requires agents to *declare invocable
-  skills*. Nothing in 99 NIPs does this; Buzz's persona/managed-agent events get
-  ~60% there and stop short. See §3.2 below.
+- **The sub-agent call — 🔧 needs a proposed kind, not a blocker.** Agents must
+  *declare invocable skills*; nothing in 99 NIPs does this. But since we own
+  both the caller and the sub-agent, we can define the kind ourselves, add it to
+  Buzz's registry (two files), and demo it working. **The demo becomes the
+  proposal** rather than waiting on one.
 
 ---
 
@@ -123,23 +137,24 @@ The follow-up questions in beats 3–4 are ordinary `kind:9` messages.
 
 **Demonstrates:** agent orchestration across vendors.
 
-**Buildable now: ❌ same blocker as Scenario 2** — sub-agents must be
-discoverable and invocable. (Also marked unresolved in the Linear doc, so it may
-be in flux anyway.)
+**Buildable: 🔧 same as Scenario 2** — needs the agent-skills kind we would be
+proposing, plus a two-file relay patch. Not blocked, just downstream of a
+decision about that kind's shape. (Also marked unresolved in the Linear doc, so
+it may be in flux anyway.)
 
 ---
 
 ## The signal in this
 
-Scenarios 2, 4 and 5 all lean on agents. Two of them are blocked, and **both are
-blocked on the same missing piece: an agent declaring what it can do.**
+Scenarios 2, 4 and 5 all lean on agents — and two of them need the same missing
+piece: **an agent declaring what it can do.**
 
 That changes my earlier advice. I suggested Highlights as your first NIP; the
 survey then showed NIP-84 already exists. **The scenarios point at agent skill
 declaration instead** — it is:
 
 - genuinely unclaimed (nothing in 99 NIPs; Buzz stops short),
-- the blocker for two of your five scenarios,
+- the one thing two of your five scenarios need,
 - and it has real prior art to build on — Buzz's `KIND_PERSONA` (30175) and
   `KIND_MANAGED_AGENT` (30177) are two thirds of a manifest already, and NIP-89
   is the discovery pattern to copy.
@@ -156,14 +171,16 @@ and it has a shape to start from rather than a blank page.
 2. **Scenario 3's scoped external collaborator** — zero new protocol, highest
    business value, and it exercises Buzz's permission model rather than just its
    event model.
-3. **Scenario 2's Linear widget via NIP-89** — proves Layer 3, and nobody has
-   built it.
-4. **Scenario 4's agent** — medium effort, exercises NIP-OA.
-5. **Then** write the agent-skills NIP, informed by having built 1–4.
+3. **Scenario 2's Linear widget via NIP-89** — proves Layer 3, nobody has built
+   it, and it needs the first relay patch (adding 31989/31990). Doing NIP-89
+   first is deliberate: it is a *ratified* NIP, so the patch is uncontroversial
+   and it proves the patching approach before betting a proposal on it.
+4. **Scenario 4's agent** — medium effort, exercises NIP-OA, no new kinds.
+5. **Draft the agent-skills kind, then build Scenarios 2's sub-agent and 5** on
+   top of it — with four working implementations behind the design.
 
-Steps 1–4 need **no new NIPs at all**. By the time you reach 5 you will have
-four implementations telling you what the spec has to say — which is the
-argument this whole exercise keeps making.
+Steps 1–4 need no new kinds. Step 5 defines one, and by then you will have four
+implementations telling you what it has to say.
 
 ---
 
@@ -173,7 +190,7 @@ Being explicit, so the demo does not overclaim:
 
 | Scenario | Real | Faked |
 | --- | --- | --- |
-| 1 | events, relay, Peek's rendering | "Meet" is a stand-in; no real call transcript |
-| 2 | NIP-89 handler, live widget data | the canvas is not Figma; no real sub-agent |
-| 3 | membership scoping, cross-app conversation | Figma is a stand-in; frame is an uploaded image |
+| 1 | events, relay, Peek's rendering | "Meet" is a look-alike; the transcript is scripted |
+| 2 | NIP-89 handler, live widget data, and the sub-agent call once its kind exists | the canvas is a look-alike, not Figma |
+| 3 | membership scoping, cross-app conversation | the canvas is a look-alike; the frame is an uploaded image |
 | 4 | agent identity, cross-channel reads | the "sources" are seeded, not real Linear/GitHub |
