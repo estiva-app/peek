@@ -16,6 +16,7 @@ end — see [INTEROP_PROOF.md](INTEROP_PROOF.md) §0.
 | Understand how Buzz's protocol works | [BUZZ_PROTOCOL_MODEL.md](BUZZ_PROTOCOL_MODEL.md) |
 | Understand what Peek stores today | [PEEK_DATA_MODEL.md](PEEK_DATA_MODEL.md) |
 | See where Buzz and the NfB RFC conflict | [COMPATIBILITY_GAP_ANALYSIS.md](COMPATIBILITY_GAP_ANALYSIS.md) §3 |
+| **Know which NIPs to reuse vs. write** | **[NIP_SURVEY.md](NIP_SURVEY.md)** |
 
 ## The documents
 
