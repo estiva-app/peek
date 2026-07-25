@@ -95,7 +95,16 @@ export function DeskPage() {
         : selected.kind === 'topic' && selected.topicId === item.topicId)
     if (wasSelected) setSelected(null)
     setDismissedOpenWorkIds((prev) => new Set([...prev, id]))
-    actions.removeOpenWorkItem(id)
+    if (item && item.kind !== 'dm') {
+      // Topic rows go through the overlay-aware action: it marks the topic
+      // removed in the session overlay — so the "+" picker offers it again
+      // immediately and the overlay can't resurrect the row under its
+      // synthetic id while the reactive query catches up — and deletes the
+      // server row by topic key (row ids don't exist for overlay rows).
+      actions.removeTopicFromOpenWork(item.topicId)
+    } else {
+      actions.removeOpenWorkItem(id)
+    }
   }
 
   // Starred mixes DMs and topics. Sort each entry's unreadness based on its kind's toggle.

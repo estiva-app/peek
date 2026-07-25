@@ -44,7 +44,9 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
     <DialogShell
       title="Add to Open work"
       onClose={onClose}
-      bodyClassName="flex flex-col gap-0.5 max-h-[360px] overflow-y-auto"
+      // pl-4 evens out the shell's asymmetric pl-5/pr-4 so the row hover pill
+      // sits 16px from BOTH dialog edges.
+      bodyClassName="flex flex-col gap-0.5 max-h-[360px] overflow-y-auto pl-4"
       footer={
         <>
           <Button variant="muted" onClick={onClose}>Cancel</Button>
