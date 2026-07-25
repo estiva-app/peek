@@ -15,7 +15,7 @@ export const ResolutionBlock = Node.create({
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ['div', { ...HTMLAttributes, 'data-resolution': 'true', style: 'border-left: 3px solid var(--border-strong); padding-left: 8px;' }, 0]
+    return ['div', { ...HTMLAttributes, 'data-resolution': 'true', style: 'border-left: 3px solid var(--success-default); padding-left: 8px;' }, 0]
   },
 
   addInputRules() {

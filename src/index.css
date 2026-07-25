@@ -8,8 +8,10 @@
 .tiptap p {
   margin: 0;
 }
+/* Resolution block — green rule so it can't be mistaken for a quote's
+   neutral border while typing. */
 .tiptap div[data-resolution] {
-  border-left: 3px solid var(--border-strong);
+  border-left: 3px solid var(--success-default);
   padding-left: 8px;
   margin: 0;
 }
