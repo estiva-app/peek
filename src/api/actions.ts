@@ -9,6 +9,7 @@
 import { useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
+import { useOpenWorkOverrides } from '@/api/internal/openWork'
 import { hasConvex, useDmRuntime, usesEstivaId } from './store'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '../../convex/nostr/events'
@@ -46,6 +47,7 @@ const nowTimestamp = (now = Date.now()) =>
 
 export function usePeekActions() {
   const m = useTopicMutations()
+  const openWork = useOpenWorkOverrides()
   // One-shot reads. `useQuery` is reactive and cannot be called mid-action.
   const convex = useConvex()
   const { setSentDmMessages } = useDmRuntime()
@@ -72,6 +74,8 @@ export function usePeekActions() {
   const snoozeScreenerRemote = useMutation(api.desk.snoozeScreenerItem)
   const addToOpenWorkRemote = useMutation(api.desk.addToOpenWork)
   const removeOpenWorkRemote = useMutation(api.desk.removeOpenWorkItem)
+  const addTopicsToOpenWorkRemote = useMutation(api.desk.addTopicsToOpenWork)
+  const removeTopicFromOpenWorkRemote = useMutation(api.desk.removeTopicFromOpenWork)
 
   /**
    * Sign an unsigned event and put it on the relay, returning the id the relay
@@ -498,6 +502,18 @@ export function usePeekActions() {
     },
     removeOpenWorkItem(id: string) {
       if (hasConvex) void removeOpenWorkRemote({ id })
+    },
+    /** Desk "+" picker + the topic menus: put topics straight into Open work.
+     *  The local overlay renders instantly; the Convex row follows. */
+    addTopicsToOpenWork(topicIds: string[]) {
+      if (topicIds.length === 0) return
+      openWork.addTopics(topicIds)
+      if (hasConvex) void addTopicsToOpenWorkRemote({ topicKeys: topicIds })
+    },
+    /** The topic-side menus remove by topic id (Desk rows remove by row id). */
+    removeTopicFromOpenWork(topicId: string) {
+      openWork.removeTopic(topicId)
+      if (hasConvex) void removeTopicFromOpenWorkRemote({ topicKey: topicId })
     },
   }
 }

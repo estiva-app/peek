@@ -247,6 +247,48 @@ export const removeOpenWorkItem = mutation({
   },
 })
 
+/** Desk "+" picker and the topic menus: put topics straight into Open work —
+ *  no screener row involved (§2.13). Duplicates are skipped. */
+export const addTopicsToOpenWork = mutation({
+  args: { topicKeys: v.array(v.string()) },
+  handler: async (ctx, { topicKeys }) => {
+    const you = await viewerOrThrow(ctx)
+    const existing = await ctx.db
+      .query('deskOpenWork')
+      .withIndex('by_user', (q) => q.eq('userId', you._id))
+      .collect()
+    for (const key of topicKeys) {
+      const topic = (await resolveTarget(ctx, 'topic', key)) as Doc<'topics'> | null
+      if (!topic) continue
+      if (existing.some((w) => w.kind === 'topic' && w.targetId === (topic._id as string))) continue
+      await ctx.db.insert('deskOpenWork', {
+        userId: you._id,
+        kind: 'topic',
+        targetId: topic._id as string,
+        addedAt: Date.now(),
+      })
+    }
+  },
+})
+
+/** The topic-side menus toggle by topic key (the Desk rows remove by row id,
+ *  but a topic page only knows its topic). */
+export const removeTopicFromOpenWork = mutation({
+  args: { topicKey: v.string() },
+  handler: async (ctx, { topicKey }) => {
+    const you = await viewerOrThrow(ctx)
+    const topic = (await resolveTarget(ctx, 'topic', topicKey)) as Doc<'topics'> | null
+    if (!topic) return
+    const rows = await ctx.db
+      .query('deskOpenWork')
+      .withIndex('by_user', (q) => q.eq('userId', you._id))
+      .collect()
+    for (const w of rows) {
+      if (w.kind === 'topic' && w.targetId === (topic._id as string)) await ctx.db.delete(w._id)
+    }
+  },
+})
+
 /** §4.4 — Desk Urgent, derived: containers holding an urgent message newer
  *  than the user's readState watermark. No watermark row = fully read. */
 export const urgentList = query({

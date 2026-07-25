@@ -30,6 +30,7 @@ import {
   useIsTopicMember,
   useJoinTopic,
   useInviteToTopic,
+  useOpenWorkTopicIds,
   usePeekActions,
   useStarred,
   type ConversationData,
@@ -96,6 +97,7 @@ export function useTopicView({
   const isTopicMember = useIsTopicMember()
   const joinTopic = useJoinTopic()
   const inviteToTopic = useInviteToTopic()
+  const openWorkTopicIds = useOpenWorkTopicIds()
   const actions = usePeekActions()
   const { state: debug } = useDebug()
   const huddleVariant = debug.huddles.variant
@@ -382,6 +384,19 @@ export function useTopicView({
         }
         onShowMembers={
           !isV2HuddleView && topicId != null ? () => setMembersView('list') : undefined
+        }
+        openWorkAction={
+          !isV2HuddleView && topicId != null
+            ? openWorkTopicIds.has(topicId) ? 'remove' : 'add'
+            : undefined
+        }
+        onToggleOpenWork={
+          !isV2HuddleView && topicId != null
+            ? () =>
+                openWorkTopicIds.has(topicId)
+                  ? actions.removeTopicFromOpenWork(topicId)
+                  : actions.addTopicsToOpenWork([topicId])
+            : undefined
         }
         tabs={
           huddleVariant === 1 ? (

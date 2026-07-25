@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
-import { CURRENT_USER_NAME, hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useHuddleLookup } from '@/api'
+import { CURRENT_USER_NAME, hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useHuddleLookup, useOpenWorkTopicIds, usePeekActions } from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -28,6 +28,8 @@ export function TopicsPage() {
   const deleteTopic = useDeleteTopic()
   const isTopicResolved = useIsTopicResolved()
   const isTopicMember = useIsTopicMember()
+  const openWorkTopicIds = useOpenWorkTopicIds()
+  const actions = usePeekActions()
   const [yourExpanded, setYourExpanded] = useState(true)
   const [otherExpanded, setOtherExpanded] = useState(true)
   const huddleLookup = useHuddleLookup()
@@ -198,6 +200,12 @@ export function TopicsPage() {
                     isSelected={topicSelected}
                     onClick={() => handleSelectTopic(topic.id)}
                     onDeleteTopic={() => handleDeleteTopic(topic.id)}
+                    openWorkAction={openWorkTopicIds.has(topic.id) ? 'remove' : 'add'}
+                    onToggleOpenWork={() =>
+                      openWorkTopicIds.has(topic.id)
+                        ? actions.removeTopicFromOpenWork(topic.id)
+                        : actions.addTopicsToOpenWork([topic.id])
+                    }
                   />
                   {topicHuddles.length > 0 && (() => {
                     // Linear-style branch tree, drawn as a single SVG path:

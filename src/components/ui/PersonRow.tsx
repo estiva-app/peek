@@ -24,6 +24,10 @@ interface PersonRowProps {
    *  "Delete topic" item calling this handler (topic-list rows, QA #2.8).
    *  Without it the 3-dot stays inert, exactly as before. */
   onDeleteTopic?: () => void
+  /** Adds an "Add to Open work" / "Remove from Open work" item to the
+   *  more-menu — the label advertises which direction will succeed. */
+  openWorkAction?: 'add' | 'remove'
+  onToggleOpenWork?: () => void
   className?: string
 }
 
@@ -41,8 +45,11 @@ export function PersonRow({
   onClick,
   onRemove,
   onDeleteTopic,
+  openWorkAction,
+  onToggleOpenWork,
   className,
 }: PersonRowProps) {
+  const hasMenu = !!onDeleteTopic || !!(openWorkAction && onToggleOpenWork)
   const [isHovered, setIsHovered] = useState(false)
   // More-menu (portalled — the sidebar scroll container clips overflow).
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
@@ -70,7 +77,7 @@ export function PersonRow({
 
   const openMenu = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!onDeleteTopic) return
+    if (!hasMenu) return
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     setMenuPos({
       top: rect.bottom + 4,
@@ -144,7 +151,7 @@ export function PersonRow({
       ) : null}
 
       {menuPos &&
-        onDeleteTopic &&
+        hasMenu &&
         createPortal(
           <div
             ref={menuRef}
@@ -153,15 +160,30 @@ export function PersonRow({
             style={{ top: menuPos.top, left: menuPos.left, width: MENU_WIDTH }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
-              onClick={() => {
-                setMenuPos(null)
-                onDeleteTopic()
-              }}
-            >
-              <span className="flex-1 text-sm truncate text-error-default">Delete topic</span>
-            </div>
+            {openWorkAction && onToggleOpenWork && (
+              <div
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
+                onClick={() => {
+                  setMenuPos(null)
+                  onToggleOpenWork()
+                }}
+              >
+                <span className="flex-1 text-sm truncate text-text-secondary signal:text-text-primary">
+                  {openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}
+                </span>
+              </div>
+            )}
+            {onDeleteTopic && (
+              <div
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
+                onClick={() => {
+                  setMenuPos(null)
+                  onDeleteTopic()
+                }}
+              >
+                <span className="flex-1 text-sm truncate text-error-default">Delete topic</span>
+              </div>
+            )}
           </div>,
           document.body
         )}

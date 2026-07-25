@@ -8,6 +8,7 @@ import { SectionLabel } from '@/components/ui/SectionHeader'
 import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
+import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { useTopicView } from '@/components/views/useTopicView'
 import {
@@ -53,6 +54,7 @@ export function DeskPage() {
   const [selected, setSelected] = useState<Selected | null>(null)
   const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
   const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
+  const [showAddToOpenWork, setShowAddToOpenWork] = useState(false)
   const [starredExpanded, setStarredExpanded] = useState(true)
 
   // The 1–2 item caps are a demo-composition affordance for the mock dataset.
@@ -204,6 +206,7 @@ export function DeskPage() {
   const threadPanel = selected?.kind === 'dm' ? dmView.threadPanel : topicView.threadPanel
 
   return (
+    <>
     <AppShell
       leftPanel={
         <div className="flex flex-col h-full">
@@ -281,7 +284,7 @@ export function DeskPage() {
                   <IconButton aria-label="Sort" tooltip="Sort by">
                     <IconSortDescending size={16} stroke={1.5} />
                   </IconButton>
-                  <IconButton aria-label="Add" tooltip="Add to Open work">
+                  <IconButton aria-label="Add" tooltip="Add to Open work" onClick={() => setShowAddToOpenWork(true)}>
                     <IconPlus size={16} stroke={1.5} />
                   </IconButton>
                 </div>
@@ -401,5 +404,12 @@ export function DeskPage() {
       rightPanel={rightPanel}
       threadPanel={threadPanel}
     />
+    {showAddToOpenWork && (
+      <AddToOpenWorkDialog
+        onAdd={(topicIds) => actions.addTopicsToOpenWork(topicIds)}
+        onClose={() => setShowAddToOpenWork(false)}
+      />
+    )}
+    </>
   )
 }

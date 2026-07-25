@@ -1,4 +1,5 @@
-import { type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare, IconLayoutSidebarRight, IconLayoutSidebarRightFilled } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
@@ -46,6 +47,11 @@ interface ConversationHeaderProps {
    */
   onToggleFolderPanel?: () => void
   folderPanelOpen?: boolean
+  /** When provided, "More actions" opens a menu with an Add/Remove Open work
+   *  item — the label advertises which direction will succeed. Without it the
+   *  3-dot stays inert, exactly as before. */
+  openWorkAction?: 'add' | 'remove'
+  onToggleOpenWork?: () => void
   tabs?: ReactNode
   className?: string
 }
@@ -64,6 +70,8 @@ export function ConversationHeader({
   onToggleStarred,
   onStartHuddle,
   onShowMembers,
+  openWorkAction,
+  onToggleOpenWork,
   tabs,
   className,
   folderId,
@@ -76,6 +84,34 @@ export function ConversationHeader({
     const link = `folder:${folderId}`
     void navigator.clipboard?.writeText(link).catch(() => window.prompt('Copy this Folder link:', link))
   }
+
+  // "More actions" menu (portalled). Menu rules: outside click + Escape close.
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const hasMoreMenu = !!(openWorkAction && onToggleOpenWork)
+
+  useEffect(() => {
+    if (!menuPos) return
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuPos(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuPos(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuPos])
+
+  const openMoreMenu = (e: React.MouseEvent) => {
+    if (!hasMoreMenu) return
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setMenuPos((prev) => (prev ? null : { top: rect.bottom + 4, right: window.innerWidth - rect.right }))
+  }
+
   return (
     <div className={cn('shrink-0 border-b border-border-subtle', className)}>
       {/* Row 1: title + actions */}
@@ -180,12 +216,37 @@ export function ConversationHeader({
                 )}
               </IconButton>
             )}
-            <IconButton tooltip="More actions" aria-label="More actions">
+            <IconButton tooltip="More actions" aria-label="More actions" onClick={openMoreMenu}>
               <IconDotsVertical size={16} stroke={1.5} />
             </IconButton>
           </div>
         </div>
       </div>
+
+      {menuPos &&
+        hasMoreMenu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            data-interactive
+            className="fixed z-50 bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2 flex flex-col w-[220px]"
+            style={{ top: menuPos.top, right: menuPos.right }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
+              onClick={() => {
+                setMenuPos(null)
+                onToggleOpenWork?.()
+              }}
+            >
+              <span className="flex-1 text-sm truncate text-text-secondary signal:text-text-primary">
+                {openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}
+              </span>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Row 2: tabs */}
       {tabs && (
