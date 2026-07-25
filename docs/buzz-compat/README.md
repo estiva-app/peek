@@ -18,6 +18,7 @@ end — see [INTEROP_PROOF.md](INTEROP_PROOF.md) §0.
 | See where Buzz and the NfB RFC conflict | [COMPATIBILITY_GAP_ANALYSIS.md](COMPATIBILITY_GAP_ANALYSIS.md) §3 |
 | **Know which NIPs to reuse vs. write** | **[NIP_SURVEY.md](NIP_SURVEY.md)** |
 | **Know which demo scenarios are buildable now** | **[SCENARIO_FEASIBILITY.md](SCENARIO_FEASIBILITY.md)** |
+| Read the first NfB NIP draft | [nips/NIP-FC.md](nips/NIP-FC.md) — Files and Components |
 
 ## The documents
 
