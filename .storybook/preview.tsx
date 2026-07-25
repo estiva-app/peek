@@ -25,14 +25,14 @@ try {
   /* channel not ready at import — the decorator still covers story pages */
 }
 
-// Apply the default (dark) immediately so standalone MDX pages — Introduction,
-// Design Tokens — render dark on first load, before any GLOBALS_UPDATED fires.
-applyTheme('dark')
+// Apply the default (signal) immediately so standalone MDX pages — Introduction,
+// Design Tokens — render themed on first load, before any GLOBALS_UPDATED fires.
+applyTheme('signal')
 
 const withTheme: Decorator = (Story, context) => {
   // parameters.forceTheme lets theme-specific stories (e.g. the Signal
   // specimens page) pin their theme regardless of the toolbar.
-  const theme = (context.parameters.forceTheme as string) ?? context.globals.theme ?? 'dark'
+  const theme = (context.parameters.forceTheme as string) ?? context.globals.theme ?? 'signal'
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
@@ -53,7 +53,7 @@ const preview: Preview = {
       },
     },
   },
-  initialGlobals: { theme: 'dark' },
+  initialGlobals: { theme: 'signal' },
   parameters: {
     layout: 'centered',
     controls: { expanded: true },
