@@ -41,42 +41,15 @@ end — see [INTEROP_PROOF.md](INTEROP_PROOF.md) §0.
 | `publish-to-relay.ts` | End-to-end probe. Imports Peek's real `convex/nostr/*` modules and publishes a profile, channel and message to a running relay, then reads them back |
 | `emit-buzz-event.mjs` | Standalone emitter from the first analysis pass. Superseded by the modules, kept because it documents every Peek field with nowhere to go |
 | `verify-with-buzz/` | Rust harness that runs **Buzz's own crates** over Peek's output — the cross-implementation check |
-| `demo/` | **The interop demo.** A task board — a different kind of app — on the same channel Peek writes to. See below |
 
-## The demo
+## The demo apps
 
-`demo/` is a small standalone page that reads and writes the same Nostr channel
-Peek publishes to. Peek renders those events as chat messages; this renders them
-as tasks. **There is no integration between the two** — no shared database, no
-API call, no webhook. They agree on a relay URL and a channel UUID.
+They live in a **separate repo**: `~/nfb-demos`. Look-alike stand-ins for Meet,
+Figma and Linear, showing what those tools would be like on Nostr.
 
-```bash
-# 1. relay running (see above), then serve the page:
-cd docs/buzz-compat/demo && python3 -m http.server 5180
-# 2. open http://localhost:5180 and paste in a channel UUID
-#    (find one: npx convex data topics  → the channelUuid column)
-```
-
-The page holds **its own keypair**, generated in the browser and stored in
-`localStorage` — it is a different identity from any Peek user, shown as a
-different colour.
-
-`two-app-run.txt` is a captured headless run proving the claim without a
-browser: a fresh identity reads Peek's events, publishes its own, and both
-coexist in one stream.
-
-> **Honest limit:** interop is currently **one-way at Peek's end**. Peek writes
-> to the relay and anything can read it, but Peek does not yet read *back*, so a
-> task created in the demo will not appear in Peek's UI until Stage 2's read path
-> exists. The demo page shows both directions because it talks to the relay
-> directly.
-
-`bundle.js` is generated and committed so the demo runs with no build step.
-Rebuild after editing `app.ts`:
-
-```bash
-npx esbuild docs/buzz-compat/demo/app.ts --bundle --format=esm --outfile=docs/buzz-compat/demo/bundle.js
-```
+They deliberately share no code with Peek — each has its own copy of the
+protocol helpers, so "two independent apps interoperating" means what it says.
+See that repo's README to run them.
 
 ## Running things
 
