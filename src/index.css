@@ -160,6 +160,10 @@
   --accent-hover:   #7C3AED;
   --accent-muted:   #EDE9FE;
 
+  /* Summary-highlight swatch. Follows the accent in the violet themes; signal
+     overrides it (its accent is cyan, which would collide with Question). */
+  --highlight-summary: var(--accent-primary);
+
   /* brand mark/wordmark (indigo on light, white on dark) */
   --logo: #140855;
 
@@ -269,6 +273,11 @@
   --accent-primary: #56c8ff;
   --accent-hover:   #8ad6ff;
   --accent-muted:   rgba(86, 200, 255, 0.11);
+
+  /* Summary highlight stays violet here — the accent is cyan, which would be
+     indistinguishable from Question's info-blue. Violet is the one hue the
+     signal palette doesn't already assign a meaning. */
+  --highlight-summary: #a78bfa;
 
   --logo: #ffffff;
 

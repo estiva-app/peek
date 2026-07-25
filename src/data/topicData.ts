@@ -28,7 +28,7 @@ export const HIGHLIGHT_META: Record<HighlightType, { color: string; label: strin
   concern:    { color: 'var(--error-default)',   label: 'Concern' },
   conclusion: { color: 'var(--success-default)', label: 'Conclusion' },
   question:   { color: 'var(--info-default)',    label: 'Question' },
-  summary:    { color: 'var(--accent-primary)',  label: 'Summary' },
+  summary:    { color: 'var(--highlight-summary)', label: 'Summary' },
 }
 
 export interface ReactionData {
