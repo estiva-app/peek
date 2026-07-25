@@ -40,11 +40,16 @@ export interface SignedEvent extends UnsignedEvent {
 /** Buzz kind numbers used by Peek (crates/buzz-core/src/kind.rs). */
 export const KIND = {
   PROFILE: 0,
+  DELETION: 5,
+  REACTION: 7,
   STREAM_MESSAGE: 9,
   NIP29_PUT_USER: 9000,
   NIP29_CREATE_GROUP: 9007,
   HTTP_AUTH: 27235,
 } as const
+
+/** `build_reaction` (builders.rs:463) caps the emoji at 64 chars. */
+export const MAX_EMOJI_CHARS = 64
 
 /** kind:9 content cap — `check_content(content, 64 * 1024)` in build_message. */
 export const MAX_MESSAGE_BYTES = 64 * 1024
@@ -186,12 +191,79 @@ export function buildAddMember(
   }
 }
 
-/** NIP-10 reply context for a threaded message. */
+/**
+ * kind:7 reaction — mirrors `build_reaction` (builders.rs:463).
+ *
+ * Note there is **no `h` tag**: Buzz derives the channel from the *target's*
+ * `#e` tag and explicitly ignores a client-supplied `#h` (`NOSTR.md`). Adding one
+ * would change the event id for no benefit.
+ */
+export function buildReaction(
+  pubkey: string,
+  createdAtMs: number,
+  args: { targetEventId: string; emoji: string },
+): UnsignedEvent {
+  assertHex64(pubkey, 'pubkey')
+  assertHex64(args.targetEventId, 'targetEventId')
+  if ([...args.emoji].length > MAX_EMOJI_CHARS) {
+    throw new Error(`emoji longer than ${MAX_EMOJI_CHARS} chars`)
+  }
+  return {
+    pubkey,
+    created_at: toNostrSeconds(createdAtMs),
+    kind: KIND.REACTION,
+    tags: [['e', args.targetEventId]],
+    content: args.emoji,
+  }
+}
+
+/**
+ * kind:5 deletion — mirrors `build_remove_reaction` (builders.rs:495).
+ *
+ * Used to retract a reaction: Peek deletes the row, Nostr needs a tombstone.
+ * Buzz accepts self-authored deletions (and an owner deleting their agent's).
+ */
+export function buildDeletion(
+  pubkey: string,
+  createdAtMs: number,
+  args: { targetEventId: string },
+): UnsignedEvent {
+  assertHex64(pubkey, 'pubkey')
+  assertHex64(args.targetEventId, 'targetEventId')
+  return {
+    pubkey,
+    created_at: toNostrSeconds(createdAtMs),
+    kind: KIND.DELETION,
+    tags: [['e', args.targetEventId]],
+    content: '',
+  }
+}
+
+/**
+ * NIP-10 reply context.
+ *
+ * Mirrors Buzz's `ThreadRef` + `thread_tags` (builders.rs:173), which has a
+ * detail that is easy to get wrong: for a **direct** reply (parent is the root)
+ * Buzz emits a SINGLE tag marked `"reply"` — not a `"root"` tag. Only a nested
+ * reply emits both. Getting this wrong changes the event id and, worse, produces
+ * threads Buzz's clients read differently.
+ */
 export interface ThreadRef {
   /** Thread root event id (64-hex). */
   rootId: string
-  /** Direct parent event id, when replying to a reply. */
-  replyId?: string
+  /** Direct parent event id. Equal to `rootId` for a direct reply. */
+  parentId: string
+}
+
+/** Exactly Buzz's `thread_tags` (builders.rs:173). */
+export function threadTags(ref: ThreadRef): NostrTag[] {
+  if (ref.rootId === ref.parentId) {
+    return [['e', ref.rootId, '', 'reply']]
+  }
+  return [
+    ['e', ref.rootId, '', 'root'],
+    ['e', ref.parentId, '', 'reply'],
+  ]
 }
 
 /**
@@ -223,11 +295,7 @@ export function buildMessage(
 
   const tags: NostrTag[] = [['h', args.channelUuid]]
 
-  if (args.threadRef) {
-    // NIP-10 marked form, as Buzz's `thread_tags` emits it.
-    tags.push(['e', args.threadRef.rootId, '', 'root'])
-    if (args.threadRef.replyId) tags.push(['e', args.threadRef.replyId, '', 'reply'])
-  }
+  if (args.threadRef) tags.push(...threadTags(args.threadRef))
 
   if (args.mentions && args.mentions.length > 0) {
     if (args.mentions.length > MAX_MENTIONS) {

@@ -236,6 +236,201 @@ export const importMessage = internalMutation({
   },
 })
 
+// ── Replies (kind:9 + NIP-10) ───────────────────────────────────────────────
+
+/**
+ * Everything needed to publish one reply.
+ *
+ * A reply can only be published once its **parent message** has been — the
+ * NIP-10 `e` tag needs the parent's event id, and Buzz rejects replies whose
+ * parent it does not know ("unknown parents rejected", `NOSTR.md`).
+ */
+export const getReplyContext = internalQuery({
+  args: { replyId: v.id('replies') },
+  handler: async (ctx, { replyId }) => {
+    const r = await ctx.db.get(replyId)
+    if (!r) return null
+    const parent = await ctx.db.get(r.messageId)
+    if (!parent || parent.parentKind !== 'topic') return null
+    const topicId = ctx.db.normalizeId('topics', parent.parentId)
+    if (!topicId) return null
+    const topic = await ctx.db.get(topicId)
+    return {
+      body: r.body,
+      createdAt: r.createdAt,
+      authorId: r.authorId,
+      alreadyPublished: r.nostrEventId ?? null,
+      parentEventId: parent.nostrEventId ?? null,
+      channelUuid: topic?.channelUuid ?? null,
+    }
+  },
+})
+
+export const markReplyPublished = internalMutation({
+  args: { replyId: v.id('replies'), nostrEventId: v.string() },
+  handler: async (ctx, { replyId, nostrEventId }) => {
+    await ctx.db.patch(replyId, { nostrEventId })
+  },
+})
+
+/** Import a reply from the relay, keyed on its event id. */
+export const importReply = internalMutation({
+  args: {
+    messageId: v.id('messages'),
+    authorId: v.id('users'),
+    body: v.string(),
+    createdAt: v.number(),
+    nostrEventId: v.string(),
+  },
+  handler: async (ctx, { messageId, authorId, body, createdAt, nostrEventId }) => {
+    const existing = await ctx.db
+      .query('replies')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    if (existing) return { inserted: false }
+    await ctx.db.insert('replies', {
+      messageId,
+      authorId,
+      body,
+      createdAt,
+      seedKey: nostrEventId,
+      nostrEventId,
+    })
+    return { inserted: true }
+  },
+})
+
+/**
+ * Event ids of a topic's published messages — the targets to look for reactions
+ * on.
+ *
+ * Reactions cannot be found the way messages are: kind:7 has no `h` tag, and it
+ * has no `created_at` relationship to the message it targets, so a `since`
+ * cursor over the channel does not reach them. They have to be queried by
+ * target, which means knowing every message Peek has in the channel — not just
+ * the ones that arrived in the current sync window.
+ *
+ * Newest first and capped, so a long-running channel does not build an
+ * unbounded filter.
+ */
+export const listMessageEventIdsForTopic = internalQuery({
+  args: { topicId: v.id('topics'), limit: v.number() },
+  handler: async (ctx, { topicId, limit }) => {
+    const rows = await ctx.db
+      .query('messages')
+      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .collect()
+    return rows
+      .filter((m) => m.nostrEventId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((m) => m.nostrEventId!)
+  },
+})
+
+/**
+ * Event ids of reactions Peek has already imported for a topic.
+ *
+ * Needed to spot **retractions**. A kind:5 targets the reaction event, and once
+ * the relay has that deletion it stops returning the reaction itself — so asking
+ * "are any of the reactions I just fetched deleted?" can never find one. The
+ * question has to be "are any of the reactions I already hold deleted?".
+ */
+export const listReactionEventIdsForTopic = internalQuery({
+  args: { topicId: v.id('topics'), limit: v.number() },
+  handler: async (ctx, { topicId, limit }) => {
+    const messages = await ctx.db
+      .query('messages')
+      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .collect()
+    const out: string[] = []
+    for (const m of messages) {
+      const rows = await ctx.db
+        .query('reactions')
+        .withIndex('by_message', (q) => q.eq('messageId', m._id))
+        .collect()
+      for (const r of rows) {
+        if (r.nostrEventId) out.push(r.nostrEventId)
+        if (out.length >= limit) return out
+      }
+    }
+    return out
+  },
+})
+
+/** Local message for a relay event id — resolves a NIP-10 `e` tag to a parent. */
+export const messageByNostrEventId = internalQuery({
+  args: { nostrEventId: v.string() },
+  handler: async (ctx, { nostrEventId }) => {
+    const m = await ctx.db
+      .query('messages')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    return m ? { messageId: m._id } : null
+  },
+})
+
+// ── Reactions (kind:7 / kind:5) ─────────────────────────────────────────────
+
+export const getReactionContext = internalQuery({
+  args: { reactionId: v.id('reactions') },
+  handler: async (ctx, { reactionId }) => {
+    const r = await ctx.db.get(reactionId)
+    if (!r) return null
+    const target = await ctx.db.get(r.messageId)
+    return {
+      emoji: r.emoji,
+      createdAt: r.createdAt,
+      userId: r.userId,
+      alreadyPublished: r.nostrEventId ?? null,
+      targetEventId: target?.nostrEventId ?? null,
+    }
+  },
+})
+
+export const markReactionPublished = internalMutation({
+  args: { reactionId: v.id('reactions'), nostrEventId: v.string() },
+  handler: async (ctx, { reactionId, nostrEventId }) => {
+    // The row may already be gone: un-reacting deletes it, and the publish is
+    // async. Patching a deleted id throws, so check first.
+    const r = await ctx.db.get(reactionId)
+    if (r) await ctx.db.patch(reactionId, { nostrEventId })
+  },
+})
+
+/** Import a reaction from the relay. Idempotent on the kind:7 event id. */
+export const importReaction = internalMutation({
+  args: {
+    messageId: v.id('messages'),
+    userId: v.id('users'),
+    emoji: v.string(),
+    createdAt: v.number(),
+    nostrEventId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('reactions')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', args.nostrEventId))
+      .unique()
+    if (existing) return { inserted: false }
+    await ctx.db.insert('reactions', args)
+    return { inserted: true }
+  },
+})
+
+/** Apply a kind:5 deletion of a reaction that was imported earlier. */
+export const removeReactionByNostrEventId = internalMutation({
+  args: { nostrEventId: v.string() },
+  handler: async (ctx, { nostrEventId }) => {
+    const r = await ctx.db
+      .query('reactions')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    if (r) await ctx.db.delete(r._id)
+    return { deleted: r !== null }
+  },
+})
+
 export const setTopicSyncCursor = internalMutation({
   args: { topicId: v.id('topics'), nostrSyncedAt: v.number() },
   handler: async (ctx, { topicId, nostrSyncedAt }) => {

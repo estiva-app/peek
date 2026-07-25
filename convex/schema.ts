@@ -162,9 +162,12 @@ export default defineSchema({
     fileAttachments: v.optional(v.array(fileAttachment)),
     /** Stable client key — mock or client-generated reply id (see topics). */
     seedKey: v.optional(v.string()),
+    /** Nostr event id once published (a kind:9 with a NIP-10 `e` tag). */
+    nostrEventId: v.optional(v.string()),
   })
     .index('by_message', ['messageId'])
-    .index('by_seedKey', ['seedKey']),
+    .index('by_seedKey', ['seedKey'])
+    .index('by_nostrEventId', ['nostrEventId']),
 
   // §2.7 — per-user rows; counts + "yours" aggregate in the query (§4.6)
   reactions: defineTable({
@@ -172,9 +175,13 @@ export default defineSchema({
     userId: v.id('users'),
     emoji: v.string(),
     createdAt: v.number(),
+    /** Nostr event id of the kind:7 once published. Kept so retracting the
+     *  reaction can publish a kind:5 deletion pointing at it. */
+    nostrEventId: v.optional(v.string()),
   })
     .index('by_message', ['messageId'])
-    .index('by_message_user', ['messageId', 'userId']),
+    .index('by_message_user', ['messageId', 'userId'])
+    .index('by_nostrEventId', ['nostrEventId']),
 
   // §2.8 — lastActivity/card preview DERIVED (§4.5); promotion never copies
   // messages (§3 edge case 1)

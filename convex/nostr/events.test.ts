@@ -16,8 +16,10 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAddMember,
   buildCreateChannel,
+  buildDeletion,
   buildMessage,
   buildProfile,
+  buildReaction,
   canonicalChannelName,
   computeEventId,
 } from './events'
@@ -136,19 +138,58 @@ describe('shape rules taken from builders.rs', () => {
     ).toThrow(/max 65536/)
   })
 
-  it('emits NIP-10 marked e-tags in root-then-reply order', () => {
-    const root = '1'.repeat(64)
-    const reply = '2'.repeat(64)
+  /**
+   * This test previously asserted a `["e", root, "", "root"]` tag for a direct
+   * reply, which is what I assumed rather than what Buzz does. It passed, because
+   * it pinned my assumption. `thread_tags` (builders.rs:173) emits a SINGLE
+   * `"reply"`-marked tag when root == parent, and only splits into root+reply
+   * when they differ. Both branches are covered below so the mistake cannot
+   * come back.
+   */
+  it('emits ONE reply-marked e-tag for a direct reply, as thread_tags does', () => {
+    const parent = '1'.repeat(64)
     const event = buildMessage(PUBKEY, 0, {
       channelUuid: CHANNEL,
       content: 'hi',
-      threadRef: { rootId: root, replyId: reply },
+      threadRef: { rootId: parent, parentId: parent },
+    })
+    expect(event.tags).toEqual([
+      ['h', CHANNEL],
+      ['e', parent, '', 'reply'],
+    ])
+  })
+
+  it('emits root then reply for a nested reply', () => {
+    const root = '1'.repeat(64)
+    const parent = '2'.repeat(64)
+    const event = buildMessage(PUBKEY, 0, {
+      channelUuid: CHANNEL,
+      content: 'hi',
+      threadRef: { rootId: root, parentId: parent },
     })
     expect(event.tags).toEqual([
       ['h', CHANNEL],
       ['e', root, '', 'root'],
-      ['e', reply, '', 'reply'],
+      ['e', parent, '', 'reply'],
     ])
+  })
+
+  it('kind:7 reaction carries only an e-tag — no h tag', () => {
+    // Buzz derives the channel from the target's own #e tag and ignores a
+    // client-supplied #h, so adding one would change the id for no benefit.
+    const target = '3'.repeat(64)
+    const event = buildReaction(PUBKEY, 0, { targetEventId: target, emoji: '👍' })
+    expect(event.kind).toBe(7)
+    expect(event.tags).toEqual([['e', target]])
+    expect(event.content).toBe('👍')
+  })
+
+  it('kind:5 deletion targets one event with empty content', () => {
+    const target = '4'.repeat(64)
+    const event = buildDeletion(PUBKEY, 0, { targetEventId: target })
+    expect(event.kind).toBe(5)
+    expect(event.tags).toEqual([['e', target]])
+    expect(event.content).toBe('')
   })
 
   it('truncates Peek’s millisecond timestamps to Nostr seconds', () => {

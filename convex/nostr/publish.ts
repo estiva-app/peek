@@ -17,7 +17,14 @@ import { v } from 'convex/values'
 import { internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { buildAddMember, buildCreateChannel, buildMessage, buildProfile } from './events'
+import {
+  buildAddMember,
+  buildCreateChannel,
+  buildDeletion,
+  buildMessage,
+  buildProfile,
+  buildReaction,
+} from './events'
 import { signEvent } from './sign'
 import { decryptSecretKey, encryptSecretKey, generateKeypair } from './keys'
 import { publishEvent, relayUrl } from './bridge'
@@ -258,6 +265,123 @@ export const publishMembership = internalAction({
       if (!res.ok) console.warn(`[nostr] add-member rejected: ${res.reason}`)
     } catch (e) {
       console.warn(`[nostr] publishMembership(${topicId}, ${userId}) failed:`, e)
+    }
+  },
+})
+
+/**
+ * Publish a reply as a kind:9 carrying a NIP-10 `e` tag.
+ *
+ * Peek's replies are always **direct** replies to a message — no nesting — so
+ * root and parent are the same event and `threadTags` emits the single
+ * `["e", id, "", "reply"]` form Buzz uses.
+ *
+ * Skipped when the parent message has not been published: Buzz rejects replies
+ * to events it does not know, and there is no id to point at.
+ */
+export const publishReply = internalAction({
+  args: { replyId: v.id('replies') },
+  handler: async (ctx, { replyId }) => {
+    if (!relayUrl()) return
+    try {
+      const r = await ctx.runQuery(internal.nostr.data.getReplyContext, { replyId })
+      if (!r || r.alreadyPublished) return
+      if (!r.channelUuid || !r.parentEventId) {
+        console.warn(
+          `[nostr] reply ${replyId} skipped: parent message is not on the relay yet`,
+        )
+        return
+      }
+      if (!withinDriftWindow(r.createdAt)) return
+
+      const author = await identityFor(ctx, r.authorId)
+      const res = await publishEvent(
+        signEvent(
+          buildMessage(author.pubkey, r.createdAt, {
+            channelUuid: r.channelUuid,
+            content: r.body,
+            threadRef: { rootId: r.parentEventId, parentId: r.parentEventId },
+          }),
+          author.secretKeyHex,
+        ),
+        author,
+      )
+      if (!res.ok) {
+        console.warn(`[nostr] reply ${replyId} rejected: ${res.reason}`)
+        return
+      }
+      if (res.eventId) {
+        await ctx.runMutation(internal.nostr.data.markReplyPublished, {
+          replyId,
+          nostrEventId: res.eventId,
+        })
+      }
+    } catch (e) {
+      console.warn(`[nostr] publishReply(${replyId}) failed:`, e)
+    }
+  },
+})
+
+/** Publish a reaction as kind:7 pointing at the target message's event. */
+export const publishReaction = internalAction({
+  args: { reactionId: v.id('reactions') },
+  handler: async (ctx, { reactionId }) => {
+    if (!relayUrl()) return
+    try {
+      const r = await ctx.runQuery(internal.nostr.data.getReactionContext, { reactionId })
+      if (!r || r.alreadyPublished) return
+      if (!r.targetEventId) return // target not on the relay — nothing to react to
+      if (!withinDriftWindow(r.createdAt)) return
+
+      const author = await identityFor(ctx, r.userId)
+      const res = await publishEvent(
+        signEvent(
+          buildReaction(author.pubkey, r.createdAt, {
+            targetEventId: r.targetEventId,
+            emoji: r.emoji,
+          }),
+          author.secretKeyHex,
+        ),
+        author,
+      )
+      if (!res.ok) {
+        console.warn(`[nostr] reaction ${reactionId} rejected: ${res.reason}`)
+        return
+      }
+      if (res.eventId) {
+        await ctx.runMutation(internal.nostr.data.markReactionPublished, {
+          reactionId,
+          nostrEventId: res.eventId,
+        })
+      }
+    } catch (e) {
+      console.warn(`[nostr] publishReaction(${reactionId}) failed:`, e)
+    }
+  },
+})
+
+/**
+ * Retract a reaction with a kind:5 deletion.
+ *
+ * Takes the event id and the reacting user rather than a row id, because by the
+ * time this runs the Convex row is already gone — un-reacting deletes it.
+ */
+export const publishReactionRemoval = internalAction({
+  args: { userId: v.id('users'), nostrEventId: v.string() },
+  handler: async (ctx, { userId, nostrEventId }) => {
+    if (!relayUrl()) return
+    try {
+      const author = await identityFor(ctx, userId)
+      const res = await publishEvent(
+        signEvent(
+          buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),
+          author.secretKeyHex,
+        ),
+        author,
+      )
+      if (!res.ok) console.warn(`[nostr] reaction deletion rejected: ${res.reason}`)
+    } catch (e) {
+      console.warn(`[nostr] publishReactionRemoval failed:`, e)
     }
   },
 })
