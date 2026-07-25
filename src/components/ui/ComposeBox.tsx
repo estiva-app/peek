@@ -101,6 +101,12 @@ function serializeToText(editor: ReturnType<typeof useEditor>): string {
           }
         })
       })
+    } else if (node.type.name === 'blockquote') {
+      node.forEach((qChild) => {
+        if (qChild.type.name === 'paragraph') {
+          lines.push(`> ${serializeInline(qChild)}`)
+        }
+      })
     }
   })
   return lines.join('\n').trim()
@@ -242,6 +248,18 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
                 ed.commands.splitListItem('listItem')
               }
               return true
+            }
+          }
+          // In a quote: splitBlock continues it line by line; Shift+Enter on
+          // an EMPTY quote line lifts out to a regular paragraph (mirrors how
+          // an empty list item exits the list).
+          for (let d = $from.depth; d > 0; d--) {
+            if ($from.node(d).type.name === 'blockquote') {
+              if ($from.parent.textContent.length === 0) {
+                ed.commands.lift('paragraph')
+                return true
+              }
+              break
             }
           }
           ed.commands.splitBlock()

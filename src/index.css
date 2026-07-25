@@ -105,15 +105,24 @@
 [data-message-body] :is(h1, h2) + :is(h1, h2) {
   margin-top: 4px;
 }
-/* Composer-only list boundaries: the sent card separates block segments
-   with a 4px flex gap (list-above/below/between). The composer stacks
-   blocks with no gap, so it carries the same 4px as margins. Plain
-   line-to-line stays flush — the sent card joins those lines into one
-   <br>-separated paragraph. Heading-BELOW spacing is handled above
-   (composer 8px vs sent 4px + gap); adjacent-margin collapsing keeps
-   heading→block at 8px here too. */
-.tiptap :is(p, h1, h2, ul, ol) + :is(ul, ol),
-.tiptap :is(ul, ol) + p {
+/* Quotes (`> ` lines) — the classic quiet quote: a hairline-strong left rule,
+   indented, in secondary ink. One look while typing and once sent. */
+.tiptap blockquote,
+[data-message-body] blockquote {
+  margin: 0;
+  border-left: 3px solid var(--border-strong);
+  padding: 0 0 0 10px;
+  color: var(--text-secondary);
+}
+/* Composer-only list/quote boundaries: the sent card separates block
+   segments with a 4px flex gap (list/quote above/below/between). The
+   composer stacks blocks with no gap, so it carries the same 4px as
+   margins. Plain line-to-line stays flush — the sent card joins those
+   lines into one <br>-separated paragraph. Heading-BELOW spacing is
+   handled above (composer 8px vs sent 4px + gap); adjacent-margin
+   collapsing keeps heading→block at 8px here too. */
+.tiptap :is(p, h1, h2, ul, ol, blockquote) + :is(ul, ol, blockquote),
+.tiptap :is(ul, ol, blockquote) + p {
   margin-top: 4px !important;
 }
 /* Matches the `underline-offset-2` MessageBody puts on underlined spans. */

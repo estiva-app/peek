@@ -416,3 +416,44 @@ describe('heading lines', () => {
     expect(doc.content[1]).toEqual({ type: 'paragraph', content: [{ type: 'text', text: 'body' }] })
   })
 })
+
+describe('quote lines', () => {
+  it('parseBodySegments groups consecutive > lines into one quote segment', () => {
+    expect(parseBodySegments('intro\n> first\n> second\noutro')).toEqual([
+      { type: 'text', lines: ['intro'] },
+      { type: 'quote', lines: ['first', 'second'] },
+      { type: 'text', lines: ['outro'] },
+    ])
+  })
+
+  it('requires the space after > — a bare > at line start stays literal', () => {
+    expect(parseBodySegments('>no space')).toEqual([{ type: 'text', lines: ['>no space'] }])
+  })
+
+  it('leaves mid-line > untouched', () => {
+    expect(parseBodySegments('5 > 3 is true')).toEqual([
+      { type: 'text', lines: ['5 > 3 is true'] },
+    ])
+  })
+
+  it('textToTiptapContent produces a blockquote with one paragraph per line', () => {
+    const doc = textToTiptapContent('> one\n> two')
+    expect(doc.content[0]).toEqual({
+      type: 'blockquote',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'one' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'two' }] },
+      ],
+    })
+  })
+
+  it('quote lines keep inline marks', () => {
+    expect(parseBodySegments('> a **bold** word')).toEqual([
+      { type: 'quote', lines: ['a **bold** word'] },
+    ])
+  })
+
+  it('stripInlineFormatting drops the quote prefix in previews', () => {
+    expect(stripInlineFormatting('> quoted **bit**')).toBe('quoted bit')
+  })
+})

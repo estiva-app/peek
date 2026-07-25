@@ -84,3 +84,14 @@ export const Headings: Story = {
       '# Payment integration rollout\nQuick summary of where we landed.\n## Open questions\n- Do we gate refunds behind the same flag?\n- **Who owns** the retry queue?',
   },
 }
+
+/**
+ * `> ` lines render as a quote block (consecutive lines merge into one).
+ * The space is required — a bare `>` or mid-line `>` stays literal text.
+ */
+export const Quote: Story = {
+  args: {
+    body:
+      "Replying to Honza's point:\n> I'm missing quotes\n> quotes goes here\nAgreed — and note that 5 > 3 stays literal.",
+  },
+}

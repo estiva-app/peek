@@ -196,6 +196,16 @@ export function ConversationCard({
               return true
             }
           }
+          // Empty quote line exits the quote (mirrors empty-list-item lift).
+          for (let d = $from.depth; d > 0; d--) {
+            if ($from.node(d).type.name === 'blockquote') {
+              if ($from.parent.textContent.length === 0) {
+                ed.commands.lift('paragraph')
+                return true
+              }
+              break
+            }
+          }
           ed.commands.splitBlock()
           return true
         }

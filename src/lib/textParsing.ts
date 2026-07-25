@@ -221,7 +221,7 @@ export function stripInlineFormatting(text: string): string {
   return text
     .split('\n')
     .map((line) =>
-      parseInlineMarks(line.replace(/^#{1,2}\s/, ''))
+      parseInlineMarks(line.replace(/^#{1,2}\s/, '').replace(/^>\s/, ''))
         .map((s) => s.text)
         .join('')
     )
@@ -332,8 +332,12 @@ export type BodySegment =
   | { type: 'bullet'; items: string[] }
   | { type: 'numbered'; items: string[] }
   | { type: 'heading'; level: 1 | 2; text: string }
+  | { type: 'quote'; lines: string[] }
 
 const HEADING_LINE_RE = /^#{1,2}\s/
+/** `> ` with the space required — a bare `>` (e.g. "5 > 3" typed at a line
+ *  start) stays literal text, same conservatism as the other markers. */
+const QUOTE_LINE_RE = /^>\s/
 
 /** Split a multi-line body string into a list of segments (text / bullet /
  *  numbered / heading). Blank lines split runs of plain text into separate
@@ -366,12 +370,20 @@ export function parseBodySegments(body: string): BodySegment[] {
         i++
       }
       segments.push({ type: 'numbered', items })
+    } else if (QUOTE_LINE_RE.test(line)) {
+      const quoteLines: string[] = []
+      while (i < lines.length && QUOTE_LINE_RE.test(lines[i])) {
+        quoteLines.push(lines[i].replace(QUOTE_LINE_RE, ''))
+        i++
+      }
+      segments.push({ type: 'quote', lines: quoteLines })
     } else {
       const textLines: string[] = []
       while (
         i < lines.length &&
         !/^[-•]\s/.test(lines[i]) &&
         !/^\d+\.\s/.test(lines[i]) &&
+        !QUOTE_LINE_RE.test(lines[i]) &&
         !(HEADING_LINE_RE.test(lines[i]) && !lines[i].startsWith('###'))
       ) {
         textLines.push(lines[i])
@@ -441,6 +453,19 @@ export function textToTiptapContent(text: string) {
       continue
     }
 
+    if (QUOTE_LINE_RE.test(line)) {
+      const quoteParas: Record<string, unknown>[] = []
+      while (i < lines.length && QUOTE_LINE_RE.test(lines[i])) {
+        quoteParas.push({
+          type: 'paragraph',
+          content: parseInlineContent(lines[i].replace(QUOTE_LINE_RE, '')),
+        })
+        i++
+      }
+      docContent.push({ type: 'blockquote', content: quoteParas })
+      continue
+    }
+
     if (line.length === 0) {
       docContent.push({ type: 'paragraph', content: [] })
     } else {
@@ -493,6 +518,12 @@ export function serializeTiptapToText(editor: { state: { doc: unknown } } | null
             idx++
           }
         })
+      })
+    } else if (node.type.name === 'blockquote') {
+      node.forEach((qChild) => {
+        if (qChild.type.name === 'paragraph') {
+          lines.push(`> ${serializeInline(qChild as TiptapInlineChild & TiptapNode)}`)
+        }
       })
     }
   })
