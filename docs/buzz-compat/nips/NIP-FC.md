@@ -4,7 +4,14 @@ NIP-FC
 Files and Components
 --------------------
 
-`draft` `optional`
+`draft` `optional` `superseded`
+
+> **Superseded — do not propose.** [FILES_ARCHITECTURE.md](../FILES_ARCHITECTURE.md)
+> argues that git provides folders, files, history and multi-writer merge, and
+> that static components are markup rather than protocol. That resolves this
+> draft's central open question (multi-writer) far better than any option
+> sketched below. Kept as a record of the reasoning that led there; its one
+> surviving idea is addressable sub-file units for anchoring comments.
 
 This NIP defines `kind:30840` (a **File**) and `kind:30841` (a **Component**):
 a shared business object composed of separately addressable parts.
