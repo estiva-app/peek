@@ -160,8 +160,8 @@ The git model is better, not free.
 - **Reading a file is a git fetch, not a relay `REQ`.** Every client needs git
   access or the relay's HTTP git API. That is a real client-side cost, and it
   makes "just subscribe to everything" no longer true for files.
-- **Frequent small edits are awkward.** Git commits are not keystrokes. A live
-  collaborative canvas is *not* a git file — see §6.
+- **Frequent small edits are awkward.** Git commits are not keystrokes, so an
+  app has to decide when to commit — see §6.
 - **Discovery changes.** Finding files means listing a repo, not filtering
   events. Relay-side search (NIP-50) does not see inside git blobs.
 - **Comments on part of a file lose their anchor.** Git has no addressable
@@ -172,24 +172,62 @@ The git model is better, not free.
 
 ---
 
-## 6. A fork this exposes: versioned files vs live surfaces
+## 6. Real-time editing is deliberately app-local
 
 Your point 2 — *"any kind of files is git versioned; separate things are messages
-and discussion"* — is right, and there may be a **third** category it doesn't
-cover.
+and discussion"* — raises the obvious objection: what about a Figma canvas or a
+Google Doc, where several people type at once?
 
-- **Versioned files** — documents, specs, code. Git. Edited in sessions, history
-  matters, merges make sense.
-- **Messages and discussion** — `kind:9` in channels. Already works.
-- **Live surfaces** — a Figma canvas, a shared whiteboard, a doc two people are
-  typing in *right now*. Git is the wrong shape; so is an addressable event.
-  Buzz already has `kind:40100` canvas for this.
+**The answer is that this does not belong on Nostr at all**, and that is a
+principle rather than a workaround.
 
-Scenario 2 and 3 are set on a design canvas, which is the third category. Worth
-deciding whether NfB treats a canvas as a file that happens to be edited live, or
-as a genuinely different thing.
+### Nothing available solves it anyway
 
----
+Checked, not assumed:
+
+| | Real-time co-editing |
+| --- | --- |
+| Git | No — but it merges, and keeps history |
+| Buzz canvas (`kind:40100`) | No — `UPDATE channels SET canvas = $1`, a plain overwrite. Last writer silently erases the other |
+| Any of the 99 NIPs | Does not exist. No CRDT, Automerge, Yjs or operational-transform mechanism anywhere |
+
+So this is not a git shortcoming. Buzz's canvas is *worse* — git at least reports
+a conflict instead of discarding someone's work.
+
+### And it should not
+
+An app building Figma-on-NfB would use its own real-time mechanism — a CRDT over
+a websocket, whatever suits — and publish to Nostr **when there is something
+worth committing.** Nothing is lost by that, and it follows directly from the
+rule already adopted:
+
+> Publish completed business actions that other apps need. Keep per-viewer
+> state, derived state, and routing decisions local.
+
+Keystrokes and cursor positions are the purest possible case of ephemeral local
+state. A character typed is not a business action; a saved document is. Signing
+and storing an event per keystroke would be absurd on any substrate.
+
+This is also exactly how git already works: your editor does not commit every
+keystroke. The commit is the unit that means something, and the same boundary
+applies here.
+
+**Interop lives at the commit boundary.** Another app does not need your
+keystrokes — it needs the document. Publishing at the commit gives full
+interoperability with none of the cost.
+
+### Two small consequences
+
+1. **Presence is a separate question, and is worth having.** Knowing *that* Ana
+   is editing — as opposed to receiving her keystrokes — is genuinely useful
+   across apps, and Nostr already carries it: `kind:20001` presence and
+   `kind:20002` typing indicators, both ephemeral and never stored. So "who is
+   in this document right now" can be shared without the editing traffic being
+   shared.
+2. **Each app must choose its commit boundary.** Commit on every pause and the
+   history becomes noise; commit only on explicit save and collaborative context
+   is lost. That is an application decision, but a demo should pick something
+   deliberate rather than accidental.
 
 ## 7. Where this leaves the design
 
@@ -204,7 +242,8 @@ as a genuinely different thing.
 | Dynamic component: which object | `nostr:` URI, NIP-21/19/27 | **No** |
 | Dynamic component: which app | NIP-89 | **No** |
 | **Dynamic component: inline rendering** | — | **Yes — one small NIP** |
-| Live collaborative surfaces | undecided (§6) | Open |
+| Live collaborative editing | **App-local by design** (§6) | **No — deliberately out of scope** |
+| Knowing who is editing now | `kind:20001` / `20002`, ephemeral | **No** |
 | Comment on part of a file | git line-ranges, or revisit Components | Open |
 
 **One new NIP instead of a document model.** That is a much better place to be
