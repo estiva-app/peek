@@ -18,7 +18,9 @@ end — see [INTEROP_PROOF.md](INTEROP_PROOF.md) §0.
 | See where Buzz and the NfB RFC conflict | [COMPATIBILITY_GAP_ANALYSIS.md](COMPATIBILITY_GAP_ANALYSIS.md) §3 |
 | **Know which NIPs to reuse vs. write** | **[NIP_SURVEY.md](NIP_SURVEY.md)** |
 | **Know which demo scenarios are buildable now** | **[SCENARIO_FEASIBILITY.md](SCENARIO_FEASIBILITY.md)** |
-| **Understand the Folder/File/Component design** | **[FILES_ARCHITECTURE.md](FILES_ARCHITECTURE.md)** |
+| **Update the RFC** | **[RFC_UPDATES.md](RFC_UPDATES.md)** — what to change in 0.2, by section |
+| **Build the next app** | **[LINEAR_LITE_SPEC.md](LINEAR_LITE_SPEC.md)** |
+| Understand the Folder/File/Component design | [FILES_ARCHITECTURE.md](FILES_ARCHITECTURE.md) |
 | Read the first NIP draft (superseded) | [nips/NIP-FC.md](nips/NIP-FC.md) |
 
 ## The documents
