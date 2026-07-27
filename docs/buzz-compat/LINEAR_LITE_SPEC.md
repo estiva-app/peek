@@ -21,11 +21,12 @@ files/git question entirely, because issues are records, not documents.
 
 ## 1. Objects
 
-Two addressable kinds. Addressable (NIP-33) because both are mutable records with
-stable identities, so an edit is a republish and history is the event log.
+Kind numbers are **provisional** — 30820–30899 and 185x are unused in the NIP
+repository and in Buzz.
 
-Kind numbers are **provisional** — 30850/30851, chosen because 30820–30899 is
-unused in the NIP repository and in Buzz.
+**Every object carries `h` — the Folder.** That is both how things are grouped and
+how access is enforced, so it is required, not optional
+([RFC_UPDATES.md](RFC_UPDATES.md) §1.1).
 
 ### 1.1 Project — `kind:30850`
 
@@ -33,21 +34,22 @@ unused in the NIP repository and in Buzz.
 {
   "kind": 30850,
   "tags": [
-    ["d", "<uuid>"],                       // stable project id
+    ["d", "<uuid>"],
     ["title", "Payment integration"],
-    ["status", "in_progress"],             // planned|in_progress|completed|cancelled
-    ["lead", "<pubkey>"],                  // optional
-    ["h", "<channel-uuid>"]                // optional: scopes to a Peek topic/channel
+    ["h", "<folder-id>"],                  // REQUIRED — the Folder
+    ["lead", "<pubkey>"]                   // optional
   ],
   "content": "Stripe Checkout for workspace billing — redirect flow, no custom card form."
 }
 ```
 
-`content` is the description, plain text. `h` is what makes a project visible to
-exactly the people in that channel — reusing Buzz's enforcement rather than
-inventing access control.
+Authored by whoever created it. Editable in place **by its author only** — for
+anything others change, see §1.3.
 
 ### 1.2 Issue — `kind:30851`
+
+The **root** event. Immutable facts about the issue: what it is and where it
+lives. Mutable state (status, assignee) is *not* here.
 
 ```jsonc
 {
@@ -55,26 +57,57 @@ inventing access control.
   "tags": [
     ["d", "<uuid>"],
     ["title", "Billing entry + add payment method"],
-    ["status", "todo"],                    // todo|in_progress|done|cancelled
+    ["h", "<folder-id>"],                  // REQUIRED
     ["a", "30850:<pubkey>:<project-d>"],   // parent project, optional
-    ["assignee", "<pubkey>"],              // optional
-    ["priority", "2"],                     // optional, 0–4
-    ["ref", "PEE-127"],                    // human-readable key, display only
-    ["h", "<channel-uuid>"]
+    ["ref", "PEE-127"]                     // display-only key
   ],
   "content": "Entry point in settings, plus the empty-state when no card is on file."
 }
 ```
 
-### 1.3 Comments — no new kind
+### 1.3 Change — `kind:1851`
 
-**NIP-22** `kind:1111`, which scopes to any addressable event. A Peek user
-commenting on an issue publishes a `kind:1111` referencing
-`30851:<pubkey>:<issue-d>`. Both apps read the same comments.
+**The important one.** A regular (append-only) event that sets one field on one
+object. This is how status and assignee change, and it is what makes the model
+work with more than one person.
 
-This is the cross-app commenting claim, and it costs nothing.
+```jsonc
+{
+  "kind": 1851,
+  "tags": [
+    ["a", "30851:<pubkey>:<issue-d>"],     // the object being changed
+    ["field", "status"],
+    ["value", "in_progress"],
+    ["h", "<folder-id>"]
+  ],
+  "content": ""                            // optional human note
+}
+```
 
----
+**Why not just edit the issue?** NIP-33 addresses are `(pubkey, kind, d)`, so only
+the author can replace their own event. Ana creates an issue and Ravi closes it —
+Ravi *cannot* rewrite Ana's event. In a tracker that is the normal case.
+
+**Reading current state** is a fold: take the root, then apply changes in
+`created_at` order, last write per field wins. Two consequences worth having:
+
+- **The activity feed is free.** It *is* the change stream.
+- **Nobody rewrites anyone's event**, so no permission gymnastics.
+
+Precedent: NIP-34's git statuses (`1630`–`1633`) work exactly this way, and Buzz's
+own `kind:9000` add-member is an event rather than an edit to a channel object.
+
+> **Design alternative worth testing:** for purely categorical fields, a **NIP-32**
+> label (`kind:1985`, `L`/`l`) says almost the same thing using an existing NIP —
+> `["l","done","linear.status"]` on the issue. It fits status and priority well
+> and assignee badly (a pubkey is not a label). One generic change kind is chosen
+> here for consistency across fields; if it survives contact with the MVP, the
+> categorical cases could migrate to NIP-32 and shed a kind.
+
+### 1.4 Comments — no new kind
+
+**NIP-22** `kind:1111`, which scopes to any addressable event. Both apps read the
+same comments. Cross-app commenting, for free.
 
 ## 2. The manifest
 
@@ -141,14 +174,15 @@ protocol, and the reason to build this app.
         "id": "set-issue-status",
         "label": "Change status",
         "appliesTo": "30851",
-        "emits": { "replace": true, "setTag": "status" },
+        // A change event authored by whoever acts — NOT a rewrite of the issue.
+        "emits": { "kind": 1851, "field": "status" },
         "input": { "type": "string", "enum": "issueStatuses" }
       },
       {
         "id": "assign-issue",
         "label": "Assign",
         "appliesTo": "30851",
-        "emits": { "replace": true, "setTag": "assignee" },
+        "emits": { "kind": 1851, "field": "assignee" },
         "input": { "type": "pubkey" }
       },
       {
@@ -169,9 +203,9 @@ protocol, and the reason to build this app.
 
 ### Notes on the design
 
-- **`replace: true`** means "republish the addressable event with this tag
-  changed". That is the whole mechanism for editing an addressable record, and it
-  is why no per-action event kind is needed.
+- **Actions emit change events, not rewrites.** `kind:1851` authored by whoever
+  acts. This is what lets Ravi close Ana's issue — see §1.3. Only `add-issue`
+  creates a new object.
 - **`enum` points at a vocabulary** rather than inlining values, so the status list
   is declared once and used for both rendering and validation.
 - **Widget + slots, not layout.** Peek renders a `card` in Peek's design system.
@@ -180,8 +214,7 @@ protocol, and the reason to build this app.
 
 ### The honest gap
 
-`emits.replace` means Peek writes into Linear-lite's object space directly, with
-nothing validating it. That is the intended model
+Peek writes into the shared object space directly, with nothing validating it. That is the intended model
 ([RFC_UPDATES.md](RFC_UPDATES.md) §3), and the `input` schema is the only thing
 preventing corruption. Worth watching in practice — it is the first real test of
 the honour-system assumption.
@@ -214,7 +247,7 @@ patches (`crates/buzz-core/src/kind.rs`, `handlers/ingest.rs`):
 
 | Kind | For |
 | --- | --- |
-| 30850, 30851 | Project, Issue |
+| 30850, 30851, **1851** | Project, Issue, Change |
 | **31989, 31990** | **NIP-89** — needed regardless, since Buzz doesn't have it |
 | 1111 | **NIP-22** comments — check whether Buzz has it; not in the registry as far as I saw |
 
@@ -255,13 +288,12 @@ protocol claim becomes visible, and step 5 is what people will remember.
 
 ## 7. Open questions before building
 
-1. **Do issues need an `h` tag, or are they org-global?** Scoping to a channel
-   gives free access control but means an issue lives in one Peek topic, which may
-   be wrong for a tracker.
-2. **Who owns the `d` for an issue Peek created?** If Peek publishes a new issue
-   via `add-issue`, the addressable event is authored by the *Peek user* — so it
-   is not addressable under Linear-lite's pubkey. This is the multi-writer problem
-   in miniature, and it will bite at step 5. Worth deciding first.
+1. ~~Do issues need an `h` tag?~~ **Resolved:** yes, and it is the Folder.
+2. ~~Who owns the `d` for an issue Peek created?~~ **Resolved:** the person who
+   created it. Apps are not identities. Changes by *other* people are `kind:1851`
+   events rather than rewrites — §1.3.
 3. **How does a consumer discover *which* manifest wins** if two apps claim the
-   same kind? NIP-89 has a recommendation mechanism (`kind:31989`) that partly
-   answers this.
+   same kind? NIP-89's `kind:31989` recommendation mechanism partly answers this.
+4. **Does the fold need conflict rules beyond last-write-wins per field?** Two
+   people setting status in the same second is rare but not impossible; event id
+   is a stable tie-break.

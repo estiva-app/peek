@@ -82,6 +82,55 @@ has solved it for twenty years.
   real work, and they decompose into: **a reference** to another app's object, and
   **a rendering**. See §3.1.
 
+### Folder is the universal container, and it already exists
+
+**Decision (2026-07-25): the container is called a Folder**, at protocol and RFC
+level. Buzz and Slack call their version a channel; that word is right for chat
+and wrong for everything else, so the spec should not inherit it. Apps may label
+it however suits them — Peek calls it a Topic, Linear calls it a Project — which
+is the projection principle applied to containers rather than objects.
+
+**Mechanically it is Buzz's `h` tag.** Everything Buzz scopes is scoped by it,
+and via `channel role = repo role` that already includes git repos. So a Folder
+is not a new concept to build: it is the existing grouping, renamed and made
+explicit.
+
+> Create a Folder for a project. The Peek topic, the Linear project, the
+> repository, the messages, the highlights all carry the same `h`. One container,
+> many projections.
+
+Consequences:
+
+- **Every shared object carries `h`.** It is how things are grouped *and* how
+  access is enforced — the two are the same mechanism, which is why permissions
+  do not need separate design.
+- **One level of nesting for now** (decision 2026-07-25). Hierarchy is expected
+  later and needs only a parent link on the Folder, not a new concept.
+- The RFC should stop describing Folders as merely "local organisation". They are
+  the primary scoping unit for everything.
+
+### New principle: shared records are event-sourced, not edited in place
+
+The problem this solves: NIP-33 addresses are `(pubkey, kind, d)`, so **only the
+author can replace their own event.** Ana creates an issue, Ravi changes its
+status — Ravi cannot rewrite Ana's event, and in a tracker that is the normal
+case, not an edge case.
+
+> A shared record is a **root event plus a stream of change events**, folded at
+> read time. Nobody rewrites anyone else's event.
+
+Three things recommend it beyond solving the problem:
+
+1. **The activity feed is free** — it *is* the event stream, rather than being
+   reconstructed from one.
+2. **Precedent in this exact domain**: NIP-34's git statuses (`1630`–`1633`) are
+   separate events referencing an issue, authored by whoever set them.
+3. **Buzz already works this way** for channel membership — `kind:9000` add-member
+   is an event, not an edit to a channel object.
+
+This applies to *shared* records. An object only its author edits (a personal
+document, a draft) can stay a plain addressable event.
+
 ### New principle: the owner defines the projection
 
 Worth stating explicitly in the RFC:
@@ -273,10 +322,11 @@ Honour-system is probably right for vetted apps, but it should be chosen.
 
 ## Open questions to carry into 0.3
 
-1. **Multi-writer for non-git objects.** Solved for files by git. An issue edited
-   by two apps at once is still last-write-wins per author.
+1. ~~Multi-writer for non-git objects.~~ **Resolved** — event-sourced records,
+   above. Files use git; records use root-plus-changes.
 2. **Cross-org policy** (§1.3) — the only large unclaimed piece.
 3. **Teams as a principal** (§2.1c).
+7. **Folder nesting** — deferred by decision, needs a parent link when wanted.
 4. **Comment anchoring inside a file.** Git has no addressable sub-file unit;
    GitHub uses `(commit, path, line-range)` and it is fragile across edits. This
    is the one place addressable Components were genuinely better.
