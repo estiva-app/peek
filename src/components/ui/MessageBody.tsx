@@ -16,6 +16,8 @@ import { APP_FILES, DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, matchReference, matchUrl, parseBodySegments, parseInlineMarks } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
+import { ForeignObjectWidget } from './ForeignObjectWidget'
+import { findNaddrs } from '../../../convex/nostr/nip19'
 
 // Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
@@ -134,6 +136,11 @@ function renderWithMentions(text: string, isTopicResolved: (id: string) => boole
 
 export function MessageBody({ body, isTopicResolved }: { body: string; isTopicResolved: (id: string) => boolean }) {
   const segments = parseBodySegments(body)
+  // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
+  // object. Rendered as a block BELOW the text rather than inline, because a
+  // widget is not a word — and because the raw pointer stays visible in the
+  // text, so a reader can still copy it somewhere Peek cannot render.
+  const references = [...new Set(findNaddrs(body))]
   return (
     <div data-message-body className="flex flex-col gap-1 text-sm text-text-secondary leading-[1.4] break-words">
       {segments.map((seg, i) => {
@@ -176,6 +183,9 @@ export function MessageBody({ body, isTopicResolved }: { body: string; isTopicRe
           </p>
         )
       })}
+      {references.map((naddr) => (
+        <ForeignObjectWidget key={naddr} naddr={naddr} />
+      ))}
     </div>
   )
 }
