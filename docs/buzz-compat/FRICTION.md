@@ -98,7 +98,98 @@ also covers a wiped dev relay.
 `Vec<Value>` (`bridge.rs:970`), not a filter object and not `{filters: […]}`.
 A single object gets `invalid type: map, expected a sequence`.
 
+### A6. `created_at` is too coarse to order an event-sourced record — **workaround**
+
+Found building Linear-lite's change fold (LINEAR_LITE_SPEC.md §1.3). The fold is
+last-write-wins per field over `kind:1851` events ordered by `created_at`, and
+`created_at` is **seconds**.
+
+Measured against the live relay: **five sequential changes from a single client
+all landed in one `created_at` second.** So the ordering key ties, and the
+tie-break decides — which means the fold returned a status the user had already
+moved past. Deterministic and wrong.
+
+This is not the case §7.4 of the spec anticipated. That question assumed the
+tie was "two people setting status in the same second — rare but not
+impossible". The real case is *one* person, *one* app, a few clicks: ties are
+the common case for any burst of activity, not a race between users.
+
+Nothing on the relay side recovers the order, and this was checked rather than
+assumed:
+
+- A stored event is exactly the seven signed NIP-01 fields — `/query` returns
+  `content, created_at, id, kind, pubkey, sig, tags` and no ingest sequence or
+  row id.
+- Query result order is stable across reads but is **id-sorted**, so it carries
+  no insertion information either.
+
+So the ordering information has to be inside the signed event or it does not
+exist.
+
+**It is not a change-event problem.** The same failure reappeared verbatim on
+`kind:1111` comments the day they were added: two comments posted in one second
+sorted by event id, so the thread read back in the wrong order. `created_at`'s
+one-second resolution is a property of *every* append-only stream on this relay,
+so the ordering rule belongs to the app's whole event vocabulary rather than to
+one kind. Anything folded or threaded needs it.
+
+**What we did:** `kind:1851` and `kind:1111` carry a provisional
+`["ts", "<epoch-ms>"]` tag,
+and the fold orders by `ts` where present, falling back to `created_at * 1000`.
+A change without `ts` still folds, just at one-second resolution, so this is
+additive rather than a format break.
+
+The part worth keeping in the spec is the **trust bound**: `ts` is honoured only
+when it agrees with `created_at` to the second. The relay already validates
+`created_at` against its own clock (±15 min, A1), so a `ts` pinned inside that
+second inherits that validation and can only reorder events *within* an
+already-checked second. It adds resolution without adding anything new to trust
+— which matters under the honour-system model (RFC_UPDATES.md §3), where a
+buggy app claiming `ts = 2^52` would otherwise win every fold forever. Pinned by
+a check in `scripts/verify.ts`.
+
+**Open question for the spec.** `ts` fixes same-second ordering by *one* writer.
+It does not fix genuine concurrency between two writers with skewed clocks — for
+that, last-write-wins by wall clock is the wrong primitive regardless of
+resolution, and the honest options are a causal `prev` pointer per field (which
+costs the "consumer publishes directly, owner not in the loop" property from
+RFC §3) or accepting that categorical fields converge eventually. Worth deciding
+before a second app starts writing `1851` events, because the fold rule is the
+one thing every consumer must implement identically.
+
 ---
+
+### A7. A non-member's query returns zero rows, not an error — **workaround**
+
+Found building Peek's consumer side. Peek is handed a `nostr:naddr…` for a
+Linear-lite issue, resolves the manifest, fetches the object — and gets nothing.
+No error, no `restricted:`, just an empty array, which is indistinguishable from
+"that object does not exist".
+
+The cause is the permission model working correctly: objects and change events
+are channel-scoped, so a reader who is not a member of the Folder sees none of
+them. Grouping and access are the same mechanism (RFC_UPDATES.md §1.1), and this
+is that.
+
+What makes it a trap rather than an obvious permission failure is **which kinds
+are global**. NIP-89 manifests (31990) and recommendations (31989) are
+deliberately not channel-scoped — discovery has to work before you are a member
+of anything. So the first two steps of resolution *succeed*: Peek finds the app,
+learns the widget shape, learns the vocabulary. Only the last step comes back
+empty. The failure surfaces as far as possible from its cause and reads like a
+malformed reference.
+
+**What we did:** Peek distinguishes the two cases. When the manifest resolves
+but the object does not, the widget is returned with `unreachable: true` so the
+UI can say "you may not have access to this Folder" rather than rendering
+nothing. The demo adds Peek's reader identity to the Folder with a `kind:9000`.
+
+**Consequence worth stating in the spec.** Cross-app rendering is not free: the
+consuming app's *reading identity* must be a member of the Folder. For Peek that
+is one `kind:9000` per Folder, and it is the right model — but it means "paste a
+link and it renders" only holds inside a shared Folder, and a link pasted across
+Folder boundaries degrades rather than working. Whether the consumer should be
+able to request access, and how, is undesigned.
 
 ## B. Peek concepts with nowhere to go
 
