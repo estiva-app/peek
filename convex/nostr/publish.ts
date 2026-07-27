@@ -61,8 +61,15 @@ function withinDriftWindow(createdAtMs: number): boolean {
   return Math.abs(createdAtMs - Date.now()) <= MAX_DRIFT_MS
 }
 
-/** Fetch or mint a user's keypair, returning the decrypted secret. */
-async function identityFor(
+/**
+ * Fetch or mint a user's keypair, returning the decrypted secret.
+ *
+ * Exported for `act.ts`, which writes to another app's objects as the
+ * signed-in user. Duplicating this would risk splitting an identity: the
+ * first-write-wins mutation below is what stops two concurrent publishes
+ * minting two keys for one person.
+ */
+export async function identityFor(
   ctx: { runQuery: any; runMutation: any },
   userId: Id<'users'>,
 ): Promise<Identity> {

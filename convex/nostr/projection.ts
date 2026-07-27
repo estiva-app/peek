@@ -18,6 +18,15 @@ import type { SignedEvent } from './events'
 /** Query the relay. Returns matching events; shape mirrors the HTTP bridge. */
 export type QueryFn = (filters: Record<string, unknown>[]) => Promise<SignedEvent[]>
 
+/** An unsigned Nostr event, ready for `sign.ts`. */
+export interface UnsignedActionEvent {
+  pubkey: string
+  created_at: number
+  kind: number
+  tags: string[][]
+  content: string
+}
+
 /** NIP-89 kinds. These two are protocol, not app-specific. */
 const KIND_HANDLER_RECOMMENDATION = 31989
 const KIND_HANDLER_INFORMATION = 31990
@@ -45,13 +54,76 @@ interface SlotSpec {
   default?: string
 }
 
+/** An action the owning app says other apps may perform. */
+export interface ManifestAction {
+  id: string
+  label: string
+  /** Kind(s) this applies to, as strings. */
+  appliesTo: string | string[]
+  emits: { kind: number; field?: string; scope?: string }
+  input?: { type: string; enum?: string }
+}
+
+/**
+ * An action resolved into something a renderer can draw without re-reading the
+ * manifest.
+ *
+ * The interpretation happens here rather than in the component on purpose: the
+ * widget should not have to know that `input.enum` names a vocabulary, or that
+ * `as: "pubkey"` means "a person". Those are manifest semantics, and keeping
+ * them on this side is what lets the React component stay a dumb renderer that
+ * would work for any app.
+ */
+export interface ResolvedAction {
+  id: string
+  label: string
+  control: 'select' | 'pubkey' | 'text'
+  /** For `select`: the declared vocabulary, already looked up. */
+  options?: { value: string; label: string; colour?: string }[]
+  /** The value this field holds right now, so a control can show it. */
+  current?: string
+  field?: string
+}
+
 interface Manifest {
   name?: string
   about?: string
+  actions?: ManifestAction[]
   records?: RecordsRule
   projections?: Record<string, { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }>
   vocabularies?: Record<string, { value: string; label: string; colour: string }[]>
-  actions?: unknown[]
+}
+
+/** Actions declared for this kind, resolved against the vocabularies. */
+function resolveActions(
+  manifest: Manifest,
+  kind: number,
+  folded: Record<string, { value: string }>,
+): ResolvedAction[] {
+  const applies = (action: ManifestAction) =>
+    (Array.isArray(action.appliesTo) ? action.appliesTo : [action.appliesTo]).includes(String(kind))
+
+  const out: ResolvedAction[] = []
+  for (const action of manifest.actions ?? []) {
+    if (!applies(action)) continue
+    // Only field-setting changes and comments are renderable today. An action
+    // that creates a whole new object (`add-issue`) needs a form and a parent,
+    // so it is skipped rather than drawn as a control that cannot work.
+    const isChange = !!action.emits.field
+    const isComment = action.emits.scope === 'address'
+    if (!isChange && !isComment) continue
+
+    const vocab = action.input?.enum ? manifest.vocabularies?.[action.input.enum] : undefined
+    out.push({
+      id: action.id,
+      label: action.label,
+      control: vocab ? 'select' : action.input?.type === 'pubkey' ? 'pubkey' : 'text',
+      options: vocab?.map((v) => ({ value: v.value, label: v.label, colour: v.colour })),
+      current: action.emits.field ? folded[action.emits.field]?.value : undefined,
+      field: action.emits.field,
+    })
+  }
+  return out
 }
 
 const tagValue = (e: SignedEvent, name: string) => e.tags.find((t) => t[0] === name)?.[1]
@@ -211,6 +283,17 @@ export interface ForeignObject {
   /** Repeating slots, e.g. `meta`. */
   meta: ResolvedSlot[]
   comments: { id: string; author: string; body: string; createdAt: number }[]
+  /**
+   * The Folder this object lives in, from the root event's `h` tag.
+   *
+   * Needed to *write*: a change event carries the same `h`, and without it the
+   * relay rejects the write outright. Reading it off the object rather than
+   * asking the user is the difference between an action that works and a form
+   * with a "Folder id" box in it.
+   */
+  folder?: string
+  /** What the owning app says we may do to this object. */
+  actions: ResolvedAction[]
   /** False when no author recommendation existed and a handler was guessed. */
   viaRecommendation: boolean
   /**
@@ -280,6 +363,7 @@ export async function resolveForeignObject(
       slots: {},
       meta: [],
       comments: [],
+      actions: [],
       viaRecommendation,
       unreachable: true,
     }
@@ -319,6 +403,89 @@ export async function resolveForeignObject(
     slots,
     meta,
     comments,
+    folder: tagValue(root, 'h'),
+    actions: resolveActions(manifest, pointer.kind, folded),
     viaRecommendation,
+  }
+}
+
+/**
+ * Build the event that performs a manifest-declared action.
+ *
+ * Pure, and separate from the Convex action for the same reason `projection.ts`
+ * is separate from `foreign.ts`: this is the part worth testing against a live
+ * relay, and it must not need a deployment or a signed-in session to run.
+ *
+ * Returns a string on refusal rather than throwing — every failure here is
+ * something a user should read.
+ */
+export function buildActionEvent(args: {
+  manifest: { records?: RecordsRule; actions?: ManifestAction[]; vocabularies?: Manifest['vocabularies'] }
+  kind: number
+  /** Address of the object being acted on. */
+  address: string
+  /** Author of the object — needed for NIP-22's `P`/`p` tags. */
+  objectAuthor: string
+  folder: string
+  actionId: string
+  value: string
+  pubkey: string
+  createdAtMs: number
+}): UnsignedActionEvent | string {
+  const { manifest, kind, address, folder, actionId, value } = args
+  const records = manifest.records
+  const declared = manifest.actions?.find((a) => a.id === actionId)
+  if (!records) return 'That app does not say how its records are written.'
+  if (!declared) return `This app does not offer "${actionId}".`
+
+  const appliesTo = Array.isArray(declared.appliesTo) ? declared.appliesTo : [declared.appliesTo]
+  if (!appliesTo.includes(String(kind))) {
+    return `"${declared.label}" does not apply to a kind ${kind}.`
+  }
+
+  // Validate against the manifest's own vocabulary. The owning app cannot
+  // enforce this — anyone can publish anything (RFC_UPDATES.md §3) — so a
+  // consumer that skips the check is the one putting junk in the shared record.
+  // Checking here is Peek keeping its side of the honour system.
+  if (declared.input?.enum) {
+    const vocab = manifest.vocabularies?.[declared.input.enum] ?? []
+    if (!vocab.some((entry) => entry.value === value)) {
+      return `"${value}" is not one of ${vocab.map((e) => e.value).join(', ')}.`
+    }
+  }
+
+  const tags: string[][] = declared.emits.field
+    ? [
+        [records.targetTag, address],
+        [records.fieldTag, declared.emits.field],
+        [records.valueTag, value],
+        ['h', folder],
+      ]
+    : // NIP-22 comment. Built from the ratified NIP rather than from the
+      // manifest, which is legitimate precisely because no app owns kind:1111 —
+      // the same reason the owning app uses it. Uppercase tags name the thread
+      // root, lowercase the immediate parent.
+      [
+        ['A', address],
+        ['K', String(kind)],
+        ['P', args.objectAuthor],
+        ['a', address],
+        ['k', String(kind)],
+        ['p', args.objectAuthor],
+        ['h', folder],
+      ]
+
+  // The manifest told us how it orders events; write events that can be ordered.
+  // Without `ts`, a change from here and one from the owning app in the same
+  // second would be separated by event id — arbitrarily, and differently
+  // depending on which app you asked (FRICTION.md A6).
+  if (records.order?.includes('ts')) tags.push(['ts', String(args.createdAtMs)])
+
+  return {
+    pubkey: args.pubkey,
+    created_at: Math.floor(args.createdAtMs / 1000),
+    kind: declared.emits.kind,
+    tags,
+    content: declared.emits.field ? '' : value,
   }
 }

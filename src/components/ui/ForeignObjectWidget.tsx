@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAction } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
-import type { ForeignObject, ResolvedSlot } from '../../../convex/nostr/projection'
+import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
 import { hasConvex } from '@/api'
 import { cn } from '@/lib/utils'
 
@@ -53,9 +53,123 @@ function Meta({ slot }: { slot: ResolvedSlot }) {
   )
 }
 
+/**
+ * The manifest's actions, as controls.
+ *
+ * Every control here is drawn from a declaration, not from knowledge of the app:
+ * a `select` because the manifest named a vocabulary, a button because it asked
+ * for a pubkey, an input because it asked for text. Peek supplies the widgets;
+ * the owning app supplies the meaning.
+ */
+function Actions({
+  actions,
+  busy,
+  error,
+  onAct,
+}: {
+  actions: ResolvedAction[]
+  busy: boolean
+  error?: string
+  onAct: (actionId: string, value: string) => void
+}) {
+  const [draft, setDraft] = useState('')
+  if (!actions.length) return null
+
+  return (
+    <div className="mt-2 border-t border-border-subtle pt-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {actions.map((action) => {
+          if (action.control === 'select') {
+            return (
+              <select
+                key={action.id}
+                aria-label={action.label}
+                disabled={busy}
+                value={action.current ?? ''}
+                onChange={(e) => onAct(action.id, e.target.value)}
+                className="rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs text-text-primary disabled:opacity-50"
+              >
+                {action.options?.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )
+          }
+          if (action.control === 'pubkey') {
+            // `@me` — the server swaps in this user's key. The browser never
+            // handles key material.
+            return (
+              <button
+                key={action.id}
+                type="button"
+                disabled={busy}
+                onClick={() => onAct(action.id, '@me')}
+                className="rounded-md border border-border-default px-2 py-1 text-xs text-text-secondary hover:border-border-strong disabled:opacity-50"
+              >
+                {action.label} to me
+              </button>
+            )
+          }
+          return (
+            <form
+              key={action.id}
+              className="flex flex-1 gap-1"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!draft.trim()) return
+                onAct(action.id, draft.trim())
+                setDraft('')
+              }}
+            >
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={`${action.label}…`}
+                disabled={busy}
+                className="min-w-0 flex-1 rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs disabled:opacity-50"
+              />
+            </form>
+          )
+        })}
+      </div>
+      {error && <p className="mt-1 text-xs text-danger-default">{error}</p>}
+    </div>
+  )
+}
+
 export function ForeignObjectWidget({ naddr }: { naddr: string }) {
   const resolve = useAction(api.nostr.foreign.resolveObject)
+  const applyAction = useAction(api.nostr.act.applyAction)
   const [object, setObject] = useState<ForeignObject | null | 'loading'>('loading')
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState<string | undefined>()
+
+  const reload = useCallback(
+    () => resolve({ naddr }).then(setObject).catch(() => setObject(null)),
+    [naddr, resolve],
+  )
+
+  const onAct = useCallback(
+    async (actionId: string, value: string) => {
+      setBusy(true)
+      setActionError(undefined)
+      try {
+        const result = await applyAction({ naddr, actionId, value })
+        // The relay is the authority on whether this happened, so re-read rather
+        // than patching local state optimistically. Slower, and it means the
+        // widget can never claim a change the shared record does not have.
+        if (result.ok) await reload()
+        else setActionError(result.reason)
+      } catch (e) {
+        setActionError((e as Error).message)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [applyAction, naddr, reload],
+  )
 
   useEffect(() => {
     // Peek runs without a deployment in tests, Storybook and checkouts with no
@@ -127,6 +241,8 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
           {!object.viaRecommendation && ' ?'}
         </span>
       </div>
+
+      <Actions actions={object.actions} busy={busy} error={actionError} onAct={onAct} />
 
       {/* NIP-22 comments. The same events Linear-lite writes and reads — neither
           app owns the kind, which is what makes commenting work across both. */}

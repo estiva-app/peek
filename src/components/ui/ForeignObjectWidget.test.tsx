@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '../../../convex/nostr/projection'
 
 /**
@@ -14,10 +15,17 @@ import type { ForeignObject } from '../../../convex/nostr/projection'
  */
 const resolveObject = vi.fn()
 
-vi.mock('convex/react', () => ({ useAction: () => resolveObject }))
+const applyAction = vi.fn()
+// Both hooks come from the same module; the component asks for two different
+// actions, so hand back whichever the caller named.
+vi.mock('convex/react', () => ({
+  useAction: (ref: unknown) => (ref === 'applyAction' ? applyAction : resolveObject),
+}))
 vi.mock('@/api', () => ({ hasConvex: true }))
 vi.mock('../../../convex/_generated/api', () => ({
-  api: { nostr: { foreign: { resolveObject: 'resolveObject' } } },
+  api: {
+    nostr: { foreign: { resolveObject: 'resolveObject' }, act: { applyAction: 'applyAction' } },
+  },
 }))
 
 const { ForeignObjectWidget } = await import('./ForeignObjectWidget')
@@ -36,12 +44,16 @@ function object(overrides: Partial<ForeignObject> = {}): ForeignObject {
     },
     meta: [{ value: 'PAY-1' }, { label: 'Assignee', value: 'a'.repeat(64), isPubkey: true }],
     comments: [{ id: 'c1', author: 'b'.repeat(64), body: 'Blocked on the Stripe key.', createdAt: 1 }],
+    actions: [],
     viaRecommendation: true,
     ...overrides,
   }
 }
 
-beforeEach(() => resolveObject.mockReset())
+beforeEach(() => {
+  resolveObject.mockReset()
+  applyAction.mockReset()
+})
 
 describe('ForeignObjectWidget', () => {
   it('renders the declared slots', async () => {
@@ -105,5 +117,79 @@ describe('ForeignObjectWidget', () => {
     // `subtitle` is a card-only slot, so this also pins widget-type behaviour.
     expect(screen.getByText('Acme Ltd — 90 days overdue')).toBeInTheDocument()
     expect(screen.getByText(/Amount:/)).toHaveTextContent('£4,200')
+  })
+
+  describe('actions', () => {
+    const withActions = () =>
+      object({
+        actions: [
+          {
+            id: 'set-issue-status',
+            label: 'Change status',
+            control: 'select',
+            field: 'status',
+            current: 'todo',
+            options: [
+              { value: 'todo', label: 'Todo' },
+              { value: 'done', label: 'Done', colour: 'green' },
+            ],
+          },
+          { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee' },
+        ],
+      })
+
+    it('draws a control per declared action, using the owner\'s vocabulary', async () => {
+      resolveObject.mockResolvedValue(withActions())
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      const select = await screen.findByLabelText('Change status')
+      expect(select).toHaveValue('todo')
+      expect(screen.getByRole('option', { name: 'Done' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Assign to me/ })).toBeInTheDocument()
+    })
+
+    it('publishes the change and re-reads from the relay', async () => {
+      resolveObject.mockResolvedValue(withActions())
+      applyAction.mockResolvedValue({ ok: true })
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      await userEvent.selectOptions(await screen.findByLabelText('Change status'), 'done')
+
+      expect(applyAction).toHaveBeenCalledWith({
+        naddr: NADDR,
+        actionId: 'set-issue-status',
+        value: 'done',
+      })
+      // Re-read rather than patch: the relay is the authority on whether the
+      // change happened, so the widget must never claim one it does not have.
+      await waitFor(() => expect(resolveObject).toHaveBeenCalledTimes(2))
+    })
+
+    it('sends @me rather than a key the browser should never hold', async () => {
+      resolveObject.mockResolvedValue(withActions())
+      applyAction.mockResolvedValue({ ok: true })
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      await userEvent.click(await screen.findByRole('button', { name: /Assign to me/ }))
+      expect(applyAction).toHaveBeenCalledWith({ naddr: NADDR, actionId: 'assign-issue', value: '@me' })
+    })
+
+    it('surfaces a refusal instead of silently doing nothing', async () => {
+      resolveObject.mockResolvedValue(withActions())
+      applyAction.mockResolvedValue({ ok: false, reason: '"ushipped" is not one of todo, done.' })
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      await userEvent.selectOptions(await screen.findByLabelText('Change status'), 'done')
+      expect(await screen.findByText(/is not one of todo, done/)).toBeInTheDocument()
+      // One resolve only — a rejected change must not look like a successful one.
+      expect(resolveObject).toHaveBeenCalledTimes(1)
+    })
+
+    it('offers no controls when the manifest declares none', async () => {
+      resolveObject.mockResolvedValue(object({ actions: [] }))
+      render(<ForeignObjectWidget naddr={NADDR} />)
+      await screen.findByText('Billing entry + add payment method')
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    })
   })
 })
