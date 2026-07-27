@@ -5,10 +5,11 @@
  * (`"use node"`, needed for signing) and Node-runtime files may only contain
  * actions. Queries and mutations have to live here.
  *
- * Everything is `internal*` — none of this is reachable from the client.
+ * Almost everything is `internal*` — not reachable from the client. The one
+ * exception is `folderForTopic` at the bottom, and it says why.
  */
 import { v } from 'convex/values'
-import { internalMutation, internalQuery } from '../_generated/server'
+import { internalMutation, internalQuery, query } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
 
 /** A user's key material, or nulls when they have not been minted yet. */
@@ -452,5 +453,41 @@ export const getTopicMemberIds = internalQuery({
       .withIndex('by_topic', (q) => q.eq('topicId', topicId))
       .collect()
     return rows.map((r) => r.userId)
+  },
+})
+
+/**
+ * The Folder id for a topic — its NIP-29 channel UUID.
+ *
+ * **Public**, unlike everything else in this file, because it is the one piece
+ * of Nostr plumbing a user has a reason to hold: it is what pairs this topic
+ * with another app's view of the same thing. Linear-lite pastes it and its
+ * issues land in this topic's channel, carrying the same `h` as the messages
+ * (RFC_UPDATES.md §1.1 — one container, many projections).
+ *
+ * Safe to expose: a channel UUID is an identifier, not a credential. Reading
+ * anything in the channel still goes through the relay's own membership and
+ * visibility checks.
+ *
+ * `null` for topics created before Nostr emission was wired up, which is why
+ * the caller has to treat "no Folder" as an ordinary state rather than an error.
+ */
+export const folderForTopic = query({
+  args: { topicKey: v.string() },
+  handler: async (ctx, { topicKey }) => {
+    // `topicKey` is the client-facing id: the stable seedKey where a topic has
+    // one, otherwise the Convex `_id` (convex/schema.ts). Seeded topics carry a
+    // seedKey, so taking a `v.id('topics')` here would reject exactly the
+    // topics the demo uses.
+    const normalized = ctx.db.normalizeId('topics', topicKey)
+    if (normalized) {
+      const doc = await ctx.db.get(normalized)
+      if (doc) return doc.channelUuid ?? null
+    }
+    // No seedKey index on `topics`, so this mirrors `findTopicByKey` in
+    // convex/topics.ts: collect and scan. Topics are few and this is the
+    // fallback path only.
+    const rows = await ctx.db.query('topics').collect()
+    return rows.find((t) => t.seedKey === topicKey)?.channelUuid ?? null
   },
 })

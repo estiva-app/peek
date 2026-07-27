@@ -179,17 +179,44 @@ learns the widget shape, learns the vocabulary. Only the last step comes back
 empty. The failure surfaces as far as possible from its cause and reads like a
 malformed reference.
 
-**What we did:** Peek distinguishes the two cases. When the manifest resolves
-but the object does not, the widget is returned with `unreachable: true` so the
-UI can say "you may not have access to this Folder" rather than rendering
-nothing. The demo adds Peek's reader identity to the Folder with a `kind:9000`.
+**What we did, first:** Peek distinguishes the two cases. When the manifest
+resolves but the object does not, the widget is returned with
+`unreachable: true` so the UI can say "you may not have access to this Folder"
+rather than rendering nothing. That part stays — it is the right behaviour for a
+genuinely private Folder.
 
-**Consequence worth stating in the spec.** Cross-app rendering is not free: the
-consuming app's *reading identity* must be a member of the Folder. For Peek that
-is one `kind:9000` per Folder, and it is the right model — but it means "paste a
-link and it renders" only holds inside a shared Folder, and a link pasted across
-Folder boundaries degrades rather than working. Whether the consumer should be
-able to request access, and how, is undesigned.
+**What we did next, once it showed up in the actual UI.** The membership grant
+turned out to be self-inflicted. Two choices, neither required by the protocol:
+
+1. Linear-lite created Folders with `visibility: 'private'`.
+2. Linear-lite created a *new* Folder rather than reusing an existing one.
+
+Buzz treats `open` channels as accessible to everyone —
+`get_accessible_channel_ids` (`channel.rs:638`) unions a pubkey's memberships
+with *all* open channels, and `check_channel_membership` returns early for them
+on the write path too. **Peek already creates its own topics open**
+(`convex/nostr/publish.ts:124`). So the fix was one word, and pairing removes
+the question entirely.
+
+Verified against the live relay: a brand-new identity, never added to anything,
+published a project, an issue, a change and a comment into an existing Peek
+topic's channel, and Peek rendered the folded result. Same outcome for a fresh
+open standalone Folder.
+
+**The real lesson is about pairing, not permissions.** Creating a new Folder for
+a project that already has a Peek topic makes two containers for one thing, and
+then nobody in the topic can see the issues. RFC_UPDATES.md §1.1 already says
+this — "the Peek topic, the Linear project, the messages all carry the same
+`h`" — and building the consumer is what made it concrete. Linear-lite now
+accepts a pasted Folder link and *adopts* the container instead of forking it,
+and Peek's topic header can copy one.
+
+**Still open for the spec.** `open` on this relay means world-**writable**
+within the community, not just world-readable — the same check gates ingest. So
+"open so other apps can see it" and "anyone may write here" are currently the
+same setting. A read-only-to-non-members visibility is the missing third option,
+and without it the honest choice for a private project is explicit membership
+per consuming app.
 
 ## B. Peek concepts with nowhere to go
 

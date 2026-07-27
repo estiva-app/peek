@@ -35,6 +35,9 @@ import {
   type ConversationData,
   type Huddle,
 } from '@/api'
+import { useQuery } from 'convex/react'
+import { api } from '../../../convex/_generated/api'
+import { hasConvex } from '@/api'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useDebug } from '@/lib/debug'
 import { useNavigate } from 'react-router-dom'
@@ -79,6 +82,13 @@ export function useTopicView({
   const { state: debug } = useDebug()
   const huddleVariant = debug.huddles.variant
   const topic = topicId != null ? findTopic(topicId) : undefined
+  // The topic's Folder id, so it can be copied and pasted into another app.
+  // `'skip'` without a deployment or a topic — Peek runs on static mocks in
+  // tests and Storybook, where there is no relay and so no Folder.
+  const topicFolderId = useQuery(
+    api.nostr.data.folderForTopic,
+    hasConvex && topicId != null ? { topicKey: topicId } : 'skip',
+  )
 
   // Derived: a topic is "resolved" iff every non-deleted conv in it is resolved.
   // Single source of truth for the dashed-circle vs checkmark icon everywhere.
@@ -289,6 +299,7 @@ export function useTopicView({
   const rightPanel = (
     <div className="flex flex-col h-full">
       <ConversationHeader
+        folderId={topicFolderId}
         name={isV2HuddleView ? v2HuddleNameLabel : topicTitle}
         topicMode={!isV2HuddleView}
         huddleMode={isV2HuddleView}

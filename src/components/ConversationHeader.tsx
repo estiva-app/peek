@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock } from '@tabler/icons-react'
+import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { AvatarGroup } from './ui/AvatarGroup'
@@ -28,6 +28,14 @@ interface ConversationHeaderProps {
   /** When provided (topic mode), clicking the members pill opens the members
    *  dialog (rendered by the view that owns the data). */
   onShowMembers?: () => void
+  /**
+   * This topic's Folder id — the NIP-29 channel every event here carries as `h`.
+   *
+   * Present only when the topic exists on the relay. Shown so it can be pasted
+   * into another app: the same Folder holds this topic's messages and, say, a
+   * tracker's issues, each app projecting the one container its own way.
+   */
+  folderId?: string | null
   tabs?: ReactNode
   className?: string
 }
@@ -48,7 +56,14 @@ export function ConversationHeader({
   onShowMembers,
   tabs,
   className,
+  folderId,
 }: ConversationHeaderProps) {
+  const copyFolderLink = () => {
+    // `folder:<uuid>`, not a URL. A Folder belongs to no single app, so a link
+    // pointing at Peek would misdescribe a container Peek merely shares.
+    const link = `folder:${folderId}`
+    void navigator.clipboard?.writeText(link).catch(() => window.prompt('Copy this Folder link:', link))
+  }
   return (
     <div className={cn('shrink-0 border-b border-border-subtle', className)}>
       {/* Row 1: title + actions */}
@@ -131,6 +146,15 @@ export function ConversationHeader({
                 <IconStar size={16} stroke={1.5} />
               )}
             </IconButton>
+            {folderId && (
+              <IconButton
+                tooltip="Copy Folder link — paste into another app to share this container"
+                aria-label="Copy Folder link"
+                onClick={copyFolderLink}
+              >
+                <IconFolderShare size={16} stroke={1.5} />
+              </IconButton>
+            )}
             <IconButton tooltip="More actions" aria-label="More actions">
               <IconDotsVertical size={16} stroke={1.5} />
             </IconButton>
