@@ -27,14 +27,14 @@ describe('formatReplyTimestamp', () => {
   it('renders plain time for today', () => {
     expect(formatReplyTimestamp(new Date(2024, 8, 3, 9, 14).getTime(), NOW)).toBe('9:14 AM')
   })
-  it('prefixes Yesterday for the previous local day', () => {
-    expect(formatReplyTimestamp(new Date(2024, 8, 2, 16, 5).getTime(), NOW)).toBe('Yesterday · 4:05 PM')
+  it('joins Yesterday with "at" for the previous local day', () => {
+    expect(formatReplyTimestamp(new Date(2024, 8, 2, 16, 5).getTime(), NOW)).toBe('Yesterday at 4:05 PM')
   })
-  it('prefixes short month + day within the same year', () => {
-    expect(formatReplyTimestamp(new Date(2024, 7, 28, 11, 45).getTime(), NOW)).toBe('Aug 28 · 11:45 AM')
+  it('joins short month + day with "at" within the same year', () => {
+    expect(formatReplyTimestamp(new Date(2024, 7, 28, 11, 45).getTime(), NOW)).toBe('Aug 28 at 11:45 AM')
   })
   it('adds the year for previous years', () => {
-    expect(formatReplyTimestamp(new Date(2023, 11, 24, 18, 0).getTime(), NOW)).toBe('Dec 24, 2023 · 6:00 PM')
+    expect(formatReplyTimestamp(new Date(2023, 11, 24, 18, 0).getTime(), NOW)).toBe('Dec 24, 2023 at 6:00 PM')
   })
 })
 
