@@ -59,6 +59,18 @@ interface RecordsRule {
   valueTag: string
   order: string[]
   rule: string
+  /**
+   * A folded field whose value means "do not show this object".
+   *
+   * Archiving is a field, not a deletion, so an archived record still comes
+   * back from every query and renders perfectly well. Without this a consumer
+   * cannot tell it apart from live work — which is how a topic whose Folder
+   * held three archived projects ended up showing one of them.
+   *
+   * Peek honours the rule without knowing what the word means: the owner says
+   * which field and which value, and this stays out of it.
+   */
+  hiddenWhen?: { field: string; equals: string }
 }
 
 interface SlotSpec {
@@ -643,11 +655,13 @@ export async function resolveForeignObject(
  */
 export interface FolderProject {
   project: ForeignObject
-  /** Open tickets, most recently moved first, capped. */
+  /**
+   * Every ticket in the project, finished or not: started work first, then the
+   * queue, then what is done. Archived ones are left out — an app hiding a
+   * record from its own lists is saying it is no longer part of the project.
+   */
   tickets: ForeignObject[]
-  /** Open tickets beyond the cap, so the panel need not imply there are none. */
-  moreTickets: number
-  /** Every open ticket, listed or not — the left half of "Tickets (3/8)". */
+  /** Tickets still to do — the left half of "Tickets (3/8)". */
   openCount: number
   /** Finished tickets, as the context that makes the open count mean something. */
   doneCount: number
@@ -754,38 +768,78 @@ function containmentFor(
 export async function resolveFolderProject(
   folder: string,
   query: QueryFn,
-  options: { maxIssues?: number } = {},
 ): Promise<FolderProject | null> {
-  const maxIssues = options.maxIssues ?? 7
-
   // 1. Which kinds are containers? A Folder query needs kind numbers up front,
   //    and the only non-app-specific source for them is the published handlers.
   //    This pass is discovery only — the manifest that actually *renders* the
   //    project is resolved below, recommendation-first, once its author is known.
   const handlers = await query([{ kinds: [KIND_HANDLER_INFORMATION], limit: 20 }])
   const containers = new Map<number, { childKind: number; linkTag: string }>()
+  let discovered: Manifest | undefined
   for (const event of handlers) {
     const manifest = parseManifest(event)
     for (const kind of Object.keys(manifest?.projections ?? {})) {
       const relation = manifest && containmentFor(manifest, Number(kind))
-      if (relation) containers.set(Number(kind), relation)
+      if (relation) {
+        containers.set(Number(kind), relation)
+        discovered ??= manifest
+      }
     }
   }
   if (containers.size === 0) return null
 
-  // 2. One round trip for everything in the Folder: containers and their
-  //    children together, because `h` is what they share.
+  // 2. One round trip for everything in the Folder: containers, their children,
+  //    and the changes that have landed on either — `h` is what they share.
+  //    Changes are needed *before* a project is chosen, because whether one is
+  //    archived is itself a folded field.
   const childKinds = [...new Set([...containers.values()].map((c) => c.childKind))]
+  const discoveredRule = discovered?.records
   const inFolder = await query([
     { '#h': [folder], kinds: [...containers.keys(), ...childKinds], limit: 200 },
+    ...(discoveredRule ? [{ '#h': [folder], kinds: [discoveredRule.changeKind], limit: 500 }] : []),
   ])
 
-  const roots = inFolder.filter((e) => containers.has(e.kind))
+  const addressOfEvent = (event: SignedEvent) =>
+    pointerToAddress({
+      kind: event.kind,
+      pubkey: event.pubkey,
+      identifier: tagValue(event, 'd') ?? '',
+      relays: [],
+    })
+
+  /** Is this object one its owning app would keep out of its own lists? */
+  const isHidden = (event: SignedEvent, rule: RecordsRule | undefined, source = inFolder) => {
+    if (!rule?.hiddenWhen) return false
+    const applied = source.filter(
+      (e) => e.kind === rule.changeKind && tagValue(e, rule.targetTag) === addressOfEvent(event),
+    )
+    return foldChanges(applied, rule)[rule.hiddenWhen.field]?.value === rule.hiddenWhen.equals
+  }
+
+  const roots = inFolder
+    .filter((e) => containers.has(e.kind))
+    .filter((e) => !isHidden(e, discoveredRule))
   if (roots.length === 0) return null
-  // Nothing forbids two projects in one Folder, and nothing ranks them either.
-  // Newest wins, which matches how this file already breaks the same tie for
-  // competing manifests — arbitrary, but stable and stated rather than hidden.
-  const root = [...roots].sort((a, b) => b.created_at - a.created_at)[0]
+
+  /**
+   * Which project, when a Folder holds several.
+   *
+   * Nothing forbids more than one, and pairing makes it common rather than
+   * exotic: a topic accumulates a project per attempt. Ranking by age alone
+   * picked whichever was created last — in practice a stray — so the work
+   * decides instead. The project the Folder's tickets point at is the project
+   * the Folder is about; age only breaks the tie.
+   */
+  const ticketsFor = (candidate: SignedEvent) => {
+    const relation = containers.get(candidate.kind)!
+    const candidateAddress = addressOfEvent(candidate)
+    return inFolder.filter(
+      (e) => e.kind === relation.childKind && tagValue(e, relation.linkTag) === candidateAddress,
+    ).length
+  }
+  const root = [...roots].sort(
+    (a, b) => ticketsFor(b) - ticketsFor(a) || b.created_at - a.created_at,
+  )[0]
 
   const pointer: AddressPointer = {
     kind: root.kind,
@@ -805,10 +859,13 @@ export async function resolveFolderProject(
   if (!projection || !records) return null
   const relation = containmentFor(manifest, root.kind) ?? containers.get(root.kind)!
 
-  // 4. Every change in the Folder in one query, folded per object. Asking `#a`
-  //    per issue would be one round trip each; `#h` is the same set in one,
-  //    because a change carries the Folder it belongs to.
-  const changes = await query([{ kinds: [records.changeKind], '#h': [folder], limit: 500 }])
+  // 4. Every change in the Folder, folded per object. Already fetched in step 2
+  //    unless the authoritative manifest orders records differently from the one
+  //    discovery happened to find, which is the only case worth a second trip.
+  const changes =
+    discoveredRule?.changeKind === records.changeKind
+      ? inFolder.filter((e) => e.kind === records.changeKind)
+      : await query([{ kinds: [records.changeKind], '#h': [folder], limit: 500 }])
   const changesFor = (target: string) =>
     changes.filter((e) => tagValue(e, records.targetTag) === target)
 
@@ -832,16 +889,18 @@ export async function resolveFolderProject(
       : undefined
   // A project whose tickets have no declared projection is still worth showing;
   // it just has nothing to expand into.
-  if (!ticketProjection) {
-    return { project, tickets: [], moreTickets: 0, openCount: 0, doneCount: 0 }
-  }
+  if (!ticketProjection) return { project, tickets: [], openCount: 0, doneCount: 0 }
 
-  const open: { ticket: ForeignObject; started: boolean; activityMs: number }[] = []
+  const rows: { ticket: ForeignObject; rank: number; activityMs: number }[] = []
+  let openCount = 0
   let doneCount = 0
   for (const event of inFolder) {
     if (event.kind !== relation.childKind) continue
     const link = tagValue(event, relation.linkTag)
     if (link !== undefined && link !== address) continue
+    // Archived is the one exclusion left. Everything else the project holds is
+    // listed; a record its own app hides is not part of the project any more.
+    if (isHidden(event, records, changes)) continue
 
     const ticketPointer: AddressPointer = {
       kind: event.kind,
@@ -854,13 +913,14 @@ export async function resolveFolderProject(
     const status = statusSpec ? resolveSlot(statusSpec, event, folded, manifest) : null
     const raw = statusSpec ? rawSlotValue(statusSpec, event, folded) : undefined
 
-    if (isDoneStatus(raw, status?.value)) {
-      doneCount += 1
-      continue
-    }
-    if (!isOpenStatus(raw, status?.value)) continue
+    const done = isDoneStatus(raw, status?.value)
+    if (done) doneCount += 1
+    else if (isOpenStatus(raw, status?.value)) openCount += 1
+    // A status in neither set — parked, or one this consumer has never seen —
+    // is still a ticket and still listed. It just cannot claim to be progress
+    // in either direction, so it stays out of both counts.
 
-    open.push({
+    rows.push({
       ticket: buildObject({
         root: event,
         pointer: ticketPointer,
@@ -870,21 +930,16 @@ export async function resolveFolderProject(
         viaRecommendation,
         webTemplate: resolved.webTemplate,
       }),
-      started: isStarted(raw, status?.value),
+      rank: isStarted(raw, status?.value) ? 0 : done ? 2 : 1,
       activityMs: Math.max(event.created_at * 1000, ...ticketChanges.map(orderingMs)),
     })
   }
-  // Started work first, then the queue; within each, whatever moved most
-  // recently. A sort, not a filter — the table is still open work only.
-  open.sort((a, b) => Number(b.started) - Number(a.started) || b.activityMs - a.activityMs)
+  // Started work, then the queue, then what is finished; within each, whatever
+  // moved most recently. The whole project is here — the order is what makes it
+  // scannable rather than a dump.
+  rows.sort((a, b) => a.rank - b.rank || b.activityMs - a.activityMs)
 
-  return {
-    project,
-    tickets: open.slice(0, maxIssues).map((entry) => entry.ticket),
-    moreTickets: Math.max(0, open.length - maxIssues),
-    openCount: open.length,
-    doneCount,
-  }
+  return { project, tickets: rows.map((row) => row.ticket), openCount, doneCount }
 }
 
 /**

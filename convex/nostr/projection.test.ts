@@ -46,6 +46,7 @@ function manifestContent(kinds = { project: PROJECT_KIND, issue: ISSUE_KIND, cha
       valueTag: 'value',
       order: ['ts', 'created_at', 'id'],
       rule: 'last-write-wins-per-field',
+      hiddenWhen: { field: 'archived', equals: 'true' },
     },
     projections: {
       [kinds.project]: {
@@ -193,7 +194,70 @@ describe('resolveFolderProject', () => {
     ])
   })
 
-  it('lists open work, counts the closed, and puts started above the queue', async () => {
+  it('ignores a project its owning app has archived', async () => {
+    // Archiving is a folded field, not a deletion, so an archived project comes
+    // back from every query and renders perfectly well. Found in the wild: a
+    // paired topic whose Folder held three archived projects showed one of them.
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        manifest(),
+        project('p1'),
+        project('p2', { tags: [['d', 'p2'], ['title', 'Archived attempt'], ['h', FOLDER]] }),
+        change(`${PROJECT_KIND}:${AUTHOR}:p2`, 'archived', 'true'),
+      ]),
+    )
+
+    expect(found?.project.slots.title.value).toBe('Payment integration')
+  })
+
+  it('shows nothing when every project in the Folder is archived', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        manifest(),
+        project('p1'),
+        change(`${PROJECT_KIND}:${AUTHOR}:p1`, 'archived', 'true'),
+      ]),
+    )
+
+    expect(found).toBeNull()
+  })
+
+  it('leaves an archived ticket out of the counts', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        manifest(),
+        project('p1'),
+        issue('i1', 'Live'),
+        issue('i2', 'Filed then archived'),
+        change(issueAddr('i2'), 'archived', 'true'),
+      ]),
+    )
+
+    expect(found?.tickets.map((t) => t.slots.title.value)).toEqual(['Live'])
+    expect(found?.openCount).toBe(1)
+  })
+
+  it('picks the project the Folder’s work belongs to, not the newest', async () => {
+    // Pairing accumulates a project per attempt, so a Folder holding several is
+    // ordinary rather than exotic. Age alone picked whichever stray was created
+    // last; the tickets say which project the Folder is actually about.
+    const stray = project('p9', {
+      tags: [['d', 'p9'], ['title', 'Newer, and empty'], ['h', FOLDER]],
+      created_at: 1_800_000_000,
+    })
+
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([manifest(), project('p1'), issue('i1', 'Real work'), stray]),
+    )
+
+    expect(found?.project.slots.title.value).toBe('Payment integration')
+  })
+
+  it('lists the whole project, started first, then the queue, then the done', async () => {
     const events = [
       manifest(),
       project('p1'),
@@ -208,22 +272,24 @@ describe('resolveFolderProject', () => {
 
     const found = await resolveFolderProject(FOLDER, relay(events))
 
-    // Filed first, but started — so it leads, and the queue follows.
+    // Everything the project holds, in the order that makes it scannable:
+    // what is moving, what is waiting, what is behind you.
     expect(found?.tickets.map((t) => t.slots.title.value)).toEqual([
       'Billing entry',
       'Untouched, so still Todo',
+      'Webhook signature check',
+      'Retry copy',
     ])
     expect(found?.tickets[0].slots.status).toMatchObject({ value: 'In Progress' })
+    // The counts still divide the work; the table no longer does.
     expect(found?.openCount).toBe(2)
-    // Done and cancelled are both finished; neither is listed.
     expect(found?.doneCount).toBe(2)
-    expect(found?.moreTickets).toBe(0)
   })
 
-  it('leaves a parked or unknown status out of both counts', async () => {
+  it('lists a parked or unknown status but counts it in neither half', async () => {
     // "Backlog" is real work nobody is doing, and a status this consumer has
-    // never seen is not evidence of anything. Counting either would make
-    // "open/done" a number the panel cannot stand behind.
+    // never seen is not evidence of anything. Both are still tickets, and still
+    // listed — they just cannot claim to be progress in either direction.
     const events = [
       manifest(),
       project('p1'),
@@ -235,14 +301,17 @@ describe('resolveFolderProject', () => {
 
     const found = await resolveFolderProject(FOLDER, relay(events))
 
-    expect(found?.tickets).toEqual([])
+    expect(found?.tickets.map((t) => t.slots.title.value)).toEqual([
+      'Something another app invented',
+      'Parked',
+    ])
     expect(found?.openCount).toBe(0)
     expect(found?.doneCount).toBe(0)
   })
 
   it('follows the fold rather than the first change', async () => {
     // The seed path: an issue moved to in_progress and later closed. Reading the
-    // changes in any order but the manifest's would leave it showing as live.
+    // changes in any order but the manifest's would count it as open.
     const events = [
       manifest(),
       project('p1'),
@@ -253,10 +322,12 @@ describe('resolveFolderProject', () => {
 
     const found = await resolveFolderProject(FOLDER, relay(events))
 
-    expect(found?.tickets).toEqual([])
+    expect(found?.openCount).toBe(0)
+    expect(found?.doneCount).toBe(1)
+    expect(found?.tickets[0].slots.status).toMatchObject({ value: 'Done' })
   })
 
-  it('caps the list and reports the remainder', async () => {
+  it('lists every ticket, however many there are', async () => {
     const events = [manifest(), project('p1')]
     for (let i = 0; i < 10; i += 1) {
       events.push(issue(`i${i}`, `Live work ${i}`))
@@ -265,8 +336,8 @@ describe('resolveFolderProject', () => {
 
     const found = await resolveFolderProject(FOLDER, relay(events))
 
-    expect(found?.tickets).toHaveLength(7)
-    expect(found?.moreTickets).toBe(3)
+    expect(found?.tickets).toHaveLength(10)
+    expect(found?.openCount).toBe(10)
   })
 
   it('orders by when work last moved', async () => {

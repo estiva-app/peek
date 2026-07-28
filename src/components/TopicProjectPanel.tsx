@@ -118,6 +118,35 @@ function Properties({
   )
 }
 
+/**
+ * How much of the work is behind you.
+ *
+ * The counts already say it, but a number is read and a bar is *seen* — and
+ * "how is this project going" is the question somebody opens this panel with.
+ * Rides the same line as the count and stays deliberately quiet: two hairlines
+ * of muted colour, no legend, no percentage. It is a glance, not a chart.
+ */
+function Progress({ done, open }: { done: number; open: number }) {
+  const total = done + open
+  if (total === 0) return null
+
+  return (
+    <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={done}
+      aria-label={`${done} of ${total} tickets done`}
+      className="h-[3px] flex-1 overflow-hidden rounded-full bg-bg-inset"
+    >
+      <div
+        className="h-full rounded-full bg-success-muted transition-[width] duration-300"
+        style={{ width: `${Math.round((done / total) * 100)}%` }}
+      />
+    </div>
+  )
+}
+
 function Property({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
@@ -168,7 +197,7 @@ export function TopicProjectPanelView({
     )
   }
 
-  const { project, tickets, moreTickets, openCount, doneCount } = folderProject
+  const { project, tickets, openCount, doneCount } = folderProject
   const error = errors[project.naddr]
 
   return (
@@ -208,27 +237,30 @@ export function TopicProjectPanelView({
 
           {/* Tickets live inside the widget: they are part of the project, not a
               second thing in the column beside it. */}
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-            className="flex w-full items-center gap-1 border-t border-border-subtle px-3 py-2 text-xs text-text-secondary hover:text-text-primary"
-          >
-            <IconChevronRight
-              size={14}
-              stroke={1.5}
-              className={cn('shrink-0 transition-transform', expanded && 'rotate-90')}
-            />
-            {/* Open over done: what is left, against what is behind you. */}
-            <span>
+          <div className="flex items-center gap-3 border-t border-border-subtle px-3 py-2">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className="flex shrink-0 items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
+            >
+              <IconChevronRight
+                size={14}
+                stroke={1.5}
+                className={cn('shrink-0 transition-transform', expanded && 'rotate-90')}
+              />
+              {/* Open over done: what is left, against what is behind you. */}
               Tickets ({openCount}/{doneCount})
-            </span>
-          </button>
+            </button>
+            {/* Beside the button rather than inside it: a progressbar nested in
+                a control folds its label into the button's accessible name. */}
+            <Progress done={doneCount} open={openCount} />
+          </div>
 
           {expanded &&
             (tickets.length === 0 ? (
               <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-tertiary">
-                Nothing open right now.
+                No tickets in this project yet.
               </p>
             ) : (
               <table className="w-full table-fixed border-t border-border-subtle text-xs">
@@ -256,14 +288,6 @@ export function TopicProjectPanelView({
                       </td>
                     </tr>
                   ))}
-                  {/* Capped, so say what is missing rather than implying this is all. */}
-                  {moreTickets > 0 && (
-                    <tr>
-                      <td colSpan={2} className="px-3 py-1.5 text-text-tertiary">
-                        +{moreTickets} more open
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             ))}

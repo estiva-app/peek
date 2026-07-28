@@ -84,10 +84,11 @@ const folderProject = (overrides: Partial<FolderProject> = {}): FolderProject =>
     ticket('i1', 'Billing entry + add payment method'),
     ticket('i2', 'Webhook signature verification'),
     ticket('i3', 'Retry copy for declined cards', 'Todo', 'neutral'),
+    ticket('i4', 'Investigate drop-off spike', 'Done', 'green'),
+    ticket('i5', 'Old card-form spike', 'Cancelled', 'muted'),
   ],
-  moreTickets: 0,
   openCount: 3,
-  doneCount: 8,
+  doneCount: 2,
   ...overrides,
 })
 
@@ -96,26 +97,28 @@ export const Collapsed: Story = {
   args: { folderProject: folderProject() },
 }
 
-/** Click "Tickets (3/8)" in the canvas for the table: one row, one ticket. */
+/** Click "Tickets (3/2)" in the canvas for the table: one row, one ticket. */
 export const WithTickets: Story = {
   args: { folderProject: folderProject() },
 }
 
-/** More open work than fits: seven rows, and an honest count of the rest. */
-export const Capped: Story = {
+/** A long-running project: every ticket it holds, started work at the top. */
+export const ManyTickets: Story = {
   args: {
     folderProject: folderProject({
       tickets: [
         ticket('i1', 'Billing entry + add payment method'),
         ticket('i2', 'Webhook signature verification'),
-        ticket('i3', 'Retry copy for declined cards'),
-        ticket('i4', 'Proration on plan change'),
+        ticket('i3', 'Retry copy for declined cards', 'Todo', 'neutral'),
+        ticket('i4', 'Proration on plan change', 'Todo', 'neutral'),
         ticket('i5', 'Dunning emails', 'Todo', 'neutral'),
         ticket('i6', 'Tax rates for EU customers', 'Todo', 'neutral'),
-        ticket('i7', 'Receipt PDF layout', 'Todo', 'neutral'),
+        ticket('i7', 'Receipt PDF layout', 'Done', 'green'),
+        ticket('i8', 'Investigate drop-off spike', 'Done', 'green'),
+        ticket('i9', 'Old card-form spike', 'Cancelled', 'muted'),
       ],
-      moreTickets: 4,
-      openCount: 11,
+      openCount: 6,
+      doneCount: 3,
     }),
   },
 }
@@ -149,9 +152,20 @@ export const ActionRefused: Story = {
   },
 }
 
-/** Everything finished. The panel says so and stays quiet. */
-export const NothingOpen: Story = {
-  args: { folderProject: folderProject({ tickets: [], moreTickets: 0, openCount: 0 }) },
+/** Nothing filed yet: no rows, and no bar claiming 0%. */
+export const NoTickets: Story = {
+  args: { folderProject: folderProject({ tickets: [], openCount: 0, doneCount: 0 }) },
+}
+
+/** Everything finished — the bar full, the queue empty. */
+export const AllDone: Story = {
+  args: {
+    folderProject: folderProject({
+      tickets: [ticket('i4', 'Investigate drop-off spike', 'Done', 'green')],
+      openCount: 0,
+      doneCount: 9,
+    }),
+  },
 }
 
 /** A topic with no linked project. No broken widget, no placeholder noise. */

@@ -6,9 +6,8 @@ import { TopicProjectPanelView } from './TopicProjectPanel'
 
 /**
  * PEEK-24's acceptance criteria, as assertions: a project widget headed Files,
- * its properties as controls, and its tickets as a table inside it — quiet by
- * default, capped at seven, with a clean empty state rather than a broken
- * widget.
+ * its properties as controls, and every ticket it holds as a table inside it —
+ * quiet by default, with a clean empty state rather than a broken widget.
  *
  * Which tickets count as open is decided in `projection.ts` and tested there.
  * The panel draws what it is handed, and keeping that split is what stops the
@@ -65,8 +64,7 @@ function folderProject(overrides: Partial<FolderProject> = {}): FolderProject {
       openUrl: 'http://localhost:5190/linear-lite/#/o/naddr1project',
       viaRecommendation: true,
     },
-    tickets: [ticket('i1', 'Billing entry')],
-    moreTickets: 0,
+    tickets: [ticket('i1', 'Billing entry'), ticket('i2', 'Old thing', 'Done')],
     openCount: 1,
     doneCount: 2,
     ...overrides,
@@ -134,42 +132,63 @@ describe('TopicProjectPanelView', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
+  it('shows progress through the work', () => {
+    render(<TopicProjectPanelView folderProject={folderProject()} />)
+
+    // 1 open, 2 done — two thirds of the way through.
+    const bar = screen.getByRole('progressbar', { name: '2 of 3 tickets done' })
+    expect(bar).toHaveAttribute('aria-valuenow', '2')
+    expect(bar).toHaveAttribute('aria-valuemax', '3')
+    expect(bar.firstElementChild).toHaveStyle({ width: '67%' })
+  })
+
+  it('draws no progress bar for a project with no tickets at all', () => {
+    render(
+      <TopicProjectPanelView
+        folderProject={folderProject({ tickets: [], openCount: 0, doneCount: 0 })}
+      />,
+    )
+
+    // Nothing filed yet is not "0% done" — it is nothing to report.
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
   it('expands into a table of one row per ticket: title and status', async () => {
     render(<TopicProjectPanelView folderProject={folderProject()} />)
 
     await userEvent.click(screen.getByRole('button', { name: /Tickets/ }))
 
-    const row = within(screen.getByRole('table')).getByRole('row')
-    expect(within(row).getByRole('link', { name: 'Billing entry' })).toHaveAttribute(
+    const [first, second] = within(screen.getByRole('table')).getAllByRole('row')
+    expect(within(first).getByRole('link', { name: 'Billing entry' })).toHaveAttribute(
       'href',
       'http://localhost:5190/linear-lite/#/o/naddr1i1',
     )
-    expect(within(row).getByText('In Progress')).toBeInTheDocument()
+    expect(within(first).getByText('In Progress')).toBeInTheDocument()
+    // Finished work is listed too, and says so.
+    expect(within(second).getByText('Done')).toBeInTheDocument()
   })
 
-  it('shows at most seven rows and says how many are left', async () => {
-    const many = Array.from({ length: 7 }, (_, i) => ticket(`i${i}`, `Live work ${i}`))
+  it('lists every ticket in the project, finished ones included', async () => {
+    const many = Array.from({ length: 11 }, (_, i) => ticket(`i${i}`, `Live work ${i}`))
     render(
-      <TopicProjectPanelView
-        folderProject={folderProject({ tickets: many, moreTickets: 4, openCount: 11 })}
-      />,
+      <TopicProjectPanelView folderProject={folderProject({ tickets: many, openCount: 11 })} />,
     )
 
-    // The count is the true total, not the number of rows.
     await userEvent.click(screen.getByRole('button', { name: 'Tickets (11/2)' }))
 
-    expect(screen.getAllByRole('link', { name: /^Live work \d$/ })).toHaveLength(7)
-    expect(screen.getByText('+4 more open')).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: /^Live work \d+$/ })).toHaveLength(11)
   })
 
-  it('says so when nothing is open', async () => {
+  it('says so when the project holds no tickets at all', async () => {
     render(
-      <TopicProjectPanelView folderProject={folderProject({ tickets: [], openCount: 0 })} />,
+      <TopicProjectPanelView
+        folderProject={folderProject({ tickets: [], openCount: 0, doneCount: 0 })}
+      />,
     )
 
     await userEvent.click(screen.getByRole('button', { name: /Tickets/ }))
 
-    expect(screen.getByText('Nothing open right now.')).toBeInTheDocument()
+    expect(screen.getByText('No tickets in this project yet.')).toBeInTheDocument()
   })
 
   it('renders a clean empty state for a topic with no linked project', () => {
