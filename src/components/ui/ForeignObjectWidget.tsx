@@ -139,6 +139,31 @@ function Actions({
   )
 }
 
+/**
+ * "Open in <app>" — the way back out of Peek.
+ *
+ * The URL comes from the owning app's NIP-89 `web` tag, already substituted
+ * server-side. Peek does not construct it and does not know what it points at,
+ * which is the same discipline as everything else here: without the manifest
+ * there would be no link, because there is nothing in an naddr that says where
+ * a human should go to see the thing.
+ *
+ * `noopener` because this is a URL a stranger published into a shared relay.
+ */
+function OpenInApp({ object }: { object: ForeignObject }) {
+  if (!object.openUrl) return null
+  return (
+    <a
+      href={object.openUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-xs text-text-tertiary underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+    >
+      Open in {object.appName ?? 'app'} ↗
+    </a>
+  )
+}
+
 export function ForeignObjectWidget({ naddr }: { naddr: string }) {
   const resolve = useAction(api.nostr.foreign.resolveObject)
   const applyAction = useAction(api.nostr.act.applyAction)
@@ -199,7 +224,8 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
   if (object.unreachable) {
     return (
       <div className="mt-1 rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs text-text-tertiary">
-        {object.appName ?? 'Another app'} object — you may not have access to this Folder.
+        {object.appName ?? 'Another app'} object — you may not have access to this Folder.{' '}
+        {object.openUrl && <OpenInApp object={object} />}
       </div>
     )
   }
@@ -234,12 +260,15 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
             </div>
           )}
         </div>
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-tertiary">
-          {object.appName}
-          {/* No recommendation existed, so the handler was a guess. Worth saying:
-              "we were told" and "we guessed" should not look identical. */}
-          {!object.viaRecommendation && ' ?'}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
+            {object.appName}
+            {/* No recommendation existed, so the handler was a guess. Worth saying:
+                "we were told" and "we guessed" should not look identical. */}
+            {!object.viaRecommendation && ' ?'}
+          </span>
+          <OpenInApp object={object} />
+        </div>
       </div>
 
       <Actions actions={object.actions} busy={busy} error={actionError} onAct={onAct} />

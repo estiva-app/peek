@@ -142,10 +142,38 @@ const tagValue = (e: SignedEvent, name: string) => e.tags.find((t) => t[0] === n
  * preference. When it fires, `viaRecommendation` is false and the caller can
  * say so in the UI — "we guessed" and "we were told" should not look identical.
  */
+/**
+ * NIP-89's `web` tag: how to open one of these objects in the app that owns it.
+ *
+ * `["web", "https://host/#/o/<bech32>", "naddr"]` — the consumer substitutes the
+ * entity it is holding. Read off the *event* rather than the manifest content,
+ * because that is where NIP-89 puts it.
+ *
+ * Returns undefined when no usable template was published, which is an ordinary
+ * state rather than an error: an app may render objects it has nowhere to open.
+ */
+function webTemplate(event: SignedEvent, entity: string): string | undefined {
+  for (const tag of event.tags) {
+    if (tag[0] !== 'web' || !tag[1]) continue
+    // The third element names the entity type; NIP-89 permits omitting it, in
+    // which case the template applies to whatever we are holding.
+    if (tag[2] && tag[2] !== entity) continue
+    if (!tag[1].includes('<bech32>')) continue
+    return tag[1]
+  }
+  return undefined
+}
+
 export async function resolveManifest(
   pointer: AddressPointer,
   query: QueryFn,
-): Promise<{ manifest: Manifest; address: string; viaRecommendation: boolean } | null> {
+): Promise<{
+  manifest: Manifest
+  address: string
+  viaRecommendation: boolean
+  /** NIP-89 `web` template, `<bech32>` not yet substituted. */
+  webTemplate?: string
+} | null> {
   const parse = (event: SignedEvent) => {
     try {
       return JSON.parse(event.content) as Manifest
@@ -173,7 +201,14 @@ export async function resolveManifest(
       { kinds: [Number(kind)], authors: [pubkey], '#d': [rest.join(':')], limit: 1 },
     ])
     const manifest = found[0] ? parse(found[0]) : null
-    if (manifest) return { manifest, address: manifestAddr, viaRecommendation: true }
+    if (manifest) {
+      return {
+        manifest,
+        address: manifestAddr,
+        viaRecommendation: true,
+        webTemplate: webTemplate(found[0], 'naddr'),
+      }
+    }
   }
 
   const claimed = await query([
@@ -186,7 +221,12 @@ export async function resolveManifest(
   for (const candidate of newest) {
     const manifest = parse(candidate)
     if (manifest?.projections?.[String(pointer.kind)]) {
-      return { manifest, address: addressOf(candidate), viaRecommendation: false }
+      return {
+        manifest,
+        address: addressOf(candidate),
+        viaRecommendation: false,
+        webTemplate: webTemplate(candidate, 'naddr'),
+      }
     }
   }
   return null
@@ -292,6 +332,17 @@ export interface ForeignObject {
    * with a "Folder id" box in it.
    */
   folder?: string
+  /**
+   * Where to open this object in the app that owns it, from NIP-89's `web` tag.
+   *
+   * The return leg of the roundtrip. Without it a reference is a read-only
+   * snapshot: Peek can render a Linear-lite issue and change its status, and
+   * getting back to the issue itself means alt-tabbing and hunting for a row.
+   *
+   * Absent when the owning app published no template — the widget simply does
+   * not offer the link, rather than guessing a URL.
+   */
+  openUrl?: string
   /** What the owning app says we may do to this object. */
   actions: ResolvedAction[]
   /** False when no author recommendation existed and a handler was guessed. */
@@ -334,6 +385,9 @@ export async function resolveForeignObject(
   const resolved = await resolveManifest(pointer, query)
   if (!resolved) return null
   const { manifest, viaRecommendation } = resolved
+  // Substituted here rather than in the component: `<bech32>` is a NIP-89
+  // detail, and the widget's job is to draw a link, not to know the spec.
+  const openUrl = resolved.webTemplate?.replace('<bech32>', naddr.replace(/^nostr:/, ''))
 
   const projection = manifest.projections?.[String(pointer.kind)]
   const records = manifest.records
@@ -365,6 +419,9 @@ export async function resolveForeignObject(
       comments: [],
       actions: [],
       viaRecommendation,
+      // Offered even here. "You cannot see this object" is exactly when
+      // somebody wants to open it in the app that can.
+      openUrl,
       unreachable: true,
     }
   }
@@ -404,6 +461,7 @@ export async function resolveForeignObject(
     meta,
     comments,
     folder: tagValue(root, 'h'),
+    openUrl,
     actions: resolveActions(manifest, pointer.kind, folded),
     viaRecommendation,
   }
