@@ -5,7 +5,6 @@
  * code — a different implementation, importing nothing from Linear-lite except
  * the naddr string a user would have pasted — renders it from the manifest.
  */
-import { randomUUID } from 'node:crypto'
 import { Relay } from '/home/miky/linear-lite/lib/nostr/relay'
 import { publicKeyFromSecret } from '/home/miky/linear-lite/lib/nostr/sign'
 import { Store } from '/home/miky/linear-lite/src/store'
@@ -28,15 +27,16 @@ function person() {
 async function main() {
   // ── Linear-lite's side ────────────────────────────────────────────────────
   const ana = person()
-  const folder = randomUUID()
-  await ana.store.ensureFolder(folder, `x-${folder.slice(0, 8)}`)
   await ana.store.recommendHandler(RELAY_URL)
 
   const project = await ana.store.createProject({
-    folder,
     title: 'Payment integration',
     description: 'Stripe Checkout for workspace billing — redirect flow, no custom card form.',
   })
+  // A project *is* a Folder — the issue, its changes and its comments all live
+  // here. The point of the checks below is that Peek is never told which Folder
+  // that is; it reads `h` off the object it was handed.
+  const folder = project.folder
   const issue = await ana.store.createIssue({
     folder,
     title: 'Billing entry + add payment method',
@@ -74,7 +74,7 @@ async function main() {
       ana.identity.secretKeyHex,
     ),
   )
-  check('Peek\'s reader is added to the Folder', added.ok, added.reason ?? '')
+  check('Peek\'s reader is added to the project Folder', added.ok, added.reason ?? '')
 
   const relay = new Relay(RELAY_URL, peek.identity)
   const query = (filters: Record<string, unknown>[]) => relay.query(filters)
@@ -115,6 +115,17 @@ async function main() {
   check('  assignee resolved as a person, not hex', widget.meta.some((m) => m.label === 'Assignee' && m.isPubkey))
   check('  the display ref came through', widget.meta.some((m) => m.value === 'PAY-1'))
   check('  both comments, oldest first', widget.comments.length === 2 && widget.comments[0].body.startsWith('Blocked'), `${widget.comments.length}`)
+
+  // Peek found the Folder without being told it — the property the two-Folder
+  // split depends on. If this broke, acting on the object would fail at ingest.
+  check('  Peek learned the Folder from the object itself', widget.folder === folder, widget.folder?.slice(0, 8))
+
+  // ── The way back ──────────────────────────────────────────────────────────
+  // NIP-89's `web` tag, substituted with the naddr Peek is holding. Without it
+  // a reference is a read-only snapshot with no route back to the real thing.
+  check('  the manifest offers a way to open it', !!widget.openUrl, widget.openUrl)
+  check('    …and it carries this object\'s naddr', widget.openUrl?.includes(found.replace(/^nostr:/, '')) ?? false)
+  check('    …with no placeholder left in it', !widget.openUrl?.includes('<bech32>'))
 
   // The project is a different widget type from the same manifest.
   const card = await resolveForeignObject(addrToNaddr(project.addr, [RELAY_URL]), query)

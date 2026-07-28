@@ -98,6 +98,36 @@ also covers a wiped dev relay.
 `Vec<Value>` (`bridge.rs:970`), not a filter object and not `{filters: […]}`.
 A single object gets `invalid type: map, expected a sequence`.
 
+### A5b. A multi-value `#h` filter is **not** OR-ed — **trap, silent**
+
+NIP-01 says the values of a tag filter are alternatives, so `{"#h": [A, B]}`
+should return events in either Folder. Buzz returns **only A's**, with no error
+and no warning.
+
+Measured, with one event in each of two Folders:
+
+```
+#h:[A]      -> 1
+#h:[B]      -> 1
+#h:[A,B]    -> 1     ← not 2
+two filters -> 2     ← [{#h:[A]}, {#h:[B]}] works
+```
+
+This is worse than a papercut because the failure is a **short read**, not an
+error. Linear-lite hit it the moment projects got their own Folders: the
+workspace query returned the project records and silently none of their issues,
+which folds into a project that looks empty rather than a query that looks
+broken.
+
+**Workaround:** one filter object per Folder. `POST /query` takes an array
+anyway (A5), so it is still a single round trip — `store.ts:rawFolders` does
+this, and `scripts/smoke.ts`'s stub relay reproduces the Buzz behaviour so a
+client that regresses to an array fails in the test rather than in front of
+someone.
+
+Almost certainly because `h` is special-cased as channel scoping rather than
+handled as a generic tag filter. Not verified against other tag names.
+
 ### A6. `created_at` is too coarse to order an event-sourced record — **workaround**
 
 Found building Linear-lite's change fold (LINEAR_LITE_SPEC.md §1.3). The fold is

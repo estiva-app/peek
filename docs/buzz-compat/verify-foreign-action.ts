@@ -12,7 +12,6 @@
  *
  *   npx tsx docs/buzz-compat/verify-foreign-action.ts
  */
-import { randomUUID } from 'node:crypto'
 
 // ── The other app. Stands in for a user clicking around in Linear-lite. ──────
 import { Relay } from '/home/miky/linear-lite/lib/nostr/relay'
@@ -42,10 +41,11 @@ async function main() {
   // ── Ana, in Linear-lite ───────────────────────────────────────────────────
   const ana = person()
   const store = new Store(new Relay(RELAY_URL, ana), ana)
-  const folder = randomUUID()
-  await store.ensureFolder(folder, `act-${folder.slice(0, 8)}`)
   await store.recommendHandler(RELAY_URL)
-  const project = await store.createProject({ folder, title: 'Payment integration' })
+  const project = await store.createProject({ title: 'Payment integration' })
+  // The project's Folder — where the issue and every change to it live. Peek is
+  // never handed this value; it reads it off the object's `h`.
+  const folder = project.folder
   const issue = await store.createIssue({
     folder,
     title: 'Billing entry + add payment method',
@@ -62,6 +62,11 @@ async function main() {
 
   const widget = await resolveForeignObject(naddr, query)
   check('Peek renders the issue', !!widget && !widget.unreachable)
+  check(
+    '  …having worked out the Folder from the object alone',
+    widget?.folder === folder,
+    widget?.folder?.slice(0, 8),
+  )
   check('  …and it starts as Todo', widget?.slots.status?.value === 'Todo', widget?.slots.status?.value)
 
   // The actions come off the manifest, not out of Peek.
@@ -119,7 +124,7 @@ async function main() {
   check('Peek publishes a NIP-22 comment', commented.ok, commented.reason ?? '')
 
   // ── The claim: LINEAR-LITE's fold sees Peek's writes ──────────────────────
-  const state = foldFolder(await store.rawFolder(folder))
+  const state = foldFolder(await store.rawFolders([folder]))
   const folded = state.issues.find((i) => i.addr === issue.addr)
 
   console.log('')
