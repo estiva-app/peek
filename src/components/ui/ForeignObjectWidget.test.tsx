@@ -35,14 +35,18 @@ const NADDR = 'naddr1qqjrje33vg6xzvnr95mk2vmy95'
 function object(overrides: Partial<ForeignObject> = {}): ForeignObject {
   return {
     address: '30851:abc:issue-1',
+    naddr: NADDR,
     kind: 30851,
     widget: 'row',
     appName: 'Linear-lite',
     slots: {
-      title: { value: 'Billing entry + add payment method' },
-      status: { value: 'Done', colour: 'green' },
+      title: { value: 'Billing entry + add payment method', field: 'title' },
+      status: { value: 'Done', colour: 'green', field: 'status' },
     },
-    meta: [{ value: 'PAY-1' }, { label: 'Assignee', value: 'a'.repeat(64), isPubkey: true }],
+    meta: [
+      { value: 'PAY-1', field: 'ref' },
+      { label: 'Assignee', value: 'a'.repeat(64), isPubkey: true, field: 'assignee' },
+    ],
     comments: [{ id: 'c1', author: 'b'.repeat(64), body: 'Blocked on the Stripe key.', createdAt: 1 }],
     actions: [],
     viaRecommendation: true,
@@ -74,10 +78,35 @@ describe('ForeignObjectWidget', () => {
     expect(screen.getByText(/Assignee:/)).toHaveTextContent('aaaaaaaa…')
   })
 
-  it('shows comments, because the kind belongs to neither app', async () => {
+  it('does not restate comments the conversation around it already shows', async () => {
+    // PEEK-18. For Linear-lite a comment *is* a topic message, so the widget was
+    // re-rendering the thread it sits inside. You reply to the message instead.
     resolveObject.mockResolvedValue(object())
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText('Blocked on the Stripe key.')).toBeInTheDocument()
+
+    await screen.findByText('Billing entry + add payment method')
+    expect(screen.queryByText('Blocked on the Stripe key.')).not.toBeInTheDocument()
+  })
+
+  it('leaves opening the app to the title, not a second link beside it', async () => {
+    resolveObject.mockResolvedValue(object({ openUrl: 'http://localhost:5190/#/o/naddr1x' }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+
+    const links = await screen.findAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveTextContent('Billing entry + add payment method')
+    expect(links[0]).toHaveAttribute('href', 'http://localhost:5190/#/o/naddr1x')
+  })
+
+  it('still offers the link when there is no title to click', async () => {
+    // The unreachable card never resolved a title, so removing its link would
+    // leave no way to reach the object at all — exactly when you want one.
+    resolveObject.mockResolvedValue(
+      object({ unreachable: true, openUrl: 'http://localhost:5190/#/o/naddr1x' }),
+    )
+    render(<ForeignObjectWidget naddr={NADDR} />)
+
+    expect(await screen.findByRole('link', { name: /Open in Linear-lite/ })).toBeInTheDocument()
   })
 
   it('says so when the object is unreachable rather than rendering nothing', async () => {
@@ -137,6 +166,71 @@ describe('ForeignObjectWidget', () => {
           { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee' },
         ],
       })
+
+    it('shows a field once — in the control, not also as a label', async () => {
+      // PEEK-18. The pill and the picker were the same status, and the pill is
+      // the copy that goes stale. Matched on the field the manifest named, so
+      // this holds for any app rather than for a slot Peek happens to call
+      // "status".
+      resolveObject.mockResolvedValue(withActions())
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      await screen.findByLabelText('Change status')
+      // The pill is a span; "Done" survives as an <option> in the picker, which
+      // is the copy that should remain.
+      expect(screen.queryByText('Done', { selector: 'span' })).not.toBeInTheDocument()
+      expect(screen.getByRole('option', { name: 'Done' })).toBeInTheDocument()
+      expect(screen.queryByText(/Assignee:/)).not.toBeInTheDocument()
+      // A meta slot no action covers is untouched — this hides duplicates, not
+      // the meta line.
+      expect(screen.getByText('PAY-1')).toBeInTheDocument()
+    })
+
+    it('names the current assignee on the control that sets it', async () => {
+      resolveObject.mockResolvedValue(
+        object({
+          actions: [
+            {
+              id: 'assign-issue',
+              label: 'Assign',
+              control: 'pubkey',
+              field: 'assignee',
+              current: 'a'.repeat(64),
+            },
+          ],
+        }),
+      )
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      // Reports and sets, in one control. The accessible name stays on what
+      // pressing it does, which does not change when the holder does.
+      const button = await screen.findByRole('button', { name: /Assign to me/ })
+      expect(button).toHaveTextContent('Assign: aaaaaaaa…')
+    })
+
+    it('never draws a comment box — you reply to the message instead', async () => {
+      resolveObject.mockResolvedValue(
+        object({
+          // No `field`: a comment emits a whole event rather than setting one
+          // value, and that is how the declaration says so.
+          actions: [{ id: 'comment', label: 'Comment', control: 'text' }],
+        }),
+      )
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      await screen.findByText('Billing entry + add payment method')
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    it('keeps the labels on a card with no controls to defer to', async () => {
+      // The topic sidebar renders read-only. With no picker on screen the status
+      // pill is the only thing saying what the status is, so it stays.
+      const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+      render(<ForeignObjectCard object={withActions()} />)
+
+      expect(screen.getByText('Done')).toBeInTheDocument()
+      expect(screen.getByText(/Assignee:/)).toHaveTextContent('aaaaaaaa…')
+    })
 
     it('draws a control per declared action, using the owner\'s vocabulary', async () => {
       resolveObject.mockResolvedValue(withActions())

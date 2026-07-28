@@ -52,11 +52,25 @@ interface UseTopicViewArgs {
   showUnreads?: boolean
   /** V2 sidebar tree: when set, auto-opens the matching huddle's thread panel. */
   selectedHuddleId?: string | null
+  /** When set, the header offers a show/hide control for the Folder panel
+   *  (PEEK-24). Omitted by views with nowhere to put one, so the button never
+   *  appears where it cannot do anything. */
+  onToggleFolderPanel?: () => void
+  folderPanelOpen?: boolean
 }
 
 interface ViewSlots {
   rightPanel: ReactNode
   threadPanel: ReactNode | undefined
+  /**
+   * This topic's Folder, or null when it has none.
+   *
+   * Exposed so the page can put the Folder panel in the same column this hook
+   * fills with threads, and gate it on the same fact the header gates its
+   * toggle on — otherwise a topic with no Folder gets a panel and no way to
+   * close it.
+   */
+  folderId: string | null
 }
 
 export function useTopicView({
@@ -65,6 +79,8 @@ export function useTopicView({
   onToggleStarred,
   showUnreads = false,
   selectedHuddleId: externalSelectedHuddleId = null,
+  onToggleFolderPanel,
+  folderPanelOpen = false,
 }: UseTopicViewArgs): ViewSlots {
   const [activeTab, setActiveTab] = useState<TopicTab>('conversations')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -293,6 +309,7 @@ export function useTopicView({
         </div>
       ),
       threadPanel: undefined,
+      folderId: topicFolderId ?? null,
     }
   }
 
@@ -300,6 +317,10 @@ export function useTopicView({
     <div className="flex flex-col h-full">
       <ConversationHeader
         folderId={topicFolderId}
+        // Only where a Folder exists to show: a topic with no `h` has no panel
+        // behind the button.
+        onToggleFolderPanel={topicFolderId && !isV2HuddleView ? onToggleFolderPanel : undefined}
+        folderPanelOpen={folderPanelOpen}
         name={isV2HuddleView ? v2HuddleNameLabel : topicTitle}
         topicMode={!isV2HuddleView}
         huddleMode={isV2HuddleView}
@@ -817,5 +838,5 @@ export function useTopicView({
     />
   ) : undefined
 
-  return { rightPanel, threadPanel }
+  return { rightPanel, threadPanel, folderId: topicFolderId ?? null }
 }

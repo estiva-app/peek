@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare } from '@tabler/icons-react'
+import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare, IconLayoutSidebarRight, IconLayoutSidebarRightFilled } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { AvatarGroup } from './ui/AvatarGroup'
@@ -36,6 +36,16 @@ interface ConversationHeaderProps {
    * tracker's issues, each app projecting the one container its own way.
    */
   folderId?: string | null
+  /**
+   * Show/hide the Folder panel (PEEK-24).
+   *
+   * Next to the Folder link on purpose: both are about the container this topic
+   * shares with other apps, rather than about the conversation. Absent where
+   * there is no panel to toggle, so the button never appears somewhere it
+   * cannot do anything.
+   */
+  onToggleFolderPanel?: () => void
+  folderPanelOpen?: boolean
   tabs?: ReactNode
   className?: string
 }
@@ -57,6 +67,8 @@ export function ConversationHeader({
   tabs,
   className,
   folderId,
+  onToggleFolderPanel,
+  folderPanelOpen = false,
 }: ConversationHeaderProps) {
   const copyFolderLink = () => {
     // `folder:<uuid>`, not a URL. A Folder belongs to no single app, so a link
@@ -153,6 +165,19 @@ export function ConversationHeader({
                 onClick={copyFolderLink}
               >
                 <IconFolderShare size={16} stroke={1.5} />
+              </IconButton>
+            )}
+            {onToggleFolderPanel && (
+              <IconButton
+                tooltip={folderPanelOpen ? 'Hide Folder panel' : 'Show Folder panel'}
+                aria-label={folderPanelOpen ? 'Hide Folder panel' : 'Show Folder panel'}
+                onClick={onToggleFolderPanel}
+              >
+                {folderPanelOpen ? (
+                  <IconLayoutSidebarRightFilled size={16} stroke={1.5} />
+                ) : (
+                  <IconLayoutSidebarRight size={16} stroke={1.5} />
+                )}
               </IconButton>
             )}
             <IconButton tooltip="More actions" aria-label="More actions">

@@ -117,6 +117,60 @@ export function pointerToAddress(pointer: AddressPointer): string {
   return `${pointer.kind}:${pointer.pubkey}:${pointer.identifier}`
 }
 
+/** 8-bit bytes to 5-bit bech32 symbols, zero-padding the final group. */
+function toWords(bytes: number[]): number[] {
+  let acc = 0
+  let bits = 0
+  const out: number[] = []
+  for (const byte of bytes) {
+    acc = (acc << 8) | byte
+    bits += 8
+    while (bits >= 5) {
+      bits -= 5
+      out.push((acc >>> bits) & 31)
+    }
+  }
+  if (bits > 0) out.push((acc << (5 - bits)) & 31)
+  return out
+}
+
+/**
+ * Encode an address as `naddr1…`.
+ *
+ * The inverse of `decodeNaddr`, and needed for the same reason a decoder was:
+ * this is the identifier every other app in the ecosystem speaks. Peek grew one
+ * when the sidebar had to *hand an object back out* — a link into the owning
+ * app, and an action addressed to a specific record — rather than only receive
+ * one somebody pasted.
+ *
+ * Byte-identical to what Linear-lite produces for the same address, which the
+ * roundtrip test pins: TLV order is identifier, relays, author, kind, and the
+ * checksum is bech32, not bech32m (see the note at the top of this file).
+ */
+export function encodeNaddr(pointer: AddressPointer): string {
+  const text = (value: string) => [...new TextEncoder().encode(value)]
+  const bytes: number[] = []
+
+  const push = (type: number, value: number[]) => bytes.push(type, value.length, ...value)
+
+  push(0, text(pointer.identifier))
+  for (const relay of pointer.relays) push(1, text(relay))
+  const pubkey = pointer.pubkey.match(/.{2}/g)?.map((b) => Number.parseInt(b, 16)) ?? []
+  if (pubkey.length !== 32) throw new Error(`author must be 32 bytes, got ${pubkey.length}`)
+  push(2, pubkey)
+  push(3, [
+    (pointer.kind >>> 24) & 0xff,
+    (pointer.kind >>> 16) & 0xff,
+    (pointer.kind >>> 8) & 0xff,
+    pointer.kind & 0xff,
+  ])
+
+  const words = toWords(bytes)
+  const checksum = polymod([...hrpExpand('naddr'), ...words, 0, 0, 0, 0, 0, 0]) ^ 1
+  const tail = [0, 1, 2, 3, 4, 5].map((i) => (checksum >>> (5 * (5 - i))) & 31)
+  return `naddr1${[...words, ...tail].map((w) => CHARSET[w]).join('')}`
+}
+
 /**
  * Every `nostr:naddr1…` in a body of text (NIP-27).
  *
@@ -127,4 +181,43 @@ export const NADDR_RE = /nostr:(naddr1[023456789acdefghjklmnpqrstuvwxyz]+)/gi
 
 export function findNaddrs(text: string): string[] {
   return [...text.matchAll(NADDR_RE)].map((m) => m[1])
+}
+
+/**
+ * The same text with every `nostr:naddr1…` taken out (PEEK-18).
+ *
+ * A reference that resolves into a widget should not also sit in the prose as
+ * sixty characters of bech32: the widget *is* the reference, rendered.
+ * Linear-lite appends one to every thread it starts about an issue, so leaving
+ * it in means most cross-app messages open with a wall of noise nobody reads.
+ *
+ * Whitespace is repaired rather than merely removed. A pointer is usually
+ * trailing or on a line of its own, and deleting it in place otherwise leaves a
+ * double space mid-sentence or a hole between paragraphs — both of which look
+ * like the message itself is broken. Runs of blanks collapse *within* a line
+ * only, so indentation and paragraph breaks survive.
+ *
+ * Display-only. The stored body keeps the pointer, which is what lets the
+ * reference still be found, resolved and followed.
+ */
+export function stripNaddrs(text: string): string {
+  // Text with no pointer comes back byte-identical. The repairs below are only
+  // ever justified by a removal, and a display helper that reflows somebody's
+  // indentation for free would be a bug wearing a tidy-up's clothes.
+  if (findNaddrs(text).length === 0) return text
+
+  return (
+    text
+      // Take the blanks on either side along with the pointer, then put a single
+      // space back only when it stood between words on one line. Doing it in one
+      // pass is what keeps the repair local to the hole.
+      .replace(
+        new RegExp(`([^\\S\\n]*)${NADDR_RE.source}([^\\S\\n]*)`, 'gi'),
+        (_match, before: string, _addr: string, after: string) => (before && after ? ' ' : ''),
+      )
+      // A pointer alone on its line leaves the line's newlines behind on both
+      // sides, which reads as an unexplained gap.
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  )
 }

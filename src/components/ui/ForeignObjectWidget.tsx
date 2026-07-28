@@ -28,7 +28,7 @@ const COLOUR: Record<string, string> = {
   muted: 'bg-surface-raised text-text-tertiary',
 }
 
-function StatusPill({ slot }: { slot: ResolvedSlot }) {
+export function StatusPill({ slot }: { slot: ResolvedSlot }) {
   return (
     <span
       className={cn(
@@ -41,10 +41,18 @@ function StatusPill({ slot }: { slot: ResolvedSlot }) {
   )
 }
 
+/**
+ * A person, not 64 hex characters.
+ *
+ * Peek has profiles; until one is resolved, an abbreviation beats the raw key.
+ * Shared by the meta line and the assignee control so a key never abbreviates
+ * two different ways in one card.
+ */
+const asPerson = (pubkey: string) => `${pubkey.slice(0, 8)}…`
+
 function Meta({ slot }: { slot: ResolvedSlot }) {
-  // `as: "pubkey"` tells us to show a person rather than 64 hex characters.
-  // Peek has profiles; until one is resolved, an abbreviation beats the raw key.
-  const value = slot.isPubkey ? `${slot.value.slice(0, 8)}…` : slot.value
+  // `as: "pubkey"` tells us to show a person rather than the key itself.
+  const value = slot.isPubkey ? asPerson(slot.value) : slot.value
   return (
     <span className="text-xs text-text-tertiary">
       {slot.label ? `${slot.label}: ` : ''}
@@ -61,6 +69,98 @@ function Meta({ slot }: { slot: ResolvedSlot }) {
  * for a pubkey, an input because it asked for text. Peek supplies the widgets;
  * the owning app supplies the meaning.
  */
+export function ActionControl({
+  action,
+  busy = false,
+  onAct,
+  labelled = true,
+  className,
+}: {
+  action: ResolvedAction
+  busy?: boolean
+  onAct: (actionId: string, value: string) => void
+  /**
+   * Whether the control names the field it sets.
+   *
+   * True in a card, where a lone `ana…` button would say nothing about what it
+   * does. False in the sidebar's property rows, where the field already has a
+   * label in the column to the left and repeating it reads as a stutter.
+   */
+  labelled?: boolean
+  className?: string
+}) {
+  const [draft, setDraft] = useState('')
+
+  if (action.control === 'select') {
+    return (
+      <select
+        aria-label={action.label}
+        disabled={busy}
+        value={action.current ?? ''}
+        onChange={(e) => onAct(action.id, e.target.value)}
+        className={cn(
+          'rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs text-text-primary disabled:opacity-50',
+          className,
+        )}
+      >
+        {action.options?.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    )
+  }
+
+  if (action.control === 'pubkey') {
+    // `@me` — the server swaps in this user's key. The browser never handles
+    // key material.
+    //
+    // The face shows who holds the field now, so this one control both reports
+    // and sets it (PEEK-18) — the same bargain the status select makes.
+    // `aria-label` stays fixed on what pressing it *does*, because that does not
+    // change when the value does.
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        aria-label={`${action.label} to me`}
+        onClick={() => onAct(action.id, '@me')}
+        className={cn(
+          'rounded-md border border-border-default px-2 py-1 text-xs text-text-secondary hover:border-border-strong disabled:opacity-50',
+          className,
+        )}
+      >
+        {action.current
+          ? labelled
+            ? `${action.label}: ${asPerson(action.current)}`
+            : asPerson(action.current)
+          : `${action.label} to me`}
+      </button>
+    )
+  }
+
+  return (
+    <form
+      className={cn('flex flex-1 gap-1', className)}
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (!draft.trim()) return
+        onAct(action.id, draft.trim())
+        setDraft('')
+      }}
+    >
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={`${action.label}…`}
+        disabled={busy}
+        className="min-w-0 flex-1 rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs disabled:opacity-50"
+      />
+    </form>
+  )
+}
+
 function Actions({
   actions,
   busy,
@@ -72,67 +172,14 @@ function Actions({
   error?: string
   onAct: (actionId: string, value: string) => void
 }) {
-  const [draft, setDraft] = useState('')
   if (!actions.length) return null
 
   return (
     <div className="mt-2 border-t border-border-subtle pt-2">
       <div className="flex flex-wrap items-center gap-2">
-        {actions.map((action) => {
-          if (action.control === 'select') {
-            return (
-              <select
-                key={action.id}
-                aria-label={action.label}
-                disabled={busy}
-                value={action.current ?? ''}
-                onChange={(e) => onAct(action.id, e.target.value)}
-                className="rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs text-text-primary disabled:opacity-50"
-              >
-                {action.options?.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            )
-          }
-          if (action.control === 'pubkey') {
-            // `@me` — the server swaps in this user's key. The browser never
-            // handles key material.
-            return (
-              <button
-                key={action.id}
-                type="button"
-                disabled={busy}
-                onClick={() => onAct(action.id, '@me')}
-                className="rounded-md border border-border-default px-2 py-1 text-xs text-text-secondary hover:border-border-strong disabled:opacity-50"
-              >
-                {action.label} to me
-              </button>
-            )
-          }
-          return (
-            <form
-              key={action.id}
-              className="flex flex-1 gap-1"
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (!draft.trim()) return
-                onAct(action.id, draft.trim())
-                setDraft('')
-              }}
-            >
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder={`${action.label}…`}
-                disabled={busy}
-                className="min-w-0 flex-1 rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs disabled:opacity-50"
-              />
-            </form>
-          )
-        })}
+        {actions.map((action) => (
+          <ActionControl key={action.id} action={action} busy={busy} onAct={onAct} />
+        ))}
       </div>
       {error && <p className="mt-1 text-xs text-danger-default">{error}</p>}
     </div>
@@ -140,7 +187,12 @@ function Actions({
 }
 
 /**
- * "Open in <app>" — the way back out of Peek.
+ * "Open in <app>" — the way back out of Peek, for a card that has no other one.
+ *
+ * A resolved object does not use this: its **title** is the link, and one card
+ * carrying both was the same destination twice (PEEK-18). What is left is the
+ * unreachable case, where there is no title to click because the object never
+ * loaded — precisely when somebody wants to open it in the app that can see it.
  *
  * The URL comes from the owning app's NIP-89 `web` tag, already substituted
  * server-side. Peek does not construct it and does not know what it points at,
@@ -161,6 +213,121 @@ function OpenInApp({ object }: { object: ForeignObject }) {
     >
       Open in {object.appName ?? 'app'} ↗
     </a>
+  )
+}
+
+/**
+ * The object itself, as a bordered card.
+ *
+ * Split from the resolving component so the two concerns stay apart: this draws
+ * an object, `ForeignObjectWidget` fetches one. The topic sidebar draws its own
+ * layout rather than this one — a project that is the subject of a whole column
+ * wants a properties list and a ticket table, and a reference sitting inside a
+ * message wants a line (PEEK-24).
+ */
+export function ForeignObjectCard({
+  object,
+  busy = false,
+  error,
+  onAct,
+  className,
+}: {
+  object: ForeignObject
+  busy?: boolean
+  error?: string
+  /** Omit to render the object read-only, with no manifest controls. */
+  onAct?: (actionId: string, value: string) => void
+  className?: string
+}) {
+  const { slots, meta, widget } = object
+
+  /**
+   * Only the controls that set a field.
+   *
+   * A manifest also declares a comment action, and Peek does not draw it: you
+   * comment on one of these by replying to the message it hangs off, which is
+   * the conversation already on screen (PEEK-18). A box competing with that is
+   * a second, worse inbox for the same thread.
+   *
+   * `emits.field` is a property of the declaration rather than knowledge of the
+   * app — Peek is choosing which *kind* of control it renders, not which app it
+   * is talking to.
+   */
+  const actions = object.actions.filter((action) => action.field)
+
+  /**
+   * Fields an action already puts on screen.
+   *
+   * A status pill beside a status picker, or "Assignee: ana…" beside an assign
+   * button, is one fact rendered twice — and the second copy is the one that
+   * goes stale, because the control is what people read (PEEK-18). So the
+   * control wins and the label steps aside.
+   *
+   * Only when the controls are actually drawn: read-only cards (the topic
+   * sidebar) have no controls to defer to, so they keep the labels and lose
+   * nothing.
+   */
+  const covered = new Set(onAct ? actions.map((action) => action.field) : [])
+  const shown = (slot: ResolvedSlot | undefined) =>
+    slot && !(slot.field !== undefined && covered.has(slot.field)) ? slot : undefined
+
+  const status = shown(slots.status)
+  const visibleMeta = meta.filter(shown)
+
+  return (
+    <div
+      data-foreign-object={object.address}
+      className={cn(
+        'rounded-lg border border-border-subtle bg-surface-raised',
+        widget === 'card' ? 'p-3' : 'px-3 py-2',
+        className,
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            {/* The title is the way into the owning app. A reference you cannot
+                follow is a screenshot. */}
+            {object.openUrl ? (
+              <a
+                href={object.openUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="truncate text-sm font-semibold text-text-primary hover:underline"
+              >
+                {slots.title?.value}
+              </a>
+            ) : (
+              <span className="truncate text-sm font-semibold text-text-primary">
+                {slots.title?.value}
+              </span>
+            )}
+            {status && <StatusPill slot={status} />}
+          </div>
+          {/* A card shows the subtitle; a row is a single line by definition —
+              except in the sidebar, where the description is what makes a
+              ticket scannable without opening it. */}
+          {widget === 'card' && slots.subtitle && (
+            <p className="mt-1 text-xs text-text-secondary">{slots.subtitle.value}</p>
+          )}
+          {visibleMeta.length > 0 && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              {visibleMeta.map((slot, i) => (
+                <Meta key={i} slot={slot} />
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-tertiary">
+          {object.appName}
+          {/* No recommendation existed, so the handler was a guess. Worth saying:
+              "we were told" and "we guessed" should not look identical. */}
+          {!object.viaRecommendation && ' ?'}
+        </span>
+      </div>
+
+      {onAct && <Actions actions={actions} busy={busy} error={error} onAct={onAct} />}
+    </div>
   )
 }
 
@@ -230,61 +397,13 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
     )
   }
 
-  const { slots, meta, comments, widget } = object
-
   return (
-    <div
-      data-foreign-object={object.address}
-      className={cn(
-        'mt-1 rounded-lg border border-border-subtle bg-surface-raised',
-        widget === 'card' ? 'p-3' : 'px-3 py-2',
-      )}
-    >
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold text-text-primary">
-              {slots.title?.value}
-            </span>
-            {slots.status && <StatusPill slot={slots.status} />}
-          </div>
-          {/* A card shows the subtitle; a row is a single line by definition. */}
-          {widget === 'card' && slots.subtitle && (
-            <p className="mt-1 text-xs text-text-secondary">{slots.subtitle.value}</p>
-          )}
-          {meta.length > 0 && (
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-              {meta.map((slot, i) => (
-                <Meta key={i} slot={slot} />
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-0.5">
-          <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
-            {object.appName}
-            {/* No recommendation existed, so the handler was a guess. Worth saying:
-                "we were told" and "we guessed" should not look identical. */}
-            {!object.viaRecommendation && ' ?'}
-          </span>
-          <OpenInApp object={object} />
-        </div>
-      </div>
-
-      <Actions actions={object.actions} busy={busy} error={actionError} onAct={onAct} />
-
-      {/* NIP-22 comments. The same events Linear-lite writes and reads — neither
-          app owns the kind, which is what makes commenting work across both. */}
-      {comments.length > 0 && (
-        <div className="mt-2 space-y-1 border-t border-border-subtle pt-2">
-          {comments.map((comment) => (
-            <div key={comment.id} className="text-xs">
-              <span className="text-text-tertiary">{comment.author.slice(0, 8)}… </span>
-              <span className="text-text-secondary">{comment.body}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <ForeignObjectCard
+      object={object}
+      busy={busy}
+      error={actionError}
+      onAct={onAct}
+      className="mt-1"
+    />
   )
 }
