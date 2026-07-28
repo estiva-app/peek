@@ -30,8 +30,26 @@ export interface UnsignedActionEvent {
 /** NIP-89 kinds. These two are protocol, not app-specific. */
 const KIND_HANDLER_RECOMMENDATION = 31989
 const KIND_HANDLER_INFORMATION = 31990
-/** NIP-22 comments. Also protocol — no app owns this kind. */
+/**
+ * Default kind for comments on a foreign object.
+ *
+ * NIP-22, and no app owns it — but the owning app gets to say otherwise. An app
+ * whose objects live in a Folder may well treat a comment as a message in that
+ * container instead, which is a better answer when the container is also a Peek
+ * topic: the comment and the topic conversation become the same event rather
+ * than two records nobody reconciles.
+ *
+ * So this is the fallback, and `commentKindOf` reads the real one off the
+ * manifest's own `comment` action. Hardcoding it here would quietly stop
+ * finding comments the moment an app said something different.
+ */
 const KIND_COMMENT = 1111
+
+/** The kind an app says its comments are published as. */
+function commentKindOf(manifest: Manifest): number {
+  const declared = manifest.actions?.find((action) => action.id === 'comment')
+  return declared?.emits?.kind ?? KIND_COMMENT
+}
 
 /** How the owning app says its records should be read. */
 interface RecordsRule {
@@ -388,6 +406,7 @@ export async function resolveForeignObject(
   // Substituted here rather than in the component: `<bech32>` is a NIP-89
   // detail, and the widget's job is to draw a link, not to know the spec.
   const openUrl = resolved.webTemplate?.replace('<bech32>', naddr.replace(/^nostr:/, ''))
+  const commentKind = commentKindOf(manifest)
 
   const projection = manifest.projections?.[String(pointer.kind)]
   const records = manifest.records
@@ -400,7 +419,7 @@ export async function resolveForeignObject(
   const events = await query([
     { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
     { kinds: [records.changeKind], '#a': [address], limit: 500 },
-    { kinds: [KIND_COMMENT], '#a': [address], limit: 200 },
+    { kinds: [commentKind], '#a': [address], limit: 200 },
   ])
 
   const root = events.find(
@@ -448,7 +467,7 @@ export async function resolveForeignObject(
   }
 
   const comments = events
-    .filter((e) => e.kind === KIND_COMMENT)
+    .filter((e) => e.kind === commentKind)
     .sort(byOrder)
     .map((e) => ({ id: e.id, author: e.pubkey, body: e.content, createdAt: e.created_at }))
 

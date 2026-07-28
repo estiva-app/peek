@@ -47,8 +47,8 @@ async function main() {
   await ana.store.setField({ folder, target: issue.addr, field: 'status', value: 'in_progress' })
   await ana.store.setField({ folder, target: issue.addr, field: 'assignee', value: ana.identity.pubkey })
   await ana.store.setField({ folder, target: issue.addr, field: 'status', value: 'done' })
-  await ana.store.comment({ folder, target: issue.addr, body: 'Blocked on the Stripe key.' })
-  await ana.store.comment({ folder, target: issue.addr, body: 'Key is in 1Password now.' })
+  await ana.store.postMessage({ folder, about: issue.addr, body: 'Blocked on the Stripe key.' })
+  await ana.store.postMessage({ folder, about: issue.addr, body: 'Key is in 1Password now.' })
 
   // ── What a user pastes into Peek ──────────────────────────────────────────
   const pasted = `Can someone look at nostr:${addrToNaddr(issue.addr, [RELAY_URL])} today?`
@@ -114,7 +114,9 @@ async function main() {
   check('  …rendered through the declared vocabulary', widget.slots.status?.colour === 'green', widget.slots.status?.colour)
   check('  assignee resolved as a person, not hex', widget.meta.some((m) => m.label === 'Assignee' && m.isPubkey))
   check('  the display ref came through', widget.meta.some((m) => m.value === 'PAY-1'))
-  check('  both comments, oldest first', widget.comments.length === 2 && widget.comments[0].body.startsWith('Blocked'), `${widget.comments.length}`)
+  // Peek's widget lists the conversations attached to the object. Same events
+  // the topic shows — one container, two projections.
+  check('  both conversations, oldest first', widget.comments.length === 2 && widget.comments[0].body.startsWith('Blocked'), `${widget.comments.length}`)
 
   // Peek found the Folder without being told it — the property the two-Folder
   // split depends on. If this broke, acting on the object would fail at ingest.

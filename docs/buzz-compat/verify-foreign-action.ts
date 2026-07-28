@@ -121,7 +121,7 @@ async function main() {
   const done = await act('set-issue-status', 'done')
   check('Peek publishes a second status change', done.ok, done.reason ?? '')
   const commented = await act('comment', 'Shipped from Peek.')
-  check('Peek publishes a NIP-22 comment', commented.ok, commented.reason ?? '')
+  check('Peek publishes a comment as a kind:9 conversation', commented.ok, commented.reason ?? '')
 
   // ── The claim: LINEAR-LITE's fold sees Peek's writes ──────────────────────
   const state = foldFolder(await store.rawFolders([folder]))
@@ -138,7 +138,15 @@ async function main() {
     state.activity.map((c) => c.value === priya.pubkey ? 'assignee' : c.value).join(',') === 'in_progress,assignee,done',
     state.activity.map((c) => c.field).join(' → '),
   )
-  check('Peek\'s comment lands on Ana\'s issue', (state.comments.get(issue.addr) ?? []).some((c) => c.body === 'Shipped from Peek.'))
+  // The payoff of pointing the manifest's comment action at kind:9: Peek's
+  // comment is not a note only Linear-lite renders, it is a conversation in the
+  // Folder — which is the same thing the Peek topic shows.
+  const { conversationsAbout } = await import('/home/miky/linear-lite/src/fold')
+  const threads = conversationsAbout(state.conversations, issue.addr)
+  check('Peek\'s comment starts a conversation on Ana\'s issue',
+    threads.some((c) => c.root.body === 'Shipped from Peek.'), `${threads.length} thread(s)`)
+  check('  …and it is a root message, so Peek shows it in the topic too',
+    threads[0]?.root.rootId === undefined || threads[0]?.root.id === threads[0]?.id)
 
   // And Peek re-renders its own write.
   const after = await resolveForeignObject(naddr, query)
