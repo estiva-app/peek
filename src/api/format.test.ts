@@ -24,8 +24,8 @@ describe('formatReplyTimestamp', () => {
   it('renders Just now under 60s', () => {
     expect(formatReplyTimestamp(NOW - 59_000, NOW)).toBe('Just now')
   })
-  it('renders plain time for today', () => {
-    expect(formatReplyTimestamp(new Date(2024, 8, 3, 9, 14).getTime(), NOW)).toBe('9:14 AM')
+  it('names today explicitly (ruling 2026-07-29)', () => {
+    expect(formatReplyTimestamp(new Date(2024, 8, 3, 9, 14).getTime(), NOW)).toBe('Today at 9:14 AM')
   })
   it('joins Yesterday with "at" for the previous local day', () => {
     expect(formatReplyTimestamp(new Date(2024, 8, 2, 16, 5).getTime(), NOW)).toBe('Yesterday at 4:05 PM')
