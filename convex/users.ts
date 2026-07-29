@@ -34,10 +34,18 @@ export async function viewerOrThrow(ctx: QueryCtx | MutationCtx): Promise<Doc<'u
   return u
 }
 
-/** Stored avatar file → a URL the browser can render (null when unset). */
+/**
+ * A user's avatar → a URL the browser can render (undefined when they have none).
+ *
+ * Two sources, in order. An uploaded file is a Peek user's own avatar and wins.
+ * `image` is a `picture` URL that arrived from the relay (`nostr/sync.ts`) and
+ * belongs to someone with no Peek account — it is the only face this app will
+ * ever have for them, and without this fallback they render as a silhouette
+ * even though another app published a perfectly good avatar.
+ */
 export async function avatarUrl(ctx: QueryCtx | MutationCtx, u: Doc<'users'>): Promise<string | undefined> {
-  if (!u.avatarStorageId) return undefined
-  return (await ctx.storage.getUrl(u.avatarStorageId)) ?? undefined
+  if (!u.avatarStorageId) return u.image
+  return (await ctx.storage.getUrl(u.avatarStorageId)) ?? u.image
 }
 
 /** The signed-in user's own profile — drives the client's useCurrentUser(). */
@@ -90,6 +98,9 @@ export const setAvatar = mutation({
     const you = await viewerOrThrow(ctx)
     if (you.avatarStorageId) await ctx.storage.delete(you.avatarStorageId)
     await ctx.db.patch(you._id, { avatarStorageId: storageId })
+    // Same reason as updateProfile: an avatar nobody republishes is an avatar
+    // only Peek can see, and the old `picture` URL now points at a deleted file.
+    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishProfile, { userId: you._id })
   },
 })
 
@@ -100,5 +111,6 @@ export const removeAvatar = mutation({
     const you = await viewerOrThrow(ctx)
     if (you.avatarStorageId) await ctx.storage.delete(you.avatarStorageId)
     await ctx.db.patch(you._id, { avatarStorageId: undefined })
+    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishProfile, { userId: you._id })
   },
 })

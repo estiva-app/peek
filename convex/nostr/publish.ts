@@ -393,7 +393,21 @@ export const publishReactionRemoval = internalAction({
   },
 })
 
-/** Publish a user's profile as kind:0 so other clients render a person. */
+/**
+ * Publish a user's profile as kind:0 so other clients render a person.
+ *
+ * This is the whole of cross-app identity in one event: no other app has
+ * Peek's `users` table, and a `kind:0` is the only thing that stops a Peek
+ * account from arriving in someone else's app as 64 hex characters.
+ *
+ * **`picture` is a Convex storage URL, and that is deliberately temporary.**
+ * It ties an ecosystem-wide avatar to this deployment's lifetime, which is the
+ * wrong owner for it — the destination is a content-addressed Blossom blob on
+ * the relay (`PUT /media/upload`, BUD-02), uploaded by the identity service
+ * that will take `kind:0` over from this function. Publishing the URL we
+ * already have costs one line now and buys avatars in every app today; the
+ * uploader is written once, there, rather than twice.
+ */
 export const publishProfile = internalAction({
   args: { userId: v.id('users') },
   handler: async (ctx, { userId }) => {
@@ -407,6 +421,7 @@ export const publishProfile = internalAction({
           buildProfile(identity.pubkey, Date.now(), {
             display_name: u.name,
             about: u.role || undefined,
+            picture: u.avatarUrl || undefined,
           }),
           identity.secretKeyHex,
         ),

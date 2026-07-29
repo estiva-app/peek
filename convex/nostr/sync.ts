@@ -72,18 +72,25 @@ function replyTargetOf(e: SignedEvent): string | null {
   return marked('reply') ?? marked('root') ?? eTags[0][1] ?? null
 }
 
-/** kind:0 content → display name, tolerating anything malformed. */
-function displayNameFrom(profile: SignedEvent | undefined): string | undefined {
-  if (!profile) return undefined
+/**
+ * kind:0 content → the fields Peek stores, tolerating anything malformed.
+ *
+ * Both name keys are read because both are written: Peek publishes
+ * `display_name`, Linear-lite publishes `name`, and a person who has used both
+ * apps should resolve either way rather than on a coin flip. Anything that
+ * will not parse costs a name, never a sync run.
+ */
+function profileFrom(profile: SignedEvent | undefined): {
+  displayName?: string
+  picture?: string
+} {
+  if (!profile) return {}
   try {
     const meta = JSON.parse(profile.content)
-    return typeof meta.display_name === 'string' && meta.display_name
-      ? meta.display_name
-      : typeof meta.name === 'string' && meta.name
-        ? meta.name
-        : undefined
+    const str = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+    return { displayName: str(meta.display_name) ?? str(meta.name), picture: str(meta.picture) }
   } catch {
-    return undefined
+    return {}
   }
 }
 
@@ -197,18 +204,20 @@ export const syncChannels = internalAction({
           // One profile lookup per run, not per message.
           const authors = [...new Set(foreign.map((e) => e.pubkey))]
           const profiles = await queryEvents([{ kinds: [0], authors, limit: authors.length }], reader)
-          const nameByPubkey = new Map<string, string | undefined>()
+          const profileByPubkey = new Map<string, { displayName?: string; picture?: string }>()
           for (const pk of authors) {
-            nameByPubkey.set(
-              pk,
-              displayNameFrom(profiles.events.find((p) => p.pubkey === pk)),
-            )
+            profileByPubkey.set(pk, profileFrom(profiles.events.find((p) => p.pubkey === pk)))
           }
 
           for (const e of foreign) {
+            const profile = profileByPubkey.get(e.pubkey) ?? {}
             const authorId: Id<'users'> = await ctx.runMutation(
               internal.nostr.data.resolveExternalUser,
-              { nostrPubkey: e.pubkey, displayName: nameByPubkey.get(e.pubkey) },
+              {
+                nostrPubkey: e.pubkey,
+                displayName: profile.displayName,
+                picture: profile.picture,
+              },
             )
 
             // A kind:9 carrying a NIP-10 `e` tag is a reply, not a top-level

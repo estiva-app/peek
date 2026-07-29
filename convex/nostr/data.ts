@@ -21,6 +21,12 @@ export const getUserKeys = internalQuery({
     return {
       name: u.name,
       role: u.role,
+      // Resolved here rather than in the action, because this is the file
+      // allowed to touch the database. A user with no uploaded avatar publishes
+      // no `picture` at all — different from publishing an empty one, which
+      // would have consumers render a broken image instead of their own
+      // placeholder.
+      avatarUrl: u.avatarStorageId ? ((await ctx.storage.getUrl(u.avatarStorageId)) ?? null) : null,
       nostrPubkey: u.nostrPubkey ?? null,
       nostrSecretKey: u.nostrSecretKey ?? null,
     }
@@ -175,26 +181,37 @@ export const listLocalPubkeys = internalQuery({
  *
  * `name` is required on `users`, so a display name is always written: the
  * kind:0 `display_name` when the relay has one, otherwise a truncated pubkey.
- * Never mints key material — Peek does not custody keys for people who are not
- * its users.
+ * `picture` is stored when published — it is the only face Peek will ever have
+ * for someone who does not have a Peek account. Never mints key material —
+ * Peek does not custody keys for people who are not its users.
  */
 export const resolveExternalUser = internalMutation({
-  args: { nostrPubkey: v.string(), displayName: v.optional(v.string()) },
-  handler: async (ctx, { nostrPubkey, displayName }) => {
+  args: {
+    nostrPubkey: v.string(),
+    displayName: v.optional(v.string()),
+    /** kind:0 `picture` — an avatar URL chosen by whichever app published it. */
+    picture: v.optional(v.string()),
+  },
+  handler: async (ctx, { nostrPubkey, displayName, picture }) => {
     const existing = await ctx.db
       .query('users')
       .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', nostrPubkey))
       .unique()
     if (existing) {
-      // Adopt a real name once the relay learns one, but never overwrite a
-      // Peek user's own name with relay metadata.
-      if (displayName && existing.isExternal && existing.name !== displayName) {
-        await ctx.db.patch(existing._id, { name: displayName })
+      // Adopt a real name and face once the relay learns them, but never
+      // overwrite a Peek user's own profile with relay metadata: for a Peek
+      // account this app is the source of truth and the relay is its output.
+      if (existing.isExternal) {
+        const patch: { name?: string; image?: string } = {}
+        if (displayName && existing.name !== displayName) patch.name = displayName
+        if (picture && existing.image !== picture) patch.image = picture
+        if (Object.keys(patch).length) await ctx.db.patch(existing._id, patch)
       }
       return existing._id
     }
     return ctx.db.insert('users', {
       name: displayName || `nostr:${nostrPubkey.slice(0, 8)}`,
+      image: picture,
       nostrPubkey,
       isExternal: true,
     })
