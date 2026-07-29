@@ -53,6 +53,24 @@ export function formatReplyTimestamp(createdAt: number, now: number = Date.now()
     : `${monthDay}, ${d.getFullYear()} at ${time}`
 }
 
+/** The reply pill's time on a conversation card. The card sits under ITS OWN
+ *  day's divider, so a bare time implies that day — when the last reply
+ *  happened on a DIFFERENT local day, the label carries its day explicitly,
+ *  including a literal `Today` (the one case formatReplyTimestamp leaves
+ *  bare, because inside a thread "today" needs no marker but under an old
+ *  divider it does). */
+export function formatLastReplyTimestamp(
+  lastReplyAt: number,
+  messageCreatedAt: number,
+  now: number = Date.now()
+): string {
+  const t = formatTimestamp(lastReplyAt, now)
+  if (dayKey(lastReplyAt) === dayKey(messageCreatedAt) || t === 'Just now') return t
+  return sameLocalDay(new Date(lastReplyAt), new Date(now))
+    ? `Today at ${t}`
+    : formatReplyTimestamp(lastReplyAt, now)
+}
+
 /** Local calendar-day key for grouping (stable across DST). */
 export function dayKey(createdAt: number): string {
   const d = new Date(createdAt)

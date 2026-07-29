@@ -16,7 +16,7 @@ import { REPLIES } from '@/data/replyData'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { useTopicStore } from '@/api/internal/topicStore'
 import { useTopicLookup } from './topics'
-import { formatDateLabel, formatTimestamp, dayKey } from './format'
+import { formatDateLabel, formatTimestamp, formatLastReplyTimestamp, dayKey } from './format'
 import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
 import { hasConvex, useDmRuntime } from './store'
 import { useHuddleLookup } from './huddles'
@@ -123,7 +123,7 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
       name: a.id === meId ? CURRENT_USER_NAME : a.name,
       avatarSrc: a.avatarUrl,
     })),
-    lastReplyTime: r.lastReplyAt !== undefined ? formatTimestamp(r.lastReplyAt) : undefined,
+    lastReplyTime: r.lastReplyAt !== undefined ? formatLastReplyTimestamp(r.lastReplyAt, r.createdAt) : undefined,
     createdAtMs: r.createdAt,
     nostrReferences: r.nostrReferences,
   }
@@ -250,9 +250,15 @@ function mergeConv(c: ConversationData, o: Overrides, recountReplies = true): Co
       : (() => {
           const rs = [...(REPLIES[c.id] ?? []), ...(o.sentReplies[c.id] ?? [])]
           if (rs.length === 0) return {}
+          const last = rs[rs.length - 1]
           return {
             replyAuthors: [...new Set(rs.map((r) => r.authorName))].map((name) => ({ name })),
-            lastReplyTime: rs[rs.length - 1].timestamp,
+            // Day-qualify when both sides carry real times (runtime-sent reply
+            // on an older card); static mock strings pass through untouched.
+            lastReplyTime:
+              last.createdAtMs !== undefined && c.createdAtMs !== undefined
+                ? formatLastReplyTimestamp(last.createdAtMs, c.createdAtMs)
+                : last.timestamp,
           }
         })()),
   }
