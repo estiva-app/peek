@@ -16,6 +16,7 @@ import type * as dev_seedDates from "../dev/seedDates.js";
 import type * as dev_seedDemo from "../dev/seedDemo.js";
 import type * as http from "../http.js";
 import type * as huddles from "../huddles.js";
+import type * as identityProbe from "../identityProbe.js";
 import type * as messages from "../messages.js";
 import type * as nostr_act from "../nostr/act.js";
 import type * as nostr_bridge from "../nostr/bridge.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   "dev/seedDemo": typeof dev_seedDemo;
   http: typeof http;
   huddles: typeof huddles;
+  identityProbe: typeof identityProbe;
   messages: typeof messages;
   "nostr/act": typeof nostr_act;
   "nostr/bridge": typeof nostr_bridge;
