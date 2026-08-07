@@ -22,7 +22,6 @@ import {
   buildCreateChannel,
   buildDeletion,
   buildMessage,
-  buildProfile,
   buildReaction,
 } from './events'
 import { signEvent } from './sign'
@@ -394,42 +393,26 @@ export const publishReactionRemoval = internalAction({
 })
 
 /**
- * Publish a user's profile as kind:0 so other clients render a person.
+ * **Peek does not publish kind:0. Estiva ID does, and it is the only writer.**
  *
- * This is the whole of cross-app identity in one event: no other app has
- * Peek's `users` table, and a `kind:0` is the only thing that stops a Peek
- * account from arriving in someone else's app as 64 hex characters.
+ * There was a `publishProfile` here. It built a profile from Peek's own `users`
+ * table and published it — and Ship did the same from its own table, which is
+ * exactly why one human could arrive in the two apps as two different people.
+ * Two writers and no agreement is not a bug in either publisher; it is the
+ * shape. One writer is the fix (PEEK-31).
  *
- * **`picture` is a Convex storage URL, and that is deliberately temporary.**
- * It ties an ecosystem-wide avatar to this deployment's lifetime, which is the
- * wrong owner for it — the destination is a content-addressed Blossom blob on
- * the relay (`PUT /media/upload`, BUD-02), uploaded by the identity service
- * that will take `kind:0` over from this function. Publishing the URL we
- * already have costs one line now and buys avatars in every app today; the
- * uploader is written once, there, rather than twice.
+ * The identity service owns this now: `PUT /me/profile` on Estiva ID writes the
+ * profile and publishes the `kind:0`, signing with the custodied key. Its
+ * `/sign` endpoint refuses `kind:0` for every app, always — so this is not a
+ * convention that a later change could quietly undo. An app *cannot* get a
+ * profile signed even if it asks.
+ *
+ * `buildProfile` stays in `events.ts`: the compat harness still uses it to
+ * check our NIP-01 serialization against Buzz's Rust, and that check is the
+ * reason this app's events are byte-compatible at all.
+ *
+ * Still open, and deliberately not solved here: Peek's own profile dialog keeps
+ * writing `name`, `role` and the avatar to the local `users` table, which now
+ * goes no further than Peek. Those fields are read from Estiva ID once PEEK-72
+ * lands; until then, treat Peek's copy as a cache that nothing refreshes.
  */
-export const publishProfile = internalAction({
-  args: { userId: v.id('users') },
-  handler: async (ctx, { userId }) => {
-    if (!relayUrl()) return
-    try {
-      const u = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
-      if (!u) return
-      const identity = await identityFor(ctx, userId)
-      const res = await publishEvent(
-        signEvent(
-          buildProfile(identity.pubkey, Date.now(), {
-            display_name: u.name,
-            about: u.role || undefined,
-            picture: u.avatarUrl || undefined,
-          }),
-          identity.secretKeyHex,
-        ),
-        identity,
-      )
-      if (!res.ok) console.warn(`[nostr] profile ${userId} rejected: ${res.reason}`)
-    } catch (e) {
-      console.warn(`[nostr] publishProfile(${userId}) failed:`, e)
-    }
-  },
-})

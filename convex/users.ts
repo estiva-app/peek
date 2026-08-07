@@ -13,7 +13,6 @@
 import { v } from 'convex/values'
 import { getAuthUserId } from '@convex-dev/auth/server'
 import { mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
-import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 
 /** The authenticated user's id, or null when unauthenticated. */
@@ -76,9 +75,8 @@ export const updateProfile = mutation({
       name: trimmed,
       role: role?.trim() ? role.trim() : undefined,
     })
-    // Republish kind:0 so other clients show the new name/role. kind:0 is
-    // replaceable, so this overwrites rather than accumulating.
-    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishProfile, { userId: you._id })
+    // No kind:0 publish. Estiva ID is the sole publisher (PEEK-31), so this
+    // name is local to Peek until PEEK-72 reads it from there instead.
   },
 })
 
@@ -98,9 +96,9 @@ export const setAvatar = mutation({
     const you = await viewerOrThrow(ctx)
     if (you.avatarStorageId) await ctx.storage.delete(you.avatarStorageId)
     await ctx.db.patch(you._id, { avatarStorageId: storageId })
-    // Same reason as updateProfile: an avatar nobody republishes is an avatar
-    // only Peek can see, and the old `picture` URL now points at a deleted file.
-    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishProfile, { userId: you._id })
+    // Same as updateProfile: this avatar is Peek-local now. The published one
+    // is whatever Estiva ID holds, and moving it off Convex storage onto a
+    // content-addressed Blossom blob is PEEK-42.
   },
 })
 
@@ -111,6 +109,5 @@ export const removeAvatar = mutation({
     const you = await viewerOrThrow(ctx)
     if (you.avatarStorageId) await ctx.storage.delete(you.avatarStorageId)
     await ctx.db.patch(you._id, { avatarStorageId: undefined })
-    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishProfile, { userId: you._id })
   },
 })
