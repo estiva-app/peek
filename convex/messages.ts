@@ -9,6 +9,7 @@
  */
 import { v } from 'convex/values'
 import { mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
+import { internal } from './_generated/api'
 import { highlightType, fileAttachment } from './schema'
 import { viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
@@ -277,14 +278,24 @@ export const toggleReaction = mutation({
       .collect()
     const existing = mine.find((r) => r.emoji === emoji)
     if (existing) {
+      // Capture the event id BEFORE deleting: the retraction needs something to
+      // point a kind:5 at, and the row is about to be gone.
+      const publishedAs = existing.nostrEventId
       await ctx.db.delete(existing._id)
+      if (publishedAs) {
+        await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReactionRemoval, {
+          userId: you._id,
+          nostrEventId: publishedAs,
+        })
+      }
     } else {
-      await ctx.db.insert('reactions', {
+      const reactionId = await ctx.db.insert('reactions', {
         messageId: m._id,
         userId: you._id,
         emoji,
         createdAt: Date.now(),
       })
+      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReaction, { reactionId })
     }
   },
 })
@@ -345,6 +356,11 @@ export const send = mutation({
     }
     const inserted = await ctx.db.get(id)
     if (inserted) await screenMessage(ctx, inserted)
+    // Mirror the message onto the Nostr relay (docs/buzz-compat/). Scheduled
+    // rather than inline: signing and HTTP are action-only in Convex, and the
+    // publish must never be able to fail this mutation. No-op unless
+    // NOSTR_RELAY_URL is set.
+    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishMessage, { messageId: id })
     return id
   },
 })

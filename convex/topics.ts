@@ -8,6 +8,7 @@
  */
 import { v } from 'convex/values'
 import { mutation, query, type MutationCtx } from './_generated/server'
+import { internal } from './_generated/api'
 import { viewerOrThrow } from './users'
 import { deleteAttachmentBlobs } from './messages'
 import type { Doc, Id } from './_generated/dataModel'
@@ -25,6 +26,9 @@ export async function ensureTopicMember(
     .collect()
   if (!rows.some((r) => r.userId === userId)) {
     await ctx.db.insert('topicMembers', { topicId, userId, addedAt: Date.now() })
+    // Only on an actual insert — this helper runs on every post, so scheduling
+    // unconditionally would publish a redundant kind:9000 per message.
+    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishMembership, { topicId, userId })
   }
 }
 
@@ -103,6 +107,10 @@ export const create = mutation({
         await ctx.db.insert('topicMembers', { topicId, userId: user._id, addedAt: now })
       }
     }
+    // Publish as a NIP-29 channel + membership (docs/buzz-compat/). Scheduled
+    // after the member rows above so the action sees the full membership in one
+    // pass. No-op unless NOSTR_RELAY_URL is set.
+    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishTopic, { topicId })
     return topicId
   },
 })

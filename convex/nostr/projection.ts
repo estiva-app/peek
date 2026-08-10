@@ -1,0 +1,1024 @@
+/**
+ * Rendering another app's objects from its published manifest — the pure part.
+ *
+ * Split from `foreign.ts` so it can be exercised against a live relay without a
+ * Convex deployment: everything here takes a `query` function rather than
+ * reaching for one. `foreign.ts` supplies the authenticated bridge; a test
+ * supplies its own.
+ *
+ * **Nothing in this file knows what Linear-lite is.** No kind number, no field
+ * name, no status vocabulary is hardcoded — every one comes off the NIP-89
+ * manifest at runtime. If that stops being true the demo stops proving
+ * anything: it becomes an integration written against one app, which is the
+ * thing the whole exercise argues against.
+ */
+import { decodeNaddr, encodeNaddr, pointerToAddress, type AddressPointer } from './nip19'
+import type { SignedEvent } from './events'
+
+/** Query the relay. Returns matching events; shape mirrors the HTTP bridge. */
+export type QueryFn = (filters: Record<string, unknown>[]) => Promise<SignedEvent[]>
+
+/** An unsigned Nostr event, ready for `sign.ts`. */
+export interface UnsignedActionEvent {
+  pubkey: string
+  created_at: number
+  kind: number
+  tags: string[][]
+  content: string
+}
+
+/** NIP-89 kinds. These two are protocol, not app-specific. */
+const KIND_HANDLER_RECOMMENDATION = 31989
+const KIND_HANDLER_INFORMATION = 31990
+/**
+ * Default kind for comments on a foreign object.
+ *
+ * NIP-22, and no app owns it — but the owning app gets to say otherwise. An app
+ * whose objects live in a Folder may well treat a comment as a message in that
+ * container instead, which is a better answer when the container is also a Peek
+ * topic: the comment and the topic conversation become the same event rather
+ * than two records nobody reconciles.
+ *
+ * So this is the fallback, and `commentKindOf` reads the real one off the
+ * manifest's own `comment` action. Hardcoding it here would quietly stop
+ * finding comments the moment an app said something different.
+ */
+const KIND_COMMENT = 1111
+
+/** The kind an app says its comments are published as. */
+function commentKindOf(manifest: Manifest): number {
+  const declared = manifest.actions?.find((action) => action.id === 'comment')
+  return declared?.emits?.kind ?? KIND_COMMENT
+}
+
+/** How the owning app says its records should be read. */
+interface RecordsRule {
+  changeKind: number
+  targetTag: string
+  fieldTag: string
+  valueTag: string
+  order: string[]
+  rule: string
+  /**
+   * A folded field whose value means "do not show this object".
+   *
+   * Archiving is a field, not a deletion, so an archived record still comes
+   * back from every query and renders perfectly well. Without this a consumer
+   * cannot tell it apart from live work — which is how a topic whose Folder
+   * held three archived projects ended up showing one of them.
+   *
+   * Peek honours the rule without knowing what the word means: the owner says
+   * which field and which value, and this stays out of it.
+   */
+  hiddenWhen?: { field: string; equals: string }
+}
+
+interface SlotSpec {
+  tag?: string
+  field?: string
+  fold?: string
+  map?: string
+  as?: string
+  label?: string
+  truncate?: number
+  default?: string
+}
+
+/** An action the owning app says other apps may perform. */
+export interface ManifestAction {
+  id: string
+  label: string
+  /** Kind(s) this applies to, as strings. */
+  appliesTo: string | string[]
+  emits: {
+    kind: number
+    field?: string
+    scope?: string
+    /**
+     * Set by an action that creates a whole new object under this one: the tag
+     * the child carries, and what it points at. `toAddressOf: "self"` means the
+     * child names the object the action was invoked on.
+     *
+     * Peek reads these two to learn a **containment relation** — "kind X holds
+     * kind Y" — without being told which app or which kinds are involved. It is
+     * the only thing in the manifest that says so, which is what lets the
+     * sidebar start from a Folder and find a project with issues in it.
+     */
+    setTag?: string
+    toAddressOf?: string
+  }
+  input?: { type: string; enum?: string }
+}
+
+/**
+ * An action resolved into something a renderer can draw without re-reading the
+ * manifest.
+ *
+ * The interpretation happens here rather than in the component on purpose: the
+ * widget should not have to know that `input.enum` names a vocabulary, or that
+ * `as: "pubkey"` means "a person". Those are manifest semantics, and keeping
+ * them on this side is what lets the React component stay a dumb renderer that
+ * would work for any app.
+ */
+export interface ResolvedAction {
+  id: string
+  label: string
+  control: 'select' | 'pubkey' | 'text'
+  /** For `select`: the declared vocabulary, already looked up. */
+  options?: { value: string; label: string; colour?: string }[]
+  /** The value this field holds right now, so a control can show it. */
+  current?: string
+  field?: string
+}
+
+interface Manifest {
+  name?: string
+  about?: string
+  actions?: ManifestAction[]
+  records?: RecordsRule
+  projections?: Record<string, { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }>
+  vocabularies?: Record<string, { value: string; label: string; colour: string }[]>
+}
+
+/** Actions declared for this kind, resolved against the vocabularies. */
+function resolveActions(
+  manifest: Manifest,
+  kind: number,
+  folded: Record<string, { value: string }>,
+): ResolvedAction[] {
+  const applies = (action: ManifestAction) =>
+    (Array.isArray(action.appliesTo) ? action.appliesTo : [action.appliesTo]).includes(String(kind))
+
+  const out: ResolvedAction[] = []
+  for (const action of manifest.actions ?? []) {
+    if (!applies(action)) continue
+    // Only field-setting changes and comments are renderable today. An action
+    // that creates a whole new object (`add-issue`) needs a form and a parent,
+    // so it is skipped rather than drawn as a control that cannot work.
+    const isChange = !!action.emits.field
+    const isComment = action.emits.scope === 'address'
+    if (!isChange && !isComment) continue
+
+    const vocab = action.input?.enum ? manifest.vocabularies?.[action.input.enum] : undefined
+    out.push({
+      id: action.id,
+      label: action.label,
+      control: vocab ? 'select' : action.input?.type === 'pubkey' ? 'pubkey' : 'text',
+      options: vocab?.map((v) => ({ value: v.value, label: v.label, colour: v.colour })),
+      current: action.emits.field ? folded[action.emits.field]?.value : undefined,
+      field: action.emits.field,
+    })
+  }
+  return out
+}
+
+const tagValue = (e: SignedEvent, name: string) => e.tags.find((t) => t[0] === name)?.[1]
+
+/** A manifest event's `content`, or null when it is not parseable JSON. */
+function parseManifest(event: SignedEvent): Manifest | null {
+  try {
+    return JSON.parse(event.content) as Manifest
+  } catch {
+    return null
+  }
+}
+
+const asArray = (value: string | string[]) => (Array.isArray(value) ? value : [value])
+
+/**
+ * Which manifest wins when several claim the same kind.
+ *
+ * A `#k` query is NIP-89's discovery mechanism and it returns every handler for
+ * a kind, ranked by nothing. So the object's **author's** kind:31989
+ * recommendation is consulted first: the person who created the object is the
+ * one entitled to say which app renders it, and that is a trust anchor Peek
+ * already has rather than a value someone has to paste into a config file.
+ *
+ * The `#k` fallback exists so an object whose author never published a
+ * recommendation still renders, rather than failing closed on a missing
+ * preference. When it fires, `viaRecommendation` is false and the caller can
+ * say so in the UI — "we guessed" and "we were told" should not look identical.
+ */
+/**
+ * NIP-89's `web` tag: how to open one of these objects in the app that owns it.
+ *
+ * `["web", "https://host/#/o/<bech32>", "naddr"]` — the consumer substitutes the
+ * entity it is holding. Read off the *event* rather than the manifest content,
+ * because that is where NIP-89 puts it.
+ *
+ * Returns undefined when no usable template was published, which is an ordinary
+ * state rather than an error: an app may render objects it has nowhere to open.
+ */
+function webTemplate(event: SignedEvent, entity: string): string | undefined {
+  for (const tag of event.tags) {
+    if (tag[0] !== 'web' || !tag[1]) continue
+    // The third element names the entity type; NIP-89 permits omitting it, in
+    // which case the template applies to whatever we are holding.
+    if (tag[2] && tag[2] !== entity) continue
+    if (!tag[1].includes('<bech32>')) continue
+    return tag[1]
+  }
+  return undefined
+}
+
+export async function resolveManifest(
+  pointer: AddressPointer,
+  query: QueryFn,
+): Promise<{
+  manifest: Manifest
+  address: string
+  viaRecommendation: boolean
+  /** NIP-89 `web` template, `<bech32>` not yet substituted. */
+  webTemplate?: string
+} | null> {
+  const parse = parseManifest
+  const addressOf = (event: SignedEvent) =>
+    `${event.kind}:${event.pubkey}:${tagValue(event, 'd') ?? ''}`
+
+  const recommended = await query(
+    [
+      {
+        kinds: [KIND_HANDLER_RECOMMENDATION],
+        authors: [pointer.pubkey],
+        '#d': [String(pointer.kind)],
+        limit: 1,
+      },
+    ],
+  )
+  const manifestAddr = recommended[0]?.tags.find((t) => t[0] === 'a')?.[1]
+  if (manifestAddr) {
+    const [kind, pubkey, ...rest] = manifestAddr.split(':')
+    const found = await query([
+      { kinds: [Number(kind)], authors: [pubkey], '#d': [rest.join(':')], limit: 1 },
+    ])
+    const manifest = found[0] ? parse(found[0]) : null
+    if (manifest) {
+      return {
+        manifest,
+        address: manifestAddr,
+        viaRecommendation: true,
+        webTemplate: webTemplate(found[0], 'naddr'),
+      }
+    }
+  }
+
+  const claimed = await query([
+    { kinds: [KIND_HANDLER_INFORMATION], '#k': [String(pointer.kind)], limit: 20 },
+  ])
+  // Newest wins among unrecommended candidates. Arbitrary, and honest about it:
+  // there is no principled ranking without a recommendation, which is exactly
+  // why the recommendation exists.
+  const newest = [...claimed].sort((a, b) => b.created_at - a.created_at)
+  for (const candidate of newest) {
+    const manifest = parse(candidate)
+    if (manifest?.projections?.[String(pointer.kind)]) {
+      return {
+        manifest,
+        address: addressOf(candidate),
+        viaRecommendation: false,
+        webTemplate: webTemplate(candidate, 'naddr'),
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Ordering key for an append-only event, per the manifest's `records.order`.
+ *
+ * The manifest declares `["ts", "created_at", "id"]` and, crucially, the
+ * condition under which `ts` may be believed: only when it agrees with
+ * `created_at` to the second. `created_at` has one-second resolution and the
+ * relay validates it, so a `ts` pinned inside that second inherits that
+ * validation and can only refine ordering *within* it.
+ *
+ * Peek enforces that bound itself rather than trusting the writer. Under the
+ * honour-system model nothing validates these events (RFC_UPDATES.md §3), so a
+ * buggy or pushy client claiming a far-future `ts` would otherwise win every
+ * fold forever — in Peek's rendering as much as in the owning app's.
+ */
+function orderingMs(event: SignedEvent): number {
+  const raw = Number.parseInt(tagValue(event, 'ts') ?? '', 10)
+  if (Number.isFinite(raw) && Math.abs(Math.floor(raw / 1000) - event.created_at) <= 1) return raw
+  return event.created_at * 1000
+}
+
+/** Total order, oldest first. Ties break on the lower event id (NIP-01's rule). */
+function byOrder(a: SignedEvent, b: SignedEvent): number {
+  const [at, bt] = [orderingMs(a), orderingMs(b)]
+  if (at !== bt) return at - bt
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}
+
+/** Replay change events into current field values. Last write wins per field. */
+function foldChanges(changes: SignedEvent[], rule: RecordsRule) {
+  const fields: Record<string, { value: string; by: string; at: number }> = {}
+  for (const change of [...changes].sort(byOrder)) {
+    const field = tagValue(change, rule.fieldTag)
+    const value = tagValue(change, rule.valueTag)
+    if (!field || value === undefined) continue // a partial change sets nothing
+    fields[field] = { value, by: change.pubkey, at: change.created_at }
+  }
+  return fields
+}
+
+function truncate(text: string, limit?: number) {
+  if (!limit || text.length <= limit) return text
+  return `${text.slice(0, limit).trimEnd()}…`
+}
+
+/** A slot, resolved to something a renderer can put on screen. */
+export interface ResolvedSlot {
+  label?: string
+  value: string
+  /** Set when the value came from a vocabulary — the consumer picks the colour. */
+  colour?: string
+  /** True when the value is a pubkey and should be shown as a person. */
+  isPubkey?: boolean
+  /**
+   * The underlying field this slot reads, when it has a name.
+   *
+   * Carried so a renderer can tell that a slot and an action are two views of
+   * *one* value — a status label beside a status picker is the same fact twice
+   * (PEEK-18). Matching on the field is what makes that check work for any app:
+   * the slot key (`status`) and the action's label ("Change status") are both
+   * free-form, but a `ResolvedAction.field` and this always name the same thing
+   * because the manifest wrote them both.
+   *
+   * Undefined for a slot with no named source — `{field: "content"}` reads the
+   * event body, which no action can set.
+   */
+  field?: string
+}
+
+/**
+ * A slot's value before any vocabulary mapping or truncation.
+ *
+ * Split out because "what does this object's status *say*" and "what should a
+ * reader see" are different questions: the display value is a vocabulary label
+ * ("In Progress"), and anything deciding on the value — the active-issue filter
+ * below — has to compare the underlying one (`in_progress`).
+ */
+function rawSlotValue(
+  spec: SlotSpec,
+  root: SignedEvent,
+  folded: Record<string, { value: string }>,
+): string | undefined {
+  // `fold` first, and a spec may carry both: a field that starts as a tag on
+  // the root event and is then overridden by changes (a project's lead is the
+  // case in hand). Reading the tag first would render the value the object was
+  // created with forever — which is exactly what someone sees right after
+  // reassigning it from here.
+  if (spec.fold) {
+    return folded[spec.fold]?.value ?? (spec.tag ? tagValue(root, spec.tag) : undefined) ?? spec.default
+  }
+  if (spec.tag) return tagValue(root, spec.tag)
+  if (spec.field === 'content') return root.content
+  return undefined
+}
+
+function resolveSlot(
+  spec: SlotSpec,
+  root: SignedEvent,
+  folded: Record<string, { value: string }>,
+  manifest: Manifest,
+): ResolvedSlot | null {
+  const raw = rawSlotValue(spec, root, folded)
+
+  if (raw === undefined || raw === '') return null
+
+  let value = truncate(raw, spec.truncate)
+  let colour: string | undefined
+  if (spec.map) {
+    const entry = manifest.vocabularies?.[spec.map]?.find((v) => v.value === raw)
+    // A value outside the declared vocabulary is shown as-is rather than
+    // dropped. Another app may have written it, and silently rendering nothing
+    // would hide exactly the corruption the honour system permits.
+    value = entry?.label ?? raw
+    colour = entry?.colour ?? 'muted'
+  }
+  return {
+    label: spec.label,
+    value,
+    colour,
+    isPubkey: spec.as === 'pubkey',
+    field: spec.fold ?? spec.tag,
+  }
+}
+
+/**
+ * Every slot a projection declares, resolved.
+ *
+ * Single slots are named (`title`, `subtitle`, `status`); array specs collect
+ * into `meta`. Shared so the sidebar and the inline widget resolve a projection
+ * identically — two loops would drift the first time a slot type is added.
+ */
+function resolveSlots(
+  projection: { slots: Record<string, SlotSpec | SlotSpec[]> },
+  root: SignedEvent,
+  folded: Record<string, { value: string }>,
+  manifest: Manifest,
+): { slots: Record<string, ResolvedSlot>; meta: ResolvedSlot[] } {
+  const slots: Record<string, ResolvedSlot> = {}
+  const meta: ResolvedSlot[] = []
+  for (const [name, spec] of Object.entries(projection.slots)) {
+    if (Array.isArray(spec)) {
+      for (const one of spec) {
+        const value = resolveSlot(one, root, folded, manifest)
+        if (value) meta.push(value)
+      }
+    } else {
+      const value = resolveSlot(spec, root, folded, manifest)
+      if (value) slots[name] = value
+    }
+  }
+  return { slots, meta }
+}
+
+/** Everything the frontend needs to draw the widget. */
+export interface ForeignObject {
+  address: string
+  /**
+   * The address as `naddr1…`.
+   *
+   * Carried alongside `address` because acting on an object is addressed by
+   * naddr (`act.ts`), and the sidebar builds its objects rather than being
+   * handed a reference somebody pasted. Without it every control in a
+   * sidebar card would have to re-encode what the server already knows.
+   */
+  naddr: string
+  kind: number
+  widget: string
+  appName?: string
+  /** Named single slots: title, subtitle, status. */
+  slots: Record<string, ResolvedSlot>
+  /** Repeating slots, e.g. `meta`. */
+  meta: ResolvedSlot[]
+  comments: { id: string; author: string; body: string; createdAt: number }[]
+  /**
+   * The Folder this object lives in, from the root event's `h` tag.
+   *
+   * Needed to *write*: a change event carries the same `h`, and without it the
+   * relay rejects the write outright. Reading it off the object rather than
+   * asking the user is the difference between an action that works and a form
+   * with a "Folder id" box in it.
+   */
+  folder?: string
+  /**
+   * Where to open this object in the app that owns it, from NIP-89's `web` tag.
+   *
+   * The return leg of the roundtrip. Without it a reference is a read-only
+   * snapshot: Peek can render a Linear-lite issue and change its status, and
+   * getting back to the issue itself means alt-tabbing and hunting for a row.
+   *
+   * Absent when the owning app published no template — the widget simply does
+   * not offer the link, rather than guessing a URL.
+   */
+  openUrl?: string
+  /** What the owning app says we may do to this object. */
+  actions: ResolvedAction[]
+  /** False when no author recommendation existed and a handler was guessed. */
+  viaRecommendation: boolean
+  /**
+   * Set when the manifest resolved but the object itself did not.
+   *
+   * Almost always a permission problem rather than a missing object, and worth
+   * distinguishing because the relay makes them look identical. Objects and
+   * change events are channel-scoped, so a reader who is not a member of the
+   * Folder gets zero rows — no error, just silence. The manifest and the
+   * recommendation are global kinds and resolve fine without membership, so the
+   * failure lands late and presents as a broken reference. Telling the user
+   * "you may not have access to this Folder" is a far better guess than
+   * rendering nothing.
+   */
+  unreachable?: boolean
+}
+
+
+/**
+ * One resolved object, from its root event and the changes that have landed on
+ * it. Shared by the inline widget and the sidebar so both draw the same shape
+ * from the same rules — the difference between them is what they *fetch*, not
+ * how they render.
+ */
+function buildObject(args: {
+  root: SignedEvent
+  pointer: AddressPointer
+  manifest: Manifest
+  projection: { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }
+  folded: Record<string, { value: string }>
+  viaRecommendation: boolean
+  webTemplate?: string
+  comments?: ForeignObject['comments']
+}): ForeignObject {
+  const { root, pointer, manifest, projection, folded } = args
+  const naddr = encodeNaddr(pointer)
+  const { slots, meta } = resolveSlots(projection, root, folded, manifest)
+
+  /**
+   * What each field holds now, however it got there.
+   *
+   * `resolveActions` reads the fold alone, which is right for a field that only
+   * ever exists as a change — but a project's lead is seeded by a tag on the
+   * root event. Without this, the assign control on a project nobody has
+   * reassigned reads "Assign to me" while a lead is plainly set, and the one
+   * control that is supposed to both report and set the field (PEEK-18) reports
+   * nothing.
+   */
+  const held: Record<string, string> = {}
+  for (const spec of Object.values(projection.slots).flat()) {
+    const field = spec.fold ?? spec.tag
+    const raw = field && rawSlotValue(spec, root, folded)
+    if (field && raw !== undefined) held[field] = raw
+  }
+  return {
+    address: pointerToAddress(pointer),
+    naddr,
+    kind: pointer.kind,
+    widget: projection.widget,
+    appName: manifest.name,
+    slots,
+    meta,
+    comments: args.comments ?? [],
+    folder: tagValue(root, 'h'),
+    // Substituted here rather than in the component: `<bech32>` is a NIP-89
+    // detail, and the widget's job is to draw a link, not to know the spec.
+    openUrl: args.webTemplate?.replace('<bech32>', naddr),
+    actions: resolveActions(manifest, pointer.kind, folded).map((action) =>
+      action.current === undefined && action.field
+        ? { ...action, current: held[action.field] }
+        : action,
+    ),
+    viaRecommendation: args.viaRecommendation,
+  }
+}
+
+/**
+ * Resolve a `nostr:naddr…` into a renderable widget.
+ *
+ * Returns `null` rather than throwing when the object cannot be rendered — an
+ * unresolvable reference in a chat message should degrade to plain text, not
+ * break the message around it.
+ */
+export async function resolveForeignObject(
+  naddr: string,
+  query: QueryFn,
+): Promise<ForeignObject | null> {
+  let pointer: AddressPointer
+  try {
+    pointer = decodeNaddr(naddr)
+  } catch {
+    return null
+  }
+  const address = pointerToAddress(pointer)
+
+  const resolved = await resolveManifest(pointer, query)
+  if (!resolved) return null
+  const { manifest, viaRecommendation } = resolved
+  // Substituted here rather than in the component: `<bech32>` is a NIP-89
+  // detail, and the widget's job is to draw a link, not to know the spec.
+  const openUrl = resolved.webTemplate?.replace('<bech32>', naddr.replace(/^nostr:/, ''))
+  const commentKind = commentKindOf(manifest)
+
+  const projection = manifest.projections?.[String(pointer.kind)]
+  const records = manifest.records
+  if (!projection || !records) return null
+
+  // One round trip for the root, its changes and its comments. `#a` on both the
+  // change and the comment kind, because both point at the object by *address*
+  // rather than by event id — which is what makes them survive the author
+  // replacing the root event.
+  const events = await query([
+    { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
+    { kinds: [records.changeKind], '#a': [address], limit: 500 },
+    { kinds: [commentKind], '#a': [address], limit: 200 },
+  ])
+
+  const root = events.find(
+    (e) => e.kind === pointer.kind && tagValue(e, 'd') === pointer.identifier,
+  )
+  if (!root) {
+    // We know which app owns this and how it would be drawn; we just cannot see
+    // the object. Say so rather than returning null and looking like a typo.
+    return {
+      address,
+      naddr: naddr.replace(/^nostr:/, ''),
+      kind: pointer.kind,
+      widget: projection.widget,
+      appName: manifest.name,
+      slots: {},
+      meta: [],
+      comments: [],
+      actions: [],
+      viaRecommendation,
+      // Offered even here. "You cannot see this object" is exactly when
+      // somebody wants to open it in the app that can.
+      openUrl,
+      unreachable: true,
+    }
+  }
+
+  const folded = foldChanges(
+    events.filter(
+      (e) => e.kind === records.changeKind && tagValue(e, records.targetTag) === address,
+    ),
+    records,
+  )
+
+  const comments = events
+    .filter((e) => e.kind === commentKind)
+    .sort(byOrder)
+    .map((e) => ({ id: e.id, author: e.pubkey, body: e.content, createdAt: e.created_at }))
+
+  return buildObject({
+    root,
+    pointer,
+    manifest,
+    projection,
+    folded,
+    viaRecommendation,
+    webTemplate: resolved.webTemplate,
+    comments,
+  })
+}
+
+// ── A Folder's project, for the topic sidebar (PEEK-24) ─────────────────────
+
+/**
+ * A Folder's project and the tickets in motion in it.
+ *
+ * Both are ordinary `ForeignObject`s — the same shape an `naddr` in a message
+ * resolves to, carrying the same slots, the same declared actions and the same
+ * link back into the owning app. The sidebar therefore renders the owning app's
+ * objects with the owning app's affordances rather than a reduced copy of them,
+ * and a ticket is as actionable there as it is inline in a conversation.
+ */
+export interface FolderProject {
+  project: ForeignObject
+  /**
+   * Every ticket in the project, finished or not: started work first, then the
+   * queue, then what is done. Archived ones are left out — an app hiding a
+   * record from its own lists is saying it is no longer part of the project.
+   */
+  tickets: ForeignObject[]
+  /** Tickets still to do — the left half of "Tickets (3/8)". */
+  openCount: number
+  /** Finished tickets, as the context that makes the open count mean something. */
+  doneCount: number
+}
+
+/**
+ * What a status *means*. **Peek's editorial rule, not the owning app's.**
+ *
+ * A manifest vocabulary entry is `{value, label, colour}` — it says how to
+ * render a status and nothing about whether the work is open, finished, or
+ * parked. So the consumer has to decide.
+ *
+ * Two named sets rather than one allowlist and an "everything else": the panel
+ * counts open *against* done, and a status that is neither should land in
+ * neither. A parked "Backlog" or "Triage" is real work nobody is doing and it
+ * would inflate the open count into meaninglessness; an unrecognised status
+ * some other app invented is not evidence of anything. Both are simply left out
+ * of both counts, which keeps "3/8" a claim the panel can stand behind.
+ *
+ * The cost is honest: an app whose statuses are spelled differently shows an
+ * empty section until its values are added here. That is the failure worth
+ * having — the alternative is a count that quietly includes work nobody is on.
+ */
+const OPEN_STATUSES = new Set([
+  'todo',
+  'to do',
+  'in progress',
+  'started',
+  'doing',
+  'in review',
+  'review',
+])
+const DONE_STATUSES = new Set([
+  'done',
+  'completed',
+  'complete',
+  'closed',
+  'cancelled',
+  'canceled',
+  'duplicate',
+])
+
+/** `in_progress`, `In-Progress` and `In Progress` are the same status. */
+const normalizeStatus = (value: string) => value.trim().toLowerCase().replace(/[-_\s]+/g, ' ')
+
+/**
+ * Match on either what the object *says* or what a reader *sees* — the raw
+ * value (`in_progress`) or the vocabulary label ("In Progress"). Apps disagree
+ * about which of the two is the human-readable one, and checking both costs
+ * nothing.
+ */
+const inSet = (set: Set<string>) => (raw: string | undefined, label: string | undefined) =>
+  [raw, label].some((v) => v !== undefined && set.has(normalizeStatus(v)))
+
+const isOpenStatus = inSet(OPEN_STATUSES)
+const isDoneStatus = inSet(DONE_STATUSES)
+
+/**
+ * Started work sits above the queue.
+ *
+ * Both halves are open, but "in progress" is what somebody opened the panel to
+ * find; ordering by activity alone would bury it under whatever was filed most
+ * recently.
+ */
+const STARTED = new Set(['in progress', 'started', 'doing', 'in review', 'review'])
+const isStarted = inSet(STARTED)
+
+/**
+ * The containment relation a manifest declares: "this kind holds that kind".
+ *
+ * Read off an action that creates a child pointing back at its parent
+ * (`toAddressOf: "self"`), because that is the only place a NIP-89 manifest
+ * says one object contains another. Returns null when the app declares no such
+ * action — in which case Peek does not guess, and the sidebar shows nothing.
+ */
+function containmentFor(
+  manifest: Manifest,
+  containerKind: number,
+): { childKind: number; linkTag: string } | null {
+  for (const action of manifest.actions ?? []) {
+    if (action.emits.toAddressOf !== 'self') continue
+    if (!asArray(action.appliesTo).includes(String(containerKind))) continue
+    return { childKind: action.emits.kind, linkTag: action.emits.setTag ?? 'a' }
+  }
+  return null
+}
+
+/**
+ * The project living in a Folder, plus the work currently in motion in it.
+ *
+ * Starts from a **Folder** rather than an naddr, which is the difference
+ * between this and `resolveForeignObject`: a Peek topic and a Linear-lite
+ * project are one container (RFC_UPDATES.md §1.1), so a topic already knows
+ * enough to ask "what project is this?" without anyone pasting a reference.
+ *
+ * Still knows nothing about Linear-lite. Which kind is a project, which kind is
+ * an issue, how they link, how status folds and what it is called all come off
+ * published manifests at runtime — the same discipline as the rest of this file.
+ *
+ * Returns null for "nothing to show": no manifest declares a container, no
+ * project in this Folder, or the object cannot be read. All of those are
+ * ordinary states the caller renders as an empty sidebar, not errors.
+ */
+export async function resolveFolderProject(
+  folder: string,
+  query: QueryFn,
+): Promise<FolderProject | null> {
+  // 1. Which kinds are containers? A Folder query needs kind numbers up front,
+  //    and the only non-app-specific source for them is the published handlers.
+  //    This pass is discovery only — the manifest that actually *renders* the
+  //    project is resolved below, recommendation-first, once its author is known.
+  const handlers = await query([{ kinds: [KIND_HANDLER_INFORMATION], limit: 20 }])
+  const containers = new Map<number, { childKind: number; linkTag: string }>()
+  let discovered: Manifest | undefined
+  for (const event of handlers) {
+    const manifest = parseManifest(event)
+    for (const kind of Object.keys(manifest?.projections ?? {})) {
+      const relation = manifest && containmentFor(manifest, Number(kind))
+      if (relation) {
+        containers.set(Number(kind), relation)
+        discovered ??= manifest
+      }
+    }
+  }
+  if (containers.size === 0) return null
+
+  // 2. One round trip for everything in the Folder: containers, their children,
+  //    and the changes that have landed on either — `h` is what they share.
+  //    Changes are needed *before* a project is chosen, because whether one is
+  //    archived is itself a folded field.
+  const childKinds = [...new Set([...containers.values()].map((c) => c.childKind))]
+  const discoveredRule = discovered?.records
+  const inFolder = await query([
+    { '#h': [folder], kinds: [...containers.keys(), ...childKinds], limit: 200 },
+    ...(discoveredRule ? [{ '#h': [folder], kinds: [discoveredRule.changeKind], limit: 500 }] : []),
+  ])
+
+  const addressOfEvent = (event: SignedEvent) =>
+    pointerToAddress({
+      kind: event.kind,
+      pubkey: event.pubkey,
+      identifier: tagValue(event, 'd') ?? '',
+      relays: [],
+    })
+
+  /** Is this object one its owning app would keep out of its own lists? */
+  const isHidden = (event: SignedEvent, rule: RecordsRule | undefined, source = inFolder) => {
+    if (!rule?.hiddenWhen) return false
+    const applied = source.filter(
+      (e) => e.kind === rule.changeKind && tagValue(e, rule.targetTag) === addressOfEvent(event),
+    )
+    return foldChanges(applied, rule)[rule.hiddenWhen.field]?.value === rule.hiddenWhen.equals
+  }
+
+  const roots = inFolder
+    .filter((e) => containers.has(e.kind))
+    .filter((e) => !isHidden(e, discoveredRule))
+  if (roots.length === 0) return null
+
+  /**
+   * Which project, when a Folder holds several.
+   *
+   * Nothing forbids more than one, and pairing makes it common rather than
+   * exotic: a topic accumulates a project per attempt. Ranking by age alone
+   * picked whichever was created last — in practice a stray — so the work
+   * decides instead. The project the Folder's tickets point at is the project
+   * the Folder is about; age only breaks the tie.
+   */
+  const ticketsFor = (candidate: SignedEvent) => {
+    const relation = containers.get(candidate.kind)!
+    const candidateAddress = addressOfEvent(candidate)
+    return inFolder.filter(
+      (e) => e.kind === relation.childKind && tagValue(e, relation.linkTag) === candidateAddress,
+    ).length
+  }
+  const root = [...roots].sort(
+    (a, b) => ticketsFor(b) - ticketsFor(a) || b.created_at - a.created_at,
+  )[0]
+
+  const pointer: AddressPointer = {
+    kind: root.kind,
+    pubkey: root.pubkey,
+    identifier: tagValue(root, 'd') ?? '',
+    relays: [],
+  }
+  const address = pointerToAddress(pointer)
+
+  // 3. Now the authoritative manifest — the object's author gets to say which
+  //    app renders their project (kind:31989), same as for an inline reference.
+  const resolved = await resolveManifest(pointer, query)
+  if (!resolved) return null
+  const { manifest, viaRecommendation } = resolved
+  const projection = manifest.projections?.[String(root.kind)]
+  const records = manifest.records
+  if (!projection || !records) return null
+  const relation = containmentFor(manifest, root.kind) ?? containers.get(root.kind)!
+
+  // 4. Every change in the Folder, folded per object. Already fetched in step 2
+  //    unless the authoritative manifest orders records differently from the one
+  //    discovery happened to find, which is the only case worth a second trip.
+  const changes =
+    discoveredRule?.changeKind === records.changeKind
+      ? inFolder.filter((e) => e.kind === records.changeKind)
+      : await query([{ kinds: [records.changeKind], '#h': [folder], limit: 500 }])
+  const changesFor = (target: string) =>
+    changes.filter((e) => tagValue(e, records.targetTag) === target)
+
+  const project = buildObject({
+    root,
+    pointer,
+    manifest,
+    projection,
+    folded: foldChanges(changesFor(address), records),
+    viaRecommendation,
+    webTemplate: resolved.webTemplate,
+  })
+
+  // 5. The tickets. A child either names this project or names nothing at all —
+  //    an unlinked ticket still lives in the Folder, and the Folder *is* the
+  //    project, so dropping it would under-report live work.
+  const ticketProjection = manifest.projections?.[String(relation.childKind)]
+  const statusSpec =
+    ticketProjection && !Array.isArray(ticketProjection.slots.status)
+      ? ticketProjection.slots.status
+      : undefined
+  // A project whose tickets have no declared projection is still worth showing;
+  // it just has nothing to expand into.
+  if (!ticketProjection) return { project, tickets: [], openCount: 0, doneCount: 0 }
+
+  const rows: { ticket: ForeignObject; rank: number; activityMs: number }[] = []
+  let openCount = 0
+  let doneCount = 0
+  for (const event of inFolder) {
+    if (event.kind !== relation.childKind) continue
+    const link = tagValue(event, relation.linkTag)
+    if (link !== undefined && link !== address) continue
+    // Archived is the one exclusion left. Everything else the project holds is
+    // listed; a record its own app hides is not part of the project any more.
+    if (isHidden(event, records, changes)) continue
+
+    const ticketPointer: AddressPointer = {
+      kind: event.kind,
+      pubkey: event.pubkey,
+      identifier: tagValue(event, 'd') ?? '',
+      relays: [],
+    }
+    const ticketChanges = changesFor(pointerToAddress(ticketPointer))
+    const folded = foldChanges(ticketChanges, records)
+    const status = statusSpec ? resolveSlot(statusSpec, event, folded, manifest) : null
+    const raw = statusSpec ? rawSlotValue(statusSpec, event, folded) : undefined
+
+    const done = isDoneStatus(raw, status?.value)
+    if (done) doneCount += 1
+    else if (isOpenStatus(raw, status?.value)) openCount += 1
+    // A status in neither set — parked, or one this consumer has never seen —
+    // is still a ticket and still listed. It just cannot claim to be progress
+    // in either direction, so it stays out of both counts.
+
+    rows.push({
+      ticket: buildObject({
+        root: event,
+        pointer: ticketPointer,
+        manifest,
+        projection: ticketProjection,
+        folded,
+        viaRecommendation,
+        webTemplate: resolved.webTemplate,
+      }),
+      rank: isStarted(raw, status?.value) ? 0 : done ? 2 : 1,
+      activityMs: Math.max(event.created_at * 1000, ...ticketChanges.map(orderingMs)),
+    })
+  }
+  // Started work, then the queue, then what is finished; within each, whatever
+  // moved most recently. The whole project is here — the order is what makes it
+  // scannable rather than a dump.
+  rows.sort((a, b) => a.rank - b.rank || b.activityMs - a.activityMs)
+
+  return { project, tickets: rows.map((row) => row.ticket), openCount, doneCount }
+}
+
+/**
+ * Build the event that performs a manifest-declared action.
+ *
+ * Pure, and separate from the Convex action for the same reason `projection.ts`
+ * is separate from `foreign.ts`: this is the part worth testing against a live
+ * relay, and it must not need a deployment or a signed-in session to run.
+ *
+ * Returns a string on refusal rather than throwing — every failure here is
+ * something a user should read.
+ */
+export function buildActionEvent(args: {
+  manifest: { records?: RecordsRule; actions?: ManifestAction[]; vocabularies?: Manifest['vocabularies'] }
+  kind: number
+  /** Address of the object being acted on. */
+  address: string
+  /** Author of the object — needed for NIP-22's `P`/`p` tags. */
+  objectAuthor: string
+  folder: string
+  actionId: string
+  value: string
+  pubkey: string
+  createdAtMs: number
+}): UnsignedActionEvent | string {
+  const { manifest, kind, address, folder, actionId, value } = args
+  const records = manifest.records
+  const declared = manifest.actions?.find((a) => a.id === actionId)
+  if (!records) return 'That app does not say how its records are written.'
+  if (!declared) return `This app does not offer "${actionId}".`
+
+  const appliesTo = Array.isArray(declared.appliesTo) ? declared.appliesTo : [declared.appliesTo]
+  if (!appliesTo.includes(String(kind))) {
+    return `"${declared.label}" does not apply to a kind ${kind}.`
+  }
+
+  // Validate against the manifest's own vocabulary. The owning app cannot
+  // enforce this — anyone can publish anything (RFC_UPDATES.md §3) — so a
+  // consumer that skips the check is the one putting junk in the shared record.
+  // Checking here is Peek keeping its side of the honour system.
+  if (declared.input?.enum) {
+    const vocab = manifest.vocabularies?.[declared.input.enum] ?? []
+    if (!vocab.some((entry) => entry.value === value)) {
+      return `"${value}" is not one of ${vocab.map((e) => e.value).join(', ')}.`
+    }
+  }
+
+  const tags: string[][] = declared.emits.field
+    ? [
+        [records.targetTag, address],
+        [records.fieldTag, declared.emits.field],
+        [records.valueTag, value],
+        ['h', folder],
+      ]
+    : // NIP-22 comment. Built from the ratified NIP rather than from the
+      // manifest, which is legitimate precisely because no app owns kind:1111 —
+      // the same reason the owning app uses it. Uppercase tags name the thread
+      // root, lowercase the immediate parent.
+      [
+        ['A', address],
+        ['K', String(kind)],
+        ['P', args.objectAuthor],
+        ['a', address],
+        ['k', String(kind)],
+        ['p', args.objectAuthor],
+        ['h', folder],
+      ]
+
+  // The manifest told us how it orders events; write events that can be ordered.
+  // Without `ts`, a change from here and one from the owning app in the same
+  // second would be separated by event id — arbitrarily, and differently
+  // depending on which app you asked (FRICTION.md A6).
+  if (records.order?.includes('ts')) tags.push(['ts', String(args.createdAtMs)])
+
+  return {
+    pubkey: args.pubkey,
+    created_at: Math.floor(args.createdAtMs / 1000),
+    kind: declared.emits.kind,
+    tags,
+    content: declared.emits.field ? '' : value,
+  }
+}
