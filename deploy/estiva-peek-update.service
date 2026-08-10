@@ -1,0 +1,8 @@
+[Unit]
+Description=Pull a new Estiva Peek image and deploy it if it changed
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/estiva-peek/update.sh

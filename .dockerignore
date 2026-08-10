@@ -1,0 +1,11 @@
+# The image carries only the prebuilt dist/ and the nginx config. Everything
+# else would be dead weight in the build context.
+node_modules
+.git
+.github
+src
+convex
+public
+storybook-static
+.env
+.env.*
