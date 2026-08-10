@@ -1,0 +1,18 @@
+# Estiva Peek on the box. Lives at /opt/estiva-peek/docker-compose.yml.
+#
+# Bound to loopback: `cloudflared` reaches it locally, and binding wider would
+# expose it past the Hetzner firewall.
+
+name: estiva-peek
+
+services:
+  estiva-peek:
+    image: ${ESTIVA_PEEK_IMAGE:-ghcr.io/estiva-app/peek:main}
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8082:80'
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
