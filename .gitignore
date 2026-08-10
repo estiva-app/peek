@@ -25,8 +25,14 @@ scenario-review.md
 
 # Internal product docs — kept locally, not published
 PRDs/
-docs/
 PROTOTYPE.md
+# `docs/*` rather than `docs/` so the negation below can take effect — git does
+# not descend into an excluded directory, so `!docs/buzz-compat/` would be
+# ignored if the parent were excluded outright.
+docs/*
+# Exception: the Buzz/Nostr interop work is tracked — it holds working code
+# (publish-to-relay.ts) and the interop evidence, not just prose.
+!docs/buzz-compat/
 
 # Editor directories and files
 .vscode/*

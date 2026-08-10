@@ -33,10 +33,18 @@ export async function viewerOrThrow(ctx: QueryCtx | MutationCtx): Promise<Doc<'u
   return u
 }
 
-/** Stored avatar file → a URL the browser can render (null when unset). */
+/**
+ * A user's avatar → a URL the browser can render (undefined when they have none).
+ *
+ * Two sources, in order. An uploaded file is a Peek user's own avatar and wins.
+ * `image` is a `picture` URL that arrived from the relay (`nostr/sync.ts`) and
+ * belongs to someone with no Peek account — it is the only face this app will
+ * ever have for them, and without this fallback they render as a silhouette
+ * even though another app published a perfectly good avatar.
+ */
 export async function avatarUrl(ctx: QueryCtx | MutationCtx, u: Doc<'users'>): Promise<string | undefined> {
-  if (!u.avatarStorageId) return undefined
-  return (await ctx.storage.getUrl(u.avatarStorageId)) ?? undefined
+  if (!u.avatarStorageId) return u.image
+  return (await ctx.storage.getUrl(u.avatarStorageId)) ?? u.image
 }
 
 /** The signed-in user's own profile — drives the client's useCurrentUser(). */
@@ -67,6 +75,8 @@ export const updateProfile = mutation({
       name: trimmed,
       role: role?.trim() ? role.trim() : undefined,
     })
+    // No kind:0 publish. Estiva ID is the sole publisher (PEEK-31), so this
+    // name is local to Peek until PEEK-72 reads it from there instead.
   },
 })
 
@@ -86,6 +96,9 @@ export const setAvatar = mutation({
     const you = await viewerOrThrow(ctx)
     if (you.avatarStorageId) await ctx.storage.delete(you.avatarStorageId)
     await ctx.db.patch(you._id, { avatarStorageId: storageId })
+    // Same as updateProfile: this avatar is Peek-local now. The published one
+    // is whatever Estiva ID holds, and moving it off Convex storage onto a
+    // content-addressed Blossom blob is PEEK-42.
   },
 })
 

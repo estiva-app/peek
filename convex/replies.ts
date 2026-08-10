@@ -7,6 +7,7 @@
  */
 import { v } from 'convex/values'
 import { mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
+import { internal } from './_generated/api'
 import { highlightType, fileAttachment } from './schema'
 import { viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
@@ -100,6 +101,9 @@ export const send = mutation({
     }
     const inserted = await ctx.db.get(id)
     if (inserted) await screenReply(ctx, inserted)
+    // Publish as a kind:9 with a NIP-10 `e` tag (docs/buzz-compat/). No-op
+    // unless NOSTR_RELAY_URL is set; skipped if the parent isn't on the relay.
+    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReply, { replyId: id })
     return id
   },
 })

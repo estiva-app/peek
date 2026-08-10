@@ -16,6 +16,8 @@ import { APP_FILES, DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, matchReference, matchUrl, parseBodySegments, parseInlineMarks } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
+import { ForeignObjectWidget } from './ForeignObjectWidget'
+import { findNaddrs, stripNaddrs } from '../../../convex/nostr/nip19'
 
 // Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
@@ -133,7 +135,18 @@ function renderWithMentions(text: string, isTopicResolved: (id: string) => boole
 }
 
 export function MessageBody({ body, isTopicResolved }: { body: string; isTopicResolved: (id: string) => boolean }) {
-  const segments = parseBodySegments(body)
+  // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
+  // object. Rendered as a block BELOW the text rather than inline, because a
+  // widget is not a word.
+  const references = [...new Set(findNaddrs(body))]
+  // The pointer itself is dropped from the prose (PEEK-18). It was left in
+  // originally so a reader could copy it somewhere Peek cannot render, but that
+  // trades a rare need against every reader of every message: the widget below
+  // already says what the reference is, and says it in words.
+  const text = stripNaddrs(body)
+  // A message that was *only* a reference has nothing left to lay out. Skip the
+  // paragraph entirely rather than emitting an empty one that still takes a gap.
+  const segments = text ? parseBodySegments(text) : []
   return (
     <div data-message-body className="flex flex-col gap-1 text-sm text-text-secondary leading-[1.4] break-words">
       {segments.map((seg, i) => {
@@ -176,6 +189,9 @@ export function MessageBody({ body, isTopicResolved }: { body: string; isTopicRe
           </p>
         )
       })}
+      {references.map((naddr) => (
+        <ForeignObjectWidget key={naddr} naddr={naddr} />
+      ))}
     </div>
   )
 }

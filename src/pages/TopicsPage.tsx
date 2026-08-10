@@ -10,7 +10,8 @@ import { SectionHeader } from '@/components/ui/SectionHeader'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
-import { CURRENT_USER_NAME, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useHuddleLookup } from '@/api'
+import { TopicProjectPanel } from '@/components/TopicProjectPanel'
+import { CURRENT_USER_NAME, hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useHuddleLookup } from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -30,6 +31,10 @@ export function TopicsPage() {
   const [yourExpanded, setYourExpanded] = useState(true)
   const [otherExpanded, setOtherExpanded] = useState(true)
   const huddleLookup = useHuddleLookup()
+  /** The Folder panel is dismissible, not part of the layout (PEEK-24). Open to
+   *  begin with, since a topic paired with a project is the case it exists for;
+   *  the header button closes it and the choice holds while you browse. */
+  const [folderPanelOpen, setFolderPanelOpen] = useState(true)
   const showUnreads = debug.unreads.topics
   const huddleVariant = debug.huddles.variant
   const [createOpen, setCreateOpen] = useState(false)
@@ -90,6 +95,8 @@ export function TopicsPage() {
     topicTitle: selectedTopic?.title,
     selectedHuddleId,
     showUnreads,
+    onToggleFolderPanel: hasConvex ? () => setFolderPanelOpen((v) => !v) : undefined,
+    folderPanelOpen,
   })
 
   // Loaded and no topics at all → "No conversation selected" makes no sense
@@ -139,7 +146,15 @@ export function TopicsPage() {
         </div>
       }
       rightPanel={rightPanel}
-      threadPanel={view.threadPanel}
+      threadPanel={
+        // The right column is the thread when one is open, and the Folder panel
+        // otherwise (PEEK-24). A reply thread is what somebody just asked for;
+        // the Folder is context they chose to keep open.
+        view.threadPanel ??
+        (hasConvex && folderPanelOpen && selectedTopic && view.folderId ? (
+          <TopicProjectPanel topicKey={selectedTopic.id} />
+        ) : undefined)
+      }
     />
     </>
   )

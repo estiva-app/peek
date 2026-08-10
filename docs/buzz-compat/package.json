@@ -1,0 +1,10 @@
+{
+  "name": "peek-buzz-interop-probe",
+  "private": true,
+  "type": "module",
+  "description": "Phase 4 interop probe deps (not part of the Peek app build)",
+  "dependencies": {
+    "@noble/curves": "1.9.2",
+    "@noble/hashes": "1.8.0"
+  }
+}
