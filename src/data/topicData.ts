@@ -55,6 +55,12 @@ export interface FileAttachment {
 export interface ConversationData {
   id: string
   authorName: string
+  /** The author's face, resolved server-side (PEEK-43). Additive: `Avatar`
+   *  falls back to the name-keyed portraits when this is absent, so static
+   *  mocks and Storybook render exactly as they did. It exists because an
+   *  author with no Peek account is absent from the people directory the
+   *  name lookup reads, so that lookup could never find them. */
+  authorAvatarSrc?: string
   timestamp: string
   body: string
   reactions?: ReactionData[]

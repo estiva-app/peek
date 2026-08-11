@@ -10,7 +10,7 @@
  */
 import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
-import { aggregateReactions, findDmForPair, resolveUserKey, shape, unreadFlags, userNames } from './messages'
+import { aggregateReactions, findDmForPair, resolveUserKey, shape, unreadFlags, userFaces } from './messages'
 import { watermarks } from './readState'
 import { viewerId, viewerOrThrow } from './users'
 import type { Doc } from './_generated/dataModel'
@@ -19,7 +19,7 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const huddles = await ctx.db.query('huddles').collect()
-    const names = await userNames(ctx)
+    const faces = await userFaces(ctx)
     const me = await viewerId(ctx)
     const wm = me ? await watermarks(ctx, me) : new Map<string, number>()
     const topics = await ctx.db.query('topics').collect()
@@ -55,14 +55,15 @@ export const list = query({
         ).sort((a, b) => a.createdAt - b.createdAt)
         const replyAuthorIds = [...new Set(replies.map((r) => r.authorId))]
         return {
-          ...(await shape(ctx, m, names)),
+          ...(await shape(ctx, m, faces)),
           replyCount: replies.length,
           replyAuthors: replyAuthorIds.map((id) => ({
             id: id as string,
-            name: names.get(id) ?? 'Unknown',
+            name: faces.get(id)?.name ?? 'Unknown',
+            avatarUrl: faces.get(id)?.avatarUrl,
           })),
           lastReplyAt: replies.length > 0 ? replies[replies.length - 1].createdAt : undefined,
-          reactions: await aggregateReactions(ctx, m._id, me ?? undefined, names),
+          reactions: await aggregateReactions(ctx, m._id, me ?? undefined, faces),
           ...(await unreadFlags(ctx, m, me, wm, replies)),
         }
       }
@@ -106,7 +107,7 @@ export const list = query({
   },
 })
 
-async function findHuddleByKey(ctx: Parameters<typeof userNames>[0], key: string) {
+async function findHuddleByKey(ctx: Parameters<typeof userFaces>[0], key: string) {
   const rows = await ctx.db.query('huddles').collect()
   return rows.find((h) => h.seedKey === key || (h._id as string) === key) ?? null
 }

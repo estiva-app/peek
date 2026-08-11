@@ -11,7 +11,7 @@ import { v } from 'convex/values'
 import { mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
 import { internal } from './_generated/api'
 import { highlightType, fileAttachment } from './schema'
-import { viewerId, viewerOrThrow } from './users'
+import { avatarUrl, viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
 import { isUrgentBody, screenMessage } from './screener'
 import { ensureTopicMember } from './topics'
@@ -73,9 +73,31 @@ export async function resolveParentId(
   return hit ? (hit._id as string) : null
 }
 
-export async function userNames(ctx: QueryCtx | MutationCtx): Promise<Map<Id<'users'>, string>> {
+/** How a person is shown: their name, and a face when anything has one. */
+export interface Face {
+  name: string
+  avatarUrl?: string
+}
+
+/**
+ * Everyone's name and avatar, in one pass over `users` (PEEK-43).
+ *
+ * Replaces the name-only map this used to be. The avatar has to be resolved
+ * server-side because `avatarStorageId` is a storage handle, not a URL, and
+ * only the server can turn it into one — `avatarUrl()` in users.ts is the same
+ * precedence the profile query uses (upload, else the relay's kind:0 `picture`).
+ *
+ * That second source is the point of the ticket: someone with no Peek account
+ * only ever has `image`, so a client looking avatars up by name — against a
+ * directory that excludes them (`people.ts`) — could never find their face.
+ */
+export async function userFaces(ctx: QueryCtx | MutationCtx): Promise<Map<Id<'users'>, Face>> {
   const users = await ctx.db.query('users').collect()
-  return new Map(users.map((u) => [u._id, u.name]))
+  const faces = new Map<Id<'users'>, Face>()
+  for (const u of users) {
+    faces.set(u._id, { name: u.name, avatarUrl: await avatarUrl(ctx, u) })
+  }
+  return faces
 }
 
 /** Per-user rows → the aggregate array the cards render (§4.6): first-seen
@@ -86,7 +108,7 @@ export async function aggregateReactions(
   ctx: QueryCtx | MutationCtx,
   messageId: Id<'messages'>,
   youId: Id<'users'> | undefined,
-  userNamesById: Map<Id<'users'>, string>,
+  faces: Map<Id<'users'>, Face>,
 ): Promise<{ emoji: string; count: number; owner: 'yours' | 'others'; names: string[] }[] | undefined> {
   const rows = await ctx.db
     .query('reactions')
@@ -96,7 +118,7 @@ export async function aggregateReactions(
   rows.sort((a, b) => a._creationTime - b._creationTime)
   const agg: { emoji: string; count: number; owner: 'yours' | 'others'; names: string[] }[] = []
   for (const r of rows) {
-    const who = r.userId === youId ? 'You' : userNamesById.get(r.userId) ?? 'Someone'
+    const who = r.userId === youId ? 'You' : faces.get(r.userId)?.name ?? 'Someone'
     const entry = agg.find((e) => e.emoji === r.emoji)
     if (entry) {
       entry.count++
@@ -149,18 +171,21 @@ export async function resolveFileAttachments(
   return out.length > 0 ? out : undefined
 }
 
-export async function shape(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>, names: Map<Id<'users'>, string>) {
+export async function shape(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>, faces: Map<Id<'users'>, Face>) {
   const resolvedByReply = m.resolvedByReplyId ? await ctx.db.get(m.resolvedByReplyId) : null
   return {
     id: m.seedKey ?? (m._id as string),
     authorId: m.authorId as string,
-    authorName: names.get(m.authorId) ?? 'Unknown',
+    authorName: faces.get(m.authorId)?.name ?? 'Unknown',
+    /** Undefined for anyone with no face anywhere — the client then falls back
+     *  to its name-keyed demo portraits, so seeded rows render as they always did. */
+    authorAvatarUrl: faces.get(m.authorId)?.avatarUrl,
     createdAt: m.createdAt,
     body: m.body,
     isUrgent: m.urgent,
     highlightType: m.highlightType,
     isResolved: m.resolved,
-    resolvedBy: m.resolvedById ? names.get(m.resolvedById) : undefined,
+    resolvedBy: m.resolvedById ? faces.get(m.resolvedById)?.name : undefined,
     resolvedById: m.resolvedById ? (m.resolvedById as string) : undefined,
     resolutionMessage: m.resolutionMessage,
     resolvedByReplyId: resolvedByReply ? resolvedByReply.seedKey ?? (resolvedByReply._id as string) : undefined,
@@ -189,7 +214,7 @@ export const list = query({
         .collect()
     ).sort((a, b) => a.createdAt - b.createdAt)
     const rows = limit !== undefined && all.length > limit ? all.slice(all.length - limit) : all
-    const names = await userNames(ctx)
+    const faces = await userFaces(ctx)
     const wm = me ? await watermarks(ctx, me) : new Map<string, number>()
     const shaped = []
     for (const m of rows) {
@@ -203,14 +228,17 @@ export const list = query({
       // reply row's facepile (client renders the viewer as 'You' by id).
       const replyAuthorIds = [...new Set(replies.map((r) => r.authorId))]
       shaped.push({
-        ...(await shape(ctx, m, names)),
+        ...(await shape(ctx, m, faces)),
         replyCount: replies.length,
         replyAuthors: replyAuthorIds.map((id) => ({
           id: id as string,
-          name: names.get(id) ?? 'Unknown',
+          name: faces.get(id)?.name ?? 'Unknown',
+          // The facepile already carried an avatarSrc through the seam; it was
+          // simply never filled from the server side.
+          avatarUrl: faces.get(id)?.avatarUrl,
         })),
         lastReplyAt: replies.length > 0 ? replies[replies.length - 1].createdAt : undefined,
-        reactions: await aggregateReactions(ctx, m._id, me ?? undefined, names),
+        reactions: await aggregateReactions(ctx, m._id, me ?? undefined, faces),
         ...(await unreadFlags(ctx, m, me, wm, replies)),
       })
     }
@@ -232,10 +260,10 @@ export const get = query({
     }
     if (!m) return null
     const me = await viewerId(ctx)
-    const names = await userNames(ctx)
+    const faces = await userFaces(ctx)
     return {
-      ...(await shape(ctx, m, names)),
-      reactions: await aggregateReactions(ctx, m._id, me ?? undefined, names),
+      ...(await shape(ctx, m, faces)),
+      reactions: await aggregateReactions(ctx, m._id, me ?? undefined, faces),
     }
   },
 })

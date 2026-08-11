@@ -213,6 +213,7 @@ export function ThreadPanel({
             /* Huddle: show full message like a reply */
             <ThreadReplyCard
               authorName={conversation.authorName}
+              authorAvatarSrc={conversation.authorAvatarSrc}
               timestamp={conversation.timestamp}
               body={conversation.body}
               attachments={conversation.attachments}
@@ -226,6 +227,7 @@ export function ThreadPanel({
           ) : (
             <PinnedMessage
               authorName={conversation.authorName}
+              authorAvatarSrc={conversation.authorAvatarSrc}
               timestamp={conversation.timestamp}
               body={conversation.body}
               highlightType={conversation.highlightType}
@@ -245,6 +247,7 @@ export function ThreadPanel({
             <div key={reply.id} data-reply-id={reply.id}>
             <ThreadReplyCard
               authorName={reply.authorName}
+              authorAvatarSrc={reply.authorAvatarSrc}
               timestamp={reply.timestamp}
               body={reply.body}
               attachments={reply.attachments}
@@ -304,6 +307,7 @@ export function ThreadPanel({
             <ThreadReplyCard
               key={reply.id}
               authorName={reply.authorName}
+              authorAvatarSrc={reply.authorAvatarSrc}
               timestamp={reply.timestamp}
               body={reply.body}
               attachments={reply.attachments}
