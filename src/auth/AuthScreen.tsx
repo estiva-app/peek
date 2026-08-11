@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { PeekLogoBadge } from '@/components/ui/PeekLogo'
 import { TextInput } from '@/components/ui/TextInput'
+import { beginSignIn } from './estivaId'
 
 /**
  * The unauthenticated surface (Phase 3): sign-in / sign-up as a plain
@@ -121,6 +122,28 @@ export function AuthScreen() {
             {isSignUp ? 'Have an account? Sign in' : 'No account? Sign up'}
           </Button>
         </div>
+
+        {/* The way in to the identity service (PEEK-104), and the only one: with
+            no token yet the app mounts ConvexAuthProvider, so without this
+            button there is no path to ever obtaining one. It leaves the page
+            entirely — the session that authorises it is a SameSite=Lax cookie on
+            the identity origin, which rides top-level navigations and nothing
+            else. Sits alongside password sign-in rather than replacing it, until
+            PEEK-41 deletes Convex Auth. */}
+        <div className="flex items-center gap-3 pt-2">
+          <span className="h-px flex-1 bg-border-default" />
+          <span className="text-caption text-text-muted">or</span>
+          <span className="h-px flex-1 bg-border-default" />
+        </div>
+        <Button
+          variant="outlined"
+          className="w-full h-10"
+          type="button"
+          disabled={pending}
+          onClick={() => void beginSignIn('/')}
+        >
+          Sign in with Estiva ID
+        </Button>
       </form>
     </AuthCard>
   )
