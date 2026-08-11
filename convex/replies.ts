@@ -12,9 +12,9 @@ import { highlightType, fileAttachment } from './schema'
 import { viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
 import { isUrgentBody, screenReply } from './screener'
-import { resolveFileAttachments, deleteAttachmentBlobs } from './messages'
+import { resolveFileAttachments, deleteAttachmentBlobs, userFaces } from './messages'
 import { ensureTopicMember } from './topics'
-import type { Doc, Id } from './_generated/dataModel'
+import type { Doc } from './_generated/dataModel'
 
 async function findMessageByKey(ctx: QueryCtx | MutationCtx, key: string): Promise<Doc<'messages'> | null> {
   const bySeed = await ctx.db
@@ -26,10 +26,8 @@ async function findMessageByKey(ctx: QueryCtx | MutationCtx, key: string): Promi
   return normalized ? await ctx.db.get(normalized) : null
 }
 
-async function userNames(ctx: QueryCtx | MutationCtx): Promise<Map<Id<'users'>, string>> {
-  const users = await ctx.db.query('users').collect()
-  return new Map(users.map((u) => [u._id, u.name]))
-}
+// The local name-only copy of this is gone (PEEK-43): a reply renders the same
+// author chip a message does, so both resolve faces from the same place.
 
 /** All replies of a message, oldest first. `messageKey` is a seedKey or _id. */
 export const list = query({
@@ -41,7 +39,7 @@ export const list = query({
       .query('replies')
       .withIndex('by_message', (q) => q.eq('messageId', message._id))
       .collect()
-    const names = await userNames(ctx)
+    const faces = await userFaces(ctx)
     // isNew is derived from YOUR thread watermark for this message (§4.3) —
     // set when you open its thread panel, not when you open the container.
     const me = await viewerId(ctx)
@@ -52,7 +50,8 @@ export const list = query({
       out.push({
         id: r.seedKey ?? (r._id as string),
         authorId: r.authorId as string,
-        authorName: names.get(r.authorId) ?? 'Unknown',
+        authorName: faces.get(r.authorId)?.name ?? 'Unknown',
+        authorAvatarUrl: faces.get(r.authorId)?.avatarUrl,
         createdAt: r.createdAt,
         body: r.body,
         isUrgent: r.urgent,
