@@ -46,7 +46,31 @@ export function useEstivaIdAuth() {
     return () => clearTimeout(timer)
   }, [isAuthenticated])
 
-  const fetchAccessToken = useCallback(async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
+  /**
+   * `forceRefreshToken` is deliberately ignored, and getting this wrong broke
+   * sign-in completely.
+   *
+   * Convex asks for a fresher token **the instant the server confirms the first
+   * one** — `onTransition` calls `refetchToken()` immediately unless
+   * `initialAuthTokenReuse` is set. Answering `null` there is not read as "the
+   * token you have is still fine"; `refetchToken` treats a null as
+   * *"refetching token failed"*, calls `clearAuth()` and reports auth failed. So
+   * a perfectly valid session was torn down milliseconds after it was
+   * established, and the app fell straight back to the signed-out screen.
+   *
+   * Returning the token we already hold is both honest and safe. Convex compares
+   * it with `isNewAuth`, sees nothing new, and settles into `notRefetching` —
+   * there is no loop, because an unchanged token ends the exchange rather than
+   * restarting it.
+   *
+   * A genuinely expired token still returns `null`, which is correct: that is
+   * the end of the session, and there is no refresh grant to recover it with.
+   */
+  // Typed with the argument Convex passes, implemented without it. That keeps
+  // the real calling convention in the signature — so tests can exercise
+  // `{ forceRefreshToken: true }`, the call that caused the regression — while
+  // the body ignores it by design.
+  const fetchAccessToken = useCallback<(args: { forceRefreshToken: boolean }) => Promise<string | null>>(async () => {
     const token = validToken()
     if (!token) {
       // Expired or absent. Drop the remains so a stale token cannot be
@@ -55,10 +79,6 @@ export function useEstivaIdAuth() {
       setIsAuthenticated(false)
       return null
     }
-    // `forceRefreshToken` asks for a *newer* token than the one Convex holds.
-    // We have no way to mint one (see the header), so the honest answers are
-    // the token we have, or nothing — never a token we know Convex just rejected.
-    if (forceRefreshToken) return null
     return token.accessToken
   }, [])
 

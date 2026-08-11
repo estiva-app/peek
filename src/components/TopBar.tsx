@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { IconMenu2, IconHelpCircle, IconSun, IconMoon, IconBroadcast, IconDeviceDesktop, IconCheck, IconLogout, IconUser } from '@tabler/icons-react'
-import { useAuthActions } from '@convex-dev/auth/react'
 import { optOutOfDevAutoLogin } from '@/auth/devAutoLogin'
+import { useSignOut } from '@/auth/useSignOut'
 import { IconButton } from './ui/IconButton'
 import { Avatar } from './ui/Avatar'
 import { SearchInput } from './ui/SearchInput'
@@ -26,7 +26,7 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: React.FC<{ size: numbe
 
 export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
   const { theme, setTheme } = useTheme()
-  const { signOut } = useAuthActions()
+  const signOut = useSignOut()
   const me = useCurrentUser()
   const [menuOpen, setMenuOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)

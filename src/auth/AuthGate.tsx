@@ -6,7 +6,7 @@ import { hasConvex, usesEstivaId } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { PeekLogoBadge } from '@/components/ui/PeekLogo'
 import { AuthScreen } from './AuthScreen'
-import { beginSignIn, clearSession } from './estivaId'
+import { beginSignIn, clearSession, validToken } from './estivaId'
 import { devAutoLogin, isDevAutoLoginOptedOut } from './devAutoLogin'
 
 /**
@@ -77,13 +77,26 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
  * cannot mint a new token — there is no refresh grant — so an expired token
  * lands here, and auto-bouncing would loop indefinitely whenever the identity
  * session had expired too. A loop is a far worse failure than one click.
+ *
+ * **Two very different failures land here and they must not read the same.**
+ * Either there is no live token — genuinely signed out — or there is one and
+ * Convex refused it, which is a configuration fault (issuer, audience or JWKS
+ * reachability) that signing in again cannot fix. Calling the second one "your
+ * session has expired" sends people to re-authenticate against a wall; it cost
+ * a real debugging detour the first time this screen appeared.
  */
 function EstivaIdSignedOut({ message }: { message?: string }) {
+  const live = validToken()
+  const explanation =
+    message ??
+    (live
+      ? 'Signed in to Estiva ID, but Peek could not verify the token. This is a configuration problem rather than an expired session — check that Convex trusts the issuer and can reach its JWKS.'
+      : 'Your session has expired.')
   return (
     <div className="min-h-screen bg-bg-base flex items-center justify-center p-6">
       <div className="max-w-sm text-center space-y-4">
         <PeekLogoBadge size={40} className="mx-auto" />
-        <p className="text-body-2 text-text-secondary">{message ?? 'Your session has expired.'}</p>
+        <p className="text-body-2 text-text-secondary">{explanation}</p>
         <Button
           variant="primary"
           type="button"
