@@ -76,14 +76,19 @@ describe('completeSignIn', () => {
   it('expires the token ahead of the server, never behind it', async () => {
     primeTab()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(tokenResponse({ expires_in: 600 })))
+
     const before = Date.now()
-
     const { token } = await completeSignIn('?code=abc&state=st4te')
+    const after = Date.now()
 
-    // 600s minus the 30s safety margin. A token presented in that window is
-    // alive by the clock and rejected by the server.
-    expect(token.expiresAt).toBeLessThanOrEqual(before + 570_000)
-    expect(token.expiresAt).toBeGreaterThan(before + 560_000)
+    // 600s minus the 30s safety margin, measured from whenever the token was
+    // actually received. Bounded on both sides against the clock either side of
+    // the call: `expiresAt` is derived from a `Date.now()` taken *during* it, so
+    // `before + 570_000` is a lower bound and `after + 570_000` an upper one.
+    // Asserting a single edge makes this fail whenever a millisecond elapses,
+    // which is exactly how it failed in CI and not locally.
+    expect(token.expiresAt).toBeGreaterThanOrEqual(before + 570_000)
+    expect(token.expiresAt).toBeLessThanOrEqual(after + 570_000)
   })
 
   it('refuses a code that comes back with the wrong state', async () => {
