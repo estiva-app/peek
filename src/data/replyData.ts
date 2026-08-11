@@ -3,6 +3,8 @@ import type { HighlightType, FileAttachment } from './topicData'
 export interface ReplyData {
   id: string
   authorName: string
+  /** The author's face, resolved server-side — see ConversationData (PEEK-43). */
+  authorAvatarSrc?: string
   timestamp: string
   body: string
   isNew?: boolean

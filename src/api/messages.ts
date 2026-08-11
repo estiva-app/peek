@@ -30,6 +30,10 @@ export interface RemoteMessage {
   hasNewMessage?: boolean
   hasNewReply?: boolean
   authorName: string
+  /** Resolved server-side (PEEK-43): an uploaded avatar, else the kind:0
+   *  `picture` that arrived from the relay. Undefined when nobody has a face
+   *  for this author, which is when the name-keyed demo portraits take over. */
+  authorAvatarUrl?: string
   createdAt: number
   body: string
   isUrgent?: boolean
@@ -45,7 +49,7 @@ export interface RemoteMessage {
   /** Derived server-side (list only). */
   replyCount?: number
   /** Distinct reply authors in first-reply order (list only). */
-  replyAuthors?: { id: string; name: string }[]
+  replyAuthors?: { id: string; name: string; avatarUrl?: string }[]
   /** Send time of the newest reply (list only). */
   lastReplyAt?: number
   /** Aggregated server-side from per-user rows (§4.6). */
@@ -59,6 +63,7 @@ interface RemoteReply {
   /** Derived from YOUR thread watermark (§4.3). */
   isNew?: boolean
   authorName: string
+  authorAvatarUrl?: string
   createdAt: number
   body: string
   isUrgent?: boolean
@@ -74,6 +79,7 @@ function toReplyData(r: RemoteReply, meId: string | undefined): ReplyData {
   return {
     id: r.id,
     authorName: r.authorId && r.authorId === meId ? CURRENT_USER_NAME : r.authorName,
+    authorAvatarSrc: r.authorAvatarUrl,
     timestamp: formatTimestamp(r.createdAt),
     body: r.body,
     isNew: r.isNew,
@@ -94,6 +100,7 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
   return {
     id: r.id,
     authorName: r.authorId && r.authorId === meId ? CURRENT_USER_NAME : r.authorName,
+    authorAvatarSrc: r.authorAvatarUrl,
     timestamp: formatTimestamp(r.createdAt),
     body: r.body,
     isUrgent: r.isUrgent,
@@ -109,6 +116,7 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
     replyCount: r.replyCount,
     replyAuthors: r.replyAuthors?.map((a) => ({
       name: a.id === meId ? CURRENT_USER_NAME : a.name,
+      avatarSrc: a.avatarUrl,
     })),
     lastReplyTime: r.lastReplyAt !== undefined ? formatTimestamp(r.lastReplyAt) : undefined,
     createdAtMs: r.createdAt,

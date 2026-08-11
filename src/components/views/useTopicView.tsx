@@ -380,6 +380,7 @@ export function useTopicView({
                   <ConversationCard
                     key={`${v2SelectedHuddle.id}_${c.id}`}
                     authorName={c.authorName}
+                    authorAvatarSrc={c.authorAvatarSrc}
                     timestamp={c.timestamp}
                     body={c.body}
                     attachments={c.attachments}
@@ -528,6 +529,7 @@ export function useTopicView({
                         <ConversationCard
                           key={`${topicId}_${c.id}`}
                           authorName={c.authorName}
+                          authorAvatarSrc={c.authorAvatarSrc}
                           timestamp={c.timestamp}
                           body={c.body}
                           attachments={c.attachments}
@@ -566,6 +568,7 @@ export function useTopicView({
                         <ConversationCard
                           key={`${topicId}_${c.id}`}
                           authorName={c.authorName}
+                          authorAvatarSrc={c.authorAvatarSrc}
                           timestamp={c.timestamp}
                           body={c.body}
                           attachments={c.attachments}
@@ -602,6 +605,7 @@ export function useTopicView({
                         <ConversationCard
                           key={m.id}
                           authorName={m.authorName}
+                          authorAvatarSrc={m.authorAvatarSrc}
                           timestamp={m.timestamp}
                           body={m.body}
                           attachments={m.attachments}
