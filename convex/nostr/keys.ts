@@ -101,3 +101,14 @@ export async function decryptSecretKey(stored: string): Promise<string> {
   )
   return bytesToHex(plaintext)
 }
+
+/**
+ * Stored secrets may already be encrypted at rest, or represented directly
+ * as raw 64-character hex for compatibility.
+ */
+export async function maybeDecryptSecretKey(secretKeyHexOrSealed: string): Promise<string> {
+  if (/^[0-9a-fA-F]{64}$/.test(secretKeyHexOrSealed)) {
+    return secretKeyHexOrSealed.toLowerCase()
+  }
+  return await decryptSecretKey(secretKeyHexOrSealed)
+}

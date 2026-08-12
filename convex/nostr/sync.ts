@@ -19,6 +19,7 @@ import { internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
 import { queryEvents, relayUrl, serviceIdentity, type RelayAuth } from './bridge'
+import { maybeDecryptSecretKey } from './keys'
 import type { SignedEvent } from './events'
 
 /** Cap per topic per run so one busy channel cannot starve the others. */
@@ -43,10 +44,10 @@ async function readerIdentity(_ctx: { runQuery: any }): Promise<Reader | null> {
   const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
   if (!locals?.length) return null
   const { nostrPubkey, nostrSecretKey } = locals[0]
-  return { pubkey: nostrPubkey, secretKeyHex: nostrSecretKey }
+  return { pubkey: nostrPubkey, secretKeyHex: await maybeDecryptSecretKey(nostrSecretKey) }
 }
 
-async function queryWithReader(
+export async function queryWithReader(
   ctx: { runQuery: any },
   reader: Reader,
   filters: Record<string, unknown>[],
@@ -61,7 +62,7 @@ async function queryWithReader(
 
   const localAuth: RelayAuth = {
     pubkey: locals[0].nostrPubkey,
-    secretKeyHex: locals[0].nostrSecretKey,
+    secretKeyHex: await maybeDecryptSecretKey(locals[0].nostrSecretKey),
   }
   return await queryEvents(filters, localAuth)
 }

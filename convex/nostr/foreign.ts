@@ -11,6 +11,7 @@ import { v } from 'convex/values'
 import { action, type ActionCtx } from '../_generated/server'
 import { queryEvents, relayUrl, serviceIdentity, type RelayAuth } from './bridge'
 import { internal } from '../_generated/api'
+import { maybeDecryptSecretKey } from './keys'
 import {
   resolveFolderProject,
   resolveForeignObject,
@@ -31,7 +32,10 @@ async function readerQuery(_ctx: ActionCtx): Promise<QueryFn | null> {
   const serviceAuth = await serviceIdentity()
   const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
   const localAuth: RelayAuth | null = locals?.[0]
-    ? { pubkey: locals[0].nostrPubkey, secretKeyHex: locals[0].nostrSecretKey }
+    ? {
+        pubkey: locals[0].nostrPubkey,
+        secretKeyHex: await maybeDecryptSecretKey(locals[0].nostrSecretKey),
+      }
     : null
 
   const auth = serviceAuth ?? localAuth
