@@ -128,7 +128,11 @@ export const markMessagePublished = internalMutation({
 // Public mutation: claimChannelUuid
 export const claimChannelUuid = mutation({
   args: { topicKey: v.string(), channelUuid: v.string() },
-  handler: async (ctx, { topicKey, channelUuid }) => {
+  // Explicitly annotate the handler args and return type to avoid cyclic inference
+  handler: async (
+    ctx,
+    { topicKey, channelUuid }: { topicKey: string; channelUuid: string },
+  ): Promise<{ channelUuid: string; minted: boolean }> => {
     // Ensure caller is authenticated and exists
     const you = await viewerOrThrow(ctx)
 
@@ -147,11 +151,13 @@ export const claimChannelUuid = mutation({
       throw new Error('only the topic creator may claim channelUuid')
     }
 
-    // Delegate to internal storeChannelUuid (first-write-wins)
-    const res = await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
+    // Delegate to internal storeChannelUuid (first-write-wins).
+    // Add an explicit type for the returned shape so TS doesn't have to infer it.
+    const res = (await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
       topicId: topicDoc._id,
       channelUuid,
-    })
+    })) as { channelUuid: string; minted: boolean }
+
     return res
   },
 })
