@@ -18,7 +18,7 @@ import { v } from 'convex/values'
 import { internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { queryEvents, relayUrl, serviceIdentity } from './bridge'
+import { queryEvents, relayUrl, serviceIdentity, type RelayAuth } from './bridge'
 import type { SignedEvent } from './events'
 
 /** Cap per topic per run so one busy channel cannot starve the others. */
@@ -34,19 +34,36 @@ const PAGE_LIMIT = 200
  */
 const REACTION_TARGET_LIMIT = 100
 
-interface Reader {
-  pubkey: string
-  token: string
-}
+type Reader = RelayAuth
 
-/**
- * A backend service identity authenticates the relay read path without ever
- * decrypting a user-held secret.
- */
 async function readerIdentity(_ctx: { runQuery: any }): Promise<Reader | null> {
   const auth = await serviceIdentity()
-  if (!auth) return null
-  return { pubkey: auth.pubkey, token: auth.token! }
+  if (auth) return auth
+
+  const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
+  if (!locals?.length) return null
+  const { nostrPubkey, nostrSecretKey } = locals[0]
+  return { pubkey: nostrPubkey, secretKeyHex: nostrSecretKey }
+}
+
+async function queryWithReader(
+  ctx: { runQuery: any },
+  reader: Reader,
+  filters: Record<string, unknown>[],
+): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
+  const initial = await queryEvents(filters, reader)
+  if (initial.ok) return initial
+
+  if (reader.secretKeyHex || !reader.token) return initial
+
+  const locals = await ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
+  if (!locals?.length) return initial
+
+  const localAuth: RelayAuth = {
+    pubkey: locals[0].nostrPubkey,
+    secretKeyHex: locals[0].nostrSecretKey,
+  }
+  return await queryEvents(filters, localAuth)
 }
 
 /**
@@ -99,9 +116,10 @@ async function syncReactions(
   isLocal: Set<string>,
   known: string[],
 ): Promise<void> {
-  const reactions = await queryEvents(
-    [{ kinds: [7], '#e': targetEventIds, limit: PAGE_LIMIT }],
+  const reactions = await queryWithReader(
+    ctx,
     reader,
+    [{ kinds: [7], '#e': targetEventIds, limit: PAGE_LIMIT }],
   )
   if (!reactions.ok) return
 
@@ -133,7 +151,9 @@ async function syncReactions(
   // returning that event, so a deleted reaction is absent from `reactions.events`
   // and asking about those ids could never find its deletion.
   if (known.length === 0) return
-  const deletions = await queryEvents([{ kinds: [5], '#e': known, limit: PAGE_LIMIT }], reader)
+  const deletions = await queryWithReader(ctx, reader, [
+    { kinds: [5], '#e': known, limit: PAGE_LIMIT },
+  ])
   if (!deletions.ok) return
   for (const d of deletions.events) {
     for (const t of d.tags.filter((tag) => tag[0] === 'e' && known.includes(tag[1]))) {
@@ -185,7 +205,7 @@ export const syncChannels = internalAction({
         // the re-read free.
         if (topic.since !== null) filter.since = topic.since
 
-        const { ok, events, reason } = await queryEvents([filter], reader)
+        const { ok, events, reason } = await queryWithReader(ctx, reader, [filter])
         if (!ok) {
           console.warn(`[nostr] sync query failed for ${topic.channelUuid}: ${reason}`)
           continue
@@ -195,7 +215,9 @@ export const syncChannels = internalAction({
         if (foreign.length > 0) {
           // One profile lookup per run, not per message.
           const authors = [...new Set(foreign.map((e) => e.pubkey))]
-          const profiles = await queryEvents([{ kinds: [0], authors, limit: authors.length }], reader)
+          const profiles = await queryWithReader(ctx, reader, [
+            { kinds: [0], authors, limit: authors.length },
+          ])
           const profileByPubkey = new Map<string, { displayName?: string; picture?: string }>()
           for (const pk of authors) {
             profileByPubkey.set(pk, profileFrom(profiles.events.find((p) => p.pubkey === pk)))
