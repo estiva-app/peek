@@ -63,6 +63,10 @@ function withinDriftWindow(createdAtMs: number): boolean {
 /**
  * Fetch or mint a user's keypair, returning the decrypted secret.
  *
+ * Returns **null** when Peek holds an identity it has no key for — the caller
+ * must skip rather than publish. See the guard below; that case used to mint,
+ * and it was the worst bug in this file.
+ *
  * Exported for `act.ts`, which writes to another app's objects as the
  * signed-in user. Duplicating this would risk splitting an identity: the
  * first-write-wins mutation below is what stops two concurrent publishes
@@ -71,7 +75,7 @@ function withinDriftWindow(createdAtMs: number): boolean {
 export async function identityFor(
   ctx: { runQuery: any; runMutation: any },
   userId: Id<'users'>,
-): Promise<Identity> {
+): Promise<Identity | null> {
   const existing = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
   if (!existing) throw new Error(`unknown user ${userId}`)
   if (existing.nostrPubkey && existing.nostrSecretKey) {
@@ -80,6 +84,25 @@ export async function identityFor(
       secretKeyHex: await decryptSecretKey(existing.nostrSecretKey),
     }
   }
+
+  // A pubkey with **no secret** is an identity Peek does not custody: someone
+  // who signed in through Estiva ID, or a stranger seen on the relay. The old
+  // guard here tested `pubkey && secret`, so this case fell through and minted
+  // a fresh keypair *over their real pubkey*.
+  //
+  // That is catastrophic and completely silent. `viewerId()` resolves people by
+  // `by_nostrPubkey`, so the moment their pubkey is replaced they stop matching
+  // their own row: every query returns empty and every mutation throws "Not
+  // signed in", with nothing anywhere pointing at the cause. Everything they had
+  // already published detaches from them at the same instant, and anything
+  // published afterwards goes out under a stranger key — which is what broke
+  // Peek↔Ship collaboration, since the Folder Ship looked for was never theirs.
+  //
+  // Peek cannot sign for these people until PEEK-40 routes signing through
+  // Estiva ID's `POST /sign`. Until then the honest answer is that the publish
+  // does not happen, and callers say so out loud.
+  if (existing.nostrPubkey) return null
+
   const kp = generateKeypair()
   // First-write-wins: the mutation returns the effective values, so if another
   // publish minted first we adopt its key instead of splitting the identity.
@@ -92,6 +115,19 @@ export async function identityFor(
     pubkey: stored.nostrPubkey,
     secretKeyHex: await decryptSecretKey(stored.nostrSecretKey),
   }
+}
+
+/**
+ * One place to say why a publish was skipped, so the reason is legible in logs
+ * instead of being inferred from silence.
+ */
+function skipUnsigned(what: string, userId: Id<'users'>): null {
+  console.warn(
+    `[nostr] ${what} skipped: Peek holds no signing key for user ${userId}. That identity ` +
+      `belongs to Estiva ID, and signing moves there in PEEK-40. Minting a key here would ` +
+      `overwrite their pubkey and detach them from everything they have published.`,
+  )
+  return null
 }
 
 /**
@@ -108,6 +144,7 @@ async function ensureChannel(
   const topic = await ctx.runQuery(internal.nostr.data.getTopic, { topicId })
   if (!topic) return null
   const creator = await identityFor(ctx, topic.creatorId)
+  if (!creator) return skipUnsigned(`channel for topic ${topicId}`, topic.creatorId)
 
   const uuid =
     topic.channelUuid ??
@@ -155,6 +192,10 @@ export const publishTopic = internalAction({
       )
       for (const userId of memberIds) {
         const member = await identityFor(ctx, userId)
+        if (!member) {
+          skipUnsigned(`membership for topic ${topicId}`, userId)
+          continue
+        }
         if (member.pubkey === channel.creator.pubkey) continue // creator is already owner
         const res = await publishEvent(
           signEvent(
@@ -197,6 +238,10 @@ export const publishMessage = internalAction({
       }
 
       const author = await identityFor(ctx, m.authorId)
+      if (!author) {
+        skipUnsigned(`message ${messageId}`, m.authorId)
+        return
+      }
 
       // Happy path assumes the channel exists, to avoid a round trip per message.
       let channelUuid = m.channelUuid
@@ -256,6 +301,10 @@ export const publishMembership = internalAction({
       const channel = await ensureChannel(ctx, topicId)
       if (!channel) return
       const member = await identityFor(ctx, userId)
+      if (!member) {
+        skipUnsigned(`membership for topic ${topicId}`, userId)
+        return
+      }
       if (member.pubkey === channel.creator.pubkey) return // creator is already owner
       const res = await publishEvent(
         signEvent(
@@ -301,6 +350,10 @@ export const publishReply = internalAction({
       if (!withinDriftWindow(r.createdAt)) return
 
       const author = await identityFor(ctx, r.authorId)
+      if (!author) {
+        skipUnsigned(`reply ${replyId}`, r.authorId)
+        return
+      }
       const res = await publishEvent(
         signEvent(
           buildMessage(author.pubkey, r.createdAt, {
@@ -340,6 +393,10 @@ export const publishReaction = internalAction({
       if (!withinDriftWindow(r.createdAt)) return
 
       const author = await identityFor(ctx, r.userId)
+      if (!author) {
+        skipUnsigned(`reaction ${reactionId}`, r.userId)
+        return
+      }
       const res = await publishEvent(
         signEvent(
           buildReaction(author.pubkey, r.createdAt, {
@@ -378,6 +435,10 @@ export const publishReactionRemoval = internalAction({
     if (!relayUrl()) return
     try {
       const author = await identityFor(ctx, userId)
+      if (!author) {
+        skipUnsigned(`deletion of ${nostrEventId}`, userId)
+        return
+      }
       const res = await publishEvent(
         signEvent(
           buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),

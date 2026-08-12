@@ -51,7 +51,13 @@ export const storeKeypair = internalMutation({
   handler: async (ctx, { userId, nostrPubkey, nostrSecretKey }) => {
     const u = await ctx.db.get(userId)
     if (!u) throw new Error(`unknown user ${userId}`)
-    if (u.nostrPubkey && u.nostrSecretKey) {
+    // An existing pubkey is never overwritten — with or without a secret beside
+    // it. The old test was `pubkey && secret`, which let a custodied mint land on
+    // top of an identity Estiva ID holds and silently detach that person from
+    // everything they had published. `identityFor` already refuses this case;
+    // this is the backstop, because the damage is unrecoverable and invisible.
+    if (u.nostrPubkey) {
+      if (!u.nostrSecretKey) throw new Error(`refusing to mint over held identity for ${userId}`)
       return { nostrPubkey: u.nostrPubkey, nostrSecretKey: u.nostrSecretKey, minted: false }
     }
     await ctx.db.patch(userId, { nostrPubkey, nostrSecretKey })
