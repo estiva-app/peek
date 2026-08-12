@@ -28,7 +28,7 @@
  */
 import { v } from 'convex/values'
 import { action } from '../_generated/server'
-import { getAuthUserId } from '@convex-dev/auth/server'
+import { internal } from '../_generated/api'
 import { publishEvent, queryEvents, relayUrl } from './bridge'
 import { identityFor } from './publish'
 import { signEvent } from './sign'
@@ -54,9 +54,16 @@ export const applyAction = action({
   handler: async (ctx, { naddr, actionId, value }): Promise<ActResult> => {
     if (!relayUrl()) return fail('Nostr publishing is off (NOSTR_RELAY_URL is unset).')
 
-    const userId = await getAuthUserId(ctx)
+    // Resolves by pubkey for Estiva ID identities. `getAuthUserId` was used
+    // here and silently returned a pubkey instead of a user id for them.
+    const userId = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!userId) return fail('Sign in to change another app\'s object.')
     const identity = await identityFor(ctx, userId)
+    if (!identity) {
+      return fail(
+        'Peek cannot sign as you yet: your key lives in Estiva ID, and Peek signs through it from PEEK-40 onwards.',
+      )
+    }
 
     let pointer
     try {

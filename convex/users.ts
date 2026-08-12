@@ -18,7 +18,7 @@
  */
 import { v } from 'convex/values'
 import { getAuthUserId } from '@convex-dev/auth/server'
-import { mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
+import { internalQuery, mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
 
 /**
@@ -132,6 +132,19 @@ export const adoptIdentity = mutation({
       nostrPubkey: pubkey,
     })
   },
+})
+
+/**
+ * The viewer's id, for Node actions.
+ *
+ * Actions have no `ctx.db`, so they cannot call `viewerId` directly — and
+ * `getAuthUserId` is not a substitute: it never checks the issuer, so for an
+ * Estiva ID token it returns a 64-char pubkey where an `Id<'users'>` belongs
+ * (see `pubkeyFromIdentity`). `nostr/act.ts` was doing exactly that.
+ */
+export const viewerIdForAction = internalQuery({
+  args: {},
+  handler: async (ctx) => viewerId(ctx),
 })
 
 /** The authenticated user's doc; throws for mutations that must not run signed out. */
