@@ -9,7 +9,8 @@
  */
 import { v } from 'convex/values'
 import { action, type ActionCtx } from '../_generated/server'
-import { queryEvents, relayUrl, serviceIdentity } from './bridge'
+import { queryEvents, relayUrl, serviceIdentity, type RelayAuth } from './bridge'
+import { internal } from '../_generated/api'
 import {
   resolveFolderProject,
   resolveForeignObject,
@@ -27,12 +28,20 @@ import {
 async function readerQuery(_ctx: ActionCtx): Promise<QueryFn | null> {
   if (!relayUrl()) return null
 
-  const auth = await serviceIdentity()
+  const serviceAuth = await serviceIdentity()
+  const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
+  const localAuth: RelayAuth | null = locals?.[0]
+    ? { pubkey: locals[0].nostrPubkey, secretKeyHex: locals[0].nostrSecretKey }
+    : null
+
+  const auth = serviceAuth ?? localAuth
   if (!auth) return null
 
   return async (filters) => {
-    const { events } = await queryEvents(filters, auth)
-    return events
+    const primary = await queryEvents(filters, auth)
+    if (primary.ok || !serviceAuth || !localAuth) return primary.events
+    const fallback = await queryEvents(filters, localAuth)
+    return fallback.events
   }
 }
 

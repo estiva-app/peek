@@ -61,17 +61,21 @@ function withinDriftWindow(createdAtMs: number): boolean {
 /**
  * Sign through the identity service instead of local key custody.
  *
- * The pubkey and token come from the backend service credential, not from a user
- * row in Convex. This keeps the bridge auth and the relay sign path off the same
- * secret material that used to be decrypted here.
+ * The token comes from the backend service credential. The event author pubkey
+ * comes from the user row, so published actions still appear as the acting
+ * user instead of the service account.
  */
 export async function identityFor(
-  _ctx: { runQuery: any; runMutation: any },
-  _userId: Id<'users'>,
+  ctx: { runQuery: any; runMutation: any },
+  userId: Id<'users'>,
 ): Promise<Identity | null> {
   const auth = await serviceIdentity()
   if (!auth) return null
-  return { pubkey: auth.pubkey, token: auth.token! }
+
+  const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
+  if (!keys?.nostrPubkey) return null
+
+  return { pubkey: keys.nostrPubkey, token: auth.token! }
 }
 
 /**
