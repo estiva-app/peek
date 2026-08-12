@@ -24,13 +24,11 @@ import {
   buildMessage,
   buildReaction,
 } from './events'
-import { signEvent } from './sign'
-import { decryptSecretKey, encryptSecretKey, generateKeypair } from './keys'
-import { publishEvent, relayUrl } from './bridge'
+import { publishEvent, relayUrl, serviceIdentity, signWithIdentityService } from './bridge'
 
 interface Identity {
   pubkey: string
-  secretKeyHex: string
+  token: string
 }
 
 /**
@@ -61,60 +59,19 @@ function withinDriftWindow(createdAtMs: number): boolean {
 }
 
 /**
- * Fetch or mint a user's keypair, returning the decrypted secret.
+ * Sign through the identity service instead of local key custody.
  *
- * Returns **null** when Peek holds an identity it has no key for — the caller
- * must skip rather than publish. See the guard below; that case used to mint,
- * and it was the worst bug in this file.
- *
- * Exported for `act.ts`, which writes to another app's objects as the
- * signed-in user. Duplicating this would risk splitting an identity: the
- * first-write-wins mutation below is what stops two concurrent publishes
- * minting two keys for one person.
+ * The pubkey and token come from the backend service credential, not from a user
+ * row in Convex. This keeps the bridge auth and the relay sign path off the same
+ * secret material that used to be decrypted here.
  */
 export async function identityFor(
-  ctx: { runQuery: any; runMutation: any },
-  userId: Id<'users'>,
+  _ctx: { runQuery: any; runMutation: any },
+  _userId: Id<'users'>,
 ): Promise<Identity | null> {
-  const existing = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
-  if (!existing) throw new Error(`unknown user ${userId}`)
-  if (existing.nostrPubkey && existing.nostrSecretKey) {
-    return {
-      pubkey: existing.nostrPubkey,
-      secretKeyHex: await decryptSecretKey(existing.nostrSecretKey),
-    }
-  }
-
-  // A pubkey with **no secret** is an identity Peek does not custody: someone
-  // who signed in through Estiva ID, or a stranger seen on the relay. The old
-  // guard here tested `pubkey && secret`, so this case fell through and minted
-  // a fresh keypair *over their real pubkey*.
-  //
-  // That is catastrophic and completely silent. `viewerId()` resolves people by
-  // `by_nostrPubkey`, so the moment their pubkey is replaced they stop matching
-  // their own row: every query returns empty and every mutation throws "Not
-  // signed in", with nothing anywhere pointing at the cause. Everything they had
-  // already published detaches from them at the same instant, and anything
-  // published afterwards goes out under a stranger key — which is what broke
-  // Peek↔Ship collaboration, since the Folder Ship looked for was never theirs.
-  //
-  // Peek cannot sign for these people until PEEK-40 routes signing through
-  // Estiva ID's `POST /sign`. Until then the honest answer is that the publish
-  // does not happen, and callers say so out loud.
-  if (existing.nostrPubkey) return null
-
-  const kp = generateKeypair()
-  // First-write-wins: the mutation returns the effective values, so if another
-  // publish minted first we adopt its key instead of splitting the identity.
-  const stored = await ctx.runMutation(internal.nostr.data.storeKeypair, {
-    userId,
-    nostrPubkey: kp.publicKeyHex,
-    nostrSecretKey: await encryptSecretKey(kp.secretKeyHex),
-  })
-  return {
-    pubkey: stored.nostrPubkey,
-    secretKeyHex: await decryptSecretKey(stored.nostrSecretKey),
-  }
+  const auth = await serviceIdentity()
+  if (!auth) return null
+  return { pubkey: auth.pubkey, token: auth.token! }
 }
 
 /**
@@ -123,9 +80,8 @@ export async function identityFor(
  */
 function skipUnsigned(what: string, userId: Id<'users'>): null {
   console.warn(
-    `[nostr] ${what} skipped: Peek holds no signing key for user ${userId}. That identity ` +
-      `belongs to Estiva ID, and signing moves there in PEEK-40. Minting a key here would ` +
-      `overwrite their pubkey and detach them from everything they have published.`,
+    `[nostr] ${what} skipped: Peek has no identity-service credential for user ${userId}. ` +
+      `Signing now goes through Estiva ID, so nothing local is decrypted or minted.`,
   )
   return null
 }
@@ -156,21 +112,19 @@ async function ensureChannel(
       })
     ).channelUuid
 
-  const res = await publishEvent(
-    signEvent(
-      // Date.now(), not topic.createdAt: we are creating this channel on the
-      // relay now, and a Peek topic older than 15 minutes would otherwise be
-      // rejected by the drift check and could never be published at all.
-      buildCreateChannel(creator.pubkey, Date.now(), {
-        channelUuid: uuid,
-        name: topic.title,
-        visibility: 'open',
-        channelType: 'stream',
-      }),
-      creator.secretKeyHex,
-    ),
+  const signed = await signWithIdentityService(
+    // Date.now(), not topic.createdAt: we are creating this channel on the
+    // relay now, and a Peek topic older than 15 minutes would otherwise be
+    // rejected by the drift check and could never be published at all.
+    buildCreateChannel(creator.pubkey, Date.now(), {
+      channelUuid: uuid,
+      name: topic.title,
+      visibility: 'open',
+      channelType: 'stream',
+    }),
     creator,
   )
+  const res = await publishEvent(signed, creator)
   if (!res.ok) {
     console.warn(`[nostr] channel create rejected for topic ${topicId}: ${res.reason}`)
     return null
@@ -197,17 +151,15 @@ export const publishTopic = internalAction({
           continue
         }
         if (member.pubkey === channel.creator.pubkey) continue // creator is already owner
-        const res = await publishEvent(
-          signEvent(
-            buildAddMember(channel.creator.pubkey, Date.now(), {
-              channelUuid: channel.channelUuid,
-              targetPubkey: member.pubkey,
-              role: 'member',
-            }),
-            channel.creator.secretKeyHex,
-          ),
+        const signed = await signWithIdentityService(
+          buildAddMember(channel.creator.pubkey, Date.now(), {
+            channelUuid: channel.channelUuid,
+            targetPubkey: member.pubkey,
+            role: 'member',
+          }),
           channel.creator,
         )
+        const res = await publishEvent(signed, channel.creator)
         if (!res.ok) console.warn(`[nostr] add-member rejected: ${res.reason}`)
       }
     } catch (e) {
@@ -251,14 +203,13 @@ export const publishMessage = internalAction({
         channelUuid = channel.channelUuid
       }
 
-      const send = () =>
-        publishEvent(
-          signEvent(
-            buildMessage(author.pubkey, m.createdAt, { channelUuid: channelUuid!, content: m.body }),
-            author.secretKeyHex,
-          ),
+      const send = async () => {
+        const signed = await signWithIdentityService(
+          buildMessage(author.pubkey, m.createdAt, { channelUuid: channelUuid!, content: m.body }),
           author,
         )
+        return publishEvent(signed, author)
+      }
 
       let res = await send()
 
@@ -306,17 +257,15 @@ export const publishMembership = internalAction({
         return
       }
       if (member.pubkey === channel.creator.pubkey) return // creator is already owner
-      const res = await publishEvent(
-        signEvent(
-          buildAddMember(channel.creator.pubkey, Date.now(), {
-            channelUuid: channel.channelUuid,
-            targetPubkey: member.pubkey,
-            role: 'member',
-          }),
-          channel.creator.secretKeyHex,
-        ),
+      const signed = await signWithIdentityService(
+        buildAddMember(channel.creator.pubkey, Date.now(), {
+          channelUuid: channel.channelUuid,
+          targetPubkey: member.pubkey,
+          role: 'member',
+        }),
         channel.creator,
       )
+      const res = await publishEvent(signed, channel.creator)
       if (!res.ok) console.warn(`[nostr] add-member rejected: ${res.reason}`)
     } catch (e) {
       console.warn(`[nostr] publishMembership(${topicId}, ${userId}) failed:`, e)
@@ -354,17 +303,15 @@ export const publishReply = internalAction({
         skipUnsigned(`reply ${replyId}`, r.authorId)
         return
       }
-      const res = await publishEvent(
-        signEvent(
-          buildMessage(author.pubkey, r.createdAt, {
-            channelUuid: r.channelUuid,
-            content: r.body,
-            threadRef: { rootId: r.parentEventId, parentId: r.parentEventId },
-          }),
-          author.secretKeyHex,
-        ),
+      const signed = await signWithIdentityService(
+        buildMessage(author.pubkey, r.createdAt, {
+          channelUuid: r.channelUuid,
+          content: r.body,
+          threadRef: { rootId: r.parentEventId, parentId: r.parentEventId },
+        }),
         author,
       )
+      const res = await publishEvent(signed, author)
       if (!res.ok) {
         console.warn(`[nostr] reply ${replyId} rejected: ${res.reason}`)
         return
@@ -397,16 +344,14 @@ export const publishReaction = internalAction({
         skipUnsigned(`reaction ${reactionId}`, r.userId)
         return
       }
-      const res = await publishEvent(
-        signEvent(
-          buildReaction(author.pubkey, r.createdAt, {
-            targetEventId: r.targetEventId,
-            emoji: r.emoji,
-          }),
-          author.secretKeyHex,
-        ),
+      const signed = await signWithIdentityService(
+        buildReaction(author.pubkey, r.createdAt, {
+          targetEventId: r.targetEventId,
+          emoji: r.emoji,
+        }),
         author,
       )
+      const res = await publishEvent(signed, author)
       if (!res.ok) {
         console.warn(`[nostr] reaction ${reactionId} rejected: ${res.reason}`)
         return
@@ -439,13 +384,11 @@ export const publishReactionRemoval = internalAction({
         skipUnsigned(`deletion of ${nostrEventId}`, userId)
         return
       }
-      const res = await publishEvent(
-        signEvent(
-          buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),
-          author.secretKeyHex,
-        ),
+      const signed = await signWithIdentityService(
+        buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),
         author,
       )
+      const res = await publishEvent(signed, author)
       if (!res.ok) console.warn(`[nostr] reaction deletion rejected: ${res.reason}`)
     } catch (e) {
       console.warn(`[nostr] publishReactionRemoval failed:`, e)

@@ -29,9 +29,8 @@
 import { v } from 'convex/values'
 import { action } from '../_generated/server'
 import { internal } from '../_generated/api'
-import { publishEvent, queryEvents, relayUrl } from './bridge'
+import { publishEvent, queryEvents, relayUrl, signWithIdentityService } from './bridge'
 import { identityFor } from './publish'
-import { signEvent } from './sign'
 import { decodeNaddr, pointerToAddress } from './nip19'
 import { buildActionEvent, resolveManifest } from './projection'
 
@@ -111,7 +110,8 @@ export const applyAction = action({
     })
     if (typeof built === 'string') return fail(built)
 
-    const result = await publishEvent(signEvent(built, identity.secretKeyHex), identity)
+    const signed = await signWithIdentityService(built, identity)
+    const result = await publishEvent(signed, identity)
     if (!result.ok) {
       return fail(result.reason ?? 'The relay rejected the change.')
     }
