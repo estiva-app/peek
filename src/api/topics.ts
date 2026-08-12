@@ -185,3 +185,18 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
     [createLocal, createRemote, createHuddleFromDmRemote],
   )
 }
+
+/** Claim a channelUuid for a topic when the client-side publish created it.
+ * This is the small demo-time RPC (option B) that records channelUuid in the
+ * server-side topic row. It is intentionally a thin wrapper around the
+ * Convex mutation so callers can call it after a successful client publish.
+ */
+export function useClaimChannelUuid(): (topicKey: string, channelUuid: string) => void {
+  const claimRemote = useMutation(api.nostr.data.claimChannelUuid)
+  return useCallback(
+    (topicKey: string, channelUuid: string) => {
+      if (hasConvex) void claimRemote({ topicKey, channelUuid })
+    },
+    [claimRemote],
+  )
+}
