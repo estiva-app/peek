@@ -4,6 +4,8 @@ export interface Topic {
   isResolved: boolean
   /** Names of people invited to the topic when it was created. Surfaces in the members pill. */
   invitees?: string[]
+  /** Optional Folder id (NIP-29 channel UUID) when this topic is published / synced with the relay. */
+  folderId?: string | null
 }
 
 export const TOPICS: Topic[] = [

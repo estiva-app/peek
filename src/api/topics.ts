@@ -33,6 +33,8 @@ export function useTopics(): Topic[] | undefined {
     invitees: t.memberNames.length
       ? t.memberNames.map((n, i) => (t.memberIds[i] === me.id ? CURRENT_USER_NAME : n))
       : undefined,
+    // channelUuid from the server maps to the client-visible Folder id
+    folderId: (t as any).channelUuid ?? null,
   }))
   const ids = new Set(mapped.map((t) => t.id))
   return [...mapped, ...extraTopics.filter((t) => !ids.has(t.id))].filter(

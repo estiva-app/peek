@@ -76,6 +76,7 @@ export const list = query({
         memberNames,
         memberIds,
         isResolved,
+        channelUuid: t.channelUuid ?? null,
       })
     }
     return out.sort((a, b) => a.createdAt - b.createdAt)

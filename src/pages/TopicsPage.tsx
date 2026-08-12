@@ -151,7 +151,7 @@ export function TopicsPage() {
         // otherwise (PEEK-24). A reply thread is what somebody just asked for;
         // the Folder is context they chose to keep open.
         view.threadPanel ??
-        (hasConvex && folderPanelOpen && selectedTopic ? (
+        (hasConvex && folderPanelOpen && selectedTopic && view.folderId ? (
           <TopicProjectPanel topicKey={selectedTopic.id} />
         ) : undefined)
       }

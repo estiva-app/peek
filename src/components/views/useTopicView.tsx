@@ -101,10 +101,15 @@ export function useTopicView({
   // The topic's Folder id, so it can be copied and pasted into another app.
   // `'skip'` without a deployment or a topic — Peek runs on static mocks in
   // tests and Storybook, where there is no relay and so no Folder.
-  const topicFolderId = useQuery(
+  // Prefer the folder id carried on the topic object (returned by topics.list)
+  // when available — avoids a second round-trip and prevents a missing id when
+  // the client-side topic array already knows it. Fall back to the dedicated
+  // folderForTopic query when the topic lacks it.
+  const topicFolderIdQuery = useQuery(
     api.nostr.data.folderForTopic,
     hasConvex && topicId != null ? { topicKey: topicId } : 'skip',
   )
+  const topicFolderId = (topic as any)?.folderId ?? topicFolderIdQuery
 
   // Derived: a topic is "resolved" iff every non-deleted conv in it is resolved.
   // Single source of truth for the dashed-circle vs checkmark icon everywhere.
