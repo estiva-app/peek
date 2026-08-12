@@ -4,8 +4,24 @@
  * Every behavior here was established against a running relay, not inferred —
  * the surprises are called out inline because each one is a silent-failure trap.
  */
-import { authorizationHeader } from './nip98'
-import type { SignedEvent } from './events'
+import { sha256 } from '@noble/hashes/sha256'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils'
+import { authorizationHeader as localAuthorizationHeader, normalizeUrl } from './nip98'
+import type { SignedEvent, UnsignedEvent } from './events'
+
+export interface RelayAuth {
+  pubkey: string
+  token?: string
+  secretKeyHex?: string
+}
+
+export type PublishResult = {
+  ok: boolean
+  duplicate?: boolean
+  eventId?: string
+  reason?: string
+  httpStatus?: number
+}
 
 /** Where to publish. Publishing is OFF unless this is set — that is the flag. */
 export function relayUrl(): string | null {
@@ -13,20 +29,123 @@ export function relayUrl(): string | null {
   return url ? url.replace(/\/+$/, '') : null
 }
 
-export interface PublishResult {
-  ok: boolean
-  eventId?: string
-  /** Set when the relay declined. `duplicate` is called out separately below. */
-  reason?: string
-  /** True when the relay already had this state — not a failure. */
-  duplicate?: boolean
-  httpStatus: number
+export function identityServiceOrigin(): string {
+  const raw = process.env.ESTIVA_ID_ORIGIN ?? process.env.VITE_ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
+  return raw.replace(/\/+$/, '')
+}
+
+function readEnv(names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name]?.trim()
+    if (value) return value
+  }
+  return undefined
+}
+
+async function issueServiceToken(): Promise<{ token: string; pubkey: string } | null> {
+  const token = readEnv(['ESTIVA_ID_SERVICE_TOKEN', 'ESTIVA_ID_ACCESS_TOKEN', 'ESTIVA_ID_TOKEN'])
+  if (token) {
+    const payload = token.split('.')[1]
+    if (!payload) return { token, pubkey: '' }
+    try {
+      const json = JSON.parse(
+        Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
+      ) as { sub?: string }
+      if (json.sub) return { token, pubkey: json.sub }
+    } catch {
+      // fall through to explicit pubkey envs below
+    }
+  }
+
+  const clientId = readEnv(['ESTIVA_ID_CLIENT_ID', 'ESTIVA_ID_SERVICE_CLIENT_ID']) ?? 'estiva-peek'
+  const clientSecret = readEnv(['ESTIVA_ID_CLIENT_SECRET', 'ESTIVA_ID_SERVICE_CLIENT_SECRET'])
+  if (!clientSecret) return null
+
+  const res = await fetch(`${identityServiceOrigin()}/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ grantType: 'client_credentials', clientId, clientSecret }),
+  })
+  if (!res.ok) throw new Error(`Estiva ID token exchange failed: ${res.status} ${await res.text()}`)
+  const body = (await res.json()) as { access_token?: string; pubkey?: string }
+  if (!body.access_token) return null
+  return { token: body.access_token, pubkey: body.pubkey ?? '' }
+}
+
+export async function serviceIdentity(): Promise<RelayAuth | null> {
+  const configuredPubkey = readEnv(['ESTIVA_ID_SERVICE_PUBKEY', 'ESTIVA_ID_PUBKEY'])
+  const token = await issueServiceToken()
+  if (!token) return null
+  const pubkey = configuredPubkey ?? token.pubkey
+  if (!pubkey) return null
+  return {
+    pubkey,
+    token: token.token,
+  }
+}
+
+export async function signWithIdentityService(
+  unsigned: UnsignedEvent,
+  auth: RelayAuth,
+): Promise<SignedEvent> {
+  if (!auth.token) throw new Error('No Estiva ID token configured for signing.')
+  const response = await fetch(`${identityServiceOrigin()}/sign`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: ['Bearer ', auth.token].join(''),
+    },
+    body: JSON.stringify({ event: { ...unsigned, pubkey: unsigned.pubkey || auth.pubkey } }),
+  })
+  if (!response.ok) {
+    throw new Error(`POST /sign failed: ${response.status} ${await response.text()}`)
+  }
+  const body = (await response.json()) as { event?: SignedEvent }
+  if (!body.event) {
+    throw new Error('POST /sign returned no event')
+  }
+  return body.event
+}
+
+async function bridgeAuthorizationHeader(
+  url: string,
+  method: string,
+  body: string,
+  auth: RelayAuth,
+): Promise<string> {
+  if (auth.secretKeyHex) {
+    return localAuthorizationHeader({
+      pubkey: auth.pubkey,
+      secretKeyHex: auth.secretKeyHex,
+      url,
+      method,
+      body,
+    })
+  }
+  if (!auth.token) {
+    throw new Error('No relay auth token available')
+  }
+
+  const unsigned = {
+    pubkey: auth.pubkey,
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 27235,
+    tags: [
+      ['u', normalizeUrl(url)],
+      ['method', method.toUpperCase()],
+      ['nonce', crypto.randomUUID()],
+      ['payload', bytesToHex(sha256(utf8ToBytes(body)))],
+    ],
+    content: '',
+  }
+  const signed = await signWithIdentityService(unsigned, auth)
+  return `Nostr ${btoa(JSON.stringify(signed))}`
 }
 
 async function bridgeFetch(
   path: string,
   payload: unknown,
-  auth: { pubkey: string; secretKeyHex: string },
+  auth: RelayAuth,
 ): Promise<{ status: number; text: string }> {
   const base = relayUrl()
   if (!base) throw new Error('NOSTR_RELAY_URL is not set')
@@ -36,8 +155,7 @@ async function bridgeFetch(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      // Rebuilt per call, and unique per call — see nip98.ts on the nonce.
-      authorization: authorizationHeader({ ...auth, url, method: 'POST', body }),
+      authorization: await bridgeAuthorizationHeader(url, 'POST', body, auth),
     },
     body,
   })
@@ -52,10 +170,7 @@ async function bridgeFetch(
  * exists"}`. Checking only the status code silently treats rejections as
  * successes, so the `accepted` field is authoritative here.
  */
-export async function publishEvent(
-  event: SignedEvent,
-  auth: { pubkey: string; secretKeyHex: string },
-): Promise<PublishResult> {
+export async function publishEvent(event: SignedEvent, auth: RelayAuth): Promise<PublishResult> {
   const { status, text } = await bridgeFetch('/events', event, auth)
 
   let parsed: { accepted?: boolean; event_id?: string; message?: string; error?: string } = {}
@@ -92,7 +207,7 @@ export async function publishEvent(
  */
 export async function queryEvents(
   filters: Record<string, unknown>[],
-  auth: { pubkey: string; secretKeyHex: string },
+  auth: RelayAuth,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
   const { status, text } = await bridgeFetch('/query', filters, auth)
   if (status < 200 || status >= 300) {

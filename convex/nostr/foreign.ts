@@ -9,9 +9,7 @@
  */
 import { v } from 'convex/values'
 import { action, type ActionCtx } from '../_generated/server'
-import { internal } from '../_generated/api'
-import { queryEvents, relayUrl } from './bridge'
-import { decryptSecretKey } from './keys'
+import { queryEvents, relayUrl, serviceIdentity } from './bridge'
 import {
   resolveFolderProject,
   resolveForeignObject,
@@ -21,26 +19,16 @@ import {
 } from './projection'
 
 /**
- * A relay read, authenticated as a real Peek user.
+ * A relay read authenticated by the backend's identity-service credential.
  *
- * The read borrows a member's identity, matching `sync.ts`: the bridge is
- * NIP-98 gated on every route including reads, and a service identity would
- * have to be a member of every Folder to read private ones. Borrowing is both
- * simpler and more correct about permissions.
- *
- * Null when publishing is off or no local user holds a key. Both callers treat
- * that as "nothing to show" rather than as an error.
+ * The relay is NIP-98 gated on all routes, but the call path no longer depends on
+ * decrypting a user secret at all.
  */
-async function readerQuery(ctx: ActionCtx): Promise<QueryFn | null> {
+async function readerQuery(_ctx: ActionCtx): Promise<QueryFn | null> {
   if (!relayUrl()) return null
 
-  const users = await ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
-  const reader = users.find((u: any) => u.nostrPubkey && u.nostrSecretKey)
-  if (!reader) return null
-  const auth = {
-    pubkey: reader.nostrPubkey,
-    secretKeyHex: await decryptSecretKey(reader.nostrSecretKey),
-  }
+  const auth = await serviceIdentity()
+  if (!auth) return null
 
   return async (filters) => {
     const { events } = await queryEvents(filters, auth)

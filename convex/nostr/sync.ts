@@ -18,8 +18,7 @@ import { v } from 'convex/values'
 import { internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { queryEvents, relayUrl } from './bridge'
-import { decryptSecretKey } from './keys'
+import { queryEvents, relayUrl, serviceIdentity } from './bridge'
 import type { SignedEvent } from './events'
 
 /** Cap per topic per run so one busy channel cannot starve the others. */
@@ -37,24 +36,17 @@ const REACTION_TARGET_LIMIT = 100
 
 interface Reader {
   pubkey: string
-  secretKeyHex: string
+  token: string
 }
 
 /**
- * Any Peek user with a keypair can authenticate the read.
- *
- * A dedicated service identity would be tidier, but it would also need to be a
- * member of every channel to read private ones — so borrowing a real member's
- * identity is both simpler and more correct about permissions.
+ * A backend service identity authenticates the relay read path without ever
+ * decrypting a user-held secret.
  */
-async function readerIdentity(ctx: { runQuery: any }): Promise<Reader | null> {
-  const users = await ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
-  const withKeys = users.find((u: any) => u.nostrPubkey && u.nostrSecretKey)
-  if (!withKeys) return null
-  return {
-    pubkey: withKeys.nostrPubkey,
-    secretKeyHex: await decryptSecretKey(withKeys.nostrSecretKey),
-  }
+async function readerIdentity(_ctx: { runQuery: any }): Promise<Reader | null> {
+  const auth = await serviceIdentity()
+  if (!auth) return null
+  return { pubkey: auth.pubkey, token: auth.token! }
 }
 
 /**
