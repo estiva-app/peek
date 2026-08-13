@@ -172,6 +172,13 @@ async function bridgeFetch(
  */
 export async function publishEvent(event: SignedEvent, auth: RelayAuth): Promise<PublishResult> {
   const { status, text } = await bridgeFetch('/events', event, auth)
+  // The status alone is not acceptance: the relay uses HTTP 200 for some
+  // rejections. This trace intentionally records only relay output, never the
+  // bearer token or signed authorization header.
+  console.log(
+    `[TRACE] publishEvent: kind=${event.kind}, eventId=${event.id}, ` +
+      `status=${status}, response=${text.slice(0, 500)}`,
+  )
 
   let parsed: { accepted?: boolean; event_id?: string; message?: string; error?: string } = {}
   try {

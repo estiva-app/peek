@@ -112,6 +112,10 @@ export const create = mutation({
     // after the member rows above so the action sees the full membership in one
     // pass. No-op unless NOSTR_RELAY_URL is set.
     await ctx.scheduler.runAfter(0, internal.nostr.publish.publishTopic, { topicId })
+    console.log(
+      `[TRACE] topics.create: created topicId=${topicId}, creatorId=${you._id}; ` +
+        'scheduled nostr.publishTopic',
+    )
     return topicId
   },
 })

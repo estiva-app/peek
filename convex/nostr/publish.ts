@@ -70,9 +70,14 @@ export async function identityFor(
   userId: Id<'users'>,
 ): Promise<Identity | null> {
   const auth = await serviceIdentity()
+  console.log(`[TRACE] identityFor(${userId}): serviceIdentity=${auth ? `pubkey=${auth.pubkey}, hasToken=${!!auth.token}` : 'null'}`)
   if (!auth) return null
 
   const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
+  console.log(
+    `[TRACE] identityFor(${userId}): nostrPubkey=${keys?.nostrPubkey ?? 'null'}, ` +
+      `hasLegacySecret=${!!keys?.nostrSecretKey}`,
+  )
   if (!keys?.nostrPubkey) return null
 
   return { pubkey: keys.nostrPubkey, token: auth.token! }
@@ -101,26 +106,40 @@ async function ensureChannel(
   ctx: { runQuery: any; runMutation: any },
   topicId: Id<'topics'>,
 ): Promise<{ channelUuid: string; creator: Identity } | null> {
+  console.log(`[TRACE] ensureChannel START topicId=${topicId}`)
   const topic = await ctx.runQuery(internal.nostr.data.getTopic, { topicId })
-  if (!topic) return null
+  if (!topic) { console.log(`[TRACE] ensureChannel: topic not found`); return null }
+  console.log(`[TRACE] ensureChannel: topic found, creatorId=${topic.creatorId}, existing channelUuid=${topic.channelUuid ?? 'NONE'}`)
+
   const creator = await identityFor(ctx, topic.creatorId)
-  if (!creator) return skipUnsigned(`channel for topic ${topicId}`, topic.creatorId)
+  if (!creator) {
+    console.log(`[TRACE] ensureChannel: identityFor returned null for creatorId=${topic.creatorId}`)
+    return skipUnsigned(`channel for topic ${topicId}`, topic.creatorId)
+  }
+  console.log(`[TRACE] ensureChannel: identityFor returned pubkey=${creator.pubkey}, hasToken=${!!creator.token}`)
 
   const uuid = topic.channelUuid ?? crypto.randomUUID()
+  console.log(`[TRACE] ensureChannel: uuid=${uuid} (${topic.channelUuid ? 'existing' : 'newly minted'})`)
 
-  const signed = await signWithIdentityService(
-    // Date.now(), not topic.createdAt: we are creating this channel on the
-    // relay now, and a Peek topic older than 15 minutes would otherwise be
-    // rejected by the drift check and could never be published at all.
-    buildCreateChannel(creator.pubkey, Date.now(), {
-      channelUuid: uuid,
-      name: topic.title,
-      visibility: 'open',
-      channelType: 'stream',
-    }),
-    creator,
-  )
+  const unsigned = buildCreateChannel(creator.pubkey, Date.now(), {
+    channelUuid: uuid,
+    name: topic.title,
+    visibility: 'open',
+    channelType: 'stream',
+  })
+  console.log(`[TRACE] ensureChannel: buildCreateChannel kind=${unsigned.kind}, pubkey=${unsigned.pubkey}, tags=${JSON.stringify(unsigned.tags)}`)
+
+  let signed
+  try {
+    signed = await signWithIdentityService(unsigned, creator)
+    console.log(`[TRACE] ensureChannel: signWithIdentityService OK, eventId=${signed.id}`)
+  } catch (e) {
+    console.error(`[TRACE] ensureChannel: signWithIdentityService THREW:`, e)
+    throw e
+  }
+
   const res = await publishEvent(signed, creator)
+  console.log(`[TRACE] ensureChannel: publishEvent result=${JSON.stringify(res)}`)
   if (!res.ok) {
     console.warn(`[nostr] channel create rejected for topic ${topicId}: ${res.reason}`)
     return null
@@ -134,6 +153,9 @@ async function ensureChannel(
       topicId,
       channelUuid: uuid,
     })
+    console.log(`[TRACE] ensureChannel: storeChannelUuid DONE for topicId=${topicId}, uuid=${uuid}`)
+  } else {
+    console.log(`[TRACE] ensureChannel: channelUuid already persisted, skipping storeChannelUuid`)
   }
 
   return { channelUuid: uuid, creator }
@@ -143,10 +165,12 @@ async function ensureChannel(
 export const publishTopic = internalAction({
   args: { topicId: v.id('topics') },
   handler: async (ctx, { topicId }) => {
-    if (!relayUrl()) return
+    console.log(`[TRACE] publishTopic START topicId=${topicId}, relayUrl=${relayUrl() ?? 'UNSET'}`)
+    if (!relayUrl()) { console.log(`[TRACE] publishTopic: NOSTR_RELAY_URL unset, aborting`); return }
     try {
       const channel = await ensureChannel(ctx, topicId)
-      if (!channel) return
+      if (!channel) { console.log(`[TRACE] publishTopic: ensureChannel returned null, aborting`); return }
+      console.log(`[TRACE] publishTopic: channel created, uuid=${channel.channelUuid}, creatorPubkey=${channel.creator.pubkey}`)
       const memberIds: Id<'users'>[] = await ctx.runQuery(
         internal.nostr.data.getTopicMemberIds,
         { topicId },
@@ -169,6 +193,7 @@ export const publishTopic = internalAction({
         const res = await publishEvent(signed, channel.creator)
         if (!res.ok) console.warn(`[nostr] add-member rejected: ${res.reason}`)
       }
+      console.log(`[TRACE] publishTopic COMPLETE for topicId=${topicId}`)
     } catch (e) {
       console.warn(`[nostr] publishTopic(${topicId}) failed:`, e)
     }

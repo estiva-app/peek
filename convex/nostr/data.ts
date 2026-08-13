@@ -88,8 +88,12 @@ export const storeChannelUuid = internalMutation({
   handler: async (ctx, { topicId, channelUuid }) => {
     const t = await ctx.db.get(topicId)
     if (!t) throw new Error(`unknown topic ${topicId}`)
-    if (t.channelUuid) return { channelUuid: t.channelUuid, minted: false }
+    if (t.channelUuid) {
+      console.log(`[TRACE] storeChannelUuid: topicId=${topicId} already has channelUuid=${t.channelUuid}`)
+      return { channelUuid: t.channelUuid, minted: false }
+    }
     await ctx.db.patch(topicId, { channelUuid })
+    console.log(`[TRACE] storeChannelUuid: persisted topicId=${topicId}, channelUuid=${channelUuid}`)
     return { channelUuid, minted: true }
   },
 })
