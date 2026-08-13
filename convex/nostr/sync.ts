@@ -261,6 +261,20 @@ export const syncChannels = internalAction({
               continue
             }
 
+            // If the topic lacks a channelUuid, learn it from the imported message's `h` tag.
+            // This restores the implicit Ship->Peek folder linkage: Ship messages carry the folder
+            // UUID in their `h` tag, and Peek should learn it automatically from the first incoming
+            // message rather than requiring an explicit pairing action.
+            if (!topic.channelUuid) {
+              const folderUuid = e.tags.find((t) => t[0] === 'h')?.[1]
+              if (folderUuid) {
+                await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
+                  topicId: topic.topicId,
+                  channelUuid: folderUuid,
+                })
+              }
+            }
+
             await ctx.runMutation(internal.nostr.data.importMessage, {
               topicId: topic.topicId,
               authorId,
