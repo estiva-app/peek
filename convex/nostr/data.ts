@@ -9,10 +9,8 @@
  * exception is `folderForTopic` at the bottom, and it says why.
  */
 import { v } from 'convex/values'
-import { internalMutation, internalQuery, query, mutation } from '../_generated/server'
+import { internalMutation, internalQuery, query } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
-import { internal } from '../_generated/api'
-import { viewerOrThrow } from '../users'
 
 /** A user's key material, or nulls when they have not been minted yet. */
 export const getUserKeys = internalQuery({
@@ -126,43 +124,6 @@ export const markMessagePublished = internalMutation({
   args: { messageId: v.id('messages'), nostrEventId: v.string() },
   handler: async (ctx, { messageId, nostrEventId }) => {
     await ctx.db.patch(messageId, { nostrEventId, nostrPublishedAt: Date.now() })
-  },
-})
-
-// Public mutation: claimChannelUuid
-export const claimChannelUuid = mutation({
-  args: { topicKey: v.string(), channelUuid: v.string() },
-  // Explicitly annotate the handler args and return type to avoid cyclic inference
-  handler: async (
-    ctx,
-    { topicKey, channelUuid }: { topicKey: string; channelUuid: string },
-  ): Promise<{ channelUuid: string; minted: boolean }> => {
-    // Ensure caller is authenticated and exists
-    const you = await viewerOrThrow(ctx)
-
-    // Resolve topic key to a topic doc (normalizeId or seedKey)
-    let topicDoc: any = null
-    const normalized = ctx.db.normalizeId('topics', topicKey)
-    if (normalized) topicDoc = await ctx.db.get(normalized)
-    if (!topicDoc) {
-      const rows = await ctx.db.query('topics').collect()
-      topicDoc = rows.find((t) => t.seedKey === topicKey) ?? null
-    }
-    if (!topicDoc) throw new Error(`unknown topic '${topicKey}'`)
-
-    // Only the topic creator may claim a channel UUID for it
-    if (String(topicDoc.creatorId) !== String(you._id)) {
-      throw new Error('only the topic creator may claim channelUuid')
-    }
-
-    // Delegate to internal storeChannelUuid (first-write-wins).
-    // Add an explicit type for the returned shape so TS doesn't have to infer it.
-    const res = (await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
-      topicId: topicDoc._id,
-      channelUuid,
-    })) as { channelUuid: string; minted: boolean }
-
-    return res
   },
 })
 

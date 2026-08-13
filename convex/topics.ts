@@ -9,7 +9,7 @@
 import { v } from 'convex/values'
 import { mutation, query, type MutationCtx } from './_generated/server'
 import { internal } from './_generated/api'
-import { viewerOrThrow } from './users'
+import { pubkeyFromIdentity, viewerOrThrow } from './users'
 import { deleteAttachmentBlobs } from './messages'
 import type { Doc, Id } from './_generated/dataModel'
 
@@ -108,14 +108,23 @@ export const create = mutation({
         await ctx.db.insert('topicMembers', { topicId, userId: user._id, addedAt: now })
       }
     }
-    // Publish as a NIP-29 channel + membership (docs/buzz-compat/). Scheduled
-    // after the member rows above so the action sees the full membership in one
-    // pass. No-op unless NOSTR_RELAY_URL is set.
-    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishTopic, { topicId })
-    console.log(
-      `[TRACE] topics.create: created topicId=${topicId}, creatorId=${you._id}; ` +
-        'scheduled nostr.publishTopic',
-    )
+    // Scheduled actions cannot access the caller's raw Estiva ID bearer token,
+    // and `/sign` must sign as that person rather than a service identity. The
+    // authenticated client invokes publishTopicAsCreator immediately after this
+    // mutation instead. Legacy auth retains the scheduled path while it exists.
+    const isEstivaId = pubkeyFromIdentity(await ctx.auth.getUserIdentity()) !== null
+    if (isEstivaId) {
+      console.log(
+        `[TRACE] topics.create: created topicId=${topicId}, creatorId=${you._id}; ` +
+          'awaiting creator-token channel publish',
+      )
+    } else {
+      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishTopic, { topicId })
+      console.log(
+        `[TRACE] topics.create: created topicId=${topicId}, creatorId=${you._id}; ` +
+          'scheduled nostr.publishTopic',
+      )
+    }
     return topicId
   },
 })

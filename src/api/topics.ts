@@ -10,12 +10,13 @@
  * query catches up.
  */
 import { useCallback } from 'react'
-import { useMutation, useQuery } from 'convex/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
 import { useTopicStore } from '@/api/internal/topicStore'
-import { hasConvex } from './store'
+import { hasConvex, usesEstivaId } from './store'
+import { validToken } from '@/auth/estivaId'
 import type { Topic } from './types'
 import type { Person } from './types'
 
@@ -142,15 +143,29 @@ export interface CreateTopicFromDmResult {
 export function useCreateTopic(): (title: string, invitees: Person[]) => string {
   const createLocal = useTopicStore().createTopic
   const createRemote = useMutation(api.topics.create)
+  const publishTopicAsCreator = useAction(api.nostr.publish.publishTopicAsCreator)
   return useCallback(
     (title: string, invitees: Person[]) => {
       const topicId = createLocal(title, invitees.map((p) => p.name))
       if (hasConvex) {
-        void createRemote({ title, seedKey: topicId, inviteeNames: invitees.map((p) => p.name) })
+        void (async () => {
+          const remoteTopicId = await createRemote({
+            title,
+            seedKey: topicId,
+            inviteeNames: invitees.map((p) => p.name),
+          })
+          const token = usesEstivaId ? validToken() : null
+          if (!token) return
+          const result = await publishTopicAsCreator({
+            topicId: remoteTopicId,
+            estivaAccessToken: token.accessToken,
+          })
+          if (!result.ok) console.warn('[nostr] topic channel publish failed:', result.reason)
+        })().catch((error) => console.warn('[nostr] topic creation publish failed:', error))
       }
       return topicId
     },
-    [createLocal, createRemote],
+    [createLocal, createRemote, publishTopicAsCreator],
   )
 }
 
@@ -159,6 +174,7 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
   const createLocal = useTopicStore().createTopicFromDm
   const createRemote = useMutation(api.topics.create)
   const createHuddleFromDmRemote = useMutation(api.huddles.createFromDm)
+  const publishTopicAsCreator = useAction(api.nostr.publish.publishTopicAsCreator)
   return useCallback(
     (input: CreateTopicFromDmInput) => {
       const result = createLocal(input)
@@ -166,11 +182,19 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
         // Sequenced: the huddle resolves its topic by the shared seedKey,
         // so the topic must exist first.
         void (async () => {
-          await createRemote({
+          const remoteTopicId = await createRemote({
             title: input.title,
             seedKey: result.topicId,
             inviteeNames: input.invitees.map((p) => p.name),
           })
+          const token = usesEstivaId ? validToken() : null
+          if (token) {
+            const published = await publishTopicAsCreator({
+              topicId: remoteTopicId,
+              estivaAccessToken: token.accessToken,
+            })
+            if (!published.ok) console.warn('[nostr] topic channel publish failed:', published.reason)
+          }
           await createHuddleFromDmRemote({
             topicKey: result.topicId,
             seedKey: result.huddleId,
@@ -178,25 +202,10 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
             seedMessageKey: input.seedMessageId,
             memberNames: [input.dmName],
           })
-        })()
+        })().catch((error) => console.warn('[nostr] topic promotion publish failed:', error))
       }
       return result
     },
-    [createLocal, createRemote, createHuddleFromDmRemote],
-  )
-}
-
-/** Claim a channelUuid for a topic when the client-side publish created it.
- * This is the small demo-time RPC (option B) that records channelUuid in the
- * server-side topic row. It is intentionally a thin wrapper around the
- * Convex mutation so callers can call it after a successful client publish.
- */
-export function useClaimChannelUuid(): (topicKey: string, channelUuid: string) => void {
-  const claimRemote = useMutation(api.nostr.data.claimChannelUuid)
-  return useCallback(
-    (topicKey: string, channelUuid: string) => {
-      if (hasConvex) void claimRemote({ topicKey, channelUuid })
-    },
-    [claimRemote],
+    [createLocal, createRemote, createHuddleFromDmRemote, publishTopicAsCreator],
   )
 }

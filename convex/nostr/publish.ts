@@ -14,7 +14,7 @@
  * feature flag.
  */
 import { v } from 'convex/values'
-import { internalAction } from '../_generated/server'
+import { action, internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
 import {
@@ -84,6 +84,24 @@ export async function identityFor(
 }
 
 /**
+ * The creator's short-lived Estiva ID token arrives from the authenticated
+ * browser. Unlike a client-credentials token, it is bound to that person, so
+ * `/sign` will return an event authored by the creator's actual pubkey.
+ *
+ * The token is used only for this action invocation; it is never stored in a
+ * Convex document or written to logs.
+ */
+async function identityForCreatorToken(
+  ctx: { runQuery: any },
+  userId: Id<'users'>,
+  token: string,
+): Promise<Identity | null> {
+  const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
+  if (!keys?.nostrPubkey) return null
+  return { pubkey: keys.nostrPubkey, token }
+}
+
+/**
  * One place to say why a publish was skipped, so the reason is legible in logs
  * instead of being inferred from silence.
  */
@@ -105,13 +123,14 @@ function skipUnsigned(what: string, userId: Id<'users'>): null {
 async function ensureChannel(
   ctx: { runQuery: any; runMutation: any },
   topicId: Id<'topics'>,
+  creatorOverride?: Identity,
 ): Promise<{ channelUuid: string; creator: Identity } | null> {
   console.log(`[TRACE] ensureChannel START topicId=${topicId}`)
   const topic = await ctx.runQuery(internal.nostr.data.getTopic, { topicId })
   if (!topic) { console.log(`[TRACE] ensureChannel: topic not found`); return null }
   console.log(`[TRACE] ensureChannel: topic found, creatorId=${topic.creatorId}, existing channelUuid=${topic.channelUuid ?? 'NONE'}`)
 
-  const creator = await identityFor(ctx, topic.creatorId)
+  const creator = creatorOverride ?? (await identityFor(ctx, topic.creatorId))
   if (!creator) {
     console.log(`[TRACE] ensureChannel: identityFor returned null for creatorId=${topic.creatorId}`)
     return skipUnsigned(`channel for topic ${topicId}`, topic.creatorId)
@@ -132,6 +151,11 @@ async function ensureChannel(
   let signed
   try {
     signed = await signWithIdentityService(unsigned, creator)
+    if (signed.pubkey !== creator.pubkey) {
+      throw new Error(
+        `POST /sign returned ${signed.pubkey}, expected creator ${creator.pubkey}; refusing service authorship`,
+      )
+    }
     console.log(`[TRACE] ensureChannel: signWithIdentityService OK, eventId=${signed.id}`)
   } catch (e) {
     console.error(`[TRACE] ensureChannel: signWithIdentityService THREW:`, e)
@@ -160,6 +184,66 @@ async function ensureChannel(
 
   return { channelUuid: uuid, creator }
 }
+
+/**
+ * Create and persist a topic channel using the Estiva ID token of the person
+ * who just created the topic. This is deliberately an action, not a scheduled
+ * job: Convex does not expose the caller's raw bearer token to scheduled work,
+ * while Estiva ID correctly refuses to sign as anyone other than that token's
+ * subject.
+ */
+export const publishTopicAsCreator = action({
+  args: { topicId: v.id('topics'), estivaAccessToken: v.string() },
+  handler: async (ctx, { topicId, estivaAccessToken }) => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+
+    const [topic, viewerId] = await Promise.all([
+      ctx.runQuery(internal.nostr.data.getTopic, { topicId }),
+      ctx.runQuery(internal.users.viewerIdForAction, {}),
+    ])
+    if (!topic) return { ok: false, reason: `unknown topic ${topicId}` }
+    if (!viewerId || viewerId !== topic.creatorId) {
+      return { ok: false, reason: 'only the topic creator may publish its channel' }
+    }
+
+    const creator = await identityForCreatorToken(ctx, topic.creatorId, estivaAccessToken)
+    if (!creator) return { ok: false, reason: 'creator has no Estiva ID pubkey' }
+
+    try {
+      const channel = await ensureChannel(ctx, topicId, creator)
+      if (!channel) return { ok: false, reason: 'relay rejected channel creation' }
+
+      // The creator's accepted kind:9007 establishes the folder. Memberships
+      // come after it, so an invited person never receives a reference to an
+      // unknown channel. They are signed by the creator's real identity too.
+      const memberIds: Id<'users'>[] = await ctx.runQuery(
+        internal.nostr.data.getTopicMemberIds,
+        { topicId },
+      )
+      for (const userId of memberIds) {
+        const member = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
+        if (!member?.nostrPubkey || member.nostrPubkey === creator.pubkey) continue
+        const signed = await signWithIdentityService(
+          buildAddMember(creator.pubkey, Date.now(), {
+            channelUuid: channel.channelUuid,
+            targetPubkey: member.nostrPubkey,
+            role: 'member',
+          }),
+          creator,
+        )
+        if (signed.pubkey !== creator.pubkey) {
+          throw new Error(`POST /sign returned ${signed.pubkey}, expected creator ${creator.pubkey}`)
+        }
+        const result = await publishEvent(signed, creator)
+        if (!result.ok) console.warn(`[nostr] add-member rejected: ${result.reason}`)
+      }
+      return { ok: true, channelUuid: channel.channelUuid }
+    } catch (error) {
+      console.warn(`[nostr] publishTopicAsCreator(${topicId}) failed:`, error)
+      return { ok: false, reason: error instanceof Error ? error.message : 'channel publish failed' }
+    }
+  },
+})
 
 /** Publish a topic as a NIP-29 channel (kind:9007) plus its membership. */
 export const publishTopic = internalAction({
