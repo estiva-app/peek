@@ -106,15 +106,7 @@ async function ensureChannel(
   const creator = await identityFor(ctx, topic.creatorId)
   if (!creator) return skipUnsigned(`channel for topic ${topicId}`, topic.creatorId)
 
-  const uuid =
-    topic.channelUuid ??
-    (
-      await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
-        topicId,
-        // Lowercase v4, which the relay advertises as its `h` grammar in NIP-11.
-        channelUuid: crypto.randomUUID(),
-      })
-    ).channelUuid
+  const uuid = topic.channelUuid ?? crypto.randomUUID()
 
   const signed = await signWithIdentityService(
     // Date.now(), not topic.createdAt: we are creating this channel on the
@@ -133,6 +125,17 @@ async function ensureChannel(
     console.warn(`[nostr] channel create rejected for topic ${topicId}: ${res.reason}`)
     return null
   }
+
+  // Persist channelUuid only after the relay has accepted the channel event,
+  // so downstream consumers (Ship, folderForTopic) never see a folderId
+  // that the relay does not yet know about.
+  if (!topic.channelUuid) {
+    await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
+      topicId,
+      channelUuid: uuid,
+    })
+  }
+
   return { channelUuid: uuid, creator }
 }
 
