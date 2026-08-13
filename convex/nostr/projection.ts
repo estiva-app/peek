@@ -769,11 +769,13 @@ export async function resolveFolderProject(
   folder: string,
   query: QueryFn,
 ): Promise<FolderProject | null> {
+  console.log(`[TRACE] resolveFolderProject: folder=${folder}`)
   // 1. Which kinds are containers? A Folder query needs kind numbers up front,
   //    and the only non-app-specific source for them is the published handlers.
   //    This pass is discovery only — the manifest that actually *renders* the
   //    project is resolved below, recommendation-first, once its author is known.
   const handlers = await query([{ kinds: [KIND_HANDLER_INFORMATION], limit: 20 }])
+  console.log(`[TRACE] resolveFolderProject: handlers.length=${handlers.length}`)
   const containers = new Map<number, { childKind: number; linkTag: string }>()
   let discovered: Manifest | undefined
   for (const event of handlers) {
@@ -786,7 +788,11 @@ export async function resolveFolderProject(
       }
     }
   }
-  if (containers.size === 0) return null
+  console.log(`[TRACE] resolveFolderProject: containers.size=${containers.size}`)
+  if (containers.size === 0) {
+    console.log(`[TRACE] resolveFolderProject: returning null (no containers)`)
+    return null
+  }
 
   // 2. One round trip for everything in the Folder: containers, their children,
   //    and the changes that have landed on either — `h` is what they share.
@@ -794,10 +800,12 @@ export async function resolveFolderProject(
   //    archived is itself a folded field.
   const childKinds = [...new Set([...containers.values()].map((c) => c.childKind))]
   const discoveredRule = discovered?.records
+  console.log(`[TRACE] resolveFolderProject: querying folder with kinds=[${[...containers.keys(), ...childKinds].join(', ')}]`)
   const inFolder = await query([
     { '#h': [folder], kinds: [...containers.keys(), ...childKinds], limit: 200 },
     ...(discoveredRule ? [{ '#h': [folder], kinds: [discoveredRule.changeKind], limit: 500 }] : []),
   ])
+  console.log(`[TRACE] resolveFolderProject: inFolder.length=${inFolder.length}`)
 
   const addressOfEvent = (event: SignedEvent) =>
     pointerToAddress({
@@ -819,7 +827,11 @@ export async function resolveFolderProject(
   const roots = inFolder
     .filter((e) => containers.has(e.kind))
     .filter((e) => !isHidden(e, discoveredRule))
-  if (roots.length === 0) return null
+  console.log(`[TRACE] resolveFolderProject: roots.length=${roots.length}`)
+  if (roots.length === 0) {
+    console.log(`[TRACE] resolveFolderProject: returning null (no roots)`)
+    return null
+  }
 
   /**
    * Which project, when a Folder holds several.
@@ -851,12 +863,19 @@ export async function resolveFolderProject(
 
   // 3. Now the authoritative manifest — the object's author gets to say which
   //    app renders their project (kind:31989), same as for an inline reference.
+  console.log(`[TRACE] resolveFolderProject: resolving manifest for kind=${root.kind}, pubkey=${root.pubkey}`)
   const resolved = await resolveManifest(pointer, query)
-  if (!resolved) return null
+  if (!resolved) {
+    console.log(`[TRACE] resolveFolderProject: returning null (manifest not resolved)`)
+    return null
+  }
   const { manifest, viaRecommendation } = resolved
   const projection = manifest.projections?.[String(root.kind)]
   const records = manifest.records
-  if (!projection || !records) return null
+  if (!projection || !records) {
+    console.log(`[TRACE] resolveFolderProject: returning null (no projection or records)`)
+    return null
+  }
   const relation = containmentFor(manifest, root.kind) ?? containers.get(root.kind)!
 
   // 4. Every change in the Folder, folded per object. Already fetched in step 2
