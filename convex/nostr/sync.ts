@@ -193,6 +193,7 @@ export const syncChannels = internalAction({
 
     for (const topic of topics) {
       try {
+        console.log(`[TRACE] syncChannels: topicId=${topic.topicId}, channelUuid=${topic.channelUuid}, since=${topic.since}`)
         const filter: Record<string, unknown> = {
           // kind:7 has no `h` tag (Buzz derives its channel from the target),
           // so reactions are fetched separately below.
@@ -200,6 +201,7 @@ export const syncChannels = internalAction({
           '#h': [topic.channelUuid],
           limit: PAGE_LIMIT,
         }
+        console.log(`[TRACE] syncChannels: filter=${JSON.stringify(filter)}`)
         // `since` is inclusive, so the newest already-seen event comes back
         // again. That is intentional — dropping it risks missing a second event
         // sharing the same one-second timestamp, and the event-id check makes
@@ -207,6 +209,7 @@ export const syncChannels = internalAction({
         if (topic.since !== null) filter.since = topic.since
 
         const { ok, events, reason } = await queryWithReader(ctx, reader, [filter])
+        console.log(`[TRACE] syncChannels: query result ok=${ok}, events.length=${events.length}, reason=${reason}`)
         if (!ok) {
           console.warn(`[nostr] sync query failed for ${topic.channelUuid}: ${reason}`)
           continue
@@ -265,14 +268,23 @@ export const syncChannels = internalAction({
             // This restores the implicit Ship->Peek folder linkage: Ship messages carry the folder
             // UUID in their `h` tag, and Peek should learn it automatically from the first incoming
             // message rather than requiring an explicit pairing action.
+            console.log(`[TRACE] import: topicId=${topic.topicId}, topic.channelUuid=${topic.channelUuid}, event.id=${e.id}`)
+            console.log(`[TRACE] import: event.tags=${JSON.stringify(e.tags)}`)
             if (!topic.channelUuid) {
               const folderUuid = e.tags.find((t) => t[0] === 'h')?.[1]
+              console.log(`[TRACE] import: extracted folderUuid=${folderUuid}`)
               if (folderUuid) {
+                console.log(`[TRACE] import: calling storeChannelUuid for topicId=${topic.topicId}, channelUuid=${folderUuid}`)
                 await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
                   topicId: topic.topicId,
                   channelUuid: folderUuid,
                 })
+                console.log(`[TRACE] import: storeChannelUuid call completed`)
+              } else {
+                console.log(`[TRACE] import: no h tag found in event tags`)
               }
+            } else {
+              console.log(`[TRACE] import: topic already has channelUuid=${topic.channelUuid}, skipping h extraction`)
             }
 
             await ctx.runMutation(internal.nostr.data.importMessage, {

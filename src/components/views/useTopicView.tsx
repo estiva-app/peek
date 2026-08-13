@@ -109,7 +109,9 @@ export function useTopicView({
     api.nostr.data.folderForTopic,
     hasConvex && topicId != null ? { topicKey: topicId } : 'skip',
   )
+  console.log(`[TRACE] useTopicView: topicId=${topicId}, topicFolderIdQuery=${topicFolderIdQuery}, topic.folderId=${(topic as any)?.folderId}`)
   const topicFolderId = (topic as any)?.folderId ?? topicFolderIdQuery
+  console.log(`[TRACE] useTopicView: final topicFolderId=${topicFolderId}`)
 
   // Derived: a topic is "resolved" iff every non-deleted conv in it is resolved.
   // Single source of truth for the dashed-circle vs checkmark icon everywhere.
@@ -847,5 +849,6 @@ export function useTopicView({
     />
   ) : undefined
 
+  console.log(`[TRACE] useTopicView: returning folderId=${topicFolderId ?? null}`)
   return { rightPanel, threadPanel, folderId: topicFolderId ?? null }
 }

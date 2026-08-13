@@ -13,6 +13,7 @@ import type * as crons from "../crons.js";
 import type * as desk from "../desk.js";
 import type * as dev_bulk from "../dev/bulk.js";
 import type * as dev_migrationAudit from "../dev/migrationAudit.js";
+import type * as dev_repairOverwrittenIdentity from "../dev/repairOverwrittenIdentity.js";
 import type * as dev_seedDates from "../dev/seedDates.js";
 import type * as dev_seedDemo from "../dev/seedDemo.js";
 import type * as http from "../http.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   desk: typeof desk;
   "dev/bulk": typeof dev_bulk;
   "dev/migrationAudit": typeof dev_migrationAudit;
+  "dev/repairOverwrittenIdentity": typeof dev_repairOverwrittenIdentity;
   "dev/seedDates": typeof dev_seedDates;
   "dev/seedDemo": typeof dev_seedDemo;
   http: typeof http;

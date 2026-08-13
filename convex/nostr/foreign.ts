@@ -78,8 +78,18 @@ export const resolveObject = action({
 export const projectForFolder = action({
   args: { folder: v.string() },
   handler: async (ctx, { folder }): Promise<FolderProject | null> => {
+    console.log(`[TRACE] projectForFolder: called with folder=${folder}`)
     const query = await readerQuery(ctx)
-    if (!query) return null
-    return resolveFolderProject(folder, query)
+    console.log(`[TRACE] projectForFolder: query=${query ? 'available' : 'null'}`)
+    if (!query) {
+      console.log(`[TRACE] projectForFolder: returning null due to no query`)
+      return null
+    }
+    const result = await resolveFolderProject(folder, query)
+    console.log(`[TRACE] projectForFolder: resolveFolderProject returned ${result ? 'project' : 'null'}`)
+    if (result) {
+      console.log(`[TRACE] projectForFolder: result has ${result.tickets.length} tickets, openCount=${result.openCount}`)
+    }
+    return result
   },
 })

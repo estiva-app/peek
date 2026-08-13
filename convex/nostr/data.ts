@@ -502,19 +502,24 @@ export const getTopicMemberIds = internalQuery({
 export const folderForTopic = query({
   args: { topicKey: v.string() },
   handler: async (ctx, { topicKey }) => {
+    console.log(`[TRACE] folderForTopic: called with topicKey=${topicKey}`)
     // `topicKey` is the client-facing id: the stable seedKey where a topic has
     // one, otherwise the Convex `_id` (convex/schema.ts). Seeded topics carry a
     // seedKey, so taking a `v.id('topics')` here would reject exactly the
     // topics the demo uses.
     const normalized = ctx.db.normalizeId('topics', topicKey)
+    console.log(`[TRACE] folderForTopic: normalized=${normalized}`)
     if (normalized) {
       const doc = await ctx.db.get(normalized)
+      console.log(`[TRACE] folderForTopic: doc found=${!!doc}, doc.channelUuid=${doc?.channelUuid}`)
       if (doc) return doc.channelUuid ?? null
     }
     // No seedKey index on `topics`, so this mirrors `findTopicByKey` in
     // convex/topics.ts: collect and scan. Topics are few and this is the
     // fallback path only.
     const rows = await ctx.db.query('topics').collect()
-    return rows.find((t) => t.seedKey === topicKey)?.channelUuid ?? null
+    const found = rows.find((t) => t.seedKey === topicKey)
+    console.log(`[TRACE] folderForTopic: fallback found=${!!found}, found.channelUuid=${found?.channelUuid}`)
+    return found?.channelUuid ?? null
   },
 })

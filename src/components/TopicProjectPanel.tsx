@@ -317,14 +317,23 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   // does not live-update — acceptable for context beside a conversation, and
   // the honest limitation to note rather than hide.
   const load = useCallback(
-    (target: string) =>
-      resolveProject({ folder: target })
-        .then((project) => ({ folder: target, project }))
-        .catch(() => ({ folder: target, project: null })),
+    (target: string) => {
+      console.log(`[TRACE] TopicProjectPanel.load: called with target=${target}`)
+      return resolveProject({ folder: target })
+        .then((project) => {
+          console.log(`[TRACE] TopicProjectPanel.load: resolveProject returned`, project)
+          return { folder: target, project }
+        })
+        .catch((err) => {
+          console.log(`[TRACE] TopicProjectPanel.load: resolveProject error`, err)
+          return { folder: target, project: null }
+        })
+    },
     [resolveProject],
   )
 
   useEffect(() => {
+    console.log(`[TRACE] TopicProjectPanel.useEffect: folder=${folder}`)
     if (!folder) return
     let cancelled = false
     load(folder).then((next) => !cancelled && setResolved(next))

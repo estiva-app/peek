@@ -27,16 +27,20 @@ export function useTopics(): Topic[] | undefined {
   const remote = useQuery(api.topics.list, hasConvex ? {} : 'skip')
   if (!hasConvex) return localTopics
   if (remote === undefined || me === undefined) return undefined
-  const mapped: Topic[] = remote.map((t) => ({
-    id: t.id,
-    title: t.title,
-    isResolved: t.isResolved, // server-derived (§4.1); surfaced via useIsTopicResolved
-    invitees: t.memberNames.length
-      ? t.memberNames.map((n, i) => (t.memberIds[i] === me.id ? CURRENT_USER_NAME : n))
-      : undefined,
-    // channelUuid from the server maps to the client-visible Folder id
-    folderId: (t as any).channelUuid ?? null,
-  }))
+  const mapped: Topic[] = remote.map((t) => {
+    const folderId = (t as any).channelUuid ?? null
+    console.log(`[TRACE] useTopics: mapping topic id=${t.id}, channelUuid=${(t as any).channelUuid}, folderId=${folderId}`)
+    return {
+      id: t.id,
+      title: t.title,
+      isResolved: t.isResolved, // server-derived (§4.1); surfaced via useIsTopicResolved
+      invitees: t.memberNames.length
+        ? t.memberNames.map((n, i) => (t.memberIds[i] === me.id ? CURRENT_USER_NAME : n))
+        : undefined,
+      // channelUuid from the server maps to the client-visible Folder id
+      folderId,
+    }
+  })
   const ids = new Set(mapped.map((t) => t.id))
   return [...mapped, ...extraTopics.filter((t) => !ids.has(t.id))].filter(
     (t) => !deletedTopicIds.has(t.id), // optimistic window until the remove lands

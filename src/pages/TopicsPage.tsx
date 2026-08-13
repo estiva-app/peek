@@ -98,6 +98,7 @@ export function TopicsPage() {
     onToggleFolderPanel: hasConvex ? () => setFolderPanelOpen((v) => !v) : undefined,
     folderPanelOpen,
   })
+  console.log(`[TRACE] TopicsPage: selectedTopic.id=${selectedTopic?.id}, view.folderId=${view.folderId}, folderPanelOpen=${folderPanelOpen}`)
 
   // Loaded and no topics at all → "No conversation selected" makes no sense
   // here; offer to create the first topic instead (issue #3).
@@ -152,8 +153,14 @@ export function TopicsPage() {
         // the Folder is context they chose to keep open.
         view.threadPanel ??
         (hasConvex && folderPanelOpen && selectedTopic && view.folderId ? (
-          <TopicProjectPanel topicKey={selectedTopic.id} />
-        ) : undefined)
+          (() => {
+            console.log(`[TRACE] TopicsPage: rendering TopicProjectPanel with topicKey=${selectedTopic.id}`)
+            return <TopicProjectPanel topicKey={selectedTopic.id} />
+          })()
+        ) : (() => {
+          console.log(`[TRACE] TopicsPage: NOT rendering TopicProjectPanel. hasConvex=${hasConvex}, folderPanelOpen=${folderPanelOpen}, selectedTopic=${!!selectedTopic}, view.folderId=${view.folderId}`)
+          return undefined
+        })())
       }
     />
     </>
