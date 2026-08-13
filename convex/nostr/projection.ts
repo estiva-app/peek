@@ -774,7 +774,9 @@ export async function resolveFolderProject(
   //    and the only non-app-specific source for them is the published handlers.
   //    This pass is discovery only — the manifest that actually *renders* the
   //    project is resolved below, recommendation-first, once its author is known.
-  const handlers = await query([{ kinds: [KIND_HANDLER_INFORMATION], limit: 20 }])
+  const handlerFilter = [{ kinds: [KIND_HANDLER_INFORMATION], limit: 20 }]
+  console.log(`[TRACE] resolveFolderProject: querying handlers with filter=${JSON.stringify(handlerFilter)}`)
+  const handlers = await query(handlerFilter)
   console.log(`[TRACE] resolveFolderProject: handlers.length=${handlers.length}`)
   const containers = new Map<number, { childKind: number; linkTag: string }>()
   let discovered: Manifest | undefined

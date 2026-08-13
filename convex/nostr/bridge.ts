@@ -216,7 +216,9 @@ export async function queryEvents(
   filters: Record<string, unknown>[],
   auth: RelayAuth,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
+  console.log(`[TRACE] queryEvents: relayUrl=${relayUrl()}, filters=${JSON.stringify(filters)}, auth.pubkey=${auth.pubkey.slice(0, 16)}…, auth.token=${auth.token ? 'present' : 'none'}, auth.secretKeyHex=${auth.secretKeyHex ? 'present' : 'none'}`)
   const { status, text } = await bridgeFetch('/query', filters, auth)
+  console.log(`[TRACE] queryEvents: status=${status}, response.length=${text.length}`)
   if (status < 200 || status >= 300) {
     let reason = text.slice(0, 200)
     try {
@@ -224,12 +226,15 @@ export async function queryEvents(
     } catch {
       // keep the raw text
     }
+    console.log(`[TRACE] queryEvents: FAILED reason=${reason}`)
     return { ok: false, events: [], reason }
   }
   try {
     const parsed = JSON.parse(text)
+    console.log(`[TRACE] queryEvents: parsed events count=${Array.isArray(parsed) ? parsed.length : 'not array'}`)
     return { ok: true, events: Array.isArray(parsed) ? parsed : [] }
   } catch {
+    console.log(`[TRACE] queryEvents: PARSE FAILED text=${text.slice(0, 200)}`)
     return { ok: false, events: [], reason: `unparseable response: ${text.slice(0, 200)}` }
   }
 }
