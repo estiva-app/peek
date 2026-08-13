@@ -194,6 +194,7 @@ export const seed = internalMutation({
         creatorId: firstConv ? userIdOf(firstConv.authorName) : youId,
         createdAt,
         seedKey: t.id,
+        channelUuid: crypto.randomUUID(),
       })
       topicIdByMock[t.id] = topicId
       containerIds.push(topicId)

@@ -99,6 +99,7 @@ export const create = mutation({
       creatorId: you._id,
       createdAt: now,
       seedKey,
+      channelUuid: crypto.randomUUID(),
     })
     await ctx.db.insert('topicMembers', { topicId, userId: you._id, addedAt: now })
     for (const name of inviteeNames) {
