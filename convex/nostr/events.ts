@@ -268,7 +268,7 @@ export function threadTags(ref: ThreadRef): NostrTag[] {
 
 /**
  * kind:9 stream message — mirrors `build_message` (builders.rs:219).
- * Tag order: h, [thread tags], [p mentions], [broadcast], [imeta].
+ * Tag order: h, [thread tags], [a about], [p mentions], [broadcast], [imeta].
  *
  * **This is the shape verified byte-identical against Buzz's SDK** — see
  * docs/buzz-compat/INTEROP_PROOF.md §4.
@@ -280,6 +280,8 @@ export function buildMessage(
     channelUuid: string
     content: string
     threadRef?: ThreadRef
+    /** Addressable objects this conversation concerns (for cross-app routing). */
+    about?: string[]
     /** Mentioned pubkeys (64-hex). Deduplicated, lowercased, capped at 50. */
     mentions?: string[]
     broadcast?: boolean
@@ -296,6 +298,10 @@ export function buildMessage(
   const tags: NostrTag[] = [['h', args.channelUuid]]
 
   if (args.threadRef) tags.push(...threadTags(args.threadRef))
+
+  // Keep a pasted NIP-19 pointer in content for portable display, and carry
+  // its address here so Ship can route the conversation to the issue directly.
+  for (const address of [...new Set(args.about ?? [])]) tags.push(['a', address])
 
   if (args.mentions && args.mentions.length > 0) {
     if (args.mentions.length > MAX_MENTIONS) {

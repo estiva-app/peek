@@ -212,10 +212,13 @@ export const syncChannels = internalAction({
           continue
         }
 
-        const foreign = events.filter((e) => !isLocal.has(e.pubkey))
-        if (foreign.length > 0) {
+        // Ship and Peek now share an Estiva ID pubkey. Filtering by author
+        // therefore drops Ship's messages before thread routing. Imports are
+        // already idempotent by event id, which is the correct boundary.
+        const incoming = events
+        if (incoming.length > 0) {
           // One profile lookup per run, not per message.
-          const authors = [...new Set(foreign.map((e) => e.pubkey))]
+          const authors = [...new Set(incoming.map((e) => e.pubkey))]
           const profiles = await queryWithReader(ctx, reader, [
             { kinds: [0], authors, limit: authors.length },
           ])
@@ -224,7 +227,7 @@ export const syncChannels = internalAction({
             profileByPubkey.set(pk, profileFrom(profiles.events.find((p) => p.pubkey === pk)))
           }
 
-          for (const e of foreign) {
+          for (const e of incoming) {
             const profile = profileByPubkey.get(e.pubkey) ?? {}
             const authorId: Id<'users'> = await ctx.runMutation(
               internal.nostr.data.resolveExternalUser,

@@ -25,6 +25,7 @@ import {
   buildReaction,
 } from './events'
 import { publishEvent, relayUrl, serviceIdentity, signWithIdentityService } from './bridge'
+import { decodeNaddr, findNaddrs, pointerToAddress } from './nip19'
 
 interface Identity {
   pubkey: string
@@ -111,6 +112,22 @@ function skipUnsigned(what: string, userId: Id<'users'>): null {
       `Signing now goes through Estiva ID, so nothing local is decrypted or minted.`,
   )
   return null
+}
+
+/**
+ * Preserve a pasted Ship reference as the explicit address association its
+ * manifest declares for comments. Bad lookalikes stay ordinary message text.
+ */
+function referencedAddresses(body: string): string[] {
+  const addresses = new Set<string>()
+  for (const naddr of findNaddrs(body)) {
+    try {
+      addresses.add(pointerToAddress(decodeNaddr(naddr)))
+    } catch {
+      // Text is free-form; one malformed pointer cannot block a message.
+    }
+  }
+  return [...addresses]
 }
 
 /**
@@ -321,7 +338,11 @@ export const publishMessage = internalAction({
 
       const send = async () => {
         const signed = await signWithIdentityService(
-          buildMessage(author.pubkey, m.createdAt, { channelUuid: channelUuid!, content: m.body }),
+          buildMessage(author.pubkey, m.createdAt, {
+            channelUuid: channelUuid!,
+            content: m.body,
+            about: referencedAddresses(m.body),
+          }),
           author,
         )
         return publishEvent(signed, author)
