@@ -104,6 +104,23 @@ export async function signWithIdentityService(
   if (!body.event) {
     throw new Error('POST /sign returned no event')
   }
+
+  // `/sign` ignores the pubkey we send and signs as the token's subject —
+  // "The token's subject is the only pubkey this call may sign as"
+  // (estiva-id `src/http/routes/sign.ts`). So handing it a user's pubkey next to
+  // a *service* token does not produce an event authored by that user; it
+  // produces one authored by the service, silently and with a correct-looking
+  // `pubkey` field in our own bookkeeping.
+  //
+  // Refusing the mismatch centrally means no publish path can misattribute
+  // authorship: either the event belongs to whoever we named, or nothing is
+  // published and the error says why.
+  if (auth.pubkey && body.event.pubkey !== auth.pubkey) {
+    throw new Error(
+      `POST /sign returned an event authored by ${body.event.pubkey}, expected ${auth.pubkey}. ` +
+        'That token belongs to a different identity — refusing to publish under the wrong author.',
+    )
+  }
   return body.event
 }
 

@@ -1,5 +1,0 @@
-# Workflow removed per request
-# The PEEK-40 validation workflow was intentionally added during development
-# but the repository already has CI. Per your instruction this workflow has
-# been removed to avoid creating duplicate GitHub Actions jobs.
-# If you later decide to re-add a validation workflow, we can reintroduce it.

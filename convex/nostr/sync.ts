@@ -266,28 +266,12 @@ export const syncChannels = internalAction({
               continue
             }
 
-            // If the topic lacks a channelUuid, learn it from the imported message's `h` tag.
-            // This restores the implicit Ship->Peek folder linkage: Ship messages carry the folder
-            // UUID in their `h` tag, and Peek should learn it automatically from the first incoming
-            // message rather than requiring an explicit pairing action.
-            console.log(`[TRACE] import: topicId=${topic.topicId}, topic.channelUuid=${topic.channelUuid}, event.id=${e.id}`)
-            console.log(`[TRACE] import: event.tags=${JSON.stringify(e.tags)}`)
-            if (!topic.channelUuid) {
-              const folderUuid = e.tags.find((t) => t[0] === 'h')?.[1]
-              console.log(`[TRACE] import: extracted folderUuid=${folderUuid}`)
-              if (folderUuid) {
-                console.log(`[TRACE] import: calling storeChannelUuid for topicId=${topic.topicId}, channelUuid=${folderUuid}`)
-                await ctx.runMutation(internal.nostr.data.storeChannelUuid, {
-                  topicId: topic.topicId,
-                  channelUuid: folderUuid,
-                })
-                console.log(`[TRACE] import: storeChannelUuid call completed`)
-              } else {
-                console.log(`[TRACE] import: no h tag found in event tags`)
-              }
-            } else {
-              console.log(`[TRACE] import: topic already has channelUuid=${topic.channelUuid}, skipping h extraction`)
-            }
+            // Deliberately no `h`-tag learning here. Topics reach this loop from
+            // `listSyncableTopics`, which filters on `channelUuid`, so
+            // `topic.channelUuid` is set by construction and a branch guarded on
+            // its absence can never run. These events were fetched *by*
+            // `'#h': [topic.channelUuid]` in the first place, so the tag could
+            // only ever confirm what we already queried with.
 
             // Extract NIP-27 `a` tag addresses (references to other apps' objects)
             const addresses = e.tags.filter((t) => t[0] === 'a').map((t) => t[1])
