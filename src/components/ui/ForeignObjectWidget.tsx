@@ -4,7 +4,7 @@ import { api } from '../../../convex/_generated/api'
 import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
 import { hasConvex } from '@/api'
 import { cn } from '@/lib/utils'
-import { validToken } from '@/auth/estivaId'
+import { currentEstivaToken } from '@/auth/estivaId'
 
 /**
  * Another app's object, rendered inline in Peek.
@@ -341,8 +341,7 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
 
   const reload = useCallback(
     () => {
-      const userToken = validToken()
-      resolve({ naddr, estivaIdToken: userToken?.accessToken }).then(setObject).catch(() => setObject(null))
+      resolve({ naddr, estivaIdToken: currentEstivaToken() }).then(setObject).catch(() => setObject(null))
     },
     [naddr, resolve],
   )
@@ -352,12 +351,11 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
       setBusy(true)
       setActionError(undefined)
       try {
-        const userToken = validToken()
         const result = await applyAction({ 
           naddr, 
           actionId, 
           value,
-          estivaIdToken: userToken?.accessToken 
+          estivaIdToken: currentEstivaToken(),
         })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
@@ -386,7 +384,10 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
     // reactive query layer cannot do. So there is no live update — the widget
     // reflects the moment it was resolved. Good enough for a message
     // attachment, and the honest limitation to note rather than hide.
-    resolve({ naddr })
+    // The token matters as much here as in `reload`: without it this reads as
+    // the backend, which is a member of no channel, so the relay returns
+    // nothing and the widget silently renders as if the reference were broken.
+    resolve({ naddr, estivaIdToken: currentEstivaToken() })
       .then((result) => !cancelled && setObject(result))
       .catch(() => !cancelled && setObject(null))
     return () => {

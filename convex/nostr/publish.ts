@@ -494,47 +494,93 @@ export const publishMembership = internalAction({
  * Skipped when the parent message has not been published: Buzz rejects replies
  * to events it does not know, and there is no id to point at.
  */
+async function publishReplyWith(
+  ctx: { runQuery: any; runMutation: any },
+  replyId: Id<'replies'>,
+  authorOverride?: Identity,
+): Promise<{ ok: boolean; reason?: string }> {
+  const r = await ctx.runQuery(internal.nostr.data.getReplyContext, { replyId })
+  if (!r) return { ok: false, reason: 'unknown reply' }
+  if (r.alreadyPublished) return { ok: true }
+  if (!r.channelUuid || !r.parentEventId) {
+    console.warn(`[nostr] reply ${replyId} skipped: parent message is not on the relay yet`)
+    return { ok: false, reason: 'the message being replied to is not on the relay yet' }
+  }
+  if (!withinDriftWindow(r.createdAt)) {
+    return { ok: false, reason: 'outside the relay drift window' }
+  }
+
+  const author = authorOverride ?? (await identityFor(ctx, r.authorId))
+  if (!author) {
+    skipUnsigned(`reply ${replyId}`, r.authorId)
+    return { ok: false, reason: 'no signing identity for the author' }
+  }
+
+  const signed = await signAs(
+    buildMessage(author.pubkey, r.createdAt, {
+      channelUuid: r.channelUuid,
+      content: r.body,
+      threadRef: { rootId: r.parentEventId, parentId: r.parentEventId },
+    }),
+    author,
+  )
+  const res = await publishEvent(signed, author)
+  if (!res.ok) {
+    console.warn(`[nostr] reply ${replyId} rejected: ${res.reason}`)
+    return { ok: false, reason: res.reason }
+  }
+  if (res.eventId) {
+    await ctx.runMutation(internal.nostr.data.markReplyPublished, {
+      replyId,
+      nostrEventId: res.eventId,
+    })
+  }
+  return { ok: true }
+}
+
+/** Publish a reply, for users whose key Peek custodies. */
 export const publishReply = internalAction({
   args: { replyId: v.id('replies') },
   handler: async (ctx, { replyId }) => {
     if (!relayUrl()) return
     try {
-      const r = await ctx.runQuery(internal.nostr.data.getReplyContext, { replyId })
-      if (!r || r.alreadyPublished) return
-      if (!r.channelUuid || !r.parentEventId) {
-        console.warn(
-          `[nostr] reply ${replyId} skipped: parent message is not on the relay yet`,
-        )
-        return
-      }
-      if (!withinDriftWindow(r.createdAt)) return
-
-      const author = await identityFor(ctx, r.authorId)
-      if (!author) {
-        skipUnsigned(`reply ${replyId}`, r.authorId)
-        return
-      }
-      const signed = await signAs(
-        buildMessage(author.pubkey, r.createdAt, {
-          channelUuid: r.channelUuid,
-          content: r.body,
-          threadRef: { rootId: r.parentEventId, parentId: r.parentEventId },
-        }),
-        author,
-      )
-      const res = await publishEvent(signed, author)
-      if (!res.ok) {
-        console.warn(`[nostr] reply ${replyId} rejected: ${res.reason}`)
-        return
-      }
-      if (res.eventId) {
-        await ctx.runMutation(internal.nostr.data.markReplyPublished, {
-          replyId,
-          nostrEventId: res.eventId,
-        })
-      }
+      await publishReplyWith(ctx, replyId)
     } catch (e) {
       console.warn(`[nostr] publishReply(${replyId}) failed:`, e)
+    }
+  },
+})
+
+/**
+ * Publish a reply using the author's own Estiva ID token.
+ *
+ * Same reasoning as `publishMessageAsAuthor`: scheduled work never sees the
+ * caller's token, and `/sign` signs as nobody but that token's subject — so
+ * without this a reply from an Estiva ID identity is silently never published,
+ * and a thread started in Peek stops halfway on the relay.
+ */
+export const publishReplyAsAuthor = action({
+  args: { replyId: v.id('replies'), estivaAccessToken: v.string() },
+  handler: async (ctx, { replyId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+
+    const [r, viewerId] = await Promise.all([
+      ctx.runQuery(internal.nostr.data.getReplyContext, { replyId }),
+      ctx.runQuery(internal.users.viewerIdForAction, {}),
+    ])
+    if (!r) return { ok: false, reason: 'unknown reply' }
+    if (!viewerId || viewerId !== r.authorId) {
+      return { ok: false, reason: 'only the author may publish their reply' }
+    }
+
+    const author = await identityForCreatorToken(ctx, r.authorId, estivaAccessToken)
+    if (!author) return { ok: false, reason: 'author has no Estiva ID pubkey' }
+
+    try {
+      return await publishReplyWith(ctx, replyId, author)
+    } catch (e) {
+      console.warn(`[nostr] publishReplyAsAuthor(${replyId}) failed:`, e)
+      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
     }
   },
 })

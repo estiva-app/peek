@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { SkeletonBar } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
-import { validToken } from '@/auth/estivaId'
+import { currentEstivaToken } from '@/auth/estivaId'
 
 /**
  * The Folder's contents, beside the conversation (PEEK-24).
@@ -320,9 +320,7 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   const load = useCallback(
     (target: string) => {
       console.log(`[TRACE] TopicProjectPanel.load: called with target=${target}`)
-      const userToken = validToken()
-      console.log(`[TRACE] TopicProjectPanel.load: userToken=${userToken ? 'present' : 'absent'}`)
-      return resolveProject({ folder: target, estivaIdToken: userToken?.accessToken })
+      return resolveProject({ folder: target, estivaIdToken: currentEstivaToken() })
         .then((project) => {
           console.log(`[TRACE] TopicProjectPanel.load: resolveProject returned`, project)
           return { folder: target, project }
@@ -351,12 +349,11 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
       setActingOn(object.naddr)
       setErrors((prev) => ({ ...prev, [object.naddr]: '' }))
       try {
-        const userToken = validToken()
         const result = await applyAction({ 
           naddr: object.naddr, 
           actionId, 
           value,
-          estivaIdToken: userToken?.accessToken 
+          estivaIdToken: currentEstivaToken(),
         })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
