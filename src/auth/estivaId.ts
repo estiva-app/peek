@@ -205,6 +205,19 @@ export function hasEstivaIdSession(): boolean {
   return validToken() !== null
 }
 
+/**
+ * The access token to hand a Convex action that reads or writes the relay.
+ *
+ * Every one of those calls needs it, because Buzz answers a non-member with
+ * `403 relay_membership_required` and the backend is a member of nothing. One
+ * call site forgetting it is not a visible failure — the read comes back empty
+ * and the widget renders nothing — so it is worth having a single name for
+ * "the current user's token" rather than six copies of `validToken()?.accessToken`.
+ */
+export function currentEstivaToken(): string | undefined {
+  return validToken()?.accessToken
+}
+
 export function clearSession(): void {
   const s = store()
   if (!s) return
