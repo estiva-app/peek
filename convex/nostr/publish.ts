@@ -24,13 +24,18 @@ import {
   buildMessage,
   buildReaction,
 } from './events'
-import { publishEvent, relayUrl, serviceIdentity, signWithIdentityService } from './bridge'
+import { publishEvent, relayUrl, signAs, type RelayAuth } from './bridge'
+import { maybeDecryptSecretKey } from './keys'
 import { decodeNaddr, findNaddrs, pointerToAddress } from './nip19'
 
-interface Identity {
-  pubkey: string
-  token: string
-}
+/**
+ * Who a publish is attributed to, and how it will be signed.
+ *
+ * Same shape as `RelayAuth` on purpose: the bridge needs exactly this to sign
+ * both the content event and its NIP-98 auth event, and having two near-identical
+ * types invited passing one where the other was meant.
+ */
+type Identity = RelayAuth & { pubkey: string }
 
 /**
  * The relay's answer when a message targets a channel it does not know. Seen
@@ -60,28 +65,37 @@ function withinDriftWindow(createdAtMs: number): boolean {
 }
 
 /**
- * Sign through the identity service instead of local key custody.
+ * How scheduled work signs for a user, or `null` when it cannot.
  *
- * The token comes from the backend service credential. The event author pubkey
- * comes from the user row, so published actions still appear as the acting
- * user instead of the service account.
+ * Returning `null` is a real answer, not a failure: for an Estiva ID identity
+ * there is no way for background work to sign, and the honest response is to
+ * skip rather than to publish under some other name.
  */
 export async function identityFor(
   ctx: { runQuery: any; runMutation: any },
   userId: Id<'users'>,
 ): Promise<Identity | null> {
-  const auth = await serviceIdentity()
-  console.log(`[TRACE] identityFor(${userId}): serviceIdentity=${auth ? `pubkey=${auth.pubkey}, hasToken=${!!auth.token}` : 'null'}`)
-  if (!auth) return null
-
   const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
-  console.log(
-    `[TRACE] identityFor(${userId}): nostrPubkey=${keys?.nostrPubkey ?? 'null'}, ` +
-      `hasLegacySecret=${!!keys?.nostrSecretKey}`,
-  )
   if (!keys?.nostrPubkey) return null
 
-  return { pubkey: keys.nostrPubkey, token: auth.token! }
+  // Custodied key: a legacy Convex Auth user whose secret Peek still holds.
+  // Signed locally, exactly as before Estiva ID existed. PEEK-37 moves these
+  // keys out and PEEK-41 retires the accounts; until then this is the only way
+  // scheduled work can publish for them.
+  if (keys.nostrSecretKey) {
+    return {
+      pubkey: keys.nostrPubkey,
+      secretKeyHex: await maybeDecryptSecretKey(keys.nostrSecretKey),
+    }
+  }
+
+  // An Estiva ID identity. Peek holds no key, and scheduled actions cannot see
+  // the caller's bearer token — Convex does not expose it to background work.
+  // A service credential is not a substitute: `/sign` signs as the token's
+  // subject, so a service token would publish somebody else's name onto this
+  // person's message. The client republishes with its own token instead
+  // (`publishTopicAsCreator`); callers here skip and say so.
+  return null
 }
 
 /**
@@ -108,8 +122,9 @@ export async function identityForCreatorToken(
  */
 function skipUnsigned(what: string, userId: Id<'users'>): null {
   console.warn(
-    `[nostr] ${what} skipped: Peek has no identity-service credential for user ${userId}. ` +
-      `Signing now goes through Estiva ID, so nothing local is decrypted or minted.`,
+    `[nostr] ${what} skipped: Peek holds no signing key for user ${userId}, and scheduled ` +
+      `work cannot see their Estiva ID token. The client publishes this with its own token ` +
+      `instead; signing here as anyone else would misattribute the event.`,
   )
   return null
 }
@@ -167,15 +182,15 @@ async function ensureChannel(
 
   let signed
   try {
-    signed = await signWithIdentityService(unsigned, creator)
+    signed = await signAs(unsigned, creator)
     if (signed.pubkey !== creator.pubkey) {
       throw new Error(
         `POST /sign returned ${signed.pubkey}, expected creator ${creator.pubkey}; refusing service authorship`,
       )
     }
-    console.log(`[TRACE] ensureChannel: signWithIdentityService OK, eventId=${signed.id}`)
+    console.log(`[TRACE] ensureChannel: signAs OK, eventId=${signed.id}`)
   } catch (e) {
-    console.error(`[TRACE] ensureChannel: signWithIdentityService THREW:`, e)
+    console.error(`[TRACE] ensureChannel: signAs THREW:`, e)
     throw e
   }
 
@@ -240,7 +255,7 @@ export const publishTopicAsCreator = action({
       for (const userId of memberIds) {
         const member = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId })
         if (!member?.nostrPubkey || member.nostrPubkey === creator.pubkey) continue
-        const signed = await signWithIdentityService(
+        const signed = await signAs(
           buildAddMember(creator.pubkey, Date.now(), {
             channelUuid: channel.channelUuid,
             targetPubkey: member.nostrPubkey,
@@ -283,7 +298,7 @@ export const publishTopic = internalAction({
           continue
         }
         if (member.pubkey === channel.creator.pubkey) continue // creator is already owner
-        const signed = await signWithIdentityService(
+        const signed = await signAs(
           buildAddMember(channel.creator.pubkey, Date.now(), {
             channelUuid: channel.channelUuid,
             targetPubkey: member.pubkey,
@@ -337,7 +352,7 @@ export const publishMessage = internalAction({
       }
 
       const send = async () => {
-        const signed = await signWithIdentityService(
+        const signed = await signAs(
           buildMessage(author.pubkey, m.createdAt, {
             channelUuid: channelUuid!,
             content: m.body,
@@ -394,7 +409,7 @@ export const publishMembership = internalAction({
         return
       }
       if (member.pubkey === channel.creator.pubkey) return // creator is already owner
-      const signed = await signWithIdentityService(
+      const signed = await signAs(
         buildAddMember(channel.creator.pubkey, Date.now(), {
           channelUuid: channel.channelUuid,
           targetPubkey: member.pubkey,
@@ -440,7 +455,7 @@ export const publishReply = internalAction({
         skipUnsigned(`reply ${replyId}`, r.authorId)
         return
       }
-      const signed = await signWithIdentityService(
+      const signed = await signAs(
         buildMessage(author.pubkey, r.createdAt, {
           channelUuid: r.channelUuid,
           content: r.body,
@@ -481,7 +496,7 @@ export const publishReaction = internalAction({
         skipUnsigned(`reaction ${reactionId}`, r.userId)
         return
       }
-      const signed = await signWithIdentityService(
+      const signed = await signAs(
         buildReaction(author.pubkey, r.createdAt, {
           targetEventId: r.targetEventId,
           emoji: r.emoji,
@@ -521,7 +536,7 @@ export const publishReactionRemoval = internalAction({
         skipUnsigned(`deletion of ${nostrEventId}`, userId)
         return
       }
-      const signed = await signWithIdentityService(
+      const signed = await signAs(
         buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),
         author,
       )

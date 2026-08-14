@@ -14,11 +14,10 @@
  * Requires an identity to authenticate the read — the bridge is NIP-98 gated on
  * every route, reads included.
  */
-import { v } from 'convex/values'
 import { internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { queryEvents, relayUrl, serviceIdentity, type RelayAuth } from './bridge'
+import { queryEvents, relayUrl, type RelayAuth } from './bridge'
 import { maybeDecryptSecretKey } from './keys'
 import type { SignedEvent } from './events'
 
@@ -37,10 +36,19 @@ const REACTION_TARGET_LIMIT = 100
 
 type Reader = RelayAuth
 
+/**
+ * Whose identity the background sync reads the relay as.
+ *
+ * Reads are membership-scoped, so this is not a formality: it decides which
+ * channels are visible. Sync is scheduled work with no signed-in user, so the
+ * only credential available is a custodied key.
+ *
+ * `locals[0]` is arbitrary — whichever custodial user the query returns first —
+ * and that is a known limitation rather than a design: what sync can see
+ * depends on which account that happens to be. It stops mattering once PEEK-37
+ * moves these keys out and sync reads as a dedicated identity instead.
+ */
 async function readerIdentity(_ctx: { runQuery: any }): Promise<Reader | null> {
-  const auth = await serviceIdentity()
-  if (auth) return auth
-
   const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
   if (!locals?.length) return null
   const { nostrPubkey, nostrSecretKey } = locals[0]

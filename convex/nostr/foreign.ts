@@ -9,7 +9,7 @@
  */
 import { v } from 'convex/values'
 import { action, type ActionCtx } from '../_generated/server'
-import { queryEvents, relayUrl, serviceIdentity, type RelayAuth } from './bridge'
+import { queryEvents, relayUrl, type RelayAuth } from './bridge'
 import { internal } from '../_generated/api'
 import { maybeDecryptSecretKey } from './keys'
 import {
@@ -57,8 +57,10 @@ async function readerQuery(_ctx: ActionCtx, estivaIdToken?: string): Promise<Que
     }
   }
 
-  // Fallback to backend credentials (existing behavior)
-  const serviceAuth = await serviceIdentity()
+  // No signed-in token: fall back to a custodied key. `locals[0]` is arbitrary,
+  // and because relay reads are membership-scoped that means discovery can see
+  // different things depending on which custodial account comes back first.
+  // Acceptable only as a fallback — the token path above is the correct one.
   const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
   const localAuth: RelayAuth | null = locals?.[0]
     ? {
@@ -67,14 +69,11 @@ async function readerQuery(_ctx: ActionCtx, estivaIdToken?: string): Promise<Que
       }
     : null
 
-  const auth = serviceAuth ?? localAuth
-  if (!auth) return null
+  if (!localAuth) return null
 
   return async (filters) => {
-    const primary = await queryEvents(filters, auth)
-    if (primary.ok || !serviceAuth || !localAuth) return primary.events
-    const fallback = await queryEvents(filters, localAuth)
-    return fallback.events
+    const result = await queryEvents(filters, localAuth)
+    return result.events
   }
 }
 
