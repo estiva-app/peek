@@ -497,16 +497,39 @@ export async function deleteAttachmentBlobs(
   }
 }
 
+/**
+ * Delete a message, its replies, and its reactions — and hand back the relay
+ * event ids that now need tombstoning.
+ *
+ * The ids are collected BEFORE the rows go, because after the delete there is
+ * nothing left to look them up from. The browser publishes the kind:5s (same
+ * shape as `toggleReaction` → `publishReactionRemovalAsAuthor`): a bearer token
+ * only exists there, and scheduled work has no identity the relay accepts.
+ *
+ * Only the viewer's OWN events are returned. The relay enforces that a kind:5
+ * may delete nothing but its own author's event, so a reply or reaction someone
+ * else wrote stays on the relay — collecting it would just produce a rejection.
+ * A row that never reached the relay has no `nostrEventId` and needs no
+ * tombstone at all.
+ */
 export const remove = mutation({
   args: { key: v.string() },
-  handler: async (ctx, { key }) => {
+  handler: async (ctx, { key }): Promise<{ nostrEventIds: string[] }> => {
     const m = await findMessageByKey(ctx, key)
-    if (!m) return
+    if (!m) return { nostrEventIds: [] }
+    const me = await viewerId(ctx)
+    const nostrEventIds: string[] = []
+    const tombstone = (eventId: string | undefined, author: Id<'users'>) => {
+      if (eventId && me && author === me) nostrEventIds.push(eventId)
+    }
+
+    tombstone(m.nostrEventId, m.authorId)
     const replies = await ctx.db
       .query('replies')
       .withIndex('by_message', (q) => q.eq('messageId', m._id))
       .collect()
     for (const r of replies) {
+      tombstone(r.nostrEventId, r.authorId)
       await deleteAttachmentBlobs(ctx, r.fileAttachments)
       await ctx.db.delete(r._id)
     }
@@ -514,8 +537,12 @@ export const remove = mutation({
       .query('reactions')
       .withIndex('by_message', (q) => q.eq('messageId', m._id))
       .collect()
-    for (const r of reactions) await ctx.db.delete(r._id)
+    for (const r of reactions) {
+      tombstone(r.nostrEventId, r.userId)
+      await ctx.db.delete(r._id)
+    }
     await deleteAttachmentBlobs(ctx, m.fileAttachments)
     await ctx.db.delete(m._id)
+    return { nostrEventIds }
   },
 })

@@ -52,6 +52,7 @@ export function usePeekActions() {
   const publishReplyAsAuthor = useAction(api.nostr.publish.publishReplyAsAuthor)
   const publishReactionAsAuthor = useAction(api.nostr.publish.publishReactionAsAuthor)
   const publishReactionRemovalAsAuthor = useAction(api.nostr.publish.publishReactionRemovalAsAuthor)
+  const publishDeletionAsAuthor = useAction(api.nostr.publish.publishDeletionAsAuthor)
   const editBodyRemote = useMutation(api.messages.editBody)
   const removeRemote = useMutation(api.messages.remove)
   const sendReplyRemote = useMutation(api.replies.send)
@@ -101,6 +102,24 @@ export function usePeekActions() {
       // relay is a mirror rather than the source of truth.
       if (!result.ok) console.warn('[nostr] message publish failed:', result.reason)
     })().catch((error) => console.warn('[nostr] message publish failed:', error))
+  }
+
+  /**
+   * Tombstone on the relay whatever a remove mutation just destroyed.
+   *
+   * The rows are gone by the time this runs, which is why the mutation returns
+   * the event ids rather than the action looking them up. Published from here
+   * for the same reason every other write is: this is the only place the Estiva
+   * ID bearer token exists.
+   */
+  const publishDeletions = (removed: Promise<{ nostrEventIds: string[] }>) => {
+    void (async () => {
+      const { nostrEventIds } = await removed
+      const token = usesEstivaId ? validToken() : null
+      if (nostrEventIds.length === 0 || !token) return
+      const result = await publishDeletionAsAuthor({ nostrEventIds, estivaAccessToken: token.accessToken })
+      if (!result.ok) console.warn('[nostr] deletion publish failed:', result.reason)
+    })().catch((error) => console.warn('[nostr] deletion publish failed:', error))
   }
 
   const buildMessage = ({ text, resolution, highlightType, attachments, files }: SendMessagePayload): ConversationData => ({
@@ -172,13 +191,13 @@ export function usePeekActions() {
     deleteTopicMessage(topicId: string, messageId: string) {
       m.setSentMessages((prev) => ({ ...prev, [topicId]: (prev[topicId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) void removeRemote({ key: messageId })
+      if (hasConvex) publishDeletions(removeRemote({ key: messageId }))
     },
 
     deleteDmMessage(dmId: string, messageId: string) {
       setSentDmMessages((prev) => ({ ...prev, [dmId]: (prev[dmId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) void removeRemote({ key: messageId })
+      if (hasConvex) publishDeletions(removeRemote({ key: messageId }))
     },
 
     /** Body edit — id-keyed, applies to messages and replies alike
@@ -353,7 +372,7 @@ export function usePeekActions() {
 
     deleteReply(messageId: string, replyId: string) {
       m.setSentReplies((prev) => ({ ...prev, [messageId]: (prev[messageId] ?? []).filter((r) => r.id !== replyId) }))
-      if (hasConvex) void removeReplyRemote({ key: replyId })
+      if (hasConvex) publishDeletions(removeReplyRemote({ key: replyId }))
     },
 
     // ── Huddles ──
