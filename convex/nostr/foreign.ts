@@ -21,14 +21,29 @@ import {
 } from './projection'
 
 /**
- * A relay read authenticated by the backend's identity-service credential.
+ * A relay read authenticated by the user's Estiva ID token (preferred) or
+ * backend's identity-service credential (fallback).
  *
- * The relay is NIP-98 gated on all routes, but the call path no longer depends on
- * decrypting a user secret at all.
+ * The relay is NIP-98 gated on all routes. When a user token is provided, it's
+ * used to authenticate as the signed-in user (matching Ship's auth model).
+ * Falls back to backend credentials if no user token is available.
  */
-async function readerQuery(_ctx: ActionCtx): Promise<QueryFn | null> {
+async function readerQuery(_ctx: ActionCtx, estivaIdToken?: string): Promise<QueryFn | null> {
   if (!relayUrl()) return null
 
+  // Try user token first (Ship model: read as the signed-in user)
+  if (estivaIdToken) {
+    const userAuth: RelayAuth = {
+      pubkey: null, // Will be derived from token by relay
+      token: estivaIdToken,
+    }
+    return async (filters) => {
+      const result = await queryEvents(filters, userAuth)
+      return result.events
+    }
+  }
+
+  // Fallback to backend credentials (existing behavior)
   const serviceAuth = await serviceIdentity()
   const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
   const localAuth: RelayAuth | null = locals?.[0]
@@ -74,12 +89,18 @@ export const resolveObject = action({
  *
  * `null` means "no project here", which is a state the sidebar draws as an
  * empty panel — the topic simply has no tracker attached, and that is normal.
+ *
+ * Accepts an optional `estivaIdToken` to authenticate relay reads as the signed-in
+ * user (matching Ship's auth model). Falls back to backend credentials if not provided.
  */
 export const projectForFolder = action({
-  args: { folder: v.string() },
-  handler: async (ctx, { folder }): Promise<FolderProject | null> => {
-    console.log(`[TRACE] projectForFolder: called with folder=${folder}`)
-    const query = await readerQuery(ctx)
+  args: { 
+    folder: v.string(),
+    estivaIdToken: v.optional(v.string())
+  },
+  handler: async (ctx, { folder, estivaIdToken }): Promise<FolderProject | null> => {
+    console.log(`[TRACE] projectForFolder: called with folder=${folder}, estivaIdToken=${estivaIdToken ? 'present' : 'absent'}`)
+    const query = await readerQuery(ctx, estivaIdToken)
     console.log(`[TRACE] projectForFolder: query=${query ? 'available' : 'null'}`)
     if (!query) {
       console.log(`[TRACE] projectForFolder: returning null due to no query`)

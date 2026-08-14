@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { SkeletonBar } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
+import { validToken } from '@/auth/estivaId'
 
 /**
  * The Folder's contents, beside the conversation (PEEK-24).
@@ -319,7 +320,9 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   const load = useCallback(
     (target: string) => {
       console.log(`[TRACE] TopicProjectPanel.load: called with target=${target}`)
-      return resolveProject({ folder: target })
+      const userToken = validToken()
+      console.log(`[TRACE] TopicProjectPanel.load: userToken=${userToken ? 'present' : 'absent'}`)
+      return resolveProject({ folder: target, estivaIdToken: userToken?.accessToken })
         .then((project) => {
           console.log(`[TRACE] TopicProjectPanel.load: resolveProject returned`, project)
           return { folder: target, project }

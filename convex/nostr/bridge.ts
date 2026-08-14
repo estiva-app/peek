@@ -10,7 +10,7 @@ import { authorizationHeader as localAuthorizationHeader, normalizeUrl } from '.
 import type { SignedEvent, UnsignedEvent } from './events'
 
 export interface RelayAuth {
-  pubkey: string
+  pubkey: string | null
   token?: string
   secretKeyHex?: string
 }
@@ -114,6 +114,9 @@ async function bridgeAuthorizationHeader(
   auth: RelayAuth,
 ): Promise<string> {
   if (auth.secretKeyHex) {
+    if (!auth.pubkey) {
+      throw new Error('Pubkey required when using secret key auth')
+    }
     return localAuthorizationHeader({
       pubkey: auth.pubkey,
       secretKeyHex: auth.secretKeyHex,
@@ -126,8 +129,15 @@ async function bridgeAuthorizationHeader(
     throw new Error('No relay auth token available')
   }
 
+  // For user tokens (Estiva ID session tokens), use Bearer auth directly
+  // The relay validates the token and extracts the pubkey from it
+  if (!auth.pubkey) {
+    return `Bearer ${auth.token}`
+  }
+
+  // For service tokens, sign NIP-98 auth event
   const unsigned = {
-    pubkey: auth.pubkey,
+    pubkey: auth.pubkey, // Non-null here since we checked above
     created_at: Math.floor(Date.now() / 1000),
     kind: 27235,
     tags: [
@@ -216,7 +226,7 @@ export async function queryEvents(
   filters: Record<string, unknown>[],
   auth: RelayAuth,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  console.log(`[TRACE] queryEvents: relayUrl=${relayUrl()}, filters=${JSON.stringify(filters)}, auth.pubkey=${auth.pubkey.slice(0, 16)}…, auth.token=${auth.token ? 'present' : 'none'}, auth.secretKeyHex=${auth.secretKeyHex ? 'present' : 'none'}`)
+  console.log(`[TRACE] queryEvents: relayUrl=${relayUrl()}, filters=${JSON.stringify(filters)}, auth.pubkey=${auth.pubkey ? auth.pubkey.slice(0, 16) + '…' : 'null'}, auth.token=${auth.token ? 'present' : 'none'}, auth.secretKeyHex=${auth.secretKeyHex ? 'present' : 'none'}`)
   const { status, text } = await bridgeFetch('/query', filters, auth)
   console.log(`[TRACE] queryEvents: status=${status}, response.length=${text.length}`)
   if (status < 200 || status >= 300) {
