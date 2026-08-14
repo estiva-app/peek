@@ -6,11 +6,13 @@
  * deployment is configured, the corresponding Convex mutation. All writes
  * stamp CURRENT_USER_NAME (the Phase 3 identity switch point).
  */
-import { useAction, useMutation } from 'convex/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { hasConvex, useDmRuntime, usesEstivaId } from './store'
 import { validToken } from '@/auth/estivaId'
+import { buildDeletion } from '../../convex/nostr/events'
+import { publishSigned, signViaEstivaId } from '@/nostr/bridge'
 import { CURRENT_USER_NAME } from './currentUser'
 import type { UploadedFile } from './uploads'
 import type { ConversationData, FileAttachment, HighlightType, Huddle, ReactionData, ReplyData } from './types'
@@ -52,7 +54,9 @@ export function usePeekActions() {
   const publishReplyAsAuthor = useAction(api.nostr.publish.publishReplyAsAuthor)
   const publishReactionAsAuthor = useAction(api.nostr.publish.publishReactionAsAuthor)
   const publishReactionRemovalAsAuthor = useAction(api.nostr.publish.publishReactionRemovalAsAuthor)
-  const publishDeletionAsAuthor = useAction(api.nostr.publish.publishDeletionAsAuthor)
+  // Where the relay lives. A query rather than a build-time variable so the
+  // bundle and the backend cannot disagree about it — see convex/nostr/config.ts.
+  const relayConfig = useQuery(api.nostr.config.relayConfig)
   const editBodyRemote = useMutation(api.messages.editBody)
   const removeRemote = useMutation(api.messages.remove)
   const sendReplyRemote = useMutation(api.replies.send)
@@ -108,17 +112,40 @@ export function usePeekActions() {
    * Tombstone on the relay whatever a remove mutation just destroyed.
    *
    * The rows are gone by the time this runs, which is why the mutation returns
-   * the event ids rather than the action looking them up. Published from here
-   * for the same reason every other write is: this is the only place the Estiva
-   * ID bearer token exists.
+   * the event ids rather than anything looking them up afterwards.
+   *
+   * **The first path to sign and publish entirely in the browser (PEEK-106).**
+   * It went first because it needs nothing from Convex to build the event: a
+   * kind:5 is just the target id, and the viewer's pubkey is in their own token.
+   * Every other path needs an unsigned event assembled from rows, so this one
+   * proves the seam without the extra machinery. The token now never leaves the
+   * tab, so it can no longer appear in Convex's dashboard logs.
    */
   const publishDeletions = (removed: Promise<{ nostrEventIds: string[] }>) => {
     void (async () => {
       const { nostrEventIds } = await removed
       const token = usesEstivaId ? validToken() : null
       if (nostrEventIds.length === 0 || !token) return
-      const result = await publishDeletionAsAuthor({ nostrEventIds, estivaAccessToken: token.accessToken })
-      if (!result.ok) console.warn('[nostr] deletion publish failed:', result.reason)
+      const relay = relayConfig?.relayUrl
+      if (!relay) {
+        // Said out loud rather than returning quietly: an absent relay origin
+        // is indistinguishable from "nothing to publish" at the call site, and
+        // that silence is how the original bug survived.
+        console.warn(
+          `[nostr] ${nostrEventIds.length} deletion(s) not published: no relay origin ` +
+            `(publishing is off, or the config query has not resolved yet)`,
+        )
+        return
+      }
+      for (const targetEventId of nostrEventIds) {
+        const signed = await signViaEstivaId(
+          buildDeletion(token.pubkey, Date.now(), { targetEventId }),
+          token.accessToken,
+          token.pubkey,
+        )
+        const result = await publishSigned(relay, signed, token.accessToken, token.pubkey)
+        if (!result.ok) console.warn('[nostr] deletion publish failed:', result.reason)
+      }
     })().catch((error) => console.warn('[nostr] deletion publish failed:', error))
   }
 
