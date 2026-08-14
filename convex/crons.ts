@@ -1,19 +1,18 @@
 /**
- * Scheduled jobs.
+ * Scheduled jobs — there are none.
  *
- * Only the Nostr read path so far. `syncChannels` no-ops immediately when
- * `NOSTR_RELAY_URL` is unset, so this costs nothing when the integration is off
- * — which is its default state.
+ * The relay read path used to run here, authenticating with a custodial key
+ * borrowed from whichever Peek user happened to have one. Peek holds no keys
+ * now, and Buzz refuses a non-member with `403 relay_membership_required`, so
+ * background work has no identity that can see anything at all.
+ *
+ * Reads happen as the signed-in viewer (`nostr/sync:syncTopicAsViewer`), because
+ * only they are a member of their own channels. The consequence worth knowing:
+ * a topic syncs when someone opens it, not continuously.
+ *
+ * Kept as a file rather than deleted so the next person adding a cron finds this
+ * reasoning instead of rediscovering the 403s.
  */
 import { cronJobs } from 'convex/server'
-import { internal } from './_generated/api'
 
-const crons = cronJobs()
-
-// 30s is a compromise: polling the HTTP bridge is the only option from Convex's
-// request-scoped runtime (no long-lived WebSocket), so this trades latency
-// against load. Real-time would mean an external consumer holding a NIP-01 REQ
-// subscription and pushing into Convex — see convex/nostr/sync.ts.
-crons.interval('nostr: pull relay events', { seconds: 30 }, internal.nostr.sync.syncChannels, {})
-
-export default crons
+export default cronJobs()

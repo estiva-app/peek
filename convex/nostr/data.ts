@@ -28,40 +28,7 @@ export const getUserKeys = internalQuery({
       // placeholder.
       avatarUrl: u.avatarStorageId ? ((await ctx.storage.getUrl(u.avatarStorageId)) ?? null) : null,
       nostrPubkey: u.nostrPubkey ?? null,
-      nostrSecretKey: u.nostrSecretKey ?? null,
     }
-  },
-})
-
-/**
- * Store a minted keypair, **first write wins**.
- *
- * Two concurrent publishes for the same user would otherwise mint two keypairs
- * and the user's events would split across two identities. Returns whatever is
- * effectively stored, so a loser of the race uses the winner's key rather than
- * its own. Mirrors how Buzz makes `set_agent_owner` atomic
- * (crates/buzz-db/src/user.rs:291).
- */
-export const storeKeypair = internalMutation({
-  args: {
-    userId: v.id('users'),
-    nostrPubkey: v.string(),
-    nostrSecretKey: v.string(),
-  },
-  handler: async (ctx, { userId, nostrPubkey, nostrSecretKey }) => {
-    const u = await ctx.db.get(userId)
-    if (!u) throw new Error(`unknown user ${userId}`)
-    // An existing pubkey is never overwritten — with or without a secret beside
-    // it. The old test was `pubkey && secret`, which let a custodied mint land on
-    // top of an identity Estiva ID holds and silently detach that person from
-    // everything they had published. `identityFor` already refuses this case;
-    // this is the backstop, because the damage is unrecoverable and invisible.
-    if (u.nostrPubkey) {
-      if (!u.nostrSecretKey) throw new Error(`refusing to mint over held identity for ${userId}`)
-      return { nostrPubkey: u.nostrPubkey, nostrSecretKey: u.nostrSecretKey, minted: false }
-    }
-    await ctx.db.patch(userId, { nostrPubkey, nostrSecretKey })
-    return { nostrPubkey, nostrSecretKey, minted: true }
   },
 })
 
@@ -176,17 +143,6 @@ export const listChannels = internalQuery({
         channelUuid: t.channelUuid ?? '(not published yet — post a message in it)',
       }))
       .sort((a, b) => a.topic.localeCompare(b.topic))
-  },
-})
-
-/** Peek users that can sign — the read path borrows one to authenticate. */
-export const listLocalUsersWithKeys = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query('users').collect()
-    return rows
-      .filter((u) => u.nostrPubkey && u.nostrSecretKey && !u.isExternal)
-      .map((u) => ({ nostrPubkey: u.nostrPubkey!, nostrSecretKey: u.nostrSecretKey! }))
   },
 })
 

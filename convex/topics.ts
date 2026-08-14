@@ -28,7 +28,6 @@ export async function ensureTopicMember(
     await ctx.db.insert('topicMembers', { topicId, userId, addedAt: Date.now() })
     // Only on an actual insert — this helper runs on every post, so scheduling
     // unconditionally would publish a redundant kind:9000 per message.
-    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishMembership, { topicId, userId })
   }
 }
 
@@ -117,19 +116,8 @@ export const create = mutation({
     // and `/sign` must sign as that person rather than a service identity. The
     // authenticated client invokes publishTopicAsCreator immediately after this
     // mutation instead. Legacy auth retains the scheduled path while it exists.
-    const isEstivaId = pubkeyFromIdentity(await ctx.auth.getUserIdentity()) !== null
-    if (isEstivaId) {
-      console.log(
-        `[TRACE] topics.create: created topicId=${topicId}, creatorId=${you._id}; ` +
-          'awaiting creator-token channel publish',
-      )
-    } else {
-      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishTopic, { topicId })
-      console.log(
-        `[TRACE] topics.create: created topicId=${topicId}, creatorId=${you._id}; ` +
-          'scheduled nostr.publishTopic',
-      )
-    }
+    // The channel is published by `publishTopicAsCreator`, which the client
+    // calls next — scheduled work cannot see the creator's token.
     return topicId
   },
 })

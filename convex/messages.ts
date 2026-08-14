@@ -305,12 +305,6 @@ export const toggleReaction = mutation({
       .query('reactions')
       .withIndex('by_message_user', (q) => q.eq('messageId', m._id).eq('userId', you._id))
       .collect()
-    // Estiva ID identities publish from the browser, the only place their token
-    // exists — same split as `send`. Custodial accounts keep the scheduled path.
-    // The return value says which half happened, so the client does not have to
-    // re-derive it from the row it just changed.
-    const publishesHere = pubkeyFromIdentity(await ctx.auth.getUserIdentity()) === null
-
     const existing = mine.find((r) => r.emoji === emoji)
     if (existing) {
       // Capture the event id BEFORE deleting: the retraction needs something to
@@ -318,13 +312,6 @@ export const toggleReaction = mutation({
       const publishedAs = existing.nostrEventId
       await ctx.db.delete(existing._id)
       if (!publishedAs) return null // never reached the relay, so nothing to retract
-      if (publishesHere) {
-        await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReactionRemoval, {
-          userId: you._id,
-          nostrEventId: publishedAs,
-        })
-        return null
-      }
       return { action: 'removed' as const, nostrEventId: publishedAs }
     }
 
@@ -334,10 +321,6 @@ export const toggleReaction = mutation({
       emoji,
       createdAt: Date.now(),
     })
-    if (publishesHere) {
-      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReaction, { reactionId })
-      return null
-    }
     return { action: 'added' as const, reactionId }
   },
 })
@@ -398,19 +381,8 @@ export const send = mutation({
     }
     const inserted = await ctx.db.get(id)
     if (inserted) await screenMessage(ctx, inserted)
-    // Mirror the message onto the Nostr relay (docs/buzz-compat/). Scheduled
-    // rather than inline: signing and HTTP are action-only in Convex, and the
-    // publish must never be able to fail this mutation. No-op unless
-    // NOSTR_RELAY_URL is set.
-    //
-    // Same split as `topics.create`: scheduled work cannot see the caller's
-    // Estiva ID bearer token, and `/sign` will only sign as that token's
-    // subject. For those identities the authenticated client calls
-    // `publishMessageAsAuthor` straight after this mutation instead. Custodial
-    // accounts keep the scheduled path, which is the only one they can use.
-    if (pubkeyFromIdentity(await ctx.auth.getUserIdentity()) === null) {
-      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishMessage, { messageId: id })
-    }
+    // Published by the browser after this returns: only it holds the token,
+    // and `/sign` signs as nobody but that token's subject.
     return id
   },
 })

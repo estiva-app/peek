@@ -11,7 +11,6 @@ import { v } from 'convex/values'
 import { action, type ActionCtx } from '../_generated/server'
 import { queryEvents, relayUrl, type RelayAuth } from './bridge'
 import { internal } from '../_generated/api'
-import { maybeDecryptSecretKey } from './keys'
 import {
   resolveFolderProject,
   resolveForeignObject,
@@ -21,62 +20,39 @@ import {
 } from './projection'
 
 /**
- * A relay read authenticated by the user's Estiva ID token (preferred) or
- * backend's identity-service credential (fallback).
+ * How foreign-object reads authenticate to the relay.
  *
- * The relay is NIP-98 gated on all routes. When a user token is provided, it's
- * used to authenticate as the signed-in user (matching Ship's auth model).
- * Falls back to backend credentials if no user token is available.
+ * As the **signed-in viewer**, always. The relay is NIP-98 gated on every route
+ * and answers a non-member with `403 relay_membership_required`, so the person
+ * looking at the object is the only identity guaranteed to see it — the same
+ * reason `syncTopicAsViewer` exists.
+ *
+ * Without a token there is nothing to fall back to: Peek holds no keys, and a
+ * service credential would be a member of nothing. Returning null is the honest
+ * answer, and the caller degrades to an unresolved reference.
  */
 async function readerQuery(_ctx: ActionCtx, estivaIdToken?: string): Promise<QueryFn | null> {
-  if (!relayUrl()) return null
+  if (!relayUrl() || !estivaIdToken) return null
 
-  // Try user token first (Ship model: read as the signed-in user)
-  if (estivaIdToken) {
-    // Extract pubkey from JWT token
-    let userPubkey: string | null = null
-    try {
-      const payload = estivaIdToken.split('.')[1]
-      if (payload) {
-        const json = JSON.parse(
-          Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
-        ) as { sub?: string }
-        userPubkey = json.sub || null
-      }
-    } catch {
-      // If token parsing fails, proceed without pubkey (service will derive)
+  // The `sub` claim is the pubkey. `/sign` overwrites whatever we send anyway,
+  // so a token we cannot parse still signs correctly — it just cannot be
+  // cross-checked against the author we expected.
+  let pubkey: string | null = null
+  try {
+    const payload = estivaIdToken.split('.')[1]
+    if (payload) {
+      const json = JSON.parse(
+        Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
+      ) as { sub?: string }
+      pubkey = json.sub ?? null
     }
-
-    const userAuth: RelayAuth = {
-      pubkey: userPubkey,
-      token: estivaIdToken,
-    }
-    return async (filters) => {
-      const result = await queryEvents(filters, userAuth)
-      return result.events
-    }
+  } catch {
+    // Unparseable token: let `/sign` be the judge of it.
   }
 
-  // No signed-in token: fall back to a custodied key. `locals[0]` is arbitrary,
-  // and because relay reads are membership-scoped that means discovery can see
-  // different things depending on which custodial account comes back first.
-  // Acceptable only as a fallback — the token path above is the correct one.
-  const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
-  const localAuth: RelayAuth | null = locals?.[0]
-    ? {
-        pubkey: locals[0].nostrPubkey,
-        secretKeyHex: await maybeDecryptSecretKey(locals[0].nostrSecretKey),
-      }
-    : null
-
-  if (!localAuth) return null
-
-  return async (filters) => {
-    const result = await queryEvents(filters, localAuth)
-    return result.events
-  }
+  const auth: RelayAuth = { pubkey, token: estivaIdToken }
+  return async (filters) => (await queryEvents(filters, auth)).events
 }
-
 /**
  * Resolve a `nostr:naddr…` into a renderable widget.
  *
