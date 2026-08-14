@@ -35,9 +35,10 @@ import {
   type ConversationData,
   type Huddle,
 } from '@/api'
-import { useQuery } from 'convex/react'
+import { useAction, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
-import { hasConvex } from '@/api'
+import { hasConvex, usesEstivaId } from '@/api'
+import { validToken } from '@/auth/estivaId'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useDebug } from '@/lib/debug'
 import { useNavigate } from 'react-router-dom'
@@ -112,6 +113,28 @@ export function useTopicView({
   console.log(`[TRACE] useTopicView: topicId=${topicId}, topicFolderIdQuery=${topicFolderIdQuery}, topic.folderId=${(topic as any)?.folderId}`)
   const topicFolderId = (topic as any)?.folderId ?? topicFolderIdQuery
   console.log(`[TRACE] useTopicView: final topicFolderId=${topicFolderId}`)
+
+  // Pull this channel as the viewer whenever the topic is opened.
+  //
+  // The cron cannot: it reads with a custodied key, and Buzz answers a
+  // non-member with `403 relay_membership_required`, so every channel an Estiva
+  // ID identity created was invisible to it — which is why nothing written in
+  // Ship ever reached Peek. The person looking at a topic is a member of it by
+  // definition, so their token is the one identity guaranteed to see it.
+  //
+  // Cheap to repeat: the `since` cursor makes an already-synced channel fetch
+  // almost nothing, and imports are idempotent by event id regardless.
+  const syncTopicAsViewer = useAction(api.nostr.sync.syncTopicAsViewer)
+  useEffect(() => {
+    if (!hasConvex || !usesEstivaId || topicId == null || !topicFolderId) return
+    const token = validToken()
+    if (!token) return
+    void syncTopicAsViewer({ topicKey: topicId, estivaAccessToken: token.accessToken })
+      .then((r) => {
+        if (!r.ok) console.warn('[nostr] viewer sync failed:', r.reason)
+      })
+      .catch((error) => console.warn('[nostr] viewer sync failed:', error))
+  }, [topicId, topicFolderId, syncTopicAsViewer])
 
   // Derived: a topic is "resolved" iff every non-deleted conv in it is resolved.
   // Single source of truth for the dashed-circle vs checkmark icon everywhere.

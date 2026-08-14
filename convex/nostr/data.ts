@@ -144,6 +144,20 @@ export const listSyncableTopics = internalQuery({
   },
 })
 
+/** One syncable topic by client-facing key — the viewer-driven sync entry point. */
+export const syncableTopicByKey = internalQuery({
+  args: { topicKey: v.string() },
+  handler: async (ctx, { topicKey }) => {
+    const normalized = ctx.db.normalizeId('topics', topicKey)
+    const rows = await ctx.db.query('topics').collect()
+    const t = normalized
+      ? rows.find((r) => (r._id as string) === (normalized as string))
+      : rows.find((r) => r.seedKey === topicKey)
+    if (!t?.channelUuid) return null
+    return { topicId: t._id, channelUuid: t.channelUuid, since: t.nostrSyncedAt ?? null }
+  },
+})
+
 /**
  * Human-readable list of which topic maps to which relay channel.
  *
