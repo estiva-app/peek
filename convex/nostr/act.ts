@@ -30,7 +30,7 @@ import { v } from 'convex/values'
 import { action } from '../_generated/server'
 import { internal } from '../_generated/api'
 import { publishEvent, queryEvents, relayUrl, signWithIdentityService } from './bridge'
-import { identityFor, identityForCreatorToken } from './publish'
+import { identityForCreatorToken } from './publish'
 import { decodeNaddr, pointerToAddress } from './nip19'
 import { buildActionEvent, resolveManifest } from './projection'
 
@@ -58,12 +58,11 @@ export const applyAction = action({
     const userId = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!userId) return fail('Sign in to change another app\'s object.')
     
-    // Use user token when provided (Ship model: sign as the real user), 
-    // fall back to backend credentials for backward compatibility
-    const identity = estivaIdToken 
+    // The token is the only way to sign: Peek holds no keys, and `/sign` signs
+    // as nobody but the token's subject.
+    const identity = estivaIdToken
       ? await identityForCreatorToken(ctx, userId, estivaIdToken)
-      : await identityFor(ctx, userId)
-      
+      : null
     if (!identity) {
       return fail(
         'Peek cannot sign as you yet: your key lives in Estiva ID, and Peek signs through it from PEEK-40 onwards.',

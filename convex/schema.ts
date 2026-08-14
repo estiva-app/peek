@@ -59,9 +59,6 @@ export default defineSchema({
     // ── Nostr identity (docs/buzz-compat/IMPLEMENTATION_PLAN.md §3.1) ──
     /** 64-char lowercase hex x-only public key. Absent until first minted. */
     nostrPubkey: v.optional(v.string()),
-    /** AES-GCM-encrypted secret key (convex/nostr/keys.ts). Never returned to
-     *  the client. PoC-grade custody — see the plan's §6.1. */
-    nostrSecretKey: v.optional(v.string()),
     /** True for identities that arrived FROM the relay rather than signing up
      *  to Peek — someone using a different app on a shared channel. They have
      *  no Peek account, so they never get a secret key and are excluded from

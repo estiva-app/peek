@@ -19,7 +19,6 @@ import { action, internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
 import { queryEvents, relayUrl, type RelayAuth } from './bridge'
-import { maybeDecryptSecretKey } from './keys'
 import type { SignedEvent } from './events'
 
 /** Cap per topic per run so one busy channel cannot starve the others. */
@@ -37,43 +36,15 @@ const REACTION_TARGET_LIMIT = 100
 
 type Reader = RelayAuth
 
-/**
- * Whose identity the background sync reads the relay as.
- *
- * Reads are membership-scoped, so this is not a formality: it decides which
- * channels are visible. Sync is scheduled work with no signed-in user, so the
- * only credential available is a custodied key.
- *
- * `locals[0]` is arbitrary — whichever custodial user the query returns first —
- * and that is a known limitation rather than a design: what sync can see
- * depends on which account that happens to be. It stops mattering once PEEK-37
- * moves these keys out and sync reads as a dedicated identity instead.
- */
-async function readerIdentity(_ctx: { runQuery: any }): Promise<Reader | null> {
-  const locals = await _ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
-  if (!locals?.length) return null
-  const { nostrPubkey, nostrSecretKey } = locals[0]
-  return { pubkey: nostrPubkey, secretKeyHex: await maybeDecryptSecretKey(nostrSecretKey) }
-}
-
 export async function queryWithReader(
-  ctx: { runQuery: any },
+  _ctx: { runQuery: any },
   reader: Reader,
   filters: Record<string, unknown>[],
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  const initial = await queryEvents(filters, reader)
-  if (initial.ok) return initial
-
-  if (reader.secretKeyHex || !reader.token) return initial
-
-  const locals = await ctx.runQuery(internal.nostr.data.listLocalUsersWithKeys, {})
-  if (!locals?.length) return initial
-
-  const localAuth: RelayAuth = {
-    pubkey: locals[0].nostrPubkey,
-    secretKeyHex: await maybeDecryptSecretKey(locals[0].nostrSecretKey),
-  }
-  return await queryEvents(filters, localAuth)
+  // No fallback identity to retry with. Peek holds no keys, and the relay
+  // refuses a non-member outright — so the viewer's own token is the only
+  // credential that can see their channels.
+  return queryEvents(filters, reader)
 }
 
 /**
@@ -330,39 +301,6 @@ async function syncTopic(
     }
 }
 
-export const syncChannels = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    if (!relayUrl()) return
-
-    const reader = await readerIdentity(ctx)
-    if (!reader) return // nobody has published yet, so there is nothing to read as
-
-    const localPubkeys: string[] = await ctx.runQuery(internal.nostr.data.listLocalPubkeys, {})
-    const isLocal = new Set(localPubkeys)
-
-    const topics: { topicId: Id<'topics'>; channelUuid: string; since: number | null }[] =
-      await ctx.runQuery(internal.nostr.data.listSyncableTopics, {})
-
-    for (const topic of topics) {
-      await syncTopic(ctx, reader, isLocal, topic)
-    }
-  },
-})
-
-/**
- * Sync one topic as the signed-in viewer, using their Estiva ID token.
- *
- * The cron cannot do this. It reads with a custodied key, and Buzz refuses a
- * non-member with `403 relay_membership_required` — so every channel created by
- * an Estiva ID identity was invisible to it, and nothing written in Ship ever
- * reached Peek. Reading as the person looking at the topic is the only identity
- * guaranteed to be a member of it.
- *
- * The client calls this when a topic is opened. It stays cheap on repeat: the
- * `since` cursor means an already-synced channel fetches almost nothing, and
- * imports are idempotent by event id regardless.
- */
 export const syncTopicAsViewer = action({
   args: { topicKey: v.string(), estivaAccessToken: v.string() },
   handler: async (ctx, { topicKey, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
@@ -394,10 +332,46 @@ export const syncTopicAsViewer = action({
 })
 
 /** Manual trigger, for testing without waiting for the cron. */
-export const syncNow = internalAction({
-  args: {},
-  handler: async (ctx): Promise<string> => {
-    await ctx.runAction(internal.nostr.sync.syncChannels, {})
-    return 'sync complete'
+/**
+ * Pull the signed-in person's own profile from the relay (PEEK-72).
+ *
+ * Sync fills in names and faces for anyone who *appears in a topic*, which is
+ * everyone except, often, the viewer — `adoptIdentity` gives them
+ * `nostr:<8 chars>` and no image, and nothing else ever revisits it. So they see
+ * everyone's real name but their own placeholder.
+ *
+ * Reads as the viewer for the usual reason: the relay is NIP-98 gated, and their
+ * token is the credential we have. `kind:0` is not channel-scoped, so membership
+ * is not in play here — only authentication.
+ *
+ * Idempotent and cheap; the client calls it once after sign-in.
+ */
+export const syncViewerProfile = action({
+  args: { estivaAccessToken: v.string() },
+  handler: async (ctx, { estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+
+    const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewerId) return { ok: false, reason: 'not signed in' }
+    const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId: viewerId })
+    if (!keys?.nostrPubkey) return { ok: false, reason: 'viewer has no pubkey' }
+
+    const auth: RelayAuth = { pubkey: keys.nostrPubkey, token: estivaAccessToken }
+    const { ok, events, reason } = await queryEvents([{ kinds: [0], authors: [keys.nostrPubkey], limit: 1 }], auth)
+    if (!ok) return { ok: false, reason }
+
+    const profile = profileFrom(events[0])
+    if (!profile.displayName && !profile.picture) {
+      // No profile published yet. Not an error — Estiva ID writes `kind:0` when
+      // someone saves their profile, so a person who never has simply has none.
+      return { ok: true, reason: 'no profile published' }
+    }
+
+    await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
+      nostrPubkey: keys.nostrPubkey,
+      displayName: profile.displayName,
+      picture: profile.picture,
+    })
+    return { ok: true }
   },
 })

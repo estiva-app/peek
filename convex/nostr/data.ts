@@ -28,40 +28,7 @@ export const getUserKeys = internalQuery({
       // placeholder.
       avatarUrl: u.avatarStorageId ? ((await ctx.storage.getUrl(u.avatarStorageId)) ?? null) : null,
       nostrPubkey: u.nostrPubkey ?? null,
-      nostrSecretKey: u.nostrSecretKey ?? null,
     }
-  },
-})
-
-/**
- * Store a minted keypair, **first write wins**.
- *
- * Two concurrent publishes for the same user would otherwise mint two keypairs
- * and the user's events would split across two identities. Returns whatever is
- * effectively stored, so a loser of the race uses the winner's key rather than
- * its own. Mirrors how Buzz makes `set_agent_owner` atomic
- * (crates/buzz-db/src/user.rs:291).
- */
-export const storeKeypair = internalMutation({
-  args: {
-    userId: v.id('users'),
-    nostrPubkey: v.string(),
-    nostrSecretKey: v.string(),
-  },
-  handler: async (ctx, { userId, nostrPubkey, nostrSecretKey }) => {
-    const u = await ctx.db.get(userId)
-    if (!u) throw new Error(`unknown user ${userId}`)
-    // An existing pubkey is never overwritten — with or without a secret beside
-    // it. The old test was `pubkey && secret`, which let a custodied mint land on
-    // top of an identity Estiva ID holds and silently detach that person from
-    // everything they had published. `identityFor` already refuses this case;
-    // this is the backstop, because the damage is unrecoverable and invisible.
-    if (u.nostrPubkey) {
-      if (!u.nostrSecretKey) throw new Error(`refusing to mint over held identity for ${userId}`)
-      return { nostrPubkey: u.nostrPubkey, nostrSecretKey: u.nostrSecretKey, minted: false }
-    }
-    await ctx.db.patch(userId, { nostrPubkey, nostrSecretKey })
-    return { nostrPubkey, nostrSecretKey, minted: true }
   },
 })
 
@@ -179,17 +146,6 @@ export const listChannels = internalQuery({
   },
 })
 
-/** Peek users that can sign — the read path borrows one to authenticate. */
-export const listLocalUsersWithKeys = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query('users').collect()
-    return rows
-      .filter((u) => u.nostrPubkey && u.nostrSecretKey && !u.isExternal)
-      .map((u) => ({ nostrPubkey: u.nostrPubkey!, nostrSecretKey: u.nostrSecretKey! }))
-  },
-})
-
 /** Pubkeys belonging to Peek's own users — everything else is foreign. */
 export const listLocalPubkeys = internalQuery({
   args: {},
@@ -222,15 +178,27 @@ export const resolveExternalUser = internalMutation({
       .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', nostrPubkey))
       .unique()
     if (existing) {
-      // Adopt a real name and face once the relay learns them, but never
-      // overwrite a Peek user's own profile with relay metadata: for a Peek
-      // account this app is the source of truth and the relay is its output.
-      if (existing.isExternal) {
-        const patch: { name?: string; image?: string } = {}
-        if (displayName && existing.name !== displayName) patch.name = displayName
-        if (picture && existing.image !== picture) patch.image = picture
-        if (Object.keys(patch).length) await ctx.db.patch(existing._id, patch)
+      // Fill in what Peek does not have, and never overwrite what it does
+      // (PEEK-72). Estiva ID is the sole publisher of `kind:0` (PEEK-31), so the
+      // relay is now the *upstream* for a profile rather than merely the output
+      // of one — but a name someone typed into Peek still wins over it.
+      //
+      // The old rule was `isExternal` only, and it left every Estiva ID user
+      // stranded: `adoptIdentity` inserts `nostr:<8 chars>` with no image and
+      // clears `isExternal`, after which nothing could ever fill either field.
+      // Real profiles existed on the relay, with pictures, and Peek rendered
+      // placeholders and silhouettes for all of them.
+      const isPlaceholderName = /^nostr:[0-9a-f]{8}$/.test(existing.name)
+      const patch: { name?: string; image?: string } = {}
+      if (displayName && displayName !== existing.name && (existing.isExternal || isPlaceholderName)) {
+        patch.name = displayName
       }
+      // An uploaded avatar is Peek's own and outranks the relay; `image` is only
+      // ever the relay's copy, so replacing it loses nothing.
+      if (picture && picture !== existing.image && !existing.avatarStorageId) {
+        patch.image = picture
+      }
+      if (Object.keys(patch).length) await ctx.db.patch(existing._id, patch)
       return existing._id
     }
     return ctx.db.insert('users', {
