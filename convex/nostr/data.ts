@@ -146,6 +146,25 @@ export const listChannels = internalQuery({
   },
 })
 
+/**
+ * Everyone still wearing a placeholder instead of a profile (PEEK-72).
+ *
+ * A row qualifies when Peek has a pubkey for it but nothing a person chose: the
+ * `nostr:<8 chars>` name `adoptIdentity` and `resolveExternalUser` fall back to,
+ * or no face at all. An uploaded avatar means Peek has its own and the relay is
+ * not needed.
+ */
+export const usersMissingProfile = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('users').collect()
+    return rows
+      .filter((u) => u.nostrPubkey)
+      .filter((u) => /^nostr:[0-9a-f]{8}$/.test(u.name) || (!u.image && !u.avatarStorageId))
+      .map((u) => u.nostrPubkey!)
+  },
+})
+
 /** Pubkeys belonging to Peek's own users — everything else is foreign. */
 export const listLocalPubkeys = internalQuery({
   args: {},
