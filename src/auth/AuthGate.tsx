@@ -52,7 +52,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
  */
 function AdoptIdentity({ children }: { children: ReactNode }) {
   const adopt = useMutation(api.users.adoptIdentity)
-  const syncViewerProfile = useAction(api.nostr.sync.syncViewerProfile)
+  const syncStaleProfiles = useAction(api.nostr.sync.syncStaleProfiles)
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const ran = useRef(false)
@@ -63,19 +63,23 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
     adopt({})
       .then(() => {
         setReady(true)
-        // Fill in the name and face from Estiva ID (PEEK-72). Deliberately not
-        // awaited: a relay that is slow or down must not hold up sign-in, and
-        // the profile is cosmetic until it arrives.
+        // Fill in names and faces from Estiva ID (PEEK-72) — for everyone still
+        // showing a placeholder, not just the viewer. Sync only resolves a
+        // profile for authors of *newly imported* messages, so anyone already
+        // past the cursor would keep `nostr:<8 chars>` forever.
+        //
+        // Deliberately not awaited: a slow or unreachable relay must not hold up
+        // sign-in, and a name is cosmetic until it arrives.
         const token = currentEstivaToken()
         if (!token) return
-        void syncViewerProfile({ estivaAccessToken: token }).catch((error) =>
-          console.warn('[nostr] viewer profile sync failed:', error),
+        void syncStaleProfiles({ estivaAccessToken: token }).catch((error) =>
+          console.warn('[nostr] profile sync failed:', error),
         )
       })
       .catch((err: unknown) => {
         setFailed(err instanceof Error ? err.message : 'Could not set up your account.')
       })
-  }, [adopt, syncViewerProfile])
+  }, [adopt, syncStaleProfiles])
 
   if (failed) return <EstivaIdSignedOut message={failed} />
   return ready ? <>{children}</> : <AuthLoadingScreen />

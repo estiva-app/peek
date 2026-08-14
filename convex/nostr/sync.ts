@@ -333,22 +333,27 @@ export const syncTopicAsViewer = action({
 
 /** Manual trigger, for testing without waiting for the cron. */
 /**
- * Pull the signed-in person's own profile from the relay (PEEK-72).
+ * Fill in names and faces for anyone still showing a placeholder (PEEK-72).
  *
- * Sync fills in names and faces for anyone who *appears in a topic*, which is
- * everyone except, often, the viewer — `adoptIdentity` gives them
- * `nostr:<8 chars>` and no image, and nothing else ever revisits it. So they see
- * everyone's real name but their own placeholder.
+ * `syncTopic` already resolves a profile for the author of every message it
+ * imports — but only *newly* imported ones. Once the `since` cursor has passed
+ * someone's messages they are never looked up again, so anyone whose row was
+ * created before Estiva ID published their `kind:0` keeps `nostr:<8 chars>` and a
+ * silhouette forever. That is not a rare edge: it is every person who was already
+ * in a topic when this landed.
  *
- * Reads as the viewer for the usual reason: the relay is NIP-98 gated, and their
- * token is the credential we have. `kind:0` is not channel-scoped, so membership
- * is not in play here — only authentication.
+ * So this asks the question the other way round — who is *missing* a profile —
+ * rather than waiting for them to say something new.
  *
- * Idempotent and cheap; the client calls it once after sign-in.
+ * Reads as the viewer, like everything else, because the relay is NIP-98 gated.
+ * `kind:0` is not channel-scoped, so membership is not in play; only auth is.
+ *
+ * Cheap and idempotent: one query for everyone, and `resolveExternalUser` writes
+ * nothing when there is nothing new. The client calls it once after sign-in.
  */
-export const syncViewerProfile = action({
+export const syncStaleProfiles = action({
   args: { estivaAccessToken: v.string() },
-  handler: async (ctx, { estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+  handler: async (ctx, { estivaAccessToken }): Promise<{ ok: boolean; updated?: number; reason?: string }> => {
     if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
 
     const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
@@ -356,22 +361,29 @@ export const syncViewerProfile = action({
     const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId: viewerId })
     if (!keys?.nostrPubkey) return { ok: false, reason: 'viewer has no pubkey' }
 
+    const pubkeys: string[] = await ctx.runQuery(internal.nostr.data.usersMissingProfile, {})
+    if (pubkeys.length === 0) return { ok: true, updated: 0 }
+
     const auth: RelayAuth = { pubkey: keys.nostrPubkey, token: estivaAccessToken }
-    const { ok, events, reason } = await queryEvents([{ kinds: [0], authors: [keys.nostrPubkey], limit: 1 }], auth)
+    const { ok, events, reason } = await queryEvents(
+      [{ kinds: [0], authors: pubkeys, limit: pubkeys.length }],
+      auth,
+    )
     if (!ok) return { ok: false, reason }
 
-    const profile = profileFrom(events[0])
-    if (!profile.displayName && !profile.picture) {
-      // No profile published yet. Not an error — Estiva ID writes `kind:0` when
-      // someone saves their profile, so a person who never has simply has none.
-      return { ok: true, reason: 'no profile published' }
+    let updated = 0
+    for (const pubkey of pubkeys) {
+      const profile = profileFrom(events.find((e) => e.pubkey === pubkey))
+      // Nobody has published one yet. Estiva ID writes `kind:0` when a person
+      // saves their profile, so someone who never has simply has none.
+      if (!profile.displayName && !profile.picture) continue
+      await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
+        nostrPubkey: pubkey,
+        displayName: profile.displayName,
+        picture: profile.picture,
+      })
+      updated += 1
     }
-
-    await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
-      nostrPubkey: keys.nostrPubkey,
-      displayName: profile.displayName,
-      picture: profile.picture,
-    })
-    return { ok: true }
+    return { ok: true, updated }
   },
 })
