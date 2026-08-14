@@ -1,49 +1,71 @@
 /**
- * The publish path signs via Estiva ID instead of decrypting a per-user key.
+ * Who scheduled work is allowed to sign as.
+ *
+ * Two mistakes have shipped from this function, and both were silent:
+ *
+ *   1. It minted a fresh keypair over the real pubkey of anyone whose key Peek
+ *      does not hold, detaching them from everything they had published.
+ *   2. It paired the *user's* pubkey with a *service* token and claimed the
+ *      result was authored by that user. `/sign` ignores the pubkey it is given
+ *      and signs as the token's subject, so those events belonged to the
+ *      service while Peek's own records said otherwise.
+ *
+ * Neither threw. The contract worth pinning is therefore narrow: sign with a key
+ * we actually hold, or return null and let the caller skip.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { internal } from '../_generated/api'
 import { identityFor } from './publish'
 
-const SERVICE_PUBKEY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const USER_PUBKEY = 'f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1'
+const SECRET = 'b'.repeat(64)
 const USER = 'md74p1q1fxe420qsjjtnzj41858c901z' as never
 
-beforeEach(() => {
-  vi.stubEnv('ESTIVA_ID_ORIGIN', 'https://id.estiva.app')
-  vi.stubEnv('ESTIVA_ID_CLIENT_ID', 'estiva-peek')
-  vi.stubEnv('ESTIVA_ID_CLIENT_SECRET', 'peek-service-secret')
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-    new Response(JSON.stringify({ access_token: 'token-123', pubkey: SERVICE_PUBKEY }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }),
-  )
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllEnvs()
-})
+/** A ctx whose `getUserKeys` returns the given row shape. */
+function ctxFor(row: { nostrPubkey?: string | null; nostrSecretKey?: string | null } | null) {
+  return { runQuery: vi.fn().mockResolvedValue(row), runMutation: vi.fn() }
+}
 
 describe('identityFor', () => {
-  it('uses the user pubkey with the service signing token', async () => {
-    const ctx = { runQuery: vi.fn(), runMutation: vi.fn() }
-    ctx.runQuery.mockResolvedValue({ nostrPubkey: USER_PUBKEY, nostrSecretKey: null })
+  it('signs locally for a user whose key Peek still custodies', async () => {
+    const ctx = ctxFor({ nostrPubkey: USER_PUBKEY, nostrSecretKey: SECRET })
 
-    await expect(identityFor(ctx, USER)).resolves.toEqual({ pubkey: USER_PUBKEY, token: 'token-123' })
+    await expect(identityFor(ctx, USER)).resolves.toEqual({
+      pubkey: USER_PUBKEY,
+      secretKeyHex: SECRET,
+    })
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.nostr.data.getUserKeys, { userId: USER })
-    expect(ctx.runMutation).not.toHaveBeenCalled()
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://id.estiva.app/token',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          grantType: 'client_credentials',
-          clientId: 'estiva-peek',
-          clientSecret: 'peek-service-secret',
-        }),
-      }),
-    )
+  })
+
+  it('returns null for an Estiva ID identity rather than signing as someone else', async () => {
+    // The regression. Peek holds no key here, and background work cannot see
+    // this person's token — so there is no honest way to publish for them. A
+    // service token is not a substitute: the event would carry the service's
+    // signature under the user's name.
+    const ctx = ctxFor({ nostrPubkey: USER_PUBKEY, nostrSecretKey: null })
+
+    await expect(identityFor(ctx, USER)).resolves.toBeNull()
+  })
+
+  it('never mints a key, for anyone', async () => {
+    // The older regression: minting over an existing pubkey is unrecoverable,
+    // so no input may reach a write.
+    for (const row of [
+      { nostrPubkey: USER_PUBKEY, nostrSecretKey: null },
+      { nostrPubkey: null, nostrSecretKey: null },
+      {},
+    ]) {
+      const ctx = ctxFor(row)
+      await identityFor(ctx, USER)
+      expect(ctx.runMutation).not.toHaveBeenCalled()
+    }
+  })
+
+  it('returns null when the user has no identity at all', async () => {
+    await expect(identityFor(ctxFor({ nostrPubkey: null }), USER)).resolves.toBeNull()
+  })
+
+  it('returns null for a user that does not exist', async () => {
+    await expect(identityFor(ctxFor(null), USER)).resolves.toBeNull()
   })
 })

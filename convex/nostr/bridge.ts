@@ -4,9 +4,8 @@
  * Every behavior here was established against a running relay, not inferred —
  * the surprises are called out inline because each one is a silent-failure trap.
  */
-import { sha256 } from '@noble/hashes/sha256'
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils'
-import { authorizationHeader as localAuthorizationHeader, normalizeUrl } from './nip98'
+import { authorizationHeaderFor, buildUnsignedAuthEvent } from './nip98'
+import { signEvent } from './sign'
 import type { SignedEvent, UnsignedEvent } from './events'
 
 export interface RelayAuth {
@@ -34,56 +33,6 @@ export function identityServiceOrigin(): string {
   return raw.replace(/\/+$/, '')
 }
 
-function readEnv(names: string[]): string | undefined {
-  for (const name of names) {
-    const value = process.env[name]?.trim()
-    if (value) return value
-  }
-  return undefined
-}
-
-async function issueServiceToken(): Promise<{ token: string; pubkey: string } | null> {
-  const token = readEnv(['ESTIVA_ID_SERVICE_TOKEN', 'ESTIVA_ID_ACCESS_TOKEN', 'ESTIVA_ID_TOKEN'])
-  if (token) {
-    const payload = token.split('.')[1]
-    if (!payload) return { token, pubkey: '' }
-    try {
-      const json = JSON.parse(
-        Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
-      ) as { sub?: string }
-      if (json.sub) return { token, pubkey: json.sub }
-    } catch {
-      // fall through to explicit pubkey envs below
-    }
-  }
-
-  const clientId = readEnv(['ESTIVA_ID_CLIENT_ID', 'ESTIVA_ID_SERVICE_CLIENT_ID']) ?? 'estiva-peek'
-  const clientSecret = readEnv(['ESTIVA_ID_CLIENT_SECRET', 'ESTIVA_ID_SERVICE_CLIENT_SECRET'])
-  if (!clientSecret) return null
-
-  const res = await fetch(`${identityServiceOrigin()}/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ grantType: 'client_credentials', clientId, clientSecret }),
-  })
-  if (!res.ok) throw new Error(`Estiva ID token exchange failed: ${res.status} ${await res.text()}`)
-  const body = (await res.json()) as { access_token?: string; pubkey?: string }
-  if (!body.access_token) return null
-  return { token: body.access_token, pubkey: body.pubkey ?? '' }
-}
-
-export async function serviceIdentity(): Promise<RelayAuth | null> {
-  const configuredPubkey = readEnv(['ESTIVA_ID_SERVICE_PUBKEY', 'ESTIVA_ID_PUBKEY'])
-  const token = await issueServiceToken()
-  if (!token) return null
-  const pubkey = configuredPubkey ?? token.pubkey
-  if (!pubkey) return null
-  return {
-    pubkey,
-    token: token.token,
-  }
-}
-
 export async function signWithIdentityService(
   unsigned: UnsignedEvent,
   auth: RelayAuth,
@@ -104,7 +53,48 @@ export async function signWithIdentityService(
   if (!body.event) {
     throw new Error('POST /sign returned no event')
   }
+
+  // `/sign` ignores the pubkey we send and signs as the token's subject —
+  // "The token's subject is the only pubkey this call may sign as"
+  // (estiva-id `src/http/routes/sign.ts`). So handing it a user's pubkey next to
+  // a *service* token does not produce an event authored by that user; it
+  // produces one authored by the service, silently and with a correct-looking
+  // `pubkey` field in our own bookkeeping.
+  //
+  // Refusing the mismatch centrally means no publish path can misattribute
+  // authorship: either the event belongs to whoever we named, or nothing is
+  // published and the error says why.
+  if (auth.pubkey && body.event.pubkey !== auth.pubkey) {
+    throw new Error(
+      `POST /sign returned an event authored by ${body.event.pubkey}, expected ${auth.pubkey}. ` +
+        'That token belongs to a different identity — refusing to publish under the wrong author.',
+    )
+  }
   return body.event
+}
+
+/**
+ * Sign a content event as whoever `auth` names.
+ *
+ * The counterpart to `bridgeAuthorizationHeader` below, which makes the same
+ * choice for the NIP-98 auth event. Two signing routes exist and neither is
+ * going away before PEEK-41:
+ *
+ *   * **a custodied secret** — legacy Convex Auth users whose key Peek still
+ *     holds. Signed locally; nothing leaves the deployment.
+ *   * **an Estiva ID token** — everyone signed in through the identity service.
+ *     Peek holds no key for them and `/sign` signs as the token's subject.
+ *
+ * Callers should not care which. Before this existed every publish path called
+ * `signWithIdentityService` directly, which made a token mandatory and so
+ * silently disabled publishing for custodial users.
+ */
+export async function signAs(unsigned: UnsignedEvent, auth: RelayAuth): Promise<SignedEvent> {
+  if (auth.secretKeyHex) {
+    if (!auth.pubkey) throw new Error('Pubkey required when signing with a secret key')
+    return signEvent({ ...unsigned, pubkey: auth.pubkey }, auth.secretKeyHex)
+  }
+  return signWithIdentityService(unsigned, auth)
 }
 
 async function bridgeAuthorizationHeader(
@@ -113,38 +103,21 @@ async function bridgeAuthorizationHeader(
   body: string,
   auth: RelayAuth,
 ): Promise<string> {
-  if (auth.secretKeyHex) {
-    if (!auth.pubkey) {
-      throw new Error('Pubkey required when using secret key auth')
-    }
-    return localAuthorizationHeader({
-      pubkey: auth.pubkey,
-      secretKeyHex: auth.secretKeyHex,
-      url,
-      method,
-      body,
-    })
+  if (!auth.secretKeyHex && !auth.token) {
+    throw new Error('No relay auth available: expected a custodied key or an Estiva ID token')
   }
-  if (!auth.token) {
-    throw new Error('No relay auth token available')
-  }
-
-  // For both user tokens and service tokens, sign NIP-98 auth event
-  // The relay requires the Nostr auth format, not plain Bearer tokens
-  const unsigned = {
-    pubkey: auth.pubkey || '', // Empty for user tokens, service will derive from token
-    created_at: Math.floor(Date.now() / 1000),
-    kind: 27235,
-    tags: [
-      ['u', normalizeUrl(url)],
-      ['method', method.toUpperCase()],
-      ['nonce', crypto.randomUUID()],
-      ['payload', bytesToHex(sha256(utf8ToBytes(body)))],
-    ],
-    content: '',
-  }
-  const signed = await signWithIdentityService(unsigned, auth)
-  return `Nostr ${btoa(JSON.stringify(signed))}`
+  // One builder for both routes. The tag layout is part of the event id
+  // preimage, so a second copy here would be a silent divergence rather than a
+  // duplicate — the relay recomputes the id and would disagree.
+  const unsigned = buildUnsignedAuthEvent({
+    // Empty is fine for the remote route: `/sign` overwrites it with the
+    // token's subject, and `signAs` rejects a mismatch.
+    pubkey: auth.pubkey ?? '',
+    url,
+    method,
+    body,
+  })
+  return authorizationHeaderFor(await signAs(unsigned, auth))
 }
 
 async function bridgeFetch(

@@ -11,7 +11,7 @@ import { v } from 'convex/values'
 import { mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
 import { internal } from './_generated/api'
 import { highlightType, fileAttachment } from './schema'
-import { avatarUrl, viewerId, viewerOrThrow } from './users'
+import { avatarUrl, pubkeyFromIdentity, viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
 import { isUrgentBody, screenMessage } from './screener'
 import { ensureTopicMember } from './topics'
@@ -389,7 +389,15 @@ export const send = mutation({
     // rather than inline: signing and HTTP are action-only in Convex, and the
     // publish must never be able to fail this mutation. No-op unless
     // NOSTR_RELAY_URL is set.
-    await ctx.scheduler.runAfter(0, internal.nostr.publish.publishMessage, { messageId: id })
+    //
+    // Same split as `topics.create`: scheduled work cannot see the caller's
+    // Estiva ID bearer token, and `/sign` will only sign as that token's
+    // subject. For those identities the authenticated client calls
+    // `publishMessageAsAuthor` straight after this mutation instead. Custodial
+    // accounts keep the scheduled path, which is the only one they can use.
+    if (pubkeyFromIdentity(await ctx.auth.getUserIdentity()) === null) {
+      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishMessage, { messageId: id })
+    }
     return id
   },
 })

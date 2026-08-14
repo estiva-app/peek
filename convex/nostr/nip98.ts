@@ -30,7 +30,7 @@
  */
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex, randomBytes, utf8ToBytes } from '@noble/hashes/utils'
-import { KIND, type NostrTag, type UnsignedEvent } from './events'
+import { KIND, type NostrTag, type SignedEvent, type UnsignedEvent } from './events'
 import { signEvent } from './sign'
 
 /** The relay rejects auth events outside ±60s (`TIMESTAMP_TOLERANCE_SECS`). */
@@ -57,9 +57,8 @@ export function normalizeUrl(raw: string): string {
  * `nip98_expected_url` (bridge.rs:195) reconstructs it as
  * `{http|https}://{host}{path}` from the request's own Host header.
  */
-export function buildAuthEvent(args: {
+export function buildUnsignedAuthEvent(args: {
   pubkey: string
-  secretKeyHex: string
   url: string
   method: string
   /** Request body, when there is one — adds the `payload` tag. */
@@ -68,7 +67,7 @@ export function buildAuthEvent(args: {
   nowMs?: number
   /** Override for tests; defaults to random. Must differ per request. */
   nonce?: string
-}): UnsignedEvent & { id: string; sig: string } {
+}): UnsignedEvent {
   const tags: NostrTag[] = [
     ['u', normalizeUrl(args.url)],
     ['method', args.method.toUpperCase()],
@@ -81,18 +80,32 @@ export function buildAuthEvent(args: {
   if (args.body !== undefined) {
     tags.push(['payload', bytesToHex(sha256(utf8ToBytes(args.body)))])
   }
-  const unsigned: UnsignedEvent = {
+  return {
     pubkey: args.pubkey,
     created_at: Math.floor((args.nowMs ?? Date.now()) / 1000),
     kind: KIND.HTTP_AUTH,
     tags,
     content: '',
   }
-  return signEvent(unsigned, args.secretKeyHex)
+}
+
+/**
+ * The local-key variant: build and sign in one step.
+ *
+ * Kept because custodial publishing holds a raw secret and has no reason to go
+ * near the identity service. The remote path composes the same builder with
+ * `signAs` instead, so **the tag layout has exactly one definition** — it is
+ * part of the event id preimage, and two copies drifting would produce ids the
+ * relay computes differently.
+ */
+export function buildAuthEvent(
+  args: Parameters<typeof buildUnsignedAuthEvent>[0] & { secretKeyHex: string },
+): SignedEvent {
+  return signEvent(buildUnsignedAuthEvent(args), args.secretKeyHex)
 }
 
 /** Base64 without Node's Buffer, so this works in either Convex runtime. */
-function base64(input: string): string {
+export function base64(input: string): string {
   const bytes = utf8ToBytes(input)
   let binary = ''
   for (const b of bytes) binary += String.fromCharCode(b)
@@ -104,5 +117,15 @@ function base64(input: string): string {
  * (bridge.rs:81-93 strips the `Nostr ` prefix and base64-decodes the rest).
  */
 export function authorizationHeader(args: Parameters<typeof buildAuthEvent>[0]): string {
-  return `Nostr ${base64(JSON.stringify(buildAuthEvent(args)))}`
+  return authorizationHeaderFor(buildAuthEvent(args))
+}
+
+/**
+ * Header value for an auth event signed elsewhere — remotely, via `/sign`.
+ *
+ * Uses the utf8-aware `base64` above rather than a bare `btoa`, which throws on
+ * any code point above U+00FF.
+ */
+export function authorizationHeaderFor(signed: SignedEvent): string {
+  return `Nostr ${base64(JSON.stringify(signed))}`
 }
