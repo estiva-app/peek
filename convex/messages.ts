@@ -299,33 +299,46 @@ export const toggleReaction = mutation({
   args: { key: v.string(), emoji: v.string() },
   handler: async (ctx, { key, emoji }) => {
     const m = await findMessageByKey(ctx, key)
-    if (!m) return // reply reactions stay session-local until modeled (§2.7 is message-keyed)
+    if (!m) return null // reply reactions stay session-local until modeled (§2.7 is message-keyed)
     const you = await viewerOrThrow(ctx)
     const mine = await ctx.db
       .query('reactions')
       .withIndex('by_message_user', (q) => q.eq('messageId', m._id).eq('userId', you._id))
       .collect()
+    // Estiva ID identities publish from the browser, the only place their token
+    // exists — same split as `send`. Custodial accounts keep the scheduled path.
+    // The return value says which half happened, so the client does not have to
+    // re-derive it from the row it just changed.
+    const publishesHere = pubkeyFromIdentity(await ctx.auth.getUserIdentity()) === null
+
     const existing = mine.find((r) => r.emoji === emoji)
     if (existing) {
       // Capture the event id BEFORE deleting: the retraction needs something to
       // point a kind:5 at, and the row is about to be gone.
       const publishedAs = existing.nostrEventId
       await ctx.db.delete(existing._id)
-      if (publishedAs) {
+      if (!publishedAs) return null // never reached the relay, so nothing to retract
+      if (publishesHere) {
         await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReactionRemoval, {
           userId: you._id,
           nostrEventId: publishedAs,
         })
+        return null
       }
-    } else {
-      const reactionId = await ctx.db.insert('reactions', {
-        messageId: m._id,
-        userId: you._id,
-        emoji,
-        createdAt: Date.now(),
-      })
-      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReaction, { reactionId })
+      return { action: 'removed' as const, nostrEventId: publishedAs }
     }
+
+    const reactionId = await ctx.db.insert('reactions', {
+      messageId: m._id,
+      userId: you._id,
+      emoji,
+      createdAt: Date.now(),
+    })
+    if (publishesHere) {
+      await ctx.scheduler.runAfter(0, internal.nostr.publish.publishReaction, { reactionId })
+      return null
+    }
+    return { action: 'added' as const, reactionId }
   },
 })
 

@@ -50,6 +50,8 @@ export function usePeekActions() {
   const sendRemote = useMutation(api.messages.send)
   const publishMessageAsAuthor = useAction(api.nostr.publish.publishMessageAsAuthor)
   const publishReplyAsAuthor = useAction(api.nostr.publish.publishReplyAsAuthor)
+  const publishReactionAsAuthor = useAction(api.nostr.publish.publishReactionAsAuthor)
+  const publishReactionRemovalAsAuthor = useAction(api.nostr.publish.publishReactionRemovalAsAuthor)
   const editBodyRemote = useMutation(api.messages.editBody)
   const removeRemote = useMutation(api.messages.remove)
   const sendReplyRemote = useMutation(api.replies.send)
@@ -237,7 +239,26 @@ export function usePeekActions() {
           else delete next[id]
           return next
         })
-      toggleReactionRemote({ key: id, emoji: toggled }).then(clearPending, clearPending)
+      void (async () => {
+        // The mutation reports which half happened, and only for an Estiva ID
+        // identity — custodial accounts are already covered by its scheduled job.
+        const outcome = await toggleReactionRemote({ key: id, emoji: toggled })
+        const token = usesEstivaId ? validToken() : null
+        if (!outcome || !token) return
+        const result =
+          outcome.action === 'added'
+            ? await publishReactionAsAuthor({
+                reactionId: outcome.reactionId,
+                estivaAccessToken: token.accessToken,
+              })
+            : await publishReactionRemovalAsAuthor({
+                nostrEventId: outcome.nostrEventId,
+                estivaAccessToken: token.accessToken,
+              })
+        if (!result.ok) console.warn('[nostr] reaction publish failed:', result.reason)
+      })()
+        .catch((error) => console.warn('[nostr] reaction publish failed:', error))
+        .finally(clearPending)
     },
 
     // ── Resolution ──
