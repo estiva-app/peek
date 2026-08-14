@@ -585,45 +585,103 @@ export const publishReplyAsAuthor = action({
   },
 })
 
-/** Publish a reaction as kind:7 pointing at the target message's event. */
+async function publishReactionWith(
+  ctx: { runQuery: any; runMutation: any },
+  reactionId: Id<'reactions'>,
+  authorOverride?: Identity,
+): Promise<{ ok: boolean; reason?: string }> {
+  const r = await ctx.runQuery(internal.nostr.data.getReactionContext, { reactionId })
+  if (!r) return { ok: false, reason: 'unknown reaction' }
+  if (r.alreadyPublished) return { ok: true }
+  if (!r.targetEventId) return { ok: false, reason: 'the message reacted to is not on the relay' }
+  if (!withinDriftWindow(r.createdAt)) return { ok: false, reason: 'outside the relay drift window' }
+
+  const author = authorOverride ?? (await identityFor(ctx, r.userId))
+  if (!author) {
+    skipUnsigned(`reaction ${reactionId}`, r.userId)
+    return { ok: false, reason: 'no signing identity for the reactor' }
+  }
+
+  const signed = await signAs(
+    buildReaction(author.pubkey, r.createdAt, { targetEventId: r.targetEventId, emoji: r.emoji }),
+    author,
+  )
+  const res = await publishEvent(signed, author)
+  if (!res.ok) {
+    console.warn(`[nostr] reaction ${reactionId} rejected: ${res.reason}`)
+    return { ok: false, reason: res.reason }
+  }
+  if (res.eventId) {
+    await ctx.runMutation(internal.nostr.data.markReactionPublished, {
+      reactionId,
+      nostrEventId: res.eventId,
+    })
+  }
+  return { ok: true }
+}
+
+/** Publish a reaction as kind:7, for users whose key Peek custodies. */
 export const publishReaction = internalAction({
   args: { reactionId: v.id('reactions') },
   handler: async (ctx, { reactionId }) => {
     if (!relayUrl()) return
     try {
-      const r = await ctx.runQuery(internal.nostr.data.getReactionContext, { reactionId })
-      if (!r || r.alreadyPublished) return
-      if (!r.targetEventId) return // target not on the relay — nothing to react to
-      if (!withinDriftWindow(r.createdAt)) return
-
-      const author = await identityFor(ctx, r.userId)
-      if (!author) {
-        skipUnsigned(`reaction ${reactionId}`, r.userId)
-        return
-      }
-      const signed = await signAs(
-        buildReaction(author.pubkey, r.createdAt, {
-          targetEventId: r.targetEventId,
-          emoji: r.emoji,
-        }),
-        author,
-      )
-      const res = await publishEvent(signed, author)
-      if (!res.ok) {
-        console.warn(`[nostr] reaction ${reactionId} rejected: ${res.reason}`)
-        return
-      }
-      if (res.eventId) {
-        await ctx.runMutation(internal.nostr.data.markReactionPublished, {
-          reactionId,
-          nostrEventId: res.eventId,
-        })
-      }
+      await publishReactionWith(ctx, reactionId)
     } catch (e) {
       console.warn(`[nostr] publishReaction(${reactionId}) failed:`, e)
     }
   },
 })
+
+/** Publish a reaction using the reactor's own Estiva ID token. */
+export const publishReactionAsAuthor = action({
+  args: { reactionId: v.id('reactions'), estivaAccessToken: v.string() },
+  handler: async (ctx, { reactionId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+
+    const [r, viewerId] = await Promise.all([
+      ctx.runQuery(internal.nostr.data.getReactionContext, { reactionId }),
+      ctx.runQuery(internal.users.viewerIdForAction, {}),
+    ])
+    if (!r) return { ok: false, reason: 'unknown reaction' }
+    if (!viewerId || viewerId !== r.userId) {
+      return { ok: false, reason: 'only the reactor may publish their reaction' }
+    }
+
+    const author = await identityForCreatorToken(ctx, r.userId, estivaAccessToken)
+    if (!author) return { ok: false, reason: 'reactor has no Estiva ID pubkey' }
+
+    try {
+      return await publishReactionWith(ctx, reactionId, author)
+    } catch (e) {
+      console.warn(`[nostr] publishReactionAsAuthor(${reactionId}) failed:`, e)
+      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
+    }
+  },
+})
+
+async function publishRemovalWith(
+  ctx: { runQuery: any; runMutation: any },
+  userId: Id<'users'>,
+  nostrEventId: string,
+  authorOverride?: Identity,
+): Promise<{ ok: boolean; reason?: string }> {
+  const author = authorOverride ?? (await identityFor(ctx, userId))
+  if (!author) {
+    skipUnsigned(`deletion of ${nostrEventId}`, userId)
+    return { ok: false, reason: 'no signing identity for the reactor' }
+  }
+  const signed = await signAs(
+    buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),
+    author,
+  )
+  const res = await publishEvent(signed, author)
+  if (!res.ok) {
+    console.warn(`[nostr] reaction deletion rejected: ${res.reason}`)
+    return { ok: false, reason: res.reason }
+  }
+  return { ok: true }
+}
 
 /**
  * Retract a reaction with a kind:5 deletion.
@@ -636,19 +694,36 @@ export const publishReactionRemoval = internalAction({
   handler: async (ctx, { userId, nostrEventId }) => {
     if (!relayUrl()) return
     try {
-      const author = await identityFor(ctx, userId)
-      if (!author) {
-        skipUnsigned(`deletion of ${nostrEventId}`, userId)
-        return
-      }
-      const signed = await signAs(
-        buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),
-        author,
-      )
-      const res = await publishEvent(signed, author)
-      if (!res.ok) console.warn(`[nostr] reaction deletion rejected: ${res.reason}`)
+      await publishRemovalWith(ctx, userId, nostrEventId)
     } catch (e) {
       console.warn(`[nostr] publishReactionRemoval failed:`, e)
+    }
+  },
+})
+
+/**
+ * Retract a reaction using the reactor's own Estiva ID token.
+ *
+ * The row is already deleted, so there is nothing to check the caller against
+ * except themselves — the retraction is published for the signed-in user, and
+ * the relay enforces that a kind:5 may only delete its own author's event.
+ */
+export const publishReactionRemovalAsAuthor = action({
+  args: { nostrEventId: v.string(), estivaAccessToken: v.string() },
+  handler: async (ctx, { nostrEventId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+
+    const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewerId) return { ok: false, reason: 'not signed in' }
+
+    const author = await identityForCreatorToken(ctx, viewerId, estivaAccessToken)
+    if (!author) return { ok: false, reason: 'reactor has no Estiva ID pubkey' }
+
+    try {
+      return await publishRemovalWith(ctx, viewerId, nostrEventId, author)
+    } catch (e) {
+      console.warn(`[nostr] publishReactionRemovalAsAuthor failed:`, e)
+      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
     }
   },
 })
