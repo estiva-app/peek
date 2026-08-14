@@ -17,15 +17,8 @@ import { v } from 'convex/values'
 import { action, internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import {
-  buildAddMember,
-  buildCreateChannel,
-  buildDeletion,
-  buildMessage,
-  buildReaction,
-} from './events'
+import { buildAddMember, buildCreateChannel } from './events'
 import { publishEvent, relayUrl, signAs, type RelayAuth } from './bridge'
-import { decodeNaddr, findNaddrs, pointerToAddress } from './nip19'
 
 /**
  * Who a publish is attributed to, and how it will be signed.
@@ -35,33 +28,6 @@ import { decodeNaddr, findNaddrs, pointerToAddress } from './nip19'
  * types invited passing one where the other was meant.
  */
 type Identity = RelayAuth & { pubkey: string }
-
-/**
- * The relay's answer when a message targets a channel it does not know. Seen
- * verbatim from a live relay; used to detect "the channel needs creating first"
- * rather than assuming an ordering that might silently be wrong.
- */
-const NOT_A_MEMBER = 'restricted: not a channel member'
-
-/**
- * The relay rejects any event whose `created_at` is more than ±15 minutes from
- * server time — `MAX_TIMESTAMP_DRIFT_SECS` in `handlers/ingest.rs:1480`,
- * hard-coded and applied to every ingested event, not just NIP-98 auth.
- *
- * Consequence: **Peek's existing history cannot be backfilled with its real
- * timestamps.** Live traffic is unaffected. Rather than falsify `created_at` to
- * sneak old messages past the check — which would corrupt the shared record for
- * every other app reading it — out-of-window messages are skipped and logged.
- *
- * Container events (channel create, membership, profile) are different: they
- * describe state we are establishing *now*, so they legitimately carry the
- * current time and an old topic can still be published.
- */
-const MAX_DRIFT_MS = 900_000
-
-function withinDriftWindow(createdAtMs: number): boolean {
-  return Math.abs(createdAtMs - Date.now()) <= MAX_DRIFT_MS
-}
 
 /**
  * The creator's short-lived Estiva ID token arrives from the authenticated
@@ -92,22 +58,6 @@ function skipUnsigned(what: string, userId: Id<'users'>): null {
       `instead; signing here as anyone else would misattribute the event.`,
   )
   return null
-}
-
-/**
- * Preserve a pasted Ship reference as the explicit address association its
- * manifest declares for comments. Bad lookalikes stay ordinary message text.
- */
-function referencedAddresses(body: string): string[] {
-  const addresses = new Set<string>()
-  for (const naddr of findNaddrs(body)) {
-    try {
-      addresses.add(pointerToAddress(decodeNaddr(naddr)))
-    } catch {
-      // Text is free-form; one malformed pointer cannot block a message.
-    }
-  }
-  return [...addresses]
 }
 
 /**
@@ -241,323 +191,51 @@ export const publishTopicAsCreator = action({
 })
 
 /**
- * Publish one message as kind:9.
+ * Messages are published from the BROWSER now (PEEK-106).
  *
- * `authorOverride` carries the author's own Estiva ID token, supplied by the
- * authenticated browser. Scheduled work cannot obtain one — Convex does not
- * expose the caller's bearer token to background jobs — so without it this can
- * only publish for users whose key Peek custodies. Same split as
- * `ensureChannel`'s `creatorOverride`, for the same reason.
+ * `publishMessageWith` and `publishMessageAsAuthor` stood here. They took the
+ * author's bearer token as a Convex action argument, and Convex surfaces
+ * arguments in its dashboard logs, so every message sent parked a credential
+ * that can sign as that person in log retention. The replacement is
+ * `nostr/outbox.ts` (build the unsigned event) plus `src/api/actions.ts` (sign
+ * it and publish it), and no token crosses the boundary.
  *
- * Returns a reason rather than throwing: the row is already written, and a
- * relay problem must never look like a failed send.
+ * **One behaviour was deleted rather than moved, deliberately.** The old code
+ * caught the relay's `restricted: not a channel member` and called
+ * `ensureChannel` to recreate the channel before retrying. That retry has been
+ * dead since PEEK-40: `ensureChannel` refuses without a `creatorOverride`, and
+ * neither the retry nor the missing-channel branch ever passed one, so both
+ * have returned null for every message since Peek stopped holding keys. It was
+ * unreachable code that read as a working safety net — which is worse than not
+ * having one.
+ *
+ * Rebuilding it properly is a real option and belongs to its own ticket rather
+ * than to this refactor: the browser *does* hold a token, so a viewer who is
+ * the topic's creator could recreate the channel. A viewer who is not cannot,
+ * and must not — the channel belongs to the creator, and publishing it as
+ * whoever spoke first would make the wrong person its owner.
  */
-async function publishMessageWith(
-  ctx: { runQuery: any; runMutation: any },
-  messageId: Id<'messages'>,
-  authorOverride?: Identity,
-): Promise<{ ok: boolean; reason?: string }> {
-  const m = await ctx.runQuery(internal.nostr.data.getMessageContext, { messageId })
-  if (!m) return { ok: false, reason: 'not a topic message' } // DM, huddle, or deleted
-  if (m.alreadyPublished) return { ok: true } // idempotent: never publish the same row twice
-
-  // Checked before signing so old rows cost nothing and the reason is
-  // legible, rather than surfacing as the relay's generic drift rejection.
-  if (!withinDriftWindow(m.createdAt)) {
-    console.warn(
-      `[nostr] message ${messageId} skipped: createdAt is outside the relay's ±15min ` +
-        `window, and rewriting it would falsify the shared record. Backfill needs a ` +
-        `separate decision — see docs/buzz-compat/FRICTION.md.`,
-    )
-    return { ok: false, reason: 'outside the relay drift window' }
-  }
-
-  const author = authorOverride
-  if (!author) {
-    skipUnsigned(`message ${messageId}`, m.authorId)
-    return { ok: false, reason: 'no signing identity for the author' }
-  }
-
-  // Happy path assumes the channel exists, to avoid a round trip per message.
-  let channelUuid = m.channelUuid
-  if (!channelUuid) {
-    // Deliberately not created with the author's identity: the channel belongs
-    // to the topic's creator, and publishing it as whoever spoke first would
-    // make the wrong person its owner. When the creator is an Estiva ID user
-    // this needs their token, which only `publishTopicAsCreator` has.
-    const channel = await ensureChannel(ctx, m.topicId)
-    if (!channel) return { ok: false, reason: 'the topic has no channel on the relay yet' }
-    channelUuid = channel.channelUuid
-  }
-
-  const send = async () => {
-    const signed = await signAs(
-      buildMessage(author.pubkey, m.createdAt, {
-        channelUuid: channelUuid!,
-        content: m.body,
-        about: referencedAddresses(m.body),
-      }),
-      author,
-    )
-    return publishEvent(signed, author)
-  }
-
-  let res = await send()
-
-  // The channel can be absent even when Peek has a UUID for it — a wiped or
-  // rebuilt relay is the common case in development. The relay says exactly
-  // this when that happens, so recreate the channel and retry once.
-  if (!res.ok && res.reason?.includes(NOT_A_MEMBER)) {
-    const channel = await ensureChannel(ctx, m.topicId)
-    if (channel) res = await send()
-  }
-
-  if (!res.ok) {
-    console.warn(`[nostr] message ${messageId} rejected: ${res.reason}`)
-    return { ok: false, reason: res.reason }
-  }
-  if (res.eventId) {
-    await ctx.runMutation(internal.nostr.data.markMessagePublished, {
-      messageId,
-      nostrEventId: res.eventId,
-    })
-  }
-  return { ok: true }
-}
 
 /**
- * Publish a message using the author's own Estiva ID token.
+ * Replies, reactions and retractions publish from the BROWSER now (PEEK-106).
  *
- * The browser calls this straight after `messages.send`, because that is the
- * only place the token exists. Verifying the caller *is* the author matters:
- * `/sign` would refuse to sign as anyone else anyway, but failing here says so
- * plainly instead of surfacing as a signature error.
+ * `publishReplyWith` / `publishReplyAsAuthor`, `publishReactionWith` /
+ * `publishReactionAsAuthor`, and `publishRemovalWith` /
+ * `publishReactionRemovalAsAuthor` stood here. All six took the user's bearer
+ * token as a Convex action argument, and Convex surfaces arguments in its
+ * dashboard logs.
+ *
+ * They are replaced by `nostr/outbox.ts` (`unsignedReply`, `unsignedReaction`,
+ * and the matching `record…Published` mutations) plus `src/api/actions.ts`,
+ * which signs and publishes. A retraction needs no query at all: the row is
+ * already deleted, so the kind:5 is built from the id `toggleReaction` hands
+ * back, exactly as message deletion works.
+ *
+ * The NIP-10 detail that was here is now in `outbox.unsignedReply`, and it is
+ * still the thing to get right: Peek's replies are always direct, so root and
+ * parent are the same event and Buzz expects the single
+ * `["e", id, "", "reply"]` form rather than a root/reply pair.
  */
-export const publishMessageAsAuthor = action({
-  args: { messageId: v.id('messages'), estivaAccessToken: v.string() },
-  handler: async (ctx, { messageId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
-    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
-
-    const [m, viewerId] = await Promise.all([
-      ctx.runQuery(internal.nostr.data.getMessageContext, { messageId }),
-      ctx.runQuery(internal.users.viewerIdForAction, {}),
-    ])
-    if (!m) return { ok: false, reason: 'not a topic message' }
-    if (!viewerId || viewerId !== m.authorId) {
-      return { ok: false, reason: 'only the author may publish their message' }
-    }
-
-    const author = await identityForCreatorToken(ctx, m.authorId, estivaAccessToken)
-    if (!author) return { ok: false, reason: 'author has no Estiva ID pubkey' }
-
-    try {
-      return await publishMessageWith(ctx, messageId, author)
-    } catch (e) {
-      console.warn(`[nostr] publishMessageAsAuthor(${messageId}) failed:`, e)
-      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
-    }
-  },
-})
-
-/**
- * Publish a reply as a kind:9 carrying a NIP-10 `e` tag.
- *
- * Peek's replies are always **direct** replies to a message — no nesting — so
- * root and parent are the same event and `threadTags` emits the single
- * `["e", id, "", "reply"]` form Buzz uses.
- *
- * Skipped when the parent message has not been published: Buzz rejects replies
- * to events it does not know, and there is no id to point at.
- */
-async function publishReplyWith(
-  ctx: { runQuery: any; runMutation: any },
-  replyId: Id<'replies'>,
-  authorOverride?: Identity,
-): Promise<{ ok: boolean; reason?: string }> {
-  const r = await ctx.runQuery(internal.nostr.data.getReplyContext, { replyId })
-  if (!r) return { ok: false, reason: 'unknown reply' }
-  if (r.alreadyPublished) return { ok: true }
-  if (!r.channelUuid || !r.parentEventId) {
-    console.warn(`[nostr] reply ${replyId} skipped: parent message is not on the relay yet`)
-    return { ok: false, reason: 'the message being replied to is not on the relay yet' }
-  }
-  if (!withinDriftWindow(r.createdAt)) {
-    return { ok: false, reason: 'outside the relay drift window' }
-  }
-
-  const author = authorOverride
-  if (!author) {
-    skipUnsigned(`reply ${replyId}`, r.authorId)
-    return { ok: false, reason: 'no signing identity for the author' }
-  }
-
-  const signed = await signAs(
-    buildMessage(author.pubkey, r.createdAt, {
-      channelUuid: r.channelUuid,
-      content: r.body,
-      threadRef: { rootId: r.parentEventId, parentId: r.parentEventId },
-    }),
-    author,
-  )
-  const res = await publishEvent(signed, author)
-  if (!res.ok) {
-    console.warn(`[nostr] reply ${replyId} rejected: ${res.reason}`)
-    return { ok: false, reason: res.reason }
-  }
-  if (res.eventId) {
-    await ctx.runMutation(internal.nostr.data.markReplyPublished, {
-      replyId,
-      nostrEventId: res.eventId,
-    })
-  }
-  return { ok: true }
-}
-
-/**
- * Publish a reply using the author's own Estiva ID token.
- *
- * Same reasoning as `publishMessageAsAuthor`: scheduled work never sees the
- * caller's token, and `/sign` signs as nobody but that token's subject — so
- * without this a reply from an Estiva ID identity is silently never published,
- * and a thread started in Peek stops halfway on the relay.
- */
-export const publishReplyAsAuthor = action({
-  args: { replyId: v.id('replies'), estivaAccessToken: v.string() },
-  handler: async (ctx, { replyId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
-    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
-
-    const [r, viewerId] = await Promise.all([
-      ctx.runQuery(internal.nostr.data.getReplyContext, { replyId }),
-      ctx.runQuery(internal.users.viewerIdForAction, {}),
-    ])
-    if (!r) return { ok: false, reason: 'unknown reply' }
-    if (!viewerId || viewerId !== r.authorId) {
-      return { ok: false, reason: 'only the author may publish their reply' }
-    }
-
-    const author = await identityForCreatorToken(ctx, r.authorId, estivaAccessToken)
-    if (!author) return { ok: false, reason: 'author has no Estiva ID pubkey' }
-
-    try {
-      return await publishReplyWith(ctx, replyId, author)
-    } catch (e) {
-      console.warn(`[nostr] publishReplyAsAuthor(${replyId}) failed:`, e)
-      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
-    }
-  },
-})
-
-async function publishReactionWith(
-  ctx: { runQuery: any; runMutation: any },
-  reactionId: Id<'reactions'>,
-  authorOverride?: Identity,
-): Promise<{ ok: boolean; reason?: string }> {
-  const r = await ctx.runQuery(internal.nostr.data.getReactionContext, { reactionId })
-  if (!r) return { ok: false, reason: 'unknown reaction' }
-  if (r.alreadyPublished) return { ok: true }
-  if (!r.targetEventId) return { ok: false, reason: 'the message reacted to is not on the relay' }
-  if (!withinDriftWindow(r.createdAt)) return { ok: false, reason: 'outside the relay drift window' }
-
-  const author = authorOverride
-  if (!author) {
-    skipUnsigned(`reaction ${reactionId}`, r.userId)
-    return { ok: false, reason: 'no signing identity for the reactor' }
-  }
-
-  const signed = await signAs(
-    buildReaction(author.pubkey, r.createdAt, { targetEventId: r.targetEventId, emoji: r.emoji }),
-    author,
-  )
-  const res = await publishEvent(signed, author)
-  if (!res.ok) {
-    console.warn(`[nostr] reaction ${reactionId} rejected: ${res.reason}`)
-    return { ok: false, reason: res.reason }
-  }
-  if (res.eventId) {
-    await ctx.runMutation(internal.nostr.data.markReactionPublished, {
-      reactionId,
-      nostrEventId: res.eventId,
-    })
-  }
-  return { ok: true }
-}
-
-/** Publish a reaction using the reactor's own Estiva ID token. */
-export const publishReactionAsAuthor = action({
-  args: { reactionId: v.id('reactions'), estivaAccessToken: v.string() },
-  handler: async (ctx, { reactionId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
-    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
-
-    const [r, viewerId] = await Promise.all([
-      ctx.runQuery(internal.nostr.data.getReactionContext, { reactionId }),
-      ctx.runQuery(internal.users.viewerIdForAction, {}),
-    ])
-    if (!r) return { ok: false, reason: 'unknown reaction' }
-    if (!viewerId || viewerId !== r.userId) {
-      return { ok: false, reason: 'only the reactor may publish their reaction' }
-    }
-
-    const author = await identityForCreatorToken(ctx, r.userId, estivaAccessToken)
-    if (!author) return { ok: false, reason: 'reactor has no Estiva ID pubkey' }
-
-    try {
-      return await publishReactionWith(ctx, reactionId, author)
-    } catch (e) {
-      console.warn(`[nostr] publishReactionAsAuthor(${reactionId}) failed:`, e)
-      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
-    }
-  },
-})
-
-async function publishRemovalWith(
-  ctx: { runQuery: any; runMutation: any },
-  userId: Id<'users'>,
-  nostrEventId: string,
-  authorOverride?: Identity,
-): Promise<{ ok: boolean; reason?: string }> {
-  const author = authorOverride
-  if (!author) {
-    skipUnsigned(`deletion of ${nostrEventId}`, userId)
-    return { ok: false, reason: 'no signing identity for the reactor' }
-  }
-  const signed = await signAs(
-    buildDeletion(author.pubkey, Date.now(), { targetEventId: nostrEventId }),
-    author,
-  )
-  const res = await publishEvent(signed, author)
-  if (!res.ok) {
-    console.warn(`[nostr] reaction deletion rejected: ${res.reason}`)
-    return { ok: false, reason: res.reason }
-  }
-  return { ok: true }
-}
-
-/**
- * Retract a reaction using the reactor's own Estiva ID token.
- *
- * The row is already deleted, so there is nothing to check the caller against
- * except themselves — the retraction is published for the signed-in user, and
- * the relay enforces that a kind:5 may only delete its own author's event.
- */
-export const publishReactionRemovalAsAuthor = action({
-  args: { nostrEventId: v.string(), estivaAccessToken: v.string() },
-  handler: async (ctx, { nostrEventId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
-    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
-
-    const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
-    if (!viewerId) return { ok: false, reason: 'not signed in' }
-
-    const author = await identityForCreatorToken(ctx, viewerId, estivaAccessToken)
-    if (!author) return { ok: false, reason: 'reactor has no Estiva ID pubkey' }
-
-    try {
-      return await publishRemovalWith(ctx, viewerId, nostrEventId, author)
-    } catch (e) {
-      console.warn(`[nostr] publishReactionRemovalAsAuthor failed:`, e)
-      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
-    }
-  },
-})
 
 /**
  * Deleting a message tombstones it from the BROWSER, not from here (PEEK-106).
