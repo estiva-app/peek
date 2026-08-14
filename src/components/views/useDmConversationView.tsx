@@ -225,6 +225,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   isResolved={c.isResolved}
                   resolvedBy={c.resolvedBy}
                   resolutionMessage={c.resolutionMessage}
+                  nostrReferences={c.nostrReferences}
                   isSelected={threadConvId === c.id}
                   showCreateTopic={!huddleContextByMessageId.has(c.id)}
                   dmContext={dmContext}
@@ -262,6 +263,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   isResolved={m.isResolved}
                   resolvedBy={m.resolvedBy}
                   resolutionMessage={m.resolutionMessage}
+                  nostrReferences={m.nostrReferences}
                   isSelected={threadConvId === m.id}
                   showCreateTopic={!huddleContextByMessageId.has(m.id)}
                   dmContext={dmContext}

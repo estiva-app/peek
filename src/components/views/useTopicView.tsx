@@ -400,6 +400,7 @@ export function useTopicView({
                     isResolved={c.isResolved}
                     resolvedBy={c.resolvedBy}
                     resolutionMessage={c.resolutionMessage}
+                    nostrReferences={c.nostrReferences}
                     showCreateTopic={false}
                     isSelected={threadConvId === c.id}
                     onResolvedChange={(resolved, resolvedBy, message) => actions.setResolution(c.id, resolved, resolved ? (resolvedBy ?? CURRENT_USER_NAME) : undefined, message)}
@@ -552,6 +553,7 @@ export function useTopicView({
                           isResolved={c.isResolved}
                           resolvedBy={c.resolvedBy}
                           resolutionMessage={c.resolutionMessage}
+                          nostrReferences={c.nostrReferences}
                           showCreateTopic={false}
                           isSelected={threadConvId === c.id}
                           onResolvedChange={(resolved, resolvedBy, message) => actions.setResolution(c.id, resolved, resolved ? (resolvedBy ?? CURRENT_USER_NAME) : undefined, message)}
@@ -591,6 +593,7 @@ export function useTopicView({
                           isResolved={c.isResolved}
                           resolvedBy={c.resolvedBy}
                           resolutionMessage={c.resolutionMessage}
+                          nostrReferences={c.nostrReferences}
                           showCreateTopic={false}
                           isSelected={threadConvId === c.id}
                           onResolvedChange={(resolved, resolvedBy, message) => actions.setResolution(c.id, resolved, resolved ? (resolvedBy ?? CURRENT_USER_NAME) : undefined, message)}
@@ -625,6 +628,7 @@ export function useTopicView({
                           isResolved={m.isResolved}
                           resolvedBy={m.resolvedBy}
                           resolutionMessage={m.resolutionMessage}
+                          nostrReferences={m.nostrReferences}
                           showCreateTopic={false}
                           isSelected={threadConvId === m.id}
                           onResolvedChange={(resolved, resolvedBy, message) => actions.setResolution(m.id, resolved, resolved ? (resolvedBy ?? CURRENT_USER_NAME) : undefined, message)}

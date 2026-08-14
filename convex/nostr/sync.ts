@@ -254,12 +254,14 @@ export const syncChannels = internalAction({
                 // strand the reply under the wrong message.
                 continue
               }
+              const addresses = e.tags.filter((t) => t[0] === 'a').map((t) => t[1])
               await ctx.runMutation(internal.nostr.data.importReply, {
                 messageId: parent.messageId,
                 authorId,
                 body: e.content,
                 createdAt: e.created_at * 1000,
                 nostrEventId: e.id,
+                nostrReferences: addresses.length > 0 ? addresses : undefined,
               })
               continue
             }
@@ -287,6 +289,9 @@ export const syncChannels = internalAction({
               console.log(`[TRACE] import: topic already has channelUuid=${topic.channelUuid}, skipping h extraction`)
             }
 
+            // Extract NIP-27 `a` tag addresses (references to other apps' objects)
+            const addresses = e.tags.filter((t) => t[0] === 'a').map((t) => t[1])
+
             await ctx.runMutation(internal.nostr.data.importMessage, {
               topicId: topic.topicId,
               authorId,
@@ -294,6 +299,7 @@ export const syncChannels = internalAction({
               // Nostr seconds → Peek milliseconds.
               createdAt: e.created_at * 1000,
               nostrEventId: e.id,
+              nostrReferences: addresses.length > 0 ? addresses : undefined,
             })
           }
         }

@@ -92,7 +92,7 @@ export async function identityFor(
  * The token is used only for this action invocation; it is never stored in a
  * Convex document or written to logs.
  */
-async function identityForCreatorToken(
+export async function identityForCreatorToken(
   ctx: { runQuery: any },
   userId: Id<'users'>,
   token: string,

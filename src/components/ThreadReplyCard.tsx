@@ -174,6 +174,7 @@ interface ThreadReplyCardProps {
    *  - resolved=true with new `message` → parent stays/becomes resolved with that message
    *  - resolved=false → parent reopens (user removed the resolution from the editor) */
   onResolutionChange?: (resolved: boolean, message?: string) => void
+  nostrReferences?: string[]
   className?: string
 }
 
@@ -195,6 +196,7 @@ export function ThreadReplyCard({
   ownsResolution = false,
   resolutionMsg,
   onResolutionChange,
+  nostrReferences,
   className,
 }: ThreadReplyCardProps) {
   const [isHovered, setIsHovered] = useState(false)
@@ -529,7 +531,7 @@ export function ThreadReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} isTopicResolved={isTopicResolved} />
+              <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} />
             </div>
             {attachments && attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">

@@ -191,6 +191,7 @@ export async function shape(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>, fac
     resolvedByReplyId: resolvedByReply ? resolvedByReply.seedKey ?? (resolvedByReply._id as string) : undefined,
     attachments: m.attachments,
     files: await resolveFileAttachments(ctx, m.fileAttachments),
+    nostrReferences: m.nostrReferences,
   }
 }
 

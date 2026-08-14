@@ -30,7 +30,7 @@ import { v } from 'convex/values'
 import { action } from '../_generated/server'
 import { internal } from '../_generated/api'
 import { publishEvent, queryEvents, relayUrl, signWithIdentityService } from './bridge'
-import { identityFor } from './publish'
+import { identityFor, identityForCreatorToken } from './publish'
 import { decodeNaddr, pointerToAddress } from './nip19'
 import { buildActionEvent, resolveManifest } from './projection'
 
@@ -49,15 +49,21 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
  * no), not an exception for a log nobody opens.
  */
 export const applyAction = action({
-  args: { naddr: v.string(), actionId: v.string(), value: v.string() },
-  handler: async (ctx, { naddr, actionId, value }): Promise<ActResult> => {
+  args: { naddr: v.string(), actionId: v.string(), value: v.string(), estivaIdToken: v.optional(v.string()) },
+  handler: async (ctx, { naddr, actionId, value, estivaIdToken }): Promise<ActResult> => {
     if (!relayUrl()) return fail('Nostr publishing is off (NOSTR_RELAY_URL is unset).')
 
     // Resolves by pubkey for Estiva ID identities. `getAuthUserId` was used
     // here and silently returned a pubkey instead of a user id for them.
     const userId = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!userId) return fail('Sign in to change another app\'s object.')
-    const identity = await identityFor(ctx, userId)
+    
+    // Use user token when provided (Ship model: sign as the real user), 
+    // fall back to backend credentials for backward compatibility
+    const identity = estivaIdToken 
+      ? await identityForCreatorToken(ctx, userId, estivaIdToken)
+      : await identityFor(ctx, userId)
+      
     if (!identity) {
       return fail(
         'Peek cannot sign as you yet: your key lives in Estiva ID, and Peek signs through it from PEEK-40 onwards.',

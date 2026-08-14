@@ -351,7 +351,13 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
       setActingOn(object.naddr)
       setErrors((prev) => ({ ...prev, [object.naddr]: '' }))
       try {
-        const result = await applyAction({ naddr: object.naddr, actionId, value })
+        const userToken = validToken()
+        const result = await applyAction({ 
+          naddr: object.naddr, 
+          actionId, 
+          value,
+          estivaIdToken: userToken?.accessToken 
+        })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // panel can never claim a change the shared record does not have.

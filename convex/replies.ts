@@ -58,6 +58,7 @@ export const list = query({
         highlightType: r.highlightType,
         attachments: r.attachments,
         files: await resolveFileAttachments(ctx, r.fileAttachments),
+        nostrReferences: r.nostrReferences,
         isNew:
           me && r.authorId !== me && (threadWm === undefined || r.createdAt > threadWm)
             ? true

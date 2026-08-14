@@ -86,9 +86,9 @@ async function readerQuery(_ctx: ActionCtx, estivaIdToken?: string): Promise<Que
  * plain text rather than break the message.
  */
 export const resolveObject = action({
-  args: { naddr: v.string() },
-  handler: async (ctx, { naddr }): Promise<ForeignObject | null> => {
-    const query = await readerQuery(ctx)
+  args: { naddr: v.string(), estivaIdToken: v.optional(v.string()) },
+  handler: async (ctx, { naddr, estivaIdToken }): Promise<ForeignObject | null> => {
+    const query = await readerQuery(ctx, estivaIdToken)
     if (!query) return null
     return resolveForeignObject(naddr, query)
   },

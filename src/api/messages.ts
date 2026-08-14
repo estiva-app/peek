@@ -48,6 +48,8 @@ export interface RemoteMessage {
   files?: FileAttachment[]
   /** Derived server-side (list only). */
   replyCount?: number
+  /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
+  nostrReferences?: string[]
   /** Distinct reply authors in first-reply order (list only). */
   replyAuthors?: { id: string; name: string; avatarUrl?: string }[]
   /** Send time of the newest reply (list only). */
@@ -70,6 +72,8 @@ interface RemoteReply {
   highlightType?: ConversationData['highlightType']
   attachments?: string[]
   files?: FileAttachment[]
+  /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
+  nostrReferences?: string[]
 }
 
 /** Remote reply → presentation shape; the viewer's own rows render as 'You'
@@ -88,6 +92,7 @@ function toReplyData(r: RemoteReply, meId: string | undefined): ReplyData {
     attachments: r.attachments,
     files: r.files,
     createdAtMs: r.createdAt,
+    nostrReferences: r.nostrReferences,
   }
 }
 
@@ -120,6 +125,7 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
     })),
     lastReplyTime: r.lastReplyAt !== undefined ? formatTimestamp(r.lastReplyAt) : undefined,
     createdAtMs: r.createdAt,
+    nostrReferences: r.nostrReferences,
   }
 }
 

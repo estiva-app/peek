@@ -4,6 +4,7 @@ import { api } from '../../../convex/_generated/api'
 import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
 import { hasConvex } from '@/api'
 import { cn } from '@/lib/utils'
+import { validToken } from '@/auth/estivaId'
 
 /**
  * Another app's object, rendered inline in Peek.
@@ -339,7 +340,10 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
   const [actionError, setActionError] = useState<string | undefined>()
 
   const reload = useCallback(
-    () => resolve({ naddr }).then(setObject).catch(() => setObject(null)),
+    () => {
+      const userToken = validToken()
+      resolve({ naddr, estivaIdToken: userToken?.accessToken }).then(setObject).catch(() => setObject(null))
+    },
     [naddr, resolve],
   )
 
@@ -348,7 +352,13 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
       setBusy(true)
       setActionError(undefined)
       try {
-        const result = await applyAction({ naddr, actionId, value })
+        const userToken = validToken()
+        const result = await applyAction({ 
+          naddr, 
+          actionId, 
+          value,
+          estivaIdToken: userToken?.accessToken 
+        })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // widget can never claim a change the shared record does not have.

@@ -20,6 +20,8 @@ export interface ReplyData {
    * pre-promotion). Runtime-sent replies set it at create time.
    */
   createdAtMs?: number
+  /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
+  nostrReferences?: string[]
 }
 
 /**

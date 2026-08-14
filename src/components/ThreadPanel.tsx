@@ -220,6 +220,7 @@ export function ThreadPanel({
               files={conversation.files}
               reactions={initialReactions}
               highlightType={initialHighlightType}
+              nostrReferences={conversation.nostrReferences}
               onBodyChange={onInitialBodyChange}
               onReactionsChange={onInitialReactionsChange}
               onHighlightChange={onInitialHighlightChange}
@@ -258,6 +259,7 @@ export function ThreadPanel({
               isUrgent={reply.isUrgent}
               ownsResolution={resolvedByReplyId === reply.id}
               resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
+              nostrReferences={reply.nostrReferences}
               onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
               onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
               onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
@@ -318,6 +320,7 @@ export function ThreadPanel({
               isUrgent={reply.isUrgent}
               ownsResolution={resolvedByReplyId === reply.id}
               resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
+              nostrReferences={reply.nostrReferences}
               onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
               onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
               onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}

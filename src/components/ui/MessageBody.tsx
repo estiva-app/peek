@@ -134,11 +134,17 @@ function renderWithMentions(text: string, isTopicResolved: (id: string) => boole
   )
 }
 
-export function MessageBody({ body, isTopicResolved }: { body: string; isTopicResolved: (id: string) => boolean }) {
+export function MessageBody({ body, isTopicResolved, nostrReferences }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[] }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
-  const references = [...new Set(findNaddrs(body))]
+  // 
+  // For imported messages, use stored nostrReferences (from `a` tags) to avoid
+  // re-parsing. For locally-created messages, fall back to parsing the body.
+  const references = nostrReferences && nostrReferences.length > 0 
+    ? nostrReferences 
+    : [...new Set(findNaddrs(body))]
+  
   // The pointer itself is dropped from the prose (PEEK-18). It was left in
   // originally so a reader could copy it somewhere Peek cannot render, but that
   // trades a rare need against every reader of every message: the widget below

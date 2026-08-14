@@ -144,6 +144,10 @@ export default defineSchema({
      *  publish failed". */
     nostrEventId: v.optional(v.string()),
     nostrPublishedAt: v.optional(v.number()),
+    /** NIP-27 `a` tag addresses from imported events (references to other apps'
+     *  objects like Ship projects/issues). Stored separately so they persist
+     *  even if the message body is edited. */
+    nostrReferences: v.optional(v.array(v.string())),
   })
     .index('by_parent', ['parentKind', 'parentId'])
     .index('by_seedKey', ['seedKey'])
@@ -164,6 +168,8 @@ export default defineSchema({
     seedKey: v.optional(v.string()),
     /** Nostr event id once published (a kind:9 with a NIP-10 `e` tag). */
     nostrEventId: v.optional(v.string()),
+    /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
+    nostrReferences: v.optional(v.array(v.string())),
   })
     .index('by_message', ['messageId'])
     .index('by_seedKey', ['seedKey'])

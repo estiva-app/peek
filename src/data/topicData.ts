@@ -86,6 +86,8 @@ export interface ConversationData {
   replyAuthors?: { name: string; avatarSrc?: string }[]
   /** Formatted time of the newest reply, shown next to the reply count. */
   lastReplyTime?: string
+  /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
+  nostrReferences?: string[]
 }
 
 export interface ConvGroup {

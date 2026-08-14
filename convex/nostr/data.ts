@@ -241,8 +241,9 @@ export const importMessage = internalMutation({
     body: v.string(),
     createdAt: v.number(),
     nostrEventId: v.string(),
+    nostrReferences: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { topicId, authorId, body, createdAt, nostrEventId }) => {
+  handler: async (ctx, { topicId, authorId, body, createdAt, nostrEventId, nostrReferences }) => {
     const existing = await ctx.db
       .query('messages')
       .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
@@ -259,6 +260,7 @@ export const importMessage = internalMutation({
       seedKey: nostrEventId,
       nostrEventId,
       nostrPublishedAt: Date.now(),
+      nostrReferences,
     })
     return { inserted: true }
   },
@@ -309,8 +311,9 @@ export const importReply = internalMutation({
     body: v.string(),
     createdAt: v.number(),
     nostrEventId: v.string(),
+    nostrReferences: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { messageId, authorId, body, createdAt, nostrEventId }) => {
+  handler: async (ctx, { messageId, authorId, body, createdAt, nostrEventId, nostrReferences }) => {
     const existing = await ctx.db
       .query('replies')
       .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
@@ -323,6 +326,7 @@ export const importReply = internalMutation({
       createdAt,
       seedKey: nostrEventId,
       nostrEventId,
+      nostrReferences,
     })
     return { inserted: true }
   },
