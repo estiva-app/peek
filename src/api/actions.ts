@@ -6,12 +6,13 @@
  * deployment is configured, the corresponding Convex mutation. All writes
  * stamp CURRENT_USER_NAME (the Phase 3 identity switch point).
  */
-import { useAction, useMutation, useQuery } from 'convex/react'
+import { useAction, useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { hasConvex, useDmRuntime, usesEstivaId } from './store'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '../../convex/nostr/events'
+import type { UnsignedEvent } from '../../convex/nostr/events'
 import { publishSigned, signViaEstivaId } from '@/nostr/bridge'
 import { CURRENT_USER_NAME } from './currentUser'
 import type { UploadedFile } from './uploads'
@@ -45,12 +46,14 @@ const nowTimestamp = (now = Date.now()) =>
 
 export function usePeekActions() {
   const m = useTopicMutations()
+  // One-shot reads. `useQuery` is reactive and cannot be called mid-action.
+  const convex = useConvex()
   const { setSentDmMessages } = useDmRuntime()
   // Convex double-writes (no-ops without a deployment): the optimistic local
   // copy renders instantly; the record shares its id via seedKey so the
   // reactive read dedupes when it catches up.
   const sendRemote = useMutation(api.messages.send)
-  const publishMessageAsAuthor = useAction(api.nostr.publish.publishMessageAsAuthor)
+  const recordMessagePublished = useMutation(api.nostr.outbox.recordMessagePublished)
   const publishReplyAsAuthor = useAction(api.nostr.publish.publishReplyAsAuthor)
   const publishReactionAsAuthor = useAction(api.nostr.publish.publishReactionAsAuthor)
   const publishReactionRemovalAsAuthor = useAction(api.nostr.publish.publishReactionRemovalAsAuthor)
@@ -70,6 +73,36 @@ export function usePeekActions() {
   const snoozeScreenerRemote = useMutation(api.desk.snoozeScreenerItem)
   const addToOpenWorkRemote = useMutation(api.desk.addToOpenWork)
   const removeOpenWorkRemote = useMutation(api.desk.removeOpenWorkItem)
+
+  /**
+   * Sign an unsigned event and put it on the relay, returning the id the relay
+   * assigned — or null, with the reason logged.
+   *
+   * Never throws to the caller and never surfaces as a failed user action: the
+   * Convex row is written either way, and the relay is a mirror rather than the
+   * source of truth. That was true when this lived in an action and has to stay
+   * true now that it does not.
+   */
+  const signAndPublish = async (
+    unsigned: UnsignedEvent,
+    token: { accessToken: string; pubkey: string },
+  ): Promise<string | null> => {
+    const relay = relayConfig?.relayUrl
+    if (!relay) {
+      console.warn(
+        `[nostr] kind:${unsigned.kind} not published: no relay origin ` +
+          `(publishing is off, or the config query has not resolved yet)`,
+      )
+      return null
+    }
+    const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+    const result = await publishSigned(relay, signed, token.accessToken, token.pubkey)
+    if (!result.ok) {
+      console.warn(`[nostr] kind:${unsigned.kind} publish failed:`, result.reason)
+      return null
+    }
+    return result.eventId ?? null
+  }
 
   const persistMessage = (
     parentKind: 'topic' | 'dm' | 'huddle',
@@ -91,20 +124,22 @@ export function usePeekActions() {
         fileAttachments: toRemoteFiles(files),
       })
 
-      // Estiva ID identities publish from here, because this is the only place
-      // the bearer token exists — Convex does not hand it to scheduled work, and
-      // `/sign` will sign as nobody but that token's subject. Custodial accounts
-      // are already published by the mutation's scheduled job, so republishing
-      // them here would duplicate.
+      // Signed and published from here, because this is the only place the
+      // bearer token exists — Convex does not hand it to scheduled work, and
+      // `/sign` will sign as nobody but that token's subject. Convex builds the
+      // unsigned event (it has the rows) and records the id afterwards (a fact,
+      // not a secret); the token never crosses the boundary.
       const token = usesEstivaId ? validToken() : null
       if (!token) return
-      const result = await publishMessageAsAuthor({
-        messageId,
-        estivaAccessToken: token.accessToken,
-      })
-      // Never surfaced as a failed send: the row is written either way, and the
-      // relay is a mirror rather than the source of truth.
-      if (!result.ok) console.warn('[nostr] message publish failed:', result.reason)
+      const built = await convex.query(api.nostr.outbox.unsignedMessage, { messageId })
+      if (!built.ok) {
+        // Includes the ordinary cases — already published, a DM, outside the
+        // relay's window — so this is a debug line, not a failure.
+        console.warn('[nostr] message not published:', built.reason)
+        return
+      }
+      const eventId = await signAndPublish(built.unsigned, token)
+      if (eventId) await recordMessagePublished({ messageId, nostrEventId: eventId })
     })().catch((error) => console.warn('[nostr] message publish failed:', error))
   }
 
@@ -126,25 +161,11 @@ export function usePeekActions() {
       const { nostrEventIds } = await removed
       const token = usesEstivaId ? validToken() : null
       if (nostrEventIds.length === 0 || !token) return
-      const relay = relayConfig?.relayUrl
-      if (!relay) {
-        // Said out loud rather than returning quietly: an absent relay origin
-        // is indistinguishable from "nothing to publish" at the call site, and
-        // that silence is how the original bug survived.
-        console.warn(
-          `[nostr] ${nostrEventIds.length} deletion(s) not published: no relay origin ` +
-            `(publishing is off, or the config query has not resolved yet)`,
-        )
-        return
-      }
+      // One kind:5 per target rather than one event with many `e` tags — that
+      // is the shape Buzz accepts, and a rejected batch would lose every
+      // tombstone in it instead of one.
       for (const targetEventId of nostrEventIds) {
-        const signed = await signViaEstivaId(
-          buildDeletion(token.pubkey, Date.now(), { targetEventId }),
-          token.accessToken,
-          token.pubkey,
-        )
-        const result = await publishSigned(relay, signed, token.accessToken, token.pubkey)
-        if (!result.ok) console.warn('[nostr] deletion publish failed:', result.reason)
+        await signAndPublish(buildDeletion(token.pubkey, Date.now(), { targetEventId }), token)
       }
     })().catch((error) => console.warn('[nostr] deletion publish failed:', error))
   }
