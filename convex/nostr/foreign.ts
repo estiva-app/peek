@@ -33,8 +33,22 @@ async function readerQuery(_ctx: ActionCtx, estivaIdToken?: string): Promise<Que
 
   // Try user token first (Ship model: read as the signed-in user)
   if (estivaIdToken) {
+    // Extract pubkey from JWT token
+    let userPubkey: string | null = null
+    try {
+      const payload = estivaIdToken.split('.')[1]
+      if (payload) {
+        const json = JSON.parse(
+          Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
+        ) as { sub?: string }
+        userPubkey = json.sub || null
+      }
+    } catch {
+      // If token parsing fails, proceed without pubkey (service will derive)
+    }
+
     const userAuth: RelayAuth = {
-      pubkey: null, // Will be derived from token by relay
+      pubkey: userPubkey,
       token: estivaIdToken,
     }
     return async (filters) => {

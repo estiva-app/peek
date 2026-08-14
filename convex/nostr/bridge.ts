@@ -95,7 +95,7 @@ export async function signWithIdentityService(
       'content-type': 'application/json',
       authorization: ['Bearer ', auth.token].join(''),
     },
-    body: JSON.stringify({ event: { ...unsigned, pubkey: unsigned.pubkey || auth.pubkey } }),
+    body: JSON.stringify({ event: { ...unsigned, pubkey: unsigned.pubkey || auth.pubkey || undefined } }),
   })
   if (!response.ok) {
     throw new Error(`POST /sign failed: ${response.status} ${await response.text()}`)
@@ -129,15 +129,10 @@ async function bridgeAuthorizationHeader(
     throw new Error('No relay auth token available')
   }
 
-  // For user tokens (Estiva ID session tokens), use Bearer auth directly
-  // The relay validates the token and extracts the pubkey from it
-  if (!auth.pubkey) {
-    return `Bearer ${auth.token}`
-  }
-
-  // For service tokens, sign NIP-98 auth event
+  // For both user tokens and service tokens, sign NIP-98 auth event
+  // The relay requires the Nostr auth format, not plain Bearer tokens
   const unsigned = {
-    pubkey: auth.pubkey, // Non-null here since we checked above
+    pubkey: auth.pubkey || '', // Empty for user tokens, service will derive from token
     created_at: Math.floor(Date.now() / 1000),
     kind: 27235,
     tags: [
@@ -226,7 +221,8 @@ export async function queryEvents(
   filters: Record<string, unknown>[],
   auth: RelayAuth,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  console.log(`[TRACE] queryEvents: relayUrl=${relayUrl()}, filters=${JSON.stringify(filters)}, auth.pubkey=${auth.pubkey ? auth.pubkey.slice(0, 16) + '…' : 'null'}, auth.token=${auth.token ? 'present' : 'none'}, auth.secretKeyHex=${auth.secretKeyHex ? 'present' : 'none'}`)
+  const pubkeyLog = auth.pubkey ? auth.pubkey.slice(0, 16) + '…' : 'null'
+  console.log(`[TRACE] queryEvents: relayUrl=${relayUrl()}, filters=${JSON.stringify(filters)}, auth.pubkey=${pubkeyLog}, auth.token=${auth.token ? 'present' : 'none'}, auth.secretKeyHex=${auth.secretKeyHex ? 'present' : 'none'}`)
   const { status, text } = await bridgeFetch('/query', filters, auth)
   console.log(`[TRACE] queryEvents: status=${status}, response.length=${text.length}`)
   if (status < 200 || status >= 300) {
