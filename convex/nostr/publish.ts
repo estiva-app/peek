@@ -316,75 +316,134 @@ export const publishTopic = internalAction({
   },
 })
 
-/** Publish one message as kind:9. */
+/**
+ * Publish one message as kind:9.
+ *
+ * `authorOverride` carries the author's own Estiva ID token, supplied by the
+ * authenticated browser. Scheduled work cannot obtain one — Convex does not
+ * expose the caller's bearer token to background jobs — so without it this can
+ * only publish for users whose key Peek custodies. Same split as
+ * `ensureChannel`'s `creatorOverride`, for the same reason.
+ *
+ * Returns a reason rather than throwing: the row is already written, and a
+ * relay problem must never look like a failed send.
+ */
+async function publishMessageWith(
+  ctx: { runQuery: any; runMutation: any },
+  messageId: Id<'messages'>,
+  authorOverride?: Identity,
+): Promise<{ ok: boolean; reason?: string }> {
+  const m = await ctx.runQuery(internal.nostr.data.getMessageContext, { messageId })
+  if (!m) return { ok: false, reason: 'not a topic message' } // DM, huddle, or deleted
+  if (m.alreadyPublished) return { ok: true } // idempotent: never publish the same row twice
+
+  // Checked before signing so old rows cost nothing and the reason is
+  // legible, rather than surfacing as the relay's generic drift rejection.
+  if (!withinDriftWindow(m.createdAt)) {
+    console.warn(
+      `[nostr] message ${messageId} skipped: createdAt is outside the relay's ±15min ` +
+        `window, and rewriting it would falsify the shared record. Backfill needs a ` +
+        `separate decision — see docs/buzz-compat/FRICTION.md.`,
+    )
+    return { ok: false, reason: 'outside the relay drift window' }
+  }
+
+  const author = authorOverride ?? (await identityFor(ctx, m.authorId))
+  if (!author) {
+    skipUnsigned(`message ${messageId}`, m.authorId)
+    return { ok: false, reason: 'no signing identity for the author' }
+  }
+
+  // Happy path assumes the channel exists, to avoid a round trip per message.
+  let channelUuid = m.channelUuid
+  if (!channelUuid) {
+    // Deliberately not created with the author's identity: the channel belongs
+    // to the topic's creator, and publishing it as whoever spoke first would
+    // make the wrong person its owner. When the creator is an Estiva ID user
+    // this needs their token, which only `publishTopicAsCreator` has.
+    const channel = await ensureChannel(ctx, m.topicId)
+    if (!channel) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+    channelUuid = channel.channelUuid
+  }
+
+  const send = async () => {
+    const signed = await signAs(
+      buildMessage(author.pubkey, m.createdAt, {
+        channelUuid: channelUuid!,
+        content: m.body,
+        about: referencedAddresses(m.body),
+      }),
+      author,
+    )
+    return publishEvent(signed, author)
+  }
+
+  let res = await send()
+
+  // The channel can be absent even when Peek has a UUID for it — a wiped or
+  // rebuilt relay is the common case in development. The relay says exactly
+  // this when that happens, so recreate the channel and retry once.
+  if (!res.ok && res.reason?.includes(NOT_A_MEMBER)) {
+    const channel = await ensureChannel(ctx, m.topicId)
+    if (channel) res = await send()
+  }
+
+  if (!res.ok) {
+    console.warn(`[nostr] message ${messageId} rejected: ${res.reason}`)
+    return { ok: false, reason: res.reason }
+  }
+  if (res.eventId) {
+    await ctx.runMutation(internal.nostr.data.markMessagePublished, {
+      messageId,
+      nostrEventId: res.eventId,
+    })
+  }
+  return { ok: true }
+}
+
+/** Publish one message as kind:9, for users whose key Peek custodies. */
 export const publishMessage = internalAction({
   args: { messageId: v.id('messages') },
   handler: async (ctx, { messageId }) => {
     if (!relayUrl()) return
     try {
-      const m = await ctx.runQuery(internal.nostr.data.getMessageContext, { messageId })
-      if (!m) return // DM, huddle, or deleted — out of scope for Stage 1
-      if (m.alreadyPublished) return // idempotent: never publish the same row twice
-
-      // Checked before signing so old rows cost nothing and the reason is
-      // legible, rather than surfacing as the relay's generic drift rejection.
-      if (!withinDriftWindow(m.createdAt)) {
-        console.warn(
-          `[nostr] message ${messageId} skipped: createdAt is outside the relay's ±15min ` +
-            `window, and rewriting it would falsify the shared record. Backfill needs a ` +
-            `separate decision — see docs/buzz-compat/FRICTION.md.`,
-        )
-        return
-      }
-
-      const author = await identityFor(ctx, m.authorId)
-      if (!author) {
-        skipUnsigned(`message ${messageId}`, m.authorId)
-        return
-      }
-
-      // Happy path assumes the channel exists, to avoid a round trip per message.
-      let channelUuid = m.channelUuid
-      if (!channelUuid) {
-        const channel = await ensureChannel(ctx, m.topicId)
-        if (!channel) return
-        channelUuid = channel.channelUuid
-      }
-
-      const send = async () => {
-        const signed = await signAs(
-          buildMessage(author.pubkey, m.createdAt, {
-            channelUuid: channelUuid!,
-            content: m.body,
-            about: referencedAddresses(m.body),
-          }),
-          author,
-        )
-        return publishEvent(signed, author)
-      }
-
-      let res = await send()
-
-      // The channel can be absent even when Peek has a UUID for it — a wiped or
-      // rebuilt relay is the common case in development. The relay says exactly
-      // this when that happens, so recreate the channel and retry once.
-      if (!res.ok && res.reason?.includes(NOT_A_MEMBER)) {
-        const channel = await ensureChannel(ctx, m.topicId)
-        if (channel) res = await send()
-      }
-
-      if (!res.ok) {
-        console.warn(`[nostr] message ${messageId} rejected: ${res.reason}`)
-        return
-      }
-      if (res.eventId) {
-        await ctx.runMutation(internal.nostr.data.markMessagePublished, {
-          messageId,
-          nostrEventId: res.eventId,
-        })
-      }
+      await publishMessageWith(ctx, messageId)
     } catch (e) {
       console.warn(`[nostr] publishMessage(${messageId}) failed:`, e)
+    }
+  },
+})
+
+/**
+ * Publish a message using the author's own Estiva ID token.
+ *
+ * The browser calls this straight after `messages.send`, because that is the
+ * only place the token exists. Verifying the caller *is* the author matters:
+ * `/sign` would refuse to sign as anyone else anyway, but failing here says so
+ * plainly instead of surfacing as a signature error.
+ */
+export const publishMessageAsAuthor = action({
+  args: { messageId: v.id('messages'), estivaAccessToken: v.string() },
+  handler: async (ctx, { messageId, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+
+    const [m, viewerId] = await Promise.all([
+      ctx.runQuery(internal.nostr.data.getMessageContext, { messageId }),
+      ctx.runQuery(internal.users.viewerIdForAction, {}),
+    ])
+    if (!m) return { ok: false, reason: 'not a topic message' }
+    if (!viewerId || viewerId !== m.authorId) {
+      return { ok: false, reason: 'only the author may publish their message' }
+    }
+
+    const author = await identityForCreatorToken(ctx, m.authorId, estivaAccessToken)
+    if (!author) return { ok: false, reason: 'author has no Estiva ID pubkey' }
+
+    try {
+      return await publishMessageWith(ctx, messageId, author)
+    } catch (e) {
+      console.warn(`[nostr] publishMessageAsAuthor(${messageId}) failed:`, e)
+      return { ok: false, reason: e instanceof Error ? e.message : 'publish failed' }
     }
   },
 })

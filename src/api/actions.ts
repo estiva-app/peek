@@ -6,10 +6,11 @@
  * deployment is configured, the corresponding Convex mutation. All writes
  * stamp CURRENT_USER_NAME (the Phase 3 identity switch point).
  */
-import { useMutation } from 'convex/react'
+import { useAction, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
-import { hasConvex, useDmRuntime } from './store'
+import { hasConvex, useDmRuntime, usesEstivaId } from './store'
+import { validToken } from '@/auth/estivaId'
 import { CURRENT_USER_NAME } from './currentUser'
 import type { UploadedFile } from './uploads'
 import type { ConversationData, FileAttachment, HighlightType, Huddle, ReactionData, ReplyData } from './types'
@@ -47,6 +48,7 @@ export function usePeekActions() {
   // copy renders instantly; the record shares its id via seedKey so the
   // reactive read dedupes when it catches up.
   const sendRemote = useMutation(api.messages.send)
+  const publishMessageAsAuthor = useAction(api.nostr.publish.publishMessageAsAuthor)
   const editBodyRemote = useMutation(api.messages.editBody)
   const removeRemote = useMutation(api.messages.remove)
   const sendReplyRemote = useMutation(api.replies.send)
@@ -68,17 +70,34 @@ export function usePeekActions() {
     files?: UploadedFile[],
   ) => {
     if (!hasConvex) return
-    void sendRemote({
-      parentKind,
-      parentKey,
-      seedKey: msg.id,
-      body: msg.body,
-      highlightType: msg.highlightType,
-      resolved: msg.isResolved,
-      resolutionMessage: msg.resolutionMessage,
-      attachments: msg.attachments,
-      fileAttachments: toRemoteFiles(files),
-    })
+    void (async () => {
+      const messageId = await sendRemote({
+        parentKind,
+        parentKey,
+        seedKey: msg.id,
+        body: msg.body,
+        highlightType: msg.highlightType,
+        resolved: msg.isResolved,
+        resolutionMessage: msg.resolutionMessage,
+        attachments: msg.attachments,
+        fileAttachments: toRemoteFiles(files),
+      })
+
+      // Estiva ID identities publish from here, because this is the only place
+      // the bearer token exists — Convex does not hand it to scheduled work, and
+      // `/sign` will sign as nobody but that token's subject. Custodial accounts
+      // are already published by the mutation's scheduled job, so republishing
+      // them here would duplicate.
+      const token = usesEstivaId ? validToken() : null
+      if (!token) return
+      const result = await publishMessageAsAuthor({
+        messageId,
+        estivaAccessToken: token.accessToken,
+      })
+      // Never surfaced as a failed send: the row is written either way, and the
+      // relay is a mirror rather than the source of truth.
+      if (!result.ok) console.warn('[nostr] message publish failed:', result.reason)
+    })().catch((error) => console.warn('[nostr] message publish failed:', error))
   }
 
   const buildMessage = ({ text, resolution, highlightType, attachments, files }: SendMessagePayload): ConversationData => ({
