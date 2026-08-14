@@ -49,6 +49,7 @@ export function usePeekActions() {
   // reactive read dedupes when it catches up.
   const sendRemote = useMutation(api.messages.send)
   const publishMessageAsAuthor = useAction(api.nostr.publish.publishMessageAsAuthor)
+  const publishReplyAsAuthor = useAction(api.nostr.publish.publishReplyAsAuthor)
   const editBodyRemote = useMutation(api.messages.editBody)
   const removeRemote = useMutation(api.messages.remove)
   const sendReplyRemote = useMutation(api.replies.send)
@@ -285,14 +286,27 @@ export function usePeekActions() {
         }
         m.setSentReplies((prev) => ({ ...prev, [messageId]: [...(prev[messageId] ?? []), newReply] }))
         if (hasConvex) {
-          void sendReplyRemote({
-            messageKey: messageId,
-            seedKey: newReply.id,
-            body: text,
-            highlightType,
-            attachments,
-            fileAttachments: toRemoteFiles(files),
-          })
+          void (async () => {
+            const replyId = await sendReplyRemote({
+              messageKey: messageId,
+              seedKey: newReply.id,
+              body: text,
+              highlightType,
+              attachments,
+              fileAttachments: toRemoteFiles(files),
+            })
+
+            // As with messages: only the browser holds the Estiva ID token, so
+            // only the browser can publish for those identities. Custodial
+            // accounts are already handled by the mutation's scheduled job.
+            const token = usesEstivaId ? validToken() : null
+            if (!token) return
+            const result = await publishReplyAsAuthor({
+              replyId,
+              estivaAccessToken: token.accessToken,
+            })
+            if (!result.ok) console.warn('[nostr] reply publish failed:', result.reason)
+          })().catch((error) => console.warn('[nostr] reply publish failed:', error))
         }
       }
       if (resolution) {
