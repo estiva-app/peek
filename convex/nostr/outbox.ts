@@ -23,7 +23,7 @@
  */
 import { v } from 'convex/values'
 import { mutation, query } from '../_generated/server'
-import { buildMessage } from './events'
+import { buildMessage, buildReaction } from './events'
 import { referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
 import type { UnsignedEvent } from './events'
@@ -80,6 +80,106 @@ export const unsignedMessage = query({
         about: referencedAddresses(m.body),
       }),
     }
+  },
+})
+
+/**
+ * A reply is a kind:9 with NIP-10 thread tags.
+ *
+ * Peek's replies are always **direct** replies — no nesting — so root and
+ * parent are the same event, and `threadTags` emits the single
+ * `["e", id, "", "reply"]` form Buzz uses rather than a root/reply pair.
+ *
+ * Refused when the parent has not been published: Buzz rejects a reply to an
+ * event it does not know, and there is no id to point at.
+ */
+export const unsignedReply = query({
+  args: { replyId: v.id('replies') },
+  handler: async (ctx, { replyId }): Promise<UnsignedMessage> => {
+    const r = await ctx.db.get(replyId)
+    if (!r) return { ok: false, reason: 'unknown reply' }
+    if (r.nostrEventId) return { ok: false, reason: 'already published' }
+
+    const me = await viewerId(ctx)
+    if (!me || me !== r.authorId) return { ok: false, reason: 'only the author may publish their reply' }
+    if (!withinDriftWindow(r.createdAt)) return { ok: false, reason: 'outside the relay drift window' }
+
+    const parent = await ctx.db.get(r.messageId)
+    if (!parent || parent.parentKind !== 'topic') return { ok: false, reason: 'not a topic reply' }
+    if (!parent.nostrEventId) {
+      return { ok: false, reason: 'the message being replied to is not on the relay yet' }
+    }
+    const topicId = ctx.db.normalizeId('topics', parent.parentId)
+    const topic = topicId ? await ctx.db.get(topicId) : null
+    if (!topic?.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+
+    const author = await ctx.db.get(r.authorId)
+    if (!author?.nostrPubkey) return { ok: false, reason: 'author has no Estiva ID pubkey' }
+
+    return {
+      ok: true,
+      unsigned: buildMessage(author.nostrPubkey, r.createdAt, {
+        channelUuid: topic.channelUuid,
+        content: r.body,
+        threadRef: { rootId: parent.nostrEventId, parentId: parent.nostrEventId },
+      }),
+    }
+  },
+})
+
+export const recordReplyPublished = mutation({
+  args: { replyId: v.id('replies'), nostrEventId: v.string() },
+  handler: async (ctx, { replyId, nostrEventId }) => {
+    const r = await ctx.db.get(replyId)
+    if (!r) return
+    const me = await viewerId(ctx)
+    if (!me || me !== r.authorId) return
+    await ctx.db.patch(replyId, { nostrEventId })
+  },
+})
+
+/**
+ * A reaction is a kind:7 pointing at the message's event.
+ *
+ * No drift check: unlike a message, a reaction is created now and carries the
+ * current time, so it cannot fall outside the relay's window.
+ */
+export const unsignedReaction = query({
+  args: { reactionId: v.id('reactions') },
+  handler: async (ctx, { reactionId }): Promise<UnsignedMessage> => {
+    const r = await ctx.db.get(reactionId)
+    if (!r) return { ok: false, reason: 'unknown reaction' }
+    if (r.nostrEventId) return { ok: false, reason: 'already published' }
+
+    const me = await viewerId(ctx)
+    if (!me || me !== r.userId) return { ok: false, reason: 'only the reactor may publish their reaction' }
+
+    const target = await ctx.db.get(r.messageId)
+    if (!target?.nostrEventId) return { ok: false, reason: 'the message reacted to is not on the relay yet' }
+
+    const reactor = await ctx.db.get(r.userId)
+    if (!reactor?.nostrPubkey) return { ok: false, reason: 'reactor has no Estiva ID pubkey' }
+
+    return {
+      ok: true,
+      unsigned: buildReaction(reactor.nostrPubkey, r.createdAt, {
+        targetEventId: target.nostrEventId,
+        emoji: r.emoji,
+      }),
+    }
+  },
+})
+
+export const recordReactionPublished = mutation({
+  args: { reactionId: v.id('reactions'), nostrEventId: v.string() },
+  handler: async (ctx, { reactionId, nostrEventId }) => {
+    // The row may already be gone — un-reacting deletes it and the publish is
+    // async, so patching a deleted id would throw.
+    const r = await ctx.db.get(reactionId)
+    if (!r) return
+    const me = await viewerId(ctx)
+    if (!me || me !== r.userId) return
+    await ctx.db.patch(reactionId, { nostrEventId })
   },
 })
 

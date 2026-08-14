@@ -6,7 +6,7 @@
  * deployment is configured, the corresponding Convex mutation. All writes
  * stamp CURRENT_USER_NAME (the Phase 3 identity switch point).
  */
-import { useAction, useConvex, useMutation, useQuery } from 'convex/react'
+import { useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { hasConvex, useDmRuntime, usesEstivaId } from './store'
@@ -54,9 +54,8 @@ export function usePeekActions() {
   // reactive read dedupes when it catches up.
   const sendRemote = useMutation(api.messages.send)
   const recordMessagePublished = useMutation(api.nostr.outbox.recordMessagePublished)
-  const publishReplyAsAuthor = useAction(api.nostr.publish.publishReplyAsAuthor)
-  const publishReactionAsAuthor = useAction(api.nostr.publish.publishReactionAsAuthor)
-  const publishReactionRemovalAsAuthor = useAction(api.nostr.publish.publishReactionRemovalAsAuthor)
+  const recordReplyPublished = useMutation(api.nostr.outbox.recordReplyPublished)
+  const recordReactionPublished = useMutation(api.nostr.outbox.recordReactionPublished)
   // Where the relay lives. A query rather than a build-time variable so the
   // bundle and the backend cannot disagree about it — see convex/nostr/config.ts.
   const relayConfig = useQuery(api.nostr.config.relayConfig)
@@ -312,17 +311,24 @@ export function usePeekActions() {
         const outcome = await toggleReactionRemote({ key: id, emoji: toggled })
         const token = usesEstivaId ? validToken() : null
         if (!outcome || !token) return
-        const result =
-          outcome.action === 'added'
-            ? await publishReactionAsAuthor({
-                reactionId: outcome.reactionId,
-                estivaAccessToken: token.accessToken,
-              })
-            : await publishReactionRemovalAsAuthor({
-                nostrEventId: outcome.nostrEventId,
-                estivaAccessToken: token.accessToken,
-              })
-        if (!result.ok) console.warn('[nostr] reaction publish failed:', result.reason)
+        if (outcome.action === 'added') {
+          const built = await convex.query(api.nostr.outbox.unsignedReaction, {
+            reactionId: outcome.reactionId,
+          })
+          if (!built.ok) {
+            console.warn('[nostr] reaction not published:', built.reason)
+            return
+          }
+          const eventId = await signAndPublish(built.unsigned, token)
+          if (eventId) await recordReactionPublished({ reactionId: outcome.reactionId, nostrEventId: eventId })
+        } else {
+          // Retraction. The row is already gone, so the kind:5 is built from the
+          // id the mutation handed back — nothing is left to look up.
+          await signAndPublish(
+            buildDeletion(token.pubkey, Date.now(), { targetEventId: outcome.nostrEventId }),
+            token,
+          )
+        }
       })()
         .catch((error) => console.warn('[nostr] reaction publish failed:', error))
         .finally(clearPending)
@@ -389,11 +395,13 @@ export function usePeekActions() {
             // accounts are already handled by the mutation's scheduled job.
             const token = usesEstivaId ? validToken() : null
             if (!token) return
-            const result = await publishReplyAsAuthor({
-              replyId,
-              estivaAccessToken: token.accessToken,
-            })
-            if (!result.ok) console.warn('[nostr] reply publish failed:', result.reason)
+            const built = await convex.query(api.nostr.outbox.unsignedReply, { replyId })
+            if (!built.ok) {
+              console.warn('[nostr] reply not published:', built.reason)
+              return
+            }
+            const eventId = await signAndPublish(built.unsigned, token)
+            if (eventId) await recordReplyPublished({ replyId, nostrEventId: eventId })
           })().catch((error) => console.warn('[nostr] reply publish failed:', error))
         }
       }
