@@ -560,6 +560,51 @@ export const publishReactionRemovalAsAuthor = action({
 })
 
 /**
+ * Tombstone messages, replies, and reactions whose Peek rows are already gone.
+ *
+ * Deleting in Peek used to be purely local: the row vanished here and the event
+ * stayed on the relay, so a message deleted in Peek went on being displayed in
+ * Ship indefinitely. `messages.remove` / `replies.remove` now return the event
+ * ids they destroyed and the browser publishes a kind:5 for each.
+ *
+ * Same shape and same reason as `publishReactionRemovalAsAuthor`: the rows are
+ * already deleted, so there is nothing left to check the caller against except
+ * themselves. The relay enforces that a kind:5 may only delete its own author's
+ * event, and the mutations only hand back the viewer's own ids.
+ *
+ * One kind:5 per target rather than one event with many `e` tags — that is the
+ * shape Buzz is known to accept, and a rejected batch would lose every
+ * tombstone in it instead of one.
+ */
+export const publishDeletionAsAuthor = action({
+  args: { nostrEventIds: v.array(v.string()), estivaAccessToken: v.string() },
+  handler: async (ctx, { nostrEventIds, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+    if (nostrEventIds.length === 0) return { ok: true }
+
+    const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewerId) return { ok: false, reason: 'not signed in' }
+
+    const author = await identityForCreatorToken(ctx, viewerId, estivaAccessToken)
+    if (!author) return { ok: false, reason: 'author has no Estiva ID pubkey' }
+
+    const failures: string[] = []
+    for (const nostrEventId of nostrEventIds) {
+      try {
+        const res = await publishRemovalWith(ctx, viewerId, nostrEventId, author)
+        if (!res.ok) failures.push(res.reason ?? 'publish failed')
+      } catch (e) {
+        console.warn(`[nostr] publishDeletionAsAuthor(${nostrEventId}) failed:`, e)
+        failures.push(e instanceof Error ? e.message : 'publish failed')
+      }
+    }
+    // Partial success is still worth reporting as a failure: the caller only
+    // logs it, and a silently dropped tombstone is exactly the bug this fixes.
+    return failures.length === 0 ? { ok: true } : { ok: false, reason: failures.join('; ') }
+  },
+})
+
+/**
  * **Peek does not publish kind:0. Estiva ID does, and it is the only writer.**
  *
  * There was a `publishProfile` here. It built a profile from Peek's own `users`

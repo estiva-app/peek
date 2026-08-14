@@ -106,18 +106,25 @@ export const send = mutation({
   },
 })
 
+/**
+ * Delete a reply, returning its relay event id so the browser can tombstone it
+ * (see `messages.remove` for why the id comes back from the mutation and why
+ * only the viewer's own event qualifies).
+ */
 export const remove = mutation({
   args: { key: v.string() },
-  handler: async (ctx, { key }) => {
+  handler: async (ctx, { key }): Promise<{ nostrEventIds: string[] }> => {
     const bySeed = await ctx.db
       .query('replies')
       .withIndex('by_seedKey', (q) => q.eq('seedKey', key))
       .unique()
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
-    if (r) {
-      await deleteAttachmentBlobs(ctx, r.fileAttachments)
-      await ctx.db.delete(r._id)
-    }
+    if (!r) return { nostrEventIds: [] }
+    const me = await viewerId(ctx)
+    const mine = r.nostrEventId && me && r.authorId === me ? [r.nostrEventId] : []
+    await deleteAttachmentBlobs(ctx, r.fileAttachments)
+    await ctx.db.delete(r._id)
+    return { nostrEventIds: mine }
   },
 })
