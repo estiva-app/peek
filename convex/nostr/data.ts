@@ -178,15 +178,27 @@ export const resolveExternalUser = internalMutation({
       .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', nostrPubkey))
       .unique()
     if (existing) {
-      // Adopt a real name and face once the relay learns them, but never
-      // overwrite a Peek user's own profile with relay metadata: for a Peek
-      // account this app is the source of truth and the relay is its output.
-      if (existing.isExternal) {
-        const patch: { name?: string; image?: string } = {}
-        if (displayName && existing.name !== displayName) patch.name = displayName
-        if (picture && existing.image !== picture) patch.image = picture
-        if (Object.keys(patch).length) await ctx.db.patch(existing._id, patch)
+      // Fill in what Peek does not have, and never overwrite what it does
+      // (PEEK-72). Estiva ID is the sole publisher of `kind:0` (PEEK-31), so the
+      // relay is now the *upstream* for a profile rather than merely the output
+      // of one — but a name someone typed into Peek still wins over it.
+      //
+      // The old rule was `isExternal` only, and it left every Estiva ID user
+      // stranded: `adoptIdentity` inserts `nostr:<8 chars>` with no image and
+      // clears `isExternal`, after which nothing could ever fill either field.
+      // Real profiles existed on the relay, with pictures, and Peek rendered
+      // placeholders and silhouettes for all of them.
+      const isPlaceholderName = /^nostr:[0-9a-f]{8}$/.test(existing.name)
+      const patch: { name?: string; image?: string } = {}
+      if (displayName && displayName !== existing.name && (existing.isExternal || isPlaceholderName)) {
+        patch.name = displayName
       }
+      // An uploaded avatar is Peek's own and outranks the relay; `image` is only
+      // ever the relay's copy, so replacing it loses nothing.
+      if (picture && picture !== existing.image && !existing.avatarStorageId) {
+        patch.image = picture
+      }
+      if (Object.keys(patch).length) await ctx.db.patch(existing._id, patch)
       return existing._id
     }
     return ctx.db.insert('users', {

@@ -332,3 +332,46 @@ export const syncTopicAsViewer = action({
 })
 
 /** Manual trigger, for testing without waiting for the cron. */
+/**
+ * Pull the signed-in person's own profile from the relay (PEEK-72).
+ *
+ * Sync fills in names and faces for anyone who *appears in a topic*, which is
+ * everyone except, often, the viewer — `adoptIdentity` gives them
+ * `nostr:<8 chars>` and no image, and nothing else ever revisits it. So they see
+ * everyone's real name but their own placeholder.
+ *
+ * Reads as the viewer for the usual reason: the relay is NIP-98 gated, and their
+ * token is the credential we have. `kind:0` is not channel-scoped, so membership
+ * is not in play here — only authentication.
+ *
+ * Idempotent and cheap; the client calls it once after sign-in.
+ */
+export const syncViewerProfile = action({
+  args: { estivaAccessToken: v.string() },
+  handler: async (ctx, { estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
+    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+
+    const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewerId) return { ok: false, reason: 'not signed in' }
+    const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId: viewerId })
+    if (!keys?.nostrPubkey) return { ok: false, reason: 'viewer has no pubkey' }
+
+    const auth: RelayAuth = { pubkey: keys.nostrPubkey, token: estivaAccessToken }
+    const { ok, events, reason } = await queryEvents([{ kinds: [0], authors: [keys.nostrPubkey], limit: 1 }], auth)
+    if (!ok) return { ok: false, reason }
+
+    const profile = profileFrom(events[0])
+    if (!profile.displayName && !profile.picture) {
+      // No profile published yet. Not an error — Estiva ID writes `kind:0` when
+      // someone saves their profile, so a person who never has simply has none.
+      return { ok: true, reason: 'no profile published' }
+    }
+
+    await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
+      nostrPubkey: keys.nostrPubkey,
+      displayName: profile.displayName,
+      picture: profile.picture,
+    })
+    return { ok: true }
+  },
+})

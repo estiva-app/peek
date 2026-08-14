@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Authenticated, Unauthenticated, AuthLoading, useMutation } from 'convex/react'
+import { Authenticated, Unauthenticated, AuthLoading, useAction, useMutation } from 'convex/react'
 import { useAuthActions } from '@convex-dev/auth/react'
 import { api } from '../../convex/_generated/api'
 import { hasConvex, usesEstivaId } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { PeekLogoBadge } from '@/components/ui/PeekLogo'
 import { AuthScreen } from './AuthScreen'
-import { beginSignIn, clearSession, validToken } from './estivaId'
+import { beginSignIn, clearSession, currentEstivaToken, validToken } from './estivaId'
 import { devAutoLogin, isDevAutoLoginOptedOut } from './devAutoLogin'
 
 /**
@@ -52,6 +52,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
  */
 function AdoptIdentity({ children }: { children: ReactNode }) {
   const adopt = useMutation(api.users.adoptIdentity)
+  const syncViewerProfile = useAction(api.nostr.sync.syncViewerProfile)
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const ran = useRef(false)
@@ -60,11 +61,21 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
     if (ran.current) return
     ran.current = true
     adopt({})
-      .then(() => setReady(true))
+      .then(() => {
+        setReady(true)
+        // Fill in the name and face from Estiva ID (PEEK-72). Deliberately not
+        // awaited: a relay that is slow or down must not hold up sign-in, and
+        // the profile is cosmetic until it arrives.
+        const token = currentEstivaToken()
+        if (!token) return
+        void syncViewerProfile({ estivaAccessToken: token }).catch((error) =>
+          console.warn('[nostr] viewer profile sync failed:', error),
+        )
+      })
       .catch((err: unknown) => {
         setFailed(err instanceof Error ? err.message : 'Could not set up your account.')
       })
-  }, [adopt])
+  }, [adopt, syncViewerProfile])
 
   if (failed) return <EstivaIdSignedOut message={failed} />
   return ready ? <>{children}</> : <AuthLoadingScreen />
