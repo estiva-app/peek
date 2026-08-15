@@ -15,11 +15,11 @@
  * every route, reads included.
  */
 import { v } from 'convex/values'
-import { action, internalAction } from '../_generated/server'
+import { action, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { queryEvents, relayUrl, type RelayAuth } from './bridge'
 import type { SignedEvent } from './events'
+import { viewerId } from '../users'
 
 /** Cap per topic per run so one busy channel cannot starve the others. */
 const PAGE_LIMIT = 200
@@ -33,19 +33,6 @@ const PAGE_LIMIT = 200
  * WebSocket instead of re-querying by target.
  */
 const REACTION_TARGET_LIMIT = 100
-
-type Reader = RelayAuth
-
-export async function queryWithReader(
-  _ctx: { runQuery: any },
-  reader: Reader,
-  filters: Record<string, unknown>[],
-): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  // No fallback identity to retry with. Peek holds no keys, and the relay
-  // refuses a non-member outright — so the viewer's own token is the only
-  // credential that can see their channels.
-  return queryEvents(filters, reader)
-}
 
 /**
  * The event this kind:9 is replying to, or null if it is top-level.
@@ -92,19 +79,12 @@ function profileFrom(profile: SignedEvent | undefined): {
  */
 async function syncReactions(
   ctx: { runQuery: any; runMutation: any },
-  reader: Reader,
-  targetEventIds: string[],
+  reactions: SignedEvent[],
+  deletions: SignedEvent[],
   isLocal: Set<string>,
   known: string[],
 ): Promise<void> {
-  const reactions = await queryWithReader(
-    ctx,
-    reader,
-    [{ kinds: [7], '#e': targetEventIds, limit: PAGE_LIMIT }],
-  )
-  if (!reactions.ok) return
-
-  for (const e of reactions.events.filter((r) => !isLocal.has(r.pubkey))) {
+  for (const e of reactions.filter((r) => !isLocal.has(r.pubkey))) {
     const targetId = e.tags.find((t) => t[0] === 'e')?.[1]
     if (!targetId) continue
     const target = await ctx.runQuery(internal.nostr.data.messageByNostrEventId, {
@@ -129,14 +109,11 @@ async function syncReactions(
 
   // Retractions are checked against the reactions Peek ALREADY HOLDS, not the
   // ones just fetched: once the relay has a kind:5 for an event it stops
-  // returning that event, so a deleted reaction is absent from `reactions.events`
-  // and asking about those ids could never find its deletion.
+  // returning that event, so a deleted reaction is absent from the fetched set
+  // and asking about those ids could never find its deletion. That is why the
+  // browser queries kind:5 by `known` rather than by what it just read.
   if (known.length === 0) return
-  const deletions = await queryWithReader(ctx, reader, [
-    { kinds: [5], '#e': known, limit: PAGE_LIMIT },
-  ])
-  if (!deletions.ok) return
-  for (const d of deletions.events) {
+  for (const d of deletions) {
     for (const t of d.tags.filter((tag) => tag[0] === 'e' && known.includes(tag[1]))) {
       // The relay already enforces self-authored deletion, so by the time an
       // event is here it is legitimate. Re-verifying authorship locally is not
@@ -166,48 +143,21 @@ async function syncReactions(
  */
 async function syncTopic(
   ctx: { runQuery: any; runMutation: any },
-  reader: Reader,
-  isLocal: Set<string>,
+  incoming: SignedEvent[],
+  profileEvents: SignedEvent[],
   topic: { topicId: Id<'topics'>; channelUuid: string; since: number | null },
 ): Promise<void> {
     try {
-      console.log(`[TRACE] syncChannels: topicId=${topic.topicId}, channelUuid=${topic.channelUuid}, since=${topic.since}`)
-      const filter: Record<string, unknown> = {
-        // kind:7 has no `h` tag (Buzz derives its channel from the target),
-        // so reactions are fetched separately below.
-        kinds: [9],
-        '#h': [topic.channelUuid],
-        limit: PAGE_LIMIT,
-      }
-      console.log(`[TRACE] syncChannels: filter=${JSON.stringify(filter)}`)
-      // `since` is inclusive, so the newest already-seen event comes back
-      // again. That is intentional — dropping it risks missing a second event
-      // sharing the same one-second timestamp, and the event-id check makes
-      // the re-read free.
-      if (topic.since !== null) filter.since = topic.since
-
-      const { ok, events, reason } = await queryWithReader(ctx, reader, [filter])
-      console.log(`[TRACE] syncChannels: query result ok=${ok}, events.length=${events.length}, reason=${reason}`)
-      if (!ok) {
-        // `relay_membership_required` here means the reader is not a member of
-        // this channel — see `syncTopicAsViewer`, which is the way round it.
-        console.warn(`[nostr] sync query failed for ${topic.channelUuid}: ${reason}`)
-        return
-      }
-
       // Ship and Peek now share an Estiva ID pubkey. Filtering by author
       // therefore drops Ship's messages before thread routing. Imports are
       // already idempotent by event id, which is the correct boundary.
-      const incoming = events
       if (incoming.length > 0) {
-        // One profile lookup per run, not per message.
+        // One profile lookup per run, not per message — the browser fetched
+        // them alongside the messages for exactly that reason.
         const authors = [...new Set(incoming.map((e) => e.pubkey))]
-        const profiles = await queryWithReader(ctx, reader, [
-          { kinds: [0], authors, limit: authors.length },
-        ])
         const profileByPubkey = new Map<string, { displayName?: string; picture?: string }>()
         for (const pk of authors) {
-          profileByPubkey.set(pk, profileFrom(profiles.events.find((p) => p.pubkey === pk)))
+          profileByPubkey.set(pk, profileFrom(profileEvents.find((p) => p.pubkey === pk)))
         }
 
         for (const e of incoming) {
@@ -268,32 +218,13 @@ async function syncTopic(
         }
       }
 
-      // Reactions are fetched by TARGET, not by channel or cursor: kind:7 has
-      // no `h` tag, and its `created_at` bears no relation to the message it
-      // targets, so the channel cursor never reaches it.
-      //
-      // The targets must be every message Peek holds in this channel — using
-      // only the events from this sync window meant a reaction on any older
-      // message was silently never imported (found by testing, not reading).
-      const targets: string[] = await ctx.runQuery(
-        internal.nostr.data.listMessageEventIdsForTopic,
-        { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
-      )
-      if (targets.length > 0) {
-        const known: string[] = await ctx.runQuery(
-          internal.nostr.data.listReactionEventIdsForTopic,
-          { topicId: topic.topicId, limit: PAGE_LIMIT },
-        )
-        await syncReactions(ctx, reader, targets, isLocal, known)
-      }
-
       // Advance on ALL events seen, not just imported ones — otherwise a
       // channel containing only Peek's own messages would re-read them
       // forever.
-      if (events.length > 0) {
+      if (incoming.length > 0) {
         await ctx.runMutation(internal.nostr.data.setTopicSyncCursor, {
           topicId: topic.topicId,
-          nostrSyncedAt: Math.max(...events.map((e) => e.created_at)),
+          nostrSyncedAt: Math.max(...incoming.map((e) => e.created_at)),
         })
       }
     } catch (e) {
@@ -301,32 +232,128 @@ async function syncTopic(
     }
 }
 
-export const syncTopicAsViewer = action({
-  args: { topicKey: v.string(), estivaAccessToken: v.string() },
-  handler: async (ctx, { topicKey, estivaAccessToken }): Promise<{ ok: boolean; reason?: string }> => {
-    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+/**
+ * A signed Nostr event, as the browser read it off the relay.
+ *
+ * Validated rather than trusted: these arrive from the client now, so the shape
+ * is declared. Their *content* is not trusted either — every import below is
+ * keyed on the event id, which is the hash of the event's own fields, so a
+ * forged event cannot overwrite a real one and a replayed one is a no-op.
+ */
+const signedEvent = v.object({
+  id: v.string(),
+  pubkey: v.string(),
+  created_at: v.number(),
+  kind: v.number(),
+  tags: v.array(v.array(v.string())),
+  content: v.string(),
+  sig: v.string(),
+})
 
-    const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
-    if (!viewerId) return { ok: false, reason: 'not signed in' }
+/**
+ * What the browser needs before it can read a channel (PEEK-106).
+ *
+ * A query, so it costs no token. The relay reads themselves happen in the
+ * browser — the only place the viewer's Estiva ID token exists — and the events
+ * come back to `importChannel` below.
+ */
+export const syncPlan = query({
+  args: { topicKey: v.string() },
+  handler: async (
+    ctx,
+    { topicKey },
+  ): Promise<{ channelUuid: string; since: number | null } | null> => {
+    const me = await viewerId(ctx)
+    if (!me) return null
+    // `topics` has no seedKey index — same lookup shape as `syncableTopicByKey`.
+    const normalized = ctx.db.normalizeId('topics', topicKey)
+    const rows = await ctx.db.query('topics').collect()
+    const topic = normalized
+      ? rows.find((r) => (r._id as string) === (normalized as string))
+      : rows.find((r) => r.seedKey === topicKey)
+    if (!topic?.channelUuid) return null
+    return { channelUuid: topic.channelUuid, since: topic.nostrSyncedAt ?? null }
+  },
+})
+
+/**
+ * Project a channel's messages, and say what to fetch next.
+ *
+ * Takes events rather than a token. That is the whole change: the projection
+ * logic is unmoved — it is intricate and belongs next to the database — but the
+ * relay read that fed it does not need a credential on this side.
+ *
+ * Returns the reaction targets and the reaction ids Peek already holds, because
+ * the browser cannot know either. **Both are computed after the import**, so a
+ * message that arrived in this same run can still receive its reactions.
+ */
+export const importChannel = action({
+  args: {
+    topicKey: v.string(),
+    events: v.array(signedEvent),
+    profiles: v.array(signedEvent),
+  },
+  handler: async (
+    ctx,
+    { topicKey, events, profiles },
+  ): Promise<{ ok: boolean; targets?: string[]; known?: string[]; reason?: string }> => {
+    const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewer) return { ok: false, reason: 'not signed in' }
 
     const topic = await ctx.runQuery(internal.nostr.data.syncableTopicByKey, { topicKey })
     if (!topic) return { ok: false, reason: 'topic has no channel on the relay yet' }
 
-    const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId: viewerId })
-    if (!keys?.nostrPubkey) return { ok: false, reason: 'viewer has no pubkey' }
+    await syncTopic(ctx, events, profiles, topic)
+
+    // Reactions are addressed by TARGET, not by channel or cursor: kind:7 has
+    // no `h` tag, and its `created_at` bears no relation to the message it
+    // targets, so the channel cursor never reaches it.
+    //
+    // The targets must be every message Peek holds in this channel — using only
+    // the events from this sync window meant a reaction on any older message
+    // was silently never imported (found by testing, not by reading).
+    const targets: string[] = await ctx.runQuery(
+      internal.nostr.data.listMessageEventIdsForTopic,
+      { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
+    )
+    const known: string[] = await ctx.runQuery(
+      internal.nostr.data.listReactionEventIdsForTopic,
+      { topicId: topic.topicId, limit: PAGE_LIMIT },
+    )
+    return { ok: true, targets, known }
+  },
+})
+
+/**
+ * Project foreign reactions, and apply retractions.
+ *
+ * A second round trip rather than one, because the browser cannot know which
+ * events to ask about until the messages have been imported — `targets` and
+ * `known` come out of `importChannel`.
+ */
+export const importReactions = action({
+  args: {
+    topicKey: v.string(),
+    reactions: v.array(signedEvent),
+    deletions: v.array(signedEvent),
+    known: v.array(v.string()),
+  },
+  handler: async (
+    ctx,
+    { topicKey, reactions, deletions, known },
+  ): Promise<{ ok: boolean; reason?: string }> => {
+    const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewer) return { ok: false, reason: 'not signed in' }
+    const topic = await ctx.runQuery(internal.nostr.data.syncableTopicByKey, { topicKey })
+    if (!topic) return { ok: false, reason: 'topic has no channel on the relay yet' }
 
     const localPubkeys: string[] = await ctx.runQuery(internal.nostr.data.listLocalPubkeys, {})
     try {
-      await syncTopic(
-        ctx,
-        { pubkey: keys.nostrPubkey, token: estivaAccessToken },
-        new Set(localPubkeys),
-        topic,
-      )
+      await syncReactions(ctx, reactions, deletions, new Set(localPubkeys), known)
       return { ok: true }
     } catch (e) {
-      console.warn(`[nostr] syncTopicAsViewer(${topicKey}) failed:`, e)
-      return { ok: false, reason: e instanceof Error ? e.message : 'sync failed' }
+      console.warn(`[nostr] importReactions(${topicKey}) failed:`, e)
+      return { ok: false, reason: e instanceof Error ? e.message : 'import failed' }
     }
   },
 })
@@ -351,34 +378,33 @@ export const syncTopicAsViewer = action({
  * Cheap and idempotent: one query for everyone, and `resolveExternalUser` writes
  * nothing when there is nothing new. The client calls it once after sign-in.
  */
-export const syncStaleProfiles = action({
-  args: { estivaAccessToken: v.string() },
-  handler: async (ctx, { estivaAccessToken }): Promise<{ ok: boolean; updated?: number; reason?: string }> => {
-    if (!relayUrl()) return { ok: false, reason: 'NOSTR_RELAY_URL is unset' }
+/** Who is still showing a placeholder. A query, so it costs no token. */
+export const pubkeysMissingProfile = query({
+  args: {},
+  handler: async (ctx): Promise<string[]> => {
+    const me = await viewerId(ctx)
+    if (!me) return []
+    const users = await ctx.db.query('users').collect()
+    return users
+      .filter((u) => u.nostrPubkey && (/^nostr:[0-9a-f]{8}$/.test(u.name) || !u.image))
+      .map((u) => u.nostrPubkey as string)
+  },
+})
 
-    const viewerId = await ctx.runQuery(internal.users.viewerIdForAction, {})
-    if (!viewerId) return { ok: false, reason: 'not signed in' }
-    const keys = await ctx.runQuery(internal.nostr.data.getUserKeys, { userId: viewerId })
-    if (!keys?.nostrPubkey) return { ok: false, reason: 'viewer has no pubkey' }
-
-    const pubkeys: string[] = await ctx.runQuery(internal.nostr.data.usersMissingProfile, {})
-    if (pubkeys.length === 0) return { ok: true, updated: 0 }
-
-    const auth: RelayAuth = { pubkey: keys.nostrPubkey, token: estivaAccessToken }
-    const { ok, events, reason } = await queryEvents(
-      [{ kinds: [0], authors: pubkeys, limit: pubkeys.length }],
-      auth,
-    )
-    if (!ok) return { ok: false, reason }
+export const recordProfiles = action({
+  args: { profiles: v.array(signedEvent) },
+  handler: async (ctx, { profiles }): Promise<{ ok: boolean; updated?: number; reason?: string }> => {
+    const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewer) return { ok: false, reason: 'not signed in' }
 
     let updated = 0
-    for (const pubkey of pubkeys) {
-      const profile = profileFrom(events.find((e) => e.pubkey === pubkey))
+    for (const event of profiles) {
+      const profile = profileFrom(event)
       // Nobody has published one yet. Estiva ID writes `kind:0` when a person
       // saves their profile, so someone who never has simply has none.
       if (!profile.displayName && !profile.picture) continue
       await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
-        nostrPubkey: pubkey,
+        nostrPubkey: event.pubkey,
         displayName: profile.displayName,
         picture: profile.picture,
       })

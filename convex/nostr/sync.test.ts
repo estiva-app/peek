@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import * as bridge from './bridge'
-import { queryWithReader } from './sync'
 
 
 describe('folder UUID learning from imported messages', () => {

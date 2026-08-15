@@ -10,13 +10,14 @@
  * query catches up.
  */
 import { useCallback } from 'react'
-import { useAction, useMutation, useQuery } from 'convex/react'
+import { useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
 import { useTopicStore } from '@/api/internal/topicStore'
 import { hasConvex, usesEstivaId } from './store'
 import { validToken } from '@/auth/estivaId'
+import { publishTopicChannel } from '@/nostr/topics'
 import type { Topic } from './types'
 import type { Person } from './types'
 
@@ -143,11 +144,36 @@ export interface CreateTopicFromDmResult {
   promotedAt: string
 }
 
+/**
+ * The channel-create sequence, shared by both topic-creation paths.
+ *
+ * Signed and published in the browser (PEEK-106): every event in the sequence
+ * needs the creator's token, and this is the only place it exists.
+ */
+function usePublishTopicChannel() {
+  const convex = useConvex()
+  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  return useCallback(
+    async (topicId: string) => {
+      const token = usesEstivaId ? validToken() : null
+      if (!token || !relayUrl) return
+      const result = await publishTopicChannel(topicId, relayUrl, token, {
+        channelPlan: (args) => convex.query(api.nostr.outbox.channelPlan, args as never),
+        recordChannel: async (args) => {
+          await convex.mutation(api.nostr.outbox.recordChannel, args as never)
+        },
+      })
+      if (!result.ok) console.warn('[nostr] topic channel publish failed:', result.reason)
+    },
+    [convex, relayUrl],
+  )
+}
+
 /** Create a standalone topic (no huddle, no DM promotion). Returns its id. */
 export function useCreateTopic(): (title: string, invitees: Person[]) => string {
   const createLocal = useTopicStore().createTopic
   const createRemote = useMutation(api.topics.create)
-  const publishTopicAsCreator = useAction(api.nostr.publish.publishTopicAsCreator)
+  const publishChannel = usePublishTopicChannel()
   return useCallback(
     (title: string, invitees: Person[]) => {
       const topicId = createLocal(title, invitees.map((p) => p.name))
@@ -158,18 +184,12 @@ export function useCreateTopic(): (title: string, invitees: Person[]) => string 
             seedKey: topicId,
             inviteeNames: invitees.map((p) => p.name),
           })
-          const token = usesEstivaId ? validToken() : null
-          if (!token) return
-          const result = await publishTopicAsCreator({
-            topicId: remoteTopicId,
-            estivaAccessToken: token.accessToken,
-          })
-          if (!result.ok) console.warn('[nostr] topic channel publish failed:', result.reason)
+          await publishChannel(remoteTopicId)
         })().catch((error) => console.warn('[nostr] topic creation publish failed:', error))
       }
       return topicId
     },
-    [createLocal, createRemote, publishTopicAsCreator],
+    [createLocal, createRemote, publishChannel],
   )
 }
 
@@ -178,7 +198,7 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
   const createLocal = useTopicStore().createTopicFromDm
   const createRemote = useMutation(api.topics.create)
   const createHuddleFromDmRemote = useMutation(api.huddles.createFromDm)
-  const publishTopicAsCreator = useAction(api.nostr.publish.publishTopicAsCreator)
+  const publishChannel = usePublishTopicChannel()
   return useCallback(
     (input: CreateTopicFromDmInput) => {
       const result = createLocal(input)
@@ -191,14 +211,7 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
             seedKey: result.topicId,
             inviteeNames: input.invitees.map((p) => p.name),
           })
-          const token = usesEstivaId ? validToken() : null
-          if (token) {
-            const published = await publishTopicAsCreator({
-              topicId: remoteTopicId,
-              estivaAccessToken: token.accessToken,
-            })
-            if (!published.ok) console.warn('[nostr] topic channel publish failed:', published.reason)
-          }
+          await publishChannel(remoteTopicId)
           await createHuddleFromDmRemote({
             topicKey: result.topicId,
             seedKey: result.huddleId,
@@ -210,6 +223,6 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
       }
       return result
     },
-    [createLocal, createRemote, createHuddleFromDmRemote, publishTopicAsCreator],
+    [createLocal, createRemote, createHuddleFromDmRemote, publishChannel],
   )
 }
