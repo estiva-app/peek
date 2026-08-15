@@ -200,3 +200,67 @@ export const recordMessagePublished = mutation({
     await ctx.db.patch(messageId, { nostrEventId, nostrPublishedAt: Date.now() })
   },
 })
+
+/**
+ * Everything needed to establish a topic's channel on the relay.
+ *
+ * The UUID is **minted here rather than in the browser** so it comes from one
+ * place, but it is deliberately not persisted yet: `recordChannel` writes it
+ * only once the relay has accepted the create event, so no consumer — Ship,
+ * `folderForTopic` — can ever see a Folder id the relay does not know.
+ *
+ * Members come back as pubkeys because that is all the add-member events need,
+ * and the creator is filtered out: they own the channel already.
+ */
+export const channelPlan = query({
+  args: { topicId: v.id('topics') },
+  handler: async (
+    ctx,
+    { topicId },
+  ): Promise<
+    | { ok: true; channelUuid: string; title: string; alreadyPublished: boolean; memberPubkeys: string[] }
+    | { ok: false; reason: string }
+  > => {
+    const topic = await ctx.db.get(topicId)
+    if (!topic) return { ok: false, reason: `unknown topic ${topicId}` }
+
+    const me = await viewerId(ctx)
+    if (!me || me !== topic.creatorId) {
+      // The channel belongs to the topic's creator. Letting anyone else create
+      // it would make the wrong person its owner on the relay, permanently.
+      return { ok: false, reason: 'only the topic creator may publish its channel' }
+    }
+    const creator = await ctx.db.get(topic.creatorId)
+    if (!creator?.nostrPubkey) return { ok: false, reason: 'creator has no Estiva ID pubkey' }
+
+    const rows = await ctx.db
+      .query('topicMembers')
+      .withIndex('by_topic', (q) => q.eq('topicId', topicId))
+      .collect()
+    const memberPubkeys: string[] = []
+    for (const r of rows) {
+      const u = await ctx.db.get(r.userId)
+      if (u?.nostrPubkey && u.nostrPubkey !== creator.nostrPubkey) memberPubkeys.push(u.nostrPubkey)
+    }
+
+    return {
+      ok: true,
+      channelUuid: topic.channelUuid ?? crypto.randomUUID(),
+      title: topic.title,
+      alreadyPublished: Boolean(topic.channelUuid),
+      memberPubkeys,
+    }
+  },
+})
+
+/** First write wins, so a racing second create cannot repoint an existing topic. */
+export const recordChannel = mutation({
+  args: { topicId: v.id('topics'), channelUuid: v.string() },
+  handler: async (ctx, { topicId, channelUuid }) => {
+    const topic = await ctx.db.get(topicId)
+    if (!topic || topic.channelUuid) return
+    const me = await viewerId(ctx)
+    if (!me || me !== topic.creatorId) return
+    await ctx.db.patch(topicId, { channelUuid })
+  },
+})
