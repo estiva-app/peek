@@ -35,10 +35,11 @@ import {
   type ConversationData,
   type Huddle,
 } from '@/api'
-import { useAction, useQuery } from 'convex/react'
+import { useConvex, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { hasConvex, usesEstivaId } from '@/api'
 import { validToken } from '@/auth/estivaId'
+import { syncTopicFromRelay } from '@/nostr/sync'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useDebug } from '@/lib/debug'
 import { useNavigate } from 'react-router-dom'
@@ -124,17 +125,23 @@ export function useTopicView({
   //
   // Cheap to repeat: the `since` cursor makes an already-synced channel fetch
   // almost nothing, and imports are idempotent by event id regardless.
-  const syncTopicAsViewer = useAction(api.nostr.sync.syncTopicAsViewer)
+  //
+  // The relay reads happen here rather than in a Convex action (PEEK-106): the
+  // token is the credential, and this is the only place it exists. Convex still
+  // does the projection — see `convex/nostr/sync.ts`.
+  const convex = useConvex()
+  const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
+  const relayUrl = relayConfig?.relayUrl
   useEffect(() => {
-    if (!hasConvex || !usesEstivaId || topicId == null || !topicFolderId) return
+    if (!hasConvex || !usesEstivaId || topicId == null || !topicFolderId || !relayUrl) return
     const token = validToken()
     if (!token) return
-    void syncTopicAsViewer({ topicKey: topicId, estivaAccessToken: token.accessToken })
-      .then((r) => {
-        if (!r.ok) console.warn('[nostr] viewer sync failed:', r.reason)
-      })
-      .catch((error) => console.warn('[nostr] viewer sync failed:', error))
-  }, [topicId, topicFolderId, syncTopicAsViewer])
+    void syncTopicFromRelay(topicId, relayUrl, token, {
+      syncPlan: (args) => convex.query(api.nostr.sync.syncPlan, args),
+      importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
+      importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
+    }).catch((error) => console.warn('[nostr] viewer sync failed:', error))
+  }, [topicId, topicFolderId, relayUrl, convex])
 
   // Derived: a topic is "resolved" iff every non-deleted conv in it is resolved.
   // Single source of truth for the dashed-circle vs checkmark icon everywhere.

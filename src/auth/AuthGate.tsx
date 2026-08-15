@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Authenticated, Unauthenticated, AuthLoading, useAction, useMutation } from 'convex/react'
+import { Authenticated, Unauthenticated, AuthLoading, useConvex, useMutation, useQuery } from 'convex/react'
 import { useAuthActions } from '@convex-dev/auth/react'
 import { api } from '../../convex/_generated/api'
 import { hasConvex, usesEstivaId } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { PeekLogoBadge } from '@/components/ui/PeekLogo'
 import { AuthScreen } from './AuthScreen'
-import { beginSignIn, clearSession, currentEstivaToken, validToken } from './estivaId'
+import { beginSignIn, clearSession, validToken } from './estivaId'
+import { syncStaleProfilesFromRelay } from '@/nostr/sync'
 import { devAutoLogin, isDevAutoLoginOptedOut } from './devAutoLogin'
 
 /**
@@ -52,7 +53,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
  */
 function AdoptIdentity({ children }: { children: ReactNode }) {
   const adopt = useMutation(api.users.adoptIdentity)
-  const syncStaleProfiles = useAction(api.nostr.sync.syncStaleProfiles)
+  const convex = useConvex()
+  const relayUrl = useQuery(api.nostr.config.relayConfig, {})?.relayUrl
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const ran = useRef(false)
@@ -70,16 +72,17 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
         //
         // Deliberately not awaited: a slow or unreachable relay must not hold up
         // sign-in, and a name is cosmetic until it arrives.
-        const token = currentEstivaToken()
-        if (!token) return
-        void syncStaleProfiles({ estivaAccessToken: token }).catch((error) =>
-          console.warn('[nostr] profile sync failed:', error),
-        )
+        const token = validToken()
+        if (!token || !relayUrl) return
+        void syncStaleProfilesFromRelay(relayUrl, token, {
+          pubkeysMissingProfile: () => convex.query(api.nostr.sync.pubkeysMissingProfile, {}),
+          recordProfiles: (args) => convex.action(api.nostr.sync.recordProfiles, args as never),
+        }).catch((error) => console.warn('[nostr] profile sync failed:', error))
       })
       .catch((err: unknown) => {
         setFailed(err instanceof Error ? err.message : 'Could not set up your account.')
       })
-  }, [adopt, syncStaleProfiles])
+  }, [adopt, convex, relayUrl])
 
   if (failed) return <EstivaIdSignedOut message={failed} />
   return ready ? <>{children}</> : <AuthLoadingScreen />
