@@ -1,18 +1,23 @@
-'use node'
-
 /**
  * Stage 2 read path: project relay events back into Convex.
  *
  * This is what makes interop two-way. Without it Peek publishes into the
  * ecosystem but cannot see anything anyone else writes.
  *
- * **Polling, not subscribing.** Convex functions are request-scoped and cannot
- * hold a WebSocket, so this polls the HTTP bridge instead of opening a NIP-01
- * REQ subscription. Real-time later means a small external consumer holding the
- * socket and pushing into Convex; nothing here needs to change for that.
+ * **The relay read itself happens in the browser** (PEEK-106) — it needs the
+ * viewer's Estiva ID token, and the bridge is NIP-98 gated on every route. What
+ * is left here is the projection, which needs no credential and belongs next to
+ * the database.
  *
- * Requires an identity to authenticate the read — the bridge is NIP-98 gated on
- * every route, reads included.
+ * **No `"use node"`.** It was here because signing needed entropy the default
+ * runtime does not provide; nothing in this file signs any more. Removing it
+ * matters beyond tidiness: a Node-runtime file may export *only actions*, so
+ * with it in place `syncPlan` and `pubkeysMissingProfile` below could not exist
+ * — and that failure appears at deploy, not at type-check or test.
+ *
+ * **Polling, not subscribing.** Convex functions are request-scoped and cannot
+ * hold a WebSocket. Real-time later means a small external consumer holding the
+ * socket and pushing into Convex; nothing here needs to change for that.
  */
 import { v } from 'convex/values'
 import { action, query } from '../_generated/server'
