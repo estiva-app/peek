@@ -11,6 +11,7 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, query } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
+import { deleteAttachmentBlobs } from '../messages'
 
 /** A user's key material, or nulls when they have not been minted yet. */
 export const getUserKeys = internalQuery({
@@ -388,6 +389,95 @@ export const listReactionEventIdsForTopic = internalQuery({
       }
     }
     return out
+  },
+})
+
+/**
+ * Event ids of the messages and replies Peek holds for a topic.
+ *
+ * The set to ask "have any of these been deleted?" about. Same reasoning as
+ * `listReactionEventIdsForTopic`, and the same trap: once the relay holds a
+ * kind:5 it stops returning the target, so asking about the events just fetched
+ * could never find a deletion. The question has to be about what Peek already
+ * holds.
+ *
+ * Everyone's events, not just foreign ones. Peek's own rows are removed locally
+ * at the moment of deletion, so a kind:5 for one is a no-op here — but a
+ * deletion published from another device by the same person is not, and
+ * filtering by author would drop exactly that case.
+ */
+export const listDeletableEventIdsForTopic = internalQuery({
+  args: { topicId: v.id('topics'), limit: v.number() },
+  handler: async (ctx, { topicId, limit }) => {
+    const messages = await ctx.db
+      .query('messages')
+      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .collect()
+    const out: string[] = []
+    for (const m of messages.sort((a, b) => b.createdAt - a.createdAt)) {
+      if (m.nostrEventId) out.push(m.nostrEventId)
+      if (out.length >= limit) return out
+      const replies = await ctx.db
+        .query('replies')
+        .withIndex('by_message', (q) => q.eq('messageId', m._id))
+        .collect()
+      for (const r of replies) {
+        if (r.nostrEventId) out.push(r.nostrEventId)
+        if (out.length >= limit) return out
+      }
+    }
+    return out
+  },
+})
+
+/**
+ * Apply a kind:5 to a message or reply Peek holds (PEEK-113).
+ *
+ * The relay already enforces that a kind:5 may only delete its own author's
+ * event, so anything reaching here is legitimate. Re-checking authorship
+ * locally is not possible anyway — the target may no longer be fetchable.
+ *
+ * A message takes its replies, reactions and attachment blobs with it, matching
+ * what `messages.remove` does locally. **Nothing is published**: this is the
+ * import side, and publishing a deletion for an event that was already deleted
+ * elsewhere would be an echo.
+ */
+export const removeByNostrEventId = internalMutation({
+  args: { nostrEventId: v.string() },
+  handler: async (ctx, { nostrEventId }): Promise<{ removed: 'message' | 'reply' | null }> => {
+    const message = await ctx.db
+      .query('messages')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    if (message) {
+      const replies = await ctx.db
+        .query('replies')
+        .withIndex('by_message', (q) => q.eq('messageId', message._id))
+        .collect()
+      for (const r of replies) {
+        await deleteAttachmentBlobs(ctx, r.fileAttachments)
+        await ctx.db.delete(r._id)
+      }
+      const reactions = await ctx.db
+        .query('reactions')
+        .withIndex('by_message', (q) => q.eq('messageId', message._id))
+        .collect()
+      for (const r of reactions) await ctx.db.delete(r._id)
+      await deleteAttachmentBlobs(ctx, message.fileAttachments)
+      await ctx.db.delete(message._id)
+      return { removed: 'message' }
+    }
+
+    const reply = await ctx.db
+      .query('replies')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    if (reply) {
+      await deleteAttachmentBlobs(ctx, reply.fileAttachments)
+      await ctx.db.delete(reply._id)
+      return { removed: 'reply' }
+    }
+    return { removed: null }
   },
 })
 
