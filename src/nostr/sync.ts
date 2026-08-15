@@ -30,12 +30,19 @@ type SyncApi = {
     topicKey: string
     events: unknown[]
     profiles: unknown[]
-  }) => Promise<{ ok: boolean; targets?: string[]; known?: string[]; reason?: string }>
+  }) => Promise<{
+    ok: boolean
+    targets?: string[]
+    known?: string[]
+    deletable?: string[]
+    reason?: string
+  }>
   importReactions: (args: {
     topicKey: string
     reactions: unknown[]
     deletions: unknown[]
     known: string[]
+    deletable: string[]
   }) => Promise<{ ok: boolean; reason?: string }>
 }
 
@@ -92,35 +99,45 @@ export async function syncTopicFromRelay(
 
   const targets = imported.targets ?? []
   const known = imported.known ?? []
-  if (targets.length === 0) return
+  const deletable = imported.deletable ?? []
 
-  const reactions = await queryRelay(
-    relayUrl,
-    [{ kinds: [7], '#e': targets, limit: PAGE_LIMIT }],
-    token.accessToken,
-    token.pubkey,
-  )
-  if (!reactions.ok) return
-
-  // Retractions are asked about by the reactions Peek ALREADY HOLDS, never by
-  // the ones just fetched: once the relay has a kind:5 for an event it stops
-  // returning that event, so a retracted reaction is absent from the set above
-  // and asking about those ids could never find its own deletion.
-  const deletions =
-    known.length > 0
+  const reactions =
+    targets.length > 0
       ? await queryRelay(
           relayUrl,
-          [{ kinds: [5], '#e': known, limit: PAGE_LIMIT }],
+          [{ kinds: [7], '#e': targets, limit: PAGE_LIMIT }],
           token.accessToken,
           token.pubkey,
         )
       : { ok: true as const, events: [] }
 
+  // Retractions are asked about by the ids Peek ALREADY HOLDS, never by the
+  // events just fetched: once the relay has a kind:5 for an event it stops
+  // returning that event, so a deleted one is absent from every fetch above and
+  // asking about those ids could never find its own deletion.
+  //
+  // One query for both kinds of target. `known` is the reactions, `deletable`
+  // is the messages and replies (PEEK-113) — a kind:5 looks identical either
+  // way, so splitting this in two would only cost a round trip.
+  const retractable = [...known, ...deletable]
+  const deletions =
+    retractable.length > 0
+      ? await queryRelay(
+          relayUrl,
+          [{ kinds: [5], '#e': retractable, limit: PAGE_LIMIT }],
+          token.accessToken,
+          token.pubkey,
+        )
+      : { ok: true as const, events: [] }
+
+  if (!reactions.ok && !deletions.ok) return
+
   await api.importReactions({
     topicKey,
-    reactions: reactions.events,
+    reactions: reactions.ok ? reactions.events : [],
     deletions: deletions.ok ? deletions.events : [],
     known,
+    deletable,
   })
 }
 

@@ -88,6 +88,7 @@ async function syncReactions(
   deletions: SignedEvent[],
   isLocal: Set<string>,
   known: string[],
+  deletable: string[],
 ): Promise<void> {
   for (const e of reactions.filter((r) => !isLocal.has(r.pubkey))) {
     const targetId = e.tags.find((t) => t[0] === 'e')?.[1]
@@ -117,15 +118,46 @@ async function syncReactions(
   // returning that event, so a deleted reaction is absent from the fetched set
   // and asking about those ids could never find its deletion. That is why the
   // browser queries kind:5 by `known` rather than by what it just read.
-  if (known.length === 0) return
+  await applyDeletions(ctx, deletions, known, deletable)
+}
+
+/**
+ * Apply kind:5 retractions to whatever they target (PEEK-113).
+ *
+ * A deletion can point at a reaction, a message or a reply, and until this
+ * existed only the first was handled — so a message deleted in Ship stayed
+ * visible in Peek forever, which was the last functional gap in the interop
+ * surface.
+ *
+ * Targets are matched against the ids Peek **already holds**, never the events
+ * just fetched: once the relay has a kind:5 it stops returning the target, so a
+ * deleted event is absent from the fetch and asking about those ids could never
+ * find its own deletion. `known` and `deletable` are exactly that set.
+ *
+ * The relay already enforces that a kind:5 may only delete its own author's
+ * event, so anything arriving here is legitimate. Re-verifying authorship
+ * locally is not possible anyway — the target may no longer be fetchable.
+ */
+async function applyDeletions(
+  ctx: { runQuery: any; runMutation: any },
+  deletions: SignedEvent[],
+  known: string[],
+  deletable: string[],
+): Promise<void> {
+  if (known.length === 0 && deletable.length === 0) return
+  const reactionIds = new Set(known)
+  const contentIds = new Set(deletable)
   for (const d of deletions) {
-    for (const t of d.tags.filter((tag) => tag[0] === 'e' && known.includes(tag[1]))) {
-      // The relay already enforces self-authored deletion, so by the time an
-      // event is here it is legitimate. Re-verifying authorship locally is not
-      // possible anyway: the reaction it targets may no longer be fetchable.
-      await ctx.runMutation(internal.nostr.data.removeReactionByNostrEventId, {
-        nostrEventId: t[1],
-      })
+    for (const tag of d.tags) {
+      if (tag[0] !== 'e') continue
+      const target = tag[1]
+      if (reactionIds.has(target)) {
+        await ctx.runMutation(internal.nostr.data.removeReactionByNostrEventId, {
+          nostrEventId: target,
+        })
+      } else if (contentIds.has(target)) {
+        await ctx.runMutation(internal.nostr.data.removeByNostrEventId, { nostrEventId: target })
+      }
     }
   }
 }
@@ -301,7 +333,13 @@ export const importChannel = action({
   handler: async (
     ctx,
     { topicKey, events, profiles },
-  ): Promise<{ ok: boolean; targets?: string[]; known?: string[]; reason?: string }> => {
+  ): Promise<{
+    ok: boolean
+    targets?: string[]
+    known?: string[]
+    deletable?: string[]
+    reason?: string
+  }> => {
     const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!viewer) return { ok: false, reason: 'not signed in' }
 
@@ -325,7 +363,14 @@ export const importChannel = action({
       internal.nostr.data.listReactionEventIdsForTopic,
       { topicId: topic.topicId, limit: PAGE_LIMIT },
     )
-    return { ok: true, targets, known }
+    // What a kind:5 could be retracting (PEEK-113): messages and replies, not
+    // just reactions. Computed after the import for the same reason as
+    // `targets` — an event imported in this run can be deleted in it too.
+    const deletable: string[] = await ctx.runQuery(
+      internal.nostr.data.listDeletableEventIdsForTopic,
+      { topicId: topic.topicId, limit: PAGE_LIMIT },
+    )
+    return { ok: true, targets, known, deletable }
   },
 })
 
@@ -342,10 +387,11 @@ export const importReactions = action({
     reactions: v.array(signedEvent),
     deletions: v.array(signedEvent),
     known: v.array(v.string()),
+    deletable: v.array(v.string()),
   },
   handler: async (
     ctx,
-    { topicKey, reactions, deletions, known },
+    { topicKey, reactions, deletions, known, deletable },
   ): Promise<{ ok: boolean; reason?: string }> => {
     const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!viewer) return { ok: false, reason: 'not signed in' }
@@ -354,7 +400,7 @@ export const importReactions = action({
 
     const localPubkeys: string[] = await ctx.runQuery(internal.nostr.data.listLocalPubkeys, {})
     try {
-      await syncReactions(ctx, reactions, deletions, new Set(localPubkeys), known)
+      await syncReactions(ctx, reactions, deletions, new Set(localPubkeys), known, deletable)
       return { ok: true }
     } catch (e) {
       console.warn(`[nostr] importReactions(${topicKey}) failed:`, e)
