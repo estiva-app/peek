@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useAction, useQuery } from 'convex/react'
+import { useQuery } from 'convex/react'
 import { IconChevronRight, IconFolderOpen } from '@tabler/icons-react'
 import { api } from '../../convex/_generated/api'
 import type { FolderProject, ForeignObject, ResolvedSlot } from '../../convex/nostr/projection'
-import { hasConvex } from '@/api'
+import { hasConvex, useForeignObjects } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { SkeletonBar } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
-import { currentEstivaToken } from '@/auth/estivaId'
 
 /**
  * The Folder's contents, beside the conversation (PEEK-24).
@@ -305,8 +304,7 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
     api.nostr.data.folderForTopic,
     hasConvex && topicKey ? { topicKey } : 'skip',
   )
-  const resolveProject = useAction(api.nostr.foreign.projectForFolder)
-  const applyAction = useAction(api.nostr.act.applyAction)
+  const { resolveFolderProject: resolveProject, applyAction } = useForeignObjects()
   /** Kept with the Folder it came from, so switching topics cannot show the
    *  previous topic's project while the next one resolves. */
   const [resolved, setResolved] = useState<{ folder: string; project: FolderProject | null }>()
@@ -320,7 +318,7 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   const load = useCallback(
     (target: string) => {
       console.log(`[TRACE] TopicProjectPanel.load: called with target=${target}`)
-      return resolveProject({ folder: target, estivaIdToken: currentEstivaToken() })
+      return resolveProject(target)
         .then((project) => {
           console.log(`[TRACE] TopicProjectPanel.load: resolveProject returned`, project)
           return { folder: target, project }
@@ -349,12 +347,7 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
       setActingOn(object.naddr)
       setErrors((prev) => ({ ...prev, [object.naddr]: '' }))
       try {
-        const result = await applyAction({ 
-          naddr: object.naddr, 
-          actionId, 
-          value,
-          estivaIdToken: currentEstivaToken(),
-        })
+        const result = await applyAction({ naddr: object.naddr, actionId, value })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // panel can never claim a change the shared record does not have.

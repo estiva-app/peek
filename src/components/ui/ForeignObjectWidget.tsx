@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useAction } from 'convex/react'
-import { api } from '../../../convex/_generated/api'
 import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
-import { hasConvex } from '@/api'
+import { hasConvex, useForeignObjects } from '@/api'
 import { cn } from '@/lib/utils'
-import { currentEstivaToken } from '@/auth/estivaId'
 
 /**
  * Another app's object, rendered inline in Peek.
@@ -333,15 +330,14 @@ export function ForeignObjectCard({
 }
 
 export function ForeignObjectWidget({ naddr }: { naddr: string }) {
-  const resolve = useAction(api.nostr.foreign.resolveObject)
-  const applyAction = useAction(api.nostr.act.applyAction)
+  const { resolveObject: resolve, applyAction } = useForeignObjects()
   const [object, setObject] = useState<ForeignObject | null | 'loading'>('loading')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>()
 
   const reload = useCallback(
     () => {
-      resolve({ naddr, estivaIdToken: currentEstivaToken() }).then(setObject).catch(() => setObject(null))
+      resolve(naddr).then(setObject).catch(() => setObject(null))
     },
     [naddr, resolve],
   )
@@ -351,12 +347,7 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
       setBusy(true)
       setActionError(undefined)
       try {
-        const result = await applyAction({ 
-          naddr, 
-          actionId, 
-          value,
-          estivaIdToken: currentEstivaToken(),
-        })
+        const result = await applyAction({ naddr, actionId, value })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // widget can never claim a change the shared record does not have.
@@ -387,7 +378,7 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
     // The token matters as much here as in `reload`: without it this reads as
     // the backend, which is a member of no channel, so the relay returns
     // nothing and the widget silently renders as if the reference were broken.
-    resolve({ naddr, estivaIdToken: currentEstivaToken() })
+    resolve(naddr)
       .then((result) => !cancelled && setObject(result))
       .catch(() => !cancelled && setObject(null))
     return () => {

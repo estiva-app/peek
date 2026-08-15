@@ -16,16 +16,12 @@ import type { ForeignObject } from '../../../convex/nostr/projection'
 const resolveObject = vi.fn()
 
 const applyAction = vi.fn()
-// Both hooks come from the same module; the component asks for two different
-// actions, so hand back whichever the caller named.
-vi.mock('convex/react', () => ({
-  useAction: (ref: unknown) => (ref === 'applyAction' ? applyAction : resolveObject),
-}))
-vi.mock('@/api', () => ({ hasConvex: true }))
-vi.mock('../../../convex/_generated/api', () => ({
-  api: {
-    nostr: { foreign: { resolveObject: 'resolveObject' }, act: { applyAction: 'applyAction' } },
-  },
+// Both come from the seam now rather than from Convex actions (PEEK-106): the
+// relay read and the publish happen in the browser, so there is no action to
+// mock and `@/api` is the only seam to stub.
+vi.mock('@/api', () => ({
+  hasConvex: true,
+  useForeignObjects: () => ({ resolveObject, applyAction, resolveFolderProject: vi.fn() }),
 }))
 
 const { ForeignObjectWidget } = await import('./ForeignObjectWidget')
