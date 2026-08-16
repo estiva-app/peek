@@ -3,13 +3,16 @@ import { PeekDataProvider } from '@/api'
 import { ProfileDialog } from './ProfileDialog'
 
 /**
- * Edit your own profile — display name, role, and avatar. Built on the shared
- * `DialogShell` / `Field` / `TextInput` primitives. The avatar uploads
- * immediately on pick; name and role save on confirm; email is read-only.
+ * Your profile as Peek sees it — read-only since PEEK-42. Estiva ID owns the
+ * name, role and photo, publishes them as `kind:0`, and Peek reads them back
+ * off the relay, so the only action here is a link out to id.estiva.app.
+ *
+ * It used to edit all three into Peek's own row, which made two writers for one
+ * profile — the state PEEK-31 removed everywhere else. The visible symptom was
+ * an avatar uploaded in Peek outranking the published one.
  *
  * In Storybook (mock mode) the current user is the fixture "You" with no
- * avatar, so the form starts populated with that name and shows the upload
- * affordance.
+ * avatar, so this renders the name, the silhouette and the link.
  */
 const meta = {
   title: 'Navigation/ProfileDialog',
