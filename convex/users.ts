@@ -167,9 +167,11 @@ export async function viewerOrThrow(ctx: QueryCtx | MutationCtx): Promise<Doc<'u
  * ever have for them, and without this fallback they render as a silhouette
  * even though another app published a perfectly good avatar.
  */
-export async function avatarUrl(ctx: QueryCtx | MutationCtx, u: Doc<'users'>): Promise<string | undefined> {
-  if (!u.avatarStorageId) return u.image
-  return (await ctx.storage.getUrl(u.avatarStorageId)) ?? u.image
+export async function avatarUrl(_ctx: QueryCtx | MutationCtx, u: Doc<'users'>): Promise<string | undefined> {
+  // The relay's `kind:0` picture, and nothing else (PEEK-42). This used to
+  // prefer a Convex-stored upload, which meant a Peek avatar silently shadowed
+  // the real Estiva ID one for anyone who had ever set one here.
+  return u.image
 }
 
 /** The signed-in user's own profile — drives the client's useCurrentUser(). */
@@ -189,50 +191,22 @@ export const me = query({
   },
 })
 
-/** Edit your own display name / role. Empty role clears it. */
-export const updateProfile = mutation({
-  args: { name: v.string(), role: v.optional(v.string()) },
-  handler: async (ctx, { name, role }) => {
-    const you = await viewerOrThrow(ctx)
-    const trimmed = name.trim()
-    if (!trimmed) throw new Error('Name cannot be empty')
-    await ctx.db.patch(you._id, {
-      name: trimmed,
-      role: role?.trim() ? role.trim() : undefined,
-    })
-    // No kind:0 publish. Estiva ID is the sole publisher (PEEK-31), so this
-    // name is local to Peek until PEEK-72 reads it from there instead.
-  },
-})
-
-/** Short-lived URL the client POSTs the image file to (Convex file storage). */
-export const generateAvatarUploadUrl = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await viewerOrThrow(ctx)
-    return ctx.storage.generateUploadUrl()
-  },
-})
-
-/** Attach an uploaded file as the avatar; the previous one is deleted. */
-export const setAvatar = mutation({
-  args: { storageId: v.id('_storage') },
-  handler: async (ctx, { storageId }) => {
-    const you = await viewerOrThrow(ctx)
-    if (you.avatarStorageId) await ctx.storage.delete(you.avatarStorageId)
-    await ctx.db.patch(you._id, { avatarStorageId: storageId })
-    // Same as updateProfile: this avatar is Peek-local now. The published one
-    // is whatever Estiva ID holds, and moving it off Convex storage onto a
-    // content-addressed Blossom blob is PEEK-42.
-  },
-})
-
-/** Drop the uploaded avatar (falls back to the silhouette). */
-export const removeAvatar = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const you = await viewerOrThrow(ctx)
-    if (you.avatarStorageId) await ctx.storage.delete(you.avatarStorageId)
-    await ctx.db.patch(you._id, { avatarStorageId: undefined })
-  },
-})
+/**
+ * Profile editing lives in Estiva ID now (PEEK-42).
+ *
+ * `updateProfile`, `generateAvatarUploadUrl`, `setAvatar` and `removeAvatar`
+ * stood here. They wrote name, role and avatar into Peek's own row — a second
+ * writer for something PEEK-31 had already made single-writer everywhere else,
+ * and the divergence was visible rather than theoretical: `avatarUrl` preferred
+ * the Convex upload, so a Peek avatar shadowed the real Estiva ID picture for
+ * anyone who had ever set one.
+ *
+ * `https://id.estiva.app/account` is where a profile is edited now, and the
+ * relay's `kind:0` is how it arrives — `nostr/data.ts`'s `resolveExternalUser`
+ * and the sync profile pass already do that work.
+ *
+ * `avatarStorageId` is still declared in the schema and nothing writes it.
+ * Removing a field fails the entire push for every row still carrying one, so
+ * `dev/dropAvatarStorage` clears it — and deletes the orphaned blobs, which the
+ * schema change alone would leak — before the column can go.
+ */
