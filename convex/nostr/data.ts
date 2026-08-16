@@ -13,26 +13,6 @@ import { internalMutation, internalQuery, query } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
 import { deleteAttachmentBlobs } from '../messages'
 
-/** A user's key material, or nulls when they have not been minted yet. */
-export const getUserKeys = internalQuery({
-  args: { userId: v.id('users') },
-  handler: async (ctx, { userId }) => {
-    const u = await ctx.db.get(userId)
-    if (!u) return null
-    return {
-      name: u.name,
-      role: u.role,
-      // Resolved here rather than in the action, because this is the file
-      // allowed to touch the database. A user with no uploaded avatar publishes
-      // no `picture` at all — different from publishing an empty one, which
-      // would have consumers render a broken image instead of their own
-      // placeholder.
-      avatarUrl: u.avatarStorageId ? ((await ctx.storage.getUrl(u.avatarStorageId)) ?? null) : null,
-      nostrPubkey: u.nostrPubkey ?? null,
-    }
-  },
-})
-
 /** Topic plus the creator's id — the publish action needs both. */
 export const getTopic = internalQuery({
   args: { topicId: v.id('topics') },
@@ -147,26 +127,6 @@ export const listChannels = internalQuery({
   },
 })
 
-/**
- * Everyone still wearing a placeholder instead of a profile (PEEK-72).
- *
- * A row qualifies when Peek has a pubkey for it but nothing a person chose: the
- * `nostr:<8 chars>` name `adoptIdentity` and `resolveExternalUser` fall back to,
- * or no face at all. An uploaded avatar means Peek has its own and the relay is
- * not needed.
- */
-export const usersMissingProfile = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query('users').collect()
-    return rows
-      .filter((u) => u.nostrPubkey)
-      .filter((u) => /^nostr:[0-9a-f]{8}$/.test(u.name) || (!u.image && !u.avatarStorageId))
-      .map((u) => u.nostrPubkey!)
-  },
-})
-
-/** Pubkeys belonging to Peek's own users — everything else is foreign. */
 export const listLocalPubkeys = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -213,9 +173,11 @@ export const resolveExternalUser = internalMutation({
       if (displayName && displayName !== existing.name && (existing.isExternal || isPlaceholderName)) {
         patch.name = displayName
       }
-      // An uploaded avatar is Peek's own and outranks the relay; `image` is only
-      // ever the relay's copy, so replacing it loses nothing.
-      if (picture && picture !== existing.image && !existing.avatarStorageId) {
+      // Nothing outranks the relay now (PEEK-42). This used to skip anyone with
+      // a Convex-stored avatar, because Peek's own upload won — which is exactly
+      // the shadowing that ticket removed. `image` is only ever the relay's
+      // copy, so replacing it loses nothing.
+      if (picture && picture !== existing.image) {
         patch.image = picture
       }
       if (Object.keys(patch).length) await ctx.db.patch(existing._id, patch)
