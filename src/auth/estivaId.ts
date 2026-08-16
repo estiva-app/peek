@@ -26,6 +26,7 @@
  * while the response is snake_case (`access_token`). That is genuinely the
  * contract, not a typo here — see `docs/API.md` in estiva-id.
  */
+import { type ShellReason, clearGuard, markGuard } from './shell/contract'
 
 /** Must equal `domain` in `convex/auth.config.ts` and `ESTIVA_ID_ISSUER` in `convex/users.ts`. */
 export const ESTIVA_ID_ORIGIN =
@@ -41,6 +42,8 @@ const VERIFIER_KEY = 'peek.estivaId.codeVerifier'
 const STATE_KEY = 'peek.estivaId.state'
 const RETURN_KEY = 'peek.estivaId.returnTo'
 const TOKEN_KEY = 'peek.estivaId.token'
+/** Why the last round trip came back empty, handed from the callback to the shell. */
+const REASON_KEY = 'peek.estivaId.shellReason'
 
 export interface StoredToken {
   accessToken: string
@@ -89,7 +92,10 @@ export function redirectUri(): string {
  * CSRF token and widening it into a general-purpose payload invites treating
  * whatever comes back as trustworthy. What comes back is only ever compared.
  */
-export async function beginSignIn(returnTo = window.location.pathname + window.location.search): Promise<void> {
+export async function beginSignIn(
+  returnTo = window.location.pathname + window.location.search,
+  { silent = false }: { silent?: boolean } = {},
+): Promise<void> {
   const s = store()
   if (!s) throw new Error('sign-in requires a browser')
 
@@ -106,7 +112,35 @@ export async function beginSignIn(returnTo = window.location.pathname + window.l
   url.searchParams.set('code_challenge', await codeChallenge(verifier))
   url.searchParams.set('code_challenge_method', 'S256')
   url.searchParams.set('state', state)
+
+  /**
+   * A silent attempt asks not to be prompted (PEEK-117), so a browser with no
+   * session comes straight back with `error=login_required` instead of landing
+   * on the identity origin's sign-in page.
+   *
+   * The guard is marked **before** navigating, because after this line nothing
+   * here runs again. That marker is what stops the return trip starting another
+   * attempt — the infinite bounce this flow would otherwise be.
+   */
+  if (silent) {
+    url.searchParams.set('prompt', 'none')
+    markGuard(s, Date.now())
+  }
+
   window.location.assign(url.toString())
+}
+
+/** Hand the shell a reason across the full page load the callback ends in. */
+export function stashShellReason(reason: ShellReason): void {
+  store()?.setItem(REASON_KEY, reason)
+}
+
+/** Read it once. Single-use: a stale reason outliving its cause is a lie. */
+export function takeShellReason(): ShellReason | null {
+  const s = store()
+  const raw = s?.getItem(REASON_KEY)
+  if (raw) s?.removeItem(REASON_KEY)
+  return (raw as ShellReason | null) ?? null
 }
 
 export class SignInError extends Error {}
@@ -180,6 +214,8 @@ export async function completeSignIn(search: string): Promise<{ token: StoredTok
     pubkey: body.pubkey,
   }
   s.setItem(TOKEN_KEY, JSON.stringify(token))
+  // The attempt worked, so the next boot is entitled to a fresh silent one.
+  clearGuard(s)
   return { token, returnTo }
 }
 
@@ -221,5 +257,5 @@ export function currentEstivaToken(): string | undefined {
 export function clearSession(): void {
   const s = store()
   if (!s) return
-  for (const k of [TOKEN_KEY, VERIFIER_KEY, STATE_KEY, RETURN_KEY]) s.removeItem(k)
+  for (const k of [TOKEN_KEY, VERIFIER_KEY, STATE_KEY, RETURN_KEY, REASON_KEY]) s.removeItem(k)
 }
