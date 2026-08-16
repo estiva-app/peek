@@ -50,6 +50,18 @@ export interface StoredToken {
   /** Epoch ms. Derived from `expires_in` at receipt, not sent by the server. */
   expiresAt: number
   pubkey: string
+  /**
+   * The credential that renews the one above without a redirect (PEEK-108).
+   *
+   * Absent when Estiva ID issued none — a deployment predating the grant. The
+   * app then behaves exactly as it did before, which is what lets the two sides
+   * ship independently.
+   *
+   * **Single-use.** Estiva ID rotates it on every redemption and treats a
+   * replay as evidence of theft, revoking the whole chain. So it is replaced,
+   * never kept alongside its successor.
+   */
+  refreshToken?: string
 }
 
 /**
@@ -218,20 +230,88 @@ export async function completeSignIn(search: string): Promise<{ token: StoredTok
     )
   }
 
-  const body = (await response.json()) as { access_token?: string; expires_in?: number; pubkey?: string }
+  const body = (await response.json()) as TokenResponse
   if (!body.access_token || !body.pubkey) throw new SignInError('Estiva ID returned no token.')
 
-  const token: StoredToken = {
-    accessToken: body.access_token,
-    // Deliberately pessimistic by 30s so a token is never presented to Convex in
-    // the window where it is technically alive and about to not be.
-    expiresAt: Date.now() + Math.max(0, (body.expires_in ?? 600) - 30) * 1000,
-    pubkey: body.pubkey,
-  }
+  const token = tokenFrom(body, body.pubkey)
   s.setItem(TOKEN_KEY, JSON.stringify(token))
   // The attempt worked, so the next boot is entitled to a fresh silent one.
   clearGuard(s)
   return { token, returnTo }
+}
+
+interface TokenResponse {
+  access_token?: string
+  expires_in?: number
+  pubkey?: string
+  refresh_token?: string
+}
+
+/**
+ * Shape a token response into what we keep.
+ *
+ * The expiry is deliberately pessimistic by 30s so a token is never presented
+ * to Convex in the window where it is technically alive and about to not be.
+ */
+function tokenFrom(body: TokenResponse, pubkey: string): StoredToken {
+  return {
+    accessToken: body.access_token as string,
+    expiresAt: Date.now() + Math.max(0, (body.expires_in ?? 600) - 30) * 1000,
+    pubkey,
+    ...(body.refresh_token ? { refreshToken: body.refresh_token } : {}),
+  }
+}
+
+/**
+ * Renew the access token without leaving the page (PEEK-108).
+ *
+ * This is the whole reason the grant exists. Before it, an expired token could
+ * only be replaced by a top-level navigation through `/authorize`, which costs
+ * whatever the person had on screen.
+ *
+ * Returns `null` for every failure, and the failures are not worth
+ * distinguishing here: Estiva ID answers `invalid_grant` for all of them by
+ * design, and the caller's only move either way is to fall back to the shell.
+ * The stored token is cleared on failure so a spent refresh token is never
+ * presented twice — a replay is what Estiva ID treats as theft.
+ */
+export async function refreshAccessToken(): Promise<StoredToken | null> {
+  const s = store()
+  const current = storedToken()
+  if (!s || !current?.refreshToken) return null
+
+  let response: Response
+  try {
+    response = await fetch(new URL('/token', ESTIVA_ID_ORIGIN), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        grantType: 'refresh_token',
+        refreshToken: current.refreshToken,
+        clientId: CLIENT_ID,
+      }),
+    })
+  } catch {
+    // Unreachable rather than refused. The token we hold may still be fine, so
+    // this deliberately does not clear the session — a flaky network must not
+    // sign somebody out.
+    return null
+  }
+
+  if (!response.ok) {
+    clearSession()
+    return null
+  }
+
+  const body = (await response.json()) as TokenResponse
+  if (!body.access_token) {
+    clearSession()
+    return null
+  }
+
+  const next = tokenFrom(body, body.pubkey ?? current.pubkey)
+  s.setItem(TOKEN_KEY, JSON.stringify(next))
+  return next
 }
 
 export function storedToken(): StoredToken | null {
