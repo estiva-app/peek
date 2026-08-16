@@ -11,7 +11,7 @@
  * deletes it. `pubkeyFromIdentity` is the seam between the two.
  *
  * Avatars are real uploads: the file lives in Convex storage and the user
- * doc keeps its `avatarStorageId`; reads hand the client a resolved URL.
+ * a profile is read from the relay's `kind:0`, never written here (PEEK-42).
  * Seeded demo people keep their client-side portraits (name-keyed
  * `avatarFor`) — the seam prefers an uploaded avatar and falls back to
  * those, so the demo dataset stays pixel-identical.
@@ -205,8 +205,7 @@ export const me = query({
  * relay's `kind:0` is how it arrives — `nostr/data.ts`'s `resolveExternalUser`
  * and the sync profile pass already do that work.
  *
- * `avatarStorageId` is still declared in the schema and nothing writes it.
- * Removing a field fails the entire push for every row still carrying one, so
- * `dev/dropAvatarStorage` clears it — and deletes the orphaned blobs, which the
- * schema change alone would leak — before the column can go.
+ * `avatarStorageId` and the blobs behind it are gone too. It took two releases:
+ * a field cannot leave the validator while any row still carries it, so a sweep
+ * had to clear the column and delete the files first.
  */

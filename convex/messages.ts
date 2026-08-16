@@ -82,14 +82,15 @@ export interface Face {
 /**
  * Everyone's name and avatar, in one pass over `users` (PEEK-43).
  *
- * Replaces the name-only map this used to be. The avatar has to be resolved
- * server-side because `avatarStorageId` is a storage handle, not a URL, and
- * only the server can turn it into one — `avatarUrl()` in users.ts is the same
- * precedence the profile query uses (upload, else the relay's kind:0 `picture`).
+ * Replaces the name-only map this used to be. Resolved server-side because the
+ * client cannot: a face may belong to someone with no Peek account at all, and
+ * `people.ts` deliberately excludes them from the directory — so a client
+ * looking avatars up by name could never find one.
  *
- * That second source is the point of the ticket: someone with no Peek account
- * only ever has `image`, so a client looking avatars up by name — against a
- * directory that excludes them (`people.ts`) — could never find their face.
+ * There is only one source now (PEEK-42): `image`, Peek's copy of whatever
+ * Estiva ID published as `kind:0`. It used to be two, with a Convex upload
+ * outranking the relay, which meant the two apps could show different faces for
+ * the same person.
  */
 export async function userFaces(ctx: QueryCtx | MutationCtx): Promise<Map<Id<'users'>, Face>> {
   const users = await ctx.db.query('users').collect()

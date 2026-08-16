@@ -58,7 +58,6 @@ export default defineSchema({
     phone: v.optional(v.string()),
     // ── Peek profile fields ──
     role: v.optional(v.string()),
-    avatarStorageId: v.optional(v.id('_storage')),
     /** Stable key for idempotent seeding ('you', 'alice', …). Fixture-only. */
     seedKey: v.optional(v.string()),
     // ── Nostr identity (docs/buzz-compat/IMPLEMENTATION_PLAN.md §3.1) ──
