@@ -6,7 +6,7 @@
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
-import { formatTimestamp } from './format'
+import { formatReplyTimestamp } from './format'
 import { hasConvex } from './store'
 
 export interface ScreenerPreviewRow {
@@ -27,7 +27,9 @@ export function useScreenerPreview(itemId: string | null): ScreenerPreviewRow[] 
   if (remote === undefined) return undefined
   return (remote ?? []).map((r) => ({
     authorName: r.authorId === me?.id ? CURRENT_USER_NAME : r.authorName,
-    timestamp: formatTimestamp(r.createdAt),
+    // The popover floats with no date dividers, so each row's label carries
+    // its own day once it isn't today (same rule as thread reply cards).
+    timestamp: formatReplyTimestamp(r.createdAt),
     body: r.body,
     kind: r.kind,
   }))

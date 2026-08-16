@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDateLabel, formatTimestamp, dayKey } from './format'
+import { formatDateLabel, formatTimestamp, formatReplyTimestamp, formatLastReplyTimestamp, dayKey } from './format'
 
 // Fixed "now": Tue Sep 3 2024, 10:00:00 local time.
 const NOW = new Date(2024, 8, 3, 10, 0, 0).getTime()
@@ -17,6 +17,41 @@ describe('formatTimestamp (§5)', () => {
   it('renders 12 AM/PM at the edges', () => {
     expect(formatTimestamp(new Date(2024, 8, 2, 0, 30).getTime(), NOW)).toBe('12:30 AM')
     expect(formatTimestamp(new Date(2024, 8, 2, 12, 0).getTime(), NOW)).toBe('12:00 PM')
+  })
+})
+
+describe('formatReplyTimestamp', () => {
+  it('renders Just now under 60s', () => {
+    expect(formatReplyTimestamp(NOW - 59_000, NOW)).toBe('Just now')
+  })
+  it('names today explicitly (ruling 2026-07-29)', () => {
+    expect(formatReplyTimestamp(new Date(2024, 8, 3, 9, 14).getTime(), NOW)).toBe('Today at 9:14 AM')
+  })
+  it('joins Yesterday with "at" for the previous local day', () => {
+    expect(formatReplyTimestamp(new Date(2024, 8, 2, 16, 5).getTime(), NOW)).toBe('Yesterday at 4:05 PM')
+  })
+  it('joins short month + day with "at" within the same year', () => {
+    expect(formatReplyTimestamp(new Date(2024, 7, 28, 11, 45).getTime(), NOW)).toBe('Aug 28 at 11:45 AM')
+  })
+  it('adds the year for previous years', () => {
+    expect(formatReplyTimestamp(new Date(2023, 11, 24, 18, 0).getTime(), NOW)).toBe('Dec 24, 2023 at 6:00 PM')
+  })
+})
+
+describe('formatLastReplyTimestamp', () => {
+  const cardAt = new Date(2024, 6, 22, 11, 21).getTime() // Jul 22
+  it('plain time when the reply shares the card day (divider owns the day)', () => {
+    expect(formatLastReplyTimestamp(new Date(2024, 6, 22, 21, 28).getTime(), cardAt, NOW)).toBe('9:28 PM')
+  })
+  it('explicit Today when the reply is today but the card is older', () => {
+    expect(formatLastReplyTimestamp(new Date(2024, 8, 3, 9, 14).getTime(), cardAt, NOW)).toBe('Today at 9:14 AM')
+  })
+  it('keeps Just now (unambiguous)', () => {
+    expect(formatLastReplyTimestamp(NOW - 30_000, cardAt, NOW)).toBe('Just now')
+  })
+  it('Yesterday / dated forms for other days', () => {
+    expect(formatLastReplyTimestamp(new Date(2024, 8, 2, 16, 5).getTime(), cardAt, NOW)).toBe('Yesterday at 4:05 PM')
+    expect(formatLastReplyTimestamp(new Date(2024, 7, 28, 11, 45).getTime(), cardAt, NOW)).toBe('Aug 28 at 11:45 AM')
   })
 })
 

@@ -32,6 +32,43 @@ export function formatDateLabel(createdAt: number, now: number = Date.now()): st
   return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`
 }
 
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** Reply-card timestamp — every reply names its day explicitly (ruling
+ *  2026-07-29: a thread rooted on an older day gives a bare time no "today"
+ *  implication, and the reply pill already says `Today at …`):
+ *  `'Just now'` → `'Today at 2:30 PM'` → `'Yesterday at 2:30 PM'` →
+ *  `'Sep 3 at 2:30 PM'` (this year) → `'Sep 3, 2025 at 2:30 PM'`.
+ *  Day and time join with `at`, not a dot (ruling 2026-07-28). */
+export function formatReplyTimestamp(createdAt: number, now: number = Date.now()): string {
+  if (now - createdAt < 60_000) return 'Just now'
+  const time = formatTimestamp(createdAt, now)
+  const d = new Date(createdAt)
+  const n = new Date(now)
+  if (sameLocalDay(d, n)) return `Today at ${time}`
+  if (sameLocalDay(d, new Date(now - 24 * 60 * 60 * 1000))) return `Yesterday at ${time}`
+  const monthDay = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
+  return d.getFullYear() === n.getFullYear()
+    ? `${monthDay} at ${time}`
+    : `${monthDay}, ${d.getFullYear()} at ${time}`
+}
+
+/** The reply pill's time on a conversation card. The card sits under ITS OWN
+ *  day's divider, so a bare time implies that day — when the last reply
+ *  happened on a DIFFERENT local day, the label carries its day explicitly,
+ *  including a literal `Today` (the one case formatReplyTimestamp leaves
+ *  bare, because inside a thread "today" needs no marker but under an old
+ *  divider it does). */
+export function formatLastReplyTimestamp(
+  lastReplyAt: number,
+  messageCreatedAt: number,
+  now: number = Date.now()
+): string {
+  const t = formatTimestamp(lastReplyAt, now)
+  if (dayKey(lastReplyAt) === dayKey(messageCreatedAt) || t === 'Just now') return t
+  return formatReplyTimestamp(lastReplyAt, now)
+}
+
 /** Local calendar-day key for grouping (stable across DST). */
 export function dayKey(createdAt: number): string {
   const d = new Date(createdAt)
