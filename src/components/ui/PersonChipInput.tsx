@@ -104,7 +104,7 @@ export function PersonChipInput({
     <div className="relative">
       <div
         ref={wrapperRef}
-        className="bg-bg-inset border border-border-default focus-within:border-border-strong rounded-lg px-2 py-1.5 flex flex-wrap items-center gap-1.5 transition-colors min-h-[40px] cursor-text"
+        className="bg-bg-inset border border-border-default focus-within:border-border-strong rounded-lg px-3 py-1.5 flex flex-wrap items-center gap-1.5 transition-colors min-h-[38px] cursor-text signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]"
         onClick={() => inputRef.current?.focus()}
       >
         {value.map((p) => (

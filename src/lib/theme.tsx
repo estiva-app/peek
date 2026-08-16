@@ -22,21 +22,27 @@ const ThemeContext = createContext<{
   resolved: ResolvedTheme
   setTheme: (t: Theme) => void
   toggleTheme: () => void
-}>({ theme: 'dark', resolved: 'dark', setTheme: () => {}, toggleTheme: () => {} })
+}>({ theme: 'signal', resolved: 'signal', setTheme: () => {}, toggleTheme: () => {} })
+
+// v2 key (2026-07-25): signal became the default. The old 'theme' key is
+// deliberately ignored — the app stamped it on every visit, so honoring it
+// would keep every previous visitor on dark even though they never chose it.
+// Choices made from here on persist under the new key as usual.
+const THEME_KEY = 'theme.v2'
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    return (localStorage.getItem('theme') as Theme) ?? 'dark'
+    return (localStorage.getItem(THEME_KEY) as Theme) ?? 'signal'
   })
   const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(
-    (localStorage.getItem('theme') as Theme) ?? 'dark'
+    (localStorage.getItem(THEME_KEY) as Theme) ?? 'signal'
   ))
 
   useEffect(() => {
     const r = resolveTheme(theme)
     setResolved(r)
     applyThemeClasses(r)
-    localStorage.setItem('theme', theme)
+    localStorage.setItem(THEME_KEY, theme)
   }, [theme])
 
   // Listen for OS preference changes when in system mode
