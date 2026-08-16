@@ -8,26 +8,27 @@
  * the app the moment anyone signed in with Estiva ID. That whole hazard is gone
  * with the second provider.
  *
- * **This ends the session in Peek only.** Clearing the token here does not touch
- * the Estiva ID cookie, so signing back in will not prompt for a passkey. That
- * is defensible for an identity provider — it is what "single sign-on" means —
- * but it does make this narrower than the word suggests, and on a shared machine
- * it is not what someone clicking *Sign out* expects.
+ * **This now ends the Estiva ID session, not just Peek's copy of a token**
+ * (PEEK-122). The previous version cleared the token and reloaded, and this file
+ * said why that was narrow but defensible: signing back in was silent, which is
+ * what single sign-on means.
  *
- * Estiva ID does have `POST /auth/logout`, so a real end-session round trip is
- * possible; it is deliberately not done here because it is a behaviour change to
- * the identity service's session, not part of deleting Convex Auth, and it wants
- * its own decision about whether Peek should be able to sign you out of every
- * Estiva app at once.
+ * The auth shell made it indefensible. Entry is automatic now, so clearing the
+ * token and reloading ran the silent probe, which succeeded against the
+ * untouched cookie and put the person straight back in. The button did nothing
+ * visible. That is the whole bug, and it is a good example of a behaviour that
+ * was fine in isolation becoming wrong when something else changed.
+ *
+ * So signing out here signs you out of every Estiva app. That is a deliberate
+ * decision rather than an inherited one — see PEEK-122 for the trade-off, and
+ * for the one thing it does not do: tokens already issued live up to an hour,
+ * so another app's *already-open* tab keeps working until its token expires.
  */
 import { useCallback } from 'react'
-import { clearSession } from './estivaId'
+import { beginSignOut } from './estivaId'
 
 export function useSignOut(): () => void {
-  return useCallback(() => {
-    clearSession()
-    // A full load rather than a router navigation: the app resolves its auth
-    // state at mount, so it has to come up again with the token gone.
-    window.location.assign('/')
-  }, [])
+  // Navigates to the identity origin, so nothing after it runs. The cookie is
+  // only reachable by going there — the same reason entry works the way it does.
+  return useCallback(() => beginSignOut(), [])
 }

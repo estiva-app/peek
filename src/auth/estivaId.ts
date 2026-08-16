@@ -130,6 +130,21 @@ export async function beginSignIn(
   window.location.assign(url.toString())
 }
 
+/**
+ * Where to go back to, as stashed by `beginSignIn`.
+ *
+ * Single-use, like the reason. The refusal path needs this as much as the
+ * success path does: a silent probe that comes back `login_required` was still
+ * started from somewhere, and dropping it puts people on the desk instead of
+ * the link they opened (PEEK-123).
+ */
+export function takeReturnTo(): string | null {
+  const s = store()
+  const raw = s?.getItem(RETURN_KEY)
+  if (raw) s?.removeItem(RETURN_KEY)
+  return raw ?? null
+}
+
 /** Hand the shell a reason across the full page load the callback ends in. */
 export function stashShellReason(reason: ShellReason): void {
   store()?.setItem(REASON_KEY, reason)
@@ -252,6 +267,27 @@ export function hasEstivaIdSession(): boolean {
  */
 export function currentEstivaToken(): string | undefined {
   return validToken()?.accessToken
+}
+
+/**
+ * Leave for Estiva ID to end the session there (PEEK-122).
+ *
+ * Clearing the local token is not signing out. The `estiva_id_session` cookie
+ * on the identity origin is untouched by it, so the shell's silent probe
+ * succeeds on the next boot and puts the person straight back in — which is
+ * exactly what "sign out doesn't sign me out" was.
+ *
+ * The cookie can only be reached by going there, for the same reason entry
+ * works the way it does. The reason is stashed first so the shell offers a
+ * passkey on return rather than silently probing for a session we just ended.
+ */
+export function beginSignOut(): void {
+  clearSession()
+  stashShellReason('no_session')
+  const url = new URL('/logout', ESTIVA_ID_ORIGIN)
+  url.searchParams.set('client_id', CLIENT_ID)
+  url.searchParams.set('post_logout_redirect_uri', redirectUri())
+  window.location.assign(url.toString())
 }
 
 export function clearSession(): void {
