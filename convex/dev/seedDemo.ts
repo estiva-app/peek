@@ -17,10 +17,9 @@
  * Run:  npx convex run dev/seedDemo:seed '{"wipe": true}'
  */
 import { v } from 'convex/values'
-import { createAccount } from '@convex-dev/auth/server'
 import { internalAction, internalMutation, type MutationCtx } from '../_generated/server'
 import { internal } from '../_generated/api'
-import type { DataModel, Id, TableNames } from '../_generated/dataModel'
+import type { Id, TableNames } from '../_generated/dataModel'
 import { TOPICS, TOPIC_CONVERSATIONS, type ConversationData } from '../../src/data/topicData'
 import { DM_CONVERSATIONS } from '../../src/data/dmData'
 import { REPLIES } from '../../src/data/replyData'
@@ -50,10 +49,9 @@ const SEED_EXTRAS = [
   { seedKey: 'maya',   name: 'Maya Patel' },
 ] as const
 
-/** The seed user — "You". seedWithLogin gives her real credentials. */
+/** The seed user — "You". `seedAs` binds her to a real Estiva ID pubkey. */
 const SEED_YOU = { seedKey: 'you', name: 'Cath' } as const
 export const DEMO_EMAIL = 'demo@peek.dev'
-const DEMO_PASSWORD = 'Peek-demo-1'
 
 /** Mock conversation number → partner (mirrors src/api/directory.ts).
  *  `key` is the partner's person key — the DM's real id (§2.4). */
@@ -71,10 +69,11 @@ const ALL_TABLES: TableNames[] = [
   'users', 'topics', 'topicMembers', 'dmConversations', 'messages',
   'replies', 'reactions', 'huddles', 'huddleMembers', 'readState',
   'stars', 'screenerItems', 'deskOpenWork',
-  // Convex Auth bookkeeping — wiped too, else wiping `users` orphans
-  // accounts/sessions and prior sign-ins break irrecoverably.
-  'authAccounts', 'authSessions', 'authRefreshTokens',
-  'authVerificationCodes', 'authVerifiers', 'authRateLimits',
+  // Convex Auth's tables used to be wiped here too. They left the schema with
+  // it (PEEK-41) and are therefore no longer in `TableNames`, so typed code
+  // cannot reach them at all. Any rows still in them are inert — nothing reads
+  // them and no sign-in consults them — and clearing them is a one-off from the
+  // dashboard rather than something this fixture should pretend to own.
 ]
 
 async function wipeAll(ctx: MutationCtx) {
@@ -98,7 +97,7 @@ export const seed = internalMutation({
   args: { wipe: v.optional(v.boolean()) },
   handler: async (ctx, { wipe }) => {
     if (wipe) await wipeAll(ctx)
-    // The demo-login user (seedKey 'you') may already exist — seedWithLogin
+    // The seed user (seedKey 'you') may already exist — `seedAs`
     // creates the account first; the seed then reuses that user as "You".
     const users = await ctx.db.query('users').collect()
     const existingYou = users.find((u) => u.seedKey === 'you')
@@ -397,21 +396,56 @@ export const seed = internalMutation({
 })
 
 /**
- * Seed + demo login in one step (decision 2026-07-09): creates the
- * demo@peek.dev / Peek-demo-1 account as the seed user "Cath" (seedKey
- * 'you'), then runs the full demo seed against that identity.
+ * Seed the demo data and hand the seed user "Cath" to a real identity.
  *
- * Run:  npx convex run dev/seedDemo:seedWithLogin '{"wipe": true}'
+ * Run:  npx convex run dev/seedDemo:seedAs '{"pubkey": "<64 hex>", "wipe": true}'
+ *
+ * There was a `seedWithLogin` here that called Convex Auth's `createAccount` to
+ * mint a demo@peek.dev / password login. Convex Auth is gone (PEEK-41), and
+ * with it the idea of an account Peek can create on its own: identity lives in
+ * Estiva ID, and Peek only ever recognises a pubkey.
+ *
+ * So instead of creating credentials, this **adopts** them. Pass the pubkey you
+ * sign in with — `sessionStorage`'s stored token carries it, or read it off
+ * your row in the `users` table — and the seed user is stamped with it, so
+ * signing in through Estiva ID lands you on Cath with the whole demo dataset
+ * behind you rather than as a brand new person in an empty workspace.
+ *
+ * Idempotent, and safe to point at a pubkey that already has its own row: the
+ * pubkey is only stamped when nobody else holds it, because two rows sharing
+ * one pubkey is the exact corruption `by_nostrPubkey` lookups cannot survive —
+ * `.unique()` throws and every signed-in read fails.
  */
-export const seedWithLogin = internalAction({
-  args: { wipe: v.optional(v.boolean()) },
-  handler: async (ctx, { wipe }): Promise<unknown> => {
+export const seedAs = internalAction({
+  args: { pubkey: v.string(), wipe: v.optional(v.boolean()) },
+  handler: async (ctx, { pubkey, wipe }): Promise<unknown> => {
+    if (!/^[0-9a-f]{64}$/.test(pubkey)) {
+      throw new Error('pubkey must be 64 lowercase hex characters')
+    }
     if (wipe) await ctx.runMutation(internal.dev.seedDemo.wipe, {})
-    await createAccount<DataModel>(ctx, {
-      provider: 'password',
-      account: { id: DEMO_EMAIL, secret: DEMO_PASSWORD },
-      profile: { name: SEED_YOU.name, email: DEMO_EMAIL, seedKey: SEED_YOU.seedKey },
-    })
-    return ctx.runMutation(internal.dev.seedDemo.seed, {})
+    const seeded = await ctx.runMutation(internal.dev.seedDemo.seed, {})
+    await ctx.runMutation(internal.dev.seedDemo.bindSeedUser, { pubkey })
+    return seeded
+  },
+})
+
+/** Stamp the seed user with a pubkey, unless somebody else already holds it. */
+export const bindSeedUser = internalMutation({
+  args: { pubkey: v.string() },
+  handler: async (ctx, { pubkey }) => {
+    const holder = await ctx.db
+      .query('users')
+      .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', pubkey))
+      .unique()
+    if (holder) return { bound: false, reason: `already held by ${holder.name}` }
+
+    const you = await ctx.db
+      .query('users')
+      .withIndex('by_seedKey', (q) => q.eq('seedKey', SEED_YOU.seedKey))
+      .unique()
+    if (!you) return { bound: false, reason: 'seed user not found — run the seed first' }
+
+    await ctx.db.patch(you._id, { nostrPubkey: pubkey, email: DEMO_EMAIL })
+    return { bound: true }
   },
 })

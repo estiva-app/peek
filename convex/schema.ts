@@ -7,7 +7,6 @@
  * the optional dev-only fixture.
  */
 import { defineSchema, defineTable } from 'convex/server'
-import { authTables } from '@convex-dev/auth/server'
 import { v } from 'convex/values'
 
 export const highlightType = v.union(
@@ -35,21 +34,31 @@ export const fileAttachment = v.object({
 export const containerKind = v.union(v.literal('topic'), v.literal('dm'))
 
 export default defineSchema({
-  // Convex Auth bookkeeping tables (authAccounts, authSessions, …).
-  // `users` is overridden below with Peek's fields merged in.
-  ...authTables,
+  // Convex Auth's bookkeeping tables (authAccounts, authSessions, …) are gone
+  // with it (PEEK-41). Any rows left in them are simply no longer declared:
+  // "schemas only validate documents in the tables listed in the schema", so
+  // they neither block a push nor are reachable from a typed query.
 
   // §2.1 — replaces PEOPLE + the 'You' literal + AVATAR_BY_NAME.
-  // Auth fields (name/image/email/…) per @convex-dev/auth authTables.users;
-  // name stays required — the Password profile always provides it
-  // (sign-up collects full name, decision 2026-07-09).
+  //
+  // `email` survives Convex Auth's removal as a plain profile field, sourced
+  // from the identity service rather than from a credential row.
+  //
+  // The three fields marked vestigial below are Convex Auth's and nothing reads
+  // or writes them any more. They **cannot simply be deleted from this
+  // validator**: a push fails with "Object contains extra field … that is not
+  // in the validator" for every row that still carries one. `dev/dropAuthFields`
+  // clears them; the columns go in a follow-up once it has run.
   users: defineTable({
     name: v.string(),
     image: v.optional(v.string()),
     email: v.optional(v.string()),
-    emailVerificationTime: v.optional(v.number()),
     phone: v.optional(v.string()),
+    /** Vestigial — Convex Auth. See the note above before removing. */
+    emailVerificationTime: v.optional(v.number()),
+    /** Vestigial — Convex Auth. */
     phoneVerificationTime: v.optional(v.number()),
+    /** Vestigial — Convex Auth. */
     isAnonymous: v.optional(v.boolean()),
     // ── Peek profile fields ──
     role: v.optional(v.string()),

@@ -1,39 +1,33 @@
 /**
- * Signing out, whichever way you signed in (PEEK-104).
+ * Signing out.
  *
- * Peek now has two sign-ins and therefore two sign-outs, and the components that
- * offer the action should not have to know which is mounted. This is the seam.
+ * One sign-in, one sign-out, since PEEK-41 removed Convex Auth. This used to
+ * bridge two of them and had to call `useAuthActions` unconditionally, because
+ * outside `ConvexAuthProvider` it *returns undefined* rather than throwing —
+ * which is how it first surfaced: `TopBar` destructured it directly and crashed
+ * the app the moment anyone signed in with Estiva ID. That whole hazard is gone
+ * with the second provider.
  *
- * `useAuthActions` is called unconditionally on purpose. Outside
- * `ConvexAuthProvider` it *returns undefined* rather than throwing — which is
- * exactly how this surfaced: `TopBar` destructured it directly and crashed the
- * whole app the first time someone signed in with Estiva ID, because the app was
- * mounted under `ConvexProviderWithAuth` instead. Calling the hook every render
- * keeps hook order stable; reading it defensively keeps it honest.
+ * **This ends the session in Peek only.** Clearing the token here does not touch
+ * the Estiva ID cookie, so signing back in will not prompt for a passkey. That
+ * is defensible for an identity provider — it is what "single sign-on" means —
+ * but it does make this narrower than the word suggests, and on a shared machine
+ * it is not what someone clicking *Sign out* expects.
+ *
+ * Estiva ID does have `POST /auth/logout`, so a real end-session round trip is
+ * possible; it is deliberately not done here because it is a behaviour change to
+ * the identity service's session, not part of deleting Convex Auth, and it wants
+ * its own decision about whether Peek should be able to sign you out of every
+ * Estiva app at once.
  */
 import { useCallback } from 'react'
-import { useAuthActions } from '@convex-dev/auth/react'
-import { usesEstivaId } from '@/api'
 import { clearSession } from './estivaId'
 
 export function useSignOut(): () => void {
-  // Undefined under ConvexProviderWithAuth and in Storybook — never destructured.
-  const actions = useAuthActions()
-
   return useCallback(() => {
-    if (usesEstivaId) {
-      clearSession()
-      // A full load, not a router navigation: `PeekDataProvider` picks its auth
-      // provider at mount, so the app has to come up again to hand control back
-      // to Convex Auth.
-      //
-      // This ends the session *in Peek only*. The Estiva ID cookie outlives it,
-      // so signing back in will not prompt — which is the correct behaviour for
-      // an identity provider, but does mean "sign out" is narrower here than it
-      // looks. A real end-session round trip belongs with PEEK-41.
-      window.location.assign('/')
-      return
-    }
-    void actions?.signOut()
-  }, [actions])
+    clearSession()
+    // A full load rather than a router navigation: the app resolves its auth
+    // state at mount, so it has to come up again with the token gone.
+    window.location.assign('/')
+  }, [])
 }

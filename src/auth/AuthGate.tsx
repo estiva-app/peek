@@ -1,29 +1,27 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Authenticated, Unauthenticated, AuthLoading, useConvex, useMutation, useQuery } from 'convex/react'
-import { useAuthActions } from '@convex-dev/auth/react'
 import { api } from '../../convex/_generated/api'
-import { hasConvex, usesEstivaId } from '@/api'
+import { hasConvex } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { PeekLogoBadge } from '@/components/ui/PeekLogo'
-import { AuthScreen } from './AuthScreen'
 import { beginSignIn, clearSession, validToken } from './estivaId'
 import { syncStaleProfilesFromRelay } from '@/nostr/sync'
-import { devAutoLogin, isDevAutoLoginOptedOut } from './devAutoLogin'
 
 /**
- * Router-level auth gate (Phase 3). Convex mode: unauthenticated visitors
- * see the AuthScreen, the app renders only once authenticated. Mock mode
- * (tests, Storybook, checkouts without a deployment) has no identity
- * server — the app stays auto-signed-in as CURRENT_USER_NAME, unchanged.
+ * Router-level auth gate.
  *
- * Local dev only: with `VITE_DEV_AUTOLOGIN=1` the demo user signs in
- * automatically instead of showing the screen (see ./devAutoLogin — it is
- * dead code in any production build).
+ * **One sign-in since PEEK-41.** This used to fan out three ways — the password
+ * screen, a dev auto-login, or the Estiva ID redirect — and had to agree
+ * exactly with the provider `@/api/store` had mounted, because disagreeing
+ * rendered Convex Auth's screen under the wrong provider and took the app down.
+ * There is nothing left to disagree about.
  *
- * Estiva ID mode (PEEK-104): when this tab holds an identity-service token the
- * signed-out branch offers the redirect instead of the password screen, and the
- * signed-in branch first binds the identity to a Peek row. Which provider is
- * mounted is decided in `@/api/store` — this only has to agree with it.
+ * Mock mode (tests, Storybook, a checkout with no deployment) has no identity
+ * server at all, so the app stays signed in as CURRENT_USER_NAME — unchanged.
+ *
+ * The authenticated branch binds the identity to a Peek row before rendering:
+ * a token Peek has no row for is authenticated but unknown, and every query
+ * below would come back empty.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   if (!hasConvex) return <>{children}</>
@@ -33,9 +31,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <AuthLoadingScreen />
       </AuthLoading>
       <Unauthenticated>
-        {usesEstivaId ? <EstivaIdSignedOut /> : devAutoLogin ? <DevAutoSignIn /> : <AuthScreen />}
+        <EstivaIdSignedOut />
       </Unauthenticated>
-      <Authenticated>{usesEstivaId ? <AdoptIdentity>{children}</AdoptIdentity> : children}</Authenticated>
+      <Authenticated>
+        <AdoptIdentity>{children}</AdoptIdentity>
+      </Authenticated>
     </>
   )
 }
@@ -128,33 +128,6 @@ function EstivaIdSignedOut({ message }: { message?: string }) {
       </div>
     </div>
   )
-}
-
-/**
- * Signs the configured dev user in once per mount, then hands over to the
- * normal Authenticated branch. Falls back to the real sign-in screen if the
- * attempt fails (e.g. the account was wiped and not reseeded yet) or if the
- * user deliberately signed out in this tab.
- */
-function DevAutoSignIn() {
-  const { signIn } = useAuthActions()
-  const [showScreen, setShowScreen] = useState(() => isDevAutoLoginOptedOut())
-  const attempted = useRef(false)
-
-  useEffect(() => {
-    if (attempted.current || showScreen || !devAutoLogin) return
-    attempted.current = true
-    void signIn('password', {
-      email: devAutoLogin.email,
-      password: devAutoLogin.password,
-      flow: 'signIn',
-    }).catch((err) => {
-      console.warn('[peek] dev auto-login failed — falling back to the sign-in screen.', err)
-      setShowScreen(true)
-    })
-  }, [signIn, showScreen])
-
-  return showScreen ? <AuthScreen /> : <AuthLoadingScreen />
 }
 
 /** Blank canvas with a delayed pulsing badge — same 150ms-delayed-reveal

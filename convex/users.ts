@@ -17,7 +17,6 @@
  * those, so the demo dataset stays pixel-identical.
  */
 import { v } from 'convex/values'
-import { getAuthUserId } from '@convex-dev/auth/server'
 import { internalQuery, mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
 
@@ -34,16 +33,17 @@ export const ESTIVA_ID_ISSUER = 'https://id.estiva.app'
  * The Nostr pubkey a set of credentials authenticates, or null when they did
  * not come from Estiva ID.
  *
- * The issuer check is load-bearing, not defensive. Convex Auth populates
- * `getUserIdentity()` as well, with a `subject` of `<userId>|<sessionId>`, and
- * `getAuthUserId` splits that claim without ever looking at who issued it. The
- * two identities are therefore indistinguishable by `subject` alone, and both
- * confusions fail silently rather than loudly:
+ * The issuer check is load-bearing, not defensive — and it stays that way now
+ * that Estiva ID is the only accepted issuer (PEEK-41), because `auth.config.ts`
+ * is the only thing enforcing it and a second provider added there later would
+ * silently reintroduce the ambiguity.
  *
- *   * read a Convex Auth subject as a pubkey and `by_nostrPubkey` misses, so
- *     every signed-in user turns into a stranger;
- *   * read an Estiva ID subject with `getAuthUserId` and it returns a 64-char
- *     pubkey where an `Id<'users'>` is expected.
+ * That ambiguity was real: Convex Auth populated `getUserIdentity()` too, with a
+ * `subject` of `<userId>|<sessionId>`, which is indistinguishable from a pubkey
+ * by shape alone. Both confusions failed silently rather than loudly — a Convex
+ * Auth subject read as a pubkey missed `by_nostrPubkey` and turned every
+ * signed-in user into a stranger, and a pubkey read as a user id returned 64
+ * hex characters where an `Id<'users'>` belonged.
  *
  * Split out as a plain function so it is testable without a deployment — the
  * discrimination is the subtle part of PEEK-39, not the query around it.
@@ -60,15 +60,19 @@ export function pubkeyFromIdentity(identity: { issuer: string; subject: string }
 /**
  * The authenticated user's id, or null when unauthenticated.
  *
- * Estiva ID identities resolve by pubkey (PEEK-39); everything else still goes
- * through Convex Auth, which stays the only working sign-in until PEEK-41
- * removes it. Note the null here has a second meaning it did not have before: an
- * Estiva ID token Peek has no row for yet is authenticated but unknown, and
- * `adoptIdentity` is what turns it into a row.
+ * Identity is a pubkey and nothing else since PEEK-41 removed Convex Auth.
+ * There used to be a `getAuthUserId` fallback here for password accounts; with
+ * no other issuer accepted, a token that is not Estiva ID's simply is not
+ * authenticated.
+ *
+ * `null` carries two meanings, and the second is the one that surprises: not
+ * signed in, **or** signed in with an Estiva ID token Peek has no row for yet.
+ * That second case is authenticated but unknown, and `adoptIdentity` is what
+ * turns it into a row.
  */
 export async function viewerId(ctx: QueryCtx | MutationCtx): Promise<Id<'users'> | null> {
   const pubkey = pubkeyFromIdentity(await ctx.auth.getUserIdentity())
-  if (pubkey === null) return getAuthUserId(ctx)
+  if (pubkey === null) return null
 
   const user = await ctx.db
     .query('users')
@@ -137,10 +141,10 @@ export const adoptIdentity = mutation({
 /**
  * The viewer's id, for Node actions.
  *
- * Actions have no `ctx.db`, so they cannot call `viewerId` directly — and
- * `getAuthUserId` is not a substitute: it never checks the issuer, so for an
- * Estiva ID token it returns a 64-char pubkey where an `Id<'users'>` belongs
- * (see `pubkeyFromIdentity`). `nostr/act.ts` was doing exactly that.
+ * Actions have no `ctx.db`, so they cannot call `viewerId` directly. Reading
+ * `getUserIdentity().subject` in an action is not a substitute either: it is
+ * the pubkey, not an `Id<'users'>`, and `nostr/act.ts` was once doing exactly
+ * that (see `pubkeyFromIdentity`).
  */
 export const viewerIdForAction = internalQuery({
   args: {},
