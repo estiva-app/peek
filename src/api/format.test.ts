@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDateLabel, formatTimestamp, dayKey } from './format'
+import { formatDateLabel, formatTimestamp, formatReplyTimestamp, dayKey } from './format'
 
 // Fixed "now": Tue Sep 3 2024, 10:00:00 local time.
 const NOW = new Date(2024, 8, 3, 10, 0, 0).getTime()
@@ -17,6 +17,24 @@ describe('formatTimestamp (§5)', () => {
   it('renders 12 AM/PM at the edges', () => {
     expect(formatTimestamp(new Date(2024, 8, 2, 0, 30).getTime(), NOW)).toBe('12:30 AM')
     expect(formatTimestamp(new Date(2024, 8, 2, 12, 0).getTime(), NOW)).toBe('12:00 PM')
+  })
+})
+
+describe('formatReplyTimestamp', () => {
+  it('renders Just now under 60s', () => {
+    expect(formatReplyTimestamp(NOW - 59_000, NOW)).toBe('Just now')
+  })
+  it('renders plain time for today', () => {
+    expect(formatReplyTimestamp(new Date(2024, 8, 3, 9, 14).getTime(), NOW)).toBe('9:14 AM')
+  })
+  it('prefixes Yesterday for the previous local day', () => {
+    expect(formatReplyTimestamp(new Date(2024, 8, 2, 16, 5).getTime(), NOW)).toBe('Yesterday · 4:05 PM')
+  })
+  it('prefixes short month + day within the same year', () => {
+    expect(formatReplyTimestamp(new Date(2024, 7, 28, 11, 45).getTime(), NOW)).toBe('Aug 28 · 11:45 AM')
+  })
+  it('adds the year for previous years', () => {
+    expect(formatReplyTimestamp(new Date(2023, 11, 24, 18, 0).getTime(), NOW)).toBe('Dec 24, 2023 · 6:00 PM')
   })
 })
 

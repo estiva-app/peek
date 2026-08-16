@@ -32,6 +32,27 @@ export function formatDateLabel(createdAt: number, now: number = Date.now()): st
   return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`
 }
 
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** Reply-card timestamp — the day rides along once it stops being obvious:
+ *  `'Just now'` → `'2:30 PM'` (today) → `'Yesterday · 2:30 PM'` →
+ *  `'Sep 3 · 2:30 PM'` (this year) → `'Sep 3, 2025 · 2:30 PM'`.
+ *  Thread panels have no date dividers (ruling 2026-07-28), so the label
+ *  itself carries the day; the feed keeps plain times — dividers own the
+ *  day there. */
+export function formatReplyTimestamp(createdAt: number, now: number = Date.now()): string {
+  if (now - createdAt < 60_000) return 'Just now'
+  const time = formatTimestamp(createdAt, now)
+  const d = new Date(createdAt)
+  const n = new Date(now)
+  if (sameLocalDay(d, n)) return time
+  if (sameLocalDay(d, new Date(now - 24 * 60 * 60 * 1000))) return `Yesterday · ${time}`
+  const monthDay = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
+  return d.getFullYear() === n.getFullYear()
+    ? `${monthDay} · ${time}`
+    : `${monthDay}, ${d.getFullYear()} · ${time}`
+}
+
 /** Local calendar-day key for grouping (stable across DST). */
 export function dayKey(createdAt: number): string {
   const d = new Date(createdAt)
