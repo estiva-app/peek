@@ -44,22 +44,18 @@ export default defineSchema({
   // `email` survives Convex Auth's removal as a plain profile field, sourced
   // from the identity service rather than from a credential row.
   //
-  // The three fields marked vestigial below are Convex Auth's and nothing reads
-  // or writes them any more. They **cannot simply be deleted from this
-  // validator**: a push fails with "Object contains extra field … that is not
-  // in the validator" for every row that still carries one. `dev/dropAuthFields`
-  // clears them; the columns go in a follow-up once it has run.
+  // Convex Auth's own columns (`emailVerificationTime`, `phoneVerificationTime`,
+  // `isAnonymous`) are gone. They were kept one release longer than the code
+  // that used them, because Convex fails an entire push with "Object contains
+  // extra field … that is not in the validator" for every row still carrying
+  // one — so a sweep had to confirm nobody did before they could leave. Nobody
+  // did: the Password provider ran with no verification, and the phone and
+  // anonymous providers were never configured, so nothing ever wrote them.
   users: defineTable({
     name: v.string(),
     image: v.optional(v.string()),
     email: v.optional(v.string()),
     phone: v.optional(v.string()),
-    /** Vestigial — Convex Auth. See the note above before removing. */
-    emailVerificationTime: v.optional(v.number()),
-    /** Vestigial — Convex Auth. */
-    phoneVerificationTime: v.optional(v.number()),
-    /** Vestigial — Convex Auth. */
-    isAnonymous: v.optional(v.boolean()),
     // ── Peek profile fields ──
     role: v.optional(v.string()),
     avatarStorageId: v.optional(v.id('_storage')),
