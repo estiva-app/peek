@@ -2,7 +2,7 @@
  * Which issuer a set of credentials came from (PEEK-39).
  *
  * This is the one piece of the pubkey migration that fails *silently* when it is
- * wrong. Convex Auth and Estiva ID both populate `getUserIdentity()`, and their
+ * wrong. Any issuer Convex accepts populates `getUserIdentity()`, and their
  * `subject` claims are not distinguishable by shape alone — so a viewer resolved
  * from the wrong issuer does not throw, it just quietly resolves to nobody. The
  * DB query around it is ordinary and needs no test; this does.
@@ -15,7 +15,9 @@ import { ESTIVA_ID_ISSUER, pubkeyFromIdentity } from './users'
 
 const PUBKEY = 'a'.repeat(64)
 
-/** What Convex Auth puts in the identity: `<userId>|<sessionId>`, self-issued. */
+/** What Convex Auth put in the identity: `<userId>|<sessionId>`, self-issued.
+ *  It is gone (PEEK-41), but it remains the sharpest example of a foreign
+ *  subject that is the wrong shape while looking plausible. */
 const convexAuthIdentity = {
   issuer: 'https://peek-example-123.convex.site',
   subject: 'jd77xyz1234567890abcdef|js77abc1234567890abcdef',
@@ -32,7 +34,7 @@ describe('pubkeyFromIdentity', () => {
     expect(pubkeyFromIdentity(null)).toBeNull()
   })
 
-  it('returns null for a Convex Auth session, rather than reading its subject as a pubkey', () => {
+  it('returns null for a foreign issuer, rather than reading its subject as a pubkey', () => {
     // The regression this file exists for: treat this subject as a pubkey and
     // every signed-in user silently becomes a stranger.
     expect(pubkeyFromIdentity(convexAuthIdentity)).toBeNull()

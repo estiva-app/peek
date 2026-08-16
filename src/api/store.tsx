@@ -18,7 +18,6 @@
  */
 import { createContext, useContext, useState, useMemo, type ReactNode, type Dispatch, type SetStateAction } from 'react'
 import { ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
-import { ConvexAuthProvider } from '@convex-dev/auth/react'
 import { hasEstivaIdSession } from '@/auth/estivaId'
 import { useEstivaIdAuth } from '@/auth/useEstivaIdAuth'
 import { StarredProvider } from '@/api/internal/starred'
@@ -83,23 +82,21 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
   // `client.setAuth` internally, so mounting both would leave two things racing
   // to define who you are.
   //
-  // The choice is made once, at mount, from whether this tab holds an Estiva ID
-  // token — which is safe because acquiring one always ends in a full page load
-  // (see EstivaIdCallback), so the app remounts with the answer already settled.
+  // One provider now (PEEK-41). There used to be a choice here — Convex Auth by
+  // default, `ConvexProviderWithAuth` when this tab held an Estiva ID token —
+  // and the branch was delicate: `AuthGate` had to agree with it exactly, since
+  // rendering Convex Auth's screen under the wrong provider made
+  // `useAuthActions` return undefined and took the app down.
   //
-  // ConvexAuthProvider stays the default until PEEK-41 deletes Convex Auth: it
-  // is still the only sign-in that works without the identity service, and it is
-  // what mock mode and dev auto-login rely on.
-  if (usesEstivaId) {
-    return (
-      <ConvexProviderWithAuth client={convexClient} useAuth={useEstivaIdAuth}>
-        {tree}
-      </ConvexProviderWithAuth>
-    )
-  }
-  // ConvexAuthProvider wraps ConvexProvider internally; in mock mode the
-  // placeholder client never connects and the AuthGate bypasses auth.
-  return <ConvexAuthProvider client={convexClient}>{tree}</ConvexAuthProvider>
+  // With Estiva ID the only sign-in, `useEstivaIdAuth` simply reports
+  // unauthenticated when there is no token, which is what `AuthGate` wants
+  // anyway. Mock mode never connects the client, so mounting this there is
+  // harmless.
+  return (
+    <ConvexProviderWithAuth client={convexClient} useAuth={useEstivaIdAuth}>
+      {tree}
+    </ConvexProviderWithAuth>
+  )
 }
 
 
@@ -107,19 +104,16 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
 export const hasConvex = CONVEX_URL !== undefined
 
 /**
- * Whether this tab is running on an Estiva ID token (PEEK-104).
+ * Whether this tab is holding an Estiva ID token (PEEK-104).
  *
- * Evaluated once at module load rather than reactively — see the provider
- * comment above. Flipping it mid-session would swap the client's auth owner
- * underneath live queries. Declared after `hasConvex` because it reads it, and
- * a `const` referenced before its initialiser throws rather than reading
- * undefined.
+ * No longer a provider choice — PEEK-41 left one provider — so this now means
+ * only "is there a token to sign or read with". The publish and sync paths use
+ * it to skip work that would fail without one.
  *
- * It has to live here, beside the provider choice it drives. `AuthGate` must
- * branch on the *same* value: if the two disagreed — say the token expired
- * between module load and render — the gate would render Convex Auth's screen
- * inside `ConvexProviderWithAuth`, and `useAuthActions` throws outside its own
- * provider. One value, one decision.
+ * Still evaluated once at module load rather than reactively. Acquiring a token
+ * always ends in a full page load (see `EstivaIdCallback`), so the app remounts
+ * with the answer settled, and a value that flipped mid-render would put the
+ * relay paths and the auth gate briefly out of step.
  */
 // A computed constant, not a component — the rule permits only literal ones.
 // eslint-disable-next-line react-refresh/only-export-components

@@ -40,23 +40,27 @@ Always revert afterwards (original bodies are in `src/data/*`), or reseed:
 `npx convex run dev/seedDemo:seed '{"wipe": true}'` (dev-only; also resets
 any test topics/messages created while driving).
 
-## Auth flows (Phase 3)
+## Auth (Estiva ID only, since PEEK-41)
 
-- Unauthenticated → the AuthScreen card ("Welcome back"). Drive sign-up /
-  verify / reset by placeholder text (see `.verify-auth.mjs` pattern from
-  the Phase 3 session if present).
-- OTP codes: with no `RESEND_API_KEY` env var the code is LOGGED, not
-  emailed — fetch the newest with
-  `npx convex logs --history 50 | grep "code for"` (the command streams;
-  spawn + kill after ~8s, or run it under `timeout` in bash).
-- A sign-in attempt on an unverified account re-sends a NEW code — always
-  take the newest log line.
-- Test accounts pollute the People list; reseed wipes auth tables too.
-- **Reseed command (post identity-swap):**
-  `npx convex run dev/seedDemo:seedWithLogin '{"wipe": true}'` — recreates
-  the pre-verified demo login **demo@peek.dev / Peek-demo-1** (the seed
-  user Cath) and the demo dataset. Sign in as that to see seeded data as
-  "You"; a fresh sign-up sees it as another workspace member.
+Convex Auth is gone. There is **no password screen, no OTP, and no dev
+auto-login** — everything below used to describe them and no longer applies.
+The only sign-in is the Estiva ID redirect, which needs a passkey, so a
+headless driver cannot complete it without CDP's virtual authenticator
+(`WebAuthn.addVirtualAuthenticator`, the approach Estiva ID's own tests use).
+
+Consequences for driving the app:
+
+- Unauthenticated → a single card offering **"Sign in with Estiva ID"**.
+- Anything behind `usesEstivaId` — publishing, relay reads, foreign-object
+  widgets — is inert without a token, and fails by rendering **nothing**
+  rather than erroring. A quiet screen is the expected shape when unsigned,
+  not a bug to chase.
+- **Reseed:** `npx convex run dev/seedDemo:seedAs '{"pubkey": "<64 hex>", "wipe": true}'`
+  seeds the demo dataset and stamps *your* pubkey on the seed user Cath, so
+  signing in with Estiva ID lands you on her with the data behind you rather
+  than as a new person in an empty workspace. Take the pubkey from the stored
+  token (`sessionStorage`) or from your row in the `users` table.
+  Plain `seed` still works and leaves Cath unclaimed.
 
 ## Gotchas
 
