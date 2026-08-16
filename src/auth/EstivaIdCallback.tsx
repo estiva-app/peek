@@ -11,13 +11,12 @@
  * mount, so the app has to come up again for the Estiva ID token to be the thing
  * driving the client.
  */
-import { useEffect, useRef, useState } from 'react'
-import { Button } from '@/components/ui/Button'
-import { PeekLogoBadge } from '@/components/ui/PeekLogo'
-import { beginSignIn, completeSignIn, SignInError } from './estivaId'
+import { useEffect, useRef } from 'react'
+import { AuthShell } from './shell/AuthShell'
+import { reasonForCallbackError } from './shell/contract'
+import { completeSignIn, stashShellReason } from './estivaId'
 
 export function EstivaIdCallback() {
-  const [error, setError] = useState<string | null>(null)
   const ran = useRef(false)
 
   useEffect(() => {
@@ -27,33 +26,39 @@ export function EstivaIdCallback() {
     if (ran.current) return
     ran.current = true
 
+    const params = new URLSearchParams(window.location.search)
+    const returnTo = params.get('returnTo')
+
+    /**
+     * A refusal is not this route's to render (PEEK-118).
+     *
+     * The silent probe comes back here too, and its expected negative answer is
+     * `error=login_required`. Showing an error screen at `/auth/callback` would
+     * put a second auth surface in front of people — the exact thing the shell
+     * exists to remove. So the reason is stashed and the shell picks it up on
+     * the other side of the load, where the whole of entry lives.
+     */
+    const error = params.get('error')
+    if (error) {
+      stashShellReason(reasonForCallbackError(error))
+      window.location.replace(returnTo || '/')
+      return
+    }
+
     completeSignIn(window.location.search)
-      .then(({ returnTo }) => {
+      .then(({ returnTo: stored }) => {
         // Full load, not navigate() — see the file header.
-        window.location.replace(returnTo || '/')
+        window.location.replace(stored || '/')
       })
-      .catch((err: unknown) => {
-        setError(err instanceof SignInError ? err.message : 'Could not complete sign-in.')
+      .catch(() => {
+        // Every refusal from `/token` is a uniform `invalid_grant`, so there is
+        // nothing here worth saying that `exchange_failed` does not already say.
+        stashShellReason('exchange_failed')
+        window.location.replace(returnTo || '/')
       })
   }, [])
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-bg-base flex items-center justify-center p-6">
-        <div className="max-w-sm text-center space-y-4">
-          <PeekLogoBadge size={40} className="mx-auto" />
-          <p className="text-body-2 text-text-primary">{error}</p>
-          <Button variant="primary" type="button" onClick={() => void beginSignIn('/')}>
-            Try again
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="min-h-screen bg-bg-base flex items-center justify-center">
-      <PeekLogoBadge size={40} className="animate-skeleton-in animate-pulse" />
-    </div>
-  )
+  // Never anything but the waiting state: this route either redeems and leaves,
+  // or hands a reason to the shell and leaves.
+  return <AuthShell state={{ phase: 'checking' }} onContinue={() => {}} />
 }

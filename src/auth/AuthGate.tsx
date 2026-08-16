@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Authenticated, Unauthenticated, AuthLoading, useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { hasConvex } from '@/api'
-import { Button } from '@/components/ui/Button'
-import { PeekLogoBadge } from '@/components/ui/PeekLogo'
-import { beginSignIn, clearSession, validToken } from './estivaId'
+import { validToken } from './estivaId'
+import { AuthShell } from './shell/AuthShell'
+import { useAuthShell } from './shell/useAuthShell'
 import { syncStaleProfilesFromRelay } from '@/nostr/sync'
 
 /**
@@ -22,22 +22,34 @@ import { syncStaleProfilesFromRelay } from '@/nostr/sync'
  * The authenticated branch binds the identity to a Peek row before rendering:
  * a token Peek has no row for is authenticated but unknown, and every query
  * below would come back empty.
+ *
+ * **The signed-out branch is no longer a screen (PEEK-118).** It used to be a
+ * "Sign in with Estiva ID" page, which is an app-specific login surface for an
+ * identity system the person is usually already signed into. It is now the auth
+ * shell: same canvas as the loading state, which tries to enter on its own and
+ * only asks for anything when it genuinely cannot.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   if (!hasConvex) return <>{children}</>
   return (
     <>
       <AuthLoading>
-        <AuthLoadingScreen />
+        <AuthShell state={{ phase: 'checking' }} onContinue={() => {}} />
       </AuthLoading>
       <Unauthenticated>
-        <EstivaIdSignedOut />
+        <AuthShellHost />
       </Unauthenticated>
       <Authenticated>
         <AdoptIdentity>{children}</AdoptIdentity>
       </Authenticated>
     </>
   )
+}
+
+/** Mounted only when there is no usable identity — see `useAuthShell`. */
+function AuthShellHost() {
+  const { state, onContinue } = useAuthShell()
+  return <AuthShell state={state} onContinue={onContinue} />
 }
 
 /**
@@ -84,58 +96,9 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
       })
   }, [adopt, convex, relayUrl])
 
-  if (failed) return <EstivaIdSignedOut message={failed} />
-  return ready ? <>{children}</> : <AuthLoadingScreen />
-}
-
-/**
- * The signed-out screen in Estiva ID mode.
- *
- * Deliberately a button rather than an automatic redirect. `fetchAccessToken`
- * cannot mint a new token — there is no refresh grant — so an expired token
- * lands here, and auto-bouncing would loop indefinitely whenever the identity
- * session had expired too. A loop is a far worse failure than one click.
- *
- * **Two very different failures land here and they must not read the same.**
- * Either there is no live token — genuinely signed out — or there is one and
- * Convex refused it, which is a configuration fault (issuer, audience or JWKS
- * reachability) that signing in again cannot fix. Calling the second one "your
- * session has expired" sends people to re-authenticate against a wall; it cost
- * a real debugging detour the first time this screen appeared.
- */
-function EstivaIdSignedOut({ message }: { message?: string }) {
-  const live = validToken()
-  const explanation =
-    message ??
-    (live
-      ? 'Signed in to Estiva ID, but Peek could not verify the token. This is a configuration problem rather than an expired session — check that Convex trusts the issuer and can reach its JWKS.'
-      : 'Your session has expired.')
-  return (
-    <div className="min-h-screen bg-bg-base flex items-center justify-center p-6">
-      <div className="max-w-sm text-center space-y-4">
-        <PeekLogoBadge size={40} className="mx-auto" />
-        <p className="text-body-2 text-text-secondary">{explanation}</p>
-        <Button
-          variant="primary"
-          type="button"
-          onClick={() => {
-            clearSession()
-            void beginSignIn(window.location.pathname)
-          }}
-        >
-          Sign in with Estiva ID
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-/** Blank canvas with a delayed pulsing badge — same 150ms-delayed-reveal
- *  philosophy as the skeletons (fast auth checks never flash it). */
-function AuthLoadingScreen() {
-  return (
-    <div className="min-h-screen bg-bg-base flex items-center justify-center">
-      <PeekLogoBadge size={40} className="animate-skeleton-in animate-pulse" />
-    </div>
-  )
+  // Binding the identity to a row is app bootstrap, not authentication: the
+  // token was fine. `token_rejected` is the honest reason — signing in again
+  // would not change the outcome.
+  if (failed) return <AuthShell state={{ phase: 'failed', reason: 'token_rejected' }} onContinue={() => {}} />
+  return ready ? <>{children}</> : <AuthShell state={{ phase: 'entering' }} onContinue={() => {}} />
 }
