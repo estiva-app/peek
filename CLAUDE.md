@@ -10,12 +10,56 @@ feature spec.
 
 React 19 + Vite + TypeScript + Tailwind (custom design tokens in
 `tailwind.config.js`) + Tiptap composer. Tests: Vitest (`npm run test:run`).
-Storybook: `npm run storybook`. Backend: Convex (cloud dev deployment
-`hallowed-stork-966`, config in `.env.local`; schema in `convex/schema.ts`,
-spec in `PRDs/Peek-Domain-Model.md`). Demo data:
+Storybook: `npm run storybook`. Backend: Convex (config in `.env.local`;
+schema in `convex/schema.ts`, spec in `PRDs/Peek-Domain-Model.md`). Demo data:
 `npx convex run dev/seedDemo:seed '{"wipe": true}'` — dev-only fixture;
 **production launches with an empty database, no mock data**
-(decision 2026-07-08).
+(decision 2026-07-08). To sign in as the seed user, use
+`dev/seedDemo:seedAs '{"pubkey": "<64 hex>"}'` — it stamps your Estiva ID
+pubkey on Cath instead of minting a login, which is no longer possible.
+
+## Convex deployment — read before running anything against it
+
+**The deployed backend is `honorable-guineapig-592`, and Convex labels it a
+*Development* deployment** (`[Development] jan-miky:estiva-peek:dev/jan-miky`
+in the deploy log). That is what `.github/workflows/deploy.yml` pushes to and
+what peek.estiva.app talks to.
+
+So **`--prod` is wrong here.** It resolves somewhere else and will happily
+report a reassuring nothing about a database nobody is using. Name the target
+explicitly instead:
+
+```
+npx convex run <fn> --url https://honorable-guineapig-592.eu-west-1.convex.cloud --admin-key '<deploy key>'
+```
+
+or just use the dashboard, which is already pointed at the right deployment.
+`.env.local` has pointed at a different deployment than the live one more than
+once; treat it as a hint, never as the answer. This has misled work here
+repeatedly, including a custody audit that confidently reported users who do
+not exist.
+
+### Schema changes fail asymmetrically
+
+**Removing a field from a table's validator fails the entire push** — not just
+that table — for every row that still carries it:
+
+```
+Object contains extra field `nostrSecretKey` that is not in the validator.
+```
+
+So a column can only leave the schema after a sweep has cleared it from every
+row. Ship the sweep first, run it, confirm zero, then remove the field.
+
+**Removing a whole table does not.** Schemas only validate documents in the
+tables they list, so dropped tables leave inert, unreachable rows behind —
+they neither block a push nor appear in `TableNames`. Convex Auth's tables are
+still there for exactly this reason.
+
+Neither of these is visible to `tsc`, `vite build` or the test suite. Nothing
+local runs Convex's module loader, so **push failures are discovered at deploy
+time** — see `convex/runtime.test.ts` for the one such rule that can be checked
+without a deployment (`"use node"` files may export only actions).
 
 ## Working rules
 
