@@ -14,7 +14,7 @@
 import { useEffect, useRef } from 'react'
 import { AuthShell } from './shell/AuthShell'
 import { reasonForCallbackError } from './shell/contract'
-import { completeSignIn, stashShellReason } from './estivaId'
+import { completeSignIn, stashShellReason, takeReturnTo } from './estivaId'
 
 export function EstivaIdCallback() {
   const ran = useRef(false)
@@ -27,7 +27,14 @@ export function EstivaIdCallback() {
     ran.current = true
 
     const params = new URLSearchParams(window.location.search)
-    const returnTo = params.get('returnTo')
+    /**
+     * Where we came from, from `sessionStorage` — **not** from the query.
+     *
+     * Reading it off the query string was a bug: nothing ever puts it there, so
+     * every refusal fell through to `/` and a deep link into a topic landed on
+     * the desk (PEEK-123).
+     */
+    const returnTo = takeReturnTo()
 
     /**
      * A refusal is not this route's to render (PEEK-118).
@@ -45,10 +52,26 @@ export function EstivaIdCallback() {
       return
     }
 
+    /**
+     * Neither a code nor an error: this is the return from `/logout`, which
+     * lands on the registered redirect URI because that is the only URI it is
+     * allowed to send anyone to (PEEK-122).
+     *
+     * Nothing to redeem and nothing to report — the reason was stashed before
+     * leaving. Falling through to `completeSignIn` would throw on the missing
+     * code and overwrite that reason with a spurious `exchange_failed`.
+     */
+    if (!params.get('code')) {
+      window.location.replace(returnTo || '/')
+      return
+    }
+
     completeSignIn(window.location.search)
-      .then(({ returnTo: stored }) => {
-        // Full load, not navigate() — see the file header.
-        window.location.replace(stored || '/')
+      .then(() => {
+        // `returnTo` was taken above, so `completeSignIn`'s own copy is already
+        // gone — use the one read here for every path rather than two sources
+        // that can disagree. Full load, not navigate(): see the file header.
+        window.location.replace(returnTo || '/')
       })
       .catch(() => {
         // Every refusal from `/token` is a uniform `invalid_grant`, so there is

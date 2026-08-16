@@ -4,7 +4,7 @@ import { api } from '../../convex/_generated/api'
 import { hasConvex } from '@/api'
 import { validToken } from './estivaId'
 import { AuthShell } from './shell/AuthShell'
-import { useAuthShell } from './shell/useAuthShell'
+import { markEntered, useAuthShell } from './shell/useAuthShell'
 import { syncStaleProfilesFromRelay } from '@/nostr/sync'
 
 /**
@@ -77,6 +77,9 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
     adopt({})
       .then(() => {
         setReady(true)
+        // From here a token expiring is an interruption, not a cold boot, and
+        // the shell must ask before navigating away (PEEK-123).
+        markEntered()
         // Fill in names and faces from Estiva ID (PEEK-72) — for everyone still
         // showing a placeholder, not just the viewer. Sync only resolves a
         // profile for authors of *newly imported* messages, so anyone already

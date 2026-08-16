@@ -19,6 +19,21 @@ import {
   readGuard,
 } from './contract'
 
+/**
+ * Set once this page load has been inside the app.
+ *
+ * Module-level rather than React state because it has to survive the shell
+ * unmounting and remounting, which is exactly what happens when a token expires
+ * under somebody: `Authenticated` swaps to `Unauthenticated`, and a fresh
+ * `useAuthShell` would otherwise look identical to a cold boot and navigate
+ * away with their work on screen (PEEK-123).
+ */
+let enteredThisPageLoad = false
+
+export function markEntered(): void {
+  enteredThisPageLoad = true
+}
+
 export function useAuthShell(): { state: ShellState; onContinue: () => void } {
   const [state, setState] = useState<ShellState>({ phase: 'checking' })
   const ran = useRef(false)
@@ -61,6 +76,7 @@ export function useAuthShell(): { state: ShellState; onContinue: () => void } {
       callback: null,
       hasValidToken: false,
       guardAttemptedAt: readGuard(window.sessionStorage),
+      enteredThisPageLoad,
       now: Date.now(),
     })
 

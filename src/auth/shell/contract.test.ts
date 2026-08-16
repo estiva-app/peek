@@ -24,7 +24,14 @@ import {
 const NOW = 1_700_000_000_000
 
 const observation = (o: Partial<Parameters<typeof decideBoot>[0]> = {}) =>
-  decideBoot({ callback: null, hasValidToken: false, guardAttemptedAt: null, now: NOW, ...o })
+  decideBoot({
+    callback: null,
+    hasValidToken: false,
+    guardAttemptedAt: null,
+    enteredThisPageLoad: false,
+    now: NOW,
+    ...o,
+  })
 
 describe('the boot decision', () => {
   it('enters on a live token without touching the network', () => {
@@ -84,6 +91,38 @@ describe('the boot decision', () => {
    */
   it('prefers a returned code over a guard set on the way out', () => {
     expect(observation({ callback: { code: 'abc' }, guardAttemptedAt: NOW - 500 })).toEqual({
+      do: 'complete_callback',
+    })
+  })
+})
+
+/**
+ * A cold boot and a token dying under somebody's hands look identical — no
+ * valid token — and treating them the same is what made the page navigate away
+ * mid-work (PEEK-123).
+ */
+describe('mid-session expiry', () => {
+  it('asks before navigating once the app has been entered', () => {
+    expect(observation({ enteredThisPageLoad: true })).toEqual({
+      do: 'prompt_passkey',
+      reason: 'session_expired',
+    })
+  })
+
+  it('still enters silently on a cold boot', () => {
+    expect(observation({ enteredThisPageLoad: false })).toEqual({ do: 'probe_silently' })
+  })
+
+  it('does not interfere with a live token', () => {
+    expect(observation({ enteredThisPageLoad: true, hasValidToken: true })).toEqual({ do: 'enter' })
+  })
+
+  /**
+   * The callback still wins. A token can expire while the round trip is in
+   * flight, and discarding the code we just fetched would strand the person.
+   */
+  it('still redeems a code that arrived', () => {
+    expect(observation({ enteredThisPageLoad: true, callback: { code: 'abc' } })).toEqual({
       do: 'complete_callback',
     })
   })

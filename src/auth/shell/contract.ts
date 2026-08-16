@@ -89,6 +89,16 @@ export interface BootObservation {
   hasValidToken: boolean
   /** The silent-attempt marker, if one is set. */
   guardAttemptedAt: number | null
+  /**
+   * Whether this page load has already been inside the app.
+   *
+   * A cold boot and a token dying under somebody's hands are the same
+   * observation — no valid token — and they must not get the same treatment.
+   * Silent entry is right on boot, where there is nothing on screen to lose.
+   * Mid-session it navigates away and takes whatever they were doing with it,
+   * which is how "enter automatically" turned into "the page left on its own".
+   */
+  enteredThisPageLoad: boolean
   now: number
 }
 
@@ -140,6 +150,17 @@ export function decideBoot(o: BootObservation): BootAction {
   }
 
   if (o.hasValidToken) return { do: 'enter' }
+
+  /**
+   * The token died while they were working. Offer the passkey and let them
+   * choose when to lose the page, rather than deciding it for them.
+   *
+   * The old signed-out screen was a button partly for this reason. Re-entry is
+   * usually silent, so the cost here is not a prompt — it is a full navigation
+   * out of whatever they had open, and that is not the shell's call to make.
+   * PEEK-108 is what removes the interruption rather than relocating it.
+   */
+  if (o.enteredThisPageLoad) return { do: 'prompt_passkey', reason: 'session_expired' }
 
   // A silent attempt already ran and we are back here without a token. Never
   // navigate again — this is the infinite bounce the guard exists to prevent.
