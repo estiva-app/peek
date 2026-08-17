@@ -450,12 +450,17 @@ export function usePeekActions() {
           },
         }))
         if (hasConvex) {
-          void setResolutionRemote({
-            key: messageId,
-            resolved: true,
-            resolutionMessage: resolution.message,
-            resolvedByReplyKey: newReplyId,
-          })
+          // Publishes like the other two resolution paths. Missing that here is
+          // invisible from this side — the row still resolves, the card still
+          // renders resolved, and only the relay is quietly short one assertion.
+          publishResolution(
+            setResolutionRemote({
+              key: messageId,
+              resolved: true,
+              resolutionMessage: resolution.message,
+              resolvedByReplyKey: newReplyId,
+            }),
+          )
         }
       }
     },
