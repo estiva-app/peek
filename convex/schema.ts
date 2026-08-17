@@ -190,6 +190,49 @@ export default defineSchema({
     .index('by_message_user', ['messageId', 'userId'])
     .index('by_nostrEventId', ['nostrEventId']),
 
+  /**
+   * Resolve/reopen history — append-only (PEEK-128).
+   *
+   * The columns on `messages` (`resolved`, `resolvedById`, …) stay, but they
+   * are now a *projection* folded from these rows rather than the truth. Every
+   * existing reader keeps working while this becomes the source; retiring them
+   * is a later sweep, because removing a field fails the entire Convex push for
+   * every row still carrying it (CLAUDE.md).
+   *
+   * Rows are never mutated or deleted. A reopen is another row, which is what
+   * makes the history renderable at all — the single-slot columns could only
+   * ever say where a thread ended up, never what happened to it.
+   */
+  resolutionAssertions: defineTable({
+    messageId: v.id('messages'),
+    action: v.union(v.literal('resolved'), v.literal('reopened')),
+    /** The asserting user, when they have a Peek account. Absent for an
+     *  assertion that arrived from the relay authored by someone who does not. */
+    authorId: v.optional(v.id('users')),
+    /** Always present: the pubkey that signed, or would sign, this assertion.
+     *  Identity on the wire is the pubkey, not the Convex row. */
+    authorPubkey: v.optional(v.string()),
+    createdAt: v.number(),
+    /** Peek's `resolutionMessage` — the event's content. */
+    rationale: v.optional(v.string()),
+    /** The `→ msg` reply that carried the resolution, when there was one. */
+    supportingReplyId: v.optional(v.id('replies')),
+    /**
+     * Whether Peek lets this assertion move its own state (PEEK-128 decision 4).
+     *
+     * Foreign assertions are recorded and can be shown, but an untrusted actor
+     * must not flip local state — so the fold is fed only trusted rows. Stored
+     * rather than derived at read time because trust is judged when the
+     * assertion arrives, and re-judging it later against changed membership
+     * would silently rewrite history.
+     */
+    trusted: v.boolean(),
+    /** Set once the relay has it. Absent = local-only, including legacy rows. */
+    nostrEventId: v.optional(v.string()),
+  })
+    .index('by_message', ['messageId'])
+    .index('by_nostrEventId', ['nostrEventId']),
+
   // §2.8 — lastActivity/card preview DERIVED (§4.5); promotion never copies
   // messages (§3 edge case 1)
   huddles: defineTable({

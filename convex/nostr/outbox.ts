@@ -23,7 +23,7 @@
  */
 import { v } from 'convex/values'
 import { mutation, query } from '../_generated/server'
-import { buildMessage, buildReaction } from './events'
+import { buildMessage, buildReaction, buildResolution } from './events'
 import { referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
 import type { UnsignedEvent } from './events'
@@ -198,6 +198,72 @@ export const recordMessagePublished = mutation({
     const me = await viewerId(ctx)
     if (!me || me !== m.authorId) return
     await ctx.db.patch(messageId, { nostrEventId, nostrPublishedAt: Date.now() })
+  },
+})
+
+/**
+ * A resolution assertion is a kind:9101 pointing at the message's event
+ * (PEEK-128).
+ *
+ * No drift check: an assertion is made now and carries the current time, so
+ * unlike a message it cannot fall outside the relay's window.
+ *
+ * The target message must already be on the relay. Asserting about an event
+ * nobody can resolve would put a dangling claim on the channel, which is worse
+ * than waiting — the message publishes first, and a resolution of an
+ * unpublished message simply stays local.
+ */
+export const unsignedResolution = query({
+  args: { assertionId: v.id('resolutionAssertions') },
+  handler: async (ctx, { assertionId }): Promise<UnsignedMessage> => {
+    const a = await ctx.db.get(assertionId)
+    if (!a) return { ok: false, reason: 'unknown assertion' }
+    if (a.nostrEventId) return { ok: false, reason: 'already published' }
+
+    const me = await viewerId(ctx)
+    if (!me || me !== a.authorId) {
+      return { ok: false, reason: 'only the asserter may publish their resolution' }
+    }
+
+    const target = await ctx.db.get(a.messageId)
+    if (!target) return { ok: false, reason: 'unknown message' }
+    if (target.parentKind !== 'topic') return { ok: false, reason: 'not a topic message' }
+    if (!target.nostrEventId) {
+      return { ok: false, reason: 'the message being resolved is not on the relay yet' }
+    }
+
+    const topicId = ctx.db.normalizeId('topics', target.parentId)
+    const topic = topicId ? await ctx.db.get(topicId) : null
+    if (!topic?.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+
+    const author = await ctx.db.get(a.authorId)
+    if (!author?.nostrPubkey) return { ok: false, reason: 'asserter has no Estiva ID pubkey' }
+
+    // Only carried when the supporting reply itself reached the relay; a local
+    // reply id means nothing to another app.
+    const supporting = a.supportingReplyId ? await ctx.db.get(a.supportingReplyId) : null
+
+    return {
+      ok: true,
+      unsigned: buildResolution(author.nostrPubkey, a.createdAt, {
+        channelUuid: topic.channelUuid,
+        targetEventId: target.nostrEventId,
+        action: a.action,
+        supportingEventId: supporting?.nostrEventId ?? undefined,
+        rationale: a.rationale,
+      }),
+    }
+  },
+})
+
+export const recordResolutionPublished = mutation({
+  args: { assertionId: v.id('resolutionAssertions'), nostrEventId: v.string() },
+  handler: async (ctx, { assertionId, nostrEventId }) => {
+    const a = await ctx.db.get(assertionId)
+    if (!a) return
+    const me = await viewerId(ctx)
+    if (!me || me !== a.authorId) return
+    await ctx.db.patch(assertionId, { nostrEventId })
   },
 })
 

@@ -19,6 +19,7 @@
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay } from './bridge'
+import { KIND } from '../../convex/nostr/events'
 
 /** Cap per run so one busy channel cannot dominate. Mirrors the old server-side
  *  `PAGE_LIMIT`; the relay applies it, so it has to match to page identically. */
@@ -44,6 +45,10 @@ type SyncApi = {
     known: string[]
     deletable: string[]
   }) => Promise<{ ok: boolean; reason?: string }>
+  importResolutions: (args: {
+    topicKey: string
+    assertions: unknown[]
+  }) => Promise<{ ok: boolean; imported?: number; reason?: string }>
 }
 
 export async function syncTopicFromRelay(
@@ -139,6 +144,25 @@ export async function syncTopicFromRelay(
     known,
     deletable,
   })
+
+  // Resolution assertions (PEEK-128). Fetched by channel like messages — unlike
+  // kind:7 these DO carry `h` — but imported after them, because an assertion
+  // whose target arrived in this same run has nothing to attach to until the
+  // messages are in.
+  //
+  // Deliberately not filtered by `since`: the cursor advances with the channel,
+  // and an assertion about an old message can be made at any time, so a
+  // cursored read would silently miss resolutions of anything older than the
+  // window.
+  const assertions = await queryRelay(
+    relayUrl,
+    [{ kinds: [KIND.ASSERTION], '#h': [plan.channelUuid], limit: PAGE_LIMIT }],
+    token.accessToken,
+    token.pubkey,
+  )
+  if (assertions.ok && assertions.events.length > 0) {
+    await api.importResolutions({ topicKey, assertions: assertions.events })
+  }
 }
 
 /**
