@@ -30,6 +30,7 @@ import {
   useIsTopicMember,
   useJoinTopic,
   useInviteToTopic,
+  useOpenWorkTopicIds,
   usePeekActions,
   useStarred,
   type ConversationData,
@@ -41,6 +42,7 @@ import { hasConvex, usesEstivaId } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import { syncTopicFromRelay } from '@/nostr/sync'
 import { useLastSelection } from '@/lib/lastSelection'
+import { useToast } from '@/lib/toast'
 import { useDebug } from '@/lib/debug'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
@@ -96,7 +98,9 @@ export function useTopicView({
   const isTopicMember = useIsTopicMember()
   const joinTopic = useJoinTopic()
   const inviteToTopic = useInviteToTopic()
+  const openWorkTopicIds = useOpenWorkTopicIds()
   const actions = usePeekActions()
+  const { showToast } = useToast()
   const { state: debug } = useDebug()
   const huddleVariant = debug.huddles.variant
   const topic = topicId != null ? findTopic(topicId) : undefined
@@ -382,6 +386,23 @@ export function useTopicView({
         }
         onShowMembers={
           !isV2HuddleView && topicId != null ? () => setMembersView('list') : undefined
+        }
+        openWorkAction={
+          !isV2HuddleView && topicId != null
+            ? openWorkTopicIds.has(topicId) ? 'remove' : 'add'
+            : undefined
+        }
+        onToggleOpenWork={
+          !isV2HuddleView && topicId != null
+            ? () => {
+                if (openWorkTopicIds.has(topicId)) {
+                  actions.removeTopicFromOpenWork(topicId)
+                } else {
+                  actions.addTopicsToOpenWork([topicId])
+                  showToast({ label: 'Added to Open work', type: 'success' })
+                }
+              }
+            : undefined
         }
         tabs={
           huddleVariant === 1 ? (
