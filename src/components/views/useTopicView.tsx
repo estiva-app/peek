@@ -38,7 +38,7 @@ import {
 } from '@/api'
 import { useConvex, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
-import { hasConvex, usesEstivaId } from '@/api'
+import { hasConvex } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import { syncTopicFromRelay } from '@/nostr/sync'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -137,7 +137,10 @@ export function useTopicView({
   const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
   const relayUrl = relayConfig?.relayUrl
   useEffect(() => {
-    if (!hasConvex || !usesEstivaId || topicId == null || !topicFolderId || !relayUrl) return
+    if (!hasConvex || topicId == null || !topicFolderId || !relayUrl) return
+    // `validToken()` rather than the `usesEstivaId` snapshot: that constant is
+    // fixed at module load, so a page opened while the stored token had expired
+    // disables this sync for the whole session even after the token is renewed.
     const token = validToken()
     if (!token) return
     void syncTopicFromRelay(topicId, relayUrl, token, {

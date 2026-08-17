@@ -155,8 +155,17 @@ function usePublishTopicChannel() {
   const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
   return useCallback(
     async (topicId: string) => {
-      const token = usesEstivaId ? validToken() : null
-      if (!token || !relayUrl) return
+      // Said out loud for the same reason as the publish paths in actions.ts:
+      // a channel that is never created makes every later publish in that topic
+      // refuse, one step removed from the cause.
+      // `validToken()` at call time, never the `usesEstivaId` snapshot — see
+      // `tokenForPublish` in actions.ts for why that constant goes stale.
+      const token = validToken()
+      if (!token) {
+        console.warn('[nostr] channel not created: no live Estiva ID token in this tab')
+        return
+      }
+      if (!relayUrl) return
       const result = await publishTopicChannel(topicId, relayUrl, token, {
         channelPlan: (args) => convex.query(api.nostr.outbox.channelPlan, args as never),
         recordChannel: async (args) => {
