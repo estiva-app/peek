@@ -122,9 +122,30 @@ export function usePeekActions() {
   const publishResolution = (assertion: Promise<Id<'resolutionAssertions'> | null>) => {
     void (async () => {
       const assertionId = await assertion
-      if (!assertionId) return
-      const token = usesEstivaId ? validToken() : null
-      if (!token) return
+      if (!assertionId) {
+        // Ordinary when nothing changed — reopening something already open
+        // appends no assertion — but it is also what an unrecognised message
+        // key looks like, so it is worth saying which happened.
+        console.warn('[nostr] resolution not published: no assertion was appended')
+        return
+      }
+      // Both halves said out loud. These two returns were silent, and silence
+      // here is indistinguishable from success: the row still resolves and the
+      // card still renders resolved, so a resolve that never reaches the relay
+      // looks exactly like one that does. That cost a full debugging round.
+      if (!usesEstivaId) {
+        console.warn(
+          '[nostr] resolution not published: this tab holds no Estiva ID session ' +
+            '(usesEstivaId is fixed at module load — a token acquired later in the ' +
+            'same page load will not flip it)',
+        )
+        return
+      }
+      const token = validToken()
+      if (!token) {
+        console.warn('[nostr] resolution not published: the Estiva ID token has expired')
+        return
+      }
       const built = await convex.query(api.nostr.outbox.unsignedResolution, { assertionId })
       if (!built.ok) {
         // Ordinary cases live here too — an unpublished target, a topic with no
