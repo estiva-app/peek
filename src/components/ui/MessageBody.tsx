@@ -184,6 +184,22 @@ export function MessageBody({ body, isTopicResolved, nostrReferences }: { body: 
             <h2 key={i}>{renderWithMentions(seg.text, isTopicResolved)}</h2>
           )
         }
+        if (seg.type === 'quote') {
+          // Native blockquote so sent messages and the composer share the
+          // exact same border/padding/color (see index.css).
+          return (
+            <blockquote key={i}>
+              <p>
+                {seg.lines.map((line, j) => (
+                  <span key={j}>
+                    {j > 0 && <br />}
+                    {renderWithMentions(line, isTopicResolved)}
+                  </span>
+                ))}
+              </p>
+            </blockquote>
+          )
+        }
         return (
           <p key={i}>
             {seg.lines.map((line, j) => (

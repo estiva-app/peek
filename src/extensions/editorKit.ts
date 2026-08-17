@@ -7,15 +7,15 @@ import StarterKit from '@tiptap/starter-kit'
  * app supports.
  *
  * Rich-text scope (2026-07): bold / italic / underline via keyboard
- * shortcuts (Ctrl+B / I / U) plus headline (`# ` or Ctrl+Alt+1) and
- * subheading (`## ` or Ctrl+Alt+2). Storage stays plain text — marks
- * serialize to `**`/`*`/`__` markers and headings to `#`-prefixed lines
- * (see lib/textParsing.ts). Everything else stays off until designed.
+ * shortcuts (Ctrl+B / I / U), headline (`# ` or Ctrl+Alt+1), subheading
+ * (`## ` or Ctrl+Alt+2), and quotes (`> ` or Ctrl+Shift+B). Storage stays
+ * plain text — marks serialize to `**`/`*`/`__` markers, headings to
+ * `#`-prefixed lines, quote lines to `> ` prefixes (see lib/textParsing.ts).
+ * Everything else stays off until designed.
  */
 export const peekStarterKit = StarterKit.configure({
   strike: false,
   code: false,
-  blockquote: false,
   codeBlock: false,
   horizontalRule: false,
   heading: { levels: [1, 2] },
