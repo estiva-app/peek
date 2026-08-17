@@ -42,6 +42,8 @@ export interface RemoteMessage {
   resolvedBy?: string
   resolvedById?: string
   resolutionMessage?: string
+  /** Append-only resolve/reopen history (PEEK-128), oldest first. */
+  resolutionEvents?: ResolutionEvent[]
   resolvedByReplyId?: string
   attachments?: string[]
   /** Resolved uploaded files (storage blob → URL), server-side (§Phase 5). */
@@ -151,6 +153,42 @@ function mockMessagesById(groups: ConvGroup[] | undefined): Map<string, Conversa
 }
 
 /** A reply as rendered in a thread: static shape + runtime reactions. */
+/**
+ * One resolve or reopen, as the thread timeline renders it (PEEK-129).
+ *
+ * Sourced from the append-only assertion log in `convex/messages.ts`, not from
+ * a column — so an event asserted by another app on the same channel appears
+ * here too.
+ *
+ * `trusted` is false for an assertion Peek will not let move its own state
+ * (PEEK-128 decision 4). Such an event is still shown: hiding it would leave a
+ * reader wondering why nothing happened when someone said it did.
+ */
+export interface ResolutionEvent {
+  kind: 'resolved' | 'reopened'
+  /** Display name of whoever asserted it; undefined if Peek has no user row. */
+  by?: string
+  byId?: string
+  byAvatarUrl?: string
+  /** When it happened, ms. */
+  atMs?: number
+  /** Optional rationale — Peek's resolution message. */
+  message?: string
+  /** Stable React key: the assertion row id. Absent for synthesized legacy. */
+  key?: string
+  trusted?: boolean
+  /**
+   * An optimistic event still on the client clock.
+   *
+   * `buildThreadRows` must never sort client-clock and server-clock items
+   * together — mixing them let clock skew misplace a freshly sent reply until
+   * its server copy arrived (upstream 152c25d). Everything sourced from Convex
+   * is settled, so this stays undefined there; it exists for the optimistic
+   * overlay to set once resolution joins it.
+   */
+  pending?: boolean
+}
+
 export interface ThreadReply extends ReplyData {
   reactions?: ReactionData[]
 }
@@ -188,6 +226,14 @@ export interface ThreadData {
   /** Resolution bookkeeping for the parent (drives inline resolution editing). */
   resolvedByReplyId: string | undefined
   resolutionMessage: string | undefined
+  /**
+   * The parent's resolve/reopen history, for the thread timeline (PEEK-129).
+   *
+   * Empty in mock mode: the static fixtures carry no assertion log, and
+   * synthesizing one from `isResolved` would invent a timestamp the event
+   * never had.
+   */
+  resolutionEvents: ResolutionEvent[]
   /** True while the Convex replies query is in flight. */
   isLoading: boolean
 }
@@ -446,7 +492,7 @@ export function useThread(messageId: string | null): ThreadData {
   const remoteReplies = useQuery(api.replies.list, hasConvex && messageId ? { messageKey: messageId } : 'skip')
 
   if (!messageId) {
-    return { conversation: null, replies: [], sentReplies: [], resolvedByReplyId: undefined, resolutionMessage: undefined, isLoading: false }
+    return { conversation: null, replies: [], sentReplies: [], resolvedByReplyId: undefined, resolutionMessage: undefined, resolutionEvents: [], isLoading: false }
   }
 
   const find = (): ConversationData | undefined => {
@@ -521,6 +567,7 @@ export function useThread(messageId: string | null): ThreadData {
     // pointer); otherwise the persisted resolution from Convex applies.
     resolvedByReplyId: resolution ? resolution.resolvedByReplyId : remoteMsg?.resolvedByReplyId,
     resolutionMessage: resolution ? resolution.message : remoteMsg?.resolutionMessage,
+    resolutionEvents: remoteMsg?.resolutionEvents ?? [],
     isLoading,
   }
 }

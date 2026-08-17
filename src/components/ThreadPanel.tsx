@@ -1,17 +1,135 @@
 import { useRef, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock } from '@tabler/icons-react'
+import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
 import { Avatar } from './ui/Avatar'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { DateDivider } from './ui/DateDivider'
-import type { ConversationData, HighlightType, ReactionData, ThreadReply } from '@/api'
+import { formatReplyTimestamp } from '@/api'
+import type { ConversationData, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
 import { PinnedMessage } from './ui/PinnedMessage'
 import { SkeletonConversationList } from './ui/Skeleton'
 import { partitionRepliesAroundPromotion } from '@/lib/threadPartition'
+import { cn } from '@/lib/utils'
 
 // ── Thread Panel ──
+
+/**
+ * Resolve/reopen history as timeline bullets sitting chronologically among
+ * the replies (ruling 2026-07-28: bullets, not banners/dividers — and the
+ * FULL history, so resolve → reopen → resolve reads as a timeline).
+ * Consecutive events share one block with a connecting line between dots.
+ */
+function ResolutionTimeline({ events }: { events: ResolutionEvent[] }) {
+  return (
+    <div data-resolution-timeline className="relative flex flex-col gap-2 py-1">
+      {/* Connector runs through the dot column's center — x = 20px, the same
+          axis as the reply cards' avatars (card p-2 + 24px avatar). */}
+      {events.length > 1 && (
+        <div aria-hidden className="absolute left-[19.5px] top-[12px] bottom-[12px] w-px bg-border-default" />
+      )}
+      {events.map((e, i) => (
+        <div
+          key={e.key ?? `${e.kind}-${e.atMs ?? i}`}
+          data-resolution-event={e.kind}
+          className="relative flex items-start"
+        >
+          {/* Dot column mirrors the cards' avatar column (40px, centered) so
+              bullets line up with avatars; the disc masks the connector. */}
+          <span className="flex items-center justify-center w-10 h-[17px] shrink-0">
+            <span className="flex items-center justify-center size-2 rounded-full bg-bg-surface">
+              <span className={cn('size-1 rounded-full', e.kind === 'resolved' ? 'bg-success-default' : 'bg-text-muted')} />
+            </span>
+          </span>
+          <p className="text-[12px] leading-[1.4] font-medium min-w-0">
+            {e.kind === 'resolved' ? (
+              <>
+                <span className="text-success-default whitespace-nowrap">{e.by || 'Someone'} resolved</span>
+                {e.message && (
+                  <>
+                    <IconArrowNarrowRight size={12} stroke={1.5} className="inline shrink-0 mx-1.5 -mt-px text-text-primary" />
+                    <span className="text-text-primary">{e.message}</span>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="text-text-primary">{e.by || 'Someone'}</span>
+                <span className="text-text-secondary"> reopened</span>
+              </>
+            )}
+            {e.atMs !== undefined && (
+              <span className="text-[11px] font-normal text-text-muted whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">
+                {' '}· {formatReplyTimestamp(e.atMs)}
+              </span>
+            )}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+type ThreadRow =
+  | { t: 'reply'; reply: ThreadReply }
+  | { t: 'divider' }
+  | { t: 'events'; events: ResolutionEvent[] }
+
+/**
+ * Interleave the resolution events into the reply sequence by time: an event
+ * renders after every reply that predates it. Two clock domains are never
+ * mixed: PERSISTED replies interleave with SETTLED events (both server
+ * clocks), then this session's optimistic replies + pending events form the
+ * tail, ordered among themselves by the client clock. Mixing domains made a
+ * fresh optimistic reply (client clock) flash between settled bullets
+ * (server clock) until its server copy arrived. Replies without a timestamp
+ * (static mocks) sort before all events; events without a timestamp sort
+ * after everything. Adjacent events merge into one timeline block.
+ */
+function buildThreadRows(
+  persisted: ThreadReply[],
+  sent: ThreadReply[],
+  hasDivider: boolean,
+  promotedAtMs: number | undefined,
+  events: ResolutionEvent[]
+): ThreadRow[] {
+  const byAt = (a: ResolutionEvent, b: ResolutionEvent) => (a.atMs ?? Infinity) - (b.atMs ?? Infinity)
+  const rows: ThreadRow[] = []
+  const append = (e: ResolutionEvent) => {
+    const last = rows[rows.length - 1]
+    if (last?.t === 'events') last.events.push(e)
+    else rows.push({ t: 'events', events: [e] })
+  }
+  /** Walk one reply list, emitting queued events that predate each reply;
+   *  returns the events that belong after every reply in the list. */
+  const interleave = (replies: ThreadReply[], queue: ResolutionEvent[]): ResolutionEvent[] => {
+    let ei = 0
+    for (const reply of replies) {
+      while (ei < queue.length && (queue[ei].atMs ?? Infinity) < (reply.createdAtMs ?? 0)) {
+        append(queue[ei++])
+      }
+      rows.push({ t: 'reply', reply })
+    }
+    return queue.slice(ei)
+  }
+
+  const settled = events.filter((e) => !e.pending).sort(byAt)
+  const pending = events.filter((e) => e.pending).sort(byAt)
+
+  // Persisted section (server clock), settled leftovers before the tail.
+  interleave(persisted, settled).forEach(append)
+
+  // Optimistic tail (client clock), split by the promotion divider if any.
+  const { above: sentPre, below: sentPost } = promotedAtMs !== undefined
+    ? partitionRepliesAroundPromotion({ replies: [], sentReplies: sent, promotedAtMs })
+    : { above: sent, below: [] as ThreadReply[] }
+  let rest = interleave(sentPre, pending)
+  if (hasDivider) rows.push({ t: 'divider' })
+  rest = interleave(sentPost, rest)
+  rest.forEach(append)
+  return rows
+}
 
 interface ThreadPanelProps {
   conversation: ConversationData
@@ -39,6 +157,8 @@ interface ThreadPanelProps {
   resolvedByReplyId?: string
   /** Current resolution message on the parent conv. Forwarded to the resolution-owning reply card. */
   resolutionMsg?: string
+  /** Full resolve/reopen history — rendered as timeline bullets among the replies. */
+  resolutionEvents?: ResolutionEvent[]
   /** Called when the resolution-owning reply card edits the resolution. The parent updates the
    *  parent conv's resolution override accordingly (or reopens it when removed). */
   onResolutionChange?: (resolved: boolean, message?: string) => void
@@ -109,6 +229,7 @@ export function ThreadPanel({
   onInitialHighlightChange,
   resolvedByReplyId,
   resolutionMsg,
+  resolutionEvents = [],
   onResolutionChange,
   onOpenInDm,
   onClose,
@@ -139,9 +260,14 @@ export function ThreadPanel({
 
   // When a promotion divider is rendered, replies are split chronologically
   // around the promotion event (see lib/threadPartition for the rule).
-  const { above: aboveReplies, below: postDividerSent } = promotionDivider
-    ? partitionRepliesAroundPromotion({ replies, sentReplies, promotedAtMs: promotionDivider.promotedAtMs })
-    : { above: allReplies, below: [] as typeof sentReplies }
+  // Replies + resolution events interleaved by time into one render sequence.
+  const threadRows = buildThreadRows(
+    replies,
+    sentReplies,
+    !!promotionDivider,
+    promotionDivider?.promotedAtMs,
+    resolutionEvents
+  )
 
   // Scroll to bottom when new replies are added
   useEffect(() => {
@@ -244,32 +370,41 @@ export function ThreadPanel({
             and the post-promotion replies (sentReplies). */}
         <div className="flex flex-col px-4 pb-4 gap-2">
           {isLoadingReplies && showSkeleton && <SkeletonConversationList />}
-          {aboveReplies.map((reply) => (
-            <div key={reply.id} data-reply-id={reply.id}>
-            <ThreadReplyCard
-              authorName={reply.authorName}
-              authorAvatarSrc={reply.authorAvatarSrc}
-              timestamp={reply.timestamp}
-              body={reply.body}
-              attachments={reply.attachments}
-              files={reply.files}
-              highlightType={reply.highlightType}
-              reactions={reply.reactions}
-              isNew={reply.isNew}
-              isUrgent={reply.isUrgent}
-              ownsResolution={resolvedByReplyId === reply.id}
-              resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
-              nostrReferences={reply.nostrReferences}
-              onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
-              onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
-              onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
-              onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
-              onReactionsChange={onReplyReactionsChange ? (r) => onReplyReactionsChange(reply.id, r) : undefined}
-            />
-            </div>
-          ))}
-          {promotionDivider && (
+          {threadRows.map((row, i) => {
+            if (row.t === 'events') {
+              return <ResolutionTimeline key={row.events[0]?.key ?? `events-${i}`} events={row.events} />
+            }
+            if (row.t === 'reply') {
+              const reply = row.reply
+              return (
+                <div key={reply.id} data-reply-id={reply.id}>
+                  <ThreadReplyCard
+                    authorName={reply.authorName}
+                    authorAvatarSrc={reply.authorAvatarSrc}
+                    timestamp={reply.timestamp}
+                    body={reply.body}
+                    attachments={reply.attachments}
+                    files={reply.files}
+                    highlightType={reply.highlightType}
+                    reactions={reply.reactions}
+                    isNew={reply.isNew}
+                    isUrgent={reply.isUrgent}
+                    ownsResolution={resolvedByReplyId === reply.id}
+                    resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
+                    nostrReferences={reply.nostrReferences}
+                    onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
+                    onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
+                    onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
+                    onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
+                    onReactionsChange={onReplyReactionsChange ? (r) => onReplyReactionsChange(reply.id, r) : undefined}
+                  />
+                </div>
+              )
+            }
+            // Promotion divider row
+            return promotionDivider ? (
             <DateDivider
+              key="promotion-divider"
               className="px-0 py-1"
               label={
                 <span className="flex items-center gap-1.5 text-text-secondary min-w-0">
@@ -304,30 +439,8 @@ export function ThreadPanel({
                 </span>
               }
             />
-          )}
-          {promotionDivider && postDividerSent.map((reply) => (
-            <ThreadReplyCard
-              key={reply.id}
-              authorName={reply.authorName}
-              authorAvatarSrc={reply.authorAvatarSrc}
-              timestamp={reply.timestamp}
-              body={reply.body}
-              attachments={reply.attachments}
-              files={reply.files}
-              highlightType={reply.highlightType}
-              reactions={reply.reactions}
-              isNew={reply.isNew}
-              isUrgent={reply.isUrgent}
-              ownsResolution={resolvedByReplyId === reply.id}
-              resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
-              nostrReferences={reply.nostrReferences}
-              onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
-              onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
-              onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
-              onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
-              onReactionsChange={onReplyReactionsChange ? (r) => onReplyReactionsChange(reply.id, r) : undefined}
-            />
-          ))}
+            ) : null
+          })}
         </div>
       </div>
 
