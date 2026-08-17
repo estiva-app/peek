@@ -217,6 +217,7 @@ function legacyAssertions(m: Doc<'messages'>) {
   if (!m.resolved || !m.resolvedById || !m.resolvedAt) return []
   return [
     {
+      key: undefined,
       action: 'resolved' as const,
       authorId: m.resolvedById,
       createdAt: m.resolvedAt,
@@ -244,6 +245,7 @@ export async function resolutionHistory(ctx: QueryCtx | MutationCtx, m: Doc<'mes
   return [...rows]
     .sort((a, b) => a.createdAt - b.createdAt || a._id.localeCompare(b._id))
     .map((r) => ({
+      key: r._id as string,
       action: r.action,
       authorId: r.authorId,
       createdAt: r.createdAt,
@@ -305,6 +307,28 @@ export async function shape(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>, fac
     resolvedById: m.resolvedById ? (m.resolvedById as string) : undefined,
     resolutionMessage: m.resolutionMessage,
     resolvedByReplyId: resolvedByReply ? resolvedByReply.seedKey ?? (resolvedByReply._id as string) : undefined,
+    /**
+     * The resolve/reopen history the thread renders as timeline bullets
+     * (PEEK-129), oldest first.
+     *
+     * Sourced from the append-only assertion log rather than a column, so a
+     * resolution asserted by another app is in here too. Untrusted assertions
+     * are included deliberately: they must not move `isResolved` above — the
+     * fold excludes them — but the thread should still show that someone said
+     * it, which is the difference between ignoring a claim and hiding it.
+     */
+    resolutionEvents: (await resolutionHistory(ctx, m)).map((e) => ({
+      kind: e.action,
+      by: e.authorId ? faces.get(e.authorId)?.name : undefined,
+      byId: e.authorId ? (e.authorId as string) : undefined,
+      byAvatarUrl: e.authorId ? faces.get(e.authorId)?.avatarUrl : undefined,
+      atMs: e.createdAt,
+      message: e.rationale,
+      /** Stable React key; absent for synthesized legacy history. */
+      key: e.key,
+      /** False for anything Peek will not let move its own state. */
+      trusted: e.trusted,
+    })),
     attachments: m.attachments,
     files: await resolveFileAttachments(ctx, m.fileAttachments),
     nostrReferences: m.nostrReferences,
