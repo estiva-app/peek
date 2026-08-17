@@ -80,6 +80,34 @@ export function usePeekActions() {
   const removeTopicFromOpenWorkRemote = useMutation(api.desk.removeTopicFromOpenWork)
 
   /**
+   * The token every relay write needs, or null with the reason said out loud.
+   *
+   * These checks used to be `usesEstivaId ? validToken() : null` followed by a
+   * bare `return`, in five places. Silence there is indistinguishable from
+   * success — the Convex row is written either way — so a session that
+   * published nothing looked exactly like one that published everything, and
+   * finding out required reading the relay by hand.
+   *
+   * It deliberately does NOT consult `usesEstivaId`. That is a snapshot taken
+   * when the module first evaluated, and it goes stale in a way that disables
+   * publishing for a whole page load: open the app while the stored token has
+   * expired and it is `false`, after which PEEK-108's refresh timer renews the
+   * token — reads recover, `validToken()` starts returning a live token again,
+   * and every publish path stays gated on the stale `false`, silently.
+   *
+   * `validToken()` asked at call time is the real question, and it is the same
+   * question `usesEstivaId` was a cached answer to.
+   */
+  const tokenForPublish = (what: string): { accessToken: string; pubkey: string } | null => {
+    const token = validToken()
+    if (!token) {
+      console.warn(`[nostr] ${what} not published: no live Estiva ID token in this tab`)
+      return null
+    }
+    return token
+  }
+
+  /**
    * Sign an unsigned event and put it on the relay, returning the id the relay
    * assigned — or null, with the reason logged.
    *
@@ -129,23 +157,8 @@ export function usePeekActions() {
         console.warn('[nostr] resolution not published: no assertion was appended')
         return
       }
-      // Both halves said out loud. These two returns were silent, and silence
-      // here is indistinguishable from success: the row still resolves and the
-      // card still renders resolved, so a resolve that never reaches the relay
-      // looks exactly like one that does. That cost a full debugging round.
-      if (!usesEstivaId) {
-        console.warn(
-          '[nostr] resolution not published: this tab holds no Estiva ID session ' +
-            '(usesEstivaId is fixed at module load — a token acquired later in the ' +
-            'same page load will not flip it)',
-        )
-        return
-      }
-      const token = validToken()
-      if (!token) {
-        console.warn('[nostr] resolution not published: the Estiva ID token has expired')
-        return
-      }
+      const token = tokenForPublish('resolution')
+      if (!token) return
       const built = await convex.query(api.nostr.outbox.unsignedResolution, { assertionId })
       if (!built.ok) {
         // Ordinary cases live here too — an unpublished target, a topic with no
@@ -183,7 +196,7 @@ export function usePeekActions() {
       // `/sign` will sign as nobody but that token's subject. Convex builds the
       // unsigned event (it has the rows) and records the id afterwards (a fact,
       // not a secret); the token never crosses the boundary.
-      const token = usesEstivaId ? validToken() : null
+      const token = tokenForPublish('message')
       if (!token) return
       const built = await convex.query(api.nostr.outbox.unsignedMessage, { messageId })
       if (!built.ok) {
@@ -213,8 +226,9 @@ export function usePeekActions() {
   const publishDeletions = (removed: Promise<{ nostrEventIds: string[] }>) => {
     void (async () => {
       const { nostrEventIds } = await removed
-      const token = usesEstivaId ? validToken() : null
-      if (nostrEventIds.length === 0 || !token) return
+      if (nostrEventIds.length === 0) return
+      const token = tokenForPublish('deletion')
+      if (!token) return
       // One kind:5 per target rather than one event with many `e` tags — that
       // is the shape Buzz accepts, and a rejected batch would lose every
       // tombstone in it instead of one.
@@ -364,8 +378,9 @@ export function usePeekActions() {
         // The mutation reports which half happened, and only for an Estiva ID
         // identity — custodial accounts are already covered by its scheduled job.
         const outcome = await toggleReactionRemote({ key: id, emoji: toggled })
-        const token = usesEstivaId ? validToken() : null
-        if (!outcome || !token) return
+        if (!outcome) return
+        const token = tokenForPublish('reaction')
+        if (!token) return
         if (outcome.action === 'added') {
           const built = await convex.query(api.nostr.outbox.unsignedReaction, {
             reactionId: outcome.reactionId,
@@ -448,7 +463,7 @@ export function usePeekActions() {
             // As with messages: only the browser holds the Estiva ID token, so
             // only the browser can publish for those identities. Custodial
             // accounts are already handled by the mutation's scheduled job.
-            const token = usesEstivaId ? validToken() : null
+            const token = tokenForPublish('reply')
             if (!token) return
             const built = await convex.query(api.nostr.outbox.unsignedReply, { replyId })
             if (!built.ok) {
