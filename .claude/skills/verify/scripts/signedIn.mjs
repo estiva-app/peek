@@ -33,6 +33,25 @@
  *
  * (estiva-id lives at ../estiva-id; `docker compose up` there brings up its
  * Postgres, and `PEEK_REDIRECT_URIS` must include http://localhost:5173/auth/callback.)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHAT A LOCAL ESTIVA ID CAN AND CANNOT PROVE — measured 2026-08-17.
+ *
+ * Proven end to end against a local instance: the passkey ceremony, the
+ * /authorize redirect, and the token landing in sessionStorage. The silent
+ * `prompt=none` probe even carries an existing Estiva ID session straight
+ * through, so the "Continue with passkey" click is skipped entirely.
+ *
+ * NOT reachable locally: anything served by Convex. `convex/auth.config.ts`
+ * pins the issuer to `https://id.estiva.app` and Convex fetches
+ * `<issuer>/.well-known/openid-configuration` from its own cloud, which cannot
+ * resolve localhost. A local token is therefore well-formed and accepted by
+ * Peek but rejected by Convex with **401**, and the app renders an empty page
+ * rather than erroring.
+ *
+ * So: local Estiva ID verifies auth flows. Verifying *data* — a live thread,
+ * relay reads, publishing — needs either the production issuer or a public
+ * HTTPS tunnel to a local one with a matching `auth.config.ts`.
  */
 import { chromium } from 'playwright-core'
 
@@ -85,10 +104,15 @@ async function installVirtualAuthenticator(page) {
  * @param {object}  [opts]
  * @param {boolean} [opts.headless=true]
  * @param {number}  [opts.timeout=60000] ms to wait for the round trip to settle
+ * @param {string}  [opts.inviteUrl] Enrol a fresh principal first. Estiva ID
+ *   requires an invite to register (PEEK-65), so a brand-new virtual
+ *   authenticator has no credential to sign in with. Mint one with:
+ *     EMAIL=harness@peek.test ROLE=member pnpm invite   (in ../estiva-id)
+ *   Invites are single-use, so each cold run needs a fresh one.
  * @returns {Promise<{browser, context, page, pubkey: string|null, authenticatorId: string}>}
  */
 export async function signedInPage(opts = {}) {
-  const { headless = true, timeout = 60_000 } = opts
+  const { headless = true, timeout = 60_000, inviteUrl = process.env.PEEK_VERIFY_INVITE_URL } = opts
   assertSafeTarget()
 
   const browser = await chromium.launch({ headless })
@@ -97,17 +121,24 @@ export async function signedInPage(opts = {}) {
 
   const { cdp, authenticatorId } = await installVirtualAuthenticator(page)
 
+  if (inviteUrl) {
+    await page.goto(inviteUrl, { waitUntil: 'networkidle', timeout })
+    await page.getByRole('button', { name: /create my passkey/i }).click()
+    await page.waitForFunction(() => /Sign out/.test(document.body.innerText), undefined, { timeout })
+  }
+
   // The authenticator is per-browser, so it survives the cross-origin hop to
   // Estiva ID and back. The CDP session is bound to this page/tab, which the
   // redirect reuses.
   await page.goto(`${APP_ORIGIN}/topics`, { waitUntil: 'domcontentloaded', timeout })
 
-  // The shell probes silently first (prompt=none). With no session it settles on
-  // a single button; WebAuthn needs a user activation, so this click is required
-  // and cannot be skipped.
+  // The shell probes silently first (prompt=none). When that probe finds a live
+  // Estiva ID session — which enrolling above leaves behind — it carries straight
+  // through and no button ever renders. Only click when one does: WebAuthn needs
+  // a user activation, so the click is required in the cold case and cannot be
+  // skipped there.
   const button = page.getByRole('button', { name: /continue with passkey/i })
-  await button.waitFor({ state: 'visible', timeout })
-  await button.click()
+  if (await button.count()) await button.click()
 
   // Back on Peek's own origin with a token in sessionStorage = signed in.
   await page.waitForFunction(

@@ -93,9 +93,38 @@ again and is indistinguishable from a genuine device in the account's key
 list. So `signedIn.mjs` refuses to run against `https://id.estiva.app` unless
 `PEEK_VERIFY_ALLOW_PROD=1` is set deliberately.
 
-Run a local one instead (`../estiva-id`, `docker compose up` for its Postgres),
-with `http://localhost:5173/auth/callback` in `PEEK_REDIRECT_URIS`, and set
-`VITE_ESTIVA_ID_ORIGIN` for **both** the dev server and the script.
+Run a local one instead:
+
+```bash
+cd ../estiva-id
+pnpm db:up && pnpm migrate && pnpm seed && pnpm dev      # → :8787
+EMAIL=harness@peek.test ROLE=member pnpm invite          # prints an invite URL
+```
+
+`.env` there needs `PEEK_REDIRECT_URIS=http://localhost:5173/auth/callback`
+(exact-string matched). Then start Peek with
+`VITE_ESTIVA_ID_ORIGIN=http://localhost:8787 npm run dev` and pass the invite
+as `PEEK_VERIFY_INVITE_URL` — **registration requires an invite** (PEEK-65), so
+a brand-new virtual authenticator has no credential to sign in with, and
+invites are single-use so every cold run needs a fresh one.
+
+### What a local Estiva ID proves — and what it can't
+
+Verified end to end on 2026-08-17: passkey ceremony, `/authorize` redirect, and
+the token landing in `sessionStorage`. The silent `prompt=none` probe even
+carries the session left behind by enrolment, so the "Continue with passkey"
+click is skipped entirely.
+
+**Convex data is out of reach locally.** `convex/auth.config.ts` pins the
+issuer to `https://id.estiva.app`, and Convex fetches
+`<issuer>/.well-known/openid-configuration` from its own cloud, which cannot
+resolve `localhost`. A local token is well-formed and accepted by Peek but
+**Convex answers 401**, and the app renders an empty page rather than erroring
+— so a blank screen here is the expected shape, not a bug to chase.
+
+So local Estiva ID verifies **auth flows**. Verifying **data** — a live thread,
+relay reads, publishing — needs the production issuer, or a public HTTPS tunnel
+to a local one with `auth.config.ts` changed to match.
 
 Other consequences for driving the app:
 
