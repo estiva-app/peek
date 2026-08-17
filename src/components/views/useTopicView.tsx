@@ -144,6 +144,7 @@ export function useTopicView({
       syncPlan: (args) => convex.query(api.nostr.sync.syncPlan, args),
       importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
       importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
+      importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
     }).catch((error) => console.warn('[nostr] viewer sync failed:', error))
   }, [topicId, topicFolderId, relayUrl, convex])
 

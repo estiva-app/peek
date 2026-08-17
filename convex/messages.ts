@@ -172,6 +172,121 @@ export async function resolveFileAttachments(
   return out.length > 0 ? out : undefined
 }
 
+/**
+ * Append one assertion to a message's resolve/reopen history (PEEK-128).
+ *
+ * Never patches or deletes an earlier row: the history is the point, and a
+ * reopen that overwrote its resolve would leave nothing to render.
+ *
+ * `trusted: true` because everything routed through here was asserted by the
+ * signed-in viewer of this deployment. Assertions arriving from the relay come
+ * in through the sync path, which judges trust for itself.
+ */
+export async function appendResolutionAssertion(
+  ctx: MutationCtx,
+  args: {
+    messageId: Id<'messages'>
+    action: 'resolved' | 'reopened'
+    author: Doc<'users'>
+    createdAt: number
+    rationale?: string
+    supportingReplyId?: Id<'replies'>
+  },
+): Promise<Id<'resolutionAssertions'>> {
+  return await ctx.db.insert('resolutionAssertions', {
+    messageId: args.messageId,
+    action: args.action,
+    authorId: args.author._id,
+    authorPubkey: args.author.nostrPubkey,
+    createdAt: args.createdAt,
+    rationale: args.rationale,
+    supportingReplyId: args.supportingReplyId,
+    trusted: true,
+  })
+}
+
+/**
+ * Legacy history for a message resolved before assertions existed.
+ *
+ * Decision 5 of PEEK-128: nothing is backfilled onto the relay. These rows were
+ * never published and never will be, so they are synthesized on read from the
+ * single-slot columns and carry no `nostrEventId`. Without this an old resolved
+ * thread would render as though it had never been resolved at all.
+ */
+function legacyAssertions(m: Doc<'messages'>) {
+  if (!m.resolved || !m.resolvedById || !m.resolvedAt) return []
+  return [
+    {
+      action: 'resolved' as const,
+      authorId: m.resolvedById,
+      createdAt: m.resolvedAt,
+      rationale: m.resolutionMessage,
+      supportingReplyId: m.resolvedByReplyId,
+      trusted: true,
+      legacy: true as const,
+    },
+  ]
+}
+
+/**
+ * Read a message's assertions, oldest first, falling back to legacy synthesis.
+ *
+ * Ordered by `createdAt` then id — the same tiebreak `foldResolution` uses, and
+ * for the same reason: two assertions can share a millisecond, and an unstable
+ * order would fold to different states on different reads.
+ */
+export async function resolutionHistory(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>) {
+  const rows = await ctx.db
+    .query('resolutionAssertions')
+    .withIndex('by_message', (q) => q.eq('messageId', m._id))
+    .collect()
+  if (rows.length === 0) return legacyAssertions(m)
+  return [...rows]
+    .sort((a, b) => a.createdAt - b.createdAt || a._id.localeCompare(b._id))
+    .map((r) => ({
+      action: r.action,
+      authorId: r.authorId,
+      createdAt: r.createdAt,
+      rationale: r.rationale,
+      supportingReplyId: r.supportingReplyId,
+      trusted: r.trusted,
+      legacy: false as const,
+    }))
+}
+
+/**
+ * Fold the trusted assertions back onto the message's columns.
+ *
+ * The columns are a cache of the fold, not the truth — kept because every
+ * existing query, index and card reads them, and rewriting all of that is not
+ * this ticket. Untrusted assertions are excluded here rather than at write
+ * time, so a foreign claim is still recorded and renderable as history without
+ * being able to move Peek's own state.
+ */
+export async function applyResolutionProjection(ctx: MutationCtx, messageId: Id<'messages'>) {
+  const m = await ctx.db.get(messageId)
+  if (!m) return
+  const trusted = (await resolutionHistory(ctx, m)).filter((a) => a.trusted)
+  const last = trusted[trusted.length - 1]
+  if (!last || last.action === 'reopened') {
+    await ctx.db.patch(messageId, {
+      resolved: undefined,
+      resolvedById: undefined,
+      resolutionMessage: undefined,
+      resolvedByReplyId: undefined,
+      resolvedAt: undefined,
+    })
+    return
+  }
+  await ctx.db.patch(messageId, {
+    resolved: true,
+    resolvedById: last.authorId,
+    resolutionMessage: last.rationale,
+    resolvedByReplyId: last.supportingReplyId,
+    resolvedAt: last.createdAt,
+  })
+}
+
 export async function shape(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>, faces: Map<Id<'users'>, Face>) {
   const resolvedByReply = m.resolvedByReplyId ? await ctx.db.get(m.resolvedByReplyId) : null
   return {
@@ -430,20 +545,30 @@ export const setResolution = mutation({
     /** Card-level resolve drops an earlier reply pointer; thread-level keeps it. */
     dropReplyPointer: v.optional(v.boolean()),
   },
-  handler: async (ctx, { key, resolved, resolutionMessage, resolvedByReplyKey, dropReplyPointer }) => {
+  /**
+   * Returns the assertion just appended, so the browser can publish it
+   * (PEEK-128). `null` when nothing was recorded — an unknown key, or a
+   * no-op un-resolve of something already open.
+   */
+  handler: async (ctx, { key, resolved, resolutionMessage, resolvedByReplyKey, dropReplyPointer }): Promise<Id<'resolutionAssertions'> | null> => {
     const m = await findMessageByKey(ctx, key)
-    if (!m) return
-    if (!resolved) {
-      await ctx.db.patch(m._id, {
-        resolved: undefined,
-        resolvedById: undefined,
-        resolutionMessage: undefined,
-        resolvedByReplyId: undefined,
-        resolvedAt: undefined,
-      })
-      return
-    }
+    if (!m) return null
     const you = await viewerOrThrow(ctx)
+    const at = Date.now()
+
+    if (!resolved) {
+      // Nothing to reopen — don't append an assertion asserting no change.
+      if (!m.resolved) return null
+      const assertionId = await appendResolutionAssertion(ctx, {
+        messageId: m._id,
+        action: 'reopened',
+        author: you,
+        createdAt: at,
+      })
+      await applyResolutionProjection(ctx, m._id)
+      return assertionId
+    }
+
     let resolvedByReplyId: Id<'replies'> | undefined
     if (resolvedByReplyKey) {
       const bySeed = await ctx.db
@@ -454,13 +579,17 @@ export const setResolution = mutation({
     } else if (!dropReplyPointer) {
       resolvedByReplyId = m.resolvedByReplyId
     }
-    await ctx.db.patch(m._id, {
-      resolved: true,
-      resolvedById: you._id,
-      resolutionMessage,
-      resolvedByReplyId,
-      resolvedAt: Date.now(),
+
+    const assertionId = await appendResolutionAssertion(ctx, {
+      messageId: m._id,
+      action: 'resolved',
+      author: you,
+      createdAt: at,
+      rationale: resolutionMessage,
+      supportingReplyId: resolvedByReplyId,
     })
+    await applyResolutionProjection(ctx, m._id)
+    return assertionId
   },
 })
 

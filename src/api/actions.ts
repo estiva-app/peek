@@ -14,6 +14,7 @@ import { hasConvex, useDmRuntime, usesEstivaId } from './store'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '../../convex/nostr/events'
 import type { UnsignedEvent } from '../../convex/nostr/events'
+import type { Id } from '../../convex/_generated/dataModel'
 import { publishSigned, signViaEstivaId } from '@/nostr/bridge'
 import { CURRENT_USER_NAME } from './currentUser'
 import type { UploadedFile } from './uploads'
@@ -58,6 +59,7 @@ export function usePeekActions() {
   const recordMessagePublished = useMutation(api.nostr.outbox.recordMessagePublished)
   const recordReplyPublished = useMutation(api.nostr.outbox.recordReplyPublished)
   const recordReactionPublished = useMutation(api.nostr.outbox.recordReactionPublished)
+  const recordResolutionPublished = useMutation(api.nostr.outbox.recordResolutionPublished)
   // Where the relay lives. A query rather than a build-time variable so the
   // bundle and the backend cannot disagree about it — see convex/nostr/config.ts.
   const relayConfig = useQuery(api.nostr.config.relayConfig)
@@ -105,6 +107,34 @@ export function usePeekActions() {
       return null
     }
     return result.eventId ?? null
+  }
+
+  /**
+   * Put a resolve/reopen on the relay (PEEK-128).
+   *
+   * Takes the assertion id the mutation returned rather than looking one up:
+   * the row is append-only, so "the latest assertion for this message" would be
+   * a race the moment two people resolve at once.
+   *
+   * Same contract as every other kind here — the Convex row is already written,
+   * this is the mirror, and a failure is a warning rather than a failed action.
+   */
+  const publishResolution = (assertion: Promise<Id<'resolutionAssertions'> | null>) => {
+    void (async () => {
+      const assertionId = await assertion
+      if (!assertionId) return
+      const token = usesEstivaId ? validToken() : null
+      if (!token) return
+      const built = await convex.query(api.nostr.outbox.unsignedResolution, { assertionId })
+      if (!built.ok) {
+        // Ordinary cases live here too — an unpublished target, a topic with no
+        // channel yet — so this is a debug line, not a failure.
+        console.warn('[nostr] resolution not published:', built.reason)
+        return
+      }
+      const eventId = await signAndPublish(built.unsigned, token)
+      if (eventId) await recordResolutionPublished({ assertionId, nostrEventId: eventId })
+    })().catch((error) => console.warn('[nostr] resolution publish failed:', error))
   }
 
   const persistMessage = (
@@ -344,7 +374,7 @@ export function usePeekActions() {
      *  matching the previous card behavior. */
     setResolution(id: string, resolved: boolean, resolvedBy?: string, message?: string) {
       m.setResolvedOverrides((prev) => ({ ...prev, [id]: { resolved, resolvedBy, message } }))
-      if (hasConvex) void setResolutionRemote({ key: id, resolved, resolutionMessage: message, dropReplyPointer: true })
+      if (hasConvex) publishResolution(setResolutionRemote({ key: id, resolved, resolutionMessage: message, dropReplyPointer: true }))
     },
 
     /** Thread-panel resolution edit: resolving keeps the reply pointer so the
@@ -360,7 +390,7 @@ export function usePeekActions() {
         }
         return { ...prev, [id]: { resolved: false } }
       })
-      if (hasConvex) void setResolutionRemote({ key: id, resolved, resolutionMessage: resolved ? message : undefined })
+      if (hasConvex) publishResolution(setResolutionRemote({ key: id, resolved, resolutionMessage: resolved ? message : undefined }))
     },
 
     // ── Replies ──

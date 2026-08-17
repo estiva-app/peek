@@ -23,6 +23,7 @@ import { v } from 'convex/values'
 import { action, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
+import { ASSERTION_SUBTYPE, KIND } from './events'
 import type { SignedEvent } from './events'
 import { viewerId } from '../users'
 
@@ -430,6 +431,74 @@ export const importReactions = action({
  * nothing when there is nothing new. The client calls it once after sign-in.
  */
 /** Who is still showing a placeholder. A query, so it costs no token. */
+/**
+ * Project resolution assertions from the channel (PEEK-128).
+ *
+ * A separate round trip from `importChannel`, like reactions, because an
+ * assertion can only be projected once its target message exists locally — and
+ * in a first sync the target arrives in that same call.
+ *
+ * Unknown authors are resolved the same way message authors are, so a
+ * resolution from someone with no Peek account still renders with a name.
+ * `importResolution` then records it as untrusted, which keeps it visible as
+ * history without letting it move Peek's own state.
+ */
+export const importResolutions = action({
+  args: { topicKey: v.string(), assertions: v.array(signedEvent) },
+  handler: async (ctx, { topicKey, assertions }): Promise<{ ok: boolean; imported?: number; reason?: string }> => {
+    const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
+    if (!viewer) return { ok: false, reason: 'not signed in' }
+    const topic = await ctx.runQuery(internal.nostr.data.syncableTopicByKey, { topicKey })
+    if (!topic) return { ok: false, reason: 'topic has no channel on the relay yet' }
+
+    const touched = new Set<string>()
+    let imported = 0
+
+    for (const e of assertions) {
+      if (e.kind !== KIND.ASSERTION) continue
+      const tag = (name: string) => e.tags.find((t) => t[0] === name)?.[1]
+      if (tag('t') !== ASSERTION_SUBTYPE.RESOLUTION) continue
+
+      const action = tag('action')
+      if (action !== 'resolved' && action !== 'reopened') continue
+
+      // The target is the first unmarked `e`; a marked one is the supporting
+      // reply. Both share the tag name, so order and marker are what separate
+      // them — see buildResolution.
+      const eTags = e.tags.filter((t) => t[0] === 'e')
+      const targetEventId = eTags.find((t) => t[3] !== 'support')?.[1]
+      if (!targetEventId) continue
+      const supportingEventId = eTags.find((t) => t[3] === 'support')?.[1]
+
+      const authorId = await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
+        nostrPubkey: e.pubkey,
+      })
+      const result = await ctx.runMutation(internal.nostr.data.importResolution, {
+        nostrEventId: e.id,
+        targetEventId,
+        authorId,
+        authorPubkey: e.pubkey,
+        action,
+        createdAtMs: e.created_at * 1000,
+        rationale: e.content || undefined,
+        supportingEventId,
+      })
+      if (result.imported) imported += 1
+      if (result.messageId) touched.add(result.messageId as string)
+    }
+
+    // Folded once per message, after the whole batch: assertions arrive in
+    // relay order, and folding mid-batch would briefly project a state the
+    // channel never actually held.
+    for (const messageId of touched) {
+      await ctx.runMutation(internal.nostr.data.refoldResolution, {
+        messageId: messageId as Id<'messages'>,
+      })
+    }
+    return { ok: true, imported }
+  },
+})
+
 export const pubkeysMissingProfile = query({
   args: {},
   handler: async (ctx): Promise<string[]> => {

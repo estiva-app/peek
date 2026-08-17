@@ -11,7 +11,7 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, query } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
-import { deleteAttachmentBlobs } from '../messages'
+import { applyResolutionProjection, deleteAttachmentBlobs } from '../messages'
 
 /** Topic plus the creator's id — the publish action needs both. */
 export const getTopic = internalQuery({
@@ -578,5 +578,77 @@ export const folderForTopic = query({
     const found = rows.find((t) => t.seedKey === topicKey)
     console.log(`[TRACE] folderForTopic: fallback found=${!!found}, found.channelUuid=${found?.channelUuid}`)
     return found?.channelUuid ?? null
+  },
+})
+
+/**
+ * Project a resolution assertion that arrived from the relay (PEEK-128).
+ *
+ * Idempotent on the event id, like `importMessage`: the id is a hash of the
+ * event's own content, so re-polling can never produce a second row. That
+ * matters more here than elsewhere — a duplicated assertion would not just
+ * clutter the history, it would fold identically and mask a genuine repeat.
+ *
+ * **Trust is decided here, once, and stored** (decision 4). An assertion whose
+ * author has no Peek account (`isExternal`) is recorded and renderable but is
+ * not allowed to move Peek's own resolved state. Judging it at write time
+ * rather than at read time is deliberate: re-judging later against changed
+ * membership would silently rewrite what the history says happened.
+ */
+export const importResolution = internalMutation({
+  args: {
+    nostrEventId: v.string(),
+    targetEventId: v.string(),
+    authorId: v.id('users'),
+    authorPubkey: v.string(),
+    action: v.union(v.literal('resolved'), v.literal('reopened')),
+    createdAtMs: v.number(),
+    rationale: v.optional(v.string()),
+    supportingEventId: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ imported: boolean; messageId?: Id<'messages'> }> => {
+    const existing = await ctx.db
+      .query('resolutionAssertions')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', args.nostrEventId))
+      .unique()
+    if (existing) return { imported: false, messageId: existing.messageId }
+
+    const target = await ctx.db
+      .query('messages')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', args.targetEventId))
+      .unique()
+    // An assertion about a message Peek has not imported is dropped rather than
+    // parked: the next sync brings both, and a row pointing at nothing cannot
+    // be folded or rendered.
+    if (!target) return { imported: false }
+
+    const author = await ctx.db.get(args.authorId)
+    const supporting = args.supportingEventId
+      ? await ctx.db
+          .query('replies')
+          .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', args.supportingEventId))
+          .unique()
+      : null
+
+    await ctx.db.insert('resolutionAssertions', {
+      messageId: target._id,
+      action: args.action,
+      authorId: args.authorId,
+      authorPubkey: args.authorPubkey,
+      createdAt: args.createdAtMs,
+      rationale: args.rationale,
+      supportingReplyId: supporting?._id,
+      trusted: !author?.isExternal,
+      nostrEventId: args.nostrEventId,
+    })
+    return { imported: true, messageId: target._id }
+  },
+})
+
+/** Re-fold a message's projection after assertions arrived from the relay. */
+export const refoldResolution = internalMutation({
+  args: { messageId: v.id('messages') },
+  handler: async (ctx, { messageId }) => {
+    await applyResolutionProjection(ctx, messageId)
   },
 })

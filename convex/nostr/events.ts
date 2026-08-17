@@ -45,6 +45,22 @@ export const KIND = {
   STREAM_MESSAGE: 9,
   NIP29_PUT_USER: 9000,
   NIP29_CREATE_GROUP: 9007,
+  /**
+   * Estiva assertion — a statement *about* something in the channel, rather
+   * than a message in it (PEEK-128). `resolution` is the first and, for now,
+   * only subtype; the `t` tag names it so later subtypes can join without a
+   * new kind.
+   *
+   * Estiva-specific rather than an existing NIP, deliberately: shipping the
+   * event matters more than finding a standard to fit into, and the shape
+   * leaves room to migrate later.
+   *
+   * The number sits in the **regular** range (1000–9999), which is what makes
+   * it stored and append-only. A replaceable kind would overwrite the previous
+   * assertion and destroy exactly the history this exists to keep. It clears
+   * NIP-29's 9000–9030 block on purpose.
+   */
+  ASSERTION: 9101,
   HTTP_AUTH: 27235,
 } as const
 
@@ -328,4 +344,106 @@ export function buildMessage(
     tags,
     content: args.content,
   }
+}
+
+/** Assertion subtypes. Only `resolution` exists today (PEEK-128). */
+export const ASSERTION_SUBTYPE = { RESOLUTION: 'resolution' } as const
+
+/** What a resolution assertion says happened. */
+export type ResolutionAction = 'resolved' | 'reopened'
+
+/** Rationale cap — the same 64 KiB ceiling a message content carries. */
+export const MAX_RATIONALE_BYTES = MAX_MESSAGE_BYTES
+
+/**
+ * kind:9101 resolution assertion — "this thread is resolved", said on the wire
+ * so any Estiva app reading the channel can see it (PEEK-128).
+ *
+ * **Append-only.** A reopen is another assertion, never a deletion of the
+ * resolve that preceded it; current state is folded from the ordered run, not
+ * read off a single canonical event. That is why this is a regular kind rather
+ * than a replaceable one — see `KIND.ASSERTION`.
+ *
+ * The event carries the claim and who made it. It does **not** carry authority:
+ * there is no "proposed" or "endorsed" mode here, because how much weight a
+ * given actor's assertion deserves is a policy question that belongs to the app
+ * reading it, not to the protocol. Peek's own trust rules live in the
+ * projection, not here.
+ *
+ * Tag order is fixed so the event id is reproducible: h, e(target), t, action,
+ * [e(support)].
+ */
+export function buildResolution(
+  pubkey: string,
+  createdAtMs: number,
+  args: {
+    channelUuid: string
+    /** Event id of the message whose resolution state this asserts. */
+    targetEventId: string
+    action: ResolutionAction
+    /** Optional reply that carried the resolution, for readers that want it. */
+    supportingEventId?: string
+    /** Optional free text — Peek's `resolutionMessage`. */
+    rationale?: string
+  },
+): UnsignedEvent {
+  assertHex64(pubkey, 'pubkey')
+  assertHex64(args.targetEventId, 'targetEventId')
+  if (args.supportingEventId) assertHex64(args.supportingEventId, 'supportingEventId')
+  if (args.action !== 'resolved' && args.action !== 'reopened') {
+    throw new Error(`unknown resolution action: ${String(args.action)}`)
+  }
+  const rationale = args.rationale ?? ''
+  const bytes = utf8ToBytes(rationale).length
+  if (bytes > MAX_RATIONALE_BYTES) {
+    throw new Error(`rationale is ${bytes} bytes, max ${MAX_RATIONALE_BYTES}`)
+  }
+
+  const tags: NostrTag[] = [
+    ['h', args.channelUuid],
+    ['e', args.targetEventId],
+    ['t', ASSERTION_SUBTYPE.RESOLUTION],
+    ['action', args.action],
+  ]
+  // Marked so a reader can tell the supporting reply from the target, which
+  // share the `e` tag name.
+  if (args.supportingEventId) tags.push(['e', args.supportingEventId, '', 'support'])
+
+  return {
+    pubkey,
+    created_at: toNostrSeconds(createdAtMs),
+    kind: KIND.ASSERTION,
+    tags,
+    content: rationale,
+  }
+}
+
+/**
+ * Fold an ordered run of resolution assertions into the state Peek renders.
+ *
+ * Ordering is by `created_at`, then event id as a tiebreak — two assertions can
+ * share a second, and without a stable tiebreak the same run would fold
+ * differently on different clients.
+ *
+ * **Trust is applied by the caller, not here.** Pass only the assertions whose
+ * authors the app is willing to let flip state (PEEK-128 decision 4); foreign
+ * ones can still be displayed as history without being fed to this.
+ */
+export function foldResolution(
+  assertions: Array<{
+    id: string
+    pubkey: string
+    created_at: number
+    action: ResolutionAction
+    rationale?: string
+  }>,
+): { resolved: boolean; byPubkey?: string; atSeconds?: number; rationale?: string } {
+  const ordered = [...assertions].sort(
+    (a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id),
+  )
+  const last = ordered[ordered.length - 1]
+  if (!last) return { resolved: false }
+  return last.action === 'resolved'
+    ? { resolved: true, byPubkey: last.pubkey, atSeconds: last.created_at, rationale: last.rationale || undefined }
+    : { resolved: false, byPubkey: last.pubkey, atSeconds: last.created_at }
 }
