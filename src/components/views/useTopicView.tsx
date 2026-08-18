@@ -115,9 +115,7 @@ export function useTopicView({
     api.nostr.data.folderForTopic,
     hasConvex && topicId != null ? { topicKey: topicId } : 'skip',
   )
-  console.log(`[TRACE] useTopicView: topicId=${topicId}, topicFolderIdQuery=${topicFolderIdQuery}, topic.folderId=${(topic as any)?.folderId}`)
   const topicFolderId = (topic as any)?.folderId ?? topicFolderIdQuery
-  console.log(`[TRACE] useTopicView: final topicFolderId=${topicFolderId}`)
 
   // Pull this channel as the viewer whenever the topic is opened.
   //
@@ -909,6 +907,5 @@ export function useTopicView({
     />
   ) : undefined
 
-  console.log(`[TRACE] useTopicView: returning folderId=${topicFolderId ?? null}`)
   return { rightPanel, threadPanel, folderId: topicFolderId ?? null }
 }

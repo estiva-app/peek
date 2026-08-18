@@ -30,7 +30,6 @@ export function useTopics(): Topic[] | undefined {
   if (remote === undefined || me === undefined) return undefined
   const mapped: Topic[] = remote.map((t) => {
     const folderId = (t as any).channelUuid ?? null
-    console.log(`[TRACE] useTopics: mapping topic id=${t.id}, channelUuid=${(t as any).channelUuid}, folderId=${folderId}`)
     return {
       id: t.id,
       title: t.title,
