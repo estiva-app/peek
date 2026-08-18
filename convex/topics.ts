@@ -45,12 +45,9 @@ async function findTopicByKey(ctx: MutationCtx, key: string): Promise<Doc<'topic
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    console.log(`[TRACE] topics.list: starting`)
     const topics = await ctx.db.query('topics').collect()
-    console.log(`[TRACE] topics.list: found ${topics.length} topics`)
     const out = []
     for (const t of topics) {
-      console.log(`[TRACE] topics.list: processing topic _id=${t._id}, seedKey=${t.seedKey}, channelUuid=${t.channelUuid}`)
       const members = await ctx.db
         .query('topicMembers')
         .withIndex('by_topic', (q) => q.eq('topicId', t._id))
@@ -71,7 +68,6 @@ export const list = query({
         .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', t._id as string))
         .collect()
       const isResolved = msgs.length > 0 && msgs.every((m) => m.resolved === true)
-      console.log(`[TRACE] topics.list: topic ${t.seedKey ?? t._id} has channelUuid=${t.channelUuid}`)
       out.push({
         id: t.seedKey ?? (t._id as string),
         title: t.title,
@@ -82,7 +78,6 @@ export const list = query({
         channelUuid: t.channelUuid ?? null,
       })
     }
-    console.log(`[TRACE] topics.list: returning ${out.length} topics`)
     return out.sort((a, b) => a.createdAt - b.createdAt)
   },
 })

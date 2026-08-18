@@ -35,11 +35,9 @@ export const storeChannelUuid = internalMutation({
     const t = await ctx.db.get(topicId)
     if (!t) throw new Error(`unknown topic ${topicId}`)
     if (t.channelUuid) {
-      console.log(`[TRACE] storeChannelUuid: topicId=${topicId} already has channelUuid=${t.channelUuid}`)
       return { channelUuid: t.channelUuid, minted: false }
     }
     await ctx.db.patch(topicId, { channelUuid })
-    console.log(`[TRACE] storeChannelUuid: persisted topicId=${topicId}, channelUuid=${channelUuid}`)
     return { channelUuid, minted: true }
   },
 })
@@ -559,16 +557,13 @@ export const getTopicMemberIds = internalQuery({
 export const folderForTopic = query({
   args: { topicKey: v.string() },
   handler: async (ctx, { topicKey }) => {
-    console.log(`[TRACE] folderForTopic: called with topicKey=${topicKey}`)
     // `topicKey` is the client-facing id: the stable seedKey where a topic has
     // one, otherwise the Convex `_id` (convex/schema.ts). Seeded topics carry a
     // seedKey, so taking a `v.id('topics')` here would reject exactly the
     // topics the demo uses.
     const normalized = ctx.db.normalizeId('topics', topicKey)
-    console.log(`[TRACE] folderForTopic: normalized=${normalized}`)
     if (normalized) {
       const doc = await ctx.db.get(normalized)
-      console.log(`[TRACE] folderForTopic: doc found=${!!doc}, doc.channelUuid=${doc?.channelUuid}`)
       if (doc) return doc.channelUuid ?? null
     }
     // No seedKey index on `topics`, so this mirrors `findTopicByKey` in
@@ -576,7 +571,6 @@ export const folderForTopic = query({
     // fallback path only.
     const rows = await ctx.db.query('topics').collect()
     const found = rows.find((t) => t.seedKey === topicKey)
-    console.log(`[TRACE] folderForTopic: fallback found=${!!found}, found.channelUuid=${found?.channelUuid}`)
     return found?.channelUuid ?? null
   },
 })
