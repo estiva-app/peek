@@ -99,8 +99,9 @@ export default {
     },
   },
   plugins: [
-    // `signal:` variant — active only under the .signal theme class. Today only
-    // Storybook ever applies .signal, so these styles are invisible in the app.
+    // `signal:` variant — active only under the .signal theme class. Signal is
+    // the app's only theme (2026-08-18), so these styles are what Peek looks
+    // like; Storybook can also select dark and Estiva ID from its toolbar.
     plugin(({ addVariant }) => addVariant('signal', '.signal &')),
   ],
 }

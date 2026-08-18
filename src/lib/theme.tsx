@@ -1,72 +1,50 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 
-export type Theme = 'light' | 'dark' | 'signal' | 'system'
-type ResolvedTheme = 'light' | 'dark' | 'signal'
+/**
+ * Peek ships one theme: Signal.
+ *
+ * Light, dark and system were removed from the app (2026-08-18) — not because
+ * the other palettes went away, but because offering them here made Signal one
+ * option among four rather than what the product looks like. **The `:root`
+ * (light) and `.dark` token blocks are deliberately kept in `index.css`**:
+ * Storybook still renders both, and the Estiva ID theme is built on the light
+ * palette. Nothing about the tokens was lost; only the picker was.
+ */
+export type Theme = 'signal'
 
-function resolveTheme(theme: Theme): ResolvedTheme {
-  if (theme === 'system') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  }
-  return theme
+/**
+ * Signal is a dark-based theme.
+ *
+ * `.dark` stays on so every `dark:` variant still applies, and `.signal` layers
+ * its palette and `signal:` variants on top. Dropping `.dark` here would
+ * silently disable a large fraction of the styling.
+ */
+function applyThemeClasses() {
+  document.documentElement.classList.add('dark', 'signal')
 }
 
-/** Signal is a dark-based theme: `.dark` stays on so every dark: variant
- *  applies, and `.signal` layers the palette + signal: variants on top. */
-function applyThemeClasses(resolved: ResolvedTheme) {
-  document.documentElement.classList.toggle('dark', resolved === 'dark' || resolved === 'signal')
-  document.documentElement.classList.toggle('signal', resolved === 'signal')
-}
+const ThemeContext = createContext<{ theme: Theme; resolved: Theme }>({
+  theme: 'signal',
+  resolved: 'signal',
+})
 
-const ThemeContext = createContext<{
-  theme: Theme
-  resolved: ResolvedTheme
-  setTheme: (t: Theme) => void
-  toggleTheme: () => void
-}>({ theme: 'signal', resolved: 'signal', setTheme: () => {}, toggleTheme: () => {} })
-
-// v2 key (2026-07-25): signal became the default. The old 'theme' key is
-// deliberately ignored — the app stamped it on every visit, so honoring it
-// would keep every previous visitor on dark even though they never chose it.
-// Choices made from here on persist under the new key as usual.
-const THEME_KEY = 'theme.v2'
+const VALUE = { theme: 'signal', resolved: 'signal' } as const
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    return (localStorage.getItem(THEME_KEY) as Theme) ?? 'signal'
-  })
-  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(
-    (localStorage.getItem(THEME_KEY) as Theme) ?? 'signal'
-  ))
-
   useEffect(() => {
-    const r = resolveTheme(theme)
-    setResolved(r)
-    applyThemeClasses(r)
-    localStorage.setItem(THEME_KEY, theme)
-  }, [theme])
+    /**
+     * Storybook drives the theme from its toolbar, on the same element.
+     *
+     * Stories that mount the app shell wrap in this provider, so without the
+     * guard the provider would stamp Signal over whatever the toolbar selected
+     * and the dark and Estiva ID themes would be unreachable in exactly the
+     * stories most worth looking at.
+     */
+    if (import.meta.env.STORYBOOK) return
+    applyThemeClasses()
+  }, [])
 
-  // Listen for OS preference changes when in system mode
-  useEffect(() => {
-    if (theme !== 'system') return
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = () => {
-      const r = resolveTheme('system')
-      setResolved(r)
-      applyThemeClasses(r)
-    }
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [theme])
-
-  const setTheme = (t: Theme) => setThemeState(t)
-  // Signal counts as the dark family: toggling from it goes to light.
-  const toggleTheme = () => setThemeState(t => (t === 'light' ? 'dark' : 'light'))
-
-  return (
-    <ThemeContext.Provider value={{ theme, resolved, setTheme, toggleTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  )
+  return <ThemeContext.Provider value={VALUE}>{children}</ThemeContext.Provider>
 }
 
 export const useTheme = () => useContext(ThemeContext)

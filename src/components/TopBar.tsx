@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { IconMenu2, IconHelpCircle, IconSun, IconMoon, IconBroadcast, IconDeviceDesktop, IconCheck, IconLogout, IconUser } from '@tabler/icons-react'
+import { IconMenu2, IconHelpCircle, IconLogout, IconUser } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
 import { IconButton } from './ui/IconButton'
 import { Avatar } from './ui/Avatar'
 import { SearchInput } from './ui/SearchInput'
 import { DebugMenu } from './DebugMenu'
 import { ProfileDialog } from './ProfileDialog'
-import { useTheme, type Theme } from '@/lib/theme'
 import { hasConvex, useCurrentUser, CURRENT_USER_NAME } from '@/api'
 
 interface TopBarProps {
@@ -16,15 +15,7 @@ interface TopBarProps {
   onSearchClick?: () => void
 }
 
-const THEME_OPTIONS: { value: Theme; label: string; icon: React.FC<{ size: number; stroke: number; className?: string }> }[] = [
-  { value: 'light', label: 'Light', icon: IconSun },
-  { value: 'dark', label: 'Dark', icon: IconMoon },
-  { value: 'signal', label: 'Signal', icon: IconBroadcast },
-  { value: 'system', label: 'System', icon: IconDeviceDesktop },
-]
-
 export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
-  const { theme, setTheme } = useTheme()
   const signOut = useSignOut()
   const me = useCurrentUser()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -99,7 +90,7 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
         </button>
       </div>
 
-      {/* Theme menu */}
+      {/* Avatar menu: identity, profile, sign out */}
       {menuOpen && rect && createPortal(
         <div
           ref={menuRef}
@@ -127,28 +118,6 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               <div className="border-t border-border-subtle my-1" />
             </>
           )}
-          <div className="flex items-center h-7 px-3">
-            <span className="text-[12px] font-medium leading-none text-text-secondary signal:font-mono signal:text-[10px] signal:uppercase signal:tracking-[0.14em]">Theme</span>
-          </div>
-          {THEME_OPTIONS.map((opt) => {
-            const Icon = opt.icon
-            const active = theme === opt.value
-            return (
-              <div
-                key={opt.value}
-                className="flex items-center gap-3 h-9 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover min-w-[160px]"
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  setTheme(opt.value)
-                  setMenuOpen(false)
-                }}
-              >
-                <Icon size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-                <span className="flex-1 text-[14px] font-normal leading-[1.4] text-text-primary">{opt.label}</span>
-                {active && <IconCheck size={16} stroke={1.5} className="text-text-primary shrink-0" />}
-              </div>
-            )
-          })}
           {/* Sign out (Convex mode only) */}
           {hasConvex && (
             <>

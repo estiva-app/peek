@@ -135,7 +135,16 @@
   font-weight: 600;
 }
 
-/* ─── Light theme (default) ─── */
+/*
+ * ─── Light theme ───
+ *
+ * Peek itself only ever renders Signal (see `src/lib/theme.tsx`), so nothing in
+ * the app applies this block. **Keep it anyway.** It is the base every other
+ * theme overrides — the non-colour tokens below it (typography, spacing, radii)
+ * are shared by all three — and it is the palette the Estiva ID theme uses in
+ * Storybook, where the account screens are designed. Deleting it would take the
+ * light and Estiva ID themes with it.
+ */
 :root {
   /* bg */
   --bg-base:     #F4F4F5;
@@ -193,7 +202,13 @@
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10);
 }
 
-/* ─── Dark theme ─── */
+/*
+ * ─── Dark theme ───
+ *
+ * Signal layers on top of this rather than replacing it, so `.dark` is applied
+ * for both and these values are live in the app wherever Signal does not
+ * override them. Also reachable on its own from Storybook's theme toolbar.
+ */
 .dark {
   /* bg */
   --bg-base:     #09090B;
