@@ -8,27 +8,21 @@
  * @module
  */
 
-import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as desk from "../desk.js";
 import type * as dev_bulk from "../dev/bulk.js";
 import type * as dev_seedDates from "../dev/seedDates.js";
 import type * as dev_seedDemo from "../dev/seedDemo.js";
-import type * as http from "../http.js";
 import type * as huddles from "../huddles.js";
 import type * as identityProbe from "../identityProbe.js";
 import type * as messages from "../messages.js";
-import type * as nostr_act from "../nostr/act.js";
-import type * as nostr_bridge from "../nostr/bridge.js";
 import type * as nostr_config from "../nostr/config.js";
 import type * as nostr_data from "../nostr/data.js";
 import type * as nostr_events from "../nostr/events.js";
-import type * as nostr_foreign from "../nostr/foreign.js";
 import type * as nostr_nip19 from "../nostr/nip19.js";
 import type * as nostr_nip98 from "../nostr/nip98.js";
 import type * as nostr_outbox from "../nostr/outbox.js";
 import type * as nostr_projection from "../nostr/projection.js";
-import type * as nostr_publish from "../nostr/publish.js";
 import type * as nostr_refs from "../nostr/refs.js";
 import type * as nostr_sign from "../nostr/sign.js";
 import type * as nostr_sync from "../nostr/sync.js";
@@ -47,27 +41,21 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  auth: typeof auth;
   crons: typeof crons;
   desk: typeof desk;
   "dev/bulk": typeof dev_bulk;
   "dev/seedDates": typeof dev_seedDates;
   "dev/seedDemo": typeof dev_seedDemo;
-  http: typeof http;
   huddles: typeof huddles;
   identityProbe: typeof identityProbe;
   messages: typeof messages;
-  "nostr/act": typeof nostr_act;
-  "nostr/bridge": typeof nostr_bridge;
   "nostr/config": typeof nostr_config;
   "nostr/data": typeof nostr_data;
   "nostr/events": typeof nostr_events;
-  "nostr/foreign": typeof nostr_foreign;
   "nostr/nip19": typeof nostr_nip19;
   "nostr/nip98": typeof nostr_nip98;
   "nostr/outbox": typeof nostr_outbox;
   "nostr/projection": typeof nostr_projection;
-  "nostr/publish": typeof nostr_publish;
   "nostr/refs": typeof nostr_refs;
   "nostr/sign": typeof nostr_sign;
   "nostr/sync": typeof nostr_sync;
