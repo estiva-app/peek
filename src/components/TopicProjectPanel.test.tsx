@@ -25,7 +25,12 @@ const projectActions: ForeignObject['actions'] = [
       { value: 'in_progress', label: 'In Progress' },
     ],
   },
-  { id: 'assign-project', label: 'Assign', control: 'pubkey', field: 'lead' },
+  /*
+   * `current` is who holds the field now — `buildObject` fills it from the fold
+   * or the root event's tag. Without it this fixture was a project with no lead
+   * at all, which is why nothing here noticed the control was showing a key.
+   */
+  { id: 'assign-project', label: 'Assign', control: 'pubkey', field: 'lead', current: 'b'.repeat(64) },
   // Declared for this kind, but a comment box would compete with the
   // conversation alongside; the panel does not draw it.
   { id: 'comment', label: 'Comment', control: 'text' },
@@ -60,6 +65,8 @@ function folderProject(overrides: Partial<FolderProject> = {}): FolderProject {
       },
       meta: [{ label: 'Lead', value: 'b'.repeat(64), isPubkey: true, field: 'lead' }],
       comments: [],
+      // Who the lead is, resolved with the object (FEE-1).
+      people: { ['b'.repeat(64)]: { displayName: 'Jan Miky' } },
       actions: projectActions,
       openUrl: 'http://localhost:5190/linear-lite/#/o/naddr1project',
       viaRecommendation: true,
@@ -125,7 +132,20 @@ describe('TopicProjectPanelView', () => {
     // Never a dead control: the owning app has not said these may be set here.
     expect(screen.queryByLabelText('Change status')).not.toBeInTheDocument()
     expect(screen.getByText('Status')).toBeInTheDocument()
-    expect(screen.getByText(`${'b'.repeat(8)}…`)).toBeInTheDocument()
+    // A person, whether or not this viewer may reassign them.
+    expect(screen.getByText('Jan Miky')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('bbbbbbbb')
+  })
+
+  it('names the lead on the control that reassigns them', async () => {
+    render(<TopicProjectPanelView folderProject={folderProject()} onAct={vi.fn()} />)
+
+    // The assign control both reports the lead and sets it, so this is the only
+    // place the lead appears in the live panel — and it showed eight characters
+    // of a key until FEE-1.
+    const assign = await screen.findByRole('button', { name: 'Assign to me' })
+    expect(assign).toHaveTextContent('Jan Miky')
+    expect(document.body.textContent).not.toContain('bbbbbbbb')
   })
 
   it('counts finished against the total, and keeps the table shut until asked', () => {

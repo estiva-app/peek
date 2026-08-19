@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
+import type {
+  ForeignObject,
+  People,
+  ResolvedAction,
+  ResolvedSlot,
+} from '../../../convex/nostr/projection'
 import { hasConvex, useForeignObjects } from '@/api'
 import { cn } from '@/lib/utils'
 import { Button } from './Button'
+import { Person } from './Person'
 import { Select } from './Select'
 import { SkeletonBar } from './Skeleton'
 
@@ -60,22 +66,28 @@ export function StatusPill({ slot }: { slot: ResolvedSlot }) {
   )
 }
 
-/**
- * A person, not 64 hex characters.
- *
- * Peek has profiles; until one is resolved, an abbreviation beats the raw key.
- * Shared by the meta line and the assignee control so a key never abbreviates
- * two different ways in one card.
- */
-const asPerson = (pubkey: string) => `${pubkey.slice(0, 8)}…`
+function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
+  /*
+   * `as: "pubkey"` tells us to show a person rather than the key itself — their
+   * face and their name, not eight characters of it.
+   *
+   * And no "Assignee:" in front of it (Katerina, 2026-08-19). A face beside a
+   * name is self-evidently a person; captioning it says out loud what the
+   * picture already said, and in a row widget that caption costs the width the
+   * title needs.
+   */
+  // The meta line's own size and tone: dropping the caption must not promote
+  // the value to body text beside the `PAY-1`s it sits with.
+  if (slot.isPubkey) {
+    return (
+      <Person pubkey={slot.value} people={people} className="text-xs text-text-secondary" />
+    )
+  }
 
-function Meta({ slot }: { slot: ResolvedSlot }) {
-  // `as: "pubkey"` tells us to show a person rather than the key itself.
-  const value = slot.isPubkey ? asPerson(slot.value) : slot.value
   return (
     <span className="text-xs text-text-secondary">
       {slot.label ? `${slot.label}: ` : ''}
-      {value}
+      {slot.value}
     </span>
   )
 }
@@ -90,22 +102,16 @@ function Meta({ slot }: { slot: ResolvedSlot }) {
  */
 export function ActionControl({
   action,
+  people,
   busy = false,
   onAct,
-  labelled = true,
   className,
 }: {
   action: ResolvedAction
+  /** Only read by the `pubkey` control, which names who holds the field now. */
+  people?: People
   busy?: boolean
   onAct: (actionId: string, value: string) => void
-  /**
-   * Whether the control names the field it sets.
-   *
-   * True in a card, where a lone `ana…` button would say nothing about what it
-   * does. False in the sidebar's property rows, where the field already has a
-   * label in the column to the left and repeating it reads as a stutter.
-   */
-  labelled?: boolean
   className?: string
 }) {
   const [draft, setDraft] = useState('')
@@ -151,11 +157,17 @@ export function ActionControl({
         onClick={() => onAct(action.id, '@me')}
         className={className}
       >
-        {action.current
-          ? labelled
-            ? `${action.label}: ${asPerson(action.current)}`
-            : asPerson(action.current)
-          : `${action.label} to me`}
+        {/*
+         * Who holds it, with nothing said about it — the same rule as the meta
+         * line. Unassigned still needs words, because there is no face to read
+         * and "press this to take it" is not something an empty control can
+         * convey on its own.
+         */}
+        {action.current ? (
+          <Person pubkey={action.current} people={people} />
+        ) : (
+          `${action.label} to me`
+        )}
       </Button>
     )
   }
@@ -183,11 +195,13 @@ export function ActionControl({
 
 function Actions({
   actions,
+  people,
   busy,
   error,
   onAct,
 }: {
   actions: ResolvedAction[]
+  people?: People
   busy: boolean
   error?: string
   onAct: (actionId: string, value: string) => void
@@ -198,7 +212,13 @@ function Actions({
     <div className="mt-2 border-t border-border-subtle pt-2">
       <div className="flex flex-wrap items-center gap-2">
         {actions.map((action) => (
-          <ActionControl key={action.id} action={action} busy={busy} onAct={onAct} />
+          <ActionControl
+            key={action.id}
+            action={action}
+            people={people}
+            busy={busy}
+            onAct={onAct}
+          />
         ))}
       </div>
       {error && <p className="mt-1 text-xs text-error-default">{error}</p>}
@@ -333,7 +353,7 @@ export function ForeignObjectCard({
           {visibleMeta.length > 0 && (
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
               {visibleMeta.map((slot, i) => (
-                <Meta key={i} slot={slot} />
+                <Meta key={i} slot={slot} people={object.people} />
               ))}
             </div>
           )}
@@ -346,7 +366,15 @@ export function ForeignObjectCard({
         </span>
       </div>
 
-      {onAct && <Actions actions={actions} busy={busy} error={error} onAct={onAct} />}
+      {onAct && (
+        <Actions
+          actions={actions}
+          people={object.people}
+          busy={busy}
+          error={error}
+          onAct={onAct}
+        />
+      )}
     </div>
   )
 }

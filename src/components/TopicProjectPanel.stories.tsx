@@ -20,6 +20,16 @@ import { TopicProjectPanelView } from './TopicProjectPanel'
  */
 const person = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 
+/**
+ * Who that key belongs to, resolved from their kind:0 alongside the object.
+ *
+ * The name is a demo person's on purpose: `Avatar` falls back to the seeded
+ * portraits when the relay holds no picture, so a story written this way shows
+ * a real face instead of a silhouette — which is the thing worth looking at
+ * here.
+ */
+const people = { [person]: { displayName: 'Amie Miles' } }
+
 const object = (
   id: string,
   title: string,
@@ -38,7 +48,10 @@ const object = (
       subtitle: { value: id.toUpperCase() },
       status: { label: 'Status', value: status, colour, field: 'status' },
     },
-    meta: [{ label: 'Assignee', value: `${person.slice(0, 8)}…`, isPubkey: true, field: 'assignee' }],
+    // The whole key, as a slot really carries it — abbreviating it in the
+    // fixture is what let a truncated key look correct here for so long.
+    meta: [{ label: 'Assignee', value: person, isPubkey: true, field: 'assignee' }],
+    people,
     comments: [],
     folder: 'b1d2c3e4-5f60-4718-a93a-4b5c6d7e8f90',
     /*
@@ -65,7 +78,8 @@ const project = object('fee', 'Feedback on Peek', 'In Progress', 'blue', {
     title: { value: 'Feedback on Peek', field: 'title' },
     status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' },
   },
-  meta: [{ label: 'Lead', value: `${person.slice(0, 8)}…`, isPubkey: true, field: 'lead' }],
+  meta: [{ label: 'Lead', value: person, isPubkey: true, field: 'lead' }],
+  people,
   openUrl: 'https://ship.estiva.app/#/project/fee',
 })
 
@@ -178,11 +192,51 @@ export const WithControls: Story = {
               { value: 'cancelled', label: 'Cancelled' },
             ],
           },
-          { id: 'set-lead', label: 'Lead', control: 'pubkey', field: 'lead' },
+          // `current` is who holds it now. The control both reports and sets
+          // the lead, so this is the *only* place the lead appears once a
+          // viewer can act — and it is what FEE-1 found showing a key.
+          { id: 'set-lead', label: 'Assign', control: 'pubkey', field: 'lead', current: person },
         ],
       },
     },
     onAct: () => {},
+  },
+}
+
+/**
+ * A lead nobody has published a name for.
+ *
+ * Rare — Estiva ID writes a profile at signup — but it must not put the key
+ * back on screen when it happens. The silhouette says there *is* somebody here
+ * and the em dash says we cannot name them, which is the same mark this panel
+ * already uses for a property with no value.
+ */
+export const LeadWithoutProfile: Story = {
+  args: {
+    folderProject: { ...full, project: { ...project, people: {} } },
+  },
+}
+
+/**
+ * **Nobody leads it yet** — the same control with no face to show.
+ *
+ * The one place words are still needed: a silhouette cannot say "press this to
+ * take it". Once someone holds it the control becomes their face and name, as
+ * in the story above.
+ */
+export const NoLeadYet: Story = {
+  args: {
+    ...WithControls.args,
+    folderProject: {
+      ...full,
+      project: {
+        ...project,
+        meta: [],
+        // "Assign", not "Lead": the label is the verb the control performs, and
+        // the property column beside it already says which field that is.
+        actions: [{ id: 'set-lead', label: 'Assign', control: 'pubkey', field: 'lead' }],
+      },
+    },
   },
 }
 

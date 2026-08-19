@@ -6,6 +6,7 @@ import type { FolderProject, ForeignObject, ResolvedSlot } from '../../convex/no
 import { hasConvex, useForeignObjects } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
+import { Person } from '@/components/ui/Person'
 import { SkeletonBar } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 
@@ -104,10 +105,22 @@ function Properties({
       {rows.map((row) => (
         <Property key={row.key} label={row.slot?.label ?? fieldLabel(row.field)}>
           {row.action && onAct ? (
-            <ActionControl action={row.action} busy={busy} onAct={onAct} labelled={false} />
+            <ActionControl
+              action={row.action}
+              people={object.people}
+              busy={busy}
+              onAct={onAct}
+            />
           ) : row.slot ? (
-            <span className="text-xs text-text-secondary">
-              {row.slot.isPubkey ? `${row.slot.value.slice(0, 8)}…` : row.slot.value}
+            // A pubkey is a person: their face and their full name, never the
+            // key (FEE-1). Both paths go through `Person`, so the lead reads the
+            // same whether or not this viewer may reassign it.
+            <span className="min-w-0 text-xs text-text-secondary">
+              {row.slot.isPubkey ? (
+                <Person pubkey={row.slot.value} people={object.people} />
+              ) : (
+                row.slot.value
+              )}
             </span>
           ) : (
             <span className="text-xs text-text-muted">—</span>

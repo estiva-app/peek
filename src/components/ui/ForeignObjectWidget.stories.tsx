@@ -14,6 +14,8 @@ import { ForeignObjectCard, ForeignObjectSkeleton } from './ForeignObjectWidget'
  * NIP-89 manifest declares: a title, a status, some meta, and the controls it
  * says are allowed.
  */
+const PERSON = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
+
 const issue: ForeignObject = {
   address: '30851:a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697:fee-1',
   naddr: 'naddr1qqjxxcny8yexydp495enjces956x2vec95uk2ety94nxydeexc6nver9xycrz',
@@ -25,7 +27,18 @@ const issue: ForeignObject = {
     subtitle: { value: 'FEE-1' },
     status: { label: 'Status', value: 'Todo', colour: 'neutral', field: 'status' },
   },
-  meta: [{ label: 'Assignee', value: 'a8a7d739…', isPubkey: true, field: 'assignee' }],
+  /*
+   * The whole key, as a resolved slot really carries it — the fixture used to
+   * hold a pre-truncated one, which made a bug look like the design.
+   */
+  meta: [{ label: 'Assignee', value: PERSON, isPubkey: true, field: 'assignee' }],
+  /*
+   * Who that key belongs to, resolved from their kind:0 with the object (FEE-1).
+   * A demo person's name on purpose: with no picture on the relay, `Avatar`
+   * falls back to the seeded portraits, so the story shows a face rather than a
+   * silhouette.
+   */
+  people: { [PERSON]: { displayName: 'Amie Miles' } },
   comments: [],
   folder: 'b1d2c3e4-5f60-4718-a93a-4b5c6d7e8f90',
   openUrl: 'https://ship.estiva.app/#/issue/fee-1',
@@ -44,11 +57,18 @@ const issue: ForeignObject = {
         { value: 'cancelled', label: 'Cancelled' },
       ],
     },
-    { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee' },
+    { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee', current: PERSON },
   ],
   // The author's own NIP-89 recommendation named the handler, rather than Peek
   // guessing one from the kind.
   viaRecommendation: true,
+}
+
+/** The same issue with nobody on it — the assign control has no face to show. */
+const unassigned: ForeignObject = {
+  ...issue,
+  meta: [],
+  actions: issue.actions.map((a) => (a.control === 'pubkey' ? { ...a, current: undefined } : a)),
 }
 
 const meta = {
@@ -81,10 +101,33 @@ export const Resolved: Story = {
 }
 
 /**
+ * **Assigned** — the person is the control (FEE-1).
+ *
+ * Their face and full name, with nothing captioning it: a face beside a name is
+ * self-evidently a person, and "Assignee:" in front only repeats the picture.
+ * It stays a button, because pressing it is how the assignee changes — and it
+ * is where a proper picker will go (PEE-1).
+ */
+export const Assigned: Story = {
+  args: { object: issue, onAct: () => {} },
+}
+
+/**
+ * **Unassigned** — nobody holds it, so there is no face to show.
+ *
+ * The one case that still needs words: an empty control cannot convey "press
+ * this to take it" with a silhouette alone.
+ */
+export const Unassigned: Story = {
+  args: { object: unassigned, onAct: () => {} },
+}
+
+/**
  * Read-only — no controls, because none were passed.
  *
- * This is the Files panel's rendering. Note the status and assignee labels come
- * back: with no picker to defer to, the card states the facts itself.
+ * This is a viewer who cannot change anything. The status label comes back —
+ * with no picker to defer to, the card states the fact itself — but the
+ * assignee is still just a face and a name, unpressable.
  */
 export const ReadOnly: Story = {
   args: { object: issue },
