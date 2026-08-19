@@ -62,6 +62,11 @@ interface UseTopicViewArgs {
    *  appears where it cannot do anything. */
   onToggleFolderPanel?: () => void
   folderPanelOpen?: boolean
+  /** Opens this topic's details dialog from the header's more-menu (PEE-2).
+   *  The page owns the dialog, because the sidebar rows open the same one. */
+  onOpenDetails?: () => void
+  /** Deleting from inside the topic, not only from its row in the list. */
+  onDeleteTopic?: () => void
 }
 
 interface ViewSlots {
@@ -86,6 +91,8 @@ export function useTopicView({
   selectedHuddleId: externalSelectedHuddleId = null,
   onToggleFolderPanel,
   folderPanelOpen = false,
+  onOpenDetails,
+  onDeleteTopic,
 }: UseTopicViewArgs): ViewSlots {
   const [activeTab, setActiveTab] = useState<TopicTab>('conversations')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -458,6 +465,8 @@ export function useTopicView({
             ? openWorkTopicIds.has(topicId) ? 'remove' : 'add'
             : undefined
         }
+        onOpenDetails={!isV2HuddleView && topicId != null ? onOpenDetails : undefined}
+        onDeleteTopic={!isV2HuddleView && topicId != null ? onDeleteTopic : undefined}
         onToggleOpenWork={
           !isV2HuddleView && topicId != null
             ? () => {

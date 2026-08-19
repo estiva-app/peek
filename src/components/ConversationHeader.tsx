@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare, IconLayoutSidebarRight, IconLayoutSidebarRightFilled } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
+import { TopicMoreMenu } from './ui/TopicMoreMenu'
 import { AvatarGroup } from './ui/AvatarGroup'
 import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
@@ -52,6 +53,13 @@ interface ConversationHeaderProps {
    *  3-dot stays inert, exactly as before. */
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
+  /** Opens the topic details dialog (PEE-2) — the same menu item the sidebar
+   *  row offers, so a topic reads the same from either end. */
+  onOpenDetails?: () => void
+  /** Deleting used to be reachable from the sidebar row only, so a topic could
+   *  be deleted from the list but not from inside itself. One menu, both
+   *  places (PEE-2). */
+  onDeleteTopic?: () => void
   tabs?: ReactNode
   className?: string
 }
@@ -72,6 +80,8 @@ export function ConversationHeader({
   onShowMembers,
   openWorkAction,
   onToggleOpenWork,
+  onOpenDetails,
+  onDeleteTopic,
   tabs,
   className,
   folderId,
@@ -87,24 +97,8 @@ export function ConversationHeader({
 
   // "More actions" menu (portalled). Menu rules: outside click + Escape close.
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const hasMoreMenu = !!(openWorkAction && onToggleOpenWork)
+  const hasMoreMenu = !!onOpenDetails || !!onDeleteTopic || !!(openWorkAction && onToggleOpenWork)
 
-  useEffect(() => {
-    if (!menuPos) return
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuPos(null)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuPos(null)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menuPos])
 
   const openMoreMenu = (e: React.MouseEvent) => {
     if (!hasMoreMenu) return
@@ -223,30 +217,16 @@ export function ConversationHeader({
         </div>
       </div>
 
-      {menuPos &&
-        hasMoreMenu &&
-        createPortal(
-          <div
-            ref={menuRef}
-            data-interactive
-            className="fixed z-50 bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2 flex flex-col w-[220px]"
-            style={{ top: menuPos.top, right: menuPos.right }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
-              onClick={() => {
-                setMenuPos(null)
-                onToggleOpenWork?.()
-              }}
-            >
-              <span className="flex-1 text-sm truncate text-text-secondary signal:text-text-primary">
-                {openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}
-              </span>
-            </div>
-          </div>,
-          document.body
-        )}
+      {menuPos && hasMoreMenu && (
+        <TopicMoreMenu
+          position={menuPos}
+          onClose={() => setMenuPos(null)}
+          onOpenDetails={onOpenDetails}
+          openWorkAction={openWorkAction}
+          onToggleOpenWork={onToggleOpenWork}
+          onDeleteTopic={onDeleteTopic}
+        />
+      )}
 
       {/* Row 2: tabs */}
       {tabs && (

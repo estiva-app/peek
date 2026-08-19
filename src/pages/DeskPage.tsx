@@ -2,6 +2,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { IconChevronRight, IconPlus, IconSortDescending } from '@tabler/icons-react'
 import { AppShell } from '@/layouts/AppShell'
+import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { Divider } from '@/components/ui/Divider'
 import { SectionLabel } from '@/components/ui/SectionHeader'
@@ -212,6 +213,9 @@ export function DeskPage() {
    * shows it, which read as the topic having no linked project at all.
    */
   const [folderPanelOpen, setFolderPanelOpen] = useState(true)
+  /** Which topic's details are open. Desk offers the same header menu Topics
+   *  does — a topic opened from here is the same topic (PEE-2). */
+  const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
   const topicView = useTopicView({
     topicId: selected?.kind === 'topic' ? selected.topicId : null,
     topicTitle: selected?.kind === 'topic' ? selected.topicTitle : undefined,
@@ -219,6 +223,8 @@ export function DeskPage() {
     showUnreads: showTopicUnreads,
     onToggleFolderPanel: hasConvex ? () => setFolderPanelOpen((v) => !v) : undefined,
     folderPanelOpen,
+    onOpenDetails:
+      selected?.kind === 'topic' ? () => setDetailsTopicId(selected.topicId) : undefined,
   })
 
   const rightPanel = selected?.kind === 'dm' ? dmView.rightPanel : topicView.rightPanel
@@ -239,6 +245,9 @@ export function DeskPage() {
 
   return (
     <>
+    {detailsTopicId && (
+      <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
+    )}
     <AppShell
       leftPanel={
         <div className="flex flex-col h-full">
