@@ -428,3 +428,85 @@ describe('resolveFolderProject', () => {
     expect(found?.tickets.map((t) => t.slots.title.value)).toEqual(['Visit the north site'])
   })
 })
+
+/**
+ * Who the people on another app's objects actually are (FEE-1).
+ *
+ * A manifest says a slot holds a pubkey; it never says whose. The name and face
+ * come from kind:0 — the same place the message list gets them — and are
+ * resolved *with* the object rather than after it, so a renderer never has a
+ * key on screen while it waits for a lookup.
+ */
+describe('resolveFolderProject — people', () => {
+  const LEAD = 'b'.repeat(64)
+
+  const profile = (pubkey: string, fields: Record<string, string>) =>
+    event({ kind: 0, pubkey, content: JSON.stringify(fields) })
+
+  it('names the lead from their kind:0', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        manifest(),
+        project('p1'),
+        profile(LEAD, { display_name: 'Jan Miky', picture: 'https://example.com/j.png' }),
+      ]),
+    )
+
+    expect(found?.project.people?.[LEAD]).toEqual({
+      displayName: 'Jan Miky',
+      picture: 'https://example.com/j.png',
+    })
+  })
+
+  it('reads `name` as well as `display_name`, because both are published', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([manifest(), project('p1'), profile(LEAD, { name: 'Jan Miky' })]),
+    )
+
+    expect(found?.project.people?.[LEAD]?.displayName).toBe('Jan Miky')
+  })
+
+  it('leaves someone unknown rather than inventing a name for them', async () => {
+    // Nobody published a profile. The object still resolves — a missing name
+    // costs a name, never the panel.
+    const found = await resolveFolderProject(FOLDER, relay([manifest(), project('p1')]))
+
+    expect(found?.project.slots.title.value).toBe('Payment integration')
+    expect(found?.project.people?.[LEAD]?.displayName).toBeUndefined()
+  })
+
+  it('asks about the lead even though only an action holds them', async () => {
+    /*
+     * The sidebar renders the lead *inside* the assign control, so `current` is
+     * the only place that pubkey appears once a viewer can act. Collecting
+     * pubkeys from slots alone would leave exactly the control FEE-1 was filed
+     * about still showing a key.
+     */
+    const asked: string[][] = []
+    await resolveFolderProject(FOLDER, relay([manifest(), project('p1')]), async (pubkeys) => {
+      asked.push(pubkeys)
+      return {}
+    })
+
+    expect(asked.flat()).toContain(LEAD)
+  })
+
+  it('shares one lookup across the project and its tickets', async () => {
+    // One round trip, not one per object — and every object carries the answer,
+    // so a renderer that starts naming assignees needs no second trip.
+    const calls: string[][] = []
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([manifest(), project('p1'), issue('t1', 'Billing entry')]),
+      async (pubkeys) => {
+        calls.push(pubkeys)
+        return { [LEAD]: { displayName: 'Jan Miky' } }
+      },
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(found?.tickets[0].people?.[LEAD]?.displayName).toBe('Jan Miky')
+  })
+})

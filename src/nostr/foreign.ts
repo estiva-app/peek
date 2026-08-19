@@ -24,11 +24,14 @@ import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { pointerToAddress, referenceToPointer } from '../../convex/nostr/nip19'
 import {
   buildActionEvent,
+  peopleViaRelay,
   resolveFolderProject,
   resolveForeignObject,
   resolveManifest,
   type FolderProject,
   type ForeignObject,
+  type People,
+  type PeopleFn,
   type QueryFn,
 } from '../../convex/nostr/projection'
 
@@ -47,6 +50,34 @@ function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
 }
 
 /**
+ * Profiles already looked up this session (FEE-1).
+ *
+ * A topic with ten reference widgets resolves ten times, each one asking who
+ * the same handful of people are. Module-level rather than per-call, so the
+ * sidebar and every widget in the conversation share one answer.
+ *
+ * Misses are cached too — someone with no published profile would otherwise be
+ * asked about on every single resolve, which is the common case for anyone who
+ * has not finished setting up their Estiva ID. The cost is that a profile
+ * published mid-session appears on the next reload rather than immediately,
+ * which is the right way round for something read this often and changed this
+ * rarely.
+ */
+const knownPeople = new Map<string, People[string]>()
+
+function cachedPeople(query: QueryFn): PeopleFn {
+  const fromRelay = peopleViaRelay(query)
+  return async (pubkeys) => {
+    const unknown = pubkeys.filter((key) => !knownPeople.has(key))
+    if (unknown.length > 0) {
+      const found = await fromRelay(unknown)
+      for (const key of unknown) knownPeople.set(key, found[key] ?? {})
+    }
+    return Object.fromEntries(pubkeys.map((key) => [key, knownPeople.get(key) ?? {}]))
+  }
+}
+
+/**
  * Resolve a `nostr:naddr…` into a renderable widget.
  *
  * `null` when it cannot be resolved — a broken reference in a message degrades
@@ -57,7 +88,8 @@ export async function resolveObjectAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<ForeignObject | null> {
-  return resolveForeignObject(naddr, viewerQuery(relayUrl, token))
+  const query = viewerQuery(relayUrl, token)
+  return resolveForeignObject(naddr, query, cachedPeople(query))
 }
 
 /**
@@ -71,7 +103,8 @@ export async function resolveFolderProjectAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FolderProject | null> {
-  return resolveFolderProject(folder, viewerQuery(relayUrl, token))
+  const query = viewerQuery(relayUrl, token)
+  return resolveFolderProject(folder, query, cachedPeople(query))
 }
 
 /**

@@ -13,7 +13,7 @@
  * thing the whole exercise argues against.
  */
 import { encodeNaddr, pointerToAddress, referenceToPointer, type AddressPointer } from './nip19'
-import type { SignedEvent } from './events'
+import { parseProfile, type Profile, type SignedEvent } from './events'
 
 /** Query the relay. Returns matching events; shape mirrors the HTTP bridge. */
 export type QueryFn = (filters: Record<string, unknown>[]) => Promise<SignedEvent[]>
@@ -26,6 +26,68 @@ export interface UnsignedActionEvent {
   tags: string[][]
   content: string
 }
+
+/**
+ * The people named on another app's objects (FEE-1).
+ *
+ * A manifest says a slot holds a pubkey; it never says whose. Peek showed the
+ * first eight characters of the key, which is not a person — it is the thing a
+ * person is behind. The name and face come from kind:0, the same place the
+ * message list already gets them, so the same person reads the same way in both.
+ *
+ * Keyed by pubkey. A key that resolves to nothing is simply absent, and the
+ * renderer decides what an unknown person looks like.
+ */
+export type People = Record<string, Profile>
+
+/**
+ * Looking people up, as a seam rather than a direct call.
+ *
+ * The browser puts a session cache in front of this: a topic with ten reference
+ * widgets resolves ten times, and it is the same handful of people every time.
+ * Tests and Storybook pass a fixture instead and never touch a relay.
+ */
+export type PeopleFn = (pubkeys: string[]) => Promise<People>
+
+/** The default: one kind:0 query, straight to the relay. */
+export function peopleViaRelay(query: QueryFn): PeopleFn {
+  return async (pubkeys) => {
+    if (pubkeys.length === 0) return {}
+    const events = await query([
+      { kinds: [KIND_PROFILE], authors: pubkeys, limit: pubkeys.length },
+    ])
+    const people: People = {}
+    // Oldest first, so a newer profile overwrites an older one. kind:0 is
+    // replaceable and the relay should hold one per author, but ordering the
+    // fold is cheaper than trusting that.
+    for (const event of [...events].sort(byOrder)) {
+      people[event.pubkey] = parseProfile(event)
+    }
+    return people
+  }
+}
+
+/**
+ * Every pubkey an object would put on screen.
+ *
+ * Slots and meta carry them as values; a `pubkey` action carries the current
+ * holder of the field it sets, which in the sidebar is the *only* place the
+ * project's lead appears. Missing that one is what left a face-shaped button
+ * showing eight hex characters.
+ */
+function pubkeysIn(object: ForeignObject): string[] {
+  const keys: string[] = []
+  for (const slot of [...Object.values(object.slots), ...object.meta]) {
+    if (slot.isPubkey && slot.value) keys.push(slot.value)
+  }
+  for (const action of object.actions) {
+    if (action.control === 'pubkey' && action.current) keys.push(action.current)
+  }
+  return keys
+}
+
+/** kind:0, the profile every other app publishes too. */
+const KIND_PROFILE = 0
 
 /** NIP-89 kinds. These two are protocol, not app-specific. */
 const KIND_HANDLER_RECOMMENDATION = 31989
@@ -477,6 +539,16 @@ export interface ForeignObject {
   openUrl?: string
   /** What the owning app says we may do to this object. */
   actions: ResolvedAction[]
+  /**
+   * Names and faces for every pubkey this object shows (FEE-1).
+   *
+   * Carried on the object rather than looked up by the renderer so a widget is
+   * still a pure render of what it was handed — the same property that lets
+   * Storybook draw a real person from a fixture. Empty when nothing published a
+   * profile, which the renderer treats as "someone we cannot name" rather than
+   * falling back to the key.
+   */
+  people?: People
   /** False when no author recommendation existed and a handler was guessed. */
   viaRecommendation: boolean
   /**
@@ -563,6 +635,8 @@ function buildObject(args: {
 export async function resolveForeignObject(
   naddr: string,
   query: QueryFn,
+  /** Defaults to asking the relay. The browser passes a cached lookup. */
+  lookupPeople?: PeopleFn,
 ): Promise<ForeignObject | null> {
   let pointer: AddressPointer
   try {
@@ -632,7 +706,7 @@ export async function resolveForeignObject(
     .sort(byOrder)
     .map((e) => ({ id: e.id, author: e.pubkey, body: e.content, createdAt: e.created_at }))
 
-  return buildObject({
+  const object = buildObject({
     root,
     pointer,
     manifest,
@@ -642,6 +716,11 @@ export async function resolveForeignObject(
     webTemplate: resolved.webTemplate,
     comments,
   })
+  // After the object, because who to ask about is not known until it is built.
+  // Folded into the same resolve rather than left to the renderer so the
+  // widget's skeleton covers the wait and a key is never briefly on screen.
+  const people = await (lookupPeople ?? peopleViaRelay(query))(pubkeysIn(object))
+  return { ...object, people }
 }
 
 // ── A Folder's project, for the topic sidebar (PEEK-24) ─────────────────────
@@ -778,6 +857,8 @@ function containmentFor(
 export async function resolveFolderProject(
   folder: string,
   query: QueryFn,
+  /** Defaults to asking the relay. The browser passes a cached lookup. */
+  lookupPeople?: PeopleFn,
 ): Promise<FolderProject | null> {
   // 1. Which kinds are containers? A Folder query needs kind numbers up front,
   //    and the only non-app-specific source for them is the published handlers.
@@ -908,7 +989,24 @@ export async function resolveFolderProject(
       : undefined
   // A project whose tickets have no declared projection is still worth showing;
   // it just has nothing to expand into.
-  if (!ticketProjection) return { project, tickets: [], openCount: 0, doneCount: 0 }
+  /**
+   * One lookup for everyone the panel could name, shared by every object it
+   * returns. The project's lead is the only one drawn today; the tickets carry
+   * the same map so a renderer that starts showing assignees needs no second
+   * trip, and so `ForeignObject` means the same thing whichever resolver built
+   * it.
+   */
+  const withPeople = async (objects: ForeignObject[]) => {
+    const people = await (lookupPeople ?? peopleViaRelay(query))([
+      ...new Set(objects.flatMap(pubkeysIn)),
+    ])
+    return objects.map((object) => ({ ...object, people }))
+  }
+
+  if (!ticketProjection) {
+    const [only] = await withPeople([project])
+    return { project: only, tickets: [], openCount: 0, doneCount: 0 }
+  }
 
   const rows: { ticket: ForeignObject; rank: number; activityMs: number }[] = []
   let openCount = 0
@@ -958,7 +1056,8 @@ export async function resolveFolderProject(
   // scannable rather than a dump.
   rows.sort((a, b) => a.rank - b.rank || b.activityMs - a.activityMs)
 
-  return { project, tickets: rows.map((row) => row.ticket), openCount, doneCount }
+  const [resolvedProject, ...tickets] = await withPeople([project, ...rows.map((r) => r.ticket)])
+  return { project: resolvedProject, tickets, openCount, doneCount }
 }
 
 /**

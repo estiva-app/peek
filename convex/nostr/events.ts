@@ -140,6 +140,39 @@ export function buildProfile(
   }
 }
 
+/** Who a pubkey belongs to, as far as the relay knows. */
+export interface Profile {
+  /** kind:0 `display_name` or `name`. Absent when nobody has published one. */
+  displayName?: string
+  /** kind:0 `picture` — an avatar URL chosen by whichever app published it. */
+  picture?: string
+}
+
+/**
+ * The inverse of `buildProfile`: a kind:0 event to the fields Peek shows.
+ *
+ * Both name keys are read because both are written: Peek publishes
+ * `display_name`, Linear-lite publishes `name`, and a person who has used both
+ * apps should resolve either way rather than on a coin flip. Anything that will
+ * not parse costs a name, never the read that asked for it.
+ *
+ * Lives beside `buildProfile` rather than in either caller because there are
+ * now two: the Convex sync path, which stores profiles for message authors, and
+ * the relay projection, which reads them in the browser for the people named on
+ * another app's objects. One parser is what keeps a person from having two
+ * names depending on which pane they appear in.
+ */
+export function parseProfile(event: { content: string } | undefined): Profile {
+  if (!event) return {}
+  try {
+    const meta = JSON.parse(event.content)
+    const str = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+    return { displayName: str(meta.display_name) ?? str(meta.name), picture: str(meta.picture) }
+  } catch {
+    return {}
+  }
+}
+
 export type ChannelVisibility = 'open' | 'private'
 export type ChannelKind = 'stream' | 'forum' | 'dm'
 
