@@ -17,7 +17,7 @@ import { INLINE_TOKEN_RE, matchReference, matchUrl, parseBodySegments, parseInli
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
-import { findNaddrs, stripNaddrs } from '../../../convex/nostr/nip19'
+import { findNaddrs, pointerToAddress, referenceToPointer, stripNaddrs } from '../../../convex/nostr/nip19'
 
 // Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
@@ -134,16 +134,51 @@ function renderWithMentions(text: string, isTopicResolved: (id: string) => boole
   )
 }
 
+/**
+ * One entry per referenced object, whichever notation it arrived in.
+ *
+ * `naddr1…` and `<kind>:<pubkey>:<d>` are two spellings of one address, so the
+ * address is the identity. A string that parses as neither is kept as-is rather
+ * than dropped: the widget renders nothing for it, which is the same outcome,
+ * and silently discarding references here would hide the reason.
+ */
+function dedupeReferences(refs: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const ref of refs) {
+    let key: string
+    try {
+      key = pointerToAddress(referenceToPointer(ref))
+    } catch {
+      key = ref
+    }
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(ref)
+  }
+  return out
+}
+
 export function MessageBody({ body, isTopicResolved, nostrReferences }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[] }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
   // 
-  // For imported messages, use stored nostrReferences (from `a` tags) to avoid
-  // re-parsing. For locally-created messages, fall back to parsing the body.
-  const references = nostrReferences && nostrReferences.length > 0 
-    ? nostrReferences 
-    : [...new Set(findNaddrs(body))]
+  /**
+   * Both sources, merged — not one *or* the other.
+   *
+   * An imported message carries its references as `a` tags, which sync stores
+   * in `nostrReferences`; a message composed here has them only in its body.
+   * Preferring the stored list meant that the moment a message came back from
+   * the relay, its perfectly good `naddr` in the body stopped being read at all
+   * (FEE-2). One list shadowing the other is fragile in a way that merging is
+   * not: an entry that cannot be resolved now costs one missing widget rather
+   * than every widget on the message.
+   *
+   * Deduplicated by address, because the two sources describe the same objects
+   * in different notations and would otherwise render each one twice.
+   */
+  const references = dedupeReferences([...(nostrReferences ?? []), ...findNaddrs(body)])
   
   // The pointer itself is dropped from the prose (PEEK-18). It was left in
   // originally so a reader could copy it somewhere Peek cannot render, but that

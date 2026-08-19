@@ -21,7 +21,7 @@
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
-import { decodeNaddr, pointerToAddress } from '../../convex/nostr/nip19'
+import { pointerToAddress, referenceToPointer } from '../../convex/nostr/nip19'
 import {
   buildActionEvent,
   resolveFolderProject,
@@ -96,7 +96,9 @@ export async function applyActionAsViewer(
 ): Promise<ActResult> {
   let pointer
   try {
-    pointer = decodeNaddr(args.naddr)
+    // Same tolerance as reading: a widget rendered from an `a` tag address must
+    // be actionable, not just visible.
+    pointer = referenceToPointer(args.naddr)
   } catch {
     return fail('That reference could not be decoded.')
   }

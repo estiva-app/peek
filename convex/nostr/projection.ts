@@ -12,7 +12,7 @@
  * anything: it becomes an integration written against one app, which is the
  * thing the whole exercise argues against.
  */
-import { decodeNaddr, encodeNaddr, pointerToAddress, type AddressPointer } from './nip19'
+import { encodeNaddr, pointerToAddress, referenceToPointer, type AddressPointer } from './nip19'
 import type { SignedEvent } from './events'
 
 /** Query the relay. Returns matching events; shape mirrors the HTTP bridge. */
@@ -566,7 +566,9 @@ export async function resolveForeignObject(
 ): Promise<ForeignObject | null> {
   let pointer: AddressPointer
   try {
-    pointer = decodeNaddr(naddr)
+    // Either form: a body carries `naddr1…`, an `a` tag carries the plain
+    // address, and both name the same object (FEE-2).
+    pointer = referenceToPointer(naddr)
   } catch {
     return null
   }

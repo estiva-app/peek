@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
 import { hasConvex, useForeignObjects } from '@/api'
 import { cn } from '@/lib/utils'
+import { SkeletonBar } from './Skeleton'
 
 /**
  * Another app's object, rendered inline in Peek.
@@ -329,6 +330,38 @@ export function ForeignObjectCard({
   )
 }
 
+/**
+ * The card's shell, before its contents are known.
+ *
+ * Deliberately the same border, radius, background and padding as
+ * `ForeignObjectCard`, so the real card replaces it without the message
+ * reflowing — a placeholder of the wrong size is its own small jolt.
+ *
+ * Two bars: the title, and the row of status and meta beneath it. Not an
+ * attempt to guess the layout of an app Peek has never heard of; just enough to
+ * say "something is arriving here" and hold the space it will take.
+ *
+ * `animate-skeleton-in` holds it invisible for 150ms, so a reference that
+ * resolves quickly — the common case — never flashes a placeholder at all.
+ */
+export function ForeignObjectSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        'rounded-lg border border-border-subtle bg-surface-raised p-3 animate-skeleton-in',
+        className,
+      )}
+    >
+      <SkeletonBar className="h-3.5 w-1/2" />
+      <div className="mt-2 flex items-center gap-2">
+        <SkeletonBar className="h-3 w-16" />
+        <SkeletonBar className="h-3 w-24" />
+      </div>
+    </div>
+  )
+}
+
 export function ForeignObjectWidget({ naddr }: { naddr: string }) {
   const { resolveObject: resolve, applyAction } = useForeignObjects()
   const [object, setObject] = useState<ForeignObject | null | 'loading'>('loading')
@@ -386,9 +419,21 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
     }
   }, [naddr, resolve])
 
+  /**
+   * Waiting is not the same as nothing, and they used to render the same.
+   *
+   * Resolving a reference is a round trip to the relay, so the card cannot be
+   * drawn immediately. Rendering nothing meanwhile meant a message settled at
+   * one height and then grew as each widget popped in — and on a slow answer
+   * the reference simply looked absent (FEE-3).
+   *
+   * The state already told these apart; only this branch did not.
+   */
+  if (object === 'loading') return <ForeignObjectSkeleton className="mt-1" />
+
   // A reference we cannot resolve degrades to nothing, leaving the message text
   // intact. Never break a message because an attachment failed.
-  if (object === 'loading' || object === null) return null
+  if (object === null) return null
 
   if (object.unreachable) {
     return (
