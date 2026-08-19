@@ -41,6 +41,13 @@ const object = (
     meta: [{ label: 'Assignee', value: `${person.slice(0, 8)}…`, isPubkey: true, field: 'assignee' }],
     comments: [],
     folder: 'b1d2c3e4-5f60-4718-a93a-4b5c6d7e8f90',
+    /*
+     * Tickets carry a link into the owning app, from the manifest's `web` tag —
+     * that is what makes a row clickable. Without it the row renders as plain
+     * text, which is not a state Ship produces and left the clickable row
+     * untested here.
+     */
+    openUrl: `https://ship.estiva.app/#/issue/${id}`,
     actions: [],
     viaRecommendation: true,
     ...extra,
@@ -49,6 +56,15 @@ const object = (
 const project = object('fee', 'Feedback on Peek', 'In Progress', 'blue', {
   kind: 30850,
   widget: 'card',
+  /*
+   * No subtitle. Ship gives an *issue* a key like FEE-1, which is worth showing
+   * under its title; a project has a title and a description, and inventing a
+   * short code for one put a label in this story that no project has.
+   */
+  slots: {
+    title: { value: 'Feedback on Peek', field: 'title' },
+    status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' },
+  },
   meta: [{ label: 'Lead', value: `${person.slice(0, 8)}…`, isPubkey: true, field: 'lead' }],
   openUrl: 'https://ship.estiva.app/#/project/fee',
 })

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
 import { hasConvex, useForeignObjects } from '@/api'
 import { cn } from '@/lib/utils'
+import { Button } from './Button'
 import { Select } from './Select'
 import { SkeletonBar } from './Skeleton'
 
@@ -72,7 +73,7 @@ function Meta({ slot }: { slot: ResolvedSlot }) {
   // `as: "pubkey"` tells us to show a person rather than the key itself.
   const value = slot.isPubkey ? asPerson(slot.value) : slot.value
   return (
-    <span className="text-xs text-text-muted">
+    <span className="text-xs text-text-secondary">
       {slot.label ? `${slot.label}: ` : ''}
       {value}
     </span>
@@ -141,22 +142,21 @@ export function ActionControl({
     // `aria-label` stays fixed on what pressing it *does*, because that does not
     // change when the value does.
     return (
-      <button
+      <Button
         type="button"
+        variant="outlined"
+        size="small"
         disabled={busy}
         aria-label={`${action.label} to me`}
         onClick={() => onAct(action.id, '@me')}
-        className={cn(
-          'rounded-md border border-border-default px-2 py-1 text-xs text-text-secondary hover:border-border-strong disabled:opacity-50',
-          className,
-        )}
+        className={className}
       >
         {action.current
           ? labelled
             ? `${action.label}: ${asPerson(action.current)}`
             : asPerson(action.current)
           : `${action.label} to me`}
-      </button>
+      </Button>
     )
   }
 
@@ -201,7 +201,7 @@ function Actions({
           <ActionControl key={action.id} action={action} busy={busy} onAct={onAct} />
         ))}
       </div>
-      {error && <p className="mt-1 text-xs text-danger-default">{error}</p>}
+      {error && <p className="mt-1 text-xs text-error-default">{error}</p>}
     </div>
   )
 }
@@ -229,7 +229,7 @@ function OpenInApp({ object }: { object: ForeignObject }) {
       href={object.openUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-xs text-text-muted underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+      className="text-xs text-text-secondary underline decoration-dotted underline-offset-2 hover:text-text-primary"
     >
       Open in {object.appName ?? 'app'} ↗
     </a>
@@ -458,7 +458,7 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
 
   if (object.unreachable) {
     return (
-      <div className="mt-1 rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs text-text-muted">
+      <div className="mt-1 rounded-lg border border-border-subtle px-3 py-2 text-xs text-text-secondary">
         {object.appName ?? 'Another app'} object — you may not have access to this Folder.{' '}
         {object.openUrl && <OpenInApp object={object} />}
       </div>

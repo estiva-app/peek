@@ -170,7 +170,10 @@ export function Select({
           'focus-visible:border-border-strong aria-expanded:border-border-strong',
           'signal:transition-shadow signal:focus-visible:border-border-focus signal:focus-visible:shadow-[shadow:var(--focus-ring)]',
           size === 'default' && 'px-3 py-2 text-[14px] leading-[1.4] font-normal',
-          size === 'small' && 'px-2 py-1 text-[12px] leading-[1.4] font-normal',
+          // `h-6` rather than vertical padding, so a small select and a small
+          // `Button` in adjacent property rows line up. Padding alone left the
+          // select 3px taller than the button beside it.
+          size === 'small' && 'h-6 px-2 text-[12px] leading-[1.4] font-normal',
           className,
         )}
       >

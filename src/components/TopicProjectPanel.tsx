@@ -150,7 +150,10 @@ function Progress({ done, open }: { done: number; open: number }) {
 function Property({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-[68px] shrink-0 text-xs text-text-muted">{label}</span>
+      {/* `--text-secondary`, not `--text-muted`: muted is the placeholder tone,
+          and a property label is content — at 12px it fell below comfortable
+          reading contrast (2026-08-19). */}
+      <span className="w-[68px] shrink-0 text-xs text-text-secondary">{label}</span>
       {children}
     </div>
   )
@@ -227,12 +230,16 @@ export function TopicProjectPanelView({
               </p>
             )}
 
-            <Properties
-              object={project}
-              busy={actingOn === project.naddr}
-              onAct={onAct ? (id, value) => onAct(project, id, value) : undefined}
-            />
-            {error && <p className="text-xs text-danger-default">{error}</p>}
+            {/* A little more air than the 8px stack gap: the title and its
+                description are one block, and the properties are the next. */}
+            <div className="mt-1">
+              <Properties
+                object={project}
+                busy={actingOn === project.naddr}
+                onAct={onAct ? (id, value) => onAct(project, id, value) : undefined}
+              />
+            </div>
+            {error && <p className="text-xs text-error-default">{error}</p>}
           </div>
 
           {/* Tickets live inside the widget: they are part of the project, not a
@@ -259,21 +266,38 @@ export function TopicProjectPanelView({
 
           {expanded &&
             (tickets.length === 0 ? (
-              <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-muted">
+              <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-secondary">
                 No tickets in this project yet.
               </p>
             ) : (
               <table className="w-full table-fixed border-t border-border-subtle text-xs">
                 <tbody>
                   {tickets.map((ticket) => (
-                    <tr key={ticket.address} className="border-b border-border-subtle last:border-b-0">
+                    /*
+                     * The whole row opens the ticket, not just the words.
+                     *
+                     * Only the title was a link, so the row highlighted nothing
+                     * and a click an inch to the right did nothing either. The
+                     * anchor stretches over the row with `after:absolute`, which
+                     * keeps one link per row — a second one wrapping the status
+                     * would be the same destination announced twice.
+                     *
+                     * `group` so hovering anywhere on the row brightens and
+                     * underlines the title. That is the whole affordance — no
+                     * background fill, which would be a second answer to a
+                     * question the title has already answered.
+                     */
+                    <tr
+                      key={ticket.address}
+                      className="group relative border-b border-border-subtle last:border-b-0"
+                    >
                       <td className="max-w-0 truncate py-1.5 pl-3 pr-2">
                         {ticket.openUrl ? (
                           <a
                             href={ticket.openUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-text-secondary hover:text-text-primary hover:underline"
+                            className="text-text-secondary transition-colors after:absolute after:inset-0 group-hover:text-text-primary group-hover:underline"
                           >
                             {ticket.slots.title?.value ?? 'Untitled'}
                           </a>

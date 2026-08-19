@@ -29,7 +29,10 @@ export function Button({
         size === 'small'   && 'h-6 text-[12px] leading-[12px]',
         // Padding: extra right padding when there's a leading icon for visual balance
         size === 'default' && (hasLeadingIcon ? 'pl-2 pr-3' : 'px-2'),
-        size === 'small'   && (hasLeadingIcon ? 'pl-1 pr-2' : 'px-1'),
+        // 6px, not 4px (2026-08-19): 4px was set against short labels like
+        // "Later" and left anything longer nearly touching its own border.
+        // The leading-icon variant keeps the extra right padding above.
+        size === 'small'   && (hasLeadingIcon ? 'pl-1.5 pr-2' : 'px-1.5'),
         // Active variants
         !disabled && variant === 'primary'  && 'bg-accent-primary hover:bg-accent-hover text-accent-muted cursor-pointer signal:text-[color:var(--text-inverse)] signal:font-semibold',
         !disabled && variant === 'outlined' && 'border border-border-default hover:bg-bg-hover text-text-primary cursor-pointer',
