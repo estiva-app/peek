@@ -99,7 +99,10 @@ describe('TopicProjectPanelView', () => {
     // The comment action is declared but never drawn.
     expect(screen.queryByPlaceholderText('Comment…')).not.toBeInTheDocument()
 
-    await userEvent.selectOptions(screen.getByLabelText('Change status'), 'planned')
+    // Peek's `Select`, not a native one: the options exist only once the menu is
+    // open, and are picked by their label rather than their value.
+    await userEvent.click(screen.getByLabelText('Change status'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Planned' }))
     expect(onAct).toHaveBeenCalledWith(
       expect.objectContaining({ naddr: 'naddr1project' }),
       'set-project-status',

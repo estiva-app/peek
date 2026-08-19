@@ -110,7 +110,7 @@ function Properties({
               {row.slot.isPubkey ? `${row.slot.value.slice(0, 8)}…` : row.slot.value}
             </span>
           ) : (
-            <span className="text-xs text-text-tertiary">—</span>
+            <span className="text-xs text-text-muted">—</span>
           )}
         </Property>
       ))}
@@ -150,7 +150,7 @@ function Progress({ done, open }: { done: number; open: number }) {
 function Property({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-[68px] shrink-0 text-xs text-text-tertiary">{label}</span>
+      <span className="w-[68px] shrink-0 text-xs text-text-muted">{label}</span>
       {children}
     </div>
   )
@@ -259,7 +259,7 @@ export function TopicProjectPanelView({
 
           {expanded &&
             (tickets.length === 0 ? (
-              <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-tertiary">
+              <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-muted">
                 No tickets in this project yet.
               </p>
             ) : (

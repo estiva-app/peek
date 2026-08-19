@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ForeignObject, ResolvedAction, ResolvedSlot } from '../../../convex/nostr/projection'
 import { hasConvex, useForeignObjects } from '@/api'
 import { cn } from '@/lib/utils'
+import { Select } from './Select'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -20,18 +21,36 @@ import { SkeletonBar } from './Skeleton'
  */
 
 /** Manifest colour names → Peek's own tokens. The mapping is Peek's business. */
+/**
+ * A status is coloured text, not a pill.
+ *
+ * These four names are the manifest's, not Peek's: an owning app declares
+ * `neutral | blue | green | muted` and the consumer decides what that means
+ * here. Ship's vocabularies map Todo and Planned to neutral, In Progress to
+ * blue, Done and Completed to green, Cancelled to muted.
+ *
+ * The backgrounds that used to be here — `bg-surface-raised`, `bg-info-subtle`,
+ * `bg-success-subtle` — are not tokens this app defines, so Tailwind never
+ * emitted them and no pill was ever drawn. Removed rather than replaced: text
+ * is the intended treatment (2026-08-19), so the classes were describing
+ * something nobody wanted.
+ *
+ * `text-text-tertiary` was dead in the same way, and that one *was* visible as a
+ * fault: `muted` inherited the surrounding colour, so a cancelled item looked
+ * ordinary. It maps to `--text-muted`, which is the token that name meant.
+ */
 const COLOUR: Record<string, string> = {
-  neutral: 'bg-surface-raised text-text-secondary',
-  blue: 'bg-info-subtle text-info-default',
-  green: 'bg-success-subtle text-success-default',
-  muted: 'bg-surface-raised text-text-tertiary',
+  neutral: 'text-text-secondary',
+  blue: 'text-info-default',
+  green: 'text-success-default',
+  muted: 'text-text-muted',
 }
 
 export function StatusPill({ slot }: { slot: ResolvedSlot }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center text-xs font-medium',
         COLOUR[slot.colour ?? 'muted'] ?? COLOUR.muted,
       )}
     >
@@ -53,7 +72,7 @@ function Meta({ slot }: { slot: ResolvedSlot }) {
   // `as: "pubkey"` tells us to show a person rather than the key itself.
   const value = slot.isPubkey ? asPerson(slot.value) : slot.value
   return (
-    <span className="text-xs text-text-tertiary">
+    <span className="text-xs text-text-muted">
       {slot.label ? `${slot.label}: ` : ''}
       {value}
     </span>
@@ -91,23 +110,25 @@ export function ActionControl({
   const [draft, setDraft] = useState('')
 
   if (action.control === 'select') {
+    /*
+     * Peek's `Select`, not the browser's.
+     *
+     * A native option list is drawn by the operating system — system font,
+     * system size, system highlight — so this one control could never match the
+     * four menus Peek already has. It sits in a property row beside a 12px
+     * label, hence `small`; and `w-auto` because `Select` is full-width for
+     * forms, where a `Field` gives it the room.
+     */
     return (
-      <select
-        aria-label={action.label}
+      <Select
+        ariaLabel={action.label}
         disabled={busy}
+        size="small"
         value={action.current ?? ''}
-        onChange={(e) => onAct(action.id, e.target.value)}
-        className={cn(
-          'rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs text-text-primary disabled:opacity-50',
-          className,
-        )}
-      >
-        {action.options?.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        onChange={(next) => onAct(action.id, next)}
+        options={action.options ?? []}
+        className={cn('w-auto', className)}
+      />
     )
   }
 
@@ -208,7 +229,7 @@ function OpenInApp({ object }: { object: ForeignObject }) {
       href={object.openUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-xs text-text-tertiary underline decoration-dotted underline-offset-2 hover:text-text-secondary"
+      className="text-xs text-text-muted underline decoration-dotted underline-offset-2 hover:text-text-secondary"
     >
       Open in {object.appName ?? 'app'} ↗
     </a>
@@ -317,7 +338,7 @@ export function ForeignObjectCard({
             </div>
           )}
         </div>
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-tertiary">
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
           {object.appName}
           {/* No recommendation existed, so the handler was a guess. Worth saying:
               "we were told" and "we guessed" should not look identical. */}
@@ -437,7 +458,7 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
 
   if (object.unreachable) {
     return (
-      <div className="mt-1 rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs text-text-tertiary">
+      <div className="mt-1 rounded-lg border border-border-subtle bg-surface-raised px-3 py-2 text-xs text-text-muted">
         {object.appName ?? 'Another app'} object — you may not have access to this Folder.{' '}
         {object.openUrl && <OpenInApp object={object} />}
       </div>

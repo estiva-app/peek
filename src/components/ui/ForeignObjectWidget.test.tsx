@@ -171,11 +171,13 @@ describe('ForeignObjectWidget', () => {
       resolveObject.mockResolvedValue(withActions())
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await screen.findByLabelText('Change status')
-      // The pill is a span; "Done" survives as an <option> in the picker, which
-      // is the copy that should remain.
+      const status = await screen.findByLabelText('Change status')
+      // The pill is a span; "Done" survives inside the picker, which is the copy
+      // that should remain. The picker draws its options only when open.
       expect(screen.queryByText('Done', { selector: 'span' })).not.toBeInTheDocument()
-      expect(screen.getByRole('option', { name: 'Done' })).toBeInTheDocument()
+      await userEvent.click(status)
+      expect(await screen.findByRole('option', { name: 'Done' })).toBeInTheDocument()
+      await userEvent.keyboard('{Escape}')
       expect(screen.queryByText(/Assignee:/)).not.toBeInTheDocument()
       // A meta slot no action covers is untouched — this hides duplicates, not
       // the meta line.
@@ -232,9 +234,12 @@ describe('ForeignObjectWidget', () => {
       resolveObject.mockResolvedValue(withActions())
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      const select = await screen.findByLabelText('Change status')
-      expect(select).toHaveValue('todo')
-      expect(screen.getByRole('option', { name: 'Done' })).toBeInTheDocument()
+      const status = await screen.findByLabelText('Change status')
+      // The trigger reports the current value by its label, not its raw value.
+      expect(status).toHaveTextContent('Todo')
+      await userEvent.click(status)
+      expect(await screen.findByRole('option', { name: 'Done' })).toBeInTheDocument()
+      await userEvent.keyboard('{Escape}')
       expect(screen.getByRole('button', { name: /Assign to me/ })).toBeInTheDocument()
     })
 
@@ -243,7 +248,8 @@ describe('ForeignObjectWidget', () => {
       applyAction.mockResolvedValue({ ok: true })
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await userEvent.selectOptions(await screen.findByLabelText('Change status'), 'done')
+      await userEvent.click(await screen.findByLabelText('Change status'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Done' }))
 
       expect(applyAction).toHaveBeenCalledWith({
         naddr: NADDR,
@@ -269,7 +275,8 @@ describe('ForeignObjectWidget', () => {
       applyAction.mockResolvedValue({ ok: false, reason: '"ushipped" is not one of todo, done.' })
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await userEvent.selectOptions(await screen.findByLabelText('Change status'), 'done')
+      await userEvent.click(await screen.findByLabelText('Change status'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Done' }))
       expect(await screen.findByText(/is not one of todo, done/)).toBeInTheDocument()
       // One resolve only — a rejected change must not look like a successful one.
       expect(resolveObject).toHaveBeenCalledTimes(1)
