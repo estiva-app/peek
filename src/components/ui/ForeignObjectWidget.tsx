@@ -54,12 +54,16 @@ const COLOUR: Record<string, string> = {
   muted: 'text-text-muted',
 }
 
-export function StatusPill({ slot }: { slot: ResolvedSlot }) {
+export function StatusPill({ slot, className }: { slot: ResolvedSlot; className?: string }) {
   return (
     <span
       className={cn(
+        // 12px suits the row widget and the panel's dense property rows; the
+        // details dialog reads its properties at body size, so the size is the
+        // caller's to set.
         'inline-flex items-center text-xs font-medium',
         COLOUR[slot.colour ?? 'muted'] ?? COLOUR.muted,
+        className,
       )}
     >
       {slot.value}

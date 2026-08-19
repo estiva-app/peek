@@ -228,7 +228,11 @@ export function TopicDetailsDialogView({
             <div className="mt-2 flex flex-col gap-1">
               {folderProject.project.slots.status && (
                 <Property label={folderProject.project.slots.status.label ?? 'Status'}>
-                  <StatusPill slot={folderProject.project.slots.status} />
+                  {/* Body size here, not the panel's 12px. This dialog is read,
+                      not worked in, and a status and a lead sitting at
+                      different sizes in the same two-row block was the thing
+                      that looked wrong (Katerina, 2026-08-20). */}
+                  <StatusPill slot={folderProject.project.slots.status} className="text-sm" />
                 </Property>
               )}
               {folderProject.project.meta.map((slot, i) => (
@@ -240,10 +244,14 @@ export function TopicDetailsDialogView({
                     <Person
                       pubkey={slot.value}
                       people={folderProject.project.people}
-                      className="text-xs text-text-secondary"
+                      // 20px, not the default 16: at body size the smaller face
+                      // read as undersized beside its own name. The panel keeps
+                      // 16 because its rows are 12px.
+                      size={20}
+                      className="text-sm text-text-secondary"
                     />
                   ) : (
-                    <span className="text-xs text-text-secondary">{slot.value}</span>
+                    <span className="text-sm text-text-secondary">{slot.value}</span>
                   )}
                 </Property>
               ))}

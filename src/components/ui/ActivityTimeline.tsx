@@ -84,7 +84,7 @@ export function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
           the first and last bullet, so it reads as joining them rather than as
           a rule the entries happen to sit on. */}
       {entries.length > 1 && (
-        <div aria-hidden className="absolute left-[7.5px] top-[9px] bottom-[9px] w-px bg-border-default" />
+        <div aria-hidden className="absolute left-[7.5px] top-[9px] bottom-[24px] w-px bg-border-default" />
       )}
       {entries.map((entry, i) => (
         <div key={`${entry.kind}-${entry.at}-${i}`} data-activity={entry.kind} className="relative flex items-start gap-2">
@@ -95,18 +95,24 @@ export function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
               <span className={cn('size-1 rounded-full', DOT[entry.kind])} />
             </span>
           </span>
-          {/* The text wraps and the time holds its column, so a long entry
-              runs to a second line under itself rather than pushing the time
-              off the row or squeezing it to one character per line. */}
-          <p className="min-w-0 flex-1 text-[12px] leading-[1.4]">
-            <Line entry={entry} />
-          </p>
-          <span
-            title={exactly(entry.at)}
-            className="shrink-0 text-[12px] leading-[1.4] text-text-muted"
-          >
-            {whenLabel(entry.at)}
-          </span>
+          {/*
+            * The time goes *under* the entry, not beside it (Katerina,
+            * 2026-08-20). Beside, it was a column the text had to make room
+            * for, and the longer entries — a resolution carrying its message —
+            * are the ones that need the width most. Underneath, every entry
+            * gets the full line and the times still read down one edge.
+            */}
+          <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
+            <p className="text-[12px] leading-[1.4]">
+              <Line entry={entry} />
+            </p>
+            <span
+              title={exactly(entry.at)}
+              className="text-[12px] leading-[1.4] text-text-muted"
+            >
+              {whenLabel(entry.at)}
+            </span>
+          </div>
         </div>
       ))}
     </div>

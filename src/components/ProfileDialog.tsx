@@ -29,9 +29,13 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button variant="muted" onClick={onClose}>Close</Button>
+          {/* 16px, like every other icon on a default-size control in Peek —
+              this one was 14 and read visibly smaller than the app around it
+              (Katerina, 2026-08-20). 14 is the *small*-control size, which is
+              what the small `Select`'s chevron and the small buttons use. */}
           <Button
             variant="primary"
-            leadingIcon={<IconExternalLink size={14} stroke={1.5} />}
+            leadingIcon={<IconExternalLink size={16} stroke={1.5} />}
             onClick={() => window.open(PROFILE_EDIT_URL, '_blank', 'noopener,noreferrer')}
           >
             Edit in Estiva ID
