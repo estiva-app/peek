@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { Person } from '@/components/ui/Person'
 import { Property } from '@/components/ui/Property'
+import { ProjectTickets } from '@/components/ui/ProjectTickets'
 import { SkeletonBar } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 
@@ -132,35 +133,6 @@ function Properties({
   )
 }
 
-/**
- * How much of the work is behind you.
- *
- * The counts already say it, but a number is read and a bar is *seen* — and
- * "how is this project going" is the question somebody opens this panel with.
- * Rides the same line as the count and stays deliberately quiet: two hairlines
- * of muted colour, no legend, no percentage. It is a glance, not a chart.
- */
-function Progress({ done, open }: { done: number; open: number }) {
-  const total = done + open
-  if (total === 0) return null
-
-  return (
-    <div
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={done}
-      aria-label={`${done} of ${total} tickets done`}
-      className="h-[3px] flex-1 overflow-hidden rounded-full bg-bg-inset"
-    >
-      <div
-        className="h-full rounded-full bg-success-muted transition-[width] duration-300"
-        style={{ width: `${Math.round((done / total) * 100)}%` }}
-      />
-    </div>
-  )
-}
-
 export function TopicProjectPanelView({
   folderProject,
   onAct,
@@ -254,87 +226,7 @@ export function TopicProjectPanelView({
 
           {/* Tickets live inside the widget: they are part of the project, not a
               second thing in the column beside it. */}
-          <div className="flex items-center gap-3 border-t border-border-subtle px-3 py-2">
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              aria-expanded={expanded}
-              className="flex shrink-0 items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
-            >
-              <IconChevronRight
-                size={14}
-                stroke={1.5}
-                className={cn('shrink-0 transition-transform', expanded && 'rotate-90')}
-              />
-              {/*
-                * Done over total: 0/3 nothing finished, 3/3 all of it. It used
-                * to be open over done, which read as a fraction but was two
-                * separate counts — "3/1" meant three left and one finished, and
-                * "0/2" meant everything was done while looking like the
-                * opposite. Same total the progress bar beside it already uses.
-                *
-                * Nothing at all for an empty project, on the reasoning that
-                * hides the bar there too: "0/0" is a fraction of nothing, and
-                * reads as a broken counter rather than as an empty project.
-                */}
-              Tickets{doneCount + openCount > 0 && ` (${doneCount}/${doneCount + openCount})`}
-            </button>
-            {/* Beside the button rather than inside it: a progressbar nested in
-                a control folds its label into the button's accessible name. */}
-            <Progress done={doneCount} open={openCount} />
-          </div>
-
-          {expanded &&
-            (tickets.length === 0 ? (
-              <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-secondary">
-                No tickets in this project yet.
-              </p>
-            ) : (
-              <table className="w-full table-fixed border-t border-border-subtle text-xs">
-                <tbody>
-                  {tickets.map((ticket) => (
-                    /*
-                     * The whole row opens the ticket, not just the words.
-                     *
-                     * Only the title was a link, so the row highlighted nothing
-                     * and a click an inch to the right did nothing either. The
-                     * anchor stretches over the row with `after:absolute`, which
-                     * keeps one link per row — a second one wrapping the status
-                     * would be the same destination announced twice.
-                     *
-                     * `group` so hovering anywhere on the row brightens and
-                     * underlines the title. That is the whole affordance — no
-                     * background fill, which would be a second answer to a
-                     * question the title has already answered.
-                     */
-                    <tr
-                      key={ticket.address}
-                      className="group relative border-b border-border-subtle last:border-b-0"
-                    >
-                      <td className="max-w-0 truncate py-1.5 pl-3 pr-2">
-                        {ticket.openUrl ? (
-                          <a
-                            href={ticket.openUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-text-secondary transition-colors after:absolute after:inset-0 group-hover:text-text-primary group-hover:underline"
-                          >
-                            {ticket.slots.title?.value ?? 'Untitled'}
-                          </a>
-                        ) : (
-                          <span className="text-text-secondary">
-                            {ticket.slots.title?.value ?? 'Untitled'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="w-[96px] py-1.5 pr-3 text-right">
-                        {ticket.slots.status && <StatusPill slot={ticket.slots.status} />}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ))}
+          <ProjectTickets tickets={tickets} openCount={openCount} doneCount={doneCount} />
         </div>
       </div>
     </PanelShell>

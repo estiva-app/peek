@@ -11,7 +11,7 @@ import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { SectionLabel } from './ui/SectionHeader'
 import { Person } from './ui/Person'
-import { Property } from './ui/Property'
+import { ProjectTickets } from './ui/ProjectTickets'
 import { StatusPill } from './ui/ForeignObjectWidget'
 import { TextInput } from './ui/TextInput'
 
@@ -189,7 +189,13 @@ export function TopicDetailsDialogView({
           */}
       </Section>
 
-      <Section label={`Members${details ? ` (${details.members.length})` : ''}`}>
+      {/* The count as a chip beside the heading rather than "(3)" after it
+          (Katerina, 2026-08-20) — the same pill the conversation header puts
+          beside its facepile, so one number reads one way. */}
+      <Section
+        label="Members"
+        trailing={details && <Chip type="neutral" label={String(details.members.length)} />}
+      >
         <div className="flex flex-col">
           {(details?.members ?? []).map((member) => (
             <div key={member.name} className="flex h-12 items-center gap-3">
@@ -214,66 +220,48 @@ export function TopicDetailsDialogView({
 
       {folderProject && (
         <Section label="Project">
-          <div className="flex flex-col">
-            <span className="min-w-0 truncate text-[14px] leading-[1.4] text-text-primary">
-              {folderProject.project.slots.title?.value ?? 'Untitled'}
-            </span>
-
-            {/*
-              * The project's properties as rows, the way the Files panel shows
-              * them — status and lead beside their labels rather than trailing
-              * the title (Katerina, 2026-08-20). Inline, the status read as
-              * part of the name and the lead had nowhere to go at all.
-              */}
-            <div className="mt-2 flex flex-col gap-1">
-              {folderProject.project.slots.status && (
-                <Property label={folderProject.project.slots.status.label ?? 'Status'}>
-                  {/* Body size here, not the panel's 12px. This dialog is read,
-                      not worked in, and a status and a lead sitting at
-                      different sizes in the same two-row block was the thing
-                      that looked wrong (Katerina, 2026-08-20). */}
-                  <StatusPill slot={folderProject.project.slots.status} className="text-sm" />
-                </Property>
+          {/*
+            * The Files panel's card, in a dialog (Katerina, 2026-08-20). Same
+            * bordered card, same status and lead as pills side by side, same
+            * tickets accordion with its counter and bar. It is the same project
+            * either way — showing it two ways would only invite them to drift.
+            */}
+          <div className="rounded-lg border border-border-subtle">
+            <div className="flex flex-col gap-2 px-3 py-2.5">
+              <span className="min-w-0 truncate text-sm font-semibold text-text-primary">
+                {folderProject.project.slots.title?.value ?? 'Untitled'}
+              </span>
+              {folderProject.project.slots.subtitle && (
+                <p className="line-clamp-2 text-xs text-text-secondary">
+                  {folderProject.project.slots.subtitle.value}
+                </p>
               )}
-              {folderProject.project.meta.map((slot, i) => (
-                <Property key={`${slot.label ?? 'meta'}-${i}`} label={slot.label ?? ''}>
-                  {slot.isPubkey ? (
-                    // Face and full name, or an em dash for a lead nobody has
-                    // published a profile for — the same `Person` the panel and
-                    // the reference widget use, so one key never reads two ways.
-                    <Person
-                      pubkey={slot.value}
-                      people={folderProject.project.people}
-                      // 20px, not the default 16: at body size the smaller face
-                      // read as undersized beside its own name. The panel keeps
-                      // 16 because its rows are 12px.
-                      size={20}
-                      className="text-sm text-text-secondary"
-                    />
-                  ) : (
-                    <span className="text-sm text-text-secondary">{slot.value}</span>
-                  )}
-                </Property>
-              ))}
-            </div>
-
-            {/* Air between what the project *is* and what is in it. Without it
-                the first ticket read as another property. */}
-            {folderProject.tickets.length > 0 && (
-              <div className="mt-4 flex flex-col gap-1 border-t border-border-subtle pt-3">
-                {/* Read-only on purpose: the Files panel is where a project is
-                    worked on, and a second set of controls would be a second
-                    place to change one thing. */}
-                {folderProject.tickets.map((ticket) => (
-                  <div key={ticket.address} className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[12px] leading-[1.4] text-text-secondary">
-                      {ticket.slots.title?.value ?? 'Untitled'}
-                    </span>
-                    {ticket.slots.status && <StatusPill slot={ticket.slots.status} />}
-                  </div>
-                ))}
+              {/*
+                * Side by side and unlabelled: "Status" and "Lead" in front of a
+                * status and a face were captions on things that say what they
+                * are. Read-only, so these are pills rather than the panel's
+                * controls — the same shape, without the press.
+                */}
+              <div className="flex flex-wrap items-center gap-2">
+                {folderProject.project.slots.status && (
+                  <ReadOnlyPill>
+                    <StatusPill slot={folderProject.project.slots.status} />
+                  </ReadOnlyPill>
+                )}
+                {folderProject.project.meta
+                  .filter((slot) => slot.isPubkey)
+                  .map((slot, i) => (
+                    <ReadOnlyPill key={`${slot.label ?? 'person'}-${i}`}>
+                      <Person pubkey={slot.value} people={folderProject.project.people} />
+                    </ReadOnlyPill>
+                  ))}
               </div>
-            )}
+            </div>
+            <ProjectTickets
+              tickets={folderProject.tickets}
+              openCount={folderProject.openCount}
+              doneCount={folderProject.doneCount}
+            />
           </div>
         </Section>
       )}
@@ -285,13 +273,25 @@ export function TopicDetailsDialogView({
   )
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({
+  label,
+  trailing,
+  children,
+}: {
+  label: string
+  /** Sits beside the heading — the members count, as a chip rather than text. */
+  trailing?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     // 12px under the heading, not 8: at 8 the label sat as close to its own
     // content as the content's rows sat to each other, so the sections read as
     // one list rather than four (Katerina, 2026-08-20).
     <div className="flex flex-col gap-3">
-      <SectionLabel>{label}</SectionLabel>
+      <div className="flex items-center gap-2">
+        <SectionLabel>{label}</SectionLabel>
+        {trailing}
+      </div>
       {children}
     </div>
   )
@@ -332,5 +332,21 @@ export function TopicDetailsDialog({ topicKey, onClose }: { topicKey: string; on
       onRename={(title) => renameTopic(topicKey, title)}
       onClose={onClose}
     />
+  )
+}
+
+/**
+ * A read-only pill, shaped like the small controls the Files panel uses.
+ *
+ * The dialog shows a project it cannot change, so this is the control's shape
+ * without its press: same height, same border, same radius, no hover and no
+ * cursor. It keeps a project looking like itself in both places, which is the
+ * whole point of showing it here at all.
+ */
+function ReadOnlyPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex h-6 items-center gap-1.5 rounded-lg border border-border-default px-2 text-xs text-text-secondary">
+      {children}
+    </span>
   )
 }

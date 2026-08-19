@@ -75,6 +75,10 @@ const object = (id: string, title: string, status: string, colour: string): Fore
     appName: 'Estiva Ship',
     slots: {
       title: { value: title, field: 'title' },
+      // Ship gives every issue a key — FEE-1, PEE-2 — and the rows show it.
+      // The fixture had none, so the column looked empty in the story while the
+      // real panel had it.
+      subtitle: { value: id.toUpperCase() },
       status: { label: 'Status', value: status, colour, field: 'status' },
     },
     meta: [],
@@ -89,6 +93,12 @@ const folderProject: FolderProject = {
     ...object('fee', 'Feedback on Peek', 'In Progress', 'blue'),
     kind: 30850,
     widget: 'card',
+    // A project has a description, not a key — inventing a short code for one
+    // put a label in this story that no project has.
+    slots: {
+      title: { value: 'Feedback on Peek', field: 'title' },
+      status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' },
+    },
     // A project has a lead, and the dialog was showing none because the fixture
     // carried none — the same fixture gap that hid the truncated key in FEE-1.
     meta: [{ label: 'Lead', value: person, isPubkey: true, field: 'lead' }],
