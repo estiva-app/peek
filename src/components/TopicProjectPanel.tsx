@@ -219,10 +219,15 @@ export function TopicProjectPanelView({
   return (
     <PanelShell>
       <div className="flex-1 overflow-y-auto p-3">
-        {/* `bg-surface-raised` is not a token this app defines, so this card
-            rendered with no fill at all. `--bg-inset`, matching the reference
-            widget and the file attachments it sits among. */}
-        <div className="rounded-lg border border-border-subtle bg-bg-inset">
+        {/* No fill, deliberately (Katerina, 2026-08-19). The reference widget
+            takes one because it sits in a conversation among attachments; this
+            card already has a panel of its own around it, and a second surface
+            inside it would be a box drawn on a box.
+
+            It carried `bg-surface-raised`, which is not a token this app
+            defines — so it always rendered unfilled. Dropped rather than kept,
+            since a class that emits nothing is a claim the file cannot back. */}
+        <div className="rounded-lg border border-border-subtle">
           <div className="flex flex-col gap-2 p-3">
             {/* Full width, and the only way into Linear-lite from here — a
                 separate "open in app" link was the same destination twice. */}
