@@ -323,7 +323,12 @@ export function ForeignObjectCard({
         className,
       )}
     >
-      <div className="flex items-start gap-2">
+      {/*
+       * Baselines, not box tops. The app name is 10px beside a 14px title, so
+       * aligning their boxes sat it visibly above the title's line — the
+       * smaller the type, the worse it looked (2026-08-19).
+       */}
+      <div className="flex items-baseline gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             {/* The title is the way into the owning app. A reference you cannot
