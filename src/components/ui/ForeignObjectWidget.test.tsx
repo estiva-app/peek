@@ -94,6 +94,20 @@ describe('ForeignObjectWidget', () => {
     expect(document.body.textContent).not.toContain('aaaaaaaa')
   })
 
+  it('names the owning app plainly, even when the handler was a guess', async () => {
+    /*
+     * There used to be a `?` here when no NIP-89 recommendation named the
+     * handler. It was true and unreadable — "ESTIVA SHIP ?" reads as a broken
+     * widget to anyone who does not know what a handler recommendation is
+     * (Katerina, 2026-08-19).
+     */
+    resolveObject.mockResolvedValue(object({ viaRecommendation: false }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+
+    expect(await screen.findByText('Linear-lite')).toBeInTheDocument()
+    expect(screen.queryByText(/\?/)).not.toBeInTheDocument()
+  })
+
   it('does not restate comments the conversation around it already shows', async () => {
     // PEEK-18. For Linear-lite a comment *is* a topic message, so the widget was
     // re-rendering the thread it sits inside. You reply to the message instead.

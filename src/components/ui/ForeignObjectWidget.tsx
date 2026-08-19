@@ -375,11 +375,24 @@ export function ForeignObjectCard({
             </div>
           )}
         </div>
+        {/*
+         * Just the app's name. A `?` used to follow it when no NIP-89
+         * recommendation named the handler and Peek fell back to whichever app
+         * most recently claimed the kind — "we were told" and "we guessed"
+         * should not look identical, went the reasoning.
+         *
+         * True, and addressed to the wrong reader: nobody reading a message
+         * knows what a handler recommendation is, so "ESTIVA SHIP ?" read as a
+         * broken widget rather than as a disclosure (Katerina, 2026-08-19). The
+         * guess is Peek's problem to get right, and when it gets it wrong the
+         * widget renders wrong, which is the visible signal that matters.
+         *
+         * `viaRecommendation` stays on the object — it is a real fact about how
+         * the manifest was found, and `projection.test.ts` pins it. It just has
+         * no glyph in the message any more.
+         */}
         <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
           {object.appName}
-          {/* No recommendation existed, so the handler was a guess. Worth saying:
-              "we were told" and "we guessed" should not look identical. */}
-          {!object.viaRecommendation && ' ?'}
         </span>
       </div>
 
