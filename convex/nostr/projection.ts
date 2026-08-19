@@ -663,9 +663,9 @@ export interface FolderProject {
    * record from its own lists is saying it is no longer part of the project.
    */
   tickets: ForeignObject[]
-  /** Tickets still to do — the left half of "Tickets (3/8)". */
+  /** Tickets still to do. With `doneCount`, the total the panel counts against. */
   openCount: number
-  /** Finished tickets, as the context that makes the open count mean something. */
+  /** Finished tickets — the numerator in the panel's "1/3". */
   doneCount: number
 }
 
@@ -677,14 +677,22 @@ export interface FolderProject {
  * parked. So the consumer has to decide.
  *
  * Two named sets rather than one allowlist and an "everything else": the panel
- * counts open *against* done, and a status that is neither should land in
- * neither. A parked "Backlog" or "Triage" is real work nobody is doing and it
- * would inflate the open count into meaninglessness; an unrecognised status
- * some other app invented is not evidence of anything. Both are simply left out
- * of both counts, which keeps "3/8" a claim the panel can stand behind.
+ * reads "1/3", done over the two sets added together, and a status that is
+ * neither should land in neither. A parked "Backlog" or "Triage" is real work
+ * nobody is doing and it would inflate the total into meaninglessness; an
+ * unrecognised status some other app invented is not evidence of anything.
  *
- * The cost is honest: an app whose statuses are spelled differently shows an
- * empty section until its values are added here. That is the failure worth
+ * Leaving both out is also what keeps "3/3" reachable. A cancelled ticket is
+ * not outstanding and never becomes done, so counting it in the total would
+ * leave a finished project stuck at 3/4 for good.
+ *
+ * The visible cost: with something cancelled, the total is smaller than the
+ * number of rows listed below it. The count is about progress through the work,
+ * not about how long the list is, and a total nothing can ever complete is the
+ * worse of the two.
+ *
+ * The other cost is honest: an app whose statuses are spelled differently shows
+ * an empty section until its values are added here. That is the failure worth
  * having — the alternative is a count that quietly includes work nobody is on.
  */
 const OPEN_STATUSES = new Set([

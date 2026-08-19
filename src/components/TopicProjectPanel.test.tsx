@@ -128,11 +128,26 @@ describe('TopicProjectPanelView', () => {
     expect(screen.getByText(`${'b'.repeat(8)}…`)).toBeInTheDocument()
   })
 
-  it('counts open against done, and keeps the table shut until asked', () => {
+  it('counts finished against the total, and keeps the table shut until asked', () => {
     render(<TopicProjectPanelView folderProject={folderProject()} />)
 
-    expect(screen.getByText('Tickets (1/2)')).toBeInTheDocument()
+    // 2 done of 3 counted. Read as a fraction, which is how anyone reads it.
+    expect(screen.getByText('Tickets (2/3)')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  /**
+   * The three readings that have to hold, because the previous format failed
+   * all of them: it showed open/done, so "0/2" meant everything was finished
+   * and "3/1" meant nothing much was.
+   */
+  it.each([
+    { openCount: 3, doneCount: 0, label: 'Tickets (0/3)', reading: 'nothing done' },
+    { openCount: 2, doneCount: 1, label: 'Tickets (1/3)', reading: 'one of three done' },
+    { openCount: 0, doneCount: 3, label: 'Tickets (3/3)', reading: 'all done' },
+  ])('reads $label as $reading', ({ openCount, doneCount, label }) => {
+    render(<TopicProjectPanelView folderProject={folderProject({ openCount, doneCount })} />)
+    expect(screen.getByText(label)).toBeInTheDocument()
   })
 
   it('shows progress through the work', () => {
@@ -177,7 +192,7 @@ describe('TopicProjectPanelView', () => {
       <TopicProjectPanelView folderProject={folderProject({ tickets: many, openCount: 11 })} />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: 'Tickets (11/2)' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tickets (2/13)' }))
 
     expect(screen.getAllByRole('link', { name: /^Live work \d+$/ })).toHaveLength(11)
   })
@@ -189,7 +204,8 @@ describe('TopicProjectPanelView', () => {
       />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: /Tickets/ }))
+    // Not "Tickets (0/0)" — a fraction of nothing reads as a broken counter.
+    await userEvent.click(screen.getByRole('button', { name: 'Tickets' }))
 
     expect(screen.getByText('No tickets in this project yet.')).toBeInTheDocument()
   })

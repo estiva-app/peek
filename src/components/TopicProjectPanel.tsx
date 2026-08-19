@@ -256,8 +256,18 @@ export function TopicProjectPanelView({
                 stroke={1.5}
                 className={cn('shrink-0 transition-transform', expanded && 'rotate-90')}
               />
-              {/* Open over done: what is left, against what is behind you. */}
-              Tickets ({openCount}/{doneCount})
+              {/*
+                * Done over total: 0/3 nothing finished, 3/3 all of it. It used
+                * to be open over done, which read as a fraction but was two
+                * separate counts — "3/1" meant three left and one finished, and
+                * "0/2" meant everything was done while looking like the
+                * opposite. Same total the progress bar beside it already uses.
+                *
+                * Nothing at all for an empty project, on the reasoning that
+                * hides the bar there too: "0/0" is a fraction of nothing, and
+                * reads as a broken counter rather than as an empty project.
+                */}
+              Tickets{doneCount + openCount > 0 && ` (${doneCount}/${doneCount + openCount})`}
             </button>
             {/* Beside the button rather than inside it: a progressbar nested in
                 a control folds its label into the button's accessible name. */}
