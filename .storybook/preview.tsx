@@ -7,12 +7,44 @@ import '../src/index.css'
 import './preview.css'
 import './signal.css'
 
+/**
+ * The themes this library renders.
+ *
+ * - `signal` — what Peek actually ships, and the only theme the app has.
+ * - `dark` — Signal's base, kept selectable because Signal only overrides part
+ *   of it and the difference is worth being able to see.
+ * - `estiva-id` — the Estiva ID account screens. Neither class is applied, so
+ *   the `:root` palette in index.css takes over: **light colours, with the
+ *   typography, spacing and radius tokens unchanged**, since those are not
+ *   theme-scoped. That is the whole point — one token system, a different
+ *   palette per app, which is what unifying these designs has to mean.
+ *
+ * `light` is deliberately not offered. The palette is still in index.css and is
+ * exactly what `estiva-id` renders; it is just not a theme Peek has any more.
+ * To bring it back, add 'light' to the toolbar items below.
+ */
 const applyTheme = (theme?: string) => {
   // "signal" is a dark-based theme: keep .dark active so dark: variants apply,
   // then .signal's variables (loaded after index.css) override the palette.
   document.documentElement.classList.toggle('dark', theme === 'dark' || theme === 'signal')
   document.documentElement.classList.toggle('signal', theme === 'signal')
-  document.body.classList.add('bg-bg-base', 'text-text-primary', 'font-sans')
+  // Marks the Estiva ID surface for the story harness in the estiva-id repo,
+  // which scopes that app's own stylesheet to its own stories.
+  const estivaId = theme === 'estiva-id'
+  document.documentElement.classList.toggle('estiva-id', estivaId)
+
+  /**
+   * Peek's body classes are Peek's, and `.font-sans` is the one that bites.
+   *
+   * Estiva ID sets its font on `body` as an element selector, so a class here
+   * outranks it and every account screen silently rendered in Geist instead of
+   * the system stack it actually ships. Same for the colours. Under the Estiva
+   * ID theme the app's own stylesheet is left to do its job — which is the
+   * point of designing these screens here at all.
+   */
+  document.body.classList.toggle('bg-bg-base', !estivaId)
+  document.body.classList.toggle('text-text-primary', !estivaId)
+  document.body.classList.toggle('font-sans', !estivaId)
 }
 
 // Drive the theme class from the toolbar for EVERY page — including standalone
@@ -48,7 +80,9 @@ const preview: Preview = {
       toolbar: {
         title: 'Theme',
         icon: 'mirror',
-        items: ['light', 'dark', 'signal'],
+        // 'light' removed with Peek's theme picker — `estiva-id` renders that
+        // same palette. Re-add it here if a light Peek is ever wanted again.
+        items: ['signal', 'dark', 'estiva-id'],
         dynamicTitle: true,
       },
     },
