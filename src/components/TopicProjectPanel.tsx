@@ -219,7 +219,10 @@ export function TopicProjectPanelView({
   return (
     <PanelShell>
       <div className="flex-1 overflow-y-auto p-3">
-        <div className="rounded-lg border border-border-subtle bg-surface-raised">
+        {/* `bg-surface-raised` is not a token this app defines, so this card
+            rendered with no fill at all. `--bg-inset`, matching the reference
+            widget and the file attachments it sits among. */}
+        <div className="rounded-lg border border-border-subtle bg-bg-inset">
           <div className="flex flex-col gap-2 p-3">
             {/* Full width, and the only way into Linear-lite from here — a
                 separate "open in app" link was the same destination twice. */}

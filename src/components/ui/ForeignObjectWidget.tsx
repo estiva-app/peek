@@ -40,7 +40,8 @@ import { SkeletonBar } from './Skeleton'
  * `bg-success-subtle` — are not tokens this app defines, so Tailwind never
  * emitted them and no pill was ever drawn. Removed rather than replaced: text
  * is the intended treatment (2026-08-19), so the classes were describing
- * something nobody wanted.
+ * something nobody wanted. The card's own `bg-surface-raised` was the same
+ * mistake and *was* visible — see the note on the card below.
  *
  * `text-text-tertiary` was dead in the same way, and that one *was* visible as a
  * fault: `muted` inherited the surrounding colour, so a cancelled item looked
@@ -318,7 +319,18 @@ export function ForeignObjectCard({
     <div
       data-foreign-object={object.address}
       className={cn(
-        'rounded-lg border border-border-subtle bg-surface-raised',
+        /*
+         * The same surface a file attachment sits on (Katerina, 2026-08-19).
+         * The border was never the difference — both are 1px of
+         * `--border-subtle` at 8px radius — but this card asked for
+         * `bg-surface-raised`, which is not a token this app defines, so
+         * Tailwind emitted nothing and it rendered fully transparent. A soft
+         * edge over the page reads thinner than the same edge over a fill.
+         *
+         * `--bg-inset` is what the attachment cards use, and a reference is the
+         * same sort of thing: something attached to a message from elsewhere.
+         */
+        'rounded-lg border border-border-subtle bg-bg-inset',
         widget === 'card' ? 'p-3' : 'px-3 py-2',
         className,
       )}
@@ -403,7 +415,9 @@ export function ForeignObjectSkeleton({ className }: { className?: string }) {
     <div
       aria-hidden
       className={cn(
-        'rounded-lg border border-border-subtle bg-surface-raised p-3 animate-skeleton-in',
+        // The same surface as the card it stands in for, or the placeholder
+        // and the thing it becomes are two different shapes.
+        'rounded-lg border border-border-subtle bg-bg-inset p-3 animate-skeleton-in',
         className,
       )}
     >
