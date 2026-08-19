@@ -35,11 +35,13 @@ const issue: ForeignObject = {
       label: 'Change status',
       control: 'select',
       field: 'status',
+      // Ship's issue vocabulary, verbatim from `ship/src/kinds.ts`.
       current: 'todo',
       options: [
         { value: 'todo', label: 'Todo' },
-        { value: 'doing', label: 'Doing' },
+        { value: 'in_progress', label: 'In Progress' },
         { value: 'done', label: 'Done' },
+        { value: 'cancelled', label: 'Cancelled' },
       ],
     },
     { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee' },
