@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
  * Oldest first, reading downwards. A topic's history is short enough that
  * newest-first would only make the beginning hard to find.
  */
-export type ActivityKind = 'created' | 'renamed' | 'resolved' | 'reopened' | 'joined'
+export type ActivityKind = 'created' | 'renamed' | 'resolved' | 'reopened' | 'joined' | 'left'
 
 export interface ActivityEntry {
   kind: ActivityKind
@@ -23,7 +23,8 @@ export interface ActivityEntry {
   at: number
   /** Who did it. Null for someone Peek cannot name. */
   by: string | null
-  /** A rename's previous name. */
+  /** A rename's previous name. Kept for the record even though the line reads
+   *  forwards — it is the only place the old name survives at all. */
   detail?: string
   /** A rename's new name, or the message a resolution was about. */
   subject?: string
@@ -35,10 +36,42 @@ const DOT: Record<ActivityKind, string> = {
   resolved: 'bg-success-default',
   reopened: 'bg-text-muted',
   joined: 'bg-text-muted',
+  left: 'bg-text-muted',
 }
 
-const day = (at: number) =>
-  new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+/**
+ * How long ago, at the precision that is worth reading.
+ *
+ * A history is scanned for *when roughly*, not for a timestamp: "3h" answers
+ * the question people actually have, and a date does the same job once
+ * something is old enough that hours stop meaning anything. The full date and
+ * time is on the element's `title`, so the precise answer is one hover away
+ * rather than taking up the row for everybody.
+ *
+ * The year appears only when it is not this one — a history that is mostly
+ * recent should not repeat "2026" down its right-hand edge.
+ */
+export function whenLabel(at: number, now = Date.now()): string {
+  const seconds = Math.max(0, Math.round((now - at) / 1000))
+  if (seconds < 60) return 'now'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const then = new Date(at)
+  const sameYear = then.getFullYear() === new Date(now).getFullYear()
+  return then.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  })
+}
+
+const exactly = (at: number) =>
+  new Date(at).toLocaleString(undefined, {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  })
 
 export function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
   if (entries.length === 0) {
@@ -62,10 +95,18 @@ export function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
               <span className={cn('size-1 rounded-full', DOT[entry.kind])} />
             </span>
           </span>
+          {/* The text wraps and the time holds its column, so a long entry
+              runs to a second line under itself rather than pushing the time
+              off the row or squeezing it to one character per line. */}
           <p className="min-w-0 flex-1 text-[12px] leading-[1.4]">
             <Line entry={entry} />
           </p>
-          <span className="shrink-0 text-[12px] leading-[1.4] text-text-muted">{day(entry.at)}</span>
+          <span
+            title={exactly(entry.at)}
+            className="shrink-0 text-[12px] leading-[1.4] text-text-muted"
+          >
+            {whenLabel(entry.at)}
+          </span>
         </div>
       ))}
     </div>
@@ -95,10 +136,11 @@ function Line({ entry }: { entry: ActivityEntry }) {
       return (
         <>
           {who}
-          <span className="text-text-secondary"> renamed it from </span>
-          {/* The old name is the half worth showing: the new one is the title
-              at the top of the dialog. */}
-          <span className="text-text-primary">{entry.detail}</span>
+          {/* Forwards, to the new name (Katerina, 2026-08-20). Reading it
+              backwards from the old one made the entry a puzzle: you had to
+              find the next rename below to learn what it became. */}
+          <span className="text-text-secondary"> renamed this topic to </span>
+          <span className="text-text-primary">{entry.subject}</span>
         </>
       )
     case 'joined':
@@ -106,6 +148,16 @@ function Line({ entry }: { entry: ActivityEntry }) {
         <>
           {who}
           <span className="text-text-secondary"> joined</span>
+        </>
+      )
+    case 'left':
+      // Nothing produces this yet — leaving a topic does not exist in Peek.
+      // Carried so the timeline is ready for it rather than needing a change
+      // in two places later (Katerina, 2026-08-20).
+      return (
+        <>
+          {who}
+          <span className="text-text-secondary"> left</span>
         </>
       )
     case 'resolved':

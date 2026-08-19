@@ -33,6 +33,16 @@ export const Topic: Story = {
     members,
     onStartHuddle: () => {},
     onShowMembers: () => {},
+    /*
+     * The header's more-menu, with everything a topic offers. It is the same
+     * `TopicMoreMenu` the sidebar row uses — press the ⋮ to see it (PEE-2).
+     * These were missing here, so the story showed the old one-item menu while
+     * the app had the new one.
+     */
+    onOpenDetails: () => {},
+    onDeleteTopic: () => {},
+    openWorkAction: 'add',
+    onToggleOpenWork: () => {},
   },
 }
 

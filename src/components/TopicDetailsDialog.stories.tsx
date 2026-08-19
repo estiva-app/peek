@@ -31,6 +31,14 @@ const details: TopicDetails = {
   ],
 }
 
+/**
+ * Fixed dates for the older entries and offsets for the recent ones, so the
+ * relative labels ("now", "12m", "5h") are actually exercised rather than
+ * every row reading as a date.
+ */
+const HOUR = 60 * 60 * 1000
+const ago = (ms: number) => Date.now() - ms
+
 const activity = [
   { kind: 'created' as const, at: Date.parse('2026-08-12T09:20:00Z'), by: 'Katerina Kelepouri' },
   { kind: 'joined' as const, at: Date.parse('2026-08-12T09:24:00Z'), by: 'Jan Miky' },
@@ -50,10 +58,12 @@ const activity = [
   },
   {
     kind: 'reopened' as const,
-    at: Date.parse('2026-08-19T09:05:00Z'),
+    at: ago(5 * HOUR),
     by: 'Katerina Kelepouri',
     subject: 'Reference widget will not show up in some cases',
   },
+  { kind: 'joined' as const, at: ago(12 * 60 * 1000), by: 'Juan Foley' },
+  { kind: 'renamed' as const, at: ago(20 * 1000), by: 'Katerina Kelepouri', detail: 'Peek feedback', subject: 'Feedback on Peek' },
 ]
 
 const object = (id: string, title: string, status: string, colour: string): ForeignObject =>
@@ -69,6 +79,7 @@ const object = (id: string, title: string, status: string, colour: string): Fore
     },
     meta: [],
     comments: [],
+    people: { [person]: { displayName: 'Amie Miles' } },
     actions: [],
     viaRecommendation: true,
   }) as ForeignObject
@@ -78,6 +89,9 @@ const folderProject: FolderProject = {
     ...object('fee', 'Feedback on Peek', 'In Progress', 'blue'),
     kind: 30850,
     widget: 'card',
+    // A project has a lead, and the dialog was showing none because the fixture
+    // carried none — the same fixture gap that hid the truncated key in FEE-1.
+    meta: [{ label: 'Lead', value: person, isPubkey: true, field: 'lead' }],
   },
   tickets: [
     object('fee-1', 'Assignee avatar and full name is missing in files panel', 'In Progress', 'blue'),
@@ -129,7 +143,9 @@ export const ReadOnly: Story = {
  *
  * Click Edit to see it.
  */
-export const Editing: Story = {}
+export const Editing: Story = {
+  args: { initialEditing: true },
+}
 
 /**
  * **The relay refused.**
@@ -143,7 +159,53 @@ export const Editing: Story = {}
  */
 export const RenameRefused: Story = {
   args: {
+    initialEditing: true,
+    initialError: 'The relay refused: only a channel owner or admin can rename it.',
     onRename: async () => 'The relay refused: only a channel owner or admin can rename it.',
+  },
+}
+
+/**
+ * Long entries, which is the normal case once resolutions carry a message.
+ *
+ * The text wraps to a second line under itself and the time keeps its column —
+ * it never gets pushed off the row or squeezed to a character per line.
+ */
+export const LongActivityEntries: Story = {
+  args: {
+    folderProject: null,
+    activity: [
+      activity[0],
+      {
+        kind: 'resolved',
+        at: ago(3 * HOUR),
+        by: 'Jan Miky',
+        subject:
+          'Reference widget will not show up in some cases — specifically when a message is edited after it was sent, or when the conversation was started from Ship',
+      },
+      {
+        kind: 'renamed',
+        at: ago(90 * 1000),
+        by: 'Katerina Kelepouri',
+        detail: 'Feedback',
+        subject: 'Feedback on Peek, and everything else we found while reviewing it',
+      },
+    ],
+  },
+}
+
+/**
+ * A project whose lead nobody has published a profile for.
+ *
+ * The silhouette and an em dash, never the key — the same rule the Files panel
+ * and the reference widget follow (FEE-1).
+ */
+export const ProjectWithoutLead: Story = {
+  args: {
+    folderProject: {
+      ...folderProject,
+      project: { ...folderProject.project, people: {} },
+    },
   },
 }
 

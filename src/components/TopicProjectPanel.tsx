@@ -7,6 +7,7 @@ import { hasConvex, useForeignObjects } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { Person } from '@/components/ui/Person'
+import { Property } from '@/components/ui/Property'
 import { SkeletonBar } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 
@@ -156,18 +157,6 @@ function Progress({ done, open }: { done: number; open: number }) {
         className="h-full rounded-full bg-success-muted transition-[width] duration-300"
         style={{ width: `${Math.round((done / total) * 100)}%` }}
       />
-    </div>
-  )
-}
-
-function Property({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      {/* `--text-secondary`, not `--text-muted`: muted is the placeholder tone,
-          and a property label is content — at 12px it fell below comfortable
-          reading contrast (2026-08-19). */}
-      <span className="w-[68px] shrink-0 text-xs text-text-secondary">{label}</span>
-      {children}
     </div>
   )
 }

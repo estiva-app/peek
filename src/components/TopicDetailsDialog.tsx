@@ -6,9 +6,12 @@ import type { FolderProject } from '../../convex/nostr/projection'
 import { hasConvex, useForeignObjects, useRenameTopic, useTopicActivity, useTopicDetails } from '@/api'
 import { ActivityTimeline, type ActivityEntry } from './ui/ActivityTimeline'
 import { Avatar } from './ui/Avatar'
+import { Chip } from './ui/Chip'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { SectionLabel } from './ui/SectionHeader'
+import { Person } from './ui/Person'
+import { Property } from './ui/Property'
 import { StatusPill } from './ui/ForeignObjectWidget'
 import { TextInput } from './ui/TextInput'
 
@@ -45,6 +48,8 @@ export function TopicDetailsDialogView({
   folderProject,
   onRename,
   onClose,
+  initialEditing,
+  initialError,
 }: {
   /** `undefined` while it loads. */
   details: TopicDetails | undefined
@@ -54,10 +59,22 @@ export function TopicDetailsDialogView({
   /** Resolves to an error to show, or null when the rename went through. */
   onRename?: (title: string) => Promise<string | null>
   onClose: () => void
+  /**
+   * Open straight into the rename field. **Stories and tests only** — the app
+   * never passes it.
+   *
+   * Both live states of this row are reached by clicking, which means a static
+   * story cannot show either, and these are exactly the two states worth
+   * reviewing: the field itself, and a refusal. A prop that says so is more
+   * honest than a story that pretends to click.
+   */
+  initialEditing?: boolean
+  /** The refusal to show on open. Stories and tests only, as above. */
+  initialError?: string
 }) {
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(initialEditing ?? false)
   const [draft, setDraft] = useState('')
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<string | undefined>(initialError)
   const [saving, setSaving] = useState(false)
 
   // A rename that lands from elsewhere while this is open should not be
@@ -120,7 +137,12 @@ export function TopicDetailsDialogView({
                   }
                 }}
               />
-              <Button size="small" disabled={!changed || saving} onClick={() => void save()}>
+              <Button
+                variant="primary"
+                size="small"
+                disabled={!changed || saving}
+                onClick={() => void save()}
+              >
                 {saving ? 'Saving…' : 'Save'}
               </Button>
               <Button
@@ -150,7 +172,11 @@ export function TopicDetailsDialogView({
                 leadingIcon={<IconPencil size={14} stroke={1.5} />}
                 onClick={() => setEditing(true)}
               >
-                Edit
+                {/* "Rename", not "Edit" (Katerina, 2026-08-20). "Edit" beside a
+                    topic's name does not say what it edits — the name, the
+                    topic, the members? The menu says "Topic details" and this
+                    says the one thing it does. */}
+                Rename
               </Button>
             )}
           </div>
@@ -172,13 +198,15 @@ export function TopicDetailsDialogView({
                 <span className="truncate text-[14px] font-normal leading-[1.4] text-text-primary">
                   {member.name}
                 </span>
-                {/* The creator is named as such because they are the one who can
-                    change things — it answers "who do I ask?" without a
-                    sentence explaining it. */}
                 <span className="truncate text-[12px] leading-[1.2] text-text-secondary">
-                  {member.isCreator ? 'Created this topic' : member.role}
+                  {member.role}
                 </span>
               </div>
+              {/* On the right, as a chip rather than in place of their role
+                  (Katerina, 2026-08-20): being the owner is a fact about their
+                  standing here, not their job — and it is the answer to "who do
+                  I ask", so it wants to be scannable down one edge. */}
+              {member.isCreator && <Chip type="neutral" label="Owner" />}
             </div>
           ))}
         </div>
@@ -186,26 +214,58 @@ export function TopicDetailsDialogView({
 
       {folderProject && (
         <Section label="Project">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 truncate text-[14px] leading-[1.4] text-text-primary">
-                {folderProject.project.slots.title?.value ?? 'Untitled'}
-              </span>
+          <div className="flex flex-col">
+            <span className="min-w-0 truncate text-[14px] leading-[1.4] text-text-primary">
+              {folderProject.project.slots.title?.value ?? 'Untitled'}
+            </span>
+
+            {/*
+              * The project's properties as rows, the way the Files panel shows
+              * them — status and lead beside their labels rather than trailing
+              * the title (Katerina, 2026-08-20). Inline, the status read as
+              * part of the name and the lead had nowhere to go at all.
+              */}
+            <div className="mt-2 flex flex-col gap-1">
               {folderProject.project.slots.status && (
-                <StatusPill slot={folderProject.project.slots.status} />
+                <Property label={folderProject.project.slots.status.label ?? 'Status'}>
+                  <StatusPill slot={folderProject.project.slots.status} />
+                </Property>
               )}
+              {folderProject.project.meta.map((slot, i) => (
+                <Property key={`${slot.label ?? 'meta'}-${i}`} label={slot.label ?? ''}>
+                  {slot.isPubkey ? (
+                    // Face and full name, or an em dash for a lead nobody has
+                    // published a profile for — the same `Person` the panel and
+                    // the reference widget use, so one key never reads two ways.
+                    <Person
+                      pubkey={slot.value}
+                      people={folderProject.project.people}
+                      className="text-xs text-text-secondary"
+                    />
+                  ) : (
+                    <span className="text-xs text-text-secondary">{slot.value}</span>
+                  )}
+                </Property>
+              ))}
             </div>
-            {/* Read-only here on purpose: the Files panel is where a project is
-                worked on, and a second set of controls would be a second place
-                to change one thing. */}
-            {folderProject.tickets.map((ticket) => (
-              <div key={ticket.address} className="flex items-center gap-2 py-0.5">
-                <span className="min-w-0 flex-1 truncate text-[12px] leading-[1.4] text-text-secondary">
-                  {ticket.slots.title?.value ?? 'Untitled'}
-                </span>
-                {ticket.slots.status && <StatusPill slot={ticket.slots.status} />}
+
+            {/* Air between what the project *is* and what is in it. Without it
+                the first ticket read as another property. */}
+            {folderProject.tickets.length > 0 && (
+              <div className="mt-4 flex flex-col gap-1 border-t border-border-subtle pt-3">
+                {/* Read-only on purpose: the Files panel is where a project is
+                    worked on, and a second set of controls would be a second
+                    place to change one thing. */}
+                {folderProject.tickets.map((ticket) => (
+                  <div key={ticket.address} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[12px] leading-[1.4] text-text-secondary">
+                      {ticket.slots.title?.value ?? 'Untitled'}
+                    </span>
+                    {ticket.slots.status && <StatusPill slot={ticket.slots.status} />}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         </Section>
       )}
@@ -219,7 +279,10 @@ export function TopicDetailsDialogView({
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
+    // 12px under the heading, not 8: at 8 the label sat as close to its own
+    // content as the content's rows sat to each other, so the sections read as
+    // one list rather than four (Katerina, 2026-08-20).
+    <div className="flex flex-col gap-3">
       <SectionLabel>{label}</SectionLabel>
       {children}
     </div>

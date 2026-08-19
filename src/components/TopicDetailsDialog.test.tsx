@@ -23,7 +23,7 @@ const details: TopicDetails = {
 
 const open = async (props: Partial<React.ComponentProps<typeof TopicDetailsDialogView>> = {}) => {
   render(<TopicDetailsDialogView details={details} onClose={vi.fn()} {...props} />)
-  await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Rename' }))
 }
 
 describe('TopicDetailsDialogView', () => {
@@ -35,14 +35,17 @@ describe('TopicDetailsDialogView', () => {
     expect(screen.getByText('Feedback on Peek')).toBeInTheDocument()
     // Absent, not disabled. A locked field invites an attempt that cannot
     // succeed; a label has nothing to try.
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Topic name' })).not.toBeInTheDocument()
   })
 
-  it('names the creator on their row, so it is clear who to ask', () => {
+  it('marks the creator as owner, so it is clear who to ask', () => {
     render(<TopicDetailsDialogView details={{ ...details, canRename: false }} onClose={vi.fn()} />)
 
-    expect(screen.getByText('Created this topic')).toBeInTheDocument()
+    // On the right of their row rather than in place of their job title — being
+    // the owner is standing here, not a role.
+    expect(screen.getByText('Owner')).toBeInTheDocument()
+    expect(screen.getByText('Product Designer')).toBeInTheDocument()
   })
 
   it('will not save a name that has not changed', async () => {
