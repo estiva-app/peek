@@ -1,5 +1,6 @@
 import { useMarkRead } from '@/lib/useMarkRead'
-import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { isNearBottom } from './scrollPolicy'
 import { IconPlus } from '@tabler/icons-react'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
@@ -316,12 +317,19 @@ export function useTopicView({
     setThreadConvId(null)
   }, [huddleVariant, externalSelectedHuddleId])
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [topicId])
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [currentSent.length])
+  /*
+   * ─── Scroll position ───
+   *
+   * One question asked four ways: when may Peek move the viewport?
+   *
+   *   opening a conversation  → the bottom, before the first paint
+   *   a message arrives       → follow, but only if you were already at the edge
+   *   you sent it             → always the bottom
+   *   "Show earlier"          → never; the anchor below owns the position
+   *
+   * The anchor is declared first because the effects that follow have to know
+   * not to fight it.
+   */
 
   // "Show earlier messages": keep the viewport anchored on the same message
   // while older content extends the timeline upward (distance from the
@@ -343,6 +351,62 @@ export function useTopicView({
       earlierAnchorRef.current = null
     }
   }, [currentGroups])
+
+  /**
+   * Were you at the live edge when new content arrived?
+   *
+   * A ref rather than state: this updates on every scroll frame and re-rendering
+   * the message list that often would be its own bug. `handleScroll` runs before
+   * the render that adds a message, so the value still describes where you were
+   * a moment before it landed — which is the question worth answering.
+   */
+  const nearBottom = useRef(true)
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (el) nearBottom.current = isNearBottom(el)
+  }
+
+  /**
+   * Opening a conversation lands at the bottom.
+   *
+   * Keyed on the messages being *there* rather than on `topicId`, which was the
+   * bug: the id changes while `useTopicMessages` is still loading, so this ran
+   * against an empty container, where `scrollTop = scrollHeight` clamps to 0 —
+   * and nothing ran again once the messages arrived. A long conversation opened
+   * at the top.
+   *
+   * `useLayoutEffect` so it happens before the browser paints. With `useEffect`
+   * you would see it render at the top and then jump.
+   */
+  const pinnedFor = useRef<string | number | null>(null)
+  useLayoutEffect(() => {
+    if (topicId == null || isLoading) return
+    if (pinnedFor.current === topicId) return
+    if (earlierAnchorRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    pinnedFor.current = topicId
+    nearBottom.current = true
+  }, [topicId, isLoading])
+
+  /**
+   * A message arrives: follow it only if you were watching the live edge.
+   *
+   * Keyed on the message count rather than on `currentGroups`, which is rebuilt
+   * every render and would make this fire constantly.
+   */
+  const messageCount = currentGroups.reduce((n, g) => n + g.convs.length, 0)
+  useLayoutEffect(() => {
+    if (isLoading || !nearBottom.current || earlierAnchorRef.current) return
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messageCount, isLoading])
+
+  // Your own message always brings you down to it.
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [currentSent.length])
 
   if (topicId == null || !topicTitle) {
     return {
@@ -426,7 +490,7 @@ export function useTopicView({
           followed by extraConvs and any huddleSentMessages posted by the user. */}
       {isV2HuddleView && (
         <>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
+          <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto flex flex-col">
             <div className="flex-1 min-h-0" />
             <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
               {v2HuddleConvs.length === 0 ? (
@@ -548,7 +612,7 @@ export function useTopicView({
         }
         return (
         <>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
+          <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto flex flex-col">
             <div className="flex-1 min-h-0" />
             <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
               {isLoading && <SkeletonConversationList />}
