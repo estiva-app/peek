@@ -18,7 +18,7 @@
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, signViaEstivaId } from './bridge'
-import { buildAddMember, buildCreateChannel } from '../../convex/nostr/events'
+import { buildAddMember, buildCreateChannel, buildEditChannelMetadata } from '../../convex/nostr/events'
 
 type ChannelPlan =
   | { ok: true; channelUuid: string; title: string; alreadyPublished: boolean; memberPubkeys: string[] }
@@ -80,4 +80,30 @@ async function signAndSend(
 ) {
   const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
   return publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+}
+
+/**
+ * Tell the relay a topic has been renamed (PEE-2).
+ *
+ * Convex has already been updated by the time this runs, so the app never sits
+ * waiting on a round trip to show the new name. If the relay refuses, the
+ * caller puts the old name back — a local name that quietly disagrees with the
+ * one every other app sees is worse than a rename that failed and said so.
+ *
+ * A topic with no channel yet has nothing to tell: it is renamed locally and
+ * will be created under its current name whenever it is first published.
+ */
+export async function renameTopicChannel(
+  channelUuid: string | null,
+  title: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!channelUuid) return { ok: true }
+  const sent = await signAndSend(
+    buildEditChannelMetadata(token.pubkey, Date.now(), { channelUuid, name: title }),
+    relayUrl,
+    token,
+  )
+  return sent.ok ? { ok: true } : { ok: false, reason: sent.reason ?? 'The relay refused the new name.' }
 }

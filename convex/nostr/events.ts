@@ -44,6 +44,7 @@ export const KIND = {
   REACTION: 7,
   STREAM_MESSAGE: 9,
   NIP29_PUT_USER: 9000,
+  NIP29_EDIT_METADATA: 9002,
   NIP29_CREATE_GROUP: 9007,
   /**
    * Estiva assertion — a statement *about* something in the channel, rather
@@ -207,6 +208,45 @@ export function buildCreateChannel(
     pubkey,
     created_at: toNostrSeconds(createdAtMs),
     kind: KIND.NIP29_CREATE_GROUP,
+    tags,
+    content: '',
+  }
+}
+
+/**
+ * kind:9002 edit metadata — renaming a channel (PEE-2).
+ *
+ * Buzz applies each recognised tag it finds (`name`, `about`, `archived`,
+ * `topic`, `purpose`, `visibility`, `ttl`) and refuses an event carrying none
+ * of them, so this builds exactly the fields asked for and nothing else.
+ *
+ * The name goes through `canonicalChannelName` for the same reason
+ * `buildCreateChannel` does: Buzz canonicalises before storing, so sending the
+ * raw string means Peek and the relay disagree about what the topic is called.
+ * A name that canonicalises away to nothing is not a rename, and throwing here
+ * is better than a round trip to be told so.
+ *
+ * Requires the channel's owner or admin — the relay refuses anyone else, which
+ * is why the UI offers this to the topic's creator alone.
+ */
+export function buildEditChannelMetadata(
+  pubkey: string,
+  createdAtMs: number,
+  args: { channelUuid: string; name?: string; about?: string },
+): UnsignedEvent {
+  assertHex64(pubkey, 'pubkey')
+  const tags: NostrTag[] = [['h', args.channelUuid]]
+  if (args.name !== undefined) {
+    const name = canonicalChannelName(args.name)
+    if (name.trim() === '') throw new Error('channel name is required')
+    tags.push(['name', name])
+  }
+  if (args.about !== undefined) tags.push(['about', args.about])
+  if (tags.length === 1) throw new Error('nothing to edit')
+  return {
+    pubkey,
+    created_at: toNostrSeconds(createdAtMs),
+    kind: KIND.NIP29_EDIT_METADATA,
     tags,
     content: '',
   }

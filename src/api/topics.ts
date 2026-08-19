@@ -17,7 +17,7 @@ import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
 import { useTopicStore } from '@/api/internal/topicStore'
 import { hasConvex, usesEstivaId } from './store'
 import { validToken } from '@/auth/estivaId'
-import { publishTopicChannel } from '@/nostr/topics'
+import { publishTopicChannel, renameTopicChannel } from '@/nostr/topics'
 import type { Topic } from './types'
 import type { Person } from './types'
 
@@ -232,5 +232,61 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
       return result
     },
     [createLocal, createRemote, createHuddleFromDmRemote, publishChannel],
+  )
+}
+
+// ── Topic details (PEE-2) ───────────────────────────────────────────────────
+
+/** Everything the details dialog shows. `undefined` while the query is in
+ *  flight, `null` for a topic Convex has never heard of (mock mode). */
+export function useTopicDetails(topicKey: string | undefined) {
+  return useQuery(api.topics.details, hasConvex && topicKey ? { topicKey } : 'skip')
+}
+
+/** A topic's history, oldest first. */
+export function useTopicActivity(topicKey: string | undefined) {
+  return useQuery(api.topics.activity, hasConvex && topicKey ? { topicKey } : 'skip')
+}
+
+/**
+ * Rename a topic, locally and then on the relay.
+ *
+ * Convex first so the new name is on screen at once, then the kind:9002 that
+ * tells every other app. Those can disagree — the relay grants a name change to
+ * a channel's owner or admin only — so a refusal is reported back rather than
+ * swallowed, and the caller puts the old name back. A local name that quietly
+ * differs from the shared one is the worst of the three outcomes.
+ *
+ * Resolves to an error string, or null when it went through.
+ */
+export function useRenameTopic(): (topicKey: string, title: string) => Promise<string | null> {
+  const renameRemote = useMutation(api.topics.rename)
+  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const renameLocal = useTopicStore().renameTopicLocal
+  return useCallback(
+    async (topicKey: string, title: string) => {
+      renameLocal(topicKey, title)
+      if (!hasConvex) return null
+
+      let result: { renamed: boolean; title?: string; channelUuid?: string | null }
+      try {
+        result = await renameRemote({ topicKey, title })
+      } catch (error) {
+        return error instanceof Error ? error.message : 'That rename did not go through.'
+      }
+      if (!result.renamed) return null
+
+      // `validToken()` at call time, never a snapshot — see `tokenForPublish`
+      // in actions.ts for why that constant goes stale.
+      const token = validToken()
+      if (!token || !relayUrl) {
+        // Renamed here but not announced. Worth saying: the next person to open
+        // this topic in another app still sees the old name.
+        return 'Renamed in Peek, but nobody could be told — you are not signed in to Estiva ID.'
+      }
+      const sent = await renameTopicChannel(result.channelUuid ?? null, result.title ?? title, relayUrl, token)
+      return sent.ok ? null : (sent.reason ?? 'The relay refused the new name.')
+    },
+    [relayUrl, renameLocal, renameRemote],
   )
 }
