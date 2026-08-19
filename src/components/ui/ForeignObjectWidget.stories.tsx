@@ -95,18 +95,14 @@ export const Loading: Story = {
   render: () => <ForeignObjectSkeleton />,
 }
 
-/** Resolved: what a Ship issue looks like once Peek has read it. */
-export const Resolved: Story = {
-  args: { object: issue, onAct: () => {} },
-}
-
 /**
- * **Assigned** — the person is the control (FEE-1).
+ * **Assigned** — a Ship issue as Peek renders it, with somebody on it.
  *
- * Their face and full name, with nothing captioning it: a face beside a name is
- * self-evidently a person, and "Assignee:" in front only repeats the picture.
- * It stays a button, because pressing it is how the assignee changes — and it
- * is where a proper picker will go (PEE-1).
+ * The person *is* the control: their face and full name, with nothing
+ * captioning it. A face beside a name is self-evidently a person, and
+ * "Assignee:" in front only repeats the picture. It stays a button, because
+ * pressing it is how the assignee changes — and it is where a proper picker
+ * will go (PEE-1).
  */
 export const Assigned: Story = {
   args: { object: issue, onAct: () => {} },
