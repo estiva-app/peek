@@ -4,9 +4,11 @@ import { IconPencil } from '@tabler/icons-react'
 import { api } from '../../convex/_generated/api'
 import type { FolderProject } from '../../convex/nostr/projection'
 import { hasConvex, useForeignObjects, useRenameTopic, useTopicActivity, useTopicDetails } from '@/api'
+import type { RenameOutcome } from '@/api'
 import { ActivityTimeline, type ActivityEntry } from './ui/ActivityTimeline'
 import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
+import { cn } from '@/lib/utils'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { SectionLabel } from './ui/SectionHeader'
@@ -56,8 +58,8 @@ export function TopicDetailsDialogView({
   activity?: ActivityEntry[]
   /** The linked project, read-only here. `null` when the topic has none. */
   folderProject?: FolderProject | null
-  /** Resolves to an error to show, or null when the rename went through. */
-  onRename?: (title: string) => Promise<string | null>
+  /** Resolves to `null` when it went through cleanly, or to what to say. */
+  onRename?: (title: string) => Promise<RenameOutcome>
   onClose: () => void
   /**
    * Open straight into the rename field. **Stories and tests only** — the app
@@ -74,7 +76,9 @@ export function TopicDetailsDialogView({
 }) {
   const [editing, setEditing] = useState(initialEditing ?? false)
   const [draft, setDraft] = useState('')
-  const [error, setError] = useState<string | undefined>(initialError)
+  const [outcome, setOutcome] = useState<RenameOutcome>(
+    initialError ? { kind: 'error', message: initialError } : null,
+  )
   const [saving, setSaving] = useState(false)
 
   // A rename that lands from elsewhere while this is open should not be
@@ -92,12 +96,18 @@ export function TopicDetailsDialogView({
   const save = async () => {
     if (!onRename || !changed) return
     setSaving(true)
-    const failure = await onRename(canonical)
+    const result = await onRename(canonical)
     setSaving(false)
-    setError(failure ?? undefined)
-    // The draft is kept on failure. Throwing away what somebody typed to show
-    // them the name they were trying to replace helps nobody.
-    if (!failure) setEditing(false)
+    setOutcome(result)
+    /*
+     * Only a real error keeps the field open. A warning means the rename
+     * happened and simply was not announced to the relay — leaving the editor
+     * up with a red line under it made a rename that had plainly worked look
+     * like it had failed (Katerina, 2026-08-20). The draft is kept on an
+     * error, because throwing away what somebody typed to show them the name
+     * they were replacing helps nobody.
+     */
+    if (result?.kind !== 'error') setEditing(false)
   }
 
   return (
@@ -133,7 +143,7 @@ export function TopicDetailsDialogView({
                   if (e.key === 'Escape') {
                     e.preventDefault()
                     setEditing(false)
-                    setError(undefined)
+                    setOutcome(null)
                   }
                 }}
               />
@@ -150,13 +160,13 @@ export function TopicDetailsDialogView({
                 size="small"
                 onClick={() => {
                   setEditing(false)
-                  setError(undefined)
+                  setOutcome(null)
                 }}
               >
                 Cancel
               </Button>
             </div>
-            {error && <p className="text-[12px] leading-[1.4] text-error-default">{error}</p>}
+            <Outcome outcome={outcome} />
           </div>
         ) : (
           <div className="flex items-center gap-2">
@@ -181,6 +191,7 @@ export function TopicDetailsDialogView({
             )}
           </div>
         )}
+        {!editing && <Outcome outcome={outcome} />}
         {/*
           * No "Created by" line here. It was saying a third time what the
           * members list already says under the creator's name and what the
@@ -348,5 +359,27 @@ function ReadOnlyPill({ children }: { children: React.ReactNode }) {
     <span className="inline-flex h-6 items-center gap-1.5 rounded-lg border border-border-default px-2 text-xs text-text-secondary">
       {children}
     </span>
+  )
+}
+
+/**
+ * What came of the rename, in the tone the outcome deserves.
+ *
+ * An error is red because nothing happened and something must. A warning is
+ * not, because the rename *did* happen — it just has not reached the relay, so
+ * other apps still show the old name. Painting that red said "this failed"
+ * under a name that had visibly changed.
+ */
+function Outcome({ outcome }: { outcome: RenameOutcome }) {
+  if (!outcome) return null
+  return (
+    <p
+      className={cn(
+        'text-[12px] leading-[1.4]',
+        outcome.kind === 'error' ? 'text-error-default' : 'text-warning-default',
+      )}
+    >
+      {outcome.message}
+    </p>
   )
 }

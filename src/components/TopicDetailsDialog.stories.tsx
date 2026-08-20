@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { FolderProject, ForeignObject } from '../../convex/nostr/projection'
+import type { RenameOutcome } from '@/api'
 import { TopicDetailsDialogView, type TopicDetails } from './TopicDetailsDialog'
 
 /**
@@ -121,7 +122,7 @@ const meta = {
     activity,
     folderProject,
     onClose: () => {},
-    onRename: async (): Promise<string | null> => null,
+    onRename: async (): Promise<RenameOutcome> => null,
   },
 } satisfies Meta<typeof TopicDetailsDialogView>
 
@@ -170,8 +171,29 @@ export const Editing: Story = {
 export const RenameRefused: Story = {
   args: {
     initialEditing: true,
-    initialError: 'The relay refused: only a channel owner or admin can rename it.',
-    onRename: async () => 'The relay refused: only a channel owner or admin can rename it.',
+    initialError: 'Only the person who created a topic can rename it.',
+    onRename: async () => ({
+      kind: 'error' as const,
+      message: 'Only the person who created a topic can rename it.',
+    }),
+  },
+}
+
+/**
+ * **Renamed, but not announced.**
+ *
+ * A different thing from a failure and it must not look like one: the topic
+ * *was* renamed, the relay just was not told, so other apps still show the old
+ * name. The editor closes because the rename happened, and the note is a
+ * warning rather than an error — red under a name that had visibly changed
+ * read as "this failed" (Katerina, 2026-08-20).
+ */
+export const RenamedButNotAnnounced: Story = {
+  args: {
+    onRename: async () => ({
+      kind: 'warning' as const,
+      message: 'Renamed in Peek. Sign in to Estiva ID so other apps see the new name too.',
+    }),
   },
 }
 

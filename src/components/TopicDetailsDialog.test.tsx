@@ -91,8 +91,10 @@ describe('TopicDetailsDialogView', () => {
     expect(onRename).toHaveBeenCalledWith('Peek feedback')
   })
 
-  it('keeps what you typed and says why when the relay refuses', async () => {
-    const onRename = vi.fn().mockResolvedValue('Only a channel owner or admin can rename it.')
+  it('keeps what you typed and says why when the rename is refused outright', async () => {
+    const onRename = vi
+      .fn()
+      .mockResolvedValue({ kind: 'error', message: 'Only the creator can rename it.' })
     await open({ onRename })
 
     const field = screen.getByRole('textbox', { name: 'Topic name' })
@@ -100,10 +102,30 @@ describe('TopicDetailsDialogView', () => {
     await userEvent.type(field, 'Peek feedback')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    expect(await screen.findByText('Only a channel owner or admin can rename it.')).toBeInTheDocument()
+    expect(await screen.findByText('Only the creator can rename it.')).toBeInTheDocument()
     // Still editing, still holding the rejected text: throwing it away to show
     // the name it was replacing helps nobody.
     expect(screen.getByRole('textbox', { name: 'Topic name' })).toHaveValue('Peek feedback')
+  })
+
+  it('closes the editor when the rename worked but was not announced', async () => {
+    /*
+     * The topic *was* renamed — the relay just was not told. Leaving the field
+     * open with a red line under it made a rename that had plainly worked look
+     * like a failure (Katerina, 2026-08-20).
+     */
+    const onRename = vi
+      .fn()
+      .mockResolvedValue({ kind: 'warning', message: 'Renamed in Peek. Sign in to Estiva ID.' })
+    await open({ onRename })
+
+    const field = screen.getByRole('textbox', { name: 'Topic name' })
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Peek feedback')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Renamed in Peek. Sign in to Estiva ID.')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Topic name' })).not.toBeInTheDocument()
   })
 
   it('abandons the edit on Escape without renaming anything', async () => {
