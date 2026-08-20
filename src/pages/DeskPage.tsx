@@ -2,6 +2,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { IconChevronRight, IconPlus, IconSortDescending } from '@tabler/icons-react'
 import { AppShell } from '@/layouts/AppShell'
+import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { Divider } from '@/components/ui/Divider'
 import { SectionLabel } from '@/components/ui/SectionHeader'
@@ -11,6 +12,7 @@ import { ScreenerSection } from '@/components/ScreenerSection'
 import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { useTopicView } from '@/components/views/useTopicView'
+import { TopicProjectPanel } from '@/components/TopicProjectPanel'
 import {
   dmNameById,
   useUnread,
@@ -204,18 +206,48 @@ export function DeskPage() {
     showUnreads: showPeopleUnreads,
     onStartTopicFromDm: handleStartTopicFromDm,
   })
+  /**
+   * The Folder panel is a property of the topic, not of the page it was opened
+   * from — so Desk offers it exactly as Topics does (PEE-3). Without this a
+   * topic reached from Desk lost both the panel and the header button that
+   * shows it, which read as the topic having no linked project at all.
+   */
+  const [folderPanelOpen, setFolderPanelOpen] = useState(true)
+  /** Which topic's details are open. Desk offers the same header menu Topics
+   *  does — a topic opened from here is the same topic (PEE-2). */
+  const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
   const topicView = useTopicView({
     topicId: selected?.kind === 'topic' ? selected.topicId : null,
     topicTitle: selected?.kind === 'topic' ? selected.topicTitle : undefined,
     onToggleStarred: selected?.kind === 'topic' ? handleToggleStarredOnDesk : undefined,
     showUnreads: showTopicUnreads,
+    onToggleFolderPanel: hasConvex ? () => setFolderPanelOpen((v) => !v) : undefined,
+    folderPanelOpen,
+    onOpenDetails:
+      selected?.kind === 'topic' ? () => setDetailsTopicId(selected.topicId) : undefined,
   })
 
   const rightPanel = selected?.kind === 'dm' ? dmView.rightPanel : topicView.rightPanel
-  const threadPanel = selected?.kind === 'dm' ? dmView.threadPanel : topicView.threadPanel
+  /**
+   * Same rule as Topics (PEEK-24): the right column is the reply thread when one
+   * is open, and the Folder panel otherwise. A thread is what somebody just
+   * asked for; the Folder is context they chose to keep.
+   *
+   * DMs are untouched — they have no Folder to show.
+   */
+  const threadPanel =
+    selected?.kind === 'dm'
+      ? dmView.threadPanel
+      : (topicView.threadPanel ??
+        (hasConvex && folderPanelOpen && selected?.kind === 'topic' && topicView.folderId ? (
+          <TopicProjectPanel topicKey={selected.topicId} />
+        ) : undefined))
 
   return (
     <>
+    {detailsTopicId && (
+      <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
+    )}
     <AppShell
       leftPanel={
         <div className="flex flex-col h-full">

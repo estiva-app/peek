@@ -22,6 +22,8 @@ const applyAction = vi.fn()
 vi.mock('@/api', () => ({
   hasConvex: true,
   useForeignObjects: () => ({ resolveObject, applyAction, resolveFolderProject: vi.fn() }),
+  // `Avatar` resolves portraits through the seam, and a person now has a face.
+  useAvatarSrc: () => () => undefined,
 }))
 
 const { ForeignObjectWidget } = await import('./ForeignObjectWidget')
@@ -44,6 +46,7 @@ function object(overrides: Partial<ForeignObject> = {}): ForeignObject {
       { label: 'Assignee', value: 'a'.repeat(64), isPubkey: true, field: 'assignee' },
     ],
     comments: [{ id: 'c1', author: 'b'.repeat(64), body: 'Blocked on the Stripe key.', createdAt: 1 }],
+    people: { ['a'.repeat(64)]: { displayName: 'Alice Chen' } },
     actions: [],
     viaRecommendation: true,
     ...overrides,
@@ -65,13 +68,44 @@ describe('ForeignObjectWidget', () => {
     expect(screen.getByText('PAY-1')).toBeInTheDocument()
   })
 
-  it('shows a pubkey as a person, never as 64 hex characters', async () => {
+  it('shows a pubkey as a person, never as any part of the key', async () => {
     resolveObject.mockResolvedValue(object())
     render(<ForeignObjectWidget naddr={NADDR} />)
 
     await screen.findByText('Billing entry + add payment method')
+    expect(screen.getByText('Alice Chen')).toBeInTheDocument()
+    // Not the whole key, and not the first eight characters of it either — an
+    // abbreviated key is still a key, and it was what FEE-1 was about.
     expect(screen.queryByText('a'.repeat(64))).not.toBeInTheDocument()
-    expect(screen.getByText(/Assignee:/)).toHaveTextContent('aaaaaaaa…')
+    expect(document.body.textContent).not.toContain('aaaaaaaa')
+    // And no caption in front of them: a face beside a name needs no label
+    // saying it is a person (Katerina, 2026-08-19).
+    expect(screen.queryByText(/Assignee:/)).not.toBeInTheDocument()
+  })
+
+  it('says a person is there but unnamed rather than falling back to the key', async () => {
+    // Nobody has published a kind:0 for them — rare, since Estiva ID writes one
+    // at signup, but the key must not come back when it happens.
+    resolveObject.mockResolvedValue(object({ people: {} }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+
+    await screen.findByText('Billing entry + add payment method')
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('aaaaaaaa')
+  })
+
+  it('names the owning app plainly, even when the handler was a guess', async () => {
+    /*
+     * There used to be a `?` here when no NIP-89 recommendation named the
+     * handler. It was true and unreadable — "ESTIVA SHIP ?" reads as a broken
+     * widget to anyone who does not know what a handler recommendation is
+     * (Katerina, 2026-08-19).
+     */
+    resolveObject.mockResolvedValue(object({ viaRecommendation: false }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+
+    expect(await screen.findByText('Linear-lite')).toBeInTheDocument()
+    expect(screen.queryByText(/\?/)).not.toBeInTheDocument()
   })
 
   it('does not restate comments the conversation around it already shows', async () => {
@@ -171,11 +205,13 @@ describe('ForeignObjectWidget', () => {
       resolveObject.mockResolvedValue(withActions())
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await screen.findByLabelText('Change status')
-      // The pill is a span; "Done" survives as an <option> in the picker, which
-      // is the copy that should remain.
+      const status = await screen.findByLabelText('Change status')
+      // The pill is a span; "Done" survives inside the picker, which is the copy
+      // that should remain. The picker draws its options only when open.
       expect(screen.queryByText('Done', { selector: 'span' })).not.toBeInTheDocument()
-      expect(screen.getByRole('option', { name: 'Done' })).toBeInTheDocument()
+      await userEvent.click(status)
+      expect(await screen.findByRole('option', { name: 'Done' })).toBeInTheDocument()
+      await userEvent.keyboard('{Escape}')
       expect(screen.queryByText(/Assignee:/)).not.toBeInTheDocument()
       // A meta slot no action covers is untouched — this hides duplicates, not
       // the meta line.
@@ -201,7 +237,10 @@ describe('ForeignObjectWidget', () => {
       // Reports and sets, in one control. The accessible name stays on what
       // pressing it does, which does not change when the holder does.
       const button = await screen.findByRole('button', { name: /Assign to me/ })
-      expect(button).toHaveTextContent('Assign: aaaaaaaa…')
+      expect(button).toHaveTextContent('Alice Chen')
+      // The person *is* the label. "Assign: Alice Chen" captioned a face with
+      // the word for what a face is.
+      expect(button).not.toHaveTextContent('Assign:')
     })
 
     it('never draws a comment box — you reply to the message instead', async () => {
@@ -225,16 +264,21 @@ describe('ForeignObjectWidget', () => {
       render(<ForeignObjectCard object={withActions()} />)
 
       expect(screen.getByText('Done')).toBeInTheDocument()
-      expect(screen.getByText(/Assignee:/)).toHaveTextContent('aaaaaaaa…')
+      // The status label stays — with no picker on screen, the pill is the only
+      // thing saying what the status is. The assignee needs no such help.
+      expect(screen.getByText('Alice Chen')).toBeInTheDocument()
     })
 
     it('draws a control per declared action, using the owner\'s vocabulary', async () => {
       resolveObject.mockResolvedValue(withActions())
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      const select = await screen.findByLabelText('Change status')
-      expect(select).toHaveValue('todo')
-      expect(screen.getByRole('option', { name: 'Done' })).toBeInTheDocument()
+      const status = await screen.findByLabelText('Change status')
+      // The trigger reports the current value by its label, not its raw value.
+      expect(status).toHaveTextContent('Todo')
+      await userEvent.click(status)
+      expect(await screen.findByRole('option', { name: 'Done' })).toBeInTheDocument()
+      await userEvent.keyboard('{Escape}')
       expect(screen.getByRole('button', { name: /Assign to me/ })).toBeInTheDocument()
     })
 
@@ -243,7 +287,8 @@ describe('ForeignObjectWidget', () => {
       applyAction.mockResolvedValue({ ok: true })
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await userEvent.selectOptions(await screen.findByLabelText('Change status'), 'done')
+      await userEvent.click(await screen.findByLabelText('Change status'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Done' }))
 
       expect(applyAction).toHaveBeenCalledWith({
         naddr: NADDR,
@@ -269,7 +314,8 @@ describe('ForeignObjectWidget', () => {
       applyAction.mockResolvedValue({ ok: false, reason: '"ushipped" is not one of todo, done.' })
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await userEvent.selectOptions(await screen.findByLabelText('Change status'), 'done')
+      await userEvent.click(await screen.findByLabelText('Change status'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Done' }))
       expect(await screen.findByText(/is not one of todo, done/)).toBeInTheDocument()
       // One resolve only — a rejected change must not look like a successful one.
       expect(resolveObject).toHaveBeenCalledTimes(1)

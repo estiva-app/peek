@@ -94,6 +94,28 @@ export default defineSchema({
     nostrSyncedAt: v.optional(v.number()),
   }).index('by_channelUuid', ['channelUuid']),
 
+  /**
+   * Renames, kept because nothing else remembers them.
+   *
+   * Every other entry in a topic's activity can be read off a record that
+   * already exists — `topics.createdAt` for the start, `topicMembers.addedAt`
+   * for joins, `resolutionAssertions` for resolutions. A rename overwrites
+   * `topics.title` and the old name is simply gone, so it is the one event with
+   * nowhere to be recovered from.
+   *
+   * The relay cannot supply it either: Buzz applies a kind:9002 `name` change
+   * silently, unlike a `topic` or `purpose` change, which it announces with a
+   * system message.
+   */
+  topicRenames: defineTable({
+    topicId: v.id('topics'),
+    /** The name before this change — the half people actually want to see. */
+    from: v.string(),
+    to: v.string(),
+    byUserId: v.optional(v.id('users')),
+    at: v.number(),
+  }).index('by_topic', ['topicId']),
+
   // §2.3 — invitees; membership drives the members pill, not participation
   topicMembers: defineTable({
     topicId: v.id('topics'),

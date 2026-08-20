@@ -6,6 +6,9 @@ import type { FolderProject, ForeignObject, ResolvedSlot } from '../../convex/no
 import { hasConvex, useForeignObjects } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
+import { Person } from '@/components/ui/Person'
+import { Property } from '@/components/ui/Property'
+import { ProjectTickets } from '@/components/ui/ProjectTickets'
 import { SkeletonBar } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 
@@ -104,54 +107,28 @@ function Properties({
       {rows.map((row) => (
         <Property key={row.key} label={row.slot?.label ?? fieldLabel(row.field)}>
           {row.action && onAct ? (
-            <ActionControl action={row.action} busy={busy} onAct={onAct} labelled={false} />
+            <ActionControl
+              action={row.action}
+              people={object.people}
+              busy={busy}
+              onAct={onAct}
+            />
           ) : row.slot ? (
-            <span className="text-xs text-text-secondary">
-              {row.slot.isPubkey ? `${row.slot.value.slice(0, 8)}…` : row.slot.value}
+            // A pubkey is a person: their face and their full name, never the
+            // key (FEE-1). Both paths go through `Person`, so the lead reads the
+            // same whether or not this viewer may reassign it.
+            <span className="min-w-0 text-xs text-text-secondary">
+              {row.slot.isPubkey ? (
+                <Person pubkey={row.slot.value} people={object.people} />
+              ) : (
+                row.slot.value
+              )}
             </span>
           ) : (
-            <span className="text-xs text-text-tertiary">—</span>
+            <span className="text-xs text-text-muted">—</span>
           )}
         </Property>
       ))}
-    </div>
-  )
-}
-
-/**
- * How much of the work is behind you.
- *
- * The counts already say it, but a number is read and a bar is *seen* — and
- * "how is this project going" is the question somebody opens this panel with.
- * Rides the same line as the count and stays deliberately quiet: two hairlines
- * of muted colour, no legend, no percentage. It is a glance, not a chart.
- */
-function Progress({ done, open }: { done: number; open: number }) {
-  const total = done + open
-  if (total === 0) return null
-
-  return (
-    <div
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={done}
-      aria-label={`${done} of ${total} tickets done`}
-      className="h-[3px] flex-1 overflow-hidden rounded-full bg-bg-inset"
-    >
-      <div
-        className="h-full rounded-full bg-success-muted transition-[width] duration-300"
-        style={{ width: `${Math.round((done / total) * 100)}%` }}
-      />
-    </div>
-  )
-}
-
-function Property({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-[68px] shrink-0 text-xs text-text-tertiary">{label}</span>
-      {children}
     </div>
   )
 }
@@ -203,7 +180,15 @@ export function TopicProjectPanelView({
   return (
     <PanelShell>
       <div className="flex-1 overflow-y-auto p-3">
-        <div className="rounded-lg border border-border-subtle bg-surface-raised">
+        {/* No fill, deliberately (Katerina, 2026-08-19). The reference widget
+            takes one because it sits in a conversation among attachments; this
+            card already has a panel of its own around it, and a second surface
+            inside it would be a box drawn on a box.
+
+            It carried `bg-surface-raised`, which is not a token this app
+            defines — so it always rendered unfilled. Dropped rather than kept,
+            since a class that emits nothing is a claim the file cannot back. */}
+        <div className="rounded-lg border border-border-subtle">
           <div className="flex flex-col gap-2 p-3">
             {/* Full width, and the only way into Linear-lite from here — a
                 separate "open in app" link was the same destination twice. */}
@@ -227,70 +212,21 @@ export function TopicProjectPanelView({
               </p>
             )}
 
-            <Properties
-              object={project}
-              busy={actingOn === project.naddr}
-              onAct={onAct ? (id, value) => onAct(project, id, value) : undefined}
-            />
-            {error && <p className="text-xs text-danger-default">{error}</p>}
+            {/* A little more air than the 8px stack gap: the title and its
+                description are one block, and the properties are the next. */}
+            <div className="mt-1">
+              <Properties
+                object={project}
+                busy={actingOn === project.naddr}
+                onAct={onAct ? (id, value) => onAct(project, id, value) : undefined}
+              />
+            </div>
+            {error && <p className="text-xs text-error-default">{error}</p>}
           </div>
 
           {/* Tickets live inside the widget: they are part of the project, not a
               second thing in the column beside it. */}
-          <div className="flex items-center gap-3 border-t border-border-subtle px-3 py-2">
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              aria-expanded={expanded}
-              className="flex shrink-0 items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
-            >
-              <IconChevronRight
-                size={14}
-                stroke={1.5}
-                className={cn('shrink-0 transition-transform', expanded && 'rotate-90')}
-              />
-              {/* Open over done: what is left, against what is behind you. */}
-              Tickets ({openCount}/{doneCount})
-            </button>
-            {/* Beside the button rather than inside it: a progressbar nested in
-                a control folds its label into the button's accessible name. */}
-            <Progress done={doneCount} open={openCount} />
-          </div>
-
-          {expanded &&
-            (tickets.length === 0 ? (
-              <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-tertiary">
-                No tickets in this project yet.
-              </p>
-            ) : (
-              <table className="w-full table-fixed border-t border-border-subtle text-xs">
-                <tbody>
-                  {tickets.map((ticket) => (
-                    <tr key={ticket.address} className="border-b border-border-subtle last:border-b-0">
-                      <td className="max-w-0 truncate py-1.5 pl-3 pr-2">
-                        {ticket.openUrl ? (
-                          <a
-                            href={ticket.openUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-text-secondary hover:text-text-primary hover:underline"
-                          >
-                            {ticket.slots.title?.value ?? 'Untitled'}
-                          </a>
-                        ) : (
-                          <span className="text-text-secondary">
-                            {ticket.slots.title?.value ?? 'Untitled'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="w-[96px] py-1.5 pr-3 text-right">
-                        {ticket.slots.status && <StatusPill slot={ticket.slots.status} />}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ))}
+          <ProjectTickets tickets={tickets} openCount={openCount} doneCount={doneCount} />
         </div>
       </div>
     </PanelShell>

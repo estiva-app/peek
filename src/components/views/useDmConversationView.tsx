@@ -1,5 +1,6 @@
 import { useMarkRead } from '@/lib/useMarkRead'
-import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { isNearBottom } from './scrollPolicy'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -141,13 +142,6 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
     }
   }, [dmId])
 
-  // Scroll to bottom on DM switch / new message
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [dmId])
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [currentSent.length])
 
   // "Show earlier messages": keep the viewport anchored on the same message
   // while older content extends the timeline upward (distance from the
@@ -170,6 +164,49 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
     }
   }, [dmGroups])
 
+  /**
+   * Were you at the live edge when new content arrived? See `useTopicView` — the
+   * policy is identical here, and deliberately so: a DM and a topic should not
+   * behave differently just because they are different components.
+   */
+  const nearBottom = useRef(true)
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (el) nearBottom.current = isNearBottom(el)
+  }
+
+  /**
+   * Opening a DM lands at the bottom, before the paint.
+   *
+   * Keyed on the messages being there rather than on `dmId`, which changed while
+   * `useDmMessages` was still loading — so this ran against an empty container
+   * and left long conversations at the top.
+   */
+  const pinnedFor = useRef<string | number | null>(null)
+  useLayoutEffect(() => {
+    if (dmId == null || isLoading) return
+    if (pinnedFor.current === dmId) return
+    if (earlierAnchorRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    pinnedFor.current = dmId
+    nearBottom.current = true
+  }, [dmId, isLoading])
+
+  // A message arrives: follow only if you were watching the live edge.
+  const messageCount = dmGroups.reduce((n, g) => n + g.convs.length, 0)
+  useLayoutEffect(() => {
+    if (isLoading || !nearBottom.current || earlierAnchorRef.current) return
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messageCount, isLoading])
+
+  // Your own message always brings you down to it.
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [currentSent.length])
+
   if (dmId == null || !dmName) {
     return {
       rightPanel: (
@@ -191,7 +228,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
           (dmId != null && dmName ? () => toggleDm({ dmId, name: dmName }) : undefined)
         }
       />
-      <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto flex flex-col">
         <div className="flex-1 min-h-0" />
         <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
           {isLoading && <SkeletonConversationList />}

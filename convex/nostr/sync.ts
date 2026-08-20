@@ -23,7 +23,7 @@ import { v } from 'convex/values'
 import { action, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { ASSERTION_SUBTYPE, KIND } from './events'
+import { ASSERTION_SUBTYPE, KIND, parseProfile } from './events'
 import type { SignedEvent } from './events'
 import { viewerId } from '../users'
 
@@ -53,28 +53,6 @@ function replyTargetOf(e: SignedEvent): string | null {
   if (eTags.length === 0) return null
   const marked = (marker: string) => eTags.find((t) => t[3] === marker)?.[1]
   return marked('reply') ?? marked('root') ?? eTags[0][1] ?? null
-}
-
-/**
- * kind:0 content → the fields Peek stores, tolerating anything malformed.
- *
- * Both name keys are read because both are written: Peek publishes
- * `display_name`, Linear-lite publishes `name`, and a person who has used both
- * apps should resolve either way rather than on a coin flip. Anything that
- * will not parse costs a name, never a sync run.
- */
-function profileFrom(profile: SignedEvent | undefined): {
-  displayName?: string
-  picture?: string
-} {
-  if (!profile) return {}
-  try {
-    const meta = JSON.parse(profile.content)
-    const str = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
-    return { displayName: str(meta.display_name) ?? str(meta.name), picture: str(meta.picture) }
-  } catch {
-    return {}
-  }
 }
 
 /**
@@ -195,7 +173,7 @@ async function syncTopic(
         const authors = [...new Set(incoming.map((e) => e.pubkey))]
         const profileByPubkey = new Map<string, { displayName?: string; picture?: string }>()
         for (const pk of authors) {
-          profileByPubkey.set(pk, profileFrom(profileEvents.find((p) => p.pubkey === pk)))
+          profileByPubkey.set(pk, parseProfile(profileEvents.find((p) => p.pubkey === pk)))
         }
 
         for (const e of incoming) {
@@ -519,7 +497,7 @@ export const recordProfiles = action({
 
     let updated = 0
     for (const event of profiles) {
-      const profile = profileFrom(event)
+      const profile = parseProfile(event)
       // Nobody has published one yet. Estiva ID writes `kind:0` when a person
       // saves their profile, so someone who never has simply has none.
       if (!profile.displayName && !profile.picture) continue

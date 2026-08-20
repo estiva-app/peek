@@ -117,6 +117,48 @@ export function pointerToAddress(pointer: AddressPointer): string {
   return `${pointer.kind}:${pointer.pubkey}:${pointer.identifier}`
 }
 
+/**
+ * The inverse: `<kind>:<pubkey>:<d>` back to a pointer.
+ *
+ * An address carries no relay hints — `naddr` has a TLV for them and an `a` tag
+ * does not — so the relays come back empty. That is a real loss of information,
+ * not an oversight here: it is why the two forms are not interchangeable and
+ * why the encoder is not simply run in reverse.
+ *
+ * The `d` identifier may itself contain colons, so only the first two are
+ * separators.
+ */
+export function addressToPointer(address: string): AddressPointer {
+  const first = address.indexOf(':')
+  const second = address.indexOf(':', first + 1)
+  if (first < 1 || second < 0) throw new Error(`not an address: ${address.slice(0, 40)}`)
+  const kind = Number(address.slice(0, first))
+  const pubkey = address.slice(first + 1, second)
+  const identifier = address.slice(second + 1)
+  if (!Number.isInteger(kind) || !/^[0-9a-f]{64}$/i.test(pubkey)) {
+    throw new Error(`not an address: ${address.slice(0, 40)}`)
+  }
+  return { kind, pubkey: pubkey.toLowerCase(), identifier, relays: [] }
+}
+
+/**
+ * A pointer from *either* form a reference reaches Peek in.
+ *
+ * A message composed here carries `nostr:naddr1…` in its body. The same message
+ * read back off the relay carries the same reference as an `a` tag, which is a
+ * plain `<kind>:<pubkey>:<d>` address — that is what the NIP says a tag holds,
+ * and what `referencedAddresses` writes when publishing.
+ *
+ * Both name one object. Accepting only the first is what made a reference stop
+ * rendering the moment its own message came back from the relay (FEE-2).
+ */
+export function referenceToPointer(input: string): AddressPointer {
+  const trimmed = input.replace(/^nostr:/i, '')
+  return trimmed.toLowerCase().startsWith('naddr1')
+    ? decodeNaddr(trimmed)
+    : addressToPointer(trimmed)
+}
+
 /** 8-bit bytes to 5-bit bech32 symbols, zero-padding the final group. */
 function toWords(bytes: number[]): number[] {
   let acc = 0

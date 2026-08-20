@@ -671,9 +671,12 @@ export function ConversationCard({
             </div>
           )}
 
-          {/* Uploaded files - image thumbnails / file chips */}
+          {/* Uploaded files — image thumbnails / file chips.
+              `items-start` because they are not the same height: a file row is
+              48px and an image card is ~150, and stretching left a `.pdf` chip
+              with its icon floating in a tall empty box (2026-08-19). */}
           {!isEditing && files && files.length > 0 && (
-            <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">
+            <div className="flex flex-wrap items-start gap-2 pl-8 pr-2 pb-2 w-full">
               {files.map((f, i) => (
                 <FileAttachmentCard key={f.storageId ?? `${f.name}_${i}`} file={f} />
               ))}

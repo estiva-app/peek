@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { IconMessagePlus } from '@tabler/icons-react'
 import { AppShell } from '@/layouts/AppShell'
+import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTopicDialog'
 import { PersonRow } from '@/components/ui/PersonRow'
@@ -70,6 +71,9 @@ export function TopicsPage() {
     navigate(`/topics/${topicId}?huddle=${huddleId}`)
   }
 
+  /** Which topic's details are open, if any. */
+  const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
+
   const handleDeleteTopic = (topicId: string) => {
     deleteTopic(topicId)
     // Deleting what you're looking at → back to the bare list, no stale URL
@@ -101,6 +105,10 @@ export function TopicsPage() {
     showUnreads,
     onToggleFolderPanel: hasConvex ? () => setFolderPanelOpen((v) => !v) : undefined,
     folderPanelOpen,
+    // The page owns the dialog because both ends open the same one — the row's
+    // more-menu in the list and the header's inside the topic (PEE-2).
+    onOpenDetails: selectedTopic ? () => setDetailsTopicId(selectedTopic.id) : undefined,
+    onDeleteTopic: selectedTopic ? () => handleDeleteTopic(selectedTopic.id) : undefined,
   })
 
   // Loaded and no topics at all → "No conversation selected" makes no sense
@@ -130,6 +138,9 @@ export function TopicsPage() {
         onConfirm={handleCreateTopic}
         onCancel={() => setCreateOpen(false)}
       />
+    )}
+    {detailsTopicId && (
+      <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
     )}
     <AppShell
       leftPanel={
@@ -195,6 +206,7 @@ export function TopicsPage() {
                     isSelected={topicSelected}
                     onClick={() => handleSelectTopic(topic.id)}
                     onDeleteTopic={() => handleDeleteTopic(topic.id)}
+                    onOpenDetails={() => setDetailsTopicId(topic.id)}
                     openWorkAction={openWorkTopicIds.has(topic.id) ? 'remove' : 'add'}
                     onToggleOpenWork={() => {
                       if (openWorkTopicIds.has(topic.id)) {

@@ -17,7 +17,7 @@ import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
 import { useTopicStore } from '@/api/internal/topicStore'
 import { hasConvex, usesEstivaId } from './store'
 import { validToken } from '@/auth/estivaId'
-import { publishTopicChannel } from '@/nostr/topics'
+import { publishTopicChannel, renameTopicChannel } from '@/nostr/topics'
 import type { Topic } from './types'
 import type { Person } from './types'
 
@@ -232,5 +232,84 @@ export function useCreateTopicFromDm(): (input: CreateTopicFromDmInput) => Creat
       return result
     },
     [createLocal, createRemote, createHuddleFromDmRemote, publishChannel],
+  )
+}
+
+// ── Topic details (PEE-2) ───────────────────────────────────────────────────
+
+/** Everything the details dialog shows. `undefined` while the query is in
+ *  flight, `null` for a topic Convex has never heard of (mock mode). */
+export function useTopicDetails(topicKey: string | undefined) {
+  return useQuery(api.topics.details, hasConvex && topicKey ? { topicKey } : 'skip')
+}
+
+/** A topic's history, oldest first. */
+export function useTopicActivity(topicKey: string | undefined) {
+  return useQuery(api.topics.activity, hasConvex && topicKey ? { topicKey } : 'skip')
+}
+
+/**
+ * What came of a rename.
+ *
+ * `null` is clean. The two failures are **not** the same thing and must not
+ * look the same: an `error` means nothing changed, and a `warning` means the
+ * topic *was* renamed here but the relay was not told, so other apps still see
+ * the old name. Collapsing them showed a red message under a rename that had
+ * plainly worked (Katerina, 2026-08-20).
+ */
+export type RenameOutcome = null | { kind: 'error' | 'warning'; message: string }
+
+/**
+ * Rename a topic, locally and then on the relay.
+ *
+ * Convex first so the new name is on screen at once, then the kind:9002 that
+ * tells every other app.
+ *
+ * **The local rename is not undone when the relay refuses.** Reverting would
+ * throw away something the person did and can see, to satisfy a service they
+ * may not even be signed in to — and Peek is where they are. So the rename
+ * stands and the disagreement is said out loud instead, which is the one thing
+ * that must not be silent.
+ */
+export function useRenameTopic(): (topicKey: string, title: string) => Promise<RenameOutcome> {
+  const renameRemote = useMutation(api.topics.rename)
+  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const renameLocal = useTopicStore().renameTopicLocal
+  return useCallback(
+    async (topicKey, title): Promise<RenameOutcome> => {
+      renameLocal(topicKey, title)
+      if (!hasConvex) return null
+
+      let result: { renamed: boolean; title?: string; channelUuid?: string | null }
+      try {
+        result = await renameRemote({ topicKey, title })
+      } catch (error) {
+        // Convex refused, so nothing changed anywhere. This is the only real
+        // error of the three.
+        return {
+          kind: 'error',
+          message: error instanceof Error ? error.message : 'That rename did not go through.',
+        }
+      }
+      if (!result.renamed) return null
+
+      // `validToken()` at call time, never a snapshot — see `tokenForPublish`
+      // in actions.ts for why that constant goes stale.
+      const token = validToken()
+      if (!token || !relayUrl) {
+        return {
+          kind: 'warning',
+          message: 'Renamed in Peek. Sign in to Estiva ID so other apps see the new name too.',
+        }
+      }
+      const sent = await renameTopicChannel(result.channelUuid ?? null, result.title ?? title, relayUrl, token)
+      return sent.ok
+        ? null
+        : {
+            kind: 'warning',
+            message: `Renamed in Peek, but not on the relay, so other apps still see the old name. ${sent.reason ?? ''}`.trim(),
+          }
+    },
+    [relayUrl, renameLocal, renameRemote],
   )
 }

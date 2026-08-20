@@ -25,7 +25,12 @@ const projectActions: ForeignObject['actions'] = [
       { value: 'in_progress', label: 'In Progress' },
     ],
   },
-  { id: 'assign-project', label: 'Assign', control: 'pubkey', field: 'lead' },
+  /*
+   * `current` is who holds the field now — `buildObject` fills it from the fold
+   * or the root event's tag. Without it this fixture was a project with no lead
+   * at all, which is why nothing here noticed the control was showing a key.
+   */
+  { id: 'assign-project', label: 'Assign', control: 'pubkey', field: 'lead', current: 'b'.repeat(64) },
   // Declared for this kind, but a comment box would compete with the
   // conversation alongside; the panel does not draw it.
   { id: 'comment', label: 'Comment', control: 'text' },
@@ -60,6 +65,8 @@ function folderProject(overrides: Partial<FolderProject> = {}): FolderProject {
       },
       meta: [{ label: 'Lead', value: 'b'.repeat(64), isPubkey: true, field: 'lead' }],
       comments: [],
+      // Who the lead is, resolved with the object (FEE-1).
+      people: { ['b'.repeat(64)]: { displayName: 'Jan Miky' } },
       actions: projectActions,
       openUrl: 'http://localhost:5190/linear-lite/#/o/naddr1project',
       viaRecommendation: true,
@@ -99,7 +106,10 @@ describe('TopicProjectPanelView', () => {
     // The comment action is declared but never drawn.
     expect(screen.queryByPlaceholderText('Comment…')).not.toBeInTheDocument()
 
-    await userEvent.selectOptions(screen.getByLabelText('Change status'), 'planned')
+    // Peek's `Select`, not a native one: the options exist only once the menu is
+    // open, and are picked by their label rather than their value.
+    await userEvent.click(screen.getByLabelText('Change status'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Planned' }))
     expect(onAct).toHaveBeenCalledWith(
       expect.objectContaining({ naddr: 'naddr1project' }),
       'set-project-status',
@@ -122,14 +132,42 @@ describe('TopicProjectPanelView', () => {
     // Never a dead control: the owning app has not said these may be set here.
     expect(screen.queryByLabelText('Change status')).not.toBeInTheDocument()
     expect(screen.getByText('Status')).toBeInTheDocument()
-    expect(screen.getByText(`${'b'.repeat(8)}…`)).toBeInTheDocument()
+    // A person, whether or not this viewer may reassign them.
+    expect(screen.getByText('Jan Miky')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('bbbbbbbb')
   })
 
-  it('counts open against done, and keeps the table shut until asked', () => {
+  it('names the lead on the control that reassigns them', async () => {
+    render(<TopicProjectPanelView folderProject={folderProject()} onAct={vi.fn()} />)
+
+    // The assign control both reports the lead and sets it, so this is the only
+    // place the lead appears in the live panel — and it showed eight characters
+    // of a key until FEE-1.
+    const assign = await screen.findByRole('button', { name: 'Assign to me' })
+    expect(assign).toHaveTextContent('Jan Miky')
+    expect(document.body.textContent).not.toContain('bbbbbbbb')
+  })
+
+  it('counts finished against the total, and keeps the table shut until asked', () => {
     render(<TopicProjectPanelView folderProject={folderProject()} />)
 
-    expect(screen.getByText('Tickets (1/2)')).toBeInTheDocument()
+    // 2 done of 3 counted. Read as a fraction, which is how anyone reads it.
+    expect(screen.getByText('Tickets (2/3)')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  /**
+   * The three readings that have to hold, because the previous format failed
+   * all of them: it showed open/done, so "0/2" meant everything was finished
+   * and "3/1" meant nothing much was.
+   */
+  it.each([
+    { openCount: 3, doneCount: 0, label: 'Tickets (0/3)', reading: 'nothing done' },
+    { openCount: 2, doneCount: 1, label: 'Tickets (1/3)', reading: 'one of three done' },
+    { openCount: 0, doneCount: 3, label: 'Tickets (3/3)', reading: 'all done' },
+  ])('reads $label as $reading', ({ openCount, doneCount, label }) => {
+    render(<TopicProjectPanelView folderProject={folderProject({ openCount, doneCount })} />)
+    expect(screen.getByText(label)).toBeInTheDocument()
   })
 
   it('shows progress through the work', () => {
@@ -174,7 +212,7 @@ describe('TopicProjectPanelView', () => {
       <TopicProjectPanelView folderProject={folderProject({ tickets: many, openCount: 11 })} />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: 'Tickets (11/2)' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tickets (2/13)' }))
 
     expect(screen.getAllByRole('link', { name: /^Live work \d+$/ })).toHaveLength(11)
   })
@@ -186,7 +224,8 @@ describe('TopicProjectPanelView', () => {
       />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: /Tickets/ }))
+    // Not "Tickets (0/0)" — a fraction of nothing reads as a broken counter.
+    await userEvent.click(screen.getByRole('button', { name: 'Tickets' }))
 
     expect(screen.getByText('No tickets in this project yet.')).toBeInTheDocument()
   })

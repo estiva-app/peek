@@ -33,6 +33,13 @@ export function Avatar({ src, name, alt = '', size = 36, className }: AvatarProp
   // PeekDataProvider (Storybook, tests) this falls back to the mock portraits.
   const avatarSrcFor = useAvatarSrc()
   const resolved = src ?? avatarSrcFor(name) ?? avatarSrcFor(alt)
+  /*
+   * Initials need somebody to take them from. Without a name the signal theme
+   * used to draw `?` on a bright gradient, which reads as an error badge rather
+   * than as a person — so an unnamed avatar is the silhouette in every theme
+   * (found while rendering people with no published profile, FEE-1).
+   */
+  const label = name || alt
   return (
     <div
       className={cn('rounded-sm overflow-hidden shrink-0 bg-bg-inset', className)}
@@ -44,20 +51,28 @@ export function Avatar({ src, name, alt = '', size = 36, className }: AvatarProp
         <>
           {/* No portrait (e.g. a signed-up user before uploading one): a small
               FILLED person glyph on the accent-muted tint (user decision 2026-07-15). */}
-          <div className="w-full h-full bg-accent-muted flex items-center justify-center text-text-muted signal:hidden">
+          <div
+            className={cn(
+              'w-full h-full bg-accent-muted flex items-center justify-center text-text-muted',
+              label && 'signal:hidden',
+            )}
+          >
             <IconUserFilled size={Math.round(size * 0.5)} />
           </div>
-          {/* Signal theme replaces the glyph with gradient initials. */}
-          <div
-            className="w-full h-full hidden signal:flex items-center justify-center font-semibold"
-            style={{
-              color: '#08121c',
-              fontSize: Math.round(size * 0.36),
-              background: `linear-gradient(160deg, color-mix(in srgb, ${signalHueFor(name || alt || '?')} 92%, #fff) 0%, color-mix(in srgb, ${signalHueFor(name || alt || '?')} 70%, #0b0d11) 100%)`,
-            }}
-          >
-            {initialsFor(name || alt || '?')}
-          </div>
+          {/* Signal theme replaces the glyph with gradient initials — when
+              there is a name to make initials out of. */}
+          {label && (
+            <div
+              className="w-full h-full hidden signal:flex items-center justify-center font-semibold"
+              style={{
+                color: '#08121c',
+                fontSize: Math.round(size * 0.36),
+                background: `linear-gradient(160deg, color-mix(in srgb, ${signalHueFor(label)} 92%, #fff) 0%, color-mix(in srgb, ${signalHueFor(label)} 70%, #0b0d11) 100%)`,
+              }}
+            >
+              {initialsFor(label)}
+            </div>
+          )}
         </>
       )}
     </div>

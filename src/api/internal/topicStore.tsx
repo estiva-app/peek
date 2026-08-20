@@ -47,6 +47,11 @@ interface TopicStoreValue {
    *  window over the Convex list otherwise (QA #2.8). */
   deletedTopicIds: Set<string>
   deleteTopicLocal: (topicId: string) => void
+  /** Renamed titles by topic id — the mock source of truth, and the optimistic
+   *  window over the Convex list otherwise, exactly like `deletedTopicIds`
+   *  (PEE-2). Without it the sidebar keeps the old name until the query
+   *  catches up, which is the one place a rename must look instant. */
+  renameTopicLocal: (topicId: string, title: string) => void
   /** Add invitee names to a runtime topic (mock-mode Invite members). */
   addInviteesLocal: (topicId: string, names: string[]) => void
 }
@@ -99,13 +104,22 @@ export function TopicStoreProvider({ children }: { children: ReactNode }) {
   const [extraHuddles, setExtraHuddles] = useState<Record<string, Huddle[]>>({})
   const [deletedTopicIds, setDeletedTopicIds] = useState<Set<string>>(new Set())
 
+  const [renamedTitles, setRenamedTitles] = useState<Map<string, string>>(new Map())
+
   const topics = useMemo(
-    () => [...TOPICS, ...extraTopics].filter((t) => !deletedTopicIds.has(t.id)),
-    [extraTopics, deletedTopicIds],
+    () =>
+      [...TOPICS, ...extraTopics]
+        .filter((t) => !deletedTopicIds.has(t.id))
+        .map((t) => (renamedTitles.has(t.id) ? { ...t, title: renamedTitles.get(t.id)! } : t)),
+    [extraTopics, deletedTopicIds, renamedTitles],
   )
 
   const deleteTopicLocal = useCallback((topicId: string) => {
     setDeletedTopicIds((prev) => new Set([...prev, topicId]))
+  }, [])
+
+  const renameTopicLocal = useCallback((topicId: string, title: string) => {
+    setRenamedTitles((prev) => new Map(prev).set(topicId, title))
   }, [])
 
   const addInviteesLocal = useCallback((topicId: string, names: string[]) => {
@@ -229,8 +243,8 @@ export function TopicStoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<TopicStoreValue>(
-    () => ({ topics, extraTopics, getHuddlesForTopic, getExtraHuddlesForTopic, findTopic, findHuddleByOriginDm, findAllHuddlesByOriginDm, findExtraHuddlesByOriginDm, createTopicFromDm, createTopic, deletedTopicIds, deleteTopicLocal, addInviteesLocal }),
-    [topics, extraTopics, getHuddlesForTopic, getExtraHuddlesForTopic, findTopic, findHuddleByOriginDm, findAllHuddlesByOriginDm, findExtraHuddlesByOriginDm, createTopicFromDm, createTopic, deletedTopicIds, deleteTopicLocal, addInviteesLocal],
+    () => ({ topics, extraTopics, getHuddlesForTopic, getExtraHuddlesForTopic, findTopic, findHuddleByOriginDm, findAllHuddlesByOriginDm, findExtraHuddlesByOriginDm, createTopicFromDm, createTopic, deletedTopicIds, deleteTopicLocal, renameTopicLocal, addInviteesLocal }),
+    [topics, extraTopics, getHuddlesForTopic, getExtraHuddlesForTopic, findTopic, findHuddleByOriginDm, findAllHuddlesByOriginDm, findExtraHuddlesByOriginDm, createTopicFromDm, createTopic, deletedTopicIds, deleteTopicLocal, renameTopicLocal, addInviteesLocal],
   )
 
   return <TopicStoreContext.Provider value={value}>{children}</TopicStoreContext.Provider>

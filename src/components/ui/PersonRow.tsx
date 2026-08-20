@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useState } from 'react'
 import { IconDotsVertical, IconAlertSquareRounded, IconX } from '@tabler/icons-react'
 import { TopicState, type TopicStateType, type TopicStateStatus } from './TopicState'
 import { IconButton } from './IconButton'
+import { TopicMoreMenu } from './TopicMoreMenu'
 import { cn } from '@/lib/utils'
 import { useAvatarSrc } from '@/api'
 
@@ -24,6 +24,9 @@ interface PersonRowProps {
    *  "Delete topic" item calling this handler (topic-list rows, QA #2.8).
    *  Without it the 3-dot stays inert, exactly as before. */
   onDeleteTopic?: () => void
+  /** Adds "Topic details" to the more-menu (PEE-2). The same item the
+   *  conversation header offers — one menu, two places to open it. */
+  onOpenDetails?: () => void
   /** Adds an "Add to Open work" / "Remove from Open work" item to the
    *  more-menu — the label advertises which direction will succeed. */
   openWorkAction?: 'add' | 'remove'
@@ -43,35 +46,18 @@ export function PersonRow({
   onClick,
   onRemove,
   onDeleteTopic,
+  onOpenDetails,
   openWorkAction,
   onToggleOpenWork,
   className,
 }: PersonRowProps) {
-  const hasMenu = !!onDeleteTopic || !!(openWorkAction && onToggleOpenWork)
+  const hasMenu = !!onDeleteTopic || !!onOpenDetails || !!(openWorkAction && onToggleOpenWork)
   const [isHovered, setIsHovered] = useState(false)
   // More-menu (portalled — the sidebar scroll container clips overflow).
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
   // Resolve DM avatars through the registry (uploaded > seeded portrait >
   // silhouette) — the static avatarFor never sees real users' uploads.
   const avatarSrcFor = useAvatarSrc()
-
-  // Menu rules: close on outside click and Escape.
-  useEffect(() => {
-    if (!menuPos) return
-    const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuPos(null)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuPos(null)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menuPos])
 
   const openMenu = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -147,43 +133,16 @@ export function PersonRow({
         </div>
       ) : null}
 
-      {menuPos &&
-        hasMenu &&
-        createPortal(
-          <div
-            ref={menuRef}
-            data-interactive
-            className="fixed z-50 bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2 flex flex-col min-w-[180px]"
-            style={{ top: menuPos.top, right: menuPos.right }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {openWorkAction && onToggleOpenWork && (
-              <div
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
-                onClick={() => {
-                  setMenuPos(null)
-                  onToggleOpenWork()
-                }}
-              >
-                <span className="flex-1 text-sm whitespace-nowrap text-text-secondary signal:text-text-primary">
-                  {openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}
-                </span>
-              </div>
-            )}
-            {onDeleteTopic && (
-              <div
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
-                onClick={() => {
-                  setMenuPos(null)
-                  onDeleteTopic()
-                }}
-              >
-                <span className="flex-1 text-sm whitespace-nowrap text-error-default">Delete topic</span>
-              </div>
-            )}
-          </div>,
-          document.body
-        )}
+      {menuPos && hasMenu && (
+        <TopicMoreMenu
+          position={menuPos}
+          onClose={() => setMenuPos(null)}
+          onOpenDetails={onOpenDetails}
+          openWorkAction={openWorkAction}
+          onToggleOpenWork={onToggleOpenWork}
+          onDeleteTopic={onDeleteTopic}
+        />
+      )}
     </div>
   )
 }

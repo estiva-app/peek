@@ -573,8 +573,11 @@ export function ThreadReplyCard({
                 })}
               </div>
             )}
+            {/* `items-start` because the cards are not the same height: a file
+                row is 48px and an image card is ~150, and stretching left a
+                `.pdf` chip with its icon floating in a tall empty box. */}
             {files && files.length > 0 && (
-              <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">
+              <div className="flex flex-wrap items-start gap-2 pl-8 pr-2 pb-2 w-full">
                 {files.map((f, i) => (
                   <FileAttachmentCard key={f.storageId ?? `${f.name}_${i}`} file={f} />
                 ))}

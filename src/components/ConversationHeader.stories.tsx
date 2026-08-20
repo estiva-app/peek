@@ -33,6 +33,16 @@ export const Topic: Story = {
     members,
     onStartHuddle: () => {},
     onShowMembers: () => {},
+    /*
+     * The header's more-menu, with everything a topic offers. It is the same
+     * `TopicMoreMenu` the sidebar row uses — press the ⋮ to see it (PEE-2).
+     * These were missing here, so the story showed the old one-item menu while
+     * the app had the new one.
+     */
+    onOpenDetails: () => {},
+    onDeleteTopic: () => {},
+    openWorkAction: 'add',
+    onToggleOpenWork: () => {},
   },
 }
 
@@ -71,4 +81,44 @@ export const Huddle: Story = {
     huddleMode: true,
     members: ['You', 'Greg Bothman', 'Alice Johnson'],
   },
+}
+
+// ── The Folder actions (PEE-3) ─────────────────────────────────────────────
+//
+// Two separate buttons, gated on two different things, which is why a topic
+// could show one and not the other: "Copy Folder link" needs only a `folderId`,
+// while the panel toggle needs the *page* to have offered a handler for it.
+// Desk supplied the first and not the second, so a topic opened from there
+// looked like it had no linked project.
+
+/** A topic with a Folder, and a page that offers the panel — both buttons. */
+export const TopicWithFolderPanel: Story = {
+  args: {
+    ...Topic.args,
+    folderId: 'b1d2c3e4-5f60-4718-a93a-4b5c6d7e8f90',
+    onToggleFolderPanel: () => {},
+    folderPanelOpen: true,
+  },
+}
+
+/** Panel hidden — same button, opposite tooltip and label. */
+export const TopicFolderPanelClosed: Story = {
+  args: { ...TopicWithFolderPanel.args, folderPanelOpen: false },
+}
+
+/**
+ * **What Desk used to look like.** The Folder exists, so the copy-link button
+ * renders, but no handler was passed so the panel toggle is absent — the topic
+ * appears to have no project.
+ */
+export const TopicFolderWithoutPanelToggle: Story = {
+  args: {
+    ...Topic.args,
+    folderId: 'b1d2c3e4-5f60-4718-a93a-4b5c6d7e8f90',
+  },
+}
+
+/** No Folder at all: neither button, which is correct — there is nothing to link to. */
+export const TopicWithoutFolder: Story = {
+  args: { ...Topic.args },
 }
