@@ -256,6 +256,14 @@ export function ThreadPanel({
     return () => clearTimeout(t)
   }, [isLoadingReplies])
 
+  // The root message shows here with no date divider above it, so it carries
+  // its own day — unlike the same message in the list, where the divider
+  // supplies it. Static mocks have no createdAtMs; fall back to their string.
+  const rootTimestamp =
+    conversation.createdAtMs !== undefined
+      ? formatReplyTimestamp(conversation.createdAtMs)
+      : conversation.timestamp
+
   const allReplies = [...replies, ...sentReplies]
 
   // When a promotion divider is rendered, replies are split chronologically
@@ -340,7 +348,7 @@ export function ThreadPanel({
             <ThreadReplyCard
               authorName={conversation.authorName}
               authorAvatarSrc={conversation.authorAvatarSrc}
-              timestamp={conversation.timestamp}
+              timestamp={rootTimestamp}
               body={conversation.body}
               attachments={conversation.attachments}
               files={conversation.files}
@@ -355,7 +363,7 @@ export function ThreadPanel({
             <PinnedMessage
               authorName={conversation.authorName}
               authorAvatarSrc={conversation.authorAvatarSrc}
-              timestamp={conversation.timestamp}
+              timestamp={rootTimestamp}
               body={conversation.body}
               highlightType={conversation.highlightType}
             />
