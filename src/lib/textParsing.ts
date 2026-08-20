@@ -11,6 +11,10 @@ import { APP_FILES, DOCUMENT_FILES } from '@/data/filesData'
 // in the carve-out is critical: without it, regex backtracking would let
 // `@testing` match because the next char is `-` (a handle continuation char).
 //
+// A mention must also OPEN a word — see _wordStart. That fence used to be
+// missing on the left, so `katerina@estiva.app` rendered with `@estiva` pulled
+// out as a chip.
+//
 // Names are sorted longest-first so partial-overlap candidates ("Bob" vs
 // "Bob Smith") don't shadow the longer match.
 
@@ -34,9 +38,25 @@ const _escapedBracketTitles = [
   .sort((a, b) => b.length - a.length)
   .join('|')
 
+/** The LEFT fence: a mention may only start a word, so an `@` sitting directly
+ *  after a character an email address can contain never opens one. Without it
+ *  `katerina@estiva.app` matched `@estiva` — the domain became a chip and the
+ *  address was torn in half. The (?![a-zA-Z/-]) lookahead is the matching fence
+ *  on the right, which is why package paths were already safe while every
+ *  ordinary email was not.
+ *
+ *  `!` is deliberately NOT in the set: `!@` is the urgent form, and `wow!@devops`
+ *  should still mention.
+ *
+ *  This mirrors the composer, where Tiptap's suggestion plugin already requires
+ *  the `@` to follow a space or a line start (`allowedPrefixes: [' ']`) — which
+ *  is why an email never opened the mention menu while typing, and only broke
+ *  once the message was rendered. */
+const _wordStart = '(?<![A-Za-z0-9._%+-])'
+
 function _buildMentionRe(): RegExp {
   return new RegExp(
-    `((?:!@|@)(?:${_escapedNames()})|@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\])`,
+    `(${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\])`,
     'g'
   )
 }
@@ -81,7 +101,7 @@ const _urlPattern = 'https?:\\/\\/[^\\s]+'
  *  Rebuilt alongside MENTION_RE when the workspace directory changes. */
 function _buildInlineTokenRe(): RegExp {
   return new RegExp(
-    `(${_urlPattern}|(?:!@|@)(?:${_escapedNames()})|@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\]|${_referenceAlternation})`,
+    `(${_urlPattern}|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\]|${_referenceAlternation})`,
     'g'
   )
 }

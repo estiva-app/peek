@@ -45,12 +45,27 @@ const object = (
     appName: 'Estiva Ship',
     slots: {
       title: { value: title, field: 'title' },
-      subtitle: { value: id.toUpperCase() },
+      /*
+       * Ship maps `subtitle` to the issue's *content*, not to its key. This
+       * fixture said otherwise, and that guess is what filled the key column
+       * with descriptions in production while Storybook looked right
+       * (2026-08-20).
+       */
+      subtitle: { value: `Reported while reviewing ${title.toLowerCase()}.` },
       status: { label: 'Status', value: status, colour, field: 'status' },
     },
-    // The whole key, as a slot really carries it — abbreviating it in the
-    // fixture is what let a truncated key look correct here for so long.
-    meta: [{ label: 'Assignee', value: person, isPubkey: true, field: 'assignee' }],
+    /*
+     * `ref` first and unlabelled — that is the key, FEE-1. The labelled entries
+     * are properties. Verbatim from Ship's manifest, whose issue projection
+     * declares `meta: [{tag: 'ref'}, {label: 'Assignee', as: 'pubkey'}]`.
+     *
+     * The whole pubkey too, as a slot really carries it — abbreviating it in
+     * the fixture is what let a truncated key look correct here for so long.
+     */
+    meta: [
+      { value: id.toUpperCase(), field: 'ref' },
+      { label: 'Assignee', value: person, isPubkey: true, field: 'assignee' },
+    ],
     people,
     comments: [],
     folder: 'b1d2c3e4-5f60-4718-a93a-4b5c6d7e8f90',

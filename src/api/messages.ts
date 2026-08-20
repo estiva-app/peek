@@ -16,7 +16,7 @@ import { REPLIES } from '@/data/replyData'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { useTopicStore } from '@/api/internal/topicStore'
 import { useTopicLookup } from './topics'
-import { formatDateLabel, formatTimestamp, formatLastReplyTimestamp, dayKey } from './format'
+import { formatDateLabel, formatTimestamp, formatReplyTimestamp, formatLastReplyTimestamp, dayKey } from './format'
 import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
 import { hasConvex, useDmRuntime } from './store'
 import { useHuddleLookup } from './huddles'
@@ -86,7 +86,8 @@ function toReplyData(r: RemoteReply, meId: string | undefined): ReplyData {
     id: r.id,
     authorName: r.authorId && r.authorId === meId ? CURRENT_USER_NAME : r.authorName,
     authorAvatarSrc: r.authorAvatarUrl,
-    timestamp: formatTimestamp(r.createdAt),
+    // Thread replies have no date divider above them: each names its own day.
+    timestamp: formatReplyTimestamp(r.createdAt),
     body: r.body,
     isNew: r.isNew,
     isUrgent: r.isUrgent,
@@ -108,6 +109,8 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
     id: r.id,
     authorName: r.authorId && r.authorId === meId ? CURRENT_USER_NAME : r.authorName,
     authorAvatarSrc: r.authorAvatarUrl,
+    // A list row sits under a date divider, so a bare time reads off it. The
+    // thread panel's copy of this same message does not — ThreadPanel dates it.
     timestamp: formatTimestamp(r.createdAt),
     body: r.body,
     isUrgent: r.isUrgent,

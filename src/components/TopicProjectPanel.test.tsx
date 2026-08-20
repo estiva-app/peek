@@ -191,6 +191,29 @@ describe('TopicProjectPanelView', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
+  it('shows the ticket key from meta, never the description', async () => {
+    /*
+     * Ship maps `subtitle` to the issue's *content*, so reading the key from
+     * there filled the column with the opening words of every ticket's body —
+     * in production only, because the fixtures had been written to the same
+     * wrong guess (2026-08-20).
+     */
+    const keyed = ticket('i9', 'Billing entry')
+    keyed.slots.subtitle = { value: 'When I open the panel the assignee is missing…' }
+    keyed.meta = [
+      { value: 'FEE-9', field: 'ref' },
+      { label: 'Assignee', value: 'c'.repeat(64), isPubkey: true, field: 'assignee' },
+    ]
+    render(<TopicProjectPanelView folderProject={folderProject({ tickets: [keyed] })} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Tickets/ }))
+
+    expect(screen.getByText('FEE-9')).toBeInTheDocument()
+    expect(screen.queryByText(/When I open the panel/)).not.toBeInTheDocument()
+    // A labelled meta entry is a property, not an identifier.
+    expect(screen.queryByText(`${'c'.repeat(8)}…`)).not.toBeInTheDocument()
+  })
+
   it('expands into a table of one row per ticket: title and status', async () => {
     render(<TopicProjectPanelView folderProject={folderProject()} />)
 

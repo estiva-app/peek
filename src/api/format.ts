@@ -22,22 +22,39 @@ function sameLocalDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
+/** The local calendar day before `d`. Calendar arithmetic rather than
+ *  `now - 24h`: on the day a DST fallback stretches to 25 hours, subtracting
+ *  24h from an evening "now" lands back inside the SAME day, and "Yesterday"
+ *  would never match. */
+function previousLocalDay(d: Date): Date {
+  const p = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  p.setDate(p.getDate() - 1)
+  return p
+}
+
 /** `'Today'`, `'Yesterday'`, else `'EEE, MMMM d'` — no year, ever. */
 export function formatDateLabel(createdAt: number, now: number = Date.now()): string {
   const d = new Date(createdAt)
   const n = new Date(now)
   if (sameLocalDay(d, n)) return 'Today'
-  const yesterday = new Date(now - 24 * 60 * 60 * 1000)
-  if (sameLocalDay(d, yesterday)) return 'Yesterday'
+  if (sameLocalDay(d, previousLocalDay(n))) return 'Yesterday'
   return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`
 }
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/** Reply-card timestamp — every reply names its day explicitly (ruling
- *  2026-07-29: a thread rooted on an older day gives a bare time no "today"
- *  implication, and the reply pill already says `Today at …`):
- *  `'Just now'` → `'Today at 2:30 PM'` → `'Yesterday at 2:30 PM'` →
+/** Timestamp for anywhere a time stands with NO date divider above it —
+ *  thread reply cards, the thread's pinned root message, the resolve/reopen
+ *  bullets, the screener.
+ *
+ *  One rule, no exceptions: A BARE TIME MEANS TODAY. Every older day names
+ *  itself, so the day is never inferred from a divider or a neighbouring row
+ *  (ruling 2026-08-20, replacing 2026-07-29's explicit `Today at …`, which
+ *  repeated "Today" on every row of a live thread). The rule only holds while
+ *  it holds everywhere: one surface showing a bare time for something that is
+ *  not today makes every bare time in the app ambiguous again.
+ *
+ *  `'Just now'` → `'2:30 PM'` → `'Yesterday at 2:30 PM'` →
  *  `'Sep 3 at 2:30 PM'` (this year) → `'Sep 3, 2025 at 2:30 PM'`.
  *  Day and time join with `at`, not a dot (ruling 2026-07-28). */
 export function formatReplyTimestamp(createdAt: number, now: number = Date.now()): string {
@@ -45,27 +62,34 @@ export function formatReplyTimestamp(createdAt: number, now: number = Date.now()
   const time = formatTimestamp(createdAt, now)
   const d = new Date(createdAt)
   const n = new Date(now)
-  if (sameLocalDay(d, n)) return `Today at ${time}`
-  if (sameLocalDay(d, new Date(now - 24 * 60 * 60 * 1000))) return `Yesterday at ${time}`
+  if (sameLocalDay(d, n)) return time
+  if (sameLocalDay(d, previousLocalDay(n))) return `Yesterday at ${time}`
   const monthDay = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
   return d.getFullYear() === n.getFullYear()
     ? `${monthDay} at ${time}`
     : `${monthDay}, ${d.getFullYear()} at ${time}`
 }
 
-/** The reply pill's time on a conversation card. The card sits under ITS OWN
- *  day's divider, so a bare time implies that day — when the last reply
- *  happened on a DIFFERENT local day, the label carries its day explicitly,
- *  including a literal `Today` (the one case formatReplyTimestamp leaves
- *  bare, because inside a thread "today" needs no marker but under an old
- *  divider it does). */
+/** The reply pill on a conversation card — the one place a timestamp DOES sit
+ *  under a date divider, so it carries the single exception to the rule above:
+ *  a bare time is safe only when the divider says Today AND the reply is
+ *  today. A reply from today under an OLDER divider says `Today at …`, or it
+ *  would be read as the divider's day.
+ *
+ *  The rule this replaces compared the reply to the CARD's day, which left a
+ *  thread that began and ended on one past day bare forever — a card under a
+ *  `Yesterday` divider showing `2:21 PM` with nothing to date it. */
 export function formatLastReplyTimestamp(
   lastReplyAt: number,
   messageCreatedAt: number,
   now: number = Date.now()
 ): string {
-  const t = formatTimestamp(lastReplyAt, now)
-  if (dayKey(lastReplyAt) === dayKey(messageCreatedAt) || t === 'Just now') return t
+  if (now - lastReplyAt < 60_000) return 'Just now'
+  const n = new Date(now)
+  if (sameLocalDay(new Date(lastReplyAt), n)) {
+    const time = formatTimestamp(lastReplyAt, now)
+    return sameLocalDay(new Date(messageCreatedAt), n) ? time : `Today at ${time}`
+  }
   return formatReplyTimestamp(lastReplyAt, now)
 }
 
