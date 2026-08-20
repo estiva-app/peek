@@ -96,8 +96,20 @@ export function TopicDetailsDialogView({
   const save = async () => {
     if (!onRename || !changed) return
     setSaving(true)
-    const result = await onRename(canonical)
-    setSaving(false)
+    let result: RenameOutcome
+    try {
+      result = await onRename(canonical)
+    } catch (error) {
+      // Nothing may leave this control stuck. A caller that throws is a caller
+      // that has already done half the work, and "Saving…" for ever is the
+      // worst way to say so.
+      result = {
+        kind: 'error',
+        message: error instanceof Error ? error.message : 'That rename did not go through.',
+      }
+    } finally {
+      setSaving(false)
+    }
     setOutcome(result)
     /*
      * Only a real error keeps the field open. A warning means the rename

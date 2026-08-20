@@ -302,7 +302,22 @@ export function useRenameTopic(): (topicKey: string, title: string) => Promise<R
           message: 'Renamed in Peek. Sign in to Estiva ID so other apps see the new name too.',
         }
       }
-      const sent = await renameTopicChannel(result.channelUuid ?? null, result.title ?? title, relayUrl, token)
+      /*
+       * Signing and publishing **throw** — `signViaEstivaId` raises on any
+       * non-2xx from `/sign`, and an expired token is the ordinary way that
+       * happens. Unhandled, that rejection escaped all the way past the caller
+       * and left the Save button saying "Saving…" for ever, under a rename that
+       * had already gone through (Katerina, 2026-08-20).
+       *
+       * It is a warning either way: the topic is renamed here, the relay simply
+       * does not know.
+       */
+      let sent: { ok: boolean; reason?: string }
+      try {
+        sent = await renameTopicChannel(result.channelUuid ?? null, result.title ?? title, relayUrl, token)
+      } catch (error) {
+        sent = { ok: false, reason: error instanceof Error ? error.message : undefined }
+      }
       return sent.ok
         ? null
         : {

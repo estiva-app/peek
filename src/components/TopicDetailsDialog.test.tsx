@@ -128,6 +128,26 @@ describe('TopicDetailsDialogView', () => {
     expect(screen.queryByRole('textbox', { name: 'Topic name' })).not.toBeInTheDocument()
   })
 
+  it('never leaves the button stuck when the rename throws', async () => {
+    /*
+     * `signViaEstivaId` raises on any non-2xx from `/sign`, and an expired
+     * token is the ordinary way that happens. Unhandled, that rejection left
+     * Save reading "Saving…" for ever under a rename that had already gone
+     * through (Katerina, 2026-08-20).
+     */
+    const onRename = vi.fn().mockRejectedValue(new Error('POST /sign failed: 401'))
+    await open({ onRename })
+
+    const field = screen.getByRole('textbox', { name: 'Topic name' })
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Peek feedback')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('POST /sign failed: 401')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Saving…' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
   it('abandons the edit on Escape without renaming anything', async () => {
     const onRename = vi.fn()
     await open({ onRename })
