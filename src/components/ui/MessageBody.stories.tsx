@@ -57,6 +57,18 @@ export const InlineTokens: Story = {
   },
 }
 
+/** An `@` only opens a mention at the start of a word, so an email address
+ *  stays plain text while a real mention beside it still becomes a chip.
+ *  Every address below used to have its domain torn out as a chip. */
+export const EmailAddressesAreNotMentions: Story = {
+  args: {
+    body:
+      'It would be nice to see katerina@estiva.estiva.app instead of my public key.\n' +
+      'Others that used to break: first.last@estiva.app, support@peek-app.io, kat+peek@estiva.app, user@localhost.\n' +
+      'Still a mention: @backend-team, and @Daniel Stanton — plus @testing-library/react, which was always plain.',
+  },
+}
+
 /** The same `[Topic]` chip when the topic is resolved — dashed circle → green check. */
 export const ResolvedTopicChip: Story = {
   args: {

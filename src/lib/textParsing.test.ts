@@ -58,6 +58,51 @@ describe('MENTION_RE', () => {
   })
 })
 
+/**
+ * A mention has to OPEN a word. The pattern fenced its right-hand side (which
+ * is why package paths were safe) but not its left, so the `@` in an email
+ * address started a mention and tore the address in half.
+ */
+describe('an @ inside a word is not a mention', () => {
+  const cases = [
+    ['a plain address', 'mail katerina@estiva.app today'],
+    ['a dotted local part', 'first.last@estiva.app'],
+    ['a hyphenated domain', 'support@peek-app.io'],
+    ['plus-addressing', 'kat+peek@estiva.app'],
+    ['no TLD', 'user@localhost'],
+    ['an address whose domain is a known person', 'mail jan@Daniel Stanton'],
+    ['an address at the very start', 'katerina@estiva.app is my address'],
+  ]
+  for (const [label, text] of cases) {
+    it('leaves ' + label + ' alone', () => {
+      expect(matches(text)).toEqual([])
+      expect(tokenMatches(text)).toEqual([])
+    })
+  }
+
+  // The message that reported this (2026-08-20). Rendered, the domain was
+  // pulled out as a chip and the line read "katerina" "@estiva" ".estiva.app".
+  it('leaves the reported message intact', () => {
+    const reported =
+      'It would be nice to be able to see katerina@estiva.estiva.app instead of my public key in both Ship and Peek'
+    expect(matches(reported)).toEqual([])
+    expect(reported.split(INLINE_TOKEN_RE)).toEqual([reported])
+  })
+
+  it('still matches every mention that opens a word', () => {
+    expect(matches('@backend-team ping')).toEqual(['@backend-team'])
+    expect(matches('hey @Alice Johnson')).toEqual(['@Alice Johnson'])
+    expect(matches('!@Daniel Stanton now')).toEqual(['!@Daniel Stanton'])
+    expect(matches('ping (@backend-team)')).toEqual(['@backend-team'])
+    expect(matches('line one\n@backend-team')).toEqual(['@backend-team'])
+    expect(matches('done — @backend-team')).toEqual(['@backend-team'])
+  })
+
+  it('keeps the urgent form reachable after punctuation', () => {
+    expect(matches('wow!@backend-team')).toEqual(['@backend-team'])
+  })
+})
+
 describe('parseInlineContent', () => {
   it('returns a single text node for plain text', () => {
     const out = parseInlineContent('hello world')
