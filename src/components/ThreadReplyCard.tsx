@@ -523,8 +523,8 @@ export function ThreadReplyCard({
             <div className="flex items-center gap-2 w-full">
               <div className="flex items-center gap-2 shrink-0 flex-1 min-w-0">
                 <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
-                <span className="text-body-2-strong text-text-primary whitespace-nowrap">{authorName}</span>
-                <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
+                <span className="text-body-2-strong text-text-primary min-w-0 truncate">{authorName}</span>
+                <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
                 {highlightState && <HighlightPill type={highlightState} />}
               </div>
               {isNew && !isUrgent && (
