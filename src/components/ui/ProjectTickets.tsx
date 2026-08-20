@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { IconChevronRight } from '@tabler/icons-react'
-import type { ForeignObject } from '../../../convex/nostr/projection'
+import type { ForeignObject, ResolvedSlot } from '../../../convex/nostr/projection'
 import { StatusPill } from './ForeignObjectWidget'
 import { cn } from '@/lib/utils'
 
@@ -31,6 +31,28 @@ function Progress({ done, open }: { done: number; open: number }) {
       />
     </div>
   )
+}
+
+/**
+ * A ticket's key — `FEE-1` — when the owning app publishes one.
+ *
+ * **Not `subtitle`.** That was the first guess and it was wrong in the only
+ * place that mattered: Ship maps `subtitle` to the issue's *description*
+ * (`{field: 'content', truncate: 120}`), so the column filled with the opening
+ * words of each ticket's body. The fixtures said otherwise because they were
+ * written to the guess, which is exactly how it survived Storybook and failed
+ * in production (2026-08-20).
+ *
+ * The key is a `meta` slot, and the rule for finding it is deliberately about
+ * *shape* rather than about Ship: a meta entry with **no label** and no pubkey
+ * is an identifier — the labelled ones are properties ("Assignee", "Lead") and
+ * say so. Nothing here knows the tag is called `ref`.
+ */
+function keyOf(ticket: ForeignObject): string | undefined {
+  const identifier = ticket.meta.find(
+    (slot: ResolvedSlot) => !slot.label && !slot.isPubkey && slot.value,
+  )
+  return identifier?.value
 }
 
 /**
@@ -119,14 +141,13 @@ export function ProjectTickets({
                   <td className="max-w-0 truncate py-1.5 pl-3 pr-2">
                     {/*
                      * The key first — FEE-1, PEE-2 — because it is how people
-                     * refer to a ticket out loud and in messages, and it was
-                     * missing entirely (Katerina, 2026-08-20). Fixed-width and
-                     * muted so a column of them lines up without competing with
-                     * the titles beside it.
+                     * refer to a ticket out loud and in messages. Fixed-width
+                     * and muted so a column of them lines up without competing
+                     * with the titles beside it.
                      */}
-                    {ticket.slots.subtitle && (
+                    {keyOf(ticket) && (
                       <span className="mr-2 inline-block w-[52px] shrink-0 truncate align-middle text-text-muted">
-                        {ticket.slots.subtitle.value}
+                        {keyOf(ticket)}
                       </span>
                     )}
                     {ticket.openUrl ? (

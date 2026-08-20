@@ -76,13 +76,14 @@ const object = (id: string, title: string, status: string, colour: string): Fore
     appName: 'Estiva Ship',
     slots: {
       title: { value: title, field: 'title' },
-      // Ship gives every issue a key — FEE-1, PEE-2 — and the rows show it.
-      // The fixture had none, so the column looked empty in the story while the
-      // real panel had it.
-      subtitle: { value: id.toUpperCase() },
+      // Ship's `subtitle` is the issue's *content*. The key is a `meta` slot —
+      // see below.
+      subtitle: { value: `Reported while reviewing ${title.toLowerCase()}.` },
       status: { label: 'Status', value: status, colour, field: 'status' },
     },
-    meta: [],
+    // `ref` unlabelled is the key; labelled entries are properties. Ship's
+    // manifest declares exactly this shape for an issue.
+    meta: [{ value: id.toUpperCase(), field: 'ref' }],
     comments: [],
     people: { [person]: { displayName: 'Amie Miles' } },
     actions: [],
