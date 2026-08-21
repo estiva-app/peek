@@ -26,8 +26,8 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AuthShell } from './shell/AuthShell'
-import { reasonForCallbackError } from './shell/contract'
-import { completeSignIn, stashShellReason, takeReturnTo } from './estivaId'
+import { GUARD_TTL_MS, reasonForCallbackError, readGuard } from './shell/contract'
+import { completeSignIn, hasPendingSignIn, stashShellReason, takeReturnTo } from './estivaId'
 
 export function EstivaIdCallback() {
   const navigate = useNavigate()
@@ -76,6 +76,37 @@ export function EstivaIdCallback() {
      * code and overwrite that reason with a spurious `exchange_failed`.
      */
     if (!params.get('code')) {
+      navigate(returnTo || '/', { replace: true })
+      return
+    }
+
+    /**
+     * A code in a tab that never asked for one (PEEK-167).
+     *
+     * `sessionStorage` is per-tab and a new tab inherits nothing, so a fresh tab
+     * that lands here holding a `?code=` did not get it from `beginSignIn`. It
+     * got it from the address bar: every return trip through here is a real
+     * navigation, so `https://peek.estiva.app/auth/callback?code=…` is in the
+     * omnibox's history for good, and typing the host offers it back. The
+     * handoff below replaces the *session* history entry, not the browsing
+     * history the omnibox completes against.
+     *
+     * This is the reported failure, and the one shape none of the earlier fixes
+     * could touch: the throw is the missing verifier rather than a mismatched
+     * state, and it happens in 25ms without asking the identity service
+     * anything — so the audit log holds no record of a failure, because there
+     * was none. Nothing is wrong with the session. Stripping the query and
+     * letting the shell boot normally puts the person in the app, which is
+     * where they were going.
+     *
+     * Gated on the guard so this cannot loop. A tab that just probed *did* write
+     * a verifier, so its absence there is something eating `sessionStorage`
+     * rather than a stale URL — and for that the error is the honest answer,
+     * where another trip to `/authorize` would go round forever.
+     */
+    const probedAt = readGuard(window.sessionStorage)
+    const justProbed = probedAt !== null && Date.now() - probedAt < GUARD_TTL_MS
+    if (!hasPendingSignIn() && !justProbed) {
       navigate(returnTo || '/', { replace: true })
       return
     }

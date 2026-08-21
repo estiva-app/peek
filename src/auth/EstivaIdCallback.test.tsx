@@ -16,6 +16,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { EstivaIdCallback } from './EstivaIdCallback'
 import { CALLBACK_PATH } from './estivaId'
+import { GUARD_KEY } from './shell/contract'
 
 const realFetch = globalThis.fetch
 beforeEach(() => sessionStorage.clear())
@@ -71,6 +72,37 @@ describe('the Estiva ID callback', () => {
     globalThis.fetch = (async () => ({ ok: false, status: 400 })) as unknown as typeof fetch
 
     renderAt('?code=abc&state=wrong')
+
+    await waitFor(() => expect(screen.getByText('the app')).toBeInTheDocument())
+    expect(sessionStorage.getItem('peek.estivaId.shellReason')).toBe('exchange_failed')
+  })
+
+  it('boots the app when a code arrives in a tab that never asked for one', async () => {
+    // The reported failure (PEEK-167): a fresh tab, a `?code=` offered back by
+    // the omnibox from a previous visit, and no verifier because this tab never
+    // started a sign-in. There is nothing wrong with the session, so there is
+    // nothing to report — and the exchange must not even be attempted, since
+    // the code belongs to a round trip that already finished.
+    globalThis.fetch = (async () => {
+      throw new Error('the exchange must not be attempted')
+    }) as unknown as typeof fetch
+
+    renderAt('?code=a-code-this-tab-never-asked-for&state=whatever')
+
+    await waitFor(() => expect(screen.getByText('the app')).toBeInTheDocument())
+    expect(sessionStorage.getItem('peek.estivaId.shellReason')).toBeNull()
+    expect(window.location.pathname).toBe('/')
+    expect(window.location.search).toBe('')
+  })
+
+  it('still refuses a code when this tab probed and the verifier is gone', async () => {
+    // The case that must stay an error. The guard says a probe left from here,
+    // so a missing verifier is something eating `sessionStorage` rather than a
+    // stale URL, and bouncing back to `/authorize` would loop forever.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    sessionStorage.setItem(GUARD_KEY, String(Date.now()))
+
+    renderAt('?code=abc&state=st4te')
 
     await waitFor(() => expect(screen.getByText('the app')).toBeInTheDocument())
     expect(sessionStorage.getItem('peek.estivaId.shellReason')).toBe('exchange_failed')

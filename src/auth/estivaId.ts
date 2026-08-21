@@ -418,6 +418,19 @@ export function clearSession(): void {
 }
 
 /**
+ * Whether this tab has a sign-in of its own in the air.
+ *
+ * `beginSignIn` writes the verifier and state together and `completeSignIn`
+ * spends them together, so either key answers this. Both are read because the
+ * interesting question at the call site is not which key survived — it is
+ * whether the code that just arrived belongs to anything this tab did.
+ */
+export function hasPendingSignIn(): boolean {
+  const s = store()
+  return Boolean(s?.getItem(VERIFIER_KEY) && s.getItem(STATE_KEY))
+}
+
+/**
  * Abandon a sign-in that has not come back.
  *
  * Deliberately not called on any failure path. A verifier outliving its attempt
