@@ -10,7 +10,8 @@
  * request body is camelCase and the response is snake_case.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CLIENT_ID, codeChallenge, completeSignIn, SignInError, storedToken } from './estivaId'
+import { beginSignIn, CLIENT_ID, codeChallenge, completeSignIn, SignInError, storedToken } from './estivaId'
+import { readGuard } from './shell/contract'
 
 const VERIFIER_KEY = 'peek.estivaId.codeVerifier'
 const STATE_KEY = 'peek.estivaId.state'
@@ -47,6 +48,37 @@ describe('codeChallenge', () => {
     expect(await codeChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe(
       'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
     )
+  })
+})
+
+/**
+ * The double probe (PEEK-167).
+ *
+ * Nothing here tests a redirect, because the redirect is not the part that went
+ * wrong. What went wrong is the order of two writes: the verifier and state are
+ * spent the moment this is called, and the guard that says so was published one
+ * `await` later. A tab that decided to probe twice inside that window overwrote
+ * its own credentials and then failed the state check on the way back, which
+ * reaches the person as `exchange_failed` for a code `/token` was never shown.
+ */
+describe('beginSignIn', () => {
+  it('marks the loop guard before it awaits anything', async () => {
+    const inFlight = beginSignIn('/', { silent: true })
+
+    // Read synchronously, which is precisely what a second `decideBoot`
+    // mounting in the same tick gets to see. It used to see nothing.
+    const seenBySecondCaller = readGuard(sessionStorage)
+
+    await inFlight.catch(() => {})
+    expect(seenBySecondCaller).not.toBeNull()
+  })
+
+  it('leaves the guard alone for an attempt the person asked for', async () => {
+    // The guard only ever suppresses a *silent* probe. Marking it on a tap
+    // would turn the one affordance the shell offers into a dead button.
+    await beginSignIn('/', { silent: false }).catch(() => {})
+
+    expect(readGuard(sessionStorage)).toBeNull()
   })
 })
 
