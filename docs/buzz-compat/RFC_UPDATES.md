@@ -318,6 +318,78 @@ honour-system (clients validate against the manifest), relay-enforced (the relay
 would need schemas), or self-healing (the owner publishes corrections).
 Honour-system is probably right for vetted apps, but it should be chosen.
 
+### What it does not declare: how to find anything
+
+Added after PEEK-150 built the most demanding consumer available — an agent that
+had never heard of Ship — and pointed it at Ship's manifest with nothing else.
+The reader is `scripts/manifest-reader.ts` in estiva-ship; it imports a relay
+client and a signer, and every kind number, tag name, ordering rule and status
+label it uses comes out of the manifest at runtime. Measured against production.
+
+**Rendering worked completely.** Both projections came out with titles,
+truncated subtitles, status labels resolved through the declared vocabularies,
+display refs, and assignees resolved from a public key to a person's name —
+indistinguishable from what Ship's own tooling prints.
+
+The part that made it work is the part this document added to NIP-89 last:
+`records`. Because the fold rule is declared — which kind carries changes, which
+tags name the target, the field and the value, and how to break a tie when two
+land in the same second — a stranger can apply it. The prediction was that
+folding would be the gap, on the grounds that a manifest describes objects and
+the fold is a behaviour. It is the part that already works, and it works
+precisely because it stopped being left to convention.
+
+**Everything relational was missing.** Six gaps, and they are one gap wearing
+six hats:
+
+| Asked | Missing |
+| --- | --- |
+| "list the open issues" | Nothing says which handled kind is the unit of work. `k` tags list 30850 and 30851 flat; the reader guessed from `widget: "row"`, which is a layout hint, not a type. |
+| | The vocabulary gives every value and its label, but never which values mean *not finished*. Each consumer re-derives it and they will disagree. |
+| "what is in project X?" | An issue carries `["d","title","h","a","ref"]`. Its projection reads four slots and none is the `a` tag. |
+| | Nothing names the `h` tag or any container, so a query cannot be scoped to one Folder — only to everything. |
+| "show me the discussion" | `kind:9` appears **only as an emitted kind** inside the `comment` action. No projection describes reading messages back. |
+| "is that everything?" | With no declared discovery model, a reader cannot distinguish a whole workspace from a slice, and so cannot report its own coverage. |
+
+**The sharpest of these is an asymmetry, not an omission.** The issue→project
+link is fully described — in `add-issue`, as `setTag: 'a', toAddressOf: 'self'`.
+So a consumer can *create* a correctly linked issue and then cannot *read the
+link back*. The manifest currently says how to write a relationship and not how
+to follow one, which is the exact inverse of what a reader needs.
+
+That generalises past this one tag. §1.1 established the Folder as the universal
+container and made records event-sourced; §3 then described objects one at a
+time, as though a consumer would always arrive already holding one. That is true
+of the case this document was written from — Peek renders an issue it received in
+a message — and false of every consumer that has to go and look for something.
+
+### What would close it
+
+Three additions, in the same spirit as `records`: each states a rule the owner
+already relies on, rather than adding a capability.
+
+1. **A root.** Which kind a reader should start from, and which kinds are found
+   through it rather than queried directly.
+2. **A parent link.** The tag that carries an object's containing object, on the
+   read side, as a projection slot rather than only inside an action.
+3. **Containment.** The tag that scopes a query to one container, so a consumer
+   can ask for part of a workspace instead of all of it.
+
+With those, a reader could also state what it could not see — which matters more
+for an agent than for a person. Somebody browsing sees projects and never forms
+the belief they are looking at everything; an agent asked "what is still open?"
+answers from whatever came back, and an array carries no hint that a third of the
+data was never in scope.
+
+**A finding to sit with rather than act on immediately:** because this reader has
+no containment model, it never narrows, and it therefore saw *every* issue —
+including the 13 that Ship's own discovery cannot reach, whose project records
+were deleted out from under them. 31 against 18. That is luck rather than
+correctness, and it should not be mistaken for an argument that unscoped reads
+are better. What it does establish is that those issues are intact and readable,
+and that the fault is in navigating from a parent that can be deleted, not in the
+data.
+
 ---
 
 ## Open questions to carry into 0.3
@@ -331,6 +403,9 @@ Honour-system is probably right for vetted apps, but it should be chosen.
    GitHub uses `(commit, path, line-range)` and it is fragile across edits. This
    is the one place addressable Components were genuinely better.
 5. **Widget governance** — who adds a widget type.
+8. **Declared discovery** (§3) — a root kind, a read-side parent link and a
+   containment tag. Raised by PEEK-150; without them a manifest describes
+   objects a consumer must already be holding.
 6. **Validation model** — see above.
 
 ---
@@ -344,4 +419,5 @@ Honour-system is probably right for vetted apps, but it should be chosen.
 | Where Buzz conflicts with RFC 0.2 | [COMPATIBILITY_GAP_ANALYSIS.md](COMPATIBILITY_GAP_ANALYSIS.md) §3 |
 | The git/Files reasoning | [FILES_ARCHITECTURE.md](FILES_ARCHITECTURE.md) |
 | Things that broke in practice | [FRICTION.md](FRICTION.md) |
+| Whether a manifest alone is enough to read an app | `scripts/manifest-reader.ts` in estiva-ship (PEEK-150) |
 | Superseded File-kind draft | [nips/NIP-FC.md](nips/NIP-FC.md) |
