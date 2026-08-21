@@ -117,6 +117,28 @@ export async function beginSignIn(
   s.setItem(STATE_KEY, state)
   s.setItem(RETURN_KEY, returnTo)
 
+  /**
+   * The guard is marked **here**, synchronously with the writes above, and not
+   * further down next to the navigation (PEEK-167).
+   *
+   * It used to sit just before `window.location.assign`, which reads as the
+   * same thing and is not: `codeChallenge` awaits a `crypto.subtle` digest in
+   * between. For that whole window the verifier and state have already been
+   * overwritten while `readGuard` still answers `null`, so a second `decideBoot`
+   * landing in it decides to probe as well.
+   *
+   * Two probes then write two verifier/state pairs into one tab's
+   * `sessionStorage`, and only one of the two navigations commits. When the one
+   * that commits is not the one that wrote last, the code comes back matched to
+   * a state that is no longer there and `completeSignIn` refuses it — an
+   * `exchange_failed` for a code that was never even presented to `/token`.
+   *
+   * Marking it with the other single-use writes is what makes the guard cover
+   * the window it exists for: they are the things this attempt has already
+   * spent, and they become true together or not at all.
+   */
+  if (silent) markGuard(s, Date.now())
+
   const url = new URL('/authorize', ESTIVA_ID_ORIGIN)
   url.searchParams.set('client_id', CLIENT_ID)
   url.searchParams.set('redirect_uri', redirectUri())
@@ -129,15 +151,8 @@ export async function beginSignIn(
    * A silent attempt asks not to be prompted (PEEK-117), so a browser with no
    * session comes straight back with `error=login_required` instead of landing
    * on the identity origin's sign-in page.
-   *
-   * The guard is marked **before** navigating, because after this line nothing
-   * here runs again. That marker is what stops the return trip starting another
-   * attempt — the infinite bounce this flow would otherwise be.
    */
-  if (silent) {
-    url.searchParams.set('prompt', 'none')
-    markGuard(s, Date.now())
-  }
+  if (silent) url.searchParams.set('prompt', 'none')
 
   window.location.assign(url.toString())
 }

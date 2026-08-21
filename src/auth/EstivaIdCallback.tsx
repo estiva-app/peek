@@ -73,9 +73,18 @@ export function EstivaIdCallback() {
         // that can disagree. Full load, not navigate(): see the file header.
         window.location.replace(returnTo || '/')
       })
-      .catch(() => {
-        // Every refusal from `/token` is a uniform `invalid_grant`, so there is
-        // nothing here worth saying that `exchange_failed` does not already say.
+      .catch((error: unknown) => {
+        /**
+         * The reason is uniform; the message is not, and it is worth saying.
+         *
+         * This used to swallow the error on the grounds that every refusal from
+         * `/token` is a deliberately uniform `invalid_grant`. True, and beside
+         * the point: the throws that never reach `/token` — a state that did
+         * not match, a verifier this tab never wrote — are the diagnostic ones,
+         * and they were leaving `exchange_failed` as the only trace of a
+         * sign-in that died on our side of the exchange (PEEK-167).
+         */
+        console.error('[auth-shell] exchange failed:', error)
         stashShellReason('exchange_failed')
         window.location.replace(returnTo || '/')
       })
