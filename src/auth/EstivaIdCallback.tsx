@@ -6,17 +6,31 @@
  * `http://localhost:5173`. Changing it here without re-seeding there produces a
  * `400` at `/authorize`, before any redirect happens.
  *
- * The exchange ends in a **full page load** rather than a client-side navigation.
- * That is not laziness: `PeekDataProvider` picks its Convex auth provider at
- * mount, so the app has to come up again for the Estiva ID token to be the thing
- * driving the client.
+ * The exchange ends in a **client-side navigation** (PEEK-167).
+ *
+ * It used to be a full page load, and the reason given was that
+ * `PeekDataProvider` picks its Convex auth provider at mount. That stopped being
+ * true at PEEK-41, which deleted Convex Auth and left one provider with nothing
+ * to choose. What kept the reload load-bearing after that was `usesEstivaId`, a
+ * module-load snapshot of whether this tab held a token — and every caller had
+ * already moved off it to `validToken()` at call time, leaving it with no
+ * readers at all.
+ *
+ * So a cold sign-in cost three full boots of the app where two are unavoidable:
+ * leaving for the identity origin and coming back are real cross-origin
+ * navigations, because the session cookie is `SameSite=Lax` and rides nothing
+ * else. This third hop is ours, and it is now a route change — the token is in
+ * `sessionStorage` before it happens, so `useEstivaIdAuth` seeds authenticated
+ * on the very first render of the tree it lands in.
  */
 import { useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AuthShell } from './shell/AuthShell'
 import { reasonForCallbackError } from './shell/contract'
 import { completeSignIn, stashShellReason, takeReturnTo } from './estivaId'
 
 export function EstivaIdCallback() {
+  const navigate = useNavigate()
   const ran = useRef(false)
 
   useEffect(() => {
@@ -48,7 +62,7 @@ export function EstivaIdCallback() {
     const error = params.get('error')
     if (error) {
       stashShellReason(reasonForCallbackError(error))
-      window.location.replace(returnTo || '/')
+      navigate(returnTo || '/', { replace: true })
       return
     }
 
@@ -62,7 +76,7 @@ export function EstivaIdCallback() {
      * code and overwrite that reason with a spurious `exchange_failed`.
      */
     if (!params.get('code')) {
-      window.location.replace(returnTo || '/')
+      navigate(returnTo || '/', { replace: true })
       return
     }
 
@@ -70,8 +84,8 @@ export function EstivaIdCallback() {
       .then(() => {
         // `returnTo` was taken above, so `completeSignIn`'s own copy is already
         // gone — use the one read here for every path rather than two sources
-        // that can disagree. Full load, not navigate(): see the file header.
-        window.location.replace(returnTo || '/')
+        // that can disagree.
+        navigate(returnTo || '/', { replace: true })
       })
       .catch((error: unknown) => {
         /**
@@ -86,9 +100,9 @@ export function EstivaIdCallback() {
          */
         console.error('[auth-shell] exchange failed:', error)
         stashShellReason('exchange_failed')
-        window.location.replace(returnTo || '/')
+        navigate(returnTo || '/', { replace: true })
       })
-  }, [])
+  }, [navigate])
 
   // Never anything but the waiting state: this route either redeems and leaves,
   // or hands a reason to the shell and leaves.

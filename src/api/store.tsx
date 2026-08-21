@@ -18,7 +18,6 @@
  */
 import { createContext, useContext, useState, useMemo, type ReactNode, type Dispatch, type SetStateAction } from 'react'
 import { ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
-import { hasEstivaIdSession } from '@/auth/estivaId'
 import { useEstivaIdAuth } from '@/auth/useEstivaIdAuth'
 import { StarredProvider } from '@/api/internal/starred'
 import { TopicStoreProvider } from '@/api/internal/topicStore'
@@ -107,17 +106,14 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
 export const hasConvex = CONVEX_URL !== undefined
 
 /**
- * Whether this tab is holding an Estiva ID token (PEEK-104).
+ * `usesEstivaId` is gone (PEEK-167).
  *
- * No longer a provider choice — PEEK-41 left one provider — so this now means
- * only "is there a token to sign or read with". The publish and sync paths use
- * it to skip work that would fail without one.
+ * It was a module-load snapshot of "does this tab hold a token", and it was the
+ * last thing that required acquiring one to end in a full page load: the value
+ * could only be right if the app remounted with the answer already settled.
  *
- * Still evaluated once at module load rather than reactively. Acquiring a token
- * always ends in a full page load (see `EstivaIdCallback`), so the app remounts
- * with the answer settled, and a value that flipped mid-render would put the
- * relay paths and the auth gate briefly out of step.
+ * Every caller had already moved off it to `validToken()` at call time, because
+ * a snapshot is wrong the moment a token is acquired or expires — see
+ * `tokenForPublish` in `actions.ts`. By the time it was deleted nothing read it
+ * at all, and the reload it cost was being paid for a value with no readers.
  */
-// A computed constant, not a component — the rule permits only literal ones.
-// eslint-disable-next-line react-refresh/only-export-components
-export const usesEstivaId = hasConvex && hasEstivaIdSession()
