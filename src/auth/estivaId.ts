@@ -378,6 +378,9 @@ export function currentEstivaToken(): string | undefined {
  */
 export function beginSignOut(): void {
   clearSession()
+  // Going to /logout makes any half-started sign-in moot, and this is the one
+  // caller that genuinely means both.
+  clearPendingSignIn()
   stashShellReason('no_session')
   const url = new URL('/logout', ESTIVA_ID_ORIGIN)
   url.searchParams.set('client_id', CLIENT_ID)
@@ -385,8 +388,46 @@ export function beginSignOut(): void {
   window.location.assign(url.toString())
 }
 
+/**
+ * Forget this app's session. **Not** an in-flight sign-in — see below.
+ *
+ * This used to clear the verifier, state and `returnTo` as well, which reads as
+ * thoroughness and is a bug (PEEK-167). Those three are not session state: they
+ * are the credentials of an authorization request that is *currently in the
+ * air*, owned by the `beginSignIn` that wrote them and spent by the
+ * `completeSignIn` that comes back. Clearing them on somebody else's schedule
+ * does not tidy anything up — it destroys a sign-in that is still happening.
+ *
+ * The path that made it matter: a boot whose token has expired calls
+ * `fetchAccessToken`, which fails to renew and clears the session, which drops
+ * the app to the shell, which probes and writes a fresh verifier. A *second*
+ * `fetchAccessToken` awaiting the same in-flight renewal then resolves and
+ * clears again — now deleting the verifier the probe has just written. The
+ * code comes back to a tab that no longer has anything to redeem it with, and
+ * `completeSignIn` refuses it before `/token` is ever called. The person is
+ * told the sign-in did not complete, and the identity service has no record of
+ * a failure at all, because nothing was ever asked of it.
+ *
+ * So the two are separated. Anything that wants both says so, and only
+ * `beginSignOut` does.
+ */
 export function clearSession(): void {
   const s = store()
   if (!s) return
-  for (const k of [TOKEN_KEY, VERIFIER_KEY, STATE_KEY, RETURN_KEY, REASON_KEY]) s.removeItem(k)
+  for (const k of [TOKEN_KEY, REASON_KEY]) s.removeItem(k)
+}
+
+/**
+ * Abandon a sign-in that has not come back.
+ *
+ * Deliberately not called on any failure path. A verifier outliving its attempt
+ * is harmless — `completeSignIn` clears all three before it does anything else,
+ * and a stale one cannot redeem a code that was issued against a different
+ * challenge. Destroying a live one is the expensive direction, so this is only
+ * for the case where we know the attempt is moot: we are leaving for `/logout`.
+ */
+export function clearPendingSignIn(): void {
+  const s = store()
+  if (!s) return
+  for (const k of [VERIFIER_KEY, STATE_KEY, RETURN_KEY]) s.removeItem(k)
 }

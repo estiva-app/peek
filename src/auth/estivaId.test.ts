@@ -10,7 +10,15 @@
  * request body is camelCase and the response is snake_case.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { beginSignIn, CLIENT_ID, codeChallenge, completeSignIn, SignInError, storedToken } from './estivaId'
+import {
+  beginSignIn,
+  clearSession,
+  CLIENT_ID,
+  codeChallenge,
+  completeSignIn,
+  SignInError,
+  storedToken,
+} from './estivaId'
 import { readGuard } from './shell/contract'
 
 const VERIFIER_KEY = 'peek.estivaId.codeVerifier'
@@ -61,6 +69,50 @@ describe('codeChallenge', () => {
  * its own credentials and then failed the state check on the way back, which
  * reaches the person as `exchange_failed` for a code `/token` was never shown.
  */
+/**
+ * Losing a sign-in that is still in the air (PEEK-167).
+ *
+ * `clearSession` runs from `fetchAccessToken` whenever a renewal fails, and a
+ * failed renewal is exactly what drops the app to the shell — which then starts
+ * a probe. A second `fetchAccessToken` awaiting the same renewal resolves a
+ * moment later and clears again, and if that clear reached the verifier it
+ * deleted a probe that had already left. The code comes back to a tab with
+ * nothing to redeem it, and the refusal happens here rather than at `/token`,
+ * which is why the identity service records no failure at all.
+ */
+describe('clearSession', () => {
+  it('leaves an in-flight sign-in alone', () => {
+    primeTab({ verifier: 'v'.repeat(43), state: 'st4te', returnTo: '/topics/1' })
+
+    clearSession()
+
+    expect(sessionStorage.getItem(VERIFIER_KEY)).toBe('v'.repeat(43))
+    expect(sessionStorage.getItem(STATE_KEY)).toBe('st4te')
+    expect(sessionStorage.getItem(RETURN_KEY)).toBe('/topics/1')
+  })
+
+  it('still forgets the token', () => {
+    sessionStorage.setItem('peek.estivaId.token', JSON.stringify({ accessToken: 'a', expiresAt: Date.now() + 1000 }))
+
+    clearSession()
+
+    expect(storedToken()).toBeNull()
+  })
+
+  it('does not strand a cleared session behind a live verifier', async () => {
+    // The reason the split is safe: completeSignIn spends all three itself
+    // before it does anything else, so a verifier outliving its attempt cannot
+    // accumulate. This is the property that makes not-clearing correct.
+    primeTab()
+    vi.stubGlobal('fetch', async () => ({ ok: false, status: 400 }) as Response)
+
+    await expect(completeSignIn('?code=abc&state=st4te')).rejects.toThrow(SignInError)
+
+    expect(sessionStorage.getItem(VERIFIER_KEY)).toBeNull()
+    expect(sessionStorage.getItem(STATE_KEY)).toBeNull()
+  })
+})
+
 describe('beginSignIn', () => {
   it('marks the loop guard before it awaits anything', async () => {
     const inFlight = beginSignIn('/', { silent: true })
