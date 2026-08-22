@@ -379,6 +379,116 @@ describe('resolveFolderProject', () => {
     expect(found?.tickets).toEqual([])
   })
 
+  /**
+   * Pairing after the fact, which is how both of the topics that broke were made
+   * (PEEK-24): the project was created in Estiva Ship's own Folder, then paired
+   * with a Peek topic afterwards. An event cannot change its own `h`, so the
+   * project record stayed where it was born and so did the change expressing the
+   * pairing — while every issue filed afterwards landed in the topic's Folder.
+   *
+   * Measured on production before the fix: the two paired Folders held ten and
+   * eleven issues respectively and no project event at all, and the panel read
+   * that as "no project linked to this topic".
+   */
+  describe('a project paired with the Folder after it was created', () => {
+    const ELSEWHERE = 'd9359c46-edf0-4f64-93f2-a0cb4e90a0fc'
+
+    /** The project record, still in the Folder it was created in. */
+    const paired = () =>
+      project('p1', {
+        tags: [
+          ['d', 'p1'],
+          ['title', 'Payment integration'],
+          ['h', ELSEWHERE],
+          ['lead', 'b'.repeat(64)],
+        ],
+      })
+
+    /** A change on the project, published where the project record lives. */
+    const changeElsewhere = (field: string, value: string) =>
+      change(`${PROJECT_KIND}:${AUTHOR}:p1`, field, value, {
+        tags: [
+          ['a', `${PROJECT_KIND}:${AUTHOR}:p1`],
+          ['field', field],
+          ['value', value],
+          ['h', ELSEWHERE],
+        ],
+      })
+
+    it('is found through the tickets that name it', async () => {
+      // `folder` is in the fixture because production has it, and is deliberately
+      // not what finds the project: nothing here knows the word. The tickets do
+      // the work, through the link tag the manifest already declares.
+      const found = await resolveFolderProject(
+        FOLDER,
+        relay([manifest(), paired(), issue('i1', 'Retry copy'), changeElsewhere('folder', FOLDER)]),
+      )
+
+      expect(found?.project.slots.title.value).toBe('Payment integration')
+      expect(found?.tickets.map((t) => t.slots.title.value)).toEqual(['Retry copy'])
+      expect(found?.openCount).toBe(1)
+    })
+
+    it('folds the changes that stayed behind with the record', async () => {
+      // Fetched by address, not by `h`. A Folder query alone finds none of these
+      // and shows the manifest's defaults as though they were the project's state.
+      const found = await resolveFolderProject(
+        FOLDER,
+        relay([
+          manifest(),
+          paired(),
+          issue('i1', 'Retry copy'),
+          changeElsewhere('status', 'in_progress'),
+          changeElsewhere('lead', 'c'.repeat(64)),
+        ]),
+      )
+
+      expect(found?.project.slots.status).toMatchObject({ value: 'In Progress' })
+      expect(found?.project.meta).toEqual([
+        { label: 'Lead', value: 'c'.repeat(64), colour: undefined, isPubkey: true, field: 'lead' },
+      ])
+    })
+
+    it('stays hidden when the record it points at is archived', async () => {
+      const found = await resolveFolderProject(
+        FOLDER,
+        relay([
+          manifest(),
+          paired(),
+          issue('i1', 'Retry copy'),
+          changeElsewhere('archived', 'true'),
+        ]),
+      )
+
+      expect(found).toBeNull()
+    })
+
+    it('does not adopt a link that is not a container', async () => {
+      const blocked = issue('i1', 'Blocked by another ticket')
+      blocked.tags = blocked.tags.map((t) => (t[0] === 'a' ? ['a', issueAddr('i2')] : t))
+      const blocker = issue('i2', 'The blocker')
+      blocker.tags = blocker.tags.filter((t) => t[0] !== 'a')
+
+      expect(await resolveFolderProject(FOLDER, relay([manifest(), blocked, blocker]))).toBeNull()
+    })
+
+    it('costs no extra round trip when the Folder holds its own project', async () => {
+      const sent: Record<string, unknown>[] = []
+      const answer = relay([manifest(), project('p1'), issue('i1', 'Retry copy')])
+
+      await resolveFolderProject(FOLDER, async (filters) => {
+        sent.push(...filters)
+        return answer(filters)
+      })
+
+      // The ordinary case must not pay for this. Nothing asks the relay for the
+      // project by its own `d` — that filter only exists on the adoption path.
+      expect(sent.some((f) => JSON.stringify((f as { '#d'?: string[] })['#d']) === '["p1"]')).toBe(
+        false,
+      )
+    })
+  })
+
   it('returns nothing for a Folder with no project in it', async () => {
     expect(await resolveFolderProject(FOLDER, relay([manifest()]))).toBeNull()
   })
