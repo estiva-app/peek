@@ -449,6 +449,41 @@ describe('resolveFolderProject', () => {
       ])
     })
 
+    it('is found from the pairing statement alone, with no ticket in the Folder', async () => {
+      // What Ship now publishes into the Folder being paired: the same `folder`
+      // change again, this time carrying the topic's own `h`. It is the only
+      // thing here naming the project — no ticket has been filed yet — which is
+      // exactly the case the tickets cannot cover.
+      const announcement = change(`${PROJECT_KIND}:${AUTHOR}:p1`, 'folder', FOLDER)
+
+      const found = await resolveFolderProject(
+        FOLDER,
+        relay([manifest(), paired(), announcement]),
+      )
+
+      expect(found?.project.slots.title.value).toBe('Payment integration')
+      expect(found?.tickets).toEqual([])
+      expect(found?.openCount).toBe(0)
+    })
+
+    it('prefers the project the Folder’s work belongs to over one merely named', async () => {
+      // A change naming some other project got written into this Folder. The
+      // tickets are the stronger claim and the existing sort already says so —
+      // reading changes as candidates must not overturn that.
+      const stray = change(`${PROJECT_KIND}:${AUTHOR}:p9`, 'status', 'in_progress')
+      const other = project('p9', {
+        tags: [['d', 'p9'], ['title', 'Somebody else’s project'], ['h', ELSEWHERE]],
+        created_at: 1_800_000_000,
+      })
+
+      const found = await resolveFolderProject(
+        FOLDER,
+        relay([manifest(), paired(), other, issue('i1', 'Real work'), stray]),
+      )
+
+      expect(found?.project.slots.title.value).toBe('Payment integration')
+    })
+
     it('stays hidden when the record it points at is archived', async () => {
       const found = await resolveFolderProject(
         FOLDER,

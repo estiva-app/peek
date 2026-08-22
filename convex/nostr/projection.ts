@@ -908,38 +908,62 @@ export async function resolveFolderProject(
    * An event cannot change its own `h`. So a project created in one Folder and
    * later paired with a Peek topic keeps the `h` it was born with, and the
    * pairing is expressed the only way an append-only record can express it — a
-   * change event, published in the Folder the *record* lives in. Neither the
-   * project nor that change carries the topic's `h`, so the query above sees a
-   * Folder full of tickets and no project at all, and the panel said "no
-   * project linked" about a Folder holding eleven of its issues (PEEK-24).
+   * change event. Ship published that change only in the Folder the *record*
+   * lives in, so nothing carrying the topic's `h` named the project at all: the
+   * query above saw a Folder full of tickets and no project, and the panel said
+   * "no project linked" about a Folder holding eleven of its issues (PEEK-24).
    *
-   * The children are the way back. A ticket names its project in the link tag
-   * the containment relation already declares, which is the same tag step 5
-   * reads to decide which tickets belong here — so following it outward needs
-   * no new manifest vocabulary and no idea of what "folder" means to the owning
-   * app. A Folder whose tickets all point at one project *is* that project's
-   * Folder, whichever Folder the project record happens to sit in.
+   * A consumer cannot require the producer to have got that right, and this one
+   * must keep working against the events already on the relay, so it reads
+   * whatever the Folder does hold.
    *
-   * Its changes come by address rather than by `h` for the same reason: they
-   * are wherever the record is, not here. Skipped entirely when the Folder does
-   * hold a container, which is the ordinary case and already correct.
+   * Two things in the Folder can name it, and both use a tag the manifest has
+   * already declared rather than any new vocabulary.
+   *
+   * A **ticket** names its project in the containment relation's link tag,
+   * which is the same tag step 5 reads to decide which tickets belong here. A
+   * Folder whose tickets all point at one project *is* that project's Folder,
+   * whichever Folder the project record happens to sit in.
+   *
+   * A **change published into this Folder** names its target in the records
+   * rule's target tag. That is an app saying out loud "the object at this
+   * address belongs here" — the only way to say it when the object's own `h`
+   * cannot be moved, and the one that does not need a ticket to exist yet.
+   * Estiva Ship writes it when a project is paired with a topic.
+   *
+   * Reading both matters, because they fail in opposite directions: the tickets
+   * cover a Folder paired before anybody wrote the statement, and the statement
+   * covers a Folder paired before anybody filed a ticket. Where they disagree
+   * the sort below decides, and it already prefers whichever candidate the
+   * Folder's work actually belongs to.
+   *
+   * Its changes come by address rather than by `h`, because they are wherever
+   * the record is, not here. Skipped entirely when the Folder does hold a
+   * container, which is the ordinary case and already correct.
    */
   const holdsContainer = inFolder.some((e) => containers.has(e.kind))
-  const namedByChildren = holdsContainer
+  const namedInFolder = holdsContainer
     ? []
     : [
         ...new Set(
           inFolder.flatMap((event) => {
             const relation = [...containers.values()].find((c) => c.childKind === event.kind)
-            const link = relation && tagValue(event, relation.linkTag)
-            return link ? [link] : []
+            if (relation) {
+              const link = tagValue(event, relation.linkTag)
+              return link ? [link] : []
+            }
+            if (discoveredRule && event.kind === discoveredRule.changeKind) {
+              const target = tagValue(event, discoveredRule.targetTag)
+              return target ? [target] : []
+            }
+            return []
           }),
         ),
       ]
   // Only a container may be adopted this way. A child's link tag can name
   // anything, and a ticket that points at another ticket must not become the
   // subject of the panel.
-  const linkedOutward = namedByChildren.flatMap((link) => {
+  const linkedOutward = namedInFolder.flatMap((link) => {
     try {
       const pointer = referenceToPointer(link)
       return containers.has(pointer.kind) ? [{ link, pointer }] : []
