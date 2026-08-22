@@ -851,8 +851,9 @@ function containmentFor(
  * published manifests at runtime — the same discipline as the rest of this file.
  *
  * Returns null for "nothing to show": no manifest declares a container, no
- * project in this Folder, or the object cannot be read. All of those are
- * ordinary states the caller renders as an empty sidebar, not errors.
+ * project in this Folder and none named by the tickets in it, or the object
+ * cannot be read. All of those are ordinary states the caller renders as an
+ * empty sidebar, not errors.
  */
 export async function resolveFolderProject(
   folder: string,
@@ -901,8 +902,77 @@ export async function resolveFolderProject(
       relays: [],
     })
 
+  /**
+   * 2b. A Folder can hold a project's *work* without holding the project.
+   *
+   * An event cannot change its own `h`. So a project created in one Folder and
+   * later paired with a Peek topic keeps the `h` it was born with, and the
+   * pairing is expressed the only way an append-only record can express it — a
+   * change event, published in the Folder the *record* lives in. Neither the
+   * project nor that change carries the topic's `h`, so the query above sees a
+   * Folder full of tickets and no project at all, and the panel said "no
+   * project linked" about a Folder holding eleven of its issues (PEEK-24).
+   *
+   * The children are the way back. A ticket names its project in the link tag
+   * the containment relation already declares, which is the same tag step 5
+   * reads to decide which tickets belong here — so following it outward needs
+   * no new manifest vocabulary and no idea of what "folder" means to the owning
+   * app. A Folder whose tickets all point at one project *is* that project's
+   * Folder, whichever Folder the project record happens to sit in.
+   *
+   * Its changes come by address rather than by `h` for the same reason: they
+   * are wherever the record is, not here. Skipped entirely when the Folder does
+   * hold a container, which is the ordinary case and already correct.
+   */
+  const holdsContainer = inFolder.some((e) => containers.has(e.kind))
+  const namedByChildren = holdsContainer
+    ? []
+    : [
+        ...new Set(
+          inFolder.flatMap((event) => {
+            const relation = [...containers.values()].find((c) => c.childKind === event.kind)
+            const link = relation && tagValue(event, relation.linkTag)
+            return link ? [link] : []
+          }),
+        ),
+      ]
+  // Only a container may be adopted this way. A child's link tag can name
+  // anything, and a ticket that points at another ticket must not become the
+  // subject of the panel.
+  const linkedOutward = namedByChildren.flatMap((link) => {
+    try {
+      const pointer = referenceToPointer(link)
+      return containers.has(pointer.kind) ? [{ link, pointer }] : []
+    } catch {
+      return []
+    }
+  })
+
+  const adopted = linkedOutward.length
+    ? await query([
+        ...linkedOutward.map(({ pointer }) => ({
+          kinds: [pointer.kind],
+          authors: [pointer.pubkey],
+          '#d': [pointer.identifier],
+          limit: 1,
+        })),
+        ...(discoveredRule
+          ? [
+              {
+                kinds: [discoveredRule.changeKind],
+                '#a': linkedOutward.map(({ link }) => link),
+                limit: 500,
+              },
+            ]
+          : []),
+      ])
+    : []
+
+  /** Everything the Folder holds, plus whatever it was adopted from. */
+  const known = adopted.length ? [...inFolder, ...adopted] : inFolder
+
   /** Is this object one its owning app would keep out of its own lists? */
-  const isHidden = (event: SignedEvent, rule: RecordsRule | undefined, source = inFolder) => {
+  const isHidden = (event: SignedEvent, rule: RecordsRule | undefined, source = known) => {
     if (!rule?.hiddenWhen) return false
     const applied = source.filter(
       (e) => e.kind === rule.changeKind && tagValue(e, rule.targetTag) === addressOfEvent(event),
@@ -910,7 +980,7 @@ export async function resolveFolderProject(
     return foldChanges(applied, rule)[rule.hiddenWhen.field]?.value === rule.hiddenWhen.equals
   }
 
-  const roots = inFolder
+  const roots = known
     .filter((e) => containers.has(e.kind))
     .filter((e) => !isHidden(e, discoveredRule))
   if (roots.length === 0) {
@@ -962,10 +1032,16 @@ export async function resolveFolderProject(
   // 4. Every change in the Folder, folded per object. Already fetched in step 2
   //    unless the authoritative manifest orders records differently from the one
   //    discovery happened to find, which is the only case worth a second trip.
+  //    That trip asks by address as well as by Folder: an adopted project's own
+  //    changes are not in this Folder, and a `#h` query alone would fold it
+  //    without them and report the defaults as its state.
   const changes =
     discoveredRule?.changeKind === records.changeKind
-      ? inFolder.filter((e) => e.kind === records.changeKind)
-      : await query([{ kinds: [records.changeKind], '#h': [folder], limit: 500 }])
+      ? known.filter((e) => e.kind === records.changeKind)
+      : await query([
+          { kinds: [records.changeKind], '#h': [folder], limit: 500 },
+          ...(adopted.length ? [{ kinds: [records.changeKind], '#a': [address], limit: 500 }] : []),
+        ])
   const changesFor = (target: string) =>
     changes.filter((e) => tagValue(e, records.targetTag) === target)
 
