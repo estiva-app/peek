@@ -18,7 +18,8 @@
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, signViaEstivaId } from './bridge'
-import { buildAddMember, buildCreateChannel, buildEditChannelMetadata } from '../../convex/nostr/events'
+import { buildAddMember, buildCreateChannel, buildDeleteChannel,
+  buildEditChannelMetadata } from '../../convex/nostr/events'
 
 type ChannelPlan =
   | { ok: true; channelUuid: string; title: string; alreadyPublished: boolean; memberPubkeys: string[] }
@@ -106,4 +107,37 @@ export async function renameTopicChannel(
     token,
   )
   return sent.ok ? { ok: true } : { ok: false, reason: sent.reason ?? 'The relay refused the new name.' }
+}
+
+/**
+ * Tell the relay a topic is gone.
+ *
+ * Publishing is **reported, not enforced**, matching every other write here: the
+ * rows are already deleted and a relay outage must not undo that. But the
+ * caller has to say so loudly, because this is the one case where a silent
+ * failure leaves somebody believing a conversation is gone while every admitted
+ * member can still read it (PEEK-170).
+ *
+ * Only the channel's owner may do this — Buzz refuses anyone else, and a topic's
+ * creator is its owner. A non-owner's delete removes it from Peek and cannot
+ * remove it from the relay, which is a real limit rather than an error and the
+ * caller words it that way.
+ *
+ * A topic with no channel has nothing to tell: it was never published, so
+ * nothing of it is readable anywhere else.
+ */
+export async function deleteTopicChannel(
+  channelUuid: string | null,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!channelUuid) return { ok: true }
+  const sent = await signAndSend(
+    buildDeleteChannel(token.pubkey, Date.now(), { channelUuid }),
+    relayUrl,
+    token,
+  )
+  return sent.ok
+    ? { ok: true }
+    : { ok: false, reason: sent.reason ?? 'The relay refused the deletion.' }
 }

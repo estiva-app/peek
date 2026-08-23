@@ -169,8 +169,14 @@ export const remove = mutation({
   handler: async (ctx, { topicKey }) => {
     await viewerOrThrow(ctx)
     const topic = await findTopicByKey(ctx, topicKey)
-    if (!topic) return
+    if (!topic) return { removed: false as const, channelUuid: null }
     const topicId = topic._id as string
+    /*
+      Read before the row is destroyed. The caller needs it to tell the relay
+      the channel is gone, and after this mutation there is nowhere left to
+      look it up — the topic row is the only place it lives (PEEK-170).
+    */
+    const channelUuid = topic.channelUuid ?? null
 
     await cascadeDeleteContainerMessages(ctx, 'topic', topicId)
 
@@ -208,6 +214,13 @@ export const remove = mutation({
       if (w.containerId === topicId || huddleIds.has(w.containerId)) await ctx.db.delete(w._id)
     }
     await ctx.db.delete(topic._id)
+
+    /*
+      Handed back so the caller can tell the relay. Publishing stays the
+      client's job — it holds the only Estiva ID token — and this mutation
+      holds the only copy of the channel id, so neither can do it alone.
+    */
+    return { removed: true as const, channelUuid }
   },
 })
 

@@ -74,8 +74,20 @@ export function TopicsPage() {
   /** Which topic's details are open, if any. */
   const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
 
+  /**
+   * What the last delete could not reach, if anything.
+   *
+   * Shown rather than swallowed: deleting a topic removes it here and asks the
+   * relay to drop the channel, and the second half can fail on its own — a
+   * non-owner cannot delete somebody else's channel at all. Silence would leave
+   * somebody believing a conversation is gone while every admitted member can
+   * still read it (PEEK-170).
+   */
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null)
+
   const handleDeleteTopic = (topicId: string) => {
-    deleteTopic(topicId)
+    setDeleteNotice(null)
+    void deleteTopic(topicId).then((outcome) => setDeleteNotice(outcome?.message ?? null))
     // Deleting what you're looking at → back to the bare list, no stale URL
     // (also drop the remembered selection or the redirect brings it back).
     if (selectedId === topicId) {
@@ -132,6 +144,23 @@ export function TopicsPage() {
 
   return (
     <>
+    {/*
+      A topic that is gone from Peek and not from the relay. Dismissible rather
+      than transient: it is the only signal that a conversation somebody meant
+      to delete is still readable by other apps, and a toast that fades takes
+      that with it.
+    */}
+    {deleteNotice && (
+      <div
+        role="status"
+        className="fixed top-3 left-1/2 -translate-x-1/2 z-50 max-w-[640px] rounded-md border border-warning-default/40 bg-surface-raised px-3 py-2 text-[12px] leading-[1.4] text-warning-default flex items-start gap-3"
+      >
+        <span>{deleteNotice}</span>
+        <button type="button" className="shrink-0 underline" onClick={() => setDeleteNotice(null)}>
+          Dismiss
+        </button>
+      </div>
+    )}
     {createOpen && (
       <CreateTopicDialog
         confirmLabel="Create topic"
