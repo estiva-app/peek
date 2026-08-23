@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAddMember,
   buildCreateChannel,
+  buildDeleteChannel,
   buildDeletion,
   buildMessage,
   buildProfile,
@@ -195,5 +196,47 @@ describe('shape rules taken from builders.rs', () => {
   it('truncates Peek’s millisecond timestamps to Nostr seconds', () => {
     const event = buildMessage(PUBKEY, 1_753_300_200_999, { channelUuid: CHANNEL, content: 'hi' })
     expect(event.created_at).toBe(1_753_300_200)
+  })
+})
+
+/**
+ * kind:9008 delete-group (PEEK-170).
+ *
+ * Deleting a topic removed it, its messages, replies, reactions and huddles
+ * from Convex and published nothing — so a conversation somebody deleted,
+ * believing it gone, stayed readable to every admitted member. Measured on
+ * production: 145 messages across 37 channels, zero deletion requests.
+ */
+describe('telling the relay a topic is gone', () => {
+  it('carries the channel in an h tag and nothing else', () => {
+    const event = buildDeleteChannel(PUBKEY, 1_753_300_200_000, { channelUuid: CHANNEL })
+    expect(event.kind).toBe(9008)
+    /*
+      Exactly one tag. Buzz reads the channel from `h` and authorises on it —
+      "only owner can delete group" in `validate_admin_event` — so anything else
+      here is either ignored or changes the event id for no reason.
+    */
+    expect(event.tags).toEqual([['h', CHANNEL]])
+    expect(event.content).toBe('')
+  })
+
+  it('refuses a pubkey that is not one', () => {
+    // The relay would reject the signature anyway; failing here says why.
+    expect(() => buildDeleteChannel('not-a-pubkey', Date.now(), { channelUuid: CHANNEL })).toThrow()
+  })
+
+  /*
+    Not a kind:5 per message, and the difference is capability rather than
+    efficiency: Buzz rejects a multi-target kind:5 outright, and NIP-09 is
+    honoured only for the key that signed the original — so per-message deletion
+    could never reach anybody else's messages in the topic. Deleting the channel
+    hides the whole container regardless of who wrote what.
+  */
+  it('is a different event from the per-message deletion, on purpose', () => {
+    const group = buildDeleteChannel(PUBKEY, 1_753_300_200_000, { channelUuid: CHANNEL })
+    const one = buildDeletion(PUBKEY, 1_753_300_200_000, { targetEventId: PUBKEY })
+    expect(group.kind).not.toBe(one.kind)
+    expect(one.tags[0][0]).toBe('e')
+    expect(group.tags[0][0]).toBe('h')
   })
 })

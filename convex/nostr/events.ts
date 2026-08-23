@@ -46,6 +46,7 @@ export const KIND = {
   NIP29_PUT_USER: 9000,
   NIP29_EDIT_METADATA: 9002,
   NIP29_CREATE_GROUP: 9007,
+  NIP29_DELETE_GROUP: 9008,
   /**
    * Estiva assertion — a statement *about* something in the channel, rather
    * than a message in it (PEEK-128). `resolution` is the first and, for now,
@@ -209,6 +210,43 @@ export function buildCreateChannel(
     created_at: toNostrSeconds(createdAtMs),
     kind: KIND.NIP29_CREATE_GROUP,
     tags,
+    content: '',
+  }
+}
+
+/**
+ * kind:9008 NIP-29 delete-group — what makes a deleted topic actually gone.
+ *
+ * Deleting a topic used to remove it, its messages, replies, reactions and
+ * huddles from Convex and publish nothing at all. Create propagated as a 9007;
+ * delete propagated nowhere. So a conversation somebody deleted, believing it
+ * gone, stayed readable to every admitted member indefinitely — measured on
+ * production at 145 messages across 37 channels with zero deletion requests
+ * against any of them (PEEK-170).
+ *
+ * **9008 rather than a kind:5 per message**, and the difference is capability
+ * rather than efficiency. Buzz rejects a multi-target kind:5 outright, and
+ * NIP-09 is honoured only for the key that signed the original — so
+ * per-message deletion could never reach anybody else's messages in the topic.
+ * Delete-group soft-deletes the channel, and Buzz's read guards
+ * (`c.deleted_at IS NULL` in both `get_accessible_channels` and `is_member`)
+ * then hide the whole container regardless of who wrote what is in it.
+ *
+ * Requires the channel's **owner** — Buzz enforces "only owner can delete
+ * group" in `validate_admin_event`, and a topic's creator becomes its owner at
+ * create. Anybody else is refused, which the caller reports rather than hides.
+ */
+export function buildDeleteChannel(
+  pubkey: string,
+  createdAtMs: number,
+  args: { channelUuid: string },
+): UnsignedEvent {
+  assertHex64(pubkey, 'pubkey')
+  return {
+    pubkey,
+    created_at: toNostrSeconds(createdAtMs),
+    kind: KIND.NIP29_DELETE_GROUP,
+    tags: [['h', args.channelUuid]],
     content: '',
   }
 }

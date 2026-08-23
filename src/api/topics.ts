@@ -17,7 +17,7 @@ import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
 import { useTopicStore } from '@/api/internal/topicStore'
 import { hasConvex } from './store'
 import { validToken } from '@/auth/estivaId'
-import { publishTopicChannel, renameTopicChannel } from '@/nostr/topics'
+import { deleteTopicChannel, publishTopicChannel, renameTopicChannel } from '@/nostr/topics'
 import type { Topic } from './types'
 import type { Person } from './types'
 
@@ -92,15 +92,80 @@ export function useIsTopicMember(): (topicId: string) => boolean {
 
 /** Delete a topic with everything in it (messages, huddles, membership,
  *  desk rows) — the topic-row more-menu action (QA #2.8). */
-export function useDeleteTopic(): (topicId: string) => void {
+/**
+ * Delete a topic, and tell the relay so it is actually gone.
+ *
+ * Until PEEK-170 this removed the topic, its messages, replies, reactions and
+ * huddles from Convex and published nothing. Create propagated as a kind:9007;
+ * delete propagated nowhere. A conversation somebody deleted, believing it
+ * gone, stayed readable to every admitted member indefinitely — 145 messages
+ * across 37 channels on production, with zero deletion requests against any of
+ * them, and the largest was one its owner had gone looking for and could not
+ * find.
+ *
+ * Returns an outcome rather than nothing, because the two failures are ones a
+ * person has to hear about:
+ *
+ *  - **not the owner** — Buzz allows only a channel's owner to delete it, so
+ *    somebody else's topic goes from Peek and stays on the relay. A real limit,
+ *    not an error.
+ *  - **the relay never heard** — the rows are gone and the messages are not.
+ *
+ * Publishing is reported rather than enforced, matching every other write here:
+ * the deletion already happened and a relay outage must not undo it. What
+ * changes for this one is that saying nothing is not an option — silence here
+ * means somebody believes a conversation is gone while it is still readable.
+ */
+export type DeleteTopicOutcome = { kind: 'warning'; message: string } | null
+
+export function useDeleteTopic(): (topicId: string) => Promise<DeleteTopicOutcome> {
   const deleteLocal = useTopicStore().deleteTopicLocal
   const removeRemote = useMutation(api.topics.remove)
+  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
   return useCallback(
-    (topicId: string) => {
+    async (topicId: string): Promise<DeleteTopicOutcome> => {
       deleteLocal(topicId)
-      if (hasConvex) void removeRemote({ topicKey: topicId })
+      if (!hasConvex) return null
+
+      let result: { removed: boolean; channelUuid?: string | null }
+      try {
+        result = await removeRemote({ topicKey: topicId })
+      } catch (error) {
+        return {
+          kind: 'warning',
+          message:
+            error instanceof Error ? error.message : 'That topic did not delete everywhere.',
+        }
+      }
+      // Nothing was there, or it was never published: nothing of it is readable
+      // anywhere else, so there is nothing to tell the relay.
+      if (!result.removed || !result.channelUuid) return null
+
+      // `validToken()` at call time, never a snapshot — see `tokenForPublish`.
+      const token = validToken()
+      if (!token || !relayUrl) {
+        return {
+          kind: 'warning',
+          message:
+            'Deleted from Peek. The messages are still on the relay and readable by other apps — sign in to Estiva ID and delete it again to remove them.',
+        }
+      }
+
+      let sent: { ok: boolean; reason?: string }
+      try {
+        sent = await deleteTopicChannel(result.channelUuid, relayUrl, token)
+      } catch (error) {
+        sent = { ok: false, reason: error instanceof Error ? error.message : undefined }
+      }
+      return sent.ok
+        ? null
+        : {
+            kind: 'warning',
+            message:
+              `Deleted from Peek, but the relay still has it, so its messages remain readable to other apps. ${sent.reason ?? ''}`.trim(),
+          }
     },
-    [deleteLocal, removeRemote],
+    [deleteLocal, relayUrl, removeRemote],
   )
 }
 
