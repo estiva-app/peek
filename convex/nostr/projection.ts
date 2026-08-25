@@ -157,7 +157,20 @@ interface RecordsRule {
 }
 
 interface SlotSpec {
-  tag?: string
+  /**
+   * A tag on the root event, or a list of them meaning **first that resolves**.
+   *
+   * A list exists for the same reason `emits.alsoRead` does: an app that
+   * renames a tag cannot rename it on the events it already published, so its
+   * history spans both spellings permanently. Ship moving a project's title
+   * from `title` to `name` is the case in hand — without a fallback, either
+   * every record written before the rename renders blank or every one written
+   * after does.
+   *
+   * Not to be confused with a `SlotSpec[]`, which the caller treats as "render
+   * all of these as meta". This is one slot with several places to look.
+   */
+  tag?: string | string[]
   field?: string
   fold?: string
   map?: string
@@ -449,6 +462,16 @@ export interface ResolvedSlot {
  * ("In Progress"), and anything deciding on the value — the active-issue filter
  * below — has to compare the underlying one (`in_progress`).
  */
+/** The first of these tags the event actually carries. */
+function firstTag(root: SignedEvent, tag: string | string[] | undefined): string | undefined {
+  if (!tag) return undefined
+  for (const name of Array.isArray(tag) ? tag : [tag]) {
+    const value = tagValue(root, name)
+    if (value !== undefined && value !== '') return value
+  }
+  return undefined
+}
+
 function rawSlotValue(
   spec: SlotSpec,
   root: SignedEvent,
@@ -460,9 +483,9 @@ function rawSlotValue(
   // created with forever — which is exactly what someone sees right after
   // reassigning it from here.
   if (spec.fold) {
-    return folded[spec.fold]?.value ?? (spec.tag ? tagValue(root, spec.tag) : undefined) ?? spec.default
+    return folded[spec.fold]?.value ?? firstTag(root, spec.tag) ?? spec.default
   }
-  if (spec.tag) return tagValue(root, spec.tag)
+  if (spec.tag) return firstTag(root, spec.tag)
   if (spec.field === 'content') return root.content
   return undefined
 }
@@ -492,7 +515,7 @@ function resolveSlot(
     value,
     colour,
     isPubkey: spec.as === 'pubkey',
-    field: spec.fold ?? spec.tag,
+    field: spec.fold ?? (Array.isArray(spec.tag) ? spec.tag[0] : spec.tag),
   }
 }
 
@@ -1267,4 +1290,20 @@ export function buildActionEvent(args: {
     tags,
     content: declared.emits.field ? '' : value,
   }
+}
+
+/**
+ * Test seam: resolve one projection's `title` slot against one event.
+ *
+ * Exported so the tag-fallback rules can be pinned without standing up a fake
+ * relay. `resolveSlots` and `resolveSlot` are the real path; this only picks
+ * the one slot out of them.
+ */
+export function resolveFolderProjectSlotsForTest(
+  manifest: Manifest,
+  root: SignedEvent,
+): string | undefined {
+  const projection = manifest.projections?.[String(root.kind)]
+  if (!projection) return undefined
+  return resolveSlots(projection, root, {}, manifest).slots.title?.value
 }
