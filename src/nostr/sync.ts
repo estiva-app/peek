@@ -63,7 +63,19 @@ export async function syncTopicFromRelay(
   const filter: Record<string, unknown> = {
     // kind:7 has no `h` tag (Buzz derives its channel from the target), so
     // reactions are fetched separately below.
-    kinds: [9],
+    //
+    // `1111` is NIP-22, and it is here because Ship's comments are moving to it
+    // (REW-10). A Ship comment is posted into the project's Folder — which *is*
+    // this topic's channel — so it has always arrived here as an ordinary
+    // message, and the whole "one container, many projections" claim rests on
+    // that. Asking only for `9` would have made those comments vanish from the
+    // topic the day Ship flipped: no error, no empty state, just a conversation
+    // that stops.
+    //
+    // Both kinds, permanently. A `kind:9` message is not replaceable at all, so
+    // every comment written before the flip stays `kind:9` forever and there is
+    // no migration that would let this list shrink later.
+    kinds: [9, 1111],
     '#h': [plan.channelUuid],
     limit: PAGE_LIMIT,
   }

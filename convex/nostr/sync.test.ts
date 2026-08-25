@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { referencedAddresses, replyTargetOf } from './sync'
 
 
 describe('folder UUID learning from imported messages', () => {
@@ -103,5 +104,50 @@ describe('folder UUID learning from imported messages', () => {
 
     // Verify that storeChannelUuid was NOT called
     expect(storeChannelUuid).not.toHaveBeenCalled()
+  })
+})
+
+/*
+  NIP-22 threading, which arrives here because Ship's comments are moving to
+  kind:1111 (REW-10) and a Ship comment lands in the topic's own channel.
+
+  The whole spec is the case of the tags: uppercase names the thread ROOT, the
+  object under discussion; lowercase names the IMMEDIATE PARENT. Getting it
+  backwards does not throw — it silently reparents replies or drops their
+  anchor, which is the kind of thing that shows up as "a conversation looks odd"
+  weeks later.
+*/
+describe('NIP-22 comments in a topic', () => {
+  const ISSUE = '30851:aaaa:i1'
+  const ev = (tags: string[][]) => ({ id: 'x', pubkey: 'p', created_at: 1, kind: 1111, tags, content: '', sig: '' }) as never
+
+  it('reads a top-level comment as top-level, not a reply', () => {
+    // A comment on an *address* has no `e` at all — its parent is the object.
+    expect(replyTargetOf(ev([['A', ISSUE], ['K', '30851'], ['a', ISSUE], ['k', '30851']]))).toBe(null)
+  })
+
+  it('reads a reply as pointing at the comment it answers', () => {
+    expect(replyTargetOf(ev([['A', ISSUE], ['K', '30851'], ['e', 'parent1'], ['k', '1111']]))).toBe('parent1')
+  })
+
+  it('never mistakes the uppercase root E for the parent', () => {
+    // `E` is the thread root and may be a different event entirely. Treating it
+    // as the parent would flatten every reply onto the root.
+    expect(replyTargetOf(ev([['E', 'root1'], ['e', 'parent1']]))).toBe('parent1')
+    expect(replyTargetOf(ev([['E', 'root1']]))).toBe(null)
+  })
+
+  it('keeps the thread anchor on a reply, which carries it only in uppercase A', () => {
+    // The regression this guards: reading lowercase `a` alone attaches the
+    // first comment on a Ship issue and detaches every reply beneath it.
+    expect(referencedAddresses(ev([['A', ISSUE], ['e', 'parent1'], ['k', '1111']]))).toEqual([ISSUE])
+  })
+
+  it('does not duplicate the address a top-level comment names twice', () => {
+    expect(referencedAddresses(ev([['A', ISSUE], ['a', ISSUE]]))).toEqual([ISSUE])
+  })
+
+  it('still reads a plain NIP-27 reference on an ordinary kind:9', () => {
+    expect(referencedAddresses(ev([['a', ISSUE]]))).toEqual([ISSUE])
   })
 })
