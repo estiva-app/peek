@@ -12,7 +12,7 @@
  * fills, which is the claim the whole projection layer exists to make.
  */
 import { describe, expect, it } from 'vitest'
-import { commentKindsOf, resolveFolderProject } from './projection'
+import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject } from './projection'
 import type { SignedEvent } from './events'
 
 const FOLDER = '7b32200c-e4c0-4216-b79a-8490fc05e0bd'
@@ -693,5 +693,53 @@ describe('comment kinds an app has ever emitted', () => {
   it('behaves exactly as before for a manifest written without the field', () => {
     // The compatibility claim: absent `alsoRead`, nothing changes.
     expect(commentKindsOf(withComment({ kind: 30023 }))).toEqual([30023])
+  })
+})
+
+/*
+  A slot whose tag was renamed. Ship moved a project's title from `title` to
+  `name` (REW-11) and could not rename it on the records it had already
+  published, so both spellings are live permanently. Without a fallback one
+  half of the workspace renders blank — and which half depends only on which
+  spelling the manifest names.
+
+  Note this is a single slot with several places to look, which is not the same
+  as a `SlotSpec[]` — the array form means "render all of these as meta", and
+  using it here would empty `slots.title` instead of filling it.
+*/
+describe('a slot whose tag was renamed', () => {
+  const ev = (tags: string[][]) =>
+    ({ id: 'x', pubkey: 'p', created_at: 1, kind: 30850, tags, content: '', sig: '' }) as never
+  const project = (slots: Record<string, unknown>) =>
+    ({ projections: { '30850': { widget: 'card', slots } } }) as never
+
+  const read = (tags: string[][], spec: unknown) =>
+    resolveFolderProjectSlotsForTest(project({ title: spec }), ev(tags))
+
+  it('reads the new spelling when the record carries it', () => {
+    expect(read([['name', 'Agent / Steer']], { tag: ['name', 'title'] })).toBe('Agent / Steer')
+  })
+
+  it('falls back to the old spelling for a record written before the rename', () => {
+    expect(read([['title', 'Payment integration']], { tag: ['name', 'title'] })).toBe(
+      'Payment integration',
+    )
+  })
+
+  it('prefers the first that resolves when a record somehow carries both', () => {
+    expect(read([['title', 'old'], ['name', 'new']], { tag: ['name', 'title'] })).toBe('new')
+  })
+
+  it('skips an empty tag rather than stopping at it', () => {
+    // An empty value is not an answer; it is the absence of one, and stopping
+    // there would render blank while a perfectly good fallback sat behind it.
+    expect(read([['name', ''], ['title', 'Payment integration']], { tag: ['name', 'title'] })).toBe(
+      'Payment integration',
+    )
+  })
+
+  it('behaves exactly as before for a plain string tag', () => {
+    expect(read([['title', 'Payment integration']], { tag: 'title' })).toBe('Payment integration')
+    expect(read([['name', 'Agent / Steer']], { tag: 'title' })).toBeUndefined()
   })
 })
