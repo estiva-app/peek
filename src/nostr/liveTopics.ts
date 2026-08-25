@@ -40,6 +40,12 @@ import {
 } from './liveProjection'
 import { createLiveRelay, type LiveRelay, type RelayState } from './liveRelay'
 import { signViaEstivaId } from './bridge'
+import {
+  reasonForSignFailure,
+  recordCredentialFailure,
+  recordCredentialOk,
+  recordRelayState,
+} from './freshness'
 
 export interface LiveTopics {
   /** Watch one topic's channel. Refcounted — safe to call twice for one topic. */
@@ -67,11 +73,33 @@ function build(relayUrl: string, api: LiveProjectionApi): Instance {
     // Fresh on every connect attempt — see the header.
     getCredential: () => {
       const token = validToken()
-      return token ? { accessToken: token.accessToken, pubkey: token.pubkey } : null
+      if (!token) {
+        // No credential at all. Reported rather than merely logged, because
+        // this is the state PEE-9 has to be able to tell apart from a quiet
+        // channel — but it is *not* yet "signed out": every silent renewal
+        // passes through here, so `freshness.ts` holds it for a grace period
+        // before saying anything.
+        recordCredentialFailure('session_expired')
+        return null
+      }
+      return { accessToken: token.accessToken, pubkey: token.pubkey }
     },
-    sign: (unsigned, token, expectedPubkey) => signViaEstivaId(unsigned, token, expectedPubkey),
+    sign: async (unsigned, token, expectedPubkey) => {
+      try {
+        const signed = await signViaEstivaId(unsigned, token, expectedPubkey)
+        recordCredentialOk()
+        return signed
+      } catch (error) {
+        // The status is the honest signal — and the difference between
+        // "expired" and "this app cannot verify the token" decides whether
+        // sending somebody to sign in again helps or wastes their time.
+        recordCredentialFailure(reasonForSignFailure((error as Error).message))
+        throw error
+      }
+    },
     onState: (next) => {
       state = next
+      recordRelayState(next)
       for (const listener of [...listeners]) listener(next)
     },
     log: (message, detail) => console.debug('[relay]', message, detail ?? ''),

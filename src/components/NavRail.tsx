@@ -6,6 +6,7 @@ import {
   // IconFiles,
 } from '@tabler/icons-react'
 import { NavItem } from './NavItem'
+import { FreshnessIndicator } from './FreshnessIndicator'
 import { useLastSelection } from '@/lib/lastSelection'
 
 export function NavRail() {
@@ -32,6 +33,9 @@ export function NavRail() {
       {navItems.map((item) => (
         <NavItem key={item.label} {...item} />
       ))}
+      {/* Once, in the persistent chrome — see FreshnessIndicator's header for
+          why this is not a badge per panel and not part of AuthGate. */}
+      <FreshnessIndicator />
     </nav>
   )
 }
