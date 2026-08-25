@@ -650,7 +650,10 @@ function buildObject(args: {
    */
   const held: Record<string, string> = {}
   for (const spec of Object.values(projection.slots).flat()) {
-    const field = spec.fold ?? spec.tag
+    // `tag` may name several spellings (see `SlotSpec`); the field this slot
+    // *is* keyed on is the first, which is the one the app writes today. The
+    // rest are only there to keep older records rendering.
+    const field = spec.fold ?? (Array.isArray(spec.tag) ? spec.tag[0] : spec.tag)
     const raw = field && rawSlotValue(spec, root, folded)
     if (field && raw !== undefined) held[field] = raw
   }
