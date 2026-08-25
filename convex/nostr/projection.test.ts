@@ -12,7 +12,7 @@
  * fills, which is the claim the whole projection layer exists to make.
  */
 import { describe, expect, it } from 'vitest'
-import { resolveFolderProject } from './projection'
+import { commentKindsOf, resolveFolderProject } from './projection'
 import type { SignedEvent } from './events'
 
 const FOLDER = '7b32200c-e4c0-4216-b79a-8490fc05e0bd'
@@ -653,5 +653,45 @@ describe('resolveFolderProject — people', () => {
 
     expect(calls).toHaveLength(1)
     expect(found?.tickets[0].people?.[LEAD]?.displayName).toBe('Jan Miky')
+  })
+})
+
+
+/*
+  A manifest declares one comment kind, and an app that *changes* which kind it
+  emits leaves its old comments behind — a kind:9 message is not replaceable at
+  all, so they stay under the old kind permanently. Reading only the declared
+  kind shows an object's newest comments and silently drops the rest: a thread
+  that begins in the middle, with nothing anywhere reporting a problem.
+*/
+describe('comment kinds an app has ever emitted', () => {
+  const withComment = (emits: Record<string, unknown>) =>
+    ({ actions: [{ id: 'comment', label: 'Comment', appliesTo: '30851', emits }] }) as never
+
+  it('falls back to NIP-22 when the app declares nothing', () => {
+    expect(commentKindsOf({} as never)).toEqual([1111])
+  })
+
+  it('uses the declared kind when there is only one', () => {
+    expect(commentKindsOf(withComment({ kind: 9, scope: 'address' }))).toEqual([9])
+  })
+
+  it('reads superseded kinds alongside the current one', () => {
+    expect(commentKindsOf(withComment({ kind: 1111, scope: 'address', alsoRead: [9] }))).toEqual([
+      1111, 9,
+    ])
+  })
+
+  it('puts the current kind first, because that is the one publishing uses', () => {
+    expect(commentKindsOf(withComment({ kind: 1111, alsoRead: [9] }))[0]).toBe(1111)
+  })
+
+  it('does not duplicate a kind listed in both places', () => {
+    expect(commentKindsOf(withComment({ kind: 9, alsoRead: [9] }))).toEqual([9])
+  })
+
+  it('behaves exactly as before for a manifest written without the field', () => {
+    // The compatibility claim: absent `alsoRead`, nothing changes.
+    expect(commentKindsOf(withComment({ kind: 30023 }))).toEqual([30023])
   })
 })
