@@ -15,6 +15,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAddMember,
+  buildUnsignedRelayAuthEvent,
+  relayAuthUrl,
   buildCreateChannel,
   buildDeleteChannel,
   buildDeletion,
@@ -238,5 +240,55 @@ describe('telling the relay a topic is gone', () => {
     expect(group.kind).not.toBe(one.kind)
     expect(one.tags[0][0]).toBe('e')
     expect(group.tags[0][0]).toBe('h')
+  })
+})
+
+describe('the NIP-42 auth event (PEE-5)', () => {
+  const CHALLENGE = 'c'.repeat(64)
+
+  it('carries the relay and challenge tags Buzz looks up', () => {
+    // `verify_nip42_event` finds both by name — `TagKind::Challenge` and
+    // `TagKind::Relay` — so what matters is that they are present and exact,
+    // not their order. The challenge is compared byte for byte.
+    const event = buildUnsignedRelayAuthEvent({
+      pubkey: '',
+      relayUrl: 'wss://estiva.estiva.app',
+      challenge: CHALLENGE,
+      nowMs: 1_756_000_000_000,
+    })
+    expect(event.kind).toBe(22242)
+    expect(event.content).toBe('')
+    expect(event.created_at).toBe(1_756_000_000)
+    expect(event.tags).toEqual([
+      ['relay', 'wss://estiva.estiva.app'],
+      ['challenge', CHALLENGE],
+    ])
+  })
+
+  it('reduces the relay tag to an origin', () => {
+    // `nip42_expected_relay_url` is `format!("{scheme}://{}", tenant.host())` —
+    // no path, ever. Buzz's `normalize_relay_url` forgives a trailing slash but
+    // not a path segment, so anything beyond the origin fails the comparison.
+    expect(relayAuthUrl('wss://estiva.estiva.app')).toBe('wss://estiva.estiva.app')
+    expect(relayAuthUrl('wss://estiva.estiva.app/')).toBe('wss://estiva.estiva.app')
+    expect(relayAuthUrl('wss://estiva.estiva.app/relay/socket')).toBe('wss://estiva.estiva.app')
+    expect(relayAuthUrl('ws://localhost:3100')).toBe('ws://localhost:3100')
+  })
+
+  it('keeps the port, which is part of the tenant host', () => {
+    // Buzz's own test uses `host-a.example:3100`, and `tenant.host()` is an
+    // authority rather than a hostname — dropping the port would be a mismatch
+    // against every non-default-port deployment, i.e. the local suite.
+    expect(relayAuthUrl('ws://a.localhost:3100')).toBe('ws://a.localhost:3100')
+  })
+
+  it('leaves pubkey empty for /sign to fill in', () => {
+    // Same contract as the NIP-98 builder: `/sign` overwrites it with the
+    // token's subject, and `expectedPubkey` at the call site is the check.
+    expect(buildUnsignedRelayAuthEvent({
+      pubkey: '',
+      relayUrl: 'wss://estiva.estiva.app',
+      challenge: CHALLENGE,
+    }).pubkey).toBe('')
   })
 })
