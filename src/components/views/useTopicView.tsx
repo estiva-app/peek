@@ -42,6 +42,8 @@ import { api } from '../../../convex/_generated/api'
 import { hasConvex } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import { syncTopicFromRelay } from '@/nostr/sync'
+import { getLiveTopics } from '@/nostr/liveTopics'
+import type { RelayState } from '@/nostr/liveRelay'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
 import { useDebug } from '@/lib/debug'
@@ -81,6 +83,15 @@ interface ViewSlots {
    * close it.
    */
   folderId: string | null
+  /**
+   * The tab's live relay connection state (PEE-8).
+   *
+   * Returned rather than rendered — PEE-8 deliberately shows nothing. PEE-9
+   * owns one derived connection state surfaced once, and PEE-1 needs it to know
+   * when to idle its refetch interval. Exposing it here is what stops either of
+   * them opening a second socket to re-derive it.
+   */
+  relayState: RelayState
 }
 
 export function useTopicView({
@@ -142,8 +153,46 @@ export function useTopicView({
   const convex = useConvex()
   const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
   const relayUrl = relayConfig?.relayUrl
-  useEffect(() => {
-    if (!hasConvex || topicId == null || !topicFolderId || !relayUrl) return
+
+  /**
+   * The channel this topic lives in, for the live subscription (PEE-8).
+   *
+   * `syncPlan` already answers it for the viewer and is the same query the HTTP
+   * backfill uses, so the two paths cannot disagree about which channel a topic
+   * is. Null until the topic has a channel on the relay — topics created before
+   * Nostr emission was wired up never get one, and those stay HTTP-only.
+   */
+  const syncPlan = useQuery(
+    api.nostr.sync.syncPlan,
+    hasConvex && topicId != null ? { topicKey: topicId } : 'skip',
+  )
+  const channelUuid = syncPlan?.channelUuid ?? null
+
+  /**
+   * Backfill over HTTP: on open, and again whenever the socket becomes live.
+   *
+   * **The mount-time run is unconditional and stays that way.** A subscription
+   * only delivers what arrives *after* it is registered, so opening a topic
+   * must still read history — the socket cannot do it, and should not try. The
+   * HTTP path owns the `since` cursor, the `PAGE_LIMIT` paging, and the
+   * resolution read that is deliberately *not* cursored, because an assertion
+   * about an old message can be made at any time.
+   *
+   * **The re-run on reconnect is the half the socket cannot cover.** While the
+   * connection is down, events are simply missed; the restored subscription
+   * then delivers only what is new. Without a backfill at that moment the gap
+   * would be invisible and permanent — a topic quietly missing whatever was
+   * said during the outage. `since` makes the repeat almost free.
+   *
+   * A run that lands after `topicId` has changed is harmless rather than
+   * cancelled: every import is keyed by `topicKey`, so a late backfill writes
+   * the previous topic's history to the previous topic. Nothing here is applied
+   * to component state, which is what makes that true.
+   */
+  const [relayState, setRelayState] = useState<RelayState>('connecting')
+  const backfill = useRef<() => void>(() => {})
+  backfill.current = () => {
+    if (!hasConvex || topicId == null || !relayUrl) return
     // `validToken()` rather than the `usesEstivaId` snapshot: that constant is
     // fixed at module load, so a page opened while the stored token had expired
     // disables this sync for the whole session even after the token is renewed.
@@ -155,7 +204,49 @@ export function useTopicView({
       importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
       importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
     }).catch((error) => console.warn('[nostr] viewer sync failed:', error))
+  }
+
+  useEffect(() => {
+    if (!hasConvex || topicId == null || !topicFolderId || !relayUrl) return
+    backfill.current()
   }, [topicId, topicFolderId, relayUrl, convex])
+
+  /**
+   * Subscribe this topic's channel to the tab's live socket.
+   *
+   * Additive by construction: everything above still runs, so a socket that
+   * never connects degrades to exactly today's behaviour rather than to
+   * nothing. The relay reads stay in the browser — the token is the credential
+   * and Convex surfaces action arguments in its dashboard logs, which is why
+   * PEEK-106 moved them here in the first place.
+   */
+  useEffect(() => {
+    if (!hasConvex || topicId == null || !relayUrl || !channelUuid) return
+
+    const live = getLiveTopics(relayUrl, {
+      importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
+      importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
+      importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
+    })
+
+    setRelayState(live.state())
+    let wasLive = live.state() === 'live'
+    const unsubscribe = live.onState((next) => {
+      setRelayState(next)
+      // Only on the transition *into* live, and not for the first connect —
+      // the mount effect above has already backfilled that one.
+      if (next === 'live' && !wasLive) backfill.current()
+      wasLive = next === 'live'
+    })
+
+    // Refcounted: StrictMode's double mount shares one REQ, and the channel
+    // closes when the second release lands.
+    const handle = live.watch({ topicKey: topicId, channelUuid })
+    return () => {
+      unsubscribe()
+      handle.stop()
+    }
+  }, [topicId, relayUrl, channelUuid, convex])
 
   // Derived: a topic is "resolved" iff every non-deleted conv in it is resolved.
   // Single source of truth for the dashed-circle vs checkmark icon everywhere.
@@ -424,6 +515,7 @@ export function useTopicView({
       ),
       threadPanel: undefined,
       folderId: topicFolderId ?? null,
+      relayState,
     }
   }
 
@@ -980,5 +1072,11 @@ export function useTopicView({
     />
   ) : undefined
 
-  return { rightPanel, threadPanel, folderId: topicFolderId ?? null }
+  /**
+   * `relayState` is returned rather than rendered. PEE-8 deliberately shows
+   * nothing — PEE-9 owns one derived connection state surfaced once, and PEE-1
+   * needs it to know when to idle its refetch interval. Exposing it here is
+   * what stops either of them re-deriving it from a second socket.
+   */
+  return { rightPanel, threadPanel, folderId: topicFolderId ?? null, relayState }
 }
