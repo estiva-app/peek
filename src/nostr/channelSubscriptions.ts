@@ -13,10 +13,10 @@
  *
  * ## The trap: one subscription per channel, always
  *
- * **Never build one subscription covering several channels.** It returns correct
- * history and then receives **zero live events** — EOSE is right, live is empty,
- * and nothing distinguishes it from working until somebody notices that nothing
- * ever arrives.
+ * **Never build one subscription covering several channels.** Depending on the
+ * filter it either fails loudly or, worse, returns correct history and then
+ * receives **zero live events** — EOSE right, live empty, nothing to
+ * distinguish it from working until somebody notices nothing ever arrives.
  *
  * Verified in Buzz rather than taken on trust, because the whole point is that
  * it is invisible:
@@ -34,12 +34,36 @@
  * Historical delivery at REQ time takes a different path (`per_filter_channel`)
  * which handles multi-`#h` correctly. That asymmetry is the whole illusion.
  *
+ * **Which of the two failures you get depends on whether the filter names
+ * kinds**, and this was measured against production rather than reasoned about.
+ * A global subscription must clear `p_gated_filters_authorized`
+ * (`handlers/req.rs`), whose first test is:
+ *
+ *     let can_match_p_gated = filter.kinds.as_ref().is_none_or(|ks| …);
+ *     if !can_match_p_gated { return true; }
+ *
+ * So a **kindless** multi-`#h` filter *could* match a p-gated kind, has no
+ * `#p`, and is refused outright — a live probe against
+ * `wss://estiva.estiva.app` got `CLOSED … "restricted: p-gated events require
+ * #p matching your pubkey"` immediately. But a filter naming only ordinary
+ * kinds — `{"#h":[a,b],"kinds":[9]}` — returns early as authorized, registers
+ * globally, and dies **silently**.
+ *
+ * That is the dangerous one, and it is the shape somebody optimising "one
+ * subscription for messages across all my channels" would naturally write. The
+ * ticket describes this variant; the loud one is a newer gate sitting in front
+ * of it.
+ *
  * **There is a second entrance to the same trap, and it is the likelier one.**
  * `extract_channel_id_from_filters` only counts an `#h` value it can
  * `parse::<uuid::Uuid>()`; anything else leaves `filter_has_channel` false and
  * falls through to the same global registration. So passing a **topic id**
- * where a channel uuid belongs produces an identical silent death — and Peek's
- * topic ids are Convex ids, which are not uuids. RFC 0.3's note on this ticket
+ * where a channel uuid belongs produces the same broken subscription — and
+ * Peek's topic ids are Convex ids, which are not uuids. Because this module
+ * always builds a kindless filter, that lands on the loud arm above rather than
+ * the silent one; it is still a subscription that never delivers, and it still
+ * fails asynchronously as a `CLOSED` frame the app would have to interpret.
+ * Throwing at the call site names the cause instead. RFC 0.3's note on this ticket
  * asks specifically that a topic id never become the subscription key; that is
  * why {@link createChannelSubscriptions} validates the shape and throws rather
  * than letting a bad key reach the relay. `topics.channelUuid` is also
