@@ -41,14 +41,39 @@ const PAGE_LIMIT = 200
 const REACTION_TARGET_LIMIT = 100
 
 /**
- * The event this kind:9 is replying to, or null if it is top-level.
+ * The addresses an event references — its `a` tags, plus NIP-22's `A`.
+ *
+ * Case is not cosmetic here. A NIP-22 comment names its thread *root* in
+ * uppercase `A` and its immediate *parent* in lowercase, so a top-level comment
+ * carries the object's address in both and a **reply carries it only in `A`**.
+ * Reading lowercase alone would therefore attach the first comment on a Ship
+ * issue to that issue and quietly detach every reply under it.
+ */
+export function referencedAddresses(e: SignedEvent): string[] {
+  const seen = new Set<string>()
+  for (const t of e.tags) {
+    if ((t[0] === 'a' || t[0] === 'A') && typeof t[1] === 'string' && t[1]) seen.add(t[1])
+  }
+  return [...seen]
+}
+
+/**
+ * The event this message is replying to, or null if it is top-level.
+ *
+ * Works unchanged for NIP-22 `kind:1111`, and it is worth saying why rather
+ * than leaving it to luck. A `1111` reply names its parent comment in a
+ * lowercase `e` with no NIP-10 marker, which the fallback below picks up; a
+ * top-level `1111` has no `e` at all and so is correctly read as top-level. The
+ * `t[0] === 'e'` test is case-sensitive, so NIP-22's uppercase `E` — the thread
+ * *root*, which may be a different event entirely — is correctly not mistaken
+ * for the parent.
  *
  * Reads the NIP-10 marked form Buzz emits: prefer the `"reply"`-marked tag, fall
  * back to `"root"`. A direct reply in Buzz carries only the `"reply"` marker
  * (`thread_tags`, builders.rs:173), so checking for `"root"` alone would miss
  * every direct reply.
  */
-function replyTargetOf(e: SignedEvent): string | null {
+export function replyTargetOf(e: SignedEvent): string | null {
   const eTags = e.tags.filter((t) => t[0] === 'e' && typeof t[1] === 'string')
   if (eTags.length === 0) return null
   const marked = (marker: string) => eTags.find((t) => t[3] === marker)?.[1]
@@ -200,7 +225,7 @@ async function syncTopic(
               // strand the reply under the wrong message.
               continue
             }
-            const addresses = e.tags.filter((t) => t[0] === 'a').map((t) => t[1])
+            const addresses = referencedAddresses(e)
             await ctx.runMutation(internal.nostr.data.importReply, {
               messageId: parent.messageId,
               authorId,
@@ -219,8 +244,9 @@ async function syncTopic(
           // `'#h': [topic.channelUuid]` in the first place, so the tag could
           // only ever confirm what we already queried with.
 
-          // Extract NIP-27 `a` tag addresses (references to other apps' objects)
-          const addresses = e.tags.filter((t) => t[0] === 'a').map((t) => t[1])
+          // Addresses this message references — NIP-27 `a` tags, and NIP-22's
+          // uppercase `A` for a comment's thread root.
+          const addresses = referencedAddresses(e)
 
           await ctx.runMutation(internal.nostr.data.importMessage, {
             topicId: topic.topicId,
