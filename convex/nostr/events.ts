@@ -63,6 +63,16 @@ export const KIND = {
    * NIP-29's 9000–9030 block on purpose.
    */
   ASSERTION: 9101,
+  /**
+   * NIP-42 relay auth — the challenge response that turns a connected socket
+   * into an authenticated one (`Kind::Authentication`, PEE-5).
+   *
+   * Unlike every other kind here, this one is **never published**: Buzz builds
+   * it into `buzz-auth/src/nip42.rs`, never stores it, and never logs it —
+   * "AUTH events are never stored or logged (may contain bearer tokens)" is a
+   * comment in that file. It goes over the socket and is gone.
+   */
+  RELAY_AUTH: 22242,
   HTTP_AUTH: 27235,
 } as const
 
@@ -557,4 +567,70 @@ export function foldResolution(
   return last.action === 'resolved'
     ? { resolved: true, byPubkey: last.pubkey, atSeconds: last.created_at, rationale: last.rationale || undefined }
     : { resolved: false, byPubkey: last.pubkey, atSeconds: last.created_at }
+}
+
+/**
+ * The relay's clock tolerance for a NIP-42 AUTH event, in seconds.
+ *
+ * `TIMESTAMP_TOLERANCE_SECS` in `crates/buzz-auth/src/nip42.rs` — the same ±60s
+ * NIP-98 uses, checked against the *relay's* clock. It is the one failure here
+ * a correct client can still hit: a browser whose clock is more than a minute
+ * out signs a perfectly valid event that is refused every time, and the socket
+ * is left open and permanently unauthenticated rather than closed.
+ */
+export const RELAY_AUTH_TOLERANCE_SECS = 60
+
+/**
+ * The relay URL a NIP-42 `relay` tag must carry, as Buzz computes it.
+ *
+ * `nip42_expected_relay_url` (`buzz-relay/src/api/bridge.rs:225`) is literally
+ * `format!("{scheme}://{}", tenant.host())` — scheme from the deployment, host
+ * from **the tenant the connection arrived on**, never the deployment-wide
+ * `config.relay_url`. Buzz has a test asserting exactly that
+ * (`nip42_expected_relay_url_uses_tenant_host_not_config_host`), because it
+ * regressed once.
+ *
+ * So: an origin, with no path and no trailing slash, derived from the URL we
+ * actually connected to. `normalize_relay_url` on the relay side would forgive
+ * a trailing slash, but it would not forgive a path or a different host.
+ */
+export function relayAuthUrl(connectUrl: string): string {
+  return new URL(connectUrl).origin
+}
+
+/**
+ * An unsigned kind:22242 answering a relay's AUTH challenge.
+ *
+ * Built here rather than in `src/` for the same reason `buildUnsignedAuthEvent`
+ * is: the tag layout is part of the event id preimage, and a second copy in the
+ * browser tree would be a silent divergence the relay notices and we do not.
+ *
+ * **Tag order is not load-bearing for this one kind**, unusually for this file.
+ * Buzz looks both tags up by name — `tags.find(TagKind::Challenge)` and
+ * `tags.find(TagKind::Relay)` in `verify_nip42_event` — and the two reference
+ * clients disagree anyway: rust-nostr's `EventBuilder::auth` emits challenge
+ * first, nostr-tools' `makeAuthEvent` emits relay first. NIP-42's own example
+ * uses relay-then-challenge, which is what this follows. Nothing downstream
+ * compares this event's id to anything, because nothing ever stores it.
+ */
+export function buildUnsignedRelayAuthEvent(args: {
+  /** Left empty for `/sign`, which overwrites it with the token's subject. */
+  pubkey: string
+  /** The URL the socket connected to. Reduced to an origin — see above. */
+  relayUrl: string
+  /** The challenge exactly as the relay sent it. Compared byte for byte. */
+  challenge: string
+  /** Override for tests; defaults to now. */
+  nowMs?: number
+}): UnsignedEvent {
+  return {
+    pubkey: args.pubkey,
+    created_at: Math.floor((args.nowMs ?? Date.now()) / 1000),
+    kind: KIND.RELAY_AUTH,
+    tags: [
+      ['relay', relayAuthUrl(args.relayUrl)],
+      ['challenge', args.challenge],
+    ],
+    content: '',
+  }
 }
