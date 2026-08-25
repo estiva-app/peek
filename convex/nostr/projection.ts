@@ -101,16 +101,37 @@ const KIND_HANDLER_INFORMATION = 31990
  * topic: the comment and the topic conversation become the same event rather
  * than two records nobody reconciles.
  *
- * So this is the fallback, and `commentKindOf` reads the real one off the
+ * So this is the fallback, and `commentKindsOf` reads the real one off the
  * manifest's own `comment` action. Hardcoding it here would quietly stop
  * finding comments the moment an app said something different.
  */
 const KIND_COMMENT = 1111
 
-/** The kind an app says its comments are published as. */
-function commentKindOf(manifest: Manifest): number {
+/**
+ * Every kind an app's comments might be under — what it publishes **now**, plus
+ * any it has published before.
+ *
+ * `emits.kind` is a single number, and for a while that was enough. It stops
+ * being enough the moment an app *changes* the kind it emits, because the old
+ * events do not move: a `kind:9` message is not replaceable at all, so a comment
+ * written under the old kind stays under it permanently. Reading only the
+ * declared kind would show an object's newest comments and silently drop every
+ * one written before the change — no error, nothing empty, just a thread that
+ * begins in the middle.
+ *
+ * So the owning app may also declare `emits.alsoRead`, which is the kinds it
+ * used to publish. That is the only place the knowledge actually lives; the
+ * alternative is Peek hardcoding one app's history, which is exactly what the
+ * note on `KIND_COMMENT` above says not to do.
+ *
+ * Absent `alsoRead` this returns a single kind, so a manifest written before
+ * the field existed behaves exactly as it did.
+ */
+export function commentKindsOf(manifest: Manifest): number[] {
   const declared = manifest.actions?.find((action) => action.id === 'comment')
-  return declared?.emits?.kind ?? KIND_COMMENT
+  const current = declared?.emits?.kind ?? KIND_COMMENT
+  const superseded = declared?.emits?.alsoRead ?? []
+  return [...new Set([current, ...superseded])]
 }
 
 /** How the owning app says its records should be read. */
@@ -168,6 +189,13 @@ export interface ManifestAction {
      */
     setTag?: string
     toAddressOf?: string
+    /**
+     * Kinds this action *used* to emit, which consumers must still read.
+     *
+     * Only ever additive to a read, never to a write: `kind` is what gets
+     * published, this is what also gets fetched. See `commentKindsOf`.
+     */
+    alsoRead?: number[]
   }
   input?: { type: string; enum?: string }
 }
@@ -654,7 +682,7 @@ export async function resolveForeignObject(
   // Substituted here rather than in the component: `<bech32>` is a NIP-89
   // detail, and the widget's job is to draw a link, not to know the spec.
   const openUrl = resolved.webTemplate?.replace('<bech32>', naddr.replace(/^nostr:/, ''))
-  const commentKind = commentKindOf(manifest)
+  const commentKinds = commentKindsOf(manifest)
 
   const projection = manifest.projections?.[String(pointer.kind)]
   const records = manifest.records
@@ -667,7 +695,7 @@ export async function resolveForeignObject(
   const events = await query([
     { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
     { kinds: [records.changeKind], '#a': [address], limit: 500 },
-    { kinds: [commentKind], '#a': [address], limit: 200 },
+    { kinds: commentKinds, '#a': [address], limit: 200 },
   ])
 
   const root = events.find(
@@ -702,7 +730,7 @@ export async function resolveForeignObject(
   )
 
   const comments = events
-    .filter((e) => e.kind === commentKind)
+    .filter((e) => commentKinds.includes(e.kind))
     .sort(byOrder)
     .map((e) => ({ id: e.id, author: e.pubkey, body: e.content, createdAt: e.created_at }))
 
