@@ -75,7 +75,7 @@ export async function syncTopicFromRelay(
     // Both kinds, permanently. A `kind:9` message is not replaceable at all, so
     // every comment written before the flip stays `kind:9` forever and there is
     // no migration that would let this list shrink later.
-    kinds: [9, 1111],
+    kinds: [KIND.STREAM_MESSAGE, KIND.COMMENT],
     '#h': [plan.channelUuid],
     limit: PAGE_LIMIT,
   }

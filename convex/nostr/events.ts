@@ -64,6 +64,16 @@ export const KIND = {
    */
   ASSERTION: 9101,
   /**
+   * NIP-22 comment (REW-10). Ship's comments are posted into the project's
+   * Folder — which *is* a Peek topic's channel — so they arrive in a channel as
+   * ordinary messages and must be read alongside `STREAM_MESSAGE`.
+   *
+   * Both kinds, permanently: a `kind:9` is not replaceable, so every comment
+   * written before Ship flipped stays `kind:9` forever and this pair can never
+   * shrink to one.
+   */
+  COMMENT: 1111,
+  /**
    * NIP-42 relay auth — the challenge response that turns a connected socket
    * into an authenticated one (`Kind::Authentication`, PEE-5).
    *
