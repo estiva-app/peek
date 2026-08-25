@@ -43,6 +43,7 @@ import { hasConvex } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import { syncTopicFromRelay } from '@/nostr/sync'
 import { getLiveTopics } from '@/nostr/liveTopics'
+import { recordBackfillEnd, recordBackfillStart } from '@/nostr/freshness'
 import type { RelayState } from '@/nostr/liveRelay'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
@@ -198,12 +199,22 @@ export function useTopicView({
     // disables this sync for the whole session even after the token is renewed.
     const token = validToken()
     if (!token) return
+    // Observed rather than inferred: PEE-9 shows "catching up" while this is in
+    // flight, and "last synced" from when it succeeded. A failure records the
+    // end without moving the timestamp, so the age on screen keeps growing —
+    // which is the whole point of showing it.
+    recordBackfillStart()
     void syncTopicFromRelay(topicId, relayUrl, token, {
       syncPlan: (args) => convex.query(api.nostr.sync.syncPlan, args),
       importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
       importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
       importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
-    }).catch((error) => console.warn('[nostr] viewer sync failed:', error))
+    })
+      .then(() => recordBackfillEnd(true))
+      .catch((error) => {
+        recordBackfillEnd(false)
+        console.warn('[nostr] viewer sync failed:', error)
+      })
   }
 
   useEffect(() => {

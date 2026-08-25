@@ -1,0 +1,72 @@
+/**
+ * The one place Peek says whether what you are looking at is current (PEE-9).
+ *
+ * **Surfaced once, in the nav rail** — not a badge per panel. A per-panel
+ * indicator answers the same question several times, disagrees with itself
+ * while states settle, and turns a single fact into visual noise.
+ *
+ * Deliberately quiet. Three of the four states are working states and render as
+ * a small dot with a tooltip; only `session_ended` is allowed to look like
+ * something is wrong, because it is the only one a person can act on. A badge
+ * that shouts during normal operation is a badge people stop seeing.
+ *
+ * `AuthGate` is the wrong home for this and it was considered: the gate asks
+ * whether there is an identity at all, this asks whether the data on screen is
+ * current. Different questions, different answers, and a topic can be perfectly
+ * readable while the answer to the second one is "no".
+ */
+import { useEffect, useState } from 'react'
+import {
+  currentObservation,
+  deriveFreshness,
+  describeFreshness,
+  observeFreshness,
+  type Freshness,
+} from '@/nostr/freshness'
+
+const TONE: Record<Freshness['kind'], string> = {
+  // Working states, in descending order of "nothing to see here". `polling` is
+  // amber rather than red on purpose: it is how Peek worked for its whole life
+  // before M3, and colouring a healthy fallback as a fault trains people to
+  // ignore the indicator entirely.
+  live: 'bg-emerald-500',
+  catching_up: 'bg-sky-500',
+  polling: 'bg-amber-500',
+  session_ended: 'bg-red-500',
+}
+
+export function FreshnessIndicator() {
+  const [state, setState] = useState<Freshness>(() => deriveFreshness(currentObservation()))
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => observeFreshness((o) => setState(deriveFreshness(o))), [])
+
+  // The age on screen has to keep moving on its own — "synced a minute ago" is
+  // reassuring and "synced 40 minutes ago" is actionable, and nothing else
+  // re-renders this while the relay is quiet. Also what makes `session_ended`
+  // appear once its grace period passes with no further events.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now())
+      setState(deriveFreshness(currentObservation()))
+    }, 15_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Nothing to say when everything is working. The quietest correct state is no
+  // state: an always-visible "live" badge is decoration that costs attention.
+  if (state.kind === 'live') return null
+
+  const label = describeFreshness(state, now)
+  return (
+    <div
+      className="mt-auto flex w-full justify-center py-2"
+      title={label}
+      role="status"
+      aria-label={label}
+      data-freshness={state.kind}
+    >
+      <span className={`h-2 w-2 rounded-full ${TONE[state.kind]}`} />
+    </div>
+  )
+}
