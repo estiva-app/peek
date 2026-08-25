@@ -223,28 +223,41 @@ export function useTopicView({
   useEffect(() => {
     if (!hasConvex || topicId == null || !relayUrl || !channelUuid) return
 
-    const live = getLiveTopics(relayUrl, {
-      importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
-      importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
-      importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
-    })
+    // Everything here is inside a try: this effect is additive, and a failure
+    // in it must cost the live path and nothing else. `watch()` throws on a
+    // channel key that is not a uuid — correct at that boundary, because such a
+    // subscription would register globally and never deliver — but an
+    // uncaught throw in an effect takes the whole topic view down with it. The
+    // guarantee this ticket is making is that a WS failure degrades to today's
+    // behaviour, and the HTTP backfill above has already run by this point.
+    let unsubscribe: (() => void) | undefined
+    let handle: { stop(): void } | undefined
+    try {
+      const live = getLiveTopics(relayUrl, {
+        importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
+        importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
+        importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
+      })
 
-    setRelayState(live.state())
-    let wasLive = live.state() === 'live'
-    const unsubscribe = live.onState((next) => {
-      setRelayState(next)
-      // Only on the transition *into* live, and not for the first connect —
-      // the mount effect above has already backfilled that one.
-      if (next === 'live' && !wasLive) backfill.current()
-      wasLive = next === 'live'
-    })
+      setRelayState(live.state())
+      let wasLive = live.state() === 'live'
+      unsubscribe = live.onState((next) => {
+        setRelayState(next)
+        // Only on the transition *into* live, and not for the first connect —
+        // the mount effect above has already backfilled that one.
+        if (next === 'live' && !wasLive) backfill.current()
+        wasLive = next === 'live'
+      })
 
-    // Refcounted: StrictMode's double mount shares one REQ, and the channel
-    // closes when the second release lands.
-    const handle = live.watch({ topicKey: topicId, channelUuid })
+      // Refcounted: StrictMode's double mount shares one REQ, and the channel
+      // closes when the second release lands.
+      handle = live.watch({ topicKey: topicId, channelUuid })
+    } catch (error) {
+      console.warn('[nostr] live topic subscription unavailable:', error)
+    }
     return () => {
-      unsubscribe()
-      handle.stop()
+      unsubscribe?.()
+      handle?.stop()
     }
   }, [topicId, relayUrl, channelUuid, convex])
 
