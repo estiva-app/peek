@@ -16,6 +16,14 @@
  *
  * Failures are logged and swallowed. A relay that is down must leave the app
  * working off its Convex rows, exactly as before.
+ *
+ * **Returns whether a read actually happened**, which is not the same as "did
+ * not throw": most failures here are soft — a `{ ok: false }` from the relay, a
+ * topic with no channel — and the function returns normally on all of them. The
+ * freshness indicator (PEE-9) shows the age of the last successful sync, so
+ * treating those as successes would move the timestamp on a read that fetched
+ * nothing and make "synced a few seconds ago" a lie at exactly the moment the
+ * age is the thing worth trusting.
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay } from './bridge'
@@ -56,9 +64,11 @@ export async function syncTopicFromRelay(
   relayUrl: string,
   token: StoredToken,
   api: SyncApi,
-): Promise<void> {
+): Promise<boolean> {
   const plan = await api.syncPlan({ topicKey })
-  if (!plan) return // no channel on the relay yet, or not signed in
+  // No channel on the relay yet, or not signed in. Not a sync, and not a
+  // failure worth ageing the timestamp over either — there was nothing to read.
+  if (!plan) return false
 
   const filter: Record<string, unknown> = {
     // kind:7 has no `h` tag (Buzz derives its channel from the target), so
@@ -89,7 +99,7 @@ export async function syncTopicFromRelay(
     // `relay_membership_required` here means the viewer is not a member of this
     // channel, which is a real answer rather than an error.
     console.warn(`[nostr] sync read failed for ${plan.channelUuid}: ${messages.reason}`)
-    return
+    return false
   }
 
   // One profile lookup per run, not per message.
@@ -111,7 +121,7 @@ export async function syncTopicFromRelay(
   })
   if (!imported.ok) {
     console.warn('[nostr] importChannel failed:', imported.reason)
-    return
+    return false
   }
 
   const targets = imported.targets ?? []
@@ -147,7 +157,7 @@ export async function syncTopicFromRelay(
         )
       : { ok: true as const, events: [] }
 
-  if (!reactions.ok && !deletions.ok) return
+  if (!reactions.ok && !deletions.ok) return false
 
   await api.importReactions({
     topicKey,
@@ -175,6 +185,7 @@ export async function syncTopicFromRelay(
   if (assertions.ok && assertions.events.length > 0) {
     await api.importResolutions({ topicKey, assertions: assertions.events })
   }
+  return true
 }
 
 /**

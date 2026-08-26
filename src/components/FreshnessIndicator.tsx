@@ -43,15 +43,26 @@ export function FreshnessIndicator() {
 
   // The age on screen has to keep moving on its own — "synced a minute ago" is
   // reassuring and "synced 40 minutes ago" is actionable, and nothing else
-  // re-renders this while the relay is quiet. Also what makes `session_ended`
-  // appear once its grace period passes with no further events.
+  // re-renders this while the relay is quiet. It is also what makes the
+  // time-based states arrive at all: `session_ended` once its grace period
+  // passes, and `catching_up` only once a backfill has run long enough to be
+  // worth mentioning.
+  //
+  // Faster while a backfill is running, because both of that state's bounds are
+  // seconds apart and a 15s tick would step straight over the window — showing
+  // nothing for a slow sync, or leaving "catching up" on screen well past the
+  // point it stopped being true.
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now())
-      setState(deriveFreshness(currentObservation()))
-    }, 15_000)
+    const backfilling = currentObservation().backfillSince !== null
+    const timer = setInterval(
+      () => {
+        setNow(Date.now())
+        setState(deriveFreshness(currentObservation()))
+      },
+      backfilling ? 500 : 15_000,
+    )
     return () => clearInterval(timer)
-  }, [])
+  }, [state.kind])
 
   // Nothing to say when everything is working. The quietest correct state is no
   // state: an always-visible "live" badge is decoration that costs attention.

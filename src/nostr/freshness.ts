@@ -46,6 +46,32 @@ export const CREDENTIAL_GRACE_MS = 20_000
 /** Beyond this, "last synced" stops being reassuring and becomes actionable. */
 export const STALE_AFTER_MS = 5 * 60_000
 
+/**
+ * A backfill has to be running this long before it is worth mentioning.
+ *
+ * Every topic you open starts one, and on a healthy connection it finishes in
+ * well under a second. Announcing each of those put a dot on screen for a
+ * moment every time somebody clicked a topic — accurate, and pure noise. A
+ * progress signal that fires on every fast operation is a flicker, not
+ * information.
+ */
+export const CATCHING_UP_AFTER_MS = 1_500
+
+/**
+ * And it stops being "catching up" after this long.
+ *
+ * The claim has a shelf life because the failure it hid was real: offline, the
+ * first thing a backfill awaits is `syncPlan`, a **Convex query** — and the
+ * Convex client queues calls while disconnected rather than rejecting them, so
+ * the promise never settles. The in-flight count never cleared and the
+ * indicator sat on "catching up" indefinitely, which is the most misleading
+ * state available: it says *working on it* while nothing is happening at all.
+ *
+ * Past this, the derivation falls through to `polling`, which is the honest
+ * description of a client that cannot reach anything.
+ */
+export const CATCHING_UP_STALLS_AFTER_MS = 30_000
+
 export type Freshness =
   /** Socket open and authenticated. Nothing to say. */
   | { kind: 'live' }
@@ -59,7 +85,13 @@ export type Freshness =
 export interface FreshnessObservation {
   /** `null` when no socket has been built yet — no topic has been opened. */
   relayState: RelayState | null
-  backfillInFlight: boolean
+  /**
+   * When the oldest in-flight backfill started, or `null` when none is running.
+   *
+   * A timestamp rather than a boolean because both bounds above need one: a
+   * backfill is only worth announcing between them.
+   */
+  backfillSince: number | null
   /** When an HTTP backfill last completed successfully. */
   lastSyncAt: number | null
   /**
@@ -83,7 +115,14 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
   if (o.credentialFailing && o.now - o.credentialFailing.since >= CREDENTIAL_GRACE_MS) {
     return { kind: 'session_ended', reason: o.credentialFailing.reason }
   }
-  if (o.backfillInFlight) return { kind: 'catching_up' }
+  const backfillAge = o.backfillSince === null ? null : o.now - o.backfillSince
+  if (
+    backfillAge !== null &&
+    backfillAge >= CATCHING_UP_AFTER_MS &&
+    backfillAge < CATCHING_UP_STALLS_AFTER_MS
+  ) {
+    return { kind: 'catching_up' }
+  }
   if (o.relayState === 'live') return { kind: 'live' }
   return {
     kind: 'polling',
@@ -116,19 +155,21 @@ export function reasonForSignFailure(message: string): ShellReason {
 
 type Listener = (state: FreshnessObservation) => void
 
-let observation: FreshnessObservation = {
+const EMPTY: FreshnessObservation = {
   relayState: null,
-  backfillInFlight: false,
+  backfillSince: null,
   lastSyncAt: null,
   credentialFailing: null,
-  now: Date.now(),
+  now: 0,
 }
+
+let observation: FreshnessObservation = { ...EMPTY, now: Date.now() }
 const listeners = new Set<Listener>()
-/** Backfills can overlap across topics; the indicator cares only that one is running. */
+/** Backfills overlap across topics; the oldest one is what the age is measured from. */
 let inFlight = 0
 
 function emit() {
-  observation = { ...observation, backfillInFlight: inFlight > 0, now: Date.now() }
+  observation = { ...observation, now: Date.now() }
   for (const listener of [...listeners]) listener(observation)
 }
 
@@ -147,14 +188,24 @@ export function recordRelayState(relayState: RelayState): void {
   emit()
 }
 
-export function recordBackfillStart(): void {
+export function recordBackfillStart(at = Date.now()): void {
   inFlight += 1
+  // Kept at the oldest, so a rapid series of topic switches does not keep
+  // resetting the age and hide a backfill that is genuinely stuck.
+  if (observation.backfillSince === null) observation = { ...observation, backfillSince: at }
   emit()
 }
 
 export function recordBackfillEnd(ok: boolean, at = Date.now()): void {
   inFlight = Math.max(0, inFlight - 1)
-  if (ok) observation = { ...observation, lastSyncAt: at }
+  observation = {
+    ...observation,
+    ...(inFlight === 0 ? { backfillSince: null } : {}),
+    // Only a real sync moves this. A read that failed must leave the age on
+    // screen growing — that is the signal, and recording it as success would
+    // make "synced a few seconds ago" a lie told at the worst moment.
+    ...(ok ? { lastSyncAt: at } : {}),
+  }
   emit()
 }
 
@@ -182,13 +233,7 @@ export function recordCredentialOk(): void {
 /** Test seam. */
 export function resetFreshnessForTests(): void {
   inFlight = 0
-  observation = {
-    relayState: null,
-    backfillInFlight: false,
-    lastSyncAt: null,
-    credentialFailing: null,
-    now: Date.now(),
-  }
+  observation = { ...EMPTY, now: Date.now() }
   listeners.clear()
 }
 

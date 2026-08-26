@@ -210,7 +210,7 @@ export function useTopicView({
       importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
       importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
     })
-      .then(() => recordBackfillEnd(true))
+      .then((synced) => recordBackfillEnd(synced))
       .catch((error) => {
         recordBackfillEnd(false)
         console.warn('[nostr] viewer sync failed:', error)
