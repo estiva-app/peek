@@ -19,6 +19,7 @@ import {
   CATCHING_UP_STALLS_AFTER_MS,
   CREDENTIAL_GRACE_MS,
   STALE_AFTER_MS,
+  describeFreshness,
   deriveFreshness,
   observeFreshness,
   reasonForSignFailure,
@@ -27,6 +28,7 @@ import {
   recordCredentialFailure,
   recordCredentialOk,
   recordOnline,
+  recordReadFailure,
   recordRelayState,
   currentObservation,
   resetFreshnessForTests,
@@ -37,6 +39,7 @@ const NOW = 1_756_000_000_000
 
 const observation = (o: Partial<FreshnessObservation> = {}): FreshnessObservation => ({
   online: true,
+  lastReadFailure: null,
   relayState: null,
   relayStateSince: null,
   backfillSince: null,
@@ -395,5 +398,55 @@ describe('the browser is the authority on being offline', () => {
     recordOnline(false)
     recordOnline(false)
     expect(seen).toEqual([true, false])
+  })
+})
+
+describe('a recorded read failure explains the polling state (PEE-10)', () => {
+  it('says the relay refused when that is what happened', () => {
+    // "Refused" and "could not reach" are different sentences: one is worth
+    // waiting out, the other is worth telling somebody about.
+    const state = deriveFreshness(
+      observation({
+        relayState: 'reconnecting',
+        lastSyncAt: NOW - 60_000,
+        lastReadFailure: { at: NOW - 1_000, kind: 'refused' },
+      }),
+    )
+    expect(state).toMatchObject({ kind: 'polling', failure: 'refused' })
+    expect(describeFreshness(state, NOW)).toMatch(/relay refused the last read/i)
+  })
+
+  it('ignores a failure old enough to say nothing about now', () => {
+    // An hour-old refusal explains nothing about the current state, and quoting
+    // it would be worse than saying nothing.
+    const state = deriveFreshness(
+      observation({
+        relayState: 'reconnecting',
+        lastReadFailure: { at: NOW - STALE_AFTER_MS, kind: 'refused' },
+      }),
+    )
+    expect(state).not.toHaveProperty('failure')
+    expect(describeFreshness(state, NOW)).toMatch(/not connected to the relay/i)
+  })
+
+  it('prefers the browser’s word when offline', () => {
+    // The browser saying there is no network is a better explanation than
+    // whatever the last read happened to say before it went.
+    const state = deriveFreshness(
+      observation({
+        online: false,
+        lastReadFailure: { at: NOW - 1_000, kind: 'refused' },
+      }),
+    )
+    expect(state).not.toHaveProperty('failure')
+  })
+
+  it('records a failure without moving the last successful sync', () => {
+    // The age is the signal, and it has to keep growing while reads fail.
+    recordBackfillStart()
+    recordBackfillEnd(true, NOW)
+    recordReadFailure('unreachable', NOW + 60_000)
+    expect(currentObservation().lastSyncAt).toBe(NOW)
+    expect(currentObservation().lastReadFailure).toEqual({ at: NOW + 60_000, kind: 'unreachable' })
   })
 })

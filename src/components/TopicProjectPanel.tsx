@@ -1,3 +1,11 @@
+import {
+  RelayReadError,
+  classifyRelayFailure,
+  describeRelayFailure,
+  isOutage,
+  type RelayFailureKind,
+} from '@/nostr/relayRead'
+import { recordReadFailure } from '@/nostr/freshness'
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from 'convex/react'
 import { IconChevronRight, IconFolderOpen } from '@tabler/icons-react'
@@ -139,8 +147,16 @@ export function TopicProjectPanelView({
   actingOn,
   errors = {},
 }: {
-  /** `'loading'` while the relay is being read; `null` when there is no project. */
-  folderProject: FolderProject | null | 'loading'
+  /**
+   * `'loading'` while the relay is being read; `null` when there is genuinely no
+   * project in the Folder; a {@link RelayFailureKind} when the read failed.
+   *
+   * The third case is the point of PEE-10. It used to collapse into `null`, so
+   * "the relay refused me" and "this Folder has no project" drew the identical
+   * empty panel — and an empty state that can silently mean two opposite things
+   * is what makes an app feel untrustworthy rather than merely slow.
+   */
+  folderProject: FolderProject | null | 'loading' | { failed: RelayFailureKind }
   /** Omitted in stories and tests: properties render as values, not controls. */
   onAct?: (object: ForeignObject, actionId: string, value: string) => void
   /** naddr of the object a change is in flight for. */
@@ -156,6 +172,23 @@ export function TopicProjectPanelView({
         <div className="flex flex-col gap-2 px-4 py-4">
           <SkeletonBar className="h-3 w-[160px]" />
           <SkeletonBar className="h-3 w-[220px]" />
+        </div>
+      </PanelShell>
+    )
+  }
+
+  // The read failed. Deliberately drawn as an empty state rather than an error
+  // banner — nothing has gone wrong with the app, and the panel is still doing
+  // its job of saying what is beside this conversation. It just says honestly
+  // that it does not know, instead of implying there is nothing there.
+  if (folderProject !== null && 'failed' in folderProject) {
+    return (
+      <PanelShell>
+        <div className="flex-1 flex items-center justify-center px-6">
+          <EmptyState
+            icon={<IconFolderOpen size={16} stroke={1.5} />}
+            message={describeRelayFailure(folderProject.failed)}
+          />
         </div>
       </PanelShell>
     )
@@ -243,7 +276,11 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   const { resolveFolderProject: resolveProject, applyAction } = useForeignObjects()
   /** Kept with the Folder it came from, so switching topics cannot show the
    *  previous topic's project while the next one resolves. */
-  const [resolved, setResolved] = useState<{ folder: string; project: FolderProject | null }>()
+  const [resolved, setResolved] = useState<{
+    folder: string
+    project: FolderProject | null
+    failed?: RelayFailureKind
+  }>()
   const [actingOn, setActingOn] = useState<string>()
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -252,10 +289,29 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   // does not live-update — acceptable for context beside a conversation, and
   // the honest limitation to note rather than hide.
   const load = useCallback(
-    (target: string) => {
+    (target: string): Promise<{
+      folder: string
+      project: FolderProject | null
+      failed?: RelayFailureKind
+    }> => {
       return resolveProject(target)
         .then((project) => ({ folder: target, project }))
-        .catch(() => ({ folder: target, project: null }))
+        .catch((error: unknown) => {
+          // Still swallowed — nothing throws, nothing interrupts, and the app
+          // keeps working off its Convex rows. What changed is that the failure
+          // is now *recorded* rather than only logged, so the panel can say
+          // which empty state this is.
+          const kind =
+            error instanceof RelayReadError
+              ? error.kind
+              : classifyRelayFailure((error as Error)?.message ?? '')
+          // Not a member is a real answer, arrived at successfully — it says
+          // nothing about the relay being reachable and must not light the
+          // connection indicator.
+          if (isOutage(kind)) recordReadFailure(kind)
+          console.warn('[nostr] folder project read failed:', error)
+          return { folder: target, project: null, failed: kind }
+        })
     },
     [resolveProject],
   )
@@ -298,13 +354,15 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   // `undefined` is the Folder query still loading; `null` is a topic with no
   // Folder at all (created before Nostr emission was wired up) — nothing to
   // resolve, and the empty state is the honest answer.
-  const folderProject: FolderProject | null | 'loading' =
+  const folderProject: FolderProject | null | 'loading' | { failed: RelayFailureKind } =
     folder === undefined
       ? 'loading'
       : folder === null
         ? null
         : resolved?.folder === folder
-          ? resolved.project
+          ? resolved.failed
+            ? { failed: resolved.failed }
+            : resolved.project
           : 'loading'
 
   return (

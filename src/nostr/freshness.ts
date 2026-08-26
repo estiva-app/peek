@@ -39,6 +39,7 @@
  */
 import { SHELL_COPY, type ShellReason } from '@/auth/shell/contract'
 import type { RelayState } from './liveRelay'
+import type { RelayFailureKind } from './relayRead'
 
 /** How long a failing credential must persist before the session is called over. */
 export const CREDENTIAL_GRACE_MS = 20_000
@@ -116,8 +117,14 @@ export type Freshness =
   | { kind: 'live' }
   /** A backfill is in flight — history is still arriving. */
   | { kind: 'catching_up' }
-  /** No socket; the app is running off Convex rows. Working, not broken. */
-  | { kind: 'polling'; lastSyncAt: number | null; stale: boolean }
+  /**
+   * No socket; the app is running off Convex rows. Working, not broken.
+   *
+   * `failure` distinguishes *why* when the last read told us something: a relay
+   * that refused is a different sentence from one we could not reach, and it is
+   * the difference between "wait" and "something is configured wrong".
+   */
+  | { kind: 'polling'; lastSyncAt: number | null; stale: boolean; failure?: RelayFailureKind }
   /** The one the ticket asks for: we can no longer ask on this person's behalf. */
   | { kind: 'session_ended'; reason: ShellReason }
 
@@ -151,6 +158,14 @@ export interface FreshnessObservation {
   /** When an HTTP backfill last completed successfully. */
   lastSyncAt: number | null
   /**
+   * The most recent relay read failure that says something about reachability.
+   *
+   * Never `not_a_member` — that is an answer, not an outage. Present so the
+   * polling copy can be specific; it deliberately does not create a state of
+   * its own, because the age of the last successful sync is the signal.
+   */
+  lastReadFailure: { at: number; kind: RelayFailureKind } | null
+  /**
    * When the live path first reported it could not get a usable credential,
    * and the reason it gave. Cleared the moment one works again.
    */
@@ -175,6 +190,8 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
   // and saying "loading recent history" would be a straightforwardly false
   // description of a client that cannot reach anything.
   if (!o.online) {
+    // No `failure`: the browser told us there is no network, which is a better
+    // explanation than whatever the last read happened to say before it went.
     return {
       kind: 'polling',
       lastSyncAt: o.lastSyncAt,
@@ -205,10 +222,18 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
   // No socket has ever been requested — not "unavailable". `polling` means the
   // fallback is carrying the load; nothing is being carried yet.
   if (o.relayState === null) return { kind: 'idle' }
+  // Only a *recent* failure explains the current state. An hour-old refusal
+  // says nothing about now, and quoting it would be worse than saying nothing.
+  const recentFailure =
+    o.lastReadFailure && o.now - o.lastReadFailure.at < STALE_AFTER_MS
+      ? o.lastReadFailure.kind
+      : undefined
+
   return {
     kind: 'polling',
     lastSyncAt: o.lastSyncAt,
     stale: o.lastSyncAt === null || o.now - o.lastSyncAt >= STALE_AFTER_MS,
+    ...(recentFailure ? { failure: recentFailure } : {}),
   }
 }
 
@@ -238,6 +263,7 @@ type Listener = (state: FreshnessObservation) => void
 
 const EMPTY: FreshnessObservation = {
   online: true,
+  lastReadFailure: null,
   relayState: null,
   relayStateSince: null,
   backfillSince: null,
@@ -264,6 +290,28 @@ export function observeFreshness(listener: Listener): () => void {
 
 export function currentObservation(): FreshnessObservation {
   return { ...observation, now: Date.now() }
+}
+
+/**
+ * A relay read failed (PEE-10).
+ *
+ * Recorded rather than only logged, which is the whole of that ticket: the app
+ * keeps working off its Convex rows either way, but until now nobody could tell
+ * a failure had happened.
+ *
+ * Deliberately does **not** move `lastSyncAt` and does not invent a new state.
+ * The age of the last *successful* sync already says everything a person needs
+ * — it keeps growing while reads fail — and a second alarming signal for the
+ * same fact would be the crying-wolf mistake this feature has already made
+ * three times. The reason is carried so the copy can be specific when it is
+ * worth being.
+ *
+ * Callers must filter `not_a_member` out first: that is a successful answer
+ * about membership, not evidence the relay is unreachable.
+ */
+export function recordReadFailure(kind: RelayFailureKind, at = Date.now()): void {
+  observation = { ...observation, lastReadFailure: { at, kind } }
+  emit()
 }
 
 /** The browser's `online`/`offline` events. See {@link FreshnessObservation.online}. */
@@ -360,7 +408,13 @@ export function describeFreshness(state: Freshness, now: number): string {
     case 'catching_up':
       return 'Catching up — loading recent history'
     case 'polling':
-      return `Not connected to the relay. Showing saved data, ${describeAge(state.lastSyncAt, now)}.`
+      // "Refused" and "could not reach" are different sentences on purpose:
+      // one is worth waiting out, the other is worth telling somebody about.
+      return `${
+        state.failure === 'refused'
+          ? 'The relay refused the last read.'
+          : 'Not connected to the relay.'
+      } Showing saved data, ${describeAge(state.lastSyncAt, now)}.`
     case 'session_ended':
       return SHELL_COPY[state.reason]
   }
