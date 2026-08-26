@@ -44,6 +44,7 @@ import { validToken } from '@/auth/estivaId'
 import { syncTopicFromRelay } from '@/nostr/sync'
 import { getLiveTopics } from '@/nostr/liveTopics'
 import { recordBackfillEnd, recordBackfillStart } from '@/nostr/freshness'
+import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import type { RelayState } from '@/nostr/liveRelay'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
@@ -221,6 +222,30 @@ export function useTopicView({
     if (!hasConvex || topicId == null || !topicFolderId || !relayUrl) return
     backfill.current()
   }, [topicId, topicFolderId, relayUrl, convex])
+
+  /**
+   * Re-sync on focus, on becoming visible, and on a slow interval (PEE-1).
+   *
+   * The effect above is keyed on ids that do not change while a topic is open,
+   * so before this it ran once per mount and never again — which is why a
+   * reload "fixed" a reply that had been sitting on the relay for ten minutes.
+   *
+   * **The interval idles while the socket is live**, and that is the whole
+   * adaptation this ticket needed: PEE-1 was written when the socket did not
+   * exist and it was the only relief available. Polling underneath a working
+   * live connection would undo M3. `relayState` comes from PEE-8 for exactly
+   * this — deriving it from a second socket would double the AUTH round trips
+   * for nothing.
+   *
+   * Focus and visibility still fire regardless. They happen at human frequency,
+   * the `since` cursor makes a repeat almost free, and returning to a tab is
+   * the one moment somebody actively wants certainty — including when the
+   * socket believes it is connected and is not.
+   */
+  useRefreshTriggers(() => backfill.current(), {
+    enabled: hasConvex && topicId != null && !!relayUrl,
+    interval: relayState !== 'live',
+  })
 
   /**
    * Subscribe this topic's channel to the tab's live socket.

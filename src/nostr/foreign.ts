@@ -71,24 +71,77 @@ function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
  *
  * Misses are cached too — someone with no published profile would otherwise be
  * asked about on every single resolve, which is the common case for anyone who
- * has not finished setting up their Estiva ID. The cost is that a profile
- * published mid-session appears on the next reload rather than immediately,
- * which is the right way round for something read this often and changed this
- * rarely.
+ * has not finished setting up their Estiva ID.
+ *
+ * **Entries expire now (PEE-3).** They did not, and the file used to say the
+ * cost was "a profile published mid-session appears on the next reload rather
+ * than immediately, which is the right way round for something read this often
+ * and changed this rarely". That was true while nothing else refreshed either.
+ * Once the topic sync and the project panel re-read on a timer, this became the
+ * remaining reason a newly named person still rendered as `nostr:<8 chars>`
+ * until a full reload — and it would have read as "the refresh does not work".
+ *
+ * **A miss expires much faster than a hit**, which is the whole point. A hit is
+ * a name, and names change rarely. A miss is somebody who has not finished
+ * setting up their Estiva ID — which is to say, precisely the person whose name
+ * is about to arrive.
  */
-const knownPeople = new Map<string, People[string]>()
+export const PROFILE_HIT_TTL_MS = 10 * 60_000
+export const PROFILE_MISS_TTL_MS = 60_000
 
-function cachedPeople(query: QueryFn): PeopleFn {
-  const fromRelay = peopleViaRelay(query)
+interface CachedProfile {
+  person: People[string]
+  /** When it stops being trusted. A miss gets a much sooner one. */
+  expiresAt: number
+}
+
+const knownPeople = new Map<string, CachedProfile>()
+
+/** A profile with nothing in it is a miss — the relay had no `kind:0`. */
+const isMiss = (person: People[string]) => Object.keys(person).length === 0
+
+/** Test seam, and what a sign-out should call if this ever grows one. */
+export function clearProfileCacheForTests(): void {
+  knownPeople.clear()
+}
+
+/**
+ * The caching wrapper, with the relay lookup injected.
+ *
+ * Split from {@link cachedPeople} so a test can supply the lookup and a clock
+ * without a relay — the behaviour worth pinning here is the batching and the
+ * two TTLs, none of which is about HTTP.
+ */
+function cacheAround(fromRelay: PeopleFn, now: () => number = Date.now): PeopleFn {
   return async (pubkeys) => {
-    const unknown = pubkeys.filter((key) => !knownPeople.has(key))
+    const at = now()
+    // Still one lookup for the whole set, not one per pubkey: a topic with ten
+    // reference widgets asks about the same handful of people, and splitting
+    // this would turn one query into N.
+    const unknown = pubkeys.filter((key) => {
+      const cached = knownPeople.get(key)
+      return cached === undefined || cached.expiresAt <= at
+    })
     if (unknown.length > 0) {
       const found = await fromRelay(unknown)
-      for (const key of unknown) knownPeople.set(key, found[key] ?? {})
+      for (const key of unknown) {
+        const person = found[key] ?? {}
+        knownPeople.set(key, {
+          person,
+          expiresAt: at + (isMiss(person) ? PROFILE_MISS_TTL_MS : PROFILE_HIT_TTL_MS),
+        })
+      }
     }
-    return Object.fromEntries(pubkeys.map((key) => [key, knownPeople.get(key) ?? {}]))
+    return Object.fromEntries(pubkeys.map((key) => [key, knownPeople.get(key)?.person ?? {}]))
   }
 }
+
+function cachedPeople(query: QueryFn): PeopleFn {
+  return cacheAround(peopleViaRelay(query))
+}
+
+/** Test seam — see {@link cacheAround}. */
+export const peopleCacheForTests = cacheAround
 
 /**
  * Resolve a `nostr:naddr…` into a renderable widget.
