@@ -8,6 +8,7 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  CATCHING_UP_AFTER_MS,
   describeAge,
   describeFreshness,
   recordBackfillStart,
@@ -94,10 +95,18 @@ describe('when it appears', () => {
     expect(status.getAttribute('aria-label')).toMatch(/showing saved data/i)
   })
 
-  it('says it is catching up while history loads', () => {
+  it('says it is catching up once history has been loading a while', () => {
     recordRelayState('live')
-    recordBackfillStart()
+    recordBackfillStart(Date.now() - CATCHING_UP_AFTER_MS)
     render(<FreshnessIndicator />)
     expect(screen.getByRole('status')).toHaveAttribute('data-freshness', 'catching_up')
+  })
+
+  it('stays silent through a backfill that finishes quickly', () => {
+    // The production report: a dot flashing on every topic click.
+    recordRelayState('live')
+    recordBackfillStart()
+    const { container } = render(<FreshnessIndicator />)
+    expect(container).toBeEmptyDOMElement()
   })
 })

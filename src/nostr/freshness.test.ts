@@ -14,6 +14,8 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  CATCHING_UP_AFTER_MS,
+  CATCHING_UP_STALLS_AFTER_MS,
   CREDENTIAL_GRACE_MS,
   STALE_AFTER_MS,
   deriveFreshness,
@@ -33,7 +35,7 @@ const NOW = 1_756_000_000_000
 
 const observation = (o: Partial<FreshnessObservation> = {}): FreshnessObservation => ({
   relayState: null,
-  backfillInFlight: false,
+  backfillSince: null,
   lastSyncAt: null,
   credentialFailing: null,
   now: NOW,
@@ -47,12 +49,42 @@ describe('the four states', () => {
     expect(deriveFreshness(observation({ relayState: 'live' }))).toEqual({ kind: 'live' })
   })
 
-  it('is catching up while a backfill is in flight, even on a live socket', () => {
+  it('is catching up while a slow backfill runs, even on a live socket', () => {
     // "Live" over a view that is still loading its history is the small lie
     // this ticket is about.
     expect(
-      deriveFreshness(observation({ relayState: 'live', backfillInFlight: true })),
+      deriveFreshness(
+        observation({ relayState: 'live', backfillSince: NOW - CATCHING_UP_AFTER_MS }),
+      ),
     ).toEqual({ kind: 'catching_up' })
+  })
+
+  it('says nothing about a backfill that finishes quickly', () => {
+    // Every topic you open starts one and it finishes in well under a second.
+    // Announcing each put a dot on screen for a moment on every click —
+    // accurate, and pure noise. Reported from production.
+    expect(
+      deriveFreshness(
+        observation({ relayState: 'live', backfillSince: NOW - (CATCHING_UP_AFTER_MS - 1) }),
+      ),
+    ).toEqual({ kind: 'live' })
+  })
+
+  it('stops claiming to be catching up once a backfill has stalled', () => {
+    // The failure this hid: offline, the first thing a backfill awaits is
+    // `syncPlan`, a Convex query — and the Convex client *queues* calls while
+    // disconnected instead of rejecting, so the promise never settles. The
+    // indicator sat on "catching up" for minutes, which is the most misleading
+    // state available: it says "working on it" while nothing is happening.
+    expect(
+      deriveFreshness(
+        observation({
+          relayState: 'reconnecting',
+          backfillSince: NOW - CATCHING_UP_STALLS_AFTER_MS,
+          lastSyncAt: NOW - 60_000,
+        }),
+      ),
+    ).toMatchObject({ kind: 'polling' })
   })
 
   it('is polling with no socket, and says when it last synced', () => {
@@ -140,7 +172,7 @@ describe('session_ended is delayed, not immediate', () => {
     // a spinner that will never finish.
     const state = deriveFreshness(
       observation({
-        backfillInFlight: true,
+        backfillSince: NOW - CATCHING_UP_AFTER_MS,
         credentialFailing: { since: NOW - CREDENTIAL_GRACE_MS, reason: 'session_expired' },
       }),
     )
@@ -196,17 +228,29 @@ describe('the store', () => {
   })
 
   it('counts overlapping backfills rather than toggling a flag', () => {
-    // Several topics can be backfilling at once; the indicator cares only that
-    // one is running, and a boolean would clear on the first to finish.
+    // Several topics can be backfilling at once, and a boolean would clear on
+    // the first to finish.
     recordBackfillStart()
     recordBackfillStart()
     recordBackfillEnd(true)
-    expect(currentObservation().backfillInFlight).toBe(true)
+    expect(currentObservation().backfillSince).not.toBeNull()
     recordBackfillEnd(true)
-    expect(currentObservation().backfillInFlight).toBe(false)
+    expect(currentObservation().backfillSince).toBeNull()
   })
 
-  it('moves the sync timestamp only on success', () => {
+  it('measures the age from the oldest backfill, not the newest', () => {
+    // Clicking through topics starts a new one each time. Resetting the clock
+    // on every start would let a genuinely stuck backfill hide behind a stream
+    // of fast ones and never reach the stalled bound.
+    recordBackfillStart(NOW)
+    recordBackfillStart(NOW + 10_000)
+    expect(currentObservation().backfillSince).toBe(NOW)
+  })
+
+  it('moves the sync timestamp only on a real sync', () => {
+    // `syncTopicFromRelay` returns normally on most failures — a `{ ok: false }`
+    // from the relay, a topic with no channel — so "did not throw" is not
+    // "synced". It reports which, and only the real thing moves this.
     recordBackfillStart()
     recordBackfillEnd(true, NOW)
     expect(currentObservation().lastSyncAt).toBe(NOW)
