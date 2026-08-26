@@ -72,6 +72,12 @@ describe('describing an age', () => {
 })
 
 describe('when it appears', () => {
+  it('renders nothing on a fresh load, before any topic is opened', () => {
+    // The production report this fixes: an amber dot on the Desk, every load.
+    const { container } = render(<FreshnessIndicator />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('renders nothing while everything is live', () => {
     // The quietest correct state is no state — an always-visible "live" badge is
     // decoration that costs attention.

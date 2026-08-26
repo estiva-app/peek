@@ -79,10 +79,35 @@ describe('the four states', () => {
     })
   })
 
-  it('polls when no socket has been built at all', () => {
-    // No topic opened yet, so there is no connection to describe — but the data
-    // on screen is still only as fresh as the last sync.
-    expect(deriveFreshness(observation({ relayState: null }))).toMatchObject({ kind: 'polling' })
+  it('says nothing at all before a connection has been asked for', () => {
+    // Found on production: the Desk showed an amber dot on every app load,
+    // because no topic was open so no socket existed. That reads as "not
+    // connected to the relay" during entirely normal operation, which is how
+    // an indicator teaches people to ignore it.
+    //
+    // `polling` means the fallback is carrying the load. Nothing is being
+    // carried before anything has been opened.
+    expect(deriveFreshness(observation({ relayState: null }))).toEqual({ kind: 'idle' })
+  })
+
+  it('polls once a socket has existed and is not live', () => {
+    // The distinction that makes `idle` safe: a connection that was wanted and
+    // is not there is still worth reporting.
+    expect(deriveFreshness(observation({ relayState: 'reconnecting' }))).toMatchObject({
+      kind: 'polling',
+    })
+  })
+
+  it('still reports a dead credential with no socket', () => {
+    // `idle` must not swallow the one state a person can act on.
+    expect(
+      deriveFreshness(
+        observation({
+          relayState: null,
+          credentialFailing: { since: NOW - CREDENTIAL_GRACE_MS, reason: 'session_expired' },
+        }),
+      ),
+    ).toEqual({ kind: 'session_ended', reason: 'session_expired' })
   })
 })
 
