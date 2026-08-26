@@ -259,4 +259,23 @@ describe('TopicProjectPanelView', () => {
     expect(screen.getByText('No project linked to this topic.')).toBeInTheDocument()
     expect(screen.queryByText(/Tickets/)).not.toBeInTheDocument()
   })
+
+  it('does not claim there is no project when the read failed (PEE-10)', () => {
+    // The ambiguity this ticket exists to remove: a refused read and an empty
+    // Folder used to draw the identical panel, so an empty state could silently
+    // mean two opposite things.
+    render(<TopicProjectPanelView folderProject={{ failed: 'unreachable' }} />)
+
+    expect(screen.queryByText('No project linked to this topic.')).not.toBeInTheDocument()
+    expect(screen.getByText(/could not reach the relay/i)).toBeInTheDocument()
+    expect(screen.getByText(/showing what was already saved/i)).toBeInTheDocument()
+  })
+
+  it('says plainly when the Folder is simply not visible to you', () => {
+    // Not an outage and must not read as one — the relay answered correctly.
+    render(<TopicProjectPanelView folderProject={{ failed: 'not_a_member' }} />)
+
+    expect(screen.getByText(/not a member of this Folder/i)).toBeInTheDocument()
+    expect(screen.queryByText(/could not reach/i)).not.toBeInTheDocument()
+  })
 })

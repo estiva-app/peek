@@ -21,6 +21,7 @@
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
+import { RelayReadError } from './relayRead'
 import { pointerToAddress, referenceToPointer } from '../../convex/nostr/nip19'
 import {
   buildActionEvent,
@@ -44,9 +45,21 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
 
 /** Relay reads as the viewer. Their pubkey comes off the stored token, so no
  *  JWT parsing is needed here — the backend had to do that only because it was
- *  handed a bare string. */
+ *  handed a bare string.
+ *
+ *  **Throws on a failed read rather than returning `[]`** (PEE-10). This line
+ *  used to be `(await queryRelay(…)).events`, discarding `ok` and `reason` — so
+ *  a refused read arrived at the caller as an empty array, indistinguishable
+ *  from a successful read that found nothing. Every "empty panel that actually
+ *  means refused" in this app started here, one layer below where it was
+ *  visible. Callers that must degrade quietly catch it explicitly, which is
+ *  better than the information never existing. */
 function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
-  return async (filters) => (await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)).events
+  return async (filters) => {
+    const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
+    if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+    return result.events
+  }
 }
 
 /**
@@ -82,6 +95,12 @@ function cachedPeople(query: QueryFn): PeopleFn {
  *
  * `null` when it cannot be resolved — a broken reference in a message degrades
  * to plain text rather than breaking the message.
+ *
+ * That includes a relay read that failed, which is why the catch is here and
+ * explicit: `viewerQuery` now throws so the *sidebar* can tell a refusal from
+ * an empty Folder, and this path deliberately does not want to know. A
+ * reference widget is inline in somebody's sentence; the worst thing it can do
+ * is turn a message into an error.
  */
 export async function resolveObjectAsViewer(
   naddr: string,
@@ -89,7 +108,12 @@ export async function resolveObjectAsViewer(
   token: StoredToken,
 ): Promise<ForeignObject | null> {
   const query = viewerQuery(relayUrl, token)
-  return resolveForeignObject(naddr, query, cachedPeople(query))
+  try {
+    return await resolveForeignObject(naddr, query, cachedPeople(query))
+  } catch (error) {
+    if (error instanceof RelayReadError) return null
+    throw error
+  }
 }
 
 /**
@@ -97,6 +121,11 @@ export async function resolveObjectAsViewer(
  *
  * `null` means "no project here" — a normal state the sidebar draws as an empty
  * panel, not an error.
+ *
+ * **Throws {@link RelayReadError} when the read itself failed**, which is a
+ * different thing and now says so. The sidebar draws the two differently:
+ * before this, a refused read and an empty Folder both produced "No project
+ * linked to this topic", which is the exact ambiguity PEE-10 exists to remove.
  */
 export async function resolveFolderProjectAsViewer(
   folder: string,
