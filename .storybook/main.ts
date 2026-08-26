@@ -14,6 +14,8 @@ const peekRoot = resolve(here, '..')
  * stories are simply absent, not a broken build.
  */
 const estivaIdRoot = resolve(peekRoot, '../estiva-id')
+/** @estiva/ui, consumed as source through its file: link — outside the root too. */
+const estivaUiRoot = resolve(peekRoot, '../estiva-ui')
 
 const config: StorybookConfig = {
   framework: '@storybook/react-vite',
@@ -58,7 +60,7 @@ const config: StorybookConfig = {
       ...viteConfig.server,
       fs: {
         ...viteConfig.server?.fs,
-        allow: [...(viteConfig.server?.fs?.allow ?? []), peekRoot, estivaIdRoot],
+        allow: [...(viteConfig.server?.fs?.allow ?? []), peekRoot, estivaIdRoot, estivaUiRoot],
       },
     }
 

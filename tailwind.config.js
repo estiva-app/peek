@@ -4,7 +4,8 @@ import estiva from '@estiva/ui/tailwind-preset'
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
-  content: ['./index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}'],
+  // The package's components are source; their classes must be scanned too.
+  content: ['./index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}', '../estiva-ui/src/**/*.{ts,tsx}'],
   /**
    * The shared tokens come from @estiva/ui (SHA-5, 2026-08-28): the type
    * ramp, radii, shadows, the skeleton animation and every colour name. What
