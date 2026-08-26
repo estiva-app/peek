@@ -77,6 +77,26 @@ export const CATCHING_UP_AFTER_MS = 5_000
  */
 export const CATCHING_UP_STALLS_AFTER_MS = 30_000
 
+/**
+ * How long a first connection may take before it is worth mentioning.
+ *
+ * Opening the app builds a socket, and it passes through `connecting` and
+ * `authenticating` on the way to `live` — a few hundred milliseconds, during
+ * which it is doing exactly what it should. That was falling through to
+ * `polling` and putting an amber dot on screen for a moment on every load,
+ * which is the same mistake as the one `idle` fixed: crying wolf during
+ * entirely normal operation.
+ *
+ * A connection that has not authenticated after this long genuinely is not
+ * connected, and `polling` becomes the honest description.
+ *
+ * Applies only to `connecting` and `authenticating`. `reconnecting` means the
+ * socket **was** live and is not any more, which is worth saying at once — and
+ * `liveRelay` already separates the two: the first attempt is `connecting`, a
+ * later one is `reconnecting`.
+ */
+export const CONNECTING_GRACE_MS = 5_000
+
 export type Freshness =
   /**
    * Nothing has asked for a connection yet, so there is nothing to report.
@@ -119,6 +139,8 @@ export interface FreshnessObservation {
   online: boolean
   /** `null` when no socket has been built yet — no topic has been opened. */
   relayState: RelayState | null
+  /** When `relayState` last changed, for the startup grace above. */
+  relayStateSince: number | null
   /**
    * When the oldest in-flight backfill started, or `null` when none is running.
    *
@@ -158,6 +180,17 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
       lastSyncAt: o.lastSyncAt,
       stale: o.lastSyncAt === null || o.now - o.lastSyncAt >= STALE_AFTER_MS,
     }
+  }
+
+  // Starting up is not a fallback. A socket on its way to `live` is working,
+  // and saying "not connected, showing saved data" about it is false for the
+  // few hundred milliseconds it takes.
+  const startingUp = o.relayState === 'connecting' || o.relayState === 'authenticating'
+  if (
+    startingUp &&
+    (o.relayStateSince === null || o.now - o.relayStateSince < CONNECTING_GRACE_MS)
+  ) {
+    return { kind: 'idle' }
   }
 
   const backfillAge = o.backfillSince === null ? null : o.now - o.backfillSince
@@ -206,6 +239,7 @@ type Listener = (state: FreshnessObservation) => void
 const EMPTY: FreshnessObservation = {
   online: true,
   relayState: null,
+  relayStateSince: null,
   backfillSince: null,
   lastSyncAt: null,
   credentialFailing: null,
@@ -239,8 +273,11 @@ export function recordOnline(online: boolean): void {
   emit()
 }
 
-export function recordRelayState(relayState: RelayState): void {
-  observation = { ...observation, relayState }
+export function recordRelayState(relayState: RelayState, at = Date.now()): void {
+  // Only a real change restarts the clock: the grace is measured from when the
+  // socket entered this state, and a repeat report must not extend it.
+  if (observation.relayState === relayState) return
+  observation = { ...observation, relayState, relayStateSince: at }
   emit()
 }
 
