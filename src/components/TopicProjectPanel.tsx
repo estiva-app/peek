@@ -6,6 +6,7 @@ import {
   type RelayFailureKind,
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
+import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from 'convex/react'
 import { IconChevronRight, IconFolderOpen } from '@tabler/icons-react'
@@ -324,6 +325,41 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
       cancelled = true
     }
   }, [folder, load])
+
+  /**
+   * Re-resolve on focus, visibility and a slow interval (PEE-2).
+   *
+   * The resolve effect is keyed on the folder id, which does not change for the
+   * life of the panel — so the panel read once and never again. That is the
+   * reported "a project created in Ship does not show until you navigate away
+   * and back": navigating away and back *is* the remount.
+   *
+   * **The interval does not idle on the socket**, unlike the topic sync. The
+   * socket projects channel messages into Convex; this panel reads Ship's
+   * project and issue records off the relay directly, and `liveProjection`
+   * routes none of those kinds. Live delivery does not cover it, so the timer
+   * is the mechanism rather than a fallback.
+   *
+   * (Routing `30850`/`30851` into a panel refresh would make this instant
+   * instead of eventual. It is a bigger change than this ticket, and worth its
+   * own: the socket already delivers those events, since the subscription is
+   * kindless.)
+   */
+  useRefreshTriggers(
+    () => {
+      if (!folder) return
+      // Never over an action in flight: `onAct` re-reads after a successful
+      // change, and a refresh started before it could land afterwards and put
+      // the pre-change state back on screen.
+      if (actingOn) return
+      void load(folder).then((next) => {
+        // Same guard the mount effect has, for the same reason — a slow resolve
+        // for the previous topic must not paint over the next one.
+        if (next.folder === folder) setResolved(next)
+      })
+    },
+    { enabled: hasConvex && !!folder },
+  )
 
   const onAct = useCallback(
     async (object: ForeignObject, actionId: string, value: string) => {
