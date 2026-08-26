@@ -21,6 +21,7 @@ import {
   deriveFreshness,
   describeFreshness,
   observeFreshness,
+  recordOnline,
   type Freshness,
 } from '@/nostr/freshness'
 
@@ -43,6 +44,11 @@ export function FreshnessIndicator() {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => observeFreshness((o) => setState(deriveFreshness(o))), [])
+
+  // The initial connectivity reading. `liveTopics` owns the `online`/`offline`
+  // listeners — it is the thing that has to act on them — but it only exists
+  // once a topic has been opened, and this is mounted from the first frame.
+  useEffect(() => recordOnline(window.navigator.onLine), [])
 
   // The age on screen has to keep moving on its own — "synced a minute ago" is
   // reassuring and "synced 40 minutes ago" is actionable, and nothing else

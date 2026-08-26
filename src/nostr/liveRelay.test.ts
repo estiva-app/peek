@@ -431,6 +431,54 @@ describe('token rotation', () => {
   })
 })
 
+describe('reconnect(), for a network the socket cannot detect', () => {
+  it('drops a socket that still claims to be open and builds a new one', async () => {
+    // The case with no `onclose`: the peer became unreachable but the
+    // connection is still OPEN, so nothing in the client would ever fire. Only
+    // the browser's own `online`/`offline` events know, and they call this.
+    const h = harness()
+    const first = await reachLive(h)
+    expect(h.relay.state()).toBe('live')
+
+    h.relay.reconnect()
+    expect(first.closed).toBe(true)
+    const second = h.latest()
+    expect(second).not.toBe(first)
+  })
+
+  it('restores subscriptions on the new socket', async () => {
+    const h = harness()
+    h.relay.subscribe([{ kinds: [9] }], () => {})
+    await reachLive(h)
+
+    h.relay.reconnect()
+    const restored = await reachLive(h)
+    expect(restored.sentOf('REQ')).toHaveLength(1)
+  })
+
+  it('connects immediately rather than waiting out the backoff', async () => {
+    // Coming back online should not sit through a delay that may have grown to
+    // half a minute while there was no network to reach.
+    const h = harness()
+    const first = await reachLive(h)
+    first.drop()
+    expect(h.relay.state()).toBe('reconnecting')
+
+    const before = FakeSocket.all.length
+    h.relay.reconnect()
+    // A new socket exists without any timer having been run.
+    expect(FakeSocket.all.length).toBe(before + 1)
+  })
+
+  it('does nothing once the relay is closed for good', () => {
+    const h = harness()
+    h.relay.close()
+    const before = FakeSocket.all.length
+    h.relay.reconnect()
+    expect(FakeSocket.all).toHaveLength(before)
+  })
+})
+
 describe('shutting down', () => {
   it('stops reconnecting once closed', async () => {
     const h = harness()

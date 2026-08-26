@@ -125,6 +125,20 @@ export interface Subscription {
 
 export interface LiveRelay {
   /**
+   * Drop the current socket and connect again now, ignoring any backoff.
+   *
+   * For the case a socket cannot detect on its own: the network went away and
+   * came back without the connection ever closing. A WebSocket whose peer has
+   * become unreachable stays `OPEN` until TCP gives up, which can be minutes —
+   * and browser devtools' offline mode frequently does not close it at all. The
+   * socket therefore reports `live`, delivers nothing, and would never
+   * reconnect, because reconnection is driven by `onclose`.
+   *
+   * `liveTopics` calls this from the browser's own `online`/`offline` events,
+   * which are the one authority here that a socket cannot second-guess.
+   */
+  reconnect(): void
+  /**
    * Subscribe now if the socket is live, and on every future reconnect.
    *
    * Registering before `live` is normal and supported — that is what makes a
@@ -446,6 +460,28 @@ export function createLiveRelay(options: LiveRelayOptions): LiveRelay {
         },
       }
     },
+    reconnect() {
+      if (stopped) return
+      if (reconnectTimer !== null) {
+        clearTimer(reconnectTimer)
+        reconnectTimer = null
+      }
+      // Reset the backoff: this is not another failed attempt in a series, it
+      // is new information that the network changed.
+      attempt = 0
+      if (socket) {
+        socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null
+        try {
+          socket.close()
+        } catch {
+          // Already gone.
+        }
+        socket = null
+      }
+      pendingAuthEventId = null
+      connect()
+    },
+
     state: () => state,
     close() {
       stopped = true
