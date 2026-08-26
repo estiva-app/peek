@@ -25,6 +25,7 @@ import {
   recordBackfillStart,
   recordCredentialFailure,
   recordCredentialOk,
+  recordOnline,
   recordRelayState,
   currentObservation,
   resetFreshnessForTests,
@@ -34,6 +35,7 @@ import {
 const NOW = 1_756_000_000_000
 
 const observation = (o: Partial<FreshnessObservation> = {}): FreshnessObservation => ({
+  online: true,
   relayState: null,
   backfillSince: null,
   lastSyncAt: null,
@@ -288,5 +290,52 @@ describe('the store', () => {
       now: NOW + CREDENTIAL_GRACE_MS * 10,
     })
     expect(state).toEqual({ kind: 'live' })
+  })
+})
+
+describe('the browser is the authority on being offline', () => {
+  it('polls when offline even though the socket still claims to be live', () => {
+    // Reported from production: going offline showed the catching-up dot for a
+    // minute and then *nothing at all*. A WebSocket whose peer has become
+    // unreachable stays OPEN until TCP gives up, and devtools' offline mode
+    // often never closes it — so `relayState` sat on 'live' and the derivation
+    // believed it. Showing no indicator through a total outage is the worst
+    // outcome this feature has available.
+    expect(
+      deriveFreshness(observation({ online: false, relayState: 'live', lastSyncAt: NOW - 60_000 })),
+    ).toMatchObject({ kind: 'polling', lastSyncAt: NOW - 60_000 })
+  })
+
+  it('outranks catching up, because offline is not catching up', () => {
+    // "Loading recent history" is a straightforwardly false description of a
+    // client that cannot reach anything.
+    expect(
+      deriveFreshness(
+        observation({
+          online: false,
+          relayState: 'live',
+          backfillSince: NOW - CATCHING_UP_AFTER_MS,
+        }),
+      ),
+    ).toMatchObject({ kind: 'polling' })
+  })
+
+  it('still yields to a dead credential', () => {
+    expect(
+      deriveFreshness(
+        observation({
+          online: false,
+          credentialFailing: { since: NOW - CREDENTIAL_GRACE_MS, reason: 'session_expired' },
+        }),
+      ),
+    ).toMatchObject({ kind: 'session_ended' })
+  })
+
+  it('records a change of connectivity and ignores a repeat', () => {
+    const seen: boolean[] = []
+    observeFreshness((o) => seen.push(o.online))
+    recordOnline(false)
+    recordOnline(false)
+    expect(seen).toEqual([true, false])
   })
 })

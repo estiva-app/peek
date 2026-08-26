@@ -44,6 +44,7 @@ import {
   reasonForSignFailure,
   recordCredentialFailure,
   recordCredentialOk,
+  recordOnline,
   recordRelayState,
 } from './freshness'
 
@@ -114,6 +115,29 @@ function build(relayUrl: string, api: LiveProjectionApi): Instance {
     api,
     log: (message, detail) => console.warn('[relay]', message, detail ?? ''),
   })
+
+  /*
+    The network coming back is not something a socket can notice on its own.
+    Reconnection is driven by `onclose`, and a connection whose peer became
+    unreachable stays OPEN until TCP gives up — so without this the socket sits
+    reporting `live`, delivering nothing, forever.
+
+    Registered once per instance, and the instance is per tab. `offline` drops
+    the socket so the reported state becomes honest immediately; `online`
+    retries at once rather than waiting out a backoff that may have grown to
+    half a minute while there was no network to reach.
+  */
+  if (typeof window !== 'undefined') {
+    recordOnline(window.navigator.onLine)
+    window.addEventListener('offline', () => {
+      recordOnline(false)
+      relay.reconnect()
+    })
+    window.addEventListener('online', () => {
+      recordOnline(true)
+      relay.reconnect()
+    })
+  }
 
   return {
     relayUrl,

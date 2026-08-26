@@ -54,8 +54,13 @@ export const STALE_AFTER_MS = 5 * 60_000
  * moment every time somebody clicked a topic — accurate, and pure noise. A
  * progress signal that fires on every fast operation is a flicker, not
  * information.
+ *
+ * Raised from 1.5s after that was still flickering: a sync taking a shade over
+ * the threshold showed the dot and removed it again within a frame or two,
+ * which is worse than either showing it or not. Nobody needs to be told about a
+ * sync that finishes in five seconds; the state exists for the ones that do not.
  */
-export const CATCHING_UP_AFTER_MS = 1_500
+export const CATCHING_UP_AFTER_MS = 5_000
 
 /**
  * And it stops being "catching up" after this long.
@@ -97,6 +102,21 @@ export type Freshness =
   | { kind: 'session_ended'; reason: ShellReason }
 
 export interface FreshnessObservation {
+  /**
+   * What the browser says about connectivity.
+   *
+   * The one signal here a socket cannot second-guess. A WebSocket whose peer
+   * has become unreachable stays `OPEN` until TCP gives up — minutes — and
+   * devtools' offline mode often never closes it, so `relayState` happily
+   * reported `live` while nothing could arrive. Believing it showed *no
+   * indicator at all* through a total network outage, which is the worst
+   * outcome this feature has available.
+   *
+   * Trusted in one direction only: `false` is reliable, `true` merely means the
+   * machine has an interface up — a captive portal reports online. The stalled
+   * bound on `backfillSince` is what covers "online and still unreachable".
+   */
+  online: boolean
   /** `null` when no socket has been built yet — no topic has been opened. */
   relayState: RelayState | null
   /**
@@ -129,6 +149,17 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
   if (o.credentialFailing && o.now - o.credentialFailing.since >= CREDENTIAL_GRACE_MS) {
     return { kind: 'session_ended', reason: o.credentialFailing.reason }
   }
+  // Above `catching_up`: with no network we are not catching up, we are stuck,
+  // and saying "loading recent history" would be a straightforwardly false
+  // description of a client that cannot reach anything.
+  if (!o.online) {
+    return {
+      kind: 'polling',
+      lastSyncAt: o.lastSyncAt,
+      stale: o.lastSyncAt === null || o.now - o.lastSyncAt >= STALE_AFTER_MS,
+    }
+  }
+
   const backfillAge = o.backfillSince === null ? null : o.now - o.backfillSince
   if (
     backfillAge !== null &&
@@ -173,6 +204,7 @@ export function reasonForSignFailure(message: string): ShellReason {
 type Listener = (state: FreshnessObservation) => void
 
 const EMPTY: FreshnessObservation = {
+  online: true,
   relayState: null,
   backfillSince: null,
   lastSyncAt: null,
@@ -198,6 +230,13 @@ export function observeFreshness(listener: Listener): () => void {
 
 export function currentObservation(): FreshnessObservation {
   return { ...observation, now: Date.now() }
+}
+
+/** The browser's `online`/`offline` events. See {@link FreshnessObservation.online}. */
+export function recordOnline(online: boolean): void {
+  if (observation.online === online) return
+  observation = { ...observation, online }
+  emit()
 }
 
 export function recordRelayState(relayState: RelayState): void {
