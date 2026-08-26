@@ -47,6 +47,20 @@ export const CREDENTIAL_GRACE_MS = 20_000
 export const STALE_AFTER_MS = 5 * 60_000
 
 export type Freshness =
+  /**
+   * Nothing has asked for a connection yet, so there is nothing to report.
+   *
+   * A socket is built when a topic is opened, not at boot — so on the Desk,
+   * before anything is selected, there is no connection to describe and no
+   * stale data to warn about. Reporting `polling` there said "not connected to
+   * the relay" on every single app load, which is true and useless: it is the
+   * indicator crying wolf during entirely normal operation, and that is how an
+   * indicator gets ignored.
+   *
+   * Renders nothing, like `live`. When PEE-11 subscribes outside topics this
+   * state becomes rare, and the derivation needs no change for it.
+   */
+  | { kind: 'idle' }
   /** Socket open and authenticated. Nothing to say. */
   | { kind: 'live' }
   /** A backfill is in flight — history is still arriving. */
@@ -85,6 +99,9 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
   }
   if (o.backfillInFlight) return { kind: 'catching_up' }
   if (o.relayState === 'live') return { kind: 'live' }
+  // No socket has ever been requested — not "unavailable". `polling` means the
+  // fallback is carrying the load; nothing is being carried yet.
+  if (o.relayState === null) return { kind: 'idle' }
   return {
     kind: 'polling',
     lastSyncAt: o.lastSyncAt,
@@ -215,6 +232,8 @@ export function describeAge(lastSyncAt: number | null, now: number): string {
  */
 export function describeFreshness(state: Freshness, now: number): string {
   switch (state.kind) {
+    case 'idle':
+      return 'Not connected yet — open a topic to start receiving updates'
     case 'live':
       return 'Live — updates arrive as they happen'
     case 'catching_up':

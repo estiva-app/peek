@@ -25,6 +25,9 @@ import {
 } from '@/nostr/freshness'
 
 const TONE: Record<Freshness['kind'], string> = {
+  // Never rendered — `idle` returns early below, like `live`. Present so the
+  // record stays exhaustive and a new state cannot be added without a colour.
+  idle: '',
   // Working states, in descending order of "nothing to see here". `polling` is
   // amber rather than red on purpose: it is how Peek worked for its whole life
   // before M3, and colouring a healthy fallback as a fault trains people to
@@ -53,9 +56,12 @@ export function FreshnessIndicator() {
     return () => clearInterval(timer)
   }, [])
 
-  // Nothing to say when everything is working. The quietest correct state is no
-  // state: an always-visible "live" badge is decoration that costs attention.
-  if (state.kind === 'live') return null
+  // Nothing to say when everything is working, and nothing to say before
+  // anything has been asked of the relay. The quietest correct state is no
+  // state: an always-visible badge is decoration that costs attention, and one
+  // that appears on every app load before you have done anything is worse —
+  // it teaches people that the indicator means nothing.
+  if (state.kind === 'live' || state.kind === 'idle') return null
 
   const label = describeFreshness(state, now)
   return (
