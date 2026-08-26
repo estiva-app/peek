@@ -1,3 +1,4 @@
+import { LiveWorkingSet } from '@/components/LiveWorkingSet'
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { TopBar } from '@/components/TopBar'
 import { NavRail } from '@/components/NavRail'
@@ -48,6 +49,11 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
           style={{ width: collapsed ? 0 : 64, opacity: collapsed ? 0 : 1 }}
         >
           <NavRail />
+          {/* Renders nothing. Holds the live subscriptions for the channels the
+              Desk and inbox are showing — see LiveWorkingSet. Here rather than
+              on a page because the working set belongs to the person, and
+              navigating between pages must not tear it down. */}
+          <LiveWorkingSet />
         </div>
 
         {/* App card */}
