@@ -3,13 +3,15 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 /**
- * @estiva/ui is a local link (file:../estiva-ui) consumed as SOURCE: Vite
- * resolves the link to its real path, which is outside this repo, so it has
- * to be allowed — and `react` must be deduped, or the package's own copy
- * would be a second React (the "invalid hook call" crash).
+ * `react` is deduped because @estiva-app/ui declares it a peer: two copies in
+ * one tree is the "invalid hook call" crash, and it appears at runtime rather
+ * than at build time.
+ *
+ * There is no `fs.allow` entry for the package any more — it installs from npm
+ * into node_modules like anything else. It used to be a `file:` link to a
+ * sibling directory, which resolved outside this repo and therefore existed on
+ * exactly one machine.
  */
-const estivaUiRoot = path.resolve(__dirname, '../estiva-ui')
-
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -21,7 +23,7 @@ export default defineConfig({
   },
   server: {
     fs: {
-      allow: [__dirname, estivaUiRoot],
+      allow: [__dirname],
     },
   },
   test: {

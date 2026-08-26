@@ -1,8 +1,8 @@
-import { Avatar as UiAvatar, type AvatarProps as UiAvatarProps } from '@estiva/ui'
+import { Avatar as UiAvatar, type AvatarProps as UiAvatarProps } from '@estiva-app/ui'
 import { useAvatarSrc } from '@/api'
 
 /**
- * Peek's Avatar: the shared one from @estiva/ui, given the picture Peek
+ * Peek's Avatar: the shared one from @estiva-app/ui, given the picture Peek
  * knows about (SHA-5, 2026-08-28).
  *
  * The lookup is the only thing that is Peek's — uploaded avatar (Convex

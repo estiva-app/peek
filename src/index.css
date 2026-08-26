@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap');
 
-@import '@estiva/ui/tokens.css';
+@import '@estiva-app/ui/tokens.css';
 
 @tailwind base;
 @tailwind components;
@@ -141,7 +141,7 @@
  * ─── Light theme ───
  *
  * The shared tokens — every colour, the type ramp, radii, shadows — come from
- * @estiva/ui (`tokens.css`, imported above; SHA-5, 2026-08-28), value for
+ * @estiva-app/ui (`tokens.css`, imported above; SHA-5, 2026-08-28), value for
  * value what used to be here. Peek itself only ever renders Signal (see
  * `src/lib/theme.tsx`); `light` is the base every other theme overrides and
  * the palette the Estiva ID theme uses in Storybook. What remains in this
@@ -166,7 +166,7 @@
  *
  * Signal layers on top of this rather than replacing it, so `.dark` is applied
  * for both and the dark values are live in the app wherever Signal does not
- * override them. The shared ones come from @estiva/ui (`.dark` there, value
+ * override them. The shared ones come from @estiva-app/ui (`.dark` there, value
  * for value); this block keeps Peek's own. Also reachable on its own from
  * Storybook's theme toolbar.
  */
@@ -185,7 +185,7 @@
    vars then win because the block comes after .dark. Components carry their
    signal-specific styling behind the `signal:` Tailwind variant. */
 .signal {
-  /* The shared tokens for Signal come from @estiva/ui (tokens.css `.signal`,
+  /* The shared tokens for Signal come from @estiva-app/ui (tokens.css `.signal`,
      value for value, 2026-08-28). What follows is Peek's alone. */
   --bg-private:  #131720;
 

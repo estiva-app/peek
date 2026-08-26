@@ -1,4 +1,4 @@
-import { EmptyState as UiEmptyState, type EmptyStateProps as UiEmptyStateProps } from '@estiva/ui'
+import { EmptyState as UiEmptyState, type EmptyStateProps as UiEmptyStateProps } from '@estiva-app/ui'
 
 /**
  * Peek's EmptyState is the shared one (SHA-5, 2026-08-28). The shared

@@ -1,12 +1,16 @@
-import estiva from '@estiva/ui/tailwind-preset'
+import estiva, { estivaContent } from '@estiva-app/ui/tailwind-preset'
 
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
   // The package's components are source; their classes must be scanned too.
-  content: ['./index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}', '../estiva-ui/src/**/*.{ts,tsx}'],
+  // `estivaContent` is the package's own files. Tailwind does not merge
+  // `content` from a preset — verified — so without spreading it every class
+  // used only by a shared component is purged, and the app builds and tests
+  // clean while rendering at the wrong size.
+  content: [...estivaContent, './index.html', './src/**/*.{ts,tsx}', './.storybook/**/*.{ts,tsx}'],
   /**
-   * The shared tokens come from @estiva/ui (SHA-5, 2026-08-28): the type
+   * The shared tokens come from @estiva-app/ui (SHA-5, 2026-08-28): the type
    * ramp, radii, shadows, the skeleton animation and every colour name. What
    * stays here is Peek's alone — the huddle register and the wordmark — and
    * merges over the preset.

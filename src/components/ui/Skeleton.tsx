@@ -1,4 +1,4 @@
-import { SkeletonBar, SkeletonList, SkeletonRow } from '@estiva/ui'
+import { SkeletonBar, SkeletonList, SkeletonRow } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 
 /**
