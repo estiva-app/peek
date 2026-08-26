@@ -1,4 +1,3 @@
-import plugin from 'tailwindcss/plugin'
 import estiva from '@estiva/ui/tailwind-preset'
 
 /** @type {import('tailwindcss').Config} */
@@ -24,10 +23,7 @@ export default {
       },
     },
   },
-  plugins: [
-    // `signal:` variant — active only under the .signal theme class. Signal is
-    // the app's only theme (2026-08-18), so these styles are what Peek looks
-    // like; Storybook can also select dark and Estiva ID from its toolbar.
-    plugin(({ addVariant }) => addVariant('signal', '.signal &')),
-  ],
+  // The `signal:` variant comes from the preset now (2026-08-28): Signal is a
+  // theme in the package, and shared components carry their Signal touches.
+  plugins: [],
 }
