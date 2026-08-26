@@ -185,35 +185,11 @@
    vars then win because the block comes after .dark. Components carry their
    signal-specific styling behind the `signal:` Tailwind variant. */
 .signal {
-  /* surfaces (5-step, blue-shifted graphite) */
-  --bg-base:     #0e1014;
-  --bg-surface:  #12151a;
-  --bg-elevated: #191d24;
-  --bg-inset:    #20242d;
-  --bg-hover:    rgba(255, 255, 255, 0.05);
-  --bg-selected: rgba(86, 200, 255, 0.11);
-  --bg-active:   rgba(255, 255, 255, 0.08);
-  --bg-disabled: #191d24;
+  /* The shared tokens for Signal come from @estiva/ui (tokens.css `.signal`,
+     value for value, 2026-08-28). What follows is Peek's alone. */
   --bg-private:  #131720;
 
-  /* text */
-  --text-primary:   #eef1f6;
-  --text-secondary: #b2b9c6; /* nudged up from #a6adbb (2026-07-23) — same cool hue, one step brighter */
-  --text-muted:     #6b7280;
-  --text-disabled:  #464c58;
-  --text-inverse:   #06121a;
-
-  /* borders (alpha hairlines) */
-  --border-subtle:  rgba(255, 255, 255, 0.065);
-  --border-default: rgba(255, 255, 255, 0.12);
-  --border-strong:  rgba(255, 255, 255, 0.22);
-  --border-focus:   #56c8ff;
   --border-private: rgba(255, 255, 255, 0.14);
-
-  /* accent: ice cyan */
-  --accent-primary: #56c8ff;
-  --accent-hover:   #8ad6ff;
-  --accent-muted:   rgba(86, 200, 255, 0.11);
 
   /* Summary highlight stays violet here — the accent is cyan, which would be
      indistinguishable from Question's info-blue. Violet is the one hue the
@@ -221,21 +197,6 @@
   --highlight-summary: #a78bfa;
 
   --logo: #ffffff;
-
-  /* semantic (amber is the attention color) */
-  --info-default:    #8ad6ff;
-  --info-muted:      rgba(86, 200, 255, 0.11);
-  --warning-default: #ffb020;
-  --warning-muted:   rgba(255, 176, 32, 0.12);
-  --success-default: #3fde8c;
-  --success-muted:   rgba(63, 222, 140, 0.11);
-  --error-default:   #ff6b6b;
-  --error-muted:     rgba(255, 107, 107, 0.12);
-
-  /* shadows: black depth + 1px white rim on floating layers */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px -8px rgba(0, 0, 0, 0.55);
-  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 6px 16px rgba(0, 0, 0, 0.45), 0 22px 60px -16px rgba(0, 0, 0, 0.75);
-  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 28px rgba(0, 0, 0, 0.5), 0 36px 90px -16px rgba(0, 0, 0, 0.8);
 
   /* translucent washes (vs the opaque *-muted) */
   --accent-wash:   rgba(86, 200, 255, 0.11);
