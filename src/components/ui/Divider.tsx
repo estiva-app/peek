@@ -1,9 +1,2 @@
-import { cn } from '@/lib/utils'
-
-interface DividerProps {
-  className?: string
-}
-
-export function Divider({ className }: DividerProps) {
-  return <div className={cn('h-px bg-border-subtle mx-3', className)} />
-}
+/** Peek's Divider is the shared one (SHA-5, 2026-08-28); this file keeps the import path. */
+export { Divider, type DividerProps } from '@estiva-app/ui'
