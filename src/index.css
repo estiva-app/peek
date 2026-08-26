@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap');
 
+@import '@estiva/ui/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -138,45 +140,18 @@
 /*
  * ─── Light theme ───
  *
- * Peek itself only ever renders Signal (see `src/lib/theme.tsx`), so nothing in
- * the app applies this block. **Keep it anyway.** It is the base every other
- * theme overrides — the non-colour tokens below it (typography, spacing, radii)
- * are shared by all three — and it is the palette the Estiva ID theme uses in
- * Storybook, where the account screens are designed. Deleting it would take the
- * light and Estiva ID themes with it.
+ * The shared tokens — every colour, the type ramp, radii, shadows — come from
+ * @estiva/ui (`tokens.css`, imported above; SHA-5, 2026-08-28), value for
+ * value what used to be here. Peek itself only ever renders Signal (see
+ * `src/lib/theme.tsx`); `light` is the base every other theme overrides and
+ * the palette the Estiva ID theme uses in Storybook. What remains in this
+ * block is Peek's alone: the huddle register, the summary highlight, the
+ * wordmark.
  */
 :root {
-  /* bg */
-  --bg-base:     #F4F4F5;
-  --bg-surface:  #FFFFFF;
-  --bg-elevated: #FAFAFA;
-  --bg-inset:    #F4F4F5;
-  --bg-hover:    #E9E9EB;
-  --bg-selected: #E4E4E7;
-  --bg-active:   #D4D4D8;
-  --bg-disabled: #F4F4F5;
-
-  /* text */
-  --text-primary:   #18181B;
-  --text-secondary: #52525B;
-  --text-muted:     #A1A1AA;
-  --text-disabled:  #D4D4D8;
-  --text-inverse:   #FAFAFA;
-
-  /* border */
-  --border-subtle:  #F4F4F5;
-  --border-default: #E4E4E7;
-  --border-strong:  #D4D4D8;
-  --border-focus:   #8B5CF6;
-  --border-private: #C9CDD8;
-
   /* private (huddle register) — distinct from accent, signals "private side-space" */
   --bg-private:     #F1F2F7;
-
-  /* accent */
-  --accent-primary: #8B5CF6;
-  --accent-hover:   #7C3AED;
-  --accent-muted:   #EDE9FE;
+  --border-private: #C9CDD8;
 
   /* Summary-highlight swatch. Follows the accent in the violet themes; signal
      overrides it (its accent is cyan, which would collide with Question). */
@@ -184,82 +159,24 @@
 
   /* brand mark/wordmark (indigo on light, white on dark) */
   --logo: #140855;
-
-
-  /* semantic */
-  --info-default:    #3B82F6;
-  --info-muted:      #DBEAFE;
-  --warning-default: #F59E0B;
-  --warning-muted:   #FEF3C7;
-  --success-default: #0EA06F;
-  --success-muted:   #D1FAE5;
-  --error-default:   #EF4444;
-  --error-muted:     #FEE2E2;
-
-  /* shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.10), 0 2px 4px -2px rgba(0,0,0,0.10);
-  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10);
 }
 
 /*
  * ─── Dark theme ───
  *
  * Signal layers on top of this rather than replacing it, so `.dark` is applied
- * for both and these values are live in the app wherever Signal does not
- * override them. Also reachable on its own from Storybook's theme toolbar.
+ * for both and the dark values are live in the app wherever Signal does not
+ * override them. The shared ones come from @estiva/ui (`.dark` there, value
+ * for value); this block keeps Peek's own. Also reachable on its own from
+ * Storybook's theme toolbar.
  */
 .dark {
-  /* bg */
-  --bg-base:     #09090B;
-  --bg-surface:  #141416;
-  --bg-elevated: #1C1C1F;
-  --bg-inset:    #27272A;
-  --bg-hover:    #232326;
-  --bg-selected: #1F1F22;
-  --bg-active:   #2D2D31;
-  --bg-disabled: #1C1C1F;
-
-  /* text */
-  --text-primary:   #FAFAFA;
-  --text-secondary: #AEAEB6; /* nudged up from #A1A1AA (2026-07-23) — brighter bodies, still clearly below primary */
-  --text-muted:     #71717A;
-  --text-disabled:  #52525B;
-  --text-inverse:   #18181B;
-
-  /* border */
-  --border-subtle:  #1F1F22;
-  --border-default: #2D2D31;
-  --border-strong:  #52525B;
-  --border-focus:   #A78BFA;
-  --border-private: #3D414C;
-
   /* private (huddle register) — distinct from accent, signals "private side-space" */
   --bg-private:     #181A1F;
-
-  /* accent */
-  --accent-primary: #A78BFA;
-  --accent-hover:   #8B5CF6;
-  --accent-muted:   #2E2554;
+  --border-private: #3D414C;
 
   /* brand mark/wordmark (purple on light, white on dark) */
   --logo: #FFFFFF;
-
-
-  /* semantic */
-  --info-default:    #60A5FA;
-  --info-muted:      #172554;
-  --warning-default: #FBBF24;
-  --warning-muted:   #4A3728;
-  --success-default: #34D399;
-  --success-muted:   #0E392B;
-  --error-default:   #F87171;
-  --error-muted:     #4A2828;
-
-  /* shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.30);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.40), 0 2px 4px -2px rgba(0,0,0,0.30);
-  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.50), 0 4px 6px -4px rgba(0,0,0,0.40);
 }
 
 /* ─── Signal theme ───
