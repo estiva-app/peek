@@ -319,6 +319,97 @@ export const syncPlan = query({
 })
 
 /**
+ * The channels worth keeping a live subscription on (PEE-11).
+ *
+ * Only topics synced at all before this: `useTopicView` read the open one, and
+ * nothing else had a relay read path of any kind. So a Ship-side change to a
+ * topic you were not looking at had no route into the inbox — "takes time to
+ * appear" meant "never, until you open the topic it lives in".
+ *
+ * ## The working set is what is on screen, not what you can see
+ *
+ * A viewer is a member of every channel in the workspace; subscribing to all of
+ * them would be both wasteful and pointless, since nothing renders most of
+ * them. The set here is what the Desk and inbox are actually showing:
+ *
+ *   1. `screenerItems` — the inbox. Things already asking for attention.
+ *   2. `deskOpenWork` — what somebody deliberately put in front of themselves.
+ *   3. `stars` — kept, but least urgent of the three.
+ *
+ * In that order, because it is also the order to drop from when the bound bites.
+ *
+ * ## The bound, and why it is not 1024
+ *
+ * `max_subscriptions` is 1024 per connection on production, which is a ceiling
+ * rather than a licence: every subscription is a relay-side index entry and a
+ * fan-out check on every event in the community. {@link WATCHABLE_LIMIT} is set
+ * far below it because the useful set is "what a person is looking at", and a
+ * workspace can grow topics indefinitely while a Desk cannot grow attention.
+ *
+ * DMs are deliberately absent. `dmConversations` has no `channelUuid` — DMs
+ * live entirely in Convex today and have no relay representation at all, so
+ * there is nothing to subscribe to until track C gives them one (DMS-3). This
+ * was checked rather than assumed, as PEE-11 asks.
+ */
+export const WATCHABLE_LIMIT = 32
+
+export const watchableChannels = query({
+  args: {},
+  handler: async (ctx): Promise<{ topicKey: string; channelUuid: string }[]> => {
+    const me = await viewerId(ctx)
+    if (!me) return []
+
+    const [screener, openWork, starred] = await Promise.all([
+      ctx.db
+        .query('screenerItems')
+        .withIndex('by_user', (q) => q.eq('userId', me))
+        .collect(),
+      ctx.db
+        .query('deskOpenWork')
+        .withIndex('by_user', (q) => q.eq('userId', me))
+        .collect(),
+      ctx.db
+        .query('stars')
+        .withIndex('by_user', (q) => q.eq('userId', me))
+        .collect(),
+    ])
+
+    // Order is priority, and duplicates collapse to their first appearance —
+    // a topic in the inbox *and* starred is one subscription, ranked by the
+    // more urgent of the two.
+    const wanted: string[] = []
+    for (const row of [...screener, ...openWork, ...starred]) {
+      if (row.kind !== 'topic') continue
+      if (!wanted.includes(row.targetId)) wanted.push(row.targetId)
+    }
+    if (wanted.length === 0) return []
+
+    // One read of `topics`, same shape as `syncableTopicByKey`: the table has no
+    // seedKey index, and a targetId may be either an id or a seedKey.
+    const rows = await ctx.db.query('topics').collect()
+    const byKey = new Map<string, string>()
+    for (const topic of rows) {
+      if (!topic.channelUuid) continue
+      byKey.set(topic._id as string, topic.channelUuid)
+      if (topic.seedKey) byKey.set(topic.seedKey, topic.channelUuid)
+    }
+
+    const channels: { topicKey: string; channelUuid: string }[] = []
+    const seen = new Set<string>()
+    for (const topicKey of wanted) {
+      const channelUuid = byKey.get(topicKey)
+      // A topic with no channel was created before Nostr emission was wired up.
+      // Nothing to subscribe to, and not an error.
+      if (!channelUuid || seen.has(channelUuid)) continue
+      seen.add(channelUuid)
+      channels.push({ topicKey, channelUuid })
+      if (channels.length >= WATCHABLE_LIMIT) break
+    }
+    return channels
+  },
+})
+
+/**
  * Project a channel's messages, and say what to fetch next.
  *
  * Takes events rather than a token. That is the whole change: the projection
