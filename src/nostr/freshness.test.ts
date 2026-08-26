@@ -15,6 +15,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   CATCHING_UP_AFTER_MS,
+  CONNECTING_GRACE_MS,
   CATCHING_UP_STALLS_AFTER_MS,
   CREDENTIAL_GRACE_MS,
   STALE_AFTER_MS,
@@ -37,6 +38,7 @@ const NOW = 1_756_000_000_000
 const observation = (o: Partial<FreshnessObservation> = {}): FreshnessObservation => ({
   online: true,
   relayState: null,
+  relayStateSince: null,
   backfillSince: null,
   lastSyncAt: null,
   credentialFailing: null,
@@ -106,7 +108,10 @@ describe('the four states', () => {
   })
 
   it('treats never-synced as stale rather than fresh', () => {
-    expect(deriveFreshness(observation({ relayState: 'connecting' }))).toMatchObject({
+    // `reconnecting` rather than `connecting`: a first connection gets a
+    // startup grace and says nothing, so it is the wrong state to ask about
+    // staleness with.
+    expect(deriveFreshness(observation({ relayState: 'reconnecting' }))).toMatchObject({
       kind: 'polling',
       lastSyncAt: null,
       stale: true,
@@ -126,10 +131,52 @@ describe('the four states', () => {
 
   it('polls once a socket has existed and is not live', () => {
     // The distinction that makes `idle` safe: a connection that was wanted and
-    // is not there is still worth reporting.
+    // is not there is still worth reporting. `reconnecting` means it *was*
+    // live, so this is immediate — no grace.
     expect(deriveFreshness(observation({ relayState: 'reconnecting' }))).toMatchObject({
       kind: 'polling',
     })
+  })
+
+  it('says nothing while a first connection is still being made', () => {
+    // Reported from production: an amber dot for a moment on every load. The
+    // socket passes through `connecting` and `authenticating` on its way to
+    // `live`, doing exactly what it should, and calling that "not connected,
+    // showing saved data" is false for the few hundred milliseconds it takes.
+    for (const relayState of ['connecting', 'authenticating'] as const) {
+      expect(
+        deriveFreshness(
+          observation({ relayState, relayStateSince: NOW - (CONNECTING_GRACE_MS - 1) }),
+        ),
+        relayState,
+      ).toEqual({ kind: 'idle' })
+    }
+  })
+
+  it('gives up on a first connection that is taking too long', () => {
+    // Past the grace it genuinely is not connected, and `polling` is honest.
+    expect(
+      deriveFreshness(
+        observation({ relayState: 'connecting', relayStateSince: NOW - CONNECTING_GRACE_MS }),
+      ),
+    ).toMatchObject({ kind: 'polling' })
+  })
+
+  it('gives a reconnect no grace at all', () => {
+    // `reconnecting` is a socket that was live and is not any more — worth
+    // saying at once. `liveRelay` already separates it from a first attempt.
+    expect(
+      deriveFreshness(observation({ relayState: 'reconnecting', relayStateSince: NOW })),
+    ).toMatchObject({ kind: 'polling' })
+  })
+
+  it('still reports offline during a first connection', () => {
+    // The startup grace must not out-quiet a known outage.
+    expect(
+      deriveFreshness(
+        observation({ online: false, relayState: 'connecting', relayStateSince: NOW }),
+      ),
+    ).toMatchObject({ kind: 'polling' })
   })
 
   it('still reports a dead credential with no socket', () => {
@@ -219,6 +266,17 @@ describe('the store', () => {
 
     recordRelayState('live')
     expect(seen[seen.length - 1]?.relayState).toBe('live')
+  })
+
+  it('restarts the state clock only on a real change', () => {
+    // The grace is measured from when the socket entered the state; a repeat
+    // report must not extend it, or a chatty client would never age out.
+    recordRelayState('connecting', NOW)
+    recordRelayState('connecting', NOW + 10_000)
+    expect(currentObservation().relayStateSince).toBe(NOW)
+
+    recordRelayState('live', NOW + 20_000)
+    expect(currentObservation().relayStateSince).toBe(NOW + 20_000)
   })
 
   it('stops notifying after unsubscribe', () => {
