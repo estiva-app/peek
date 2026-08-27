@@ -28,17 +28,17 @@
  *
  * The socket itself needs no attention when the token rotates — the relay
  * authenticated a **pubkey** by checking a signature and never saw the token.
- * See `liveRelay.ts`.
+ * See `createLiveRelay` in `@estiva-app/protocol`.
  */
 import { validToken } from '@/auth/estivaId'
-import { createChannelSubscriptions, type ChannelSubscriptions } from './channelSubscriptions'
+import { createChannelSubscriptions, type ChannelSubscriptions } from '@estiva-app/protocol'
 import {
   createLiveProjection,
   type LiveProjection,
   type LiveProjectionApi,
   type WatchHandle,
 } from './liveProjection'
-import { createLiveRelay, type LiveRelay, type RelayState } from './liveRelay'
+import { createLiveRelay, type LiveRelay, type RelayState } from '@estiva-app/protocol'
 import { signViaEstivaId } from './bridge'
 import {
   reasonForSignFailure,

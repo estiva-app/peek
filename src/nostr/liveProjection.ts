@@ -70,8 +70,8 @@
  * not a duplicate event. Arrival order is preserved and the projection does its
  * own threading from the `e` tags.
  */
-import { KIND, type SignedEvent } from '../../convex/nostr/events'
-import type { ChannelSubscriptions } from './channelSubscriptions'
+import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import type { ChannelSubscriptions } from '@estiva-app/protocol'
 
 /** The window a burst is coalesced into, in milliseconds. */
 export const FLUSH_WINDOW_MS = 250

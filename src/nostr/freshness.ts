@@ -38,7 +38,7 @@
  * send somebody to a login screen that cannot help them.
  */
 import { SHELL_COPY, type ShellReason } from '@/auth/shell/contract'
-import type { RelayState } from './liveRelay'
+import type { RelayState } from '@estiva-app/protocol'
 import type { RelayFailureKind } from './relayRead'
 
 /** How long a failing credential must persist before the session is called over. */
@@ -93,7 +93,7 @@ export const CATCHING_UP_STALLS_AFTER_MS = 30_000
  *
  * Applies only to `connecting` and `authenticating`. `reconnecting` means the
  * socket **was** live and is not any more, which is worth saying at once — and
- * `liveRelay` already separates the two: the first attempt is `connecting`, a
+ * `@estiva-app/protocol`'s `createLiveRelay` already separates the two: the first attempt is `connecting`, a
  * later one is `reconnecting`.
  */
 export const CONNECTING_GRACE_MS = 5_000

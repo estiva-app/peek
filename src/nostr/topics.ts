@@ -19,7 +19,7 @@
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { buildAddMember, buildCreateChannel, buildDeleteChannel,
-  buildEditChannelMetadata } from '../../convex/nostr/events'
+  buildEditChannelMetadata } from '@estiva-app/protocol'
 
 type ChannelPlan =
   | { ok: true; channelUuid: string; title: string; alreadyPublished: boolean; memberPubkeys: string[] }

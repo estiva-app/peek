@@ -12,8 +12,8 @@
  * with no error at all.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { KIND, type SignedEvent } from '../../convex/nostr/events'
-import type { ChannelSubscriptions } from './channelSubscriptions'
+import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import type { ChannelSubscriptions } from '@estiva-app/protocol'
 import { createLiveProjection, type LiveProjectionApi } from './liveProjection'
 
 const CHANNEL = '11111111-1111-4111-8111-111111111111'

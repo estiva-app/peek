@@ -10,7 +10,7 @@
  *
  * No Convex imports: this file is pure so either runtime can use it.
  */
-import { decodeNaddr, findNaddrs, pointerToAddress } from './nip19'
+import { decodeNaddr, findNaddrs, pointerToAddress } from '@estiva-app/protocol'
 
 /**
  * The relay rejects any event whose `created_at` is more than ±15 minutes from

@@ -22,23 +22,30 @@
  * Both endpoints are CORS-open to `peek.estiva.app`, verified against the live
  * services rather than assumed.
  *
- * **The tag layout is deliberately not re-implemented here.** `buildUnsignedAuthEvent`
- * is imported from the Convex tree because it is part of the event id preimage:
- * a second copy would not be duplication, it would be a silent divergence the
- * relay notices and we do not. Those modules are pure and browser-safe —
- * `@noble/hashes` and `btoa`, no Node built-ins.
+ * **The tag layout is deliberately not re-implemented here**, and neither is the
+ * relay's answer. Both come from `@estiva-app/protocol`, because both are part
+ * of what the relay judges: the tag layout is the event id preimage, and reading
+ * `200 {"accepted":false}` as a success is a way to fail that no test notices.
+ * A second copy of either would not be duplication, it would be a silent
+ * divergence the relay notices and we do not.
+ *
+ * That was true before SHA-3 too — this file already imported the builders
+ * rather than copying them — but the copy it imported *from* was one of three.
+ * `convex/nostr/` held Peek's, `ship/lib/nostr/` held Ship's, and the two had
+ * already drifted on `buildMessage`. The package is that sentence applied across
+ * repositories instead of only within one.
+ *
+ * What stays here is the part that is Peek's: the `/sign` round trip. That is
+ * identity, and it becomes `@estiva-app/identity` in SHA-4.
  */
-import { authorizationHeaderFor, buildUnsignedAuthEvent } from '../../convex/nostr/nip98'
-import type { SignedEvent, UnsignedEvent } from '../../convex/nostr/events'
+import {
+  authorizationHeaderFor,
+  buildUnsignedAuthEvent,
+  parsePublishResponse,
+  parseQueryResponse,
+} from '@estiva-app/protocol'
+import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
-
-export type PublishResult = {
-  ok: boolean
-  duplicate?: boolean
-  eventId?: string
-  reason?: string
-  httpStatus?: number
-}
 
 /**
  * Sign as the token's subject.
@@ -51,6 +58,8 @@ export type PublishResult = {
  * person. `signWithIdentityService` keeps the same guard server-side; do not
  * drop either.
  */
+export type { PublishResult }
+
 export async function signViaEstivaId(
   unsigned: UnsignedEvent,
   token: string,
@@ -124,25 +133,7 @@ export async function publishSigned(
   pubkey?: string,
 ): Promise<PublishResult> {
   const { status, text } = await bridgePost(relayUrl, '/events', event, token, pubkey)
-
-  let parsed: { accepted?: boolean; event_id?: string; message?: string; error?: string } = {}
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return { ok: false, reason: `unparseable response: ${text.slice(0, 200)}`, httpStatus: status }
-  }
-
-  if (status < 200 || status >= 300) {
-    return { ok: false, reason: parsed.error ?? text.slice(0, 200), httpStatus: status }
-  }
-
-  if (parsed.accepted === false) {
-    // "already exists" is the desired end state, so callers treat it as success.
-    const duplicate = (parsed.message ?? '').startsWith('duplicate:')
-    return { ok: duplicate, duplicate, eventId: parsed.event_id, reason: parsed.message, httpStatus: status }
-  }
-
-  return { ok: true, eventId: parsed.event_id, httpStatus: status }
+  return parsePublishResponse(status, text)
 }
 
 /**
@@ -162,19 +153,5 @@ export async function queryRelay(
   pubkey?: string,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
   const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
-  if (status < 200 || status >= 300) {
-    let reason = text.slice(0, 200)
-    try {
-      reason = JSON.parse(text).error ?? reason
-    } catch {
-      // keep the raw text
-    }
-    return { ok: false, events: [], reason }
-  }
-  try {
-    const parsed = JSON.parse(text)
-    return { ok: true, events: Array.isArray(parsed) ? parsed : [] }
-  } catch {
-    return { ok: false, events: [], reason: `unparseable response: ${text.slice(0, 200)}` }
-  }
+  return parseQueryResponse(status, text)
 }

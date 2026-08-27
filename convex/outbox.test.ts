@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 import { api } from './_generated/api'
 import schema from './schema'
 import { ESTIVA_ID_ISSUER } from './users'
-import { KIND } from './nostr/events'
+import { KIND } from '@estiva-app/protocol'
 
 const modules = import.meta.glob('./**/*.ts')
 

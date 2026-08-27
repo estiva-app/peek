@@ -17,7 +17,7 @@ import { INLINE_TOKEN_RE, matchReference, matchUrl, parseBodySegments, parseInli
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
-import { findNaddrs, pointerToAddress, referenceToPointer, stripNaddrs } from '../../../convex/nostr/nip19'
+import { findNaddrs, pointerToAddress, referenceToPointer, stripNaddrs } from '@estiva-app/protocol'
 
 // Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions

@@ -23,10 +23,10 @@
  */
 import { v } from 'convex/values'
 import { mutation, query } from '../_generated/server'
-import { buildMessage, buildReaction, buildResolution } from './events'
+import { buildMessage, buildReaction, buildResolution } from '@estiva-app/protocol'
 import { referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
-import type { UnsignedEvent } from './events'
+import type { UnsignedEvent } from '@estiva-app/protocol'
 
 /**
  * Why a message cannot be published, or the event that would publish it.

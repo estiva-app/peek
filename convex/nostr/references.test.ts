@@ -4,7 +4,7 @@ import {
   encodeNaddr,
   pointerToAddress,
   referenceToPointer,
-} from './nip19'
+} from '@estiva-app/protocol'
 
 const POINTER = {
   identifier: 'fee-1',
