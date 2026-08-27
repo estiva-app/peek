@@ -8,13 +8,10 @@
  * keeps two clients from disagreeing about the same run.
  */
 import { describe, expect, it } from 'vitest'
-import {
-  ASSERTION_SUBTYPE,
-  KIND,
-  buildResolution,
-  computeEventId,
-  foldResolution,
-} from './events'
+import { ASSERTION_SUBTYPE, KIND, buildResolution, computeEventId } from '@estiva-app/protocol'
+// The bytes come from the package; the fold stays here, because how an app
+// reads a run of assertions is where apps are meant to differ. See resolution.ts.
+import { foldResolution } from './resolution'
 
 const PUB = 'a'.repeat(64)
 const OTHER = 'b'.repeat(64)

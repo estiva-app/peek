@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject } from './projection'
-import type { SignedEvent } from './events'
+import type { SignedEvent } from '@estiva-app/protocol'
 
 const FOLDER = '7b32200c-e4c0-4216-b79a-8490fc05e0bd'
 const AUTHOR = 'a'.repeat(64)

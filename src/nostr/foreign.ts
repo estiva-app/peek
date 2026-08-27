@@ -22,7 +22,7 @@
 import type { StoredToken } from '@/auth/estivaId'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
-import { pointerToAddress, referenceToPointer } from '../../convex/nostr/nip19'
+import { pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
 import {
   buildActionEvent,
   peopleViaRelay,

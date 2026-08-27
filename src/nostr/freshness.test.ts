@@ -167,7 +167,7 @@ describe('the four states', () => {
 
   it('gives a reconnect no grace at all', () => {
     // `reconnecting` is a socket that was live and is not any more — worth
-    // saying at once. `liveRelay` already separates it from a first attempt.
+    // saying at once. `createLiveRelay` already separates it from a first attempt.
     expect(
       deriveFreshness(observation({ relayState: 'reconnecting', relayStateSince: NOW })),
     ).toMatchObject({ kind: 'polling' })

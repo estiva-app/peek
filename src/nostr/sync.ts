@@ -27,7 +27,7 @@
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay } from './bridge'
-import { KIND } from '../../convex/nostr/events'
+import { KIND } from '@estiva-app/protocol'
 
 /** Cap per run so one busy channel cannot dominate. Mirrors the old server-side
  *  `PAGE_LIMIT`; the relay applies it, so it has to match to page identically. */

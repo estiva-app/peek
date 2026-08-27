@@ -12,8 +12,8 @@
  * anything: it becomes an integration written against one app, which is the
  * thing the whole exercise argues against.
  */
-import { encodeNaddr, pointerToAddress, referenceToPointer, type AddressPointer } from './nip19'
-import { parseProfile, type Profile, type SignedEvent } from './events'
+import { encodeNaddr, pointerToAddress, referenceToPointer, type AddressPointer } from '@estiva-app/protocol'
+import { parseProfile, type Profile, type SignedEvent } from '@estiva-app/protocol'
 
 /** Query the relay. Returns matching events; shape mirrors the HTTP bridge. */
 export type QueryFn = (filters: Record<string, unknown>[]) => Promise<SignedEvent[]>

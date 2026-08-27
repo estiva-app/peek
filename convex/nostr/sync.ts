@@ -23,8 +23,8 @@ import { v } from 'convex/values'
 import { action, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
-import { ASSERTION_SUBTYPE, KIND, parseProfile } from './events'
-import type { SignedEvent } from './events'
+import { ASSERTION_SUBTYPE, KIND, parseProfile } from '@estiva-app/protocol'
+import type { SignedEvent } from '@estiva-app/protocol'
 import { viewerId } from '../users'
 
 /** Cap per topic per run so one busy channel cannot starve the others. */
