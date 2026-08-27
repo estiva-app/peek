@@ -6,7 +6,7 @@
  * token that will never work again, a relay that refuses us for a reason that
  * is not an outage. Each is a nuisance to reach in a browser and a line here.
  *
- * The `token_rejected` rule is the one with a history. `auth/shell/contract.ts`
+ * The `token_rejected` rule is the one with a history. `@estiva-app/identity`
  * carries it and its own test pins it: telling somebody their session expired
  * when the real fault is configuration sends them to re-authenticate against a
  * wall. It is asserted again here because this is a second surface that could

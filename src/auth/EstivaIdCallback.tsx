@@ -26,7 +26,7 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AuthShell } from './shell/AuthShell'
-import { GUARD_TTL_MS, reasonForCallbackError, readGuard } from './shell/contract'
+import { GUARD_TTL_MS, reasonForCallbackError, readGuard } from '@estiva-app/identity'
 import { completeSignIn, hasPendingSignIn, stashShellReason, takeReturnTo } from './estivaId'
 
 export function EstivaIdCallback() {
