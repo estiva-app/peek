@@ -16,7 +16,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { EstivaIdCallback } from './EstivaIdCallback'
 import { CALLBACK_PATH } from './estivaId'
-import { GUARD_KEY } from './shell/contract'
+import { GUARD_KEY } from '@estiva-app/identity'
 
 const realFetch = globalThis.fetch
 beforeEach(() => sessionStorage.clear())

@@ -13,7 +13,7 @@
  */
 import { Button } from '@/components/ui/Button'
 import { PeekLogoBadge } from '@/components/ui/PeekLogo'
-import { CONTINUE_LABEL, RETRY_LABEL, SHELL_COPY, type ShellState, isRecoverable } from './contract'
+import { CONTINUE_LABEL, RETRY_LABEL, SHELL_COPY, type ShellState, isRecoverable } from '@estiva-app/identity'
 
 export interface AuthShellProps {
   state: ShellState

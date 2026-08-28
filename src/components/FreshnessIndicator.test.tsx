@@ -23,7 +23,7 @@ beforeEach(() => resetFreshnessForTests())
 
 describe('what it says', () => {
   it('never tells somebody their session expired for a configuration fault', () => {
-    // The rule `auth/shell/contract.ts` exists to hold, on a second surface:
+    // The rule `@estiva-app/identity` exists to hold, on a second surface:
     // "signing in again will not fix it" must survive the trip through here.
     //
     // Asserted as the *claim* rather than the word: the shell's copy contains

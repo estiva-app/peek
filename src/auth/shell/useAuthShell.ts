@@ -17,7 +17,7 @@ import {
   decideBoot,
   logShellEvent,
   readGuard,
-} from './contract'
+} from '@estiva-app/identity'
 
 /**
  * Set once this page load has been inside the app.

@@ -8,7 +8,7 @@
  *
  * Everything here is a pure function of what the app observed, plus a tiny
  * store that collects those observations. That is deliberately the shape of
- * `auth/shell/contract.ts` — the awkward paths (a renewal in flight, a relay
+ * `@estiva-app/identity` — the awkward paths (a renewal in flight, a relay
  * that refuses us, a token that will never work again) are exactly the ones
  * that are hard to reach in a browser and easy to assert as data.
  *
@@ -37,7 +37,7 @@
  * cause is not clearly an expiry — the honest failure is the one that does not
  * send somebody to a login screen that cannot help them.
  */
-import { SHELL_COPY, type ShellReason } from '@/auth/shell/contract'
+import { SHELL_COPY, type ShellReason } from '@estiva-app/identity'
 import type { RelayState } from '@estiva-app/protocol'
 import type { RelayFailureKind } from './relayRead'
 
