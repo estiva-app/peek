@@ -32,7 +32,9 @@ const NADDR = 'naddr1qqjrje33vg6xzvnr95mk2vmy95'
 
 function object(overrides: Partial<ForeignObject> = {}): ForeignObject {
   return {
+    ref: '30851:abc:issue-1',
     address: '30851:abc:issue-1',
+    eventId: 'e'.repeat(64),
     naddr: NADDR,
     kind: 30851,
     widget: 'row',

@@ -37,6 +37,8 @@ const projectActions: ForeignObject['actions'] = [
 ]
 
 const ticket = (id: string, title: string, status = 'In Progress'): ForeignObject => ({
+  ref: `30851:abc:${id}`,
+  eventId: 'e'.repeat(64),
   address: `30851:abc:${id}`,
   naddr: `naddr1${id}`,
   kind: 30851,
@@ -53,7 +55,9 @@ const ticket = (id: string, title: string, status = 'In Progress'): ForeignObjec
 function folderProject(overrides: Partial<FolderProject> = {}): FolderProject {
   return {
     project: {
+      ref: '30850:abc:p1',
       address: '30850:abc:p1',
+      eventId: 'e'.repeat(64),
       naddr: 'naddr1project',
       kind: 30850,
       widget: 'card',

@@ -69,7 +69,9 @@ const activity = [
 
 const object = (id: string, title: string, status: string, colour: string): ForeignObject =>
   ({
+    ref: `30851:${person}:${id}`,
     address: `30851:${person}:${id}`,
+    eventId: 'e'.repeat(64),
     naddr: `naddr1${id}`,
     kind: 30851,
     widget: 'row',

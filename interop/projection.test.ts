@@ -21,7 +21,7 @@
  * fills, which is the claim the whole projection layer exists to make.
  */
 import { describe, expect, it } from 'vitest'
-import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject } from './projection'
+import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject, resolveForeignObject } from './projection'
 import type { SignedEvent } from '@estiva-app/protocol'
 
 const FOLDER = '7b32200c-e4c0-4216-b79a-8490fc05e0bd'
@@ -1063,5 +1063,134 @@ describe('an app whose records never change', () => {
   it('falls a fold slot through to its declared default', async () => {
     const found = await resolveFolderProject(FOLDER, relay([noRecords, topic]))
     expect(found?.project.slots.status.value).toBe('open')
+  })
+})
+
+/**
+ * The `list` slot for an object reached by address, and children that have no
+ * address of their own — PRO-7.
+ *
+ * PRO-2 built `list` down the folder path only. An object resolved by naddr
+ * dropped the slot silently, which on production rendered a Peek Topic with a
+ * title and no messages — indistinguishable from a quiet topic, so nothing
+ * reported a problem.
+ */
+describe('resolveForeignObject — the list slot', () => {
+  const RELAY_KEY = 'c'.repeat(64)
+  const UUID = '925897ad-796e-4bc6-999c-ca19df26c4aa'
+  const TOPIC_ADDR = `39000:${RELAY_KEY}:${UUID}`
+
+  const peekManifest = (opts: { list?: boolean; childProjection?: boolean } = {}) =>
+    event({
+      kind: 31990,
+      tags: [['d', 'peek'], ['k', '39000'], ['k', '9']],
+      content: JSON.stringify({
+        name: 'Peek',
+        projections: {
+          39000: {
+            widget: 'card',
+            slots: {
+              title: { tag: 'name' },
+              ...(opts.list === false
+                ? {}
+                : { list: { children: { kind: 9, via: 'h', match: 'identifier', limit: 50 } } }),
+            },
+          },
+          ...(opts.childProjection === false
+            ? {}
+            : {
+                9: {
+                  widget: ['message', 'card'],
+                  slots: { title: { field: 'pubkey', as: 'pubkey' }, body: { field: 'content' } },
+                },
+              }),
+        },
+      }),
+    })
+
+  const topic = event({ kind: 39000, pubkey: RELAY_KEY, tags: [['d', UUID], ['name', 'design']] })
+  const message = (body: string) => event({ kind: 9, tags: [['h', UUID]], content: body })
+
+  it('resolves children for an object reached by address', async () => {
+    const found = await resolveForeignObject(
+      TOPIC_ADDR,
+      relay([peekManifest(), topic, message('one'), message('two')]),
+    )
+    expect(found?.slots.title.value).toBe('design')
+    expect(found?.children?.map((c) => c.slots.body.value)).toEqual(['one', 'two'])
+  })
+
+  it('gives a child with no `d` its event id as its ref, and no address', async () => {
+    const found = await resolveForeignObject(TOPIC_ADDR, relay([peekManifest(), topic, message('one')]))
+    const child = found!.children![0]
+    expect(child.address).toBeUndefined()
+    expect(child.naddr).toBeUndefined()
+    expect(child.ref).toBe(child.eventId)
+    expect(child.ref).not.toBe('')
+  })
+
+  it('offers no actions on a child that cannot be addressed', async () => {
+    // Not a limitation: a change carries an `a` tag naming its target, and a
+    // regular event cannot be named that way.
+    const found = await resolveForeignObject(TOPIC_ADDR, relay([peekManifest(), topic, message('one')]))
+    expect(found!.children![0].actions).toEqual([])
+  })
+
+  it('carries the declared widget chain through to the child', async () => {
+    const found = await resolveForeignObject(TOPIC_ADDR, relay([peekManifest(), topic, message('one')]))
+    expect(found!.children![0].widget).toEqual(['message', 'card'])
+  })
+
+  it('distinguishes "declared and empty" from "no list declared"', async () => {
+    const empty = await resolveForeignObject(TOPIC_ADDR, relay([peekManifest(), topic]))
+    expect(empty?.children).toEqual([])
+
+    const none = await resolveForeignObject(TOPIC_ADDR, relay([peekManifest({ list: false }), topic]))
+    expect(none?.children).toBeUndefined()
+  })
+
+  it('renders an empty list rather than nothing when the child kind has no projection', async () => {
+    const found = await resolveForeignObject(
+      TOPIC_ADDR,
+      relay([peekManifest({ childProjection: false }), topic, message('one')]),
+    )
+    // The objects exist; this app has not said how to draw them. A title and an
+    // empty list beats refusing the whole projection.
+    expect(found?.slots.title.value).toBe('design')
+    expect(found?.children).toEqual([])
+  })
+
+  it('stops at the depth budget rather than following a child’s own list', async () => {
+    const events = [peekManifest(), topic, message('one')]
+    expect((await resolveForeignObject(TOPIC_ADDR, relay(events), undefined, 0))?.children).toHaveLength(1)
+    expect((await resolveForeignObject(TOPIC_ADDR, relay(events), undefined, 1))?.children).toEqual([])
+  })
+
+  it('keeps an addressable child’s address, so Ship’s issues are unaffected', async () => {
+    const shipish = event({
+      kind: 31990,
+      tags: [['d', 'ship'], ['k', String(PROJECT_KIND)]],
+      content: JSON.stringify({
+        name: 'Linear-lite',
+        projections: {
+          [PROJECT_KIND]: {
+            widget: 'card',
+            slots: {
+              title: { tag: 'title' },
+              list: { children: { kind: ISSUE_KIND, via: 'a', limit: 50 } },
+            },
+          },
+          [ISSUE_KIND]: { widget: 'row', slots: { title: { tag: 'title' } } },
+        },
+      }),
+    })
+    const found = await resolveForeignObject(
+      `${PROJECT_KIND}:${AUTHOR}:p1`,
+      relay([shipish, project('p1'), issue('t1', 'Billing')]),
+    )
+    const child = found!.children![0]
+    expect(child.slots.title.value).toBe('Billing')
+    expect(child.address).toBe(`${ISSUE_KIND}:${AUTHOR}:t1`)
+    expect(child.ref).toBe(child.address)
   })
 })
