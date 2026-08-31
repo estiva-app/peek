@@ -752,3 +752,177 @@ describe('a slot whose tag was renamed', () => {
     expect(read([['name', 'Agent / Steer']], { tag: 'title' })).toBeUndefined()
   })
 })
+
+/**
+ * The declared `list` slot and the declared `stage` — PRO-2.
+ *
+ * Both replace a deduction the consumer used to make. Containment was inferred
+ * from an action that *creates* a child, which is a write declaration answering
+ * a read question; and open-versus-done was matched against a hardcoded set of
+ * English words, whose own comment admitted an app spelling its statuses
+ * differently would render an empty section.
+ *
+ * The tests that matter here are the ones where the two disagree, because a
+ * test where both give the same answer cannot tell you which one ran.
+ */
+describe('a manifest that declares its own containment and stages', () => {
+  const KINDS = { project: PROJECT_KIND, issue: ISSUE_KIND, change: CHANGE_KIND }
+
+  /** Like `manifest()`, but declaring `list` and `stage`, and with knobs. */
+  const declaring = (opts: {
+    list?: { kind: number; via: string; limit?: number }
+    stages?: Record<string, string>
+    /** Drop the create-action, so only the `list` slot can answer. */
+    withoutAction?: boolean
+    issueStatuses?: { value: string; label: string; colour: string; stage?: string }[]
+  }) => {
+    const content = JSON.parse(manifestContent(KINDS))
+    if (opts.list) content.projections[KINDS.project].slots.list = { children: opts.list }
+    if (opts.withoutAction) content.actions = content.actions.filter((a: { id: string }) => a.id !== 'add-issue')
+    if (opts.issueStatuses) content.vocabularies.issueStatuses = opts.issueStatuses
+    else if (opts.stages) {
+      content.vocabularies.issueStatuses = content.vocabularies.issueStatuses.map(
+        (v: { value: string }) => ({ ...v, stage: opts.stages![v.value] }),
+      )
+    }
+    return event({
+      kind: 31990,
+      tags: [['d', 'app'], ['k', String(KINDS.project)], ['k', String(KINDS.issue)]],
+      content: JSON.stringify(content),
+    })
+  }
+
+  const ticket = (id: string, status?: string) => [
+    event({
+      kind: ISSUE_KIND,
+      tags: [['d', id], ['title', id], ['h', FOLDER], ['a', `${PROJECT_KIND}:${AUTHOR}:p1`]],
+    }),
+    ...(status
+      ? [event({ kind: CHANGE_KIND, tags: [['a', `${ISSUE_KIND}:${AUTHOR}:${id}`], ['field', 'status'], ['value', status], ['h', FOLDER]] })]
+      : []),
+  ]
+
+  it('finds children through the list slot when no action declares containment', async () => {
+    // The inference has nothing to read here: without `list` this is the
+    // "no app declares a container" case and resolves to null.
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        declaring({ list: { kind: ISSUE_KIND, via: 'a' }, withoutAction: true }),
+        project('p1'),
+        ...ticket('t1'),
+      ]),
+    )
+    expect(found?.tickets.map((t) => t.slots.title.value)).toEqual(['t1'])
+  })
+
+  it('prefers the declared list over the action, when the two disagree', async () => {
+    // The action still says issues are the children; the `list` slot says a
+    // kind nothing writes. The declaration must win, which shows as an empty
+    // list rather than the action's answer.
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        declaring({ list: { kind: 39999, via: 'a' } }),
+        project('p1'),
+        ...ticket('t1'),
+      ]),
+    )
+    expect(found?.project.slots.title.value).toBe('Payment integration')
+    expect(found?.tickets).toEqual([])
+  })
+
+  it('reads the child tag the list names, not the one the action named', async () => {
+    const parent = `${PROJECT_KIND}:${AUTHOR}:p1`
+    const viaOwner = event({
+      kind: ISSUE_KIND,
+      tags: [['d', 'owned'], ['title', 'owned'], ['h', FOLDER], ['belongs-to', parent]],
+    })
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        declaring({ list: { kind: ISSUE_KIND, via: 'belongs-to' } }),
+        project('p1'),
+        viaOwner,
+      ]),
+    )
+    expect(found?.tickets.map((t) => t.slots.title.value)).toEqual(['owned'])
+  })
+
+  it('counts by the declared stage even when the label means nothing to Peek', async () => {
+    // The third-app case, and the whole point. None of these words is in the
+    // consumer's old sets, so the label guess counts every one of them as
+    // neither open nor done and reports 0/0.
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        declaring({
+          list: { kind: ISSUE_KIND, via: 'a' },
+          issueStatuses: [
+            { value: 'ontvangen', label: 'Ontvangen', colour: 'neutral', stage: 'open' },
+            { value: 'afgerond', label: 'Afgerond', colour: 'green', stage: 'done' },
+          ],
+        }),
+        project('p1'),
+        ...ticket('t1', 'ontvangen'),
+        ...ticket('t2', 'afgerond'),
+      ]),
+    )
+    expect({ open: found?.openCount, done: found?.doneCount }).toEqual({ open: 1, done: 1 })
+  })
+
+  it('treats a dropped status as done, so a finished project can reach its total', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        declaring({ stages: { todo: 'open', in_progress: 'started', done: 'done', cancelled: 'dropped' }, list: { kind: ISSUE_KIND, via: 'a' } }),
+        project('p1'),
+        ...ticket('t1', 'done'),
+        ...ticket('t2', 'cancelled'),
+      ]),
+    )
+    // 2/2 rather than 1/2: the cancelled one is never going to become done, so
+    // leaving it outstanding pins the project below its total for ever.
+    expect({ open: found?.openCount, done: found?.doneCount }).toEqual({ open: 0, done: 2 })
+  })
+
+  it('ignores a stage outside the four and falls back to the label', async () => {
+    // Validation is an honour system; an unrecognised stage is treated as
+    // undeclared rather than trusted into a fifth category.
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        declaring({
+          list: { kind: ISSUE_KIND, via: 'a' },
+          issueStatuses: [{ value: 'done', label: 'Done', colour: 'green', stage: 'finished-ish' }],
+        }),
+        project('p1'),
+        ...ticket('t1', 'done'),
+      ]),
+    )
+    expect({ open: found?.openCount, done: found?.doneCount }).toEqual({ open: 0, done: 1 })
+  })
+
+  it('applies the declared limit to what is rendered, never to what is counted', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([
+        declaring({ list: { kind: ISSUE_KIND, via: 'a', limit: 2 }, stages: { todo: 'open', in_progress: 'started', done: 'done', cancelled: 'dropped' } }),
+        project('p1'),
+        ...ticket('t1', 'todo'),
+        ...ticket('t2', 'todo'),
+        ...ticket('t3', 'todo'),
+        ...ticket('t4', 'todo'),
+      ]),
+    )
+    expect(found?.tickets).toHaveLength(2)
+    // "2 of 4" would be a lie about the project; the budget is about drawing.
+    expect(found?.openCount).toBe(4)
+  })
+
+  it('refuses to follow a list past the depth budget', async () => {
+    const events = [declaring({ list: { kind: ISSUE_KIND, via: 'a' } }), project('p1'), ...ticket('t1')]
+    expect(await resolveFolderProject(FOLDER, relay(events), undefined, 0)).not.toBeNull()
+    expect(await resolveFolderProject(FOLDER, relay(events), undefined, 2)).toBeNull()
+  })
+})
