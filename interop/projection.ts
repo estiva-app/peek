@@ -178,6 +178,21 @@ interface SlotSpec {
   label?: string
   truncate?: number
   default?: string
+  /**
+   * **Child objects, found by the tag on the child that names this one.**
+   *
+   * The `list` slot (RFC 0.4 §13.3, PRO-2). The only slot source that does not
+   * read the root event: every other field here answers "what does this event
+   * say?", and this one answers "what points at it?".
+   *
+   * `limit` is the producer saying how many are worth fetching. **Recursion
+   * depth is deliberately not here** — a child rendered through its own
+   * projection may declare a `list` too, and the app at risk of the render loop
+   * is the one drawing it, so the budget is the consumer's (`MAX_LIST_DEPTH`).
+   * §13.4's honour-system rule cuts that way: a producer that could set the
+   * consumer's recursion budget could hang it.
+   */
+  children?: { kind: number; via: string; limit?: number }
 }
 
 /** An action the owning app says other apps may perform. */
@@ -240,7 +255,7 @@ interface Manifest {
   actions?: ManifestAction[]
   records?: RecordsRule
   projections?: Record<string, { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }>
-  vocabularies?: Record<string, { value: string; label: string; colour: string }[]>
+  vocabularies?: Record<string, { value: string; label: string; colour: string; stage?: string }[]>
 }
 
 /** Actions declared for this kind, resolved against the vocabularies. */
@@ -803,11 +818,26 @@ export interface FolderProject {
 }
 
 /**
- * What a status *means*. **Peek's editorial rule, not the owning app's.**
+ * What a status *means*. **The owning app's declaration, with a fallback.**
  *
- * A manifest vocabulary entry is `{value, label, colour}` — it says how to
- * render a status and nothing about whether the work is open, finished, or
- * parked. So the consumer has to decide.
+ * *Rewritten by PRO-2.* This used to open "Peek's editorial rule, not the
+ * owning app's", on the grounds that a vocabulary entry was `{value, label,
+ * colour}` and said nothing about whether work was open or finished. That was
+ * true, and treating it as an editorial position was the mistake: Peek is not
+ * the expert on what a Ship status means. Ship is.
+ *
+ * A vocabulary entry now carries `stage` — `open | started | done | dropped` —
+ * and that is read first. The word lists below survive only as the
+ * compatibility path for a manifest published before the field existed, which
+ * cannot be given one retroactively (the `emits.alsoRead` reason, one level
+ * up).
+ *
+ * The old comment named the cost of guessing and called it acceptable: *"an app
+ * whose statuses are spelled differently shows an empty section until its
+ * values are added here. That is the failure worth having."* For a layer whose
+ * purpose is making the third app cheap to build, it is not — the third app
+ * ships, its words are not in the set, and its panel renders blank, which is
+ * PEE-10's failure exactly. A declared stage is what removes the guess.
  *
  * Two named sets rather than one allowlist and an "everything else": the panel
  * reads "1/3", done over the two sets added together, and a status that is
@@ -859,8 +889,53 @@ const normalizeStatus = (value: string) => value.trim().toLowerCase().replace(/[
 const inSet = (set: Set<string>) => (raw: string | undefined, label: string | undefined) =>
   [raw, label].some((v) => v !== undefined && set.has(normalizeStatus(v)))
 
-const isOpenStatus = inSet(OPEN_STATUSES)
-const isDoneStatus = inSet(DONE_STATUSES)
+const isOpenStatusByLabel = inSet(OPEN_STATUSES)
+const isDoneStatusByLabel = inSet(DONE_STATUSES)
+
+/** The four stages a manifest may declare. Anything else is not a stage. */
+type Stage = 'open' | 'started' | 'done' | 'dropped'
+const STAGES = new Set<Stage>(['open', 'started', 'done', 'dropped'])
+
+/**
+ * The stage the owning app declares for a status value, or undefined.
+ *
+ * `undefined` means "this manifest does not say", which is a different fact
+ * from "this status is not progress" and must not be collapsed into one — the
+ * caller falls back to the word lists only in the first case.
+ *
+ * A `stage` outside the four is ignored rather than trusted. Validation is an
+ * honour system (RFC 0.4 §13.4) and this is a consumer reading another app's
+ * self-description; an unrecognised value is treated as undeclared, which
+ * degrades to the fallback instead of inventing a fifth stage.
+ */
+function declaredStage(
+  manifest: Manifest,
+  spec: SlotSpec | undefined,
+  raw: string | undefined,
+): Stage | undefined {
+  if (!spec?.map || raw === undefined) return undefined
+  const stage = manifest.vocabularies?.[spec.map]?.find((v) => v.value === raw)?.stage
+  return stage && STAGES.has(stage as Stage) ? (stage as Stage) : undefined
+}
+
+/**
+ * Is this status finished work?
+ *
+ * `dropped` counts as done rather than open, which is what keeps "3/3"
+ * reachable: a cancelled ticket is never going to become done, so leaving it
+ * outstanding pins a finished project below its total for ever. It is not
+ * *progress* either, and an app that wanted to draw that distinction now can —
+ * the stage is on the wire and this fold is the consumer's, not the protocol's.
+ */
+function isDone(stage: Stage | undefined, raw: string | undefined, label: string | undefined) {
+  if (stage) return stage === 'done' || stage === 'dropped'
+  return isDoneStatusByLabel(raw, label)
+}
+
+function isOpen(stage: Stage | undefined, raw: string | undefined, label: string | undefined) {
+  if (stage) return stage === 'open' || stage === 'started'
+  return isOpenStatusByLabel(raw, label)
+}
 
 /**
  * Started work sits above the queue.
@@ -870,20 +945,46 @@ const isDoneStatus = inSet(DONE_STATUSES)
  * recently.
  */
 const STARTED = new Set(['in progress', 'started', 'doing', 'in review', 'review'])
-const isStarted = inSet(STARTED)
+const isStartedByLabel = inSet(STARTED)
+
+function isStarted(stage: Stage | undefined, raw: string | undefined, label: string | undefined) {
+  if (stage) return stage === 'started'
+  return isStartedByLabel(raw, label)
+}
 
 /**
  * The containment relation a manifest declares: "this kind holds that kind".
  *
- * Read off an action that creates a child pointing back at its parent
- * (`toAddressOf: "self"`), because that is the only place a NIP-89 manifest
- * says one object contains another. Returns null when the app declares no such
- * action — in which case Peek does not guess, and the sidebar shows nothing.
+ * Read from the `list` slot, which says it outright, falling back to the
+ * inference this used to depend on. Returns null when the app says neither — in
+ * which case Peek does not guess, and the sidebar shows nothing.
  */
 function containmentFor(
   manifest: Manifest,
   containerKind: number,
-): { childKind: number; linkTag: string } | null {
+): { childKind: number; linkTag: string; limit?: number } | null {
+  /*
+    The declared answer first — PRO-2.
+
+    A `list` slot says outright which kind this one holds and by which tag. What
+    follows below is the older path, and it is worth naming what it does: it
+    reads an action that *creates* a child (`toAddressOf: "self"`) and infers a
+    *read* relationship from it. That worked, and it was a deduction from a
+    write declaration — an app offering no create-action, or offering one for a
+    kind it does not actually contain, was invisible or wrong respectively.
+
+    Kept as a compatibility path rather than deleted, because a manifest
+    published before PRO-2 cannot be given a `list` slot retroactively and
+    consumers upgrade before producers do. It goes when nothing in use relies
+    on it.
+  */
+  const projection = manifest.projections?.[String(containerKind)]
+  const listSlot = projection && !Array.isArray(projection.slots.list) ? projection.slots.list : undefined
+  if (listSlot?.children) {
+    const { kind, via, limit } = listSlot.children
+    return { childKind: kind, linkTag: via, limit }
+  }
+
   for (const action of manifest.actions ?? []) {
     if (action.emits.toAddressOf !== 'self') continue
     if (!asArray(action.appliesTo).includes(String(containerKind))) continue
@@ -891,6 +992,20 @@ function containmentFor(
   }
   return null
 }
+
+/**
+ * How deep a consumer will follow `list` slots. **The consumer's budget.**
+ *
+ * A child rendered through its own projection may declare a `list` of its own,
+ * so resolution is recursive and something has to stop it. That something is
+ * here rather than in the manifest: the app at risk of the render loop is the
+ * one drawing it, and a producer able to set this number could hang any
+ * consumer that trusted it (RFC 0.4 §13.4 — validation is an honour system).
+ *
+ * One level is what the panel needs: a project and its issues. Raising it is a
+ * decision about this app's boot cost, not about anyone else's data.
+ */
+const MAX_LIST_DEPTH = 1
 
 /**
  * The project living in a Folder, plus the work currently in motion in it.
@@ -914,14 +1029,24 @@ export async function resolveFolderProject(
   query: QueryFn,
   /** Defaults to asking the relay. The browser passes a cached lookup. */
   lookupPeople?: PeopleFn,
+  /**
+   * How many `list` levels have already been followed to get here. Callers
+   * outside this module leave it at 0; it exists so that following a child's
+   * own `list` is a budget check rather than a thing nobody remembered.
+   */
+  depth = 0,
 ): Promise<FolderProject | null> {
+  // The render loop this forbids is not hypothetical: two folders naming each
+  // other's projects resolve forever, and the manifest declaring them is
+  // another app's. See MAX_LIST_DEPTH.
+  if (depth > MAX_LIST_DEPTH) return null
   // 1. Which kinds are containers? A Folder query needs kind numbers up front,
   //    and the only non-app-specific source for them is the published handlers.
   //    This pass is discovery only — the manifest that actually *renders* the
   //    project is resolved below, recommendation-first, once its author is known.
   const handlerFilter = [{ kinds: [KIND_HANDLER_INFORMATION], limit: 20 }]
   const handlers = await query(handlerFilter)
-  const containers = new Map<number, { childKind: number; linkTag: string }>()
+  const containers = new Map<number, { childKind: number; linkTag: string; limit?: number }>()
   let discovered: Manifest | undefined
   for (const event of handlers) {
     const manifest = parseManifest(event)
@@ -1184,9 +1309,11 @@ export async function resolveFolderProject(
     const status = statusSpec ? resolveSlot(statusSpec, event, folded, manifest) : null
     const raw = statusSpec ? rawSlotValue(statusSpec, event, folded) : undefined
 
-    const done = isDoneStatus(raw, status?.value)
+    // The owning app's declaration first, the label guess only if it has none.
+    const stage = declaredStage(manifest, statusSpec, raw)
+    const done = isDone(stage, raw, status?.value)
     if (done) doneCount += 1
-    else if (isOpenStatus(raw, status?.value)) openCount += 1
+    else if (isOpen(stage, raw, status?.value)) openCount += 1
     // A status in neither set — parked, or one this consumer has never seen —
     // is still a ticket and still listed. It just cannot claim to be progress
     // in either direction, so it stays out of both counts.
@@ -1201,7 +1328,7 @@ export async function resolveFolderProject(
         viaRecommendation,
         webTemplate: resolved.webTemplate,
       }),
-      rank: isStarted(raw, status?.value) ? 0 : done ? 2 : 1,
+      rank: isStarted(stage, raw, status?.value) ? 0 : done ? 2 : 1,
       activityMs: Math.max(event.created_at * 1000, ...ticketChanges.map(orderingMs)),
     })
   }
@@ -1210,7 +1337,19 @@ export async function resolveFolderProject(
   // scannable rather than a dump.
   rows.sort((a, b) => a.rank - b.rank || b.activityMs - a.activityMs)
 
-  const [resolvedProject, ...tickets] = await withPeople([project, ...rows.map((r) => r.ticket)])
+  /*
+    The producer's declared `limit`, applied after sorting rather than before.
+
+    It says how many children are worth rendering, so cutting before the sort
+    would drop whichever happened to be read first and could hide every started
+    ticket behind a hundred finished ones. The counts above are deliberately
+    computed over everything: "4 of 117" stays true when only 200 rows are
+    drawn, and a total that changed with the render budget would be a different
+    and worse number.
+  */
+  const capped = relation.limit ? rows.slice(0, relation.limit) : rows
+
+  const [resolvedProject, ...tickets] = await withPeople([project, ...capped.map((r) => r.ticket)])
   return { project: resolvedProject, tickets, openCount, doneCount }
 }
 
