@@ -20,6 +20,7 @@ import { createContext, useContext, useState, useMemo, type ReactNode, type Disp
 import { ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
 import { useEstivaIdAuth } from '@/auth/useEstivaIdAuth'
 import { StarredProvider } from '@/api/internal/starred'
+import { ReadStateSync } from '@/nostr/useReadStateSync'
 import { TopicStoreProvider } from '@/api/internal/topicStore'
 import { TopicMutationsProvider } from '@/api/internal/topicMutations'
 import { OpenWorkProvider } from '@/api/internal/openWork'
@@ -68,6 +69,7 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
   const tree = (
     <AvatarRegistryProvider>
       <MentionDirectorySync />
+      <ReadStateSync />
       <StarredProvider>
         <TopicStoreProvider>
           <TopicDirectorySync />
