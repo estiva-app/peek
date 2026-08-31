@@ -6,7 +6,7 @@
  * the override layers otherwise (tests, Storybook, checkouts without a
  * deployment). Components receive final values and never see override maps.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { TOPIC_CONVERSATIONS } from '@/data/topicData'
@@ -337,6 +337,55 @@ const EMPTY_TOPIC: TopicMessages = {
   showEarlier: NOOP,
 }
 
+/**
+ * PEE-13 — the deleted message that resurrected.
+ *
+ * An optimistic copy exists to cover the window before its Convex row does.
+ * It used to be *suppressed* per render — "keep the local copy whenever the
+ * remote row is absent" — and a deleted row is also absent, so the tab that
+ * WROTE a message re-showed it the moment another tab deleted it, until a
+ * reload wiped the in-memory copy. A row sliding past the query's page
+ * boundary resurrected the same way.
+ *
+ * So the copy is now PRUNED the moment its row is first seen: its job is
+ * done, and nothing can bring it back. A copy whose row never appears — a
+ * failed send — is never seen and therefore never pruned, which keeps
+ * today's behaviour of not silently swallowing one.
+ *
+ * Returns the same reference when there is nothing to prune, so callers can
+ * hand it straight to a state setter without churning renders.
+ */
+export function pruneConfirmed<T extends { id: string }>(
+  store: Record<string, T[]>,
+  key: string,
+  seen: ReadonlySet<string>,
+): Record<string, T[]> {
+  const current = store[key] ?? []
+  const kept = current.filter((item) => !seen.has(item.id))
+  return kept.length === current.length ? store : { ...store, [key]: kept }
+}
+
+function usePruneConfirmed<T extends { id: string }>(
+  key: string | null,
+  /** Ids the current query answer contains; null while there is no answer. */
+  seenIds: string[] | null,
+  setStore: Dispatch<SetStateAction<Record<string, T[]>>>,
+) {
+  useEffect(() => {
+    if (key == null || seenIds == null || seenIds.length === 0) return
+    const seen = new Set(seenIds)
+    let cancelled = false
+    // Scheduled rather than called in the effect body: pruning is bookkeeping
+    // after a query update, not part of rendering it.
+    queueMicrotask(() => {
+      if (!cancelled) setStore((prev) => pruneConfirmed(prev, key, seen))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [key, seenIds, setStore])
+}
+
 export function useTopicMessages(topicId: string | null): TopicMessages {
   const o = useTopicMutations()
   // Convex-aware lookup: the members pill must reflect server topicMembers
@@ -350,6 +399,8 @@ export function useTopicMessages(topicId: string | null): TopicMessages {
     api.messages.list,
     hasConvex && topicId != null ? { parentKind: 'topic', parentKey: topicId, limit } : 'skip',
   )
+  const remoteRowIds = useMemo(() => (remote ? remote.rows.map((r) => r.id) : null), [remote])
+  usePruneConfirmed(topicId, remoteRowIds, o.setSentMessages)
   if (topicId == null) return EMPTY_TOPIC
 
   const topic = findTopic(topicId)
@@ -365,7 +416,11 @@ export function useTopicMessages(topicId: string | null): TopicMessages {
     // The confirmed copy renders from the query; the local copy covers the
     // optimistic window only.
     const remoteIds = new Set(remote.rows.map((r) => r.id))
-    sent = sentLocal.filter((c) => !remoteIds.has(c.id)).map((c) => mergeConv(c, o))
+    // deletedIds too (PEE-13's belt): the copy is pruned on first sight, but
+    // a delete racing the prune must not re-show it even for a frame.
+    sent = sentLocal
+      .filter((c) => !remoteIds.has(c.id) && !o.deletedIds.has(c.id))
+      .map((c) => mergeConv(c, o))
     hasEarlier = remote.hasMore
   } else {
     groups = (TOPIC_CONVERSATIONS[topicId] ?? [])
@@ -413,7 +468,7 @@ export interface DmMessages {
 
 export function useDmMessages(dmId: string | null): DmMessages {
   const o = useTopicMutations()
-  const { sentDmMessages } = useDmRuntime()
+  const { sentDmMessages, setSentDmMessages } = useDmRuntime()
   const me = useCurrentUser()
   const [limit, setLimit] = useState(MESSAGE_PAGE)
   useEffect(() => setLimit(MESSAGE_PAGE), [dmId])
@@ -421,6 +476,8 @@ export function useDmMessages(dmId: string | null): DmMessages {
     api.messages.list,
     hasConvex && dmId != null ? { parentKind: 'dm', parentKey: String(dmId), limit } : 'skip',
   )
+  const remoteRowIds = useMemo(() => (remote ? remote.rows.map((r) => r.id) : null), [remote])
+  usePruneConfirmed(dmId == null ? null : String(dmId), remoteRowIds, setSentDmMessages)
   const showEarlier = () => setLimit((l) => l + MESSAGE_PAGE)
   if (dmId == null) return { groups: [], sent: [], isLoading: false, hasEarlier: false, showEarlier: NOOP }
 
@@ -440,7 +497,9 @@ export function useDmMessages(dmId: string | null): DmMessages {
     const rows = remote.rows.filter((r) => !o.deletedIds.has(r.id))
     groups = groupRemoteByDay(rows, (r) => mergeConv(toConversationData(r, me.id), o, false))
     const remoteIds = new Set(remote.rows.map((r) => r.id))
-    sent = sentLocal.filter((c) => !remoteIds.has(c.id)).map((c) => mergeConv(c, o))
+    sent = sentLocal
+      .filter((c) => !remoteIds.has(c.id) && !o.deletedIds.has(c.id))
+      .map((c) => mergeConv(c, o))
     hasEarlier = remote.hasMore
   } else {
     groups = (mockGroups ?? [])
@@ -493,6 +552,11 @@ export function useThread(messageId: string | null): ThreadData {
   // sent stores only).
   const remoteMsg = useQuery(api.messages.get, hasConvex && messageId ? { key: messageId } : 'skip')
   const remoteReplies = useQuery(api.replies.list, hasConvex && messageId ? { messageKey: messageId } : 'skip')
+  const remoteReplyIds = useMemo(
+    () => (remoteReplies ? remoteReplies.map((r) => r.id) : null),
+    [remoteReplies],
+  )
+  usePruneConfirmed(messageId, remoteReplyIds, o.setSentReplies)
 
   if (!messageId) {
     return { conversation: null, replies: [], sentReplies: [], resolvedByReplyId: undefined, resolutionMessage: undefined, resolutionEvents: [], isLoading: false }
@@ -554,7 +618,9 @@ export function useThread(messageId: string | null): ThreadData {
       const mockById = new Map((REPLIES[messageId] ?? []).map((r) => [r.id, r]))
       replies = remoteReplies.map((r) => mergeReply(toReplyData(r, me?.id), o))
       const remoteIds = new Set(remoteReplies.map((r) => r.id))
-      sentReplies = sentLocal.filter((r) => !remoteIds.has(r.id)).map((r) => mergeReply(r, o))
+      sentReplies = sentLocal
+        .filter((r) => !remoteIds.has(r.id) && !o.deletedIds.has(r.id))
+        .map((r) => mergeReply(r, o))
     }
   } else {
     replies = (REPLIES[messageId] ?? []).map((r) => mergeReply(r, o))
