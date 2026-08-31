@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { FolderProject, ForeignObject } from '../../interop/projection'
+import type { FolderProject, ForeignObject } from '@estiva-app/interop'
 import { TopicProjectPanelView } from './TopicProjectPanel'
 
 /**

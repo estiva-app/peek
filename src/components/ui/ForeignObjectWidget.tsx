@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { pickWidget } from '../../../interop/projection'
+import { pickWidget } from '@estiva-app/interop'
 import type {
   ForeignObject,
   People,
   ResolvedAction,
   ResolvedSlot,
-} from '../../../interop/projection'
+} from '@estiva-app/interop'
 import { hasConvex, useForeignObjects } from '@/api'
 import { cn } from '@/lib/utils'
 import { Button } from './Button'

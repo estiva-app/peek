@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ForeignObject, FolderProject } from '../../interop/projection'
+import type { ForeignObject, FolderProject } from '@estiva-app/interop'
 import { TopicProjectPanelView } from './TopicProjectPanel'
 
 /**

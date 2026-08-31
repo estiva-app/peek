@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ForeignObject } from '../../../interop/projection'
+import type { ForeignObject } from '@estiva-app/interop'
 
 /**
  * The widget renders whatever the manifest said, and nothing else.

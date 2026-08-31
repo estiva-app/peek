@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ForeignObject } from '../../interop/projection'
+import type { ForeignObject } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
 import { TOPICS } from '@/api/fixtures'
 import { LAUNCHER_APPS } from '@/lib/launcherActions'

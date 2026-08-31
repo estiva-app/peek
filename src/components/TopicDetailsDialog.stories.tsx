@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { FolderProject, ForeignObject } from '../../interop/projection'
+import type { FolderProject, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { TopicDetailsDialogView, type TopicDetails } from './TopicDetailsDialog'
 
