@@ -128,30 +128,60 @@ async function main() {
   const manifest = JSON.parse(stored.content)
 
   // ── Can the projections be satisfied by objects that actually exist? ──────
-  const [topic] = await relay.query([{ kinds: [TOPIC_KIND], limit: 1 }])
-  check('there is a real topic to project', !!topic)
+  /*
+    Sample several topics, not the first one.
+
+    The first version asked `limit: 1` and asserted that topic had messages.
+    **19 of production's 30 topics are empty**, so a correct manifest failed
+    roughly two runs in three depending on which one sorted first — and the
+    failure said "list resolves 0 children", which is indistinguishable from
+    the declaration being wrong. That is the same confusion between *empty* and
+    *broken* this script exists to catch, turned on itself.
+
+    What "the declaration is satisfiable" actually means is that the query shape
+    finds children **where children exist**, so the check has to find such a
+    topic before it can assert anything.
+  */
+  const topics = await relay.query([{ kinds: [TOPIC_KIND], limit: 30 }])
+  check('there are real topics to project', topics.length > 0, `${topics.length} topic(s)`)
+  let topic = topics[0]
+  let children: Awaited<ReturnType<typeof relay.query>> = []
+  const listSpec = manifest.projections[String(TOPIC_KIND)].slots.list.children
+  let empties = 0
+  for (const candidate of topics) {
+    const cd = candidate.tags.find((t: string[]) => t[0] === 'd')?.[1] ?? ''
+    const found = await relay.query([{ kinds: [listSpec.kind], [`#${listSpec.via}`]: [cd], limit: listSpec.limit }])
+    if (found.length > 0) { topic = candidate; children = found; break }
+    empties++
+  }
   if (topic) {
     const slots = manifest.projections[String(TOPIC_KIND)].slots
     const name = topic.tags.find((t: string[]) => t[0] === slots.title.tag)?.[1]
     check(`  topic slot "title" (tag:${slots.title.tag}) resolves`, !!name, name)
 
     const d = topic.tags.find((t: string[]) => t[0] === 'd')?.[1] ?? ''
-    const { kind, via, match, limit } = slots.list.children
-    const children = await relay.query([{ kinds: [kind], [`#${via}`]: [d], limit }])
+    const { via, match } = slots.list.children
     check(
       `  topic slot "list" resolves children by #${via} (match:${match})`,
       children.length > 0,
-      `${children.length} message(s) in ${d}`,
+      `${children.length} message(s) in ${d}${empties ? `, after ${empties} empty topic(s)` : ''}`,
     )
-    // The whole reason `match` exists. `h` holds the uuid, so an address
-    // comparison finds nothing — assert that, or a later change could quietly
-    // switch the default back and every topic would list zero messages.
+    /*
+      The whole reason `match` exists — and this control is only worth anything
+      against a topic that HAS children.
+
+      Its first version ran against whatever topic came first and reported
+      "0 by address vs 0 by identifier" as a pass. Both arms were zero because
+      the topic was empty, so it would have passed just as happily if `match`
+      did nothing at all. A control that cannot fail is not a control; the loop
+      above is what gives this one something to distinguish.
+    */
     const asAddress = await relay.query([
-      { kinds: [kind], [`#${via}`]: [`${TOPIC_KIND}:${topic.pubkey}:${d}`], limit: 5 },
+      { kinds: [listSpec.kind], [`#${via}`]: [`${TOPIC_KIND}:${topic.pubkey}:${d}`], limit: 5 },
     ])
     check(
-      '  …and matching on the address instead finds nothing, which is why match exists',
-      asAddress.length === 0,
+      '  …and the same query by address finds nothing, which is why match exists',
+      children.length > 0 && asAddress.length === 0,
       `${asAddress.length} by address vs ${children.length} by identifier`,
     )
   }
