@@ -1,7 +1,7 @@
 /**
  * PEE-7 — routing live events into the projection.
  *
- * The projection itself is covered by `convex/nostr/projection.test.ts`; none
+ * The projection itself is covered by `interop/projection.test.ts`; none
  * of it is re-tested here. What is tested is the routing: which action gets
  * which kind, in what order, how a burst is batched, and what happens when a
  * call fails.

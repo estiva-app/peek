@@ -9,7 +9,7 @@ import { Relay } from '/home/miky/linear-lite/lib/nostr/relay'
 import { publicKeyFromSecret } from '/home/miky/linear-lite/lib/nostr/sign'
 import { Store } from '/home/miky/linear-lite/src/store'
 import { addrToNaddr } from '/home/miky/linear-lite/lib/nostr/nip19'
-import { resolveForeignObject } from '/home/miky/peek-app/convex/nostr/projection'
+import { resolveForeignObject } from '../../interop/projection'
 
 const RELAY_URL = 'http://localhost:3000'
 let failures = 0

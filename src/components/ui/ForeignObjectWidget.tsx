@@ -4,7 +4,7 @@ import type {
   People,
   ResolvedAction,
   ResolvedSlot,
-} from '../../../convex/nostr/projection'
+} from '../../../interop/projection'
 import { hasConvex, useForeignObjects } from '@/api'
 import { cn } from '@/lib/utils'
 import { Button } from './Button'

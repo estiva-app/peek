@@ -1,4 +1,4 @@
-import type { People } from '../../../convex/nostr/projection'
+import type { People } from '../../../interop/projection'
 import { cn } from '@/lib/utils'
 import { Avatar } from './Avatar'
 

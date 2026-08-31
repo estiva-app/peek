@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { IconChevronRight } from '@tabler/icons-react'
-import type { ForeignObject, ResolvedSlot } from '../../../convex/nostr/projection'
+import type { ForeignObject, ResolvedSlot } from '../../../interop/projection'
 import { StatusPill } from './ForeignObjectWidget'
 import { cn } from '@/lib/utils'
 

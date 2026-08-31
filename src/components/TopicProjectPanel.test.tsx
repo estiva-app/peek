@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { FolderProject, ForeignObject } from '../../convex/nostr/projection'
+import type { FolderProject, ForeignObject } from '../../interop/projection'
 import { TopicProjectPanelView } from './TopicProjectPanel'
 
 /**

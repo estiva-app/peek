@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ForeignObject, FolderProject } from '../../convex/nostr/projection'
+import type { ForeignObject, FolderProject } from '../../interop/projection'
 import { TopicProjectPanelView } from './TopicProjectPanel'
 
 /**
