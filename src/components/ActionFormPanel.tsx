@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Person } from '@/api'
 import type { FormField, LauncherAction, LauncherApp, VocabOption } from '@/lib/launcherActions'
-import { cn } from '@/lib/utils'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
 import { PersonChipInput } from './ui/PersonChipInput'
@@ -25,9 +24,13 @@ import { TextInput } from './ui/TextInput'
  * "declared but deliberately unrenderable" because they need a form and a
  * parent. This is the form; the `parent` control is the parent.
  *
- * Submitting VALIDATES and reports the values upward, nothing more. The
- * Intelligence runtime (Jan's projection work) is what will turn the values
- * into a signed event; its seam is the `onSubmit` callback in
+ * There is no error state: the primary action stays DISABLED until every
+ * required field is filled (Katerina 2026-08-31), the same "only offer
+ * actions that can succeed" rule the launcher applies to rows.
+ *
+ * Submitting reports the values upward, nothing more. The Intelligence
+ * runtime (Jan's projection work) is what will turn the values into a signed
+ * event; its seam is the `onSubmit` callback in
  * `CommandLauncher.submitAction`.
  */
 
@@ -61,7 +64,6 @@ export function ActionFormPanel({
   // People are picked as chips but the manifest wants one pubkey, so the
   // chip list is capped at one below and flattened to `person.id` on submit.
   const [people, setPeople] = useState<Record<string, Person[]>>({})
-  const [showErrors, setShowErrors] = useState(false)
 
   const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
 
@@ -70,17 +72,14 @@ export function ActionFormPanel({
     return values[field.key] ?? ''
   }
 
-  const missing = useMemo(
-    () => action.fields.filter((f) => f.required && valueOf(f).trim() === ''),
+  const incomplete = useMemo(
+    () => action.fields.some((f) => f.required && valueOf(f).trim() === ''),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [action, values, people],
   )
 
   const submit = () => {
-    if (missing.length > 0) {
-      setShowErrors(true)
-      return
-    }
+    if (incomplete) return
     const out: Record<string, string> = {}
     for (const field of action.fields) {
       const value = valueOf(field)
@@ -98,11 +97,7 @@ export function ActionFormPanel({
     return []
   }
 
-  const errorFor = (field: FormField): string | undefined =>
-    showErrors && field.required && valueOf(field).trim() === '' ? 'Required' : undefined
-
   const control = (field: FormField, autoFocus: boolean) => {
-    const error = errorFor(field)
     switch (field.control) {
       case 'string':
         return (
@@ -111,7 +106,7 @@ export function ActionFormPanel({
             onChange={(e) => set(field.key, e.target.value)}
             placeholder={field.placeholder}
             autoFocus={autoFocus}
-            className={cn('w-full', error && 'border-error-default')}
+            className="w-full"
           />
         )
       case 'text':
@@ -122,7 +117,7 @@ export function ActionFormPanel({
             placeholder={field.placeholder}
             autoFocus={autoFocus}
             rows={3}
-            className={cn('w-full resize-none', error && 'border-error-default')}
+            className="w-full resize-none"
           />
         )
       case 'enum':
@@ -166,20 +161,14 @@ export function ActionFormPanel({
     >
       <div className="flex flex-col gap-4 p-4 max-h-[400px] overflow-y-auto">
         {action.fields.map((field, i) => (
-          <div key={field.key} className="flex flex-col gap-1">
-            <Field label={field.label} required={field.required}>
-              {control(field, i === 0)}
-            </Field>
-            {errorFor(field) && (
-              <span className="text-xs text-error-default">{errorFor(field)}</span>
-            )}
-          </div>
+          <Field key={field.key} label={field.label} required={field.required}>
+            {control(field, i === 0)}
+          </Field>
         ))}
       </div>
 
-      <div className="flex items-center justify-end gap-3 h-14 px-4 border-t border-border-subtle shrink-0">
-        <span className="text-caption text-text-secondary">⌘↩ to {action.submitLabel.toLowerCase()}</span>
-        <Button variant="primary" onClick={submit}>
+      <div className="flex items-center justify-end h-14 px-4 border-t border-border-subtle shrink-0">
+        <Button variant="primary" onClick={submit} disabled={incomplete}>
           {action.submitLabel}
         </Button>
       </div>

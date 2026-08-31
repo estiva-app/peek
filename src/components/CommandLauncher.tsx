@@ -121,11 +121,18 @@ export function CommandLauncher({
     onClose()
   }
 
-  const appIcon = (app: LauncherApp) =>
-    app.id === 'peek' ? <PeekLogoMark height={20} /> : <ShipLogoMark height={20} />
+  const appIcon = (app: LauncherApp, size = 20) =>
+    app.id === 'peek' ? <PeekLogoMark height={size} /> : <ShipLogoMark height={size} />
 
   const enterHint = (
     <span className="text-caption text-text-secondary whitespace-nowrap shrink-0 signal:font-mono signal:text-[10px] signal:tracking-[0.04em]">↩ Enter</span>
+  )
+
+  /** The `esc` badge's styling, reused for every shortcut the footer names. */
+  const keyBadge = (label: string) => (
+    <span className="flex items-center justify-center px-1 py-px rounded-sm bg-bg-inset border border-border-strong signal:bg-[rgba(255,255,255,0.05)] signal:border-border-default signal:border-b-2 signal:rounded">
+      <span className="text-caption text-text-secondary whitespace-nowrap signal:font-mono signal:text-[10px]">{label}</span>
+    </span>
   )
 
   const iconTile = (content: React.ReactNode) => (
@@ -240,16 +247,20 @@ export function CommandLauncher({
   }, [highlight])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // A child that consumed the key keeps it: an open Select preventDefaults
+    // its own Escape, and that press must close the menu, not pop the level.
+    if (e.defaultPrevented) return
     if (e.key === 'Escape') {
       e.preventDefault()
-      onClose()
+      // In the form, Escape is the keyboard's way BACK (Katerina 2026-08-31);
+      // one more Escape from the list closes, same as everywhere else.
+      if (formAction) popLevel()
+      else onClose()
       return
     }
     /*
-     * Form mode owns its keyboard: fields need Backspace, arrows and Enter to
-     * mean what they mean in a form. Only Esc (above) stays global — leaving
-     * the form is the chip's X, matching how the FigmaFindPanel mode used to
-     * scope the launcher's keys.
+     * Form mode owns the rest of its keyboard: fields need Backspace, arrows
+     * and Enter to mean what they mean in a form.
      */
     if (formAction) return
     if (e.key === 'Backspace' && query === '' && scope) {
@@ -315,8 +326,8 @@ export function CommandLauncher({
             {/* Scope chip - the state made visible. Click the X (or Backspace on
                 an empty input) to pop one level back out. */}
             {scope && (
-              <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-1 pr-1 py-0.5 max-h-[24px] shrink-0">
-                {appIcon(scope)}
+              <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
+                {appIcon(scope, 14)}
                 <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap">
                   {chipLabel}
                 </span>
@@ -409,24 +420,30 @@ export function CommandLauncher({
           </div>
           )}
 
-          {/* Signal theme: the v3 palette's navigation tips footer */}
-          <div className="hidden signal:flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 font-mono text-[10px] text-text-muted select-none">
-            {/* Arrow/enter hints describe the list levels; a form owns those keys. */}
-            {!formAction && (
-              <>
-                <span className="flex items-center gap-1.5">
-                  <kbd>↑</kbd>
-                  <kbd>↓</kbd> navigate
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <kbd>enter</kbd> open
-                </span>
-              </>
-            )}
-            <span className="flex items-center gap-1.5">
-              <kbd>esc</kbd> close
-            </span>
-          </div>
+          {/* Footer. In form mode it carries the shortcuts in every theme
+              (the submit tip lives here, not beside the button); the list
+              levels keep the signal-only navigation tips. */}
+          {formAction ? (
+            <div className="flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 select-none text-caption text-text-secondary signal:font-mono signal:text-[10px] signal:text-text-muted">
+              <span className="flex items-center gap-1.5">
+                {keyBadge('⌘ ↩')} {formAction.submitLabel.toLowerCase()}
+              </span>
+              <span className="flex items-center gap-1.5">{keyBadge('esc')} back</span>
+            </div>
+          ) : (
+            <div className="hidden signal:flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 font-mono text-[10px] text-text-muted select-none">
+              <span className="flex items-center gap-1.5">
+                <kbd>↑</kbd>
+                <kbd>↓</kbd> navigate
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd>enter</kbd> open
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd>esc</kbd> close
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </>,

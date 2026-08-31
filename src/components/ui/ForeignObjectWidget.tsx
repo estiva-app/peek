@@ -447,9 +447,17 @@ export function ForeignObjectSkeleton({ className }: { className?: string }) {
   )
 }
 
-export function ForeignObjectWidget({ naddr }: { naddr: string }) {
+export function ForeignObjectWidget({
+  naddr,
+  resolved,
+}: {
+  naddr: string
+  /** The already-resolved object, for surfaces with no relay to ask (stories,
+   *  tests). Skips resolution entirely; actions still render but cannot land. */
+  resolved?: ForeignObject
+}) {
   const { resolveObject: resolve, applyAction } = useForeignObjects()
-  const [object, setObject] = useState<ForeignObject | null | 'loading'>('loading')
+  const [object, setObject] = useState<ForeignObject | null | 'loading'>(resolved ?? 'loading')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>()
 
@@ -481,6 +489,8 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
   )
 
   useEffect(() => {
+    // Already in hand — nothing to resolve (see `resolved` above).
+    if (resolved) return
     // Peek runs without a deployment in tests, Storybook and checkouts with no
     // backend (`hasConvex`). There is no relay to ask in that mode, so resolve
     // to nothing rather than calling an action that has no client behind it.
@@ -502,7 +512,7 @@ export function ForeignObjectWidget({ naddr }: { naddr: string }) {
     return () => {
       cancelled = true
     }
-  }, [naddr, resolve])
+  }, [naddr, resolve, resolved])
 
   /**
    * Waiting is not the same as nothing, and they used to render the same.

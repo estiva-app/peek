@@ -5,7 +5,6 @@ import { TOPICS } from '@/api/fixtures'
 import { LAUNCHER_APPS } from '@/lib/launcherActions'
 import { ActionFormPanel } from './ActionFormPanel'
 import { ThreadReplyCard } from './ThreadReplyCard'
-import { ForeignObjectCard } from './ui/ForeignObjectWidget'
 
 /**
  * The launcher's form step: an object-creating action drawn as a form.
@@ -17,8 +16,10 @@ import { ForeignObjectCard } from './ui/ForeignObjectWidget'
  * §13.4 is the contract: "an action whose `input.type` is `object` declares
  * `properties` and `required`, and a consumer draws a form."
  *
- * Submitting validates and reports values upward; nothing publishes until
- * the Intelligence runtime lands (the seam is `CommandLauncher.submitAction`).
+ * There is no error state: the primary action stays disabled until every
+ * required field is filled. Submitting reports values upward; nothing
+ * publishes until the Intelligence runtime lands (the seam is
+ * `CommandLauncher.submitAction`).
  */
 const ship = LAUNCHER_APPS.find((a) => a.id === 'ship')!
 const peek = LAUNCHER_APPS.find((a) => a.id === 'peek')!
@@ -100,17 +101,19 @@ export const PeekCreateTopic: Story = {
 /**
  * What submitting is FOR — the end state in Peek once the runtime lands.
  *
- * The created issue's `nostr:naddr…` reference goes into the reply, and
- * `MessageBody` already renders any such reference through
- * `ForeignObjectWidget`. Storybook has no relay to resolve against, so this
- * story draws the resolved card directly beneath the reply — the exact
- * composition the app produces once the reference resolves.
+ * The reply carries the created issue's reference and NOTHING else: no
+ * message text, just the widget (Katerina 2026-08-31). This renders through
+ * the real pipeline — ThreadReplyCard → MessageBody → ForeignObjectWidget —
+ * with the object handed over pre-resolved (`resolvedObjects`), since
+ * Storybook has no relay to ask. The card is therefore exactly the design
+ * storied under Messages/Reference widget → Assigned, controls included.
  */
 const PERSON = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
+const NADDR = 'naddr1qqjxxcny8yexydp495enjces956x2vec95uk2ety94nxydeexc6nver9xycrz'
 
 const justCreated: ForeignObject = {
   address: `30851:${PERSON}:fee-12`,
-  naddr: 'naddr1qqjxxcny8yexydp495enjces956x2vec95uk2ety94nxydeexc6nver9xycrz',
+  naddr: NADDR,
   kind: 30851,
   widget: 'card',
   appName: 'Estiva Ship',
@@ -124,21 +127,36 @@ const justCreated: ForeignObject = {
   comments: [],
   folder: 'b1d2c3e4-5f60-4718-a93a-4b5c6d7e8f90',
   openUrl: 'https://ship.estiva.app/#/issue/fee-12',
-  actions: [],
+  actions: [
+    {
+      id: 'set-status',
+      label: 'Change status',
+      control: 'select',
+      field: 'status',
+      // Ship's issue vocabulary, verbatim from `ship/src/kinds.ts`.
+      current: 'todo',
+      options: [
+        { value: 'todo', label: 'Todo' },
+        { value: 'in_progress', label: 'In Progress' },
+        { value: 'done', label: 'Done' },
+        { value: 'cancelled', label: 'Cancelled' },
+      ],
+    },
+    { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee', current: PERSON },
+  ],
   viaRecommendation: true,
 }
 
 export const AfterCreateInReply: Story = {
   render: () => (
-    <div className="flex flex-col gap-2 p-4 bg-bg-default">
+    <div className="w-[520px] p-4 bg-bg-default">
       <ThreadReplyCard
         authorName="Alice Johnson"
         timestamp="2:14 PM"
-        body="Good catch — filed it in Ship so it doesn't get lost:"
+        body=""
+        nostrReferences={[NADDR]}
+        resolvedObjects={{ [NADDR]: justCreated }}
       />
-      <div className="pl-11">
-        <ForeignObjectCard object={justCreated} />
-      </div>
     </div>
   ),
 }

@@ -16,6 +16,7 @@ import { APP_FILES, DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, matchReference, matchUrl, parseBodySegments, parseInlineMarks } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
+import type { ForeignObject } from '../../../interop/projection'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { findNaddrs, pointerToAddress, referenceToPointer, stripNaddrs } from '@estiva-app/protocol'
 
@@ -159,7 +160,7 @@ function dedupeReferences(refs: string[]): string[] {
   return out
 }
 
-export function MessageBody({ body, isTopicResolved, nostrReferences }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[] }) {
+export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedObjects }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[]; resolvedObjects?: Record<string, ForeignObject> }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
@@ -247,7 +248,7 @@ export function MessageBody({ body, isTopicResolved, nostrReferences }: { body: 
         )
       })}
       {references.map((naddr) => (
-        <ForeignObjectWidget key={naddr} naddr={naddr} />
+        <ForeignObjectWidget key={naddr} naddr={naddr} resolved={resolvedObjects?.[naddr]} />
       ))}
     </div>
   )

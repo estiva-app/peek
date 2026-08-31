@@ -95,8 +95,12 @@ export function PersonChipInput({
       return
     }
     if (e.key === 'Escape') {
-      setQuery('')
-      ;(e.target as HTMLInputElement).blur()
+      // Consume it only when there is something to clear; an idle input lets
+      // Escape bubble so the surface around it (dialog, launcher) can act.
+      if (query !== '') {
+        e.preventDefault()
+        setQuery('')
+      }
     }
   }
 
@@ -104,7 +108,7 @@ export function PersonChipInput({
     <div className="relative">
       <div
         ref={wrapperRef}
-        className="bg-bg-inset border border-border-default focus-within:border-border-strong rounded-lg px-3 py-1.5 flex flex-wrap items-center gap-1.5 transition-colors min-h-[38px] cursor-text signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]"
+        className="bg-bg-inset border border-border-default hover:border-border-strong focus-within:border-border-focus rounded-lg px-3 py-1.5 flex flex-wrap items-center gap-1.5 transition-colors min-h-[38px] cursor-text signal:transition-shadow signal:focus-within:shadow-[shadow:var(--focus-ring)]"
         onClick={() => inputRef.current?.focus()}
       >
         {value.map((p) => (
