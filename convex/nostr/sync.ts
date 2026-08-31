@@ -97,9 +97,14 @@ async function syncReactions(
   for (const e of reactions.filter((r) => !isLocal.has(r.pubkey))) {
     const targetId = e.tags.find((t) => t[0] === 'e')?.[1]
     if (!targetId) continue
-    const target = await ctx.runQuery(internal.nostr.data.messageByNostrEventId, {
+    // A kind:7 may target a message or a reply (PEE-12) — same tag, two
+    // id spaces, resolved in that order.
+    const asMessage = await ctx.runQuery(internal.nostr.data.messageByNostrEventId, {
       nostrEventId: targetId,
     })
+    const target =
+      asMessage ??
+      (await ctx.runQuery(internal.nostr.data.replyByNostrEventId, { nostrEventId: targetId }))
     if (!target) continue
     const userId: Id<'users'> = await ctx.runMutation(
       internal.nostr.data.resolveExternalUser,
@@ -107,6 +112,7 @@ async function syncReactions(
     )
     await ctx.runMutation(internal.nostr.data.importReaction, {
       messageId: target.messageId,
+      replyId: 'replyId' in target ? target.replyId : undefined,
       userId,
       // NIP-25 puts the emoji in content. `+`/`-` are the plain like/dislike
       // form; Peek has no concept of those, so they are stored verbatim rather
@@ -451,10 +457,16 @@ export const importChannel = action({
     // The targets must be every message Peek holds in this channel — using only
     // the events from this sync window meant a reaction on any older message
     // was silently never imported (found by testing, not by reading).
-    const targets: string[] = await ctx.runQuery(
+    // Replies are reaction targets too (PEE-12); the cap covers the union.
+    const messageTargets: string[] = await ctx.runQuery(
       internal.nostr.data.listMessageEventIdsForTopic,
       { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
     )
+    const replyTargets: string[] = await ctx.runQuery(
+      internal.nostr.data.listReplyEventIdsForTopic,
+      { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
+    )
+    const targets = [...messageTargets, ...replyTargets].slice(0, REACTION_TARGET_LIMIT)
     const known: string[] = await ctx.runQuery(
       internal.nostr.data.listReactionEventIdsForTopic,
       { topicId: topic.topicId, limit: PAGE_LIMIT },

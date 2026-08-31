@@ -115,10 +115,21 @@ export async function aggregateReactions(
     .query('reactions')
     .withIndex('by_message', (q) => q.eq('messageId', messageId))
     .collect()
+  // Reply reactions share the parent's index (PEE-12) and belong to the
+  // reply's own pill, not the message's.
+  return foldReactionRows(rows.filter((r) => r.replyId === undefined), youId, faces)
+}
+
+/** The aggregation itself, shared with the per-reply pills (convex/replies.ts). */
+export function foldReactionRows(
+  rows: Doc<'reactions'>[],
+  youId: Id<'users'> | undefined,
+  faces: Map<Id<'users'>, Face>,
+): { emoji: string; count: number; owner: 'yours' | 'others'; names: string[] }[] | undefined {
   if (rows.length === 0) return undefined
-  rows.sort((a, b) => a._creationTime - b._creationTime)
+  const sorted = [...rows].sort((a, b) => a._creationTime - b._creationTime)
   const agg: { emoji: string; count: number; owner: 'yours' | 'others'; names: string[] }[] = []
-  for (const r of rows) {
+  for (const r of sorted) {
     const who = r.userId === youId ? 'You' : faces.get(r.userId)?.name ?? 'Someone'
     const entry = agg.find((e) => e.emoji === r.emoji)
     if (entry) {
@@ -438,14 +449,27 @@ export const deleteUpload = mutation({
 export const toggleReaction = mutation({
   args: { key: v.string(), emoji: v.string() },
   handler: async (ctx, { key, emoji }) => {
-    const m = await findMessageByKey(ctx, key)
-    if (!m) return null // reply reactions stay session-local until modeled (§2.7 is message-keyed)
+    // The key names a message OR a reply — the two id spaces are distinct.
+    // Reply reactions used to be silently dropped here ("session-local until
+    // modeled"), which is why a reaction on an agent's reply vanished on
+    // reload (PEE-12).
+    let m = await findMessageByKey(ctx, key)
+    let replyId: Id<'replies'> | undefined
+    if (!m) {
+      const reply = await findReplyByKey(ctx, key)
+      if (!reply) return null
+      replyId = reply._id
+      m = await ctx.db.get(reply.messageId)
+      if (!m) return null
+    }
     const you = await viewerOrThrow(ctx)
     const mine = await ctx.db
       .query('reactions')
       .withIndex('by_message_user', (q) => q.eq('messageId', m._id).eq('userId', you._id))
       .collect()
-    const existing = mine.find((r) => r.emoji === emoji)
+    const existing = mine.find(
+      (r) => r.emoji === emoji && (r.replyId ?? null) === (replyId ?? null),
+    )
     if (existing) {
       // Capture the event id BEFORE deleting: the retraction needs something to
       // point a kind:5 at, and the row is about to be gone.
@@ -457,6 +481,7 @@ export const toggleReaction = mutation({
 
     const reactionId = await ctx.db.insert('reactions', {
       messageId: m._id,
+      replyId,
       userId: you._id,
       emoji,
       createdAt: Date.now(),
@@ -526,6 +551,19 @@ export const send = mutation({
     return id
   },
 })
+
+export async function findReplyByKey(
+  ctx: QueryCtx | MutationCtx,
+  key: string,
+): Promise<Doc<'replies'> | null> {
+  const bySeed = await ctx.db
+    .query('replies')
+    .withIndex('by_seedKey', (q) => q.eq('seedKey', key))
+    .unique()
+  if (bySeed) return bySeed
+  const normalized = ctx.db.normalizeId('replies', key)
+  return normalized ? await ctx.db.get(normalized) : null
+}
 
 export async function findMessageByKey(
   ctx: QueryCtx | MutationCtx,

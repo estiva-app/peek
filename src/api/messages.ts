@@ -76,6 +76,8 @@ interface RemoteReply {
   files?: FileAttachment[]
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** Persisted per-reply reactions (PEE-12), aggregated server-side like a message's. */
+  reactions?: ReactionData[]
 }
 
 /** Remote reply → presentation shape; the viewer's own rows render as 'You'
@@ -96,6 +98,7 @@ function toReplyData(r: RemoteReply, meId: string | undefined): ReplyData {
     files: r.files,
     createdAtMs: r.createdAt,
     nostrReferences: r.nostrReferences,
+    reactions: r.reactions,
   }
 }
 
@@ -318,7 +321,13 @@ function mergeReply(r: ReplyData, o: Overrides): ThreadReply {
     ...r,
     body: o.bodyOverrides[r.id] ?? r.body,
     highlightType: r.id in o.highlightOverrides ? o.highlightOverrides[r.id] : r.highlightType,
-    reactions: o.reactionOverrides[r.id],
+    // Same layering a message gets (PEE-12): the persisted aggregate is the
+    // base, the session override and the optimistic pending ride on top —
+    // which is what lets a reply reaction survive a reload.
+    reactions: applyPendingReactions(
+      o.reactionOverrides[r.id] ?? r.reactions,
+      o.pendingReactions[r.id],
+    ),
   }
 }
 

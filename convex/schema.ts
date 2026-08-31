@@ -201,6 +201,9 @@ export default defineSchema({
   // §2.7 — per-user rows; counts + "yours" aggregate in the query (§4.6)
   reactions: defineTable({
     messageId: v.id('messages'),
+    /** Set when the reaction is on a REPLY of that message (PEE-12).
+     *  `messageId` stays the parent — additive, so no Convex push is failed. */
+    replyId: v.optional(v.id('replies')),
     userId: v.id('users'),
     emoji: v.string(),
     createdAt: v.number(),
