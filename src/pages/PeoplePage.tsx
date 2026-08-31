@@ -11,11 +11,13 @@ import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
+import { useTopicPath } from '@/lib/useTopicPath'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
 export function PeoplePage() {
   const { dmHasUnread, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
+  const pathForTopic = useTopicPath()
   const location = useLocation()
   const { showToast } = useToast()
   const createTopicFromDm = useCreateTopicFromDm()
@@ -52,7 +54,7 @@ export function PeoplePage() {
       seedMessageId,
     })
     const previousPath = `${location.pathname}${location.search}`
-    navigate(`/topics/${topicId}`)
+    navigate(pathForTopic(topicId))
     showToast({
       label: 'Topic created',
       actionLabel: 'Back to conversation',

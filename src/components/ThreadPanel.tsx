@@ -12,6 +12,7 @@ import { PinnedMessage } from './ui/PinnedMessage'
 import { SkeletonConversationList } from './ui/Skeleton'
 import { partitionRepliesAroundPromotion } from '@/lib/threadPartition'
 import { cn } from '@/lib/utils'
+import { useTopicPath } from '@/lib/useTopicPath'
 
 // ── Thread Panel ──
 
@@ -241,6 +242,7 @@ export function ThreadPanel({
   onReplyReactionsChange,
 }: ThreadPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const pathForTopic = useTopicPath()
 
   // Delayed skeleton: switching threads keeps the panel mounted, but the
   // replies query reloads and a full skeleton flash reads as the panel
@@ -426,7 +428,7 @@ export function ThreadPanel({
                   <span className="flex items-center gap-1 min-w-0 whitespace-nowrap">
                     <span className="shrink-0">Promoted to</span>
                     <Link
-                      to={`/topics/${promotionDivider.topicId}`}
+                      to={pathForTopic(promotionDivider.topicId)}
                       data-interactive
                       onClick={(e) => {
                         e.stopPropagation()

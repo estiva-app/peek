@@ -15,7 +15,11 @@ export const TOPICS: Topic[] = [
   { id: '4', title: 'Remote work policy clarifications',             isResolved: true  },
   { id: '5', title: 'Usability test results for the dashboard redesign', isResolved: true  },
   { id: '6', title: 'Show your pet!',                                isResolved: false },
-  { id: '7', title: 'Updates on the new office layout',              isResolved: false },
+  // The one mock topic carrying a channel uuid. Every topic on production has
+  // one, and object URLs are built from it (PEE-14) — without a single fixture
+  // that has one, the canonical URL is unreachable in tests and Storybook.
+  { id: '7', title: 'Updates on the new office layout',              isResolved: false,
+    folderId: 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91' },
   { id: '8', title: 'Quick fix needed for staging deployment issue', isResolved: false },
   { id: '9', title: 'Feedback on mobile onboarding flow',            isResolved: false },
   { id: '10', title: 'Payment integration',                          isResolved: false },

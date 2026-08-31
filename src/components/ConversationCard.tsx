@@ -39,6 +39,7 @@ import { FileAttachmentCard } from './ui/FileAttachmentCard'
 import { HighlightPill } from './ui/HighlightPill'
 import { MessageBody } from './ui/MessageBody'
 import { cn } from '@/lib/utils'
+import { useTopicPath } from '@/lib/useTopicPath'
 
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
 
@@ -124,6 +125,7 @@ export function ConversationCard({
   className,
 }: ConversationCardProps) {
   const [isHovered, setIsHovered] = useState(false)
+  const pathForTopic = useTopicPath()
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [moreMenuPos, setMoreMenuPos] = useState<{
     top?: number
@@ -560,7 +562,7 @@ export function ConversationCard({
             <div className="flex-1 min-w-0 flex items-center gap-1.5 h-4">
               <span className="text-h5 text-text-secondary shrink-0">Huddle in</span>
               <Link
-                to={`/topics/${huddleContext.topicId}`}
+                to={pathForTopic(huddleContext.topicId)}
                 data-interactive
                 onClick={(e) => e.stopPropagation()}
                 className="text-h5 text-text-primary hover:underline truncate"

@@ -6,14 +6,18 @@ interface NavItemProps {
   to: string
   icon: ReactNode
   label: string
-  /** Path prefix used to determine the active state (defaults to `to`). */
-  match?: string
+  /** Path prefix(es) used to determine the active state (defaults to `to`).
+   *  A list because one section can own more than one route: object URLs put
+   *  the directory at `/topics` and a single topic at `/topic/…` (PEE-14). */
+  match?: string | string[]
 }
 
 export function NavItem({ to, icon, label, match }: NavItemProps) {
   const location = useLocation()
-  const matchPrefix = match ?? to
-  const isActive = location.pathname === matchPrefix || location.pathname.startsWith(`${matchPrefix}/`)
+  const matchPrefixes = match === undefined ? [to] : Array.isArray(match) ? match : [match]
+  const isActive = matchPrefixes.some(
+    (prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`),
+  )
 
   return (
     <NavLink to={to} className="group flex flex-col gap-0.5 items-center px-2 py-0.5 w-full">
