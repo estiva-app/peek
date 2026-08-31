@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ForeignObject } from '../../../interop/projection'
+import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectCard, ForeignObjectSkeleton } from './ForeignObjectWidget'
 
 /**

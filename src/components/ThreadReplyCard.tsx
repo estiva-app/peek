@@ -32,7 +32,7 @@ import { cn } from '@/lib/utils'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
-import type { ForeignObject } from '../../interop/projection'
+import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
 
 // ── Reply More Menu ──

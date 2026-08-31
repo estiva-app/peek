@@ -1,4 +1,4 @@
-import type { People } from '../../../interop/projection'
+import type { People } from '@estiva-app/interop'
 import { cn } from '@/lib/utils'
 import { Avatar } from './Avatar'
 

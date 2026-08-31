@@ -22,7 +22,7 @@ import {
   resolveObjectAsViewer,
   type ActResult,
 } from '@/nostr/foreign'
-import type { FolderProject, ForeignObject } from '../../interop/projection'
+import type { FolderProject, ForeignObject } from '@estiva-app/interop'
 
 /**
  * The relay origin and the viewer's token, or null when either is missing.

@@ -34,7 +34,7 @@ import {
   type People,
   type PeopleFn,
   type QueryFn,
-} from '../../interop/projection'
+} from '@estiva-app/interop'
 
 export interface ActResult {
   ok: boolean

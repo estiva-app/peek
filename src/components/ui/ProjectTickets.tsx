@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { IconChevronRight } from '@tabler/icons-react'
-import type { ForeignObject, ResolvedSlot } from '../../../interop/projection'
+import type { ForeignObject, ResolvedSlot } from '@estiva-app/interop'
 import { StatusPill } from './ForeignObjectWidget'
 import { cn } from '@/lib/utils'
 

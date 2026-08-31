@@ -35,5 +35,5 @@
     months because nothing compiled them. Deleting them fixed the instances;
     this is what stops the next one — PRO-7.
   */
-  "include": ["src", "convex", "interop", "scripts", "docs"]
+  "include": ["src", "convex", "scripts", "docs"]
 }

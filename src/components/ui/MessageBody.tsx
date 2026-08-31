@@ -16,7 +16,7 @@ import { APP_FILES, DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, matchReference, matchUrl, parseBodySegments, parseInlineMarks } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
-import type { ForeignObject } from '../../../interop/projection'
+import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { findNaddrs, pointerToAddress, referenceToPointer, stripNaddrs } from '@estiva-app/protocol'
 
