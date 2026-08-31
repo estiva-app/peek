@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ForeignObject } from '../../../convex/nostr/projection'
+import type { ForeignObject } from '../../../interop/projection'
 import { ForeignObjectCard, ForeignObjectSkeleton } from './ForeignObjectWidget'
 
 /**

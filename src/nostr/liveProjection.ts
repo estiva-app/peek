@@ -10,7 +10,7 @@
  *
  * So there is deliberately almost no new logic here, and none of it is
  * projection logic. The projection is intricate, belongs next to the database,
- * and is covered by `convex/nostr/projection.test.ts`. This module batches,
+ * and is covered by `interop/projection.test.ts`. This module batches,
  * partitions by kind, and calls three actions in a fixed order.
  *
  * ## Two keys, and they must not be confused

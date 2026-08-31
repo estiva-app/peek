@@ -19,7 +19,6 @@ import type * as messages from "../messages.js";
 import type * as nostr_config from "../nostr/config.js";
 import type * as nostr_data from "../nostr/data.js";
 import type * as nostr_outbox from "../nostr/outbox.js";
-import type * as nostr_projection from "../nostr/projection.js";
 import type * as nostr_refs from "../nostr/refs.js";
 import type * as nostr_resolution from "../nostr/resolution.js";
 import type * as nostr_sync from "../nostr/sync.js";
@@ -49,7 +48,6 @@ declare const fullApi: ApiFromModules<{
   "nostr/config": typeof nostr_config;
   "nostr/data": typeof nostr_data;
   "nostr/outbox": typeof nostr_outbox;
-  "nostr/projection": typeof nostr_projection;
   "nostr/refs": typeof nostr_refs;
   "nostr/resolution": typeof nostr_resolution;
   "nostr/sync": typeof nostr_sync;

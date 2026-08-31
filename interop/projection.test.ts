@@ -1,5 +1,14 @@
+// @vitest-environment node
 /**
  * The Folder → project resolution behind the topic sidebar (PEEK-24).
+ *
+ * **The `node` environment above is load-bearing, not tidiness.** The suite's
+ * default is jsdom (`vite.config.ts`), so every other test in this repo runs
+ * with a browser whether it needs one or not. ADR 0002 §10 constraint 3 says a
+ * package's tests must run with no app — and a test that has silently grown a
+ * `document` dependency passes here and fails the moment the module is a
+ * package with its own runner. Pinning `node` is what makes that failure land
+ * now, in this repo, instead of during the extraction.
  *
  * Written against a fake relay rather than a deployment, which is the point of
  * `projection.ts` taking a query function: this exercises the real resolution

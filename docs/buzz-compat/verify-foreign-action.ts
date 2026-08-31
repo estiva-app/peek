@@ -21,7 +21,7 @@ import { foldFolder } from '/home/miky/linear-lite/src/fold'
 import { addrToNaddr } from '/home/miky/linear-lite/lib/nostr/nip19'
 
 // ── Peek's code. This is what is under test. ─────────────────────────────────
-import { buildActionEvent, resolveForeignObject, resolveManifest } from '../../convex/nostr/projection'
+import { buildActionEvent, resolveForeignObject, resolveManifest } from '../../interop/projection'
 import { decodeNaddr, pointerToAddress } from '../../convex/nostr/nip19'
 
 const RELAY_URL = process.env.RELAY_URL ?? 'http://localhost:3000'

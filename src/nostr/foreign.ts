@@ -34,7 +34,7 @@ import {
   type People,
   type PeopleFn,
   type QueryFn,
-} from '../../convex/nostr/projection'
+} from '../../interop/projection'
 
 export interface ActResult {
   ok: boolean

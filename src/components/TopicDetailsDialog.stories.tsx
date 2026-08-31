@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { FolderProject, ForeignObject } from '../../convex/nostr/projection'
+import type { FolderProject, ForeignObject } from '../../interop/projection'
 import type { RenameOutcome } from '@/api'
 import { TopicDetailsDialogView, type TopicDetails } from './TopicDetailsDialog'
 
