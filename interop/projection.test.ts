@@ -926,3 +926,142 @@ describe('a manifest that declares its own containment and stages', () => {
     expect(await resolveFolderProject(FOLDER, relay(events), undefined, 2)).toBeNull()
   })
 })
+
+/**
+ * The two things declaring Peek's own manifest turned out to need — PRO-6.
+ *
+ * Both were found by writing a projection for a Topic and a Message rather than
+ * by reading §13, which is the argument §13.5 makes for requiring a second
+ * consumer before the layer is published as a package.
+ */
+describe('a child that names its parent by identifier, not address', () => {
+  const CHANNEL = '39000'
+  const RELAY_KEY = 'c'.repeat(64)
+
+  // A Peek-shaped manifest: a topic holding messages, linked by `h`, which
+  // carries the bare channel uuid.
+  const peekManifest = (match?: 'address' | 'identifier') =>
+    event({
+      kind: 31990,
+      tags: [['d', 'peek'], ['k', CHANNEL], ['k', '9']],
+      content: JSON.stringify({
+        name: 'Peek',
+        projections: {
+          [CHANNEL]: {
+            widget: 'card',
+            slots: {
+              title: { tag: 'name' },
+              list: { children: { kind: 9, via: 'h', ...(match ? { match } : {}), limit: 50 } },
+            },
+          },
+          9: { widget: ['message', 'card'], slots: { title: { field: 'pubkey', as: 'pubkey' } } },
+        },
+      }),
+    })
+
+  const topic = event({
+    kind: Number(CHANNEL),
+    pubkey: RELAY_KEY,
+    tags: [['d', FOLDER], ['name', 'design'], ['h', FOLDER]],
+  })
+  const message = (id: string) =>
+    event({ kind: 9, tags: [['d', id], ['h', FOLDER]], content: `msg ${id}` })
+
+  it('finds children when the manifest says the tag holds an identifier', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([peekManifest('identifier'), topic, message('m1'), message('m2')]),
+    )
+    expect(found?.project.slots.title.value).toBe('design')
+    expect(found?.tickets).toHaveLength(2)
+  })
+
+  it('finds none when it defaults to address, which is why match exists', async () => {
+    // `h` holds the uuid, never `39000:<relay>:<uuid>`. Without `match` the
+    // comparison is against the address and every topic lists zero messages —
+    // silently, because an empty list is what a quiet topic looks like too.
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([peekManifest(), topic, message('m1'), message('m2')]),
+    )
+    expect(found?.tickets).toHaveLength(0)
+  })
+
+  it('keeps address matching the default, so Ship’s manifest is unchanged', async () => {
+    const found = await resolveFolderProject(FOLDER, relay([manifest(), project('p1'), issue('t1', 't1')]))
+    expect(found?.tickets.map((t) => t.slots.title.value)).toEqual(['t1'])
+  })
+})
+
+describe('a slot whose value is the event’s author', () => {
+  it('renders the pubkey as a person, which is the only title a message has', async () => {
+    const AUTHOR_B = 'd'.repeat(64)
+    const m = event({
+      kind: 39000,
+      pubkey: AUTHOR_B,
+      tags: [['d', FOLDER], ['name', 'design'], ['h', FOLDER]],
+    })
+    const withPubkeyTitle = event({
+      kind: 31990,
+      tags: [['d', 'peek'], ['k', '39000']],
+      content: JSON.stringify({
+        name: 'Peek',
+        projections: {
+          39000: {
+            widget: 'card',
+            slots: {
+              title: { field: 'pubkey', as: 'pubkey' },
+              // A container relation, or the resolver never discovers the kind.
+              list: { children: { kind: 9, via: 'h', match: 'identifier' } },
+            },
+          },
+        },
+      }),
+    })
+    const found = await resolveFolderProject(FOLDER, relay([withPubkeyTitle, m]))
+    expect(found?.project.slots.title.value).toBe(AUTHOR_B)
+    expect(found?.project.slots.title.isPubkey).toBe(true)
+  })
+})
+
+describe('an app whose records never change', () => {
+  /**
+   * Peek is that app: a topic's name is a tag the relay wrote and a message is
+   * immutable, so there is nothing to fold and its manifest declares no
+   * `records`. The resolver used to require one and returned null for the whole
+   * projection — the object rendering as *nothing*, which §13.3 spends several
+   * paragraphs establishing is the worst available outcome.
+   *
+   * It was never caught because Ship is the only app that had ever published a
+   * manifest, and Ship folds.
+   */
+  const noRecords = event({
+    kind: 31990,
+    tags: [['d', 'peek'], ['k', '39000']],
+    content: JSON.stringify({
+      name: 'Peek',
+      // no `records` key at all
+      projections: {
+        39000: {
+          widget: 'card',
+          slots: {
+            title: { tag: 'name' },
+            status: { fold: 'status', default: 'open' },
+            list: { children: { kind: 9, via: 'h', match: 'identifier' } },
+          },
+        },
+      },
+    }),
+  })
+  const topic = event({ kind: 39000, tags: [['d', FOLDER], ['name', 'design'], ['h', FOLDER]] })
+
+  it('renders rather than returning nothing', async () => {
+    const found = await resolveFolderProject(FOLDER, relay([noRecords, topic]))
+    expect(found?.project.slots.title.value).toBe('design')
+  })
+
+  it('falls a fold slot through to its declared default', async () => {
+    const found = await resolveFolderProject(FOLDER, relay([noRecords, topic]))
+    expect(found?.project.slots.status.value).toBe('open')
+  })
+})

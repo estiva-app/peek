@@ -192,7 +192,26 @@ interface SlotSpec {
    * §13.4's honour-system rule cuts that way: a producer that could set the
    * consumer's recursion budget could hang it.
    */
-  children?: { kind: number; via: string; limit?: number }
+  children?: {
+    kind: number
+    via: string
+    limit?: number
+    /**
+     * What the child's `via` tag holds — added by PRO-6.
+     *
+     * `address` (the default, and Ship's case) means the tag carries the
+     * parent's full `kind:pubkey:d`. `identifier` means it carries only the
+     * parent's `d`.
+     *
+     * Found by declaring a projection for a Peek Topic. A message names its
+     * channel with `h`, and `h` holds the **bare channel uuid** — which is the
+     * topic's `d`, not its address. Nothing in NIP-29 is going to change that,
+     * so a `list` slot that could only compare addresses could not express the
+     * one relationship Peek has. Defaulting to `address` keeps every manifest
+     * written before this reading exactly as it did.
+     */
+    match?: 'address' | 'identifier'
+  }
 }
 
 /** An action the owning app says other apps may perform. */
@@ -429,6 +448,43 @@ function byOrder(a: SignedEvent, b: SignedEvent): number {
 }
 
 /** Replay change events into current field values. Last write wins per field. */
+/**
+ * The fold rule a manifest declares, or one that folds nothing — PRO-6.
+ *
+ * `records` is optional. An app with no change events needs no rule for
+ * turning them into current truth, and Peek is that app: a topic's name is a
+ * tag the relay wrote and a message is immutable.
+ *
+ * Both resolvers used to require it and return null for the whole projection,
+ * so an app that declared none rendered as *nothing* — which §13.3 spends
+ * several paragraphs establishing is the worst available outcome, because a
+ * blank card reads as "that app is broken". It was never caught because Ship
+ * is the only app that had ever published a manifest, and Ship folds. Nothing
+ * in RFC 0.4 §13.1 makes `records` mandatory.
+ *
+ * The substitute rule below is only ever used to *fold*, never to query, and
+ * that distinction is load-bearing. The first attempt used `changeKind: -1` as
+ * a sentinel and let the queries run: the fake relay in the tests accepted it,
+ * and production refused the entire filter with `invalid type: integer -1,
+ * expected a 16-bit unsigned number`. A kind is `u16` on the wire, so there is
+ * no out-of-band value to reach for — the query has to be skipped instead of
+ * being made unmatchable. Callers therefore branch on `manifest.records` for
+ * the filters and use this only for the fold, which runs over an empty array.
+ */
+function foldRuleOf(manifest: Manifest): RecordsRule {
+  return (
+    manifest.records ?? {
+      // Never sent to a relay. See above.
+      changeKind: 0,
+      targetTag: 'a',
+      fieldTag: 'field',
+      valueTag: 'value',
+      order: ['created_at', 'id'],
+      rule: 'last-write-wins-per-field',
+    }
+  )
+}
+
 function foldChanges(changes: SignedEvent[], rule: RecordsRule) {
   const fields: Record<string, { value: string; by: string; at: number }> = {}
   for (const change of [...changes].sort(byOrder)) {
@@ -502,6 +558,21 @@ function rawSlotValue(
   }
   if (spec.tag) return firstTag(root, spec.tag)
   if (spec.field === 'content') return root.content
+  /*
+    `pubkey` — the event's author — added by PRO-6.
+
+    Found by trying to declare a projection for a Peek Message. §13.3 makes
+    `title` the one required slot, and a `kind:9` has no title: it has an
+    author, a body and a time. The body cannot be the title, because message
+    content is structured for 41% of production events and truncating structure
+    is exactly what PRO-8 removed from Ship's manifest. Which leaves the author,
+    and until now no slot source could name it.
+
+    It is a genuine top-level event field, so it belongs in `field` rather than
+    in a new source. Paired with `as: "pubkey"` it renders as a person, which is
+    what a message wants as its title everywhere it appears.
+  */
+  if (spec.field === 'pubkey') return root.pubkey
   return undefined
 }
 
@@ -726,8 +797,8 @@ export async function resolveForeignObject(
   const commentKinds = commentKindsOf(manifest)
 
   const projection = manifest.projections?.[String(pointer.kind)]
-  const records = manifest.records
-  if (!projection || !records) return null
+  if (!projection) return null
+  const records = foldRuleOf(manifest)
 
   // One round trip for the root, its changes and its comments. `#a` on both the
   // change and the comment kind, because both point at the object by *address*
@@ -735,7 +806,8 @@ export async function resolveForeignObject(
   // replacing the root event.
   const events = await query([
     { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
-    { kinds: [records.changeKind], '#a': [address], limit: 500 },
+    // Only when the app actually declares a change kind — see `foldRuleOf`.
+    ...(manifest.records ? [{ kinds: [manifest.records.changeKind], '#a': [address], limit: 500 }] : []),
     { kinds: commentKinds, '#a': [address], limit: 200 },
   ])
 
@@ -962,7 +1034,7 @@ function isStarted(stage: Stage | undefined, raw: string | undefined, label: str
 function containmentFor(
   manifest: Manifest,
   containerKind: number,
-): { childKind: number; linkTag: string; limit?: number } | null {
+): { childKind: number; linkTag: string; limit?: number; match?: 'address' | 'identifier' } | null {
   /*
     The declared answer first — PRO-2.
 
@@ -981,8 +1053,8 @@ function containmentFor(
   const projection = manifest.projections?.[String(containerKind)]
   const listSlot = projection && !Array.isArray(projection.slots.list) ? projection.slots.list : undefined
   if (listSlot?.children) {
-    const { kind, via, limit } = listSlot.children
-    return { childKind: kind, linkTag: via, limit }
+    const { kind, via, limit, match } = listSlot.children
+    return { childKind: kind, linkTag: via, limit, match }
   }
 
   for (const action of manifest.actions ?? []) {
@@ -1046,7 +1118,7 @@ export async function resolveFolderProject(
   //    project is resolved below, recommendation-first, once its author is known.
   const handlerFilter = [{ kinds: [KIND_HANDLER_INFORMATION], limit: 20 }]
   const handlers = await query(handlerFilter)
-  const containers = new Map<number, { childKind: number; linkTag: string; limit?: number }>()
+  const containers = new Map<number, { childKind: number; linkTag: string; limit?: number; match?: 'address' | 'identifier' }>()
   let discovered: Manifest | undefined
   for (const event of handlers) {
     const manifest = parseManifest(event)
@@ -1226,10 +1298,10 @@ export async function resolveFolderProject(
   }
   const { manifest, viaRecommendation } = resolved
   const projection = manifest.projections?.[String(root.kind)]
-  const records = manifest.records
-  if (!projection || !records) {
+  if (!projection) {
     return null
   }
+  const records = foldRuleOf(manifest)
   const relation = containmentFor(manifest, root.kind) ?? containers.get(root.kind)!
 
   // 4. Every change in the Folder, folded per object. Already fetched in step 2
@@ -1238,8 +1310,12 @@ export async function resolveFolderProject(
   //    That trip asks by address as well as by Folder: an adopted project's own
   //    changes are not in this Folder, and a `#h` query alone would fold it
   //    without them and report the defaults as its state.
-  const changes =
-    discoveredRule?.changeKind === records.changeKind
+  const changes = !manifest.records
+    ? // The app declares no change kind, so there is nothing to ask for. Not a
+      // filter that matches nothing — a kind is `u16` and the relay refuses an
+      // out-of-range one outright. See `foldRuleOf`.
+      []
+    : discoveredRule?.changeKind === records.changeKind
       ? known.filter((e) => e.kind === records.changeKind)
       : await query([
           { kinds: [records.changeKind], '#h': [folder], limit: 500 },
@@ -1292,8 +1368,18 @@ export async function resolveFolderProject(
   let doneCount = 0
   for (const event of inFolder) {
     if (event.kind !== relation.childKind) continue
+    /*
+      What the link is compared against depends on what the child carries.
+
+      Ship's issues name their project by full address; Peek's messages name
+      their channel with `h`, which holds the bare uuid — the parent's `d`, not
+      its address. The manifest says which (`match`), because guessing is what
+      PRO-2 removed and comparing against both would silently accept a child
+      that named something else entirely whose `d` happened to collide.
+    */
+    const expected = relation.match === 'identifier' ? pointer.identifier : address
     const link = tagValue(event, relation.linkTag)
-    if (link !== undefined && link !== address) continue
+    if (link !== undefined && link !== expected) continue
     // Archived is the one exclusion left. Everything else the project holds is
     // listed; a record its own app hides is not part of the project any more.
     if (isHidden(event, records, changes)) continue

@@ -44,3 +44,6 @@ docs/*
 *.njsproj
 *.sln
 *.sw?
+
+# The manifest signing key (PRO-6). A secret; never committed.
+.manifest-key

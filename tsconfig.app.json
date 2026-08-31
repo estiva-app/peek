@@ -27,5 +27,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "convex", "interop"]
+  "include": ["src", "convex", "interop", "scripts"]
 }
