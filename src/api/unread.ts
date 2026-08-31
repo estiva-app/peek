@@ -15,6 +15,8 @@ import { topicHasUnread as mockTopicHasUnread } from '@/data/topicData'
 import { dmHasUnread as mockDmHasUnread } from '@/data/dmData'
 import { mockConvIdFor } from './directory'
 import { hasConvex } from './store'
+import { useTopicLookup } from './topics'
+import { recordContainerRead, recordThreadRead } from '@/nostr/useReadStateSync'
 
 /**
  * Sidebar indicators, per viewer:
@@ -68,19 +70,35 @@ export const READ_DWELL_MS = 1500
 /**
  * Mark-as-read writers. Call these from a dwell timer, never on mount alone —
  * flicking past a conversation shouldn't consume its unread state.
+ *
+ * Each writer also records a NIP-RS marker so read state follows the person
+ * between apps (CRO-4, SPEC §11). The relay write is a **mirror**: the Convex
+ * mutation is the user's action succeeding, and a marker that cannot be
+ * expressed as a protocol identity is skipped rather than published under a
+ * Peek-private id. See `useReadStateSync` for which those are.
  */
 export function useReadActions() {
   const markContainerRemote = useMutation(api.readState.markContainerRead)
   const markThreadRemote = useMutation(api.readState.markThreadRead)
+  const findTopic = useTopicLookup()
 
   return {
     markContainerRead(parentKind: 'topic' | 'dm' | 'huddle', parentKey: string) {
       if (!hasConvex) return
       void markContainerRemote({ parentKind, parentKey })
+      // Only a topic has a channel today. A DM lives in Convex until the
+      // DMs-on-Nostr work lands, and a huddle is not a channel at all.
+      if (parentKind === 'topic') {
+        recordContainerRead(findTopic(parentKey)?.folderId, Date.now())
+      }
     },
     markThreadRead(messageKey: string) {
       if (!hasConvex) return
       void markThreadRemote({ messageKey })
+      // §11.2: this advances the thread and MUST NOT touch its container.
+      // For a relay-synced message the Peek key *is* the event id; for one that
+      // has never been published, `recordThreadRead` finds no context and stops.
+      recordThreadRead(messageKey, Date.now())
     },
   }
 }
