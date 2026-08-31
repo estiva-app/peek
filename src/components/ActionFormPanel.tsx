@@ -61,14 +61,15 @@ export function ActionFormPanel({
     }
     return seeded
   })
-  // People are picked as chips but the manifest wants one pubkey, so the
-  // chip list is capped at one below and flattened to `person.id` on submit.
+  // Chips in both cases: `pubkey` wants ONE person (capped below, flattened
+  // to `person.id`), `people` keeps the whole list (ids comma-joined).
   const [people, setPeople] = useState<Record<string, Person[]>>({})
 
   const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
 
   const valueOf = (field: FormField): string => {
     if (field.control === 'pubkey') return people[field.key]?.[0]?.id ?? ''
+    if (field.control === 'people') return (people[field.key] ?? []).map((p) => p.id).join(',')
     return values[field.key] ?? ''
   }
 
@@ -135,12 +136,19 @@ export function ActionFormPanel({
           />
         )
       case 'pubkey':
+      case 'people':
         return (
           <PersonChipInput
             value={people[field.key] ?? []}
-            // One pubkey per field: a later pick replaces the current one
-            // rather than growing a list the manifest cannot express.
-            onChange={(next) => setPeople((p) => ({ ...p, [field.key]: next.slice(-1) }))}
+            // `pubkey` holds one person — a later pick replaces the current
+            // one rather than growing a list the field cannot express.
+            // `people` (invitees) keeps them all, as the app's dialog does.
+            onChange={(next) =>
+              setPeople((p) => ({
+                ...p,
+                [field.key]: field.control === 'pubkey' ? next.slice(-1) : next,
+              }))
+            }
             placeholder={field.placeholder}
           />
         )

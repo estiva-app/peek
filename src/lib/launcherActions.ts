@@ -29,12 +29,12 @@ export interface VocabOption {
 /**
  * How one field is drawn. The names mirror the manifest's `input` vocabulary:
  * `string`/`text` are `type: 'string'` (single line vs prose), `enum` is
- * `enum: '<vocabulary>'`, `pubkey` is `type: 'pubkey'`, and `parent` is the
+ * `enum: '<vocabulary>'`, `pubkey` is `type: 'pubkey'` (`people` is its plural — invitees), and `parent` is the
  * field implied by `emits.toAddressOf: 'self'` — the object this creation
  * hangs under, which is the half of "needs a form and a parent" that made
  * object-creating actions unrenderable before (RFC 0.4 §13.4).
  */
-export type FormControl = 'string' | 'text' | 'enum' | 'pubkey' | 'parent'
+export type FormControl = 'string' | 'text' | 'enum' | 'pubkey' | 'people' | 'parent'
 
 export interface FormField {
   key: string
@@ -232,23 +232,26 @@ const PEEK: LauncherApp = {
       ],
     },
     {
+      // Mirrors Peek's own Start topic dialog (CreateTopicDialog.tsx) —
+      // Title and Invite people, no description field there and none here
+      // (Katerina 2026-08-31).
       id: 'create-topic',
       label: 'Create a topic',
       emits: { kind: 9007 },
       submitLabel: 'Create topic',
       fields: [
         {
-          key: 'name',
-          label: 'Name',
+          key: 'title',
+          label: 'Title',
           control: 'string',
           required: true,
           placeholder: "What's this topic about?",
         },
         {
-          key: 'about',
-          label: 'Description',
-          control: 'text',
-          placeholder: 'Description (optional)',
+          key: 'invitees',
+          label: 'Invite people',
+          control: 'people',
+          placeholder: 'Search people...',
         },
       ],
     },
