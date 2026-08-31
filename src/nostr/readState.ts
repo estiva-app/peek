@@ -167,6 +167,28 @@ export function loadSlotIdentity(storage: Storage | undefined = safeLocalStorage
   return identity
 }
 
+/**
+ * Mint and persist a new slot id, keeping the same `client_id`.
+ *
+ * For one case only: our coordinate exists on the relay and carries somebody
+ * else's `client_id` (CRO-5). Publishing to it would overwrite another
+ * installation on every write, and it would overwrite us on every one of theirs
+ * — a fight neither side can see. The `client_id` is kept because it still
+ * names this installation truthfully; it is the coordinate that is taken.
+ */
+export function rotateSlotId(
+  identity: SlotIdentity,
+  storage: Storage | undefined = safeLocalStorage(),
+): SlotIdentity {
+  const rotated: SlotIdentity = { slotId: randomSlotId(), clientId: identity.clientId }
+  try {
+    storage?.setItem(SLOT_STORAGE_KEY, JSON.stringify(rotated))
+  } catch {
+    // Ephemeral, same trade as `loadSlotIdentity`.
+  }
+  return rotated
+}
+
 function safeLocalStorage(): Storage | undefined {
   try {
     return typeof localStorage === 'undefined' ? undefined : localStorage
@@ -324,4 +346,40 @@ export function buildReadStateEvent(
 /** This installation's own slot, and nothing else. */
 export function readStateSlotFilter(pubkey: string, slotId: string): Record<string, unknown> {
   return { kinds: [KIND.APP_DATA], authors: [pubkey], '#d': [readStateDTag(slotId)] }
+}
+
+/**
+ * The default time horizon for fetching slots, in days (CRO-5).
+ *
+ * NIP-RS calls blobs "best-effort recent activity hints bounded by a time
+ * horizon" and fixes no value, so this is a client choice. Seven days matches
+ * the reference implementation's default.
+ *
+ * **The consequence bites and is not a bug here.** Absence of a context means
+ * unread (SPEC §11.6), so a container last read three weeks ago reads as unread
+ * until the client keeps its own cache behind the protocol — which is CRO-6,
+ * and why CRO-6 has to land before anything cuts over to this.
+ */
+export const DEFAULT_HORIZON_DAYS = 7
+
+/**
+ * Every read-state slot **this person** owns, within the horizon.
+ *
+ * `authors` is the viewer themselves. NIP-RS is explicit that this is not a
+ * read-receipt protocol: exposing what somebody has read to anybody else needs
+ * their consent, so this takes one pubkey and there is deliberately no variant
+ * that takes a list.
+ */
+export function allSlotsFilter(
+  pubkey: string,
+  nowMs: number,
+  horizonDays: number = DEFAULT_HORIZON_DAYS,
+): Record<string, unknown> {
+  const since = toContextSeconds(nowMs) - Math.round(horizonDays * 24 * 60 * 60)
+  return {
+    kinds: [KIND.APP_DATA],
+    authors: [pubkey],
+    '#t': [READ_STATE_TAG],
+    since: Math.max(0, since),
+  }
 }

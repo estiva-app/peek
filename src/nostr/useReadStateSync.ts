@@ -33,14 +33,21 @@
  * Anything without one is skipped rather than published under a Peek-private
  * id, because the blob is grow-only and a bad identifier in it is permanent.
  */
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { validToken } from '@/auth/estivaId'
 import { hasConvex } from '@/api/store'
 import type { RelaySeam } from './stars'
-import { containerContext, loadSlotIdentity, threadContext, toContextSeconds } from './readState'
-import { fetchOwnSlot, publishReadState } from './readStateRelay'
+import {
+  containerContext,
+  loadSlotIdentity,
+  rotateSlotId,
+  threadContext,
+  toContextSeconds,
+  type SlotIdentity,
+} from './readState'
+import { fetchOwnSlot, loadMergedReadState, publishReadState } from './readStateRelay'
 import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
 
 /** Set by the hook, read at call time. Null disables publishing entirely. */
@@ -57,9 +64,15 @@ function seam(): RelaySeam | null {
   return { relayUrl: relayOrigin, accessToken: token.accessToken, pubkey: token.pubkey }
 }
 
+/** This installation's slot. Replaced only by a coordinate conflict (CRO-5). */
+let identity: SlotIdentity | undefined
+function currentIdentity(): SlotIdentity {
+  if (!identity) identity = loadSlotIdentity()
+  return identity
+}
+
 function ensureQueue(): ReadStateQueue {
   if (queue) return queue
-  const { slotId, clientId } = loadSlotIdentity()
   queue = createReadStateQueue({
     hydrate: async () => {
       const current = seam()
@@ -67,7 +80,7 @@ function ensureQueue(): ReadStateQueue {
       // to keep distinct from "empty".
       if (!current) return undefined
       try {
-        return await fetchOwnSlot(current, slotId)
+        return await fetchOwnSlot(current, currentIdentity().slotId)
       } catch (error) {
         console.warn('[read-state] could not read this slot back from the relay:', error)
         return undefined
@@ -77,6 +90,7 @@ function ensureQueue(): ReadStateQueue {
       const current = seam()
       if (!current) return false
       try {
+        const { slotId, clientId } = currentIdentity()
         const result = await publishReadState({ v: 1, client_id: clientId, contexts }, slotId, current)
         if (!result.ok) {
           console.warn('[read-state] publish rejected:', result.reason)
@@ -95,6 +109,7 @@ function ensureQueue(): ReadStateQueue {
 export function resetReadStateQueueForTests(): void {
   queue?.cancel()
   queue = undefined
+  identity = undefined
   relayOrigin = null
 }
 
@@ -168,4 +183,70 @@ export function flushReadState(): Promise<void> {
 export function ReadStateSync(): null {
   useReadStateSync()
   return null
+}
+
+/** What the merged read state looks like to a caller (CRO-5). */
+export interface MergedReadStateView {
+  /** context id → unix seconds, maximum across every slot this person owns. */
+  merged: Record<string, number>
+  /** False until the first fetch settles, so "none" is distinguishable from "not yet". */
+  ready: boolean
+  /** Fetch and merge again. Idempotent — safe to call as often as you like. */
+  refresh: () => Promise<void>
+  /**
+   * Other coordinates carrying our own `client_id`.
+   *
+   * SPEC §11 *SHOULDs* deleting these with NIP-09, and this deliberately does
+   * not do it automatically. Deleting somebody's read state on a heuristic is
+   * the kind of silent destructive action `useStarsSync` declined for restore,
+   * and the realistic cause — a key rotation or a restore — is also the case
+   * where the duplicate still holds markers nothing else has. They are merged,
+   * so nothing is lost by leaving them; they are surfaced so a deliberate
+   * cleanup can be built with its own review.
+   */
+  staleDuplicates: string[]
+}
+
+/**
+ * The person's read frontier, merged across every installation (CRO-5).
+ *
+ * This is the half that makes read state follow the person: Peek's slot and
+ * Ship's slot are different coordinates, and the frontier is the maximum over
+ * both. Nothing in Peek's unread indicators consumes it yet — dual-running it
+ * against Convex and cutting over is CRO-7, and cutting over before CRO-6's
+ * horizon cache exists would regress unread for every quiet conversation.
+ */
+export function useMergedReadState(): MergedReadStateView {
+  const [merged, setMerged] = useState<Record<string, number>>({})
+  const [ready, setReady] = useState(false)
+  const [staleDuplicates, setStaleDuplicates] = useState<string[]>([])
+
+  const refresh = useCallback(async () => {
+    const current = seam()
+    // No relay or no session. Not an error and not "nothing read" — `ready`
+    // stays false so a caller does not treat an empty frontier as authoritative.
+    if (!current) return
+    try {
+      const state = await loadMergedReadState(current, currentIdentity())
+      if (!state) return
+      setMerged(state.merged)
+      setStaleDuplicates(state.verdict.staleDuplicates.map((s) => s.dTag))
+      /*
+       * Our coordinate holds another installation's `client_id`. Publishing to
+       * it would overwrite them on every write and them overwrite us on every
+       * one of theirs, invisibly. Rotate before the next publish; the markers
+       * already recorded are unaffected, since the queue holds them in memory
+       * and re-hydrates against the new slot.
+       */
+      if (state.verdict.coordinateConflicted) {
+        console.warn('[read-state] our slot coordinate belongs to another installation; rotating')
+        identity = rotateSlotId(currentIdentity())
+      }
+      setReady(true)
+    } catch (error) {
+      console.warn('[read-state] could not merge read state from the relay:', error)
+    }
+  }, [])
+
+  return { merged, ready, refresh, staleDuplicates }
 }
