@@ -27,5 +27,13 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "convex", "interop", "scripts"]
+  /*
+    `docs` is here so a broken import there fails immediately.
+
+    Three probe scripts sat under `docs/buzz-compat/` importing modules that had
+    moved and a repository that had been renamed. They read as working code for
+    months because nothing compiled them. Deleting them fixed the instances;
+    this is what stops the next one — PRO-7.
+  */
+  "include": ["src", "convex", "interop", "scripts", "docs"]
 }
