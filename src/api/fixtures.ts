@@ -7,5 +7,5 @@
  */
 export { TOPIC_HUDDLES } from '@/data/huddleData'
 export { SCREENER_ITEMS } from '@/data/screenerData'
-export { TOPIC_CONVERSATIONS } from '@/data/topicData'
+export { TOPICS, TOPIC_CONVERSATIONS } from '@/data/topicData'
 export { REPLIES } from '@/data/replyData'
