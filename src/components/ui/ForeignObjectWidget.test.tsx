@@ -22,6 +22,11 @@ const applyAction = vi.fn()
 vi.mock('@/api', () => ({
   hasConvex: true,
   useForeignObjects: () => ({ resolveObject, applyAction, resolveFolderProject: vi.fn() }),
+  // The assignee picker's option list (PEE-1) — two known people.
+  useWorkspaceDirectory: () => ({
+    ['a'.repeat(64)]: { displayName: 'Alice Chen' },
+    ['b'.repeat(64)]: { displayName: 'Bruno Ferreira' },
+  }),
   // `Avatar` resolves portraits through the seam, and a person now has a face.
   useAvatarSrc: () => () => undefined,
 }))
@@ -236,13 +241,58 @@ describe('ForeignObjectWidget', () => {
       )
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      // Reports and sets, in one control. The accessible name stays on what
-      // pressing it does, which does not change when the holder does.
-      const button = await screen.findByRole('button', { name: /Assign to me/ })
-      expect(button).toHaveTextContent('Alice Chen')
+      // Reports and sets, in one control: the picker's trigger shows the
+      // holder's name (PEE-1 replaced the "Assign to me" button with the
+      // person list). The accessible name stays on what the control does.
+      const trigger = await screen.findByRole('button', { name: 'Assign' })
+      expect(trigger).toHaveTextContent('Alice Chen')
       // The person *is* the label. "Assign: Alice Chen" captioned a face with
       // the word for what a face is.
-      expect(button).not.toHaveTextContent('Assign:')
+      expect(trigger).not.toHaveTextContent('Assign:')
+    })
+
+    it('offers the people list with Unassigned, and picking publishes the pubkey (PEE-1)', async () => {
+      applyAction.mockResolvedValue({ ok: true })
+      resolveObject.mockResolvedValue(
+        object({
+          actions: [
+            {
+              id: 'assign-issue',
+              label: 'Assign',
+              control: 'pubkey',
+              field: 'assignee',
+              current: 'a'.repeat(64),
+            },
+          ],
+        }),
+      )
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Assign' }))
+      // Ship's option shape: Unassigned first, then everyone with a face.
+      const unassigned = await screen.findByRole('option', { name: /Unassigned/ })
+      expect(screen.getByRole('option', { name: /Bruno Ferreira/ })).toBeInTheDocument()
+
+      // Picking Unassigned publishes an EMPTY value — the clear the relay folds.
+      await userEvent.click(unassigned)
+      await waitFor(() =>
+        expect(applyAction).toHaveBeenCalledWith({ naddr: NADDR, actionId: 'assign-issue', value: '' }),
+      )
+    })
+
+    it('reads "Unassigned" when nobody holds the field — never "assign to me"', async () => {
+      resolveObject.mockResolvedValue(
+        object({
+          actions: [
+            { id: 'assign-issue', label: 'Assign', control: 'pubkey', field: 'assignee' },
+          ],
+        }),
+      )
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      const trigger = await screen.findByRole('button', { name: 'Assign' })
+      expect(trigger).toHaveTextContent('Unassigned')
+      expect(trigger).not.toHaveTextContent(/to me/)
     })
 
     it('never draws a comment box — you reply to the message instead', async () => {
@@ -281,7 +331,8 @@ describe('ForeignObjectWidget', () => {
       await userEvent.click(status)
       expect(await screen.findByRole('option', { name: 'Done' })).toBeInTheDocument()
       await userEvent.keyboard('{Escape}')
-      expect(screen.getByRole('button', { name: /Assign to me/ })).toBeInTheDocument()
+      // The pubkey action draws the person picker (PEE-1), not a self-assign button.
+      expect(screen.getByRole('button', { name: 'Assign' })).toBeInTheDocument()
     })
 
     it('publishes the change and re-reads from the relay', async () => {
@@ -302,13 +353,20 @@ describe('ForeignObjectWidget', () => {
       await waitFor(() => expect(resolveObject).toHaveBeenCalledTimes(2))
     })
 
-    it('sends @me rather than a key the browser should never hold', async () => {
+    it("sends the picked person's pubkey — public identity, never key material", async () => {
       resolveObject.mockResolvedValue(withActions())
       applyAction.mockResolvedValue({ ok: true })
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await userEvent.click(await screen.findByRole('button', { name: /Assign to me/ }))
-      expect(applyAction).toHaveBeenCalledWith({ naddr: NADDR, actionId: 'assign-issue', value: '@me' })
+      // The picker replaced the "@me" button (PEE-1): anybody in the workspace
+      // directory is one pick away, yourself included as an ordinary row.
+      await userEvent.click(await screen.findByRole('button', { name: 'Assign' }))
+      await userEvent.click(await screen.findByRole('option', { name: /Bruno Ferreira/ }))
+      expect(applyAction).toHaveBeenCalledWith({
+        naddr: NADDR,
+        actionId: 'assign-issue',
+        value: 'b'.repeat(64),
+      })
     })
 
     it('surfaces a refusal instead of silently doing nothing', async () => {

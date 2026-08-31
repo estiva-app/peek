@@ -16,6 +16,18 @@ import { ForeignObjectCard, ForeignObjectSkeleton } from './ForeignObjectWidget'
  */
 const PERSON = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 
+/**
+ * The workspace directory the assignee picker lists (PEE-1) — in the app it
+ * comes from `useWorkspaceDirectory` (every published kind:0); here, three
+ * demo people so opening the picker shows the real shape: Unassigned first,
+ * then faces.
+ */
+const DIRECTORY = {
+  [PERSON]: { displayName: 'Amie Miles' },
+  ['b'.repeat(64)]: { displayName: 'Alice Johnson' },
+  ['c'.repeat(64)]: { displayName: 'Daniel Stanton' },
+}
+
 const issue: ForeignObject = {
   ref: '30851:a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697:fee-1',
   address: '30851:a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697:fee-1',
@@ -107,7 +119,7 @@ export const Loading: Story = {
  * will go (PEE-1).
  */
 export const Assigned: Story = {
-  args: { object: issue, onAct: () => {} },
+  args: { object: issue, onAct: () => {}, directory: DIRECTORY },
 }
 
 /**
@@ -117,7 +129,7 @@ export const Assigned: Story = {
  * this to take it" with a silhouette alone.
  */
 export const Unassigned: Story = {
-  args: { object: unassigned, onAct: () => {} },
+  args: { object: unassigned, onAct: () => {}, directory: DIRECTORY },
 }
 
 /**
@@ -133,7 +145,7 @@ export const ReadOnly: Story = {
 
 /** Mid-action: the control is disabled until the relay confirms. */
 export const Busy: Story = {
-  args: { object: issue, onAct: () => {}, busy: true },
+  args: { object: issue, onAct: () => {}, busy: true, directory: DIRECTORY },
 }
 
 /** The relay refused the write, and says so rather than pretending it worked. */
