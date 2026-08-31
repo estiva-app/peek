@@ -31,6 +31,7 @@ import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useToast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { useTopicPath } from '@/lib/useTopicPath'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
 type SectionKey = 'urgent' | 'openWork' | 'starred'
@@ -42,6 +43,7 @@ type Selected =
 export function DeskPage() {
   const { topicHasUnread, dmHasUnread, topicIsUrgent, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
+  const pathForTopic = useTopicPath()
   const location = useLocation()
   const { showToast } = useToast()
   const { state: debug } = useDebug()
@@ -190,7 +192,7 @@ export function DeskPage() {
       seedMessageId,
     })
     const previousPath = `${location.pathname}${location.search}`
-    navigate(`/topics/${topicId}`)
+    navigate(pathForTopic(topicId))
     showToast({
       label: 'Topic created',
       actionLabel: 'Back to conversation',
