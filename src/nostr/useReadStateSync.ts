@@ -77,13 +77,13 @@ function ensureQueue(): ReadStateQueue {
     hydrate: async () => {
       const current = seam()
       // No relay or no session: "could not find out", which the queue is careful
-      // to keep distinct from "empty".
-      if (!current) return undefined
+      // to keep distinct from "the coordinate is empty".
+      if (!current) return { reachable: false }
       try {
         return await fetchOwnSlot(current, currentIdentity().slotId)
       } catch (error) {
         console.warn('[read-state] could not read this slot back from the relay:', error)
-        return undefined
+        return { reachable: false }
       }
     },
     publish: async (contexts) => {
