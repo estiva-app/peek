@@ -363,6 +363,20 @@ export function readStateSlotFilter(pubkey: string, slotId: string): Record<stri
 export const DEFAULT_HORIZON_DAYS = 7
 
 /**
+ * Peek's horizon (CRO-6).
+ *
+ * The reference default is 7 days. Peek's topics are long-lived, so a wider
+ * window is worth having and costs nothing: the relay stores the events either
+ * way, and the query is bounded by author and tag rather than by scan.
+ *
+ * This narrows the gap the cache has to cover; it does not close it, which is
+ * why CRO-6 does both rather than choosing. Any finite horizon still turns a
+ * long-quiet container into "never read", and only a durable local cache can
+ * tell those apart.
+ */
+export const PEEK_HORIZON_DAYS = 90
+
+/**
  * Every read-state slot **this person** owns, within the horizon.
  *
  * `authors` is the viewer themselves. NIP-RS is explicit that this is not a

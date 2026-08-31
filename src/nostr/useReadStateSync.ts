@@ -34,7 +34,7 @@
  * id, because the blob is grow-only and a bad identifier in it is permanent.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { useQuery } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { validToken } from '@/auth/estivaId'
 import { hasConvex } from '@/api/store'
@@ -126,10 +126,26 @@ export function useReadStateSync(): void {
   // A query rather than a build-time variable, so the bundle and the backend
   // cannot disagree about where the relay is (convex/nostr/config.ts).
   const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const cached = useQuery(api.readState.cachedReadContexts, hasConvex ? {} : 'skip')
 
   useEffect(() => {
     relayOrigin = relayUrl ?? null
   }, [relayUrl])
+
+  /*
+   * The cache's other direction (CRO-6): re-anchor markers the horizon has
+   * forgotten by feeding them back into the publish queue, so they land inside
+   * the window again instead of relying on the cache forever.
+   *
+   * This cannot loop even though the cache is also written from the merge:
+   * every hop takes the max, so a value that is already there advances nothing,
+   * `record` schedules no publish, and the cycle settles after one pass.
+   */
+  useEffect(() => {
+    if (!cached?.length) return
+    const queue = ensureQueue()
+    for (const { context, atSeconds } of cached) queue.record(context, atSeconds)
+  }, [cached])
 
   useEffect(() => {
     const onHidden = () => {
@@ -220,6 +236,7 @@ export function useMergedReadState(): MergedReadStateView {
   const [merged, setMerged] = useState<Record<string, number>>({})
   const [ready, setReady] = useState(false)
   const [staleDuplicates, setStaleDuplicates] = useState<string[]>([])
+  const applyToCache = useMutation(api.readState.applyRelayReadState)
 
   const refresh = useCallback(async () => {
     const current = seam()
@@ -231,6 +248,20 @@ export function useMergedReadState(): MergedReadStateView {
       if (!state) return
       setMerged(state.merged)
       setStaleDuplicates(state.verdict.staleDuplicates.map((s) => s.dTag))
+      /*
+       * Into the horizon cache (CRO-6). Max only, on the Convex side, so this
+       * cannot lower anything — and a context the relay has since forgotten
+       * keeps the value cached here instead of reverting to unread.
+       */
+      const contexts = Object.entries(state.merged).map(([context, atSeconds]) => ({ context, atSeconds }))
+      if (contexts.length > 0) {
+        try {
+          await applyToCache({ contexts })
+        } catch (error) {
+          // The relay half succeeded; the cache is an optimisation on top of it.
+          console.warn('[read-state] could not write the merged state into the cache:', error)
+        }
+      }
       /*
        * Our coordinate holds another installation's `client_id`. Publishing to
        * it would overwrite them on every write and them overwrite us on every
@@ -246,7 +277,7 @@ export function useMergedReadState(): MergedReadStateView {
     } catch (error) {
       console.warn('[read-state] could not merge read state from the relay:', error)
     }
-  }, [])
+  }, [applyToCache])
 
   return { merged, ready, refresh, staleDuplicates }
 }
