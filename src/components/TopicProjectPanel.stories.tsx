@@ -38,7 +38,9 @@ const object = (
   extra: Partial<ForeignObject> = {},
 ): ForeignObject =>
   ({
+    ref: `30851:${person}:${id}`,
     address: `30851:${person}:${id}`,
+    eventId: 'e'.repeat(64),
     naddr: `naddr1${id}`,
     kind: 30851,
     widget: 'row',
@@ -257,14 +259,14 @@ export const NoLeadYet: Story = {
 
 /** A change in flight: the control is held until the relay confirms it. */
 export const Acting: Story = {
-  args: { ...WithControls.args, actingOn: project.naddr },
+  args: { ...WithControls.args, actingOn: project.ref },
 }
 
 /** The relay refused a change, and the panel says which one rather than reverting quietly. */
 export const ActionFailed: Story = {
   args: {
     ...WithControls.args,
-    errors: { [project.naddr]: 'Not a member of this Folder.' },
+    errors: { [project.ref]: 'Not a member of this Folder.' },
   },
 }
 

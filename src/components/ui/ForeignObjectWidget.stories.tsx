@@ -17,7 +17,9 @@ import { ForeignObjectCard, ForeignObjectSkeleton } from './ForeignObjectWidget'
 const PERSON = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 
 const issue: ForeignObject = {
+  ref: '30851:a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697:fee-1',
   address: '30851:a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697:fee-1',
+  eventId: 'e'.repeat(64),
   naddr: 'naddr1qqjxxcny8yexydp495enjces956x2vec95uk2ety94nxydeexc6nver9xycrz',
   kind: 30851,
   widget: 'card',

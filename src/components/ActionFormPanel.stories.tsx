@@ -112,7 +112,9 @@ const PERSON = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697
 const NADDR = 'naddr1qqjxxcny8yexydp495enjces956x2vec95uk2ety94nxydeexc6nver9xycrz'
 
 const justCreated: ForeignObject = {
+  ref: `30851:${PERSON}:fee-12`,
   address: `30851:${PERSON}:fee-12`,
+  eventId: 'e'.repeat(64),
   naddr: NADDR,
   kind: 30851,
   widget: 'card',

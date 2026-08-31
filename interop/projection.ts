@@ -636,16 +636,49 @@ function resolveSlots(
 
 /** Everything the frontend needs to draw the widget. */
 export interface ForeignObject {
-  address: string
   /**
-   * The address as `naddr1…`.
+   * A stable unique handle for this object, whatever kind of thing it is.
+   *
+   * **Added by PRO-7, and it exists because not every object has an address.**
+   * A replaceable record is identified by `kind:pubkey:d`; a regular event —
+   * Peek's `kind:9` message is the case in hand — has no `d` at all and is
+   * identified only by its event id. Before this, `address` was required and
+   * doubled as the React key, the error-map key and the `data-` attribute, so
+   * a non-addressable object could not be represented at all.
+   *
+   * Use this for identity. Use `naddr` only where an *address* is genuinely
+   * required, which in practice means acting on an object.
+   */
+  ref: string
+  /**
+   * The address, `kind:pubkey:d` — **only for an addressable object.**
+   *
+   * Undefined for a regular event. See `ref`.
+   */
+  address?: string
+  /**
+   * The address as `naddr1…`, **only for an addressable object.**
    *
    * Carried alongside `address` because acting on an object is addressed by
    * naddr (`act.ts`), and the sidebar builds its objects rather than being
    * handed a reference somebody pasted. Without it every control in a
    * sidebar card would have to re-encode what the server already knows.
+   *
+   * Its absence is meaningful rather than a gap: an action emits a change
+   * carrying an `a` tag, and there is nothing for that tag to point at on a
+   * non-addressable object. A consumer that has no `naddr` correctly offers no
+   * actions.
    */
-  naddr: string
+  naddr?: string
+  /** The event id — set for every object, and the only handle a regular event has. */
+  eventId: string
+  /**
+   * Child objects from a `list` slot, each resolved through its own projection.
+   *
+   * Empty rather than absent when the slot is declared and nothing matched, so
+   * a renderer can tell "this holds nothing" from "this holds no list".
+   */
+  children?: ForeignObject[]
   kind: number
   widget: string
   appName?: string
@@ -743,9 +776,14 @@ function buildObject(args: {
     const raw = field && rawSlotValue(spec, root, folded)
     if (field && raw !== undefined) held[field] = raw
   }
+  const objectAddress = pointerToAddress(pointer)
   return {
-    address: pointerToAddress(pointer),
+    // An addressable object's `ref` is its address: stable across the author
+    // replacing the event, which the event id is not.
+    ref: objectAddress,
+    address: objectAddress,
     naddr,
+    eventId: root.id,
     kind: pointer.kind,
     widget: projection.widget,
     appName: manifest.name,
@@ -777,6 +815,12 @@ export async function resolveForeignObject(
   query: QueryFn,
   /** Defaults to asking the relay. The browser passes a cached lookup. */
   lookupPeople?: PeopleFn,
+  /**
+   * How many `list` levels have already been followed. Callers outside this
+   * module leave it at 0; it is the budget that stops a child's own `list`
+   * recursing forever. See `MAX_LIST_DEPTH`.
+   */
+  depth = 0,
 ): Promise<ForeignObject | null> {
   let pointer: AddressPointer
   try {
@@ -818,8 +862,12 @@ export async function resolveForeignObject(
     // We know which app owns this and how it would be drawn; we just cannot see
     // the object. Say so rather than returning null and looking like a typo.
     return {
+      ref: address,
       address,
       naddr: naddr.replace(/^nostr:/, ''),
+      // Nothing was read, so there is no event to name. The reference is the
+      // address; that is all this case ever knows.
+      eventId: '',
       kind: pointer.kind,
       widget: projection.widget,
       appName: manifest.name,
@@ -857,11 +905,141 @@ export async function resolveForeignObject(
     webTemplate: resolved.webTemplate,
     comments,
   })
+  /*
+    The `list` slot — PRO-7.
+
+    PRO-2 built this down the *folder* path only, where containment is
+    discovered from a Folder's contents. An object reached by address never
+    resolved it: `rawSlotValue` returns undefined for a `children` spec, so the
+    slot was silently dropped. Measured on production before this: 5 of 5 real
+    Peek Topics rendered a title, a subtitle and no messages — which is exactly
+    what a quiet topic looks like, so nothing reported a problem.
+
+    A child is resolved through *its own* projection, which is what makes "a
+    card with its children underneath" compose rather than being a special case.
+    A child may be a regular event with no address of its own (Peek's messages
+    are), so this builds by event rather than by pointer.
+  */
+  const children = await resolveChildren({
+    projection,
+    root,
+    manifest,
+    query,
+    depth,
+    webTemplate: resolved.webTemplate,
+    viaRecommendation,
+  })
+
   // After the object, because who to ask about is not known until it is built.
   // Folded into the same resolve rather than left to the renderer so the
   // widget's skeleton covers the wait and a key is never briefly on screen.
-  const people = await (lookupPeople ?? peopleViaRelay(query))(pubkeysIn(object))
-  return { ...object, people }
+  // Children are included so one lookup covers the whole tree — a message list
+  // is mostly other people, and a second trip per child would show a column of
+  // keys while it ran.
+  const forPeople = [object, ...(children ?? [])]
+  const people = await (lookupPeople ?? peopleViaRelay(query))([
+    ...new Set(forPeople.flatMap(pubkeysIn)),
+  ])
+  return { ...object, people, ...(children ? { children: children.map((c) => ({ ...c, people })) } : {}) }
+}
+
+/**
+ * Resolve a projection's `list` slot into child objects.
+ *
+ * Returns undefined when no `list` is declared — distinct from `[]`, which
+ * means "declared, and nothing matched". A renderer needs to tell "this holds
+ * nothing" from "this holds no list".
+ */
+async function resolveChildren(args: {
+  projection: { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }
+  root: SignedEvent
+  manifest: Manifest
+  query: QueryFn
+  depth: number
+  webTemplate?: string
+  viaRecommendation: boolean
+}): Promise<ForeignObject[] | undefined> {
+  const { projection, root, manifest, query, depth, webTemplate, viaRecommendation } = args
+  const spec = projection.slots.list
+  const children = !Array.isArray(spec) ? spec?.children : undefined
+  if (!children) return undefined
+  // The consumer's budget, not the manifest's — see MAX_LIST_DEPTH.
+  if (depth >= MAX_LIST_DEPTH) return []
+
+  const childProjection = manifest.projections?.[String(children.kind)]
+  // A declared list whose child kind has no projection is not renderable, and
+  // an empty list is the honest answer: the objects exist, this app has not
+  // said how to draw them.
+  if (!childProjection) return []
+
+  const identifier = tagValue(root, 'd') ?? ''
+  const parent =
+    children.match === 'identifier'
+      ? identifier
+      : pointerToAddress({ kind: root.kind, pubkey: root.pubkey, identifier, relays: [] })
+
+  const found = await query([
+    { kinds: [children.kind], [`#${children.via}`]: [parent], limit: children.limit ?? 100 },
+  ])
+
+  const records = foldRuleOf(manifest)
+  return found.sort(byOrder).map((event) =>
+    buildChildObject({ root: event, manifest, projection: childProjection, records, webTemplate, viaRecommendation }),
+  )
+}
+
+/**
+ * Build a `ForeignObject` from an event that may have no address of its own.
+ *
+ * `buildObject` takes an `AddressPointer` and assumes one exists. A `kind:9`
+ * has no `d` tag, so there is nothing to point at — its only handle is its
+ * event id. That is the whole of PRO-6's finding (6), and it is why `ref` and
+ * `eventId` exist alongside `address`.
+ *
+ * An object built this way carries **no actions**, and that is correct rather
+ * than a limitation: an action emits a change carrying an `a` tag naming what
+ * it changes, and a regular event cannot be named that way.
+ */
+function buildChildObject(args: {
+  root: SignedEvent
+  manifest: Manifest
+  projection: { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }
+  records: RecordsRule
+  webTemplate?: string
+  viaRecommendation: boolean
+}): ForeignObject {
+  const { root, manifest, projection, webTemplate, viaRecommendation } = args
+  const identifier = tagValue(root, 'd')
+  const addressable = identifier !== undefined
+  const pointer: AddressPointer = {
+    kind: root.kind,
+    pubkey: root.pubkey,
+    identifier: identifier ?? '',
+    relays: [],
+  }
+  const address = addressable ? pointerToAddress(pointer) : undefined
+  const naddr = addressable ? encodeNaddr(pointer) : undefined
+  const { slots, meta } = resolveSlots(projection, root, {}, manifest)
+
+  return {
+    // A regular event's identity is its id; a replaceable one's is its address,
+    // which survives the author replacing the event.
+    ref: address ?? root.id,
+    address,
+    naddr,
+    eventId: root.id,
+    kind: root.kind,
+    widget: projection.widget,
+    appName: manifest.name,
+    slots,
+    meta,
+    comments: [],
+    folder: tagValue(root, 'h'),
+    openUrl: naddr ? webTemplate?.replace('<bech32>', naddr) : undefined,
+    // See the note above: nothing can be declared to act on a regular event.
+    actions: [],
+    viaRecommendation,
+  }
 }
 
 // ── A Folder's project, for the topic sidebar (PEEK-24) ─────────────────────

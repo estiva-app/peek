@@ -209,7 +209,7 @@ export function TopicProjectPanelView({
   }
 
   const { project, tickets, openCount, doneCount } = folderProject
-  const error = errors[project.naddr]
+  const error = errors[project.ref]
 
   return (
     <PanelShell>
@@ -251,7 +251,7 @@ export function TopicProjectPanelView({
             <div className="mt-1">
               <Properties
                 object={project}
-                busy={actingOn === project.naddr}
+                busy={actingOn === project.ref}
                 onAct={onAct ? (id, value) => onAct(project, id, value) : undefined}
               />
             </div>
@@ -364,17 +364,29 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
   const onAct = useCallback(
     async (object: ForeignObject, actionId: string, value: string) => {
       if (!folder) return
-      setActingOn(object.naddr)
-      setErrors((prev) => ({ ...prev, [object.naddr]: '' }))
+      setActingOn(object.ref)
+      setErrors((prev) => ({ ...prev, [object.ref]: '' }))
       try {
+        /*
+          An action needs an address, and not every object has one (PRO-7). A
+          change event carries an `a` tag pointing at what it changes, and a
+          regular event — a Peek message — cannot be the target of one. So the
+          absence of `naddr` is the correct answer here rather than a gap, and
+          refusing early beats publishing a change that names nothing.
+        */
+        if (!object.naddr) {
+          setErrors((prev) => ({ ...prev, [object.ref]: 'That object cannot be changed from here.' }))
+          setActingOn(undefined)
+          return
+        }
         const result = await applyAction({ naddr: object.naddr, actionId, value })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // panel can never claim a change the shared record does not have.
         if (result.ok) setResolved(await load(folder))
-        else setErrors((prev) => ({ ...prev, [object.naddr]: result.reason ?? 'Change refused.' }))
+        else setErrors((prev) => ({ ...prev, [object.ref]: result.reason ?? 'Change refused.' }))
       } catch (e) {
-        setErrors((prev) => ({ ...prev, [object.naddr]: (e as Error).message }))
+        setErrors((prev) => ({ ...prev, [object.ref]: (e as Error).message }))
       } finally {
         setActingOn(undefined)
       }
