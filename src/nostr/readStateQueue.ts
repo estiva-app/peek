@@ -27,8 +27,14 @@ import { advanceContexts } from './readState'
 export const READ_STATE_DEBOUNCE_MS = 3000
 
 export interface ReadStateQueueOptions {
-  /** Read this slot's current blob. `undefined` means "could not find out". */
-  hydrate: () => Promise<ReadStateBlob | undefined>
+  /**
+   * Read this slot's current state.
+   *
+   * `reachable: false` means "could not find out"; `reachable: true` with no
+   * blob means the coordinate is genuinely empty, which is every installation's
+   * first run and must not block the first publish.
+   */
+  hydrate: () => Promise<{ reachable: boolean; blob?: ReadStateBlob }>
   /** Publish the whole blob. Resolves `false` when the relay did not accept it. */
   publish: (contexts: Record<string, number>) => Promise<boolean>
   debounceMs?: number
@@ -69,13 +75,15 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
     if (hydrated) return
     if (!hydrating) {
       hydrating = (async () => {
-        const blob = await opts.hydrate()
-        // `undefined` is "could not find out", not "empty". Staying unhydrated
-        // means the next attempt tries again; treating it as empty would publish
-        // a blob that drops every context recorded before this session.
-        if (blob) {
-          known = advanceContexts(blob.contexts, known)
-          published = blob.contexts
+        const result = await opts.hydrate()
+        // Unreachable is not empty. Staying unhydrated means the next attempt
+        // tries again; treating it as empty would publish a blob that drops
+        // every context recorded before this session. An empty *coordinate*, by
+        // contrast, is the ordinary first run and hydrates to nothing.
+        if (result.reachable) {
+          const contexts = result.blob?.contexts ?? {}
+          known = advanceContexts(contexts, known)
+          published = contexts
           hydrated = true
         }
       })().finally(() => {

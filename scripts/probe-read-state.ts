@@ -151,8 +151,13 @@ async function readBack(
 ): Promise<ReadStateBlob | undefined> {
   const { status, text } = await bridge('/query', [readStateSlotFilter(t.pubkey, slot)], t)
   if (status !== 200) throw new Error(`POST /query: ${status} ${text}`)
-  const body = JSON.parse(text) as { events?: SignedEvent[] }
-  const newest = (body.events ?? []).sort((a, b) => b.created_at - a.created_at)[0]
+  // `/query` answers with a **bare JSON array of events**, not `{events: [...]}`.
+  // Reading `.events` off it yields undefined and therefore an empty result —
+  // which looks exactly like "the slot is empty" and passes the negative control
+  // while proving nothing. `parseQueryResponse` in the protocol package gets
+  // this right; this script had its own copy and did not.
+  const events = JSON.parse(text) as SignedEvent[]
+  const newest = [...events].sort((a, b) => b.created_at - a.created_at)[0]
   if (!newest) return undefined
   const { plaintext } = await nip44<{ plaintext: string }>(
     'decrypt',
@@ -166,7 +171,8 @@ async function readBack(
 async function fetchSlots(t: { accessToken: string; pubkey: string }): Promise<SlotBlob[]> {
   const { status, text } = await bridge('/query', [allSlotsFilter(t.pubkey, Date.now())], t)
   if (status !== 200) throw new Error(`POST /query: ${status} ${text}`)
-  const events = (JSON.parse(text) as { events?: SignedEvent[] }).events ?? []
+  // Bare array, as above.
+  const events = JSON.parse(text) as SignedEvent[]
   const slots: SlotBlob[] = []
   for (const event of events) {
     const dTag = event.tags.find((tag) => tag[0] === 'd')?.[1]

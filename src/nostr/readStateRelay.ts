@@ -28,6 +28,14 @@ import {
   mergeSlots,
 } from './readStateMerge'
 
+/** What the relay could tell us about one slot. */
+export interface OwnSlotResult {
+  /** False only when the relay could not be asked at all. */
+  reachable: boolean
+  /** The blob at this coordinate. Absent when the coordinate is genuinely empty. */
+  blob?: ReadStateBlob
+}
+
 /**
  * Read this installation's own slot back off the relay.
  *
@@ -38,23 +46,23 @@ import {
  * before it — and because the merge across slots is grow-only, the loss is
  * invisible until this is the only slot left.
  *
- * `undefined` means "could not find out", which the caller must not treat as an
- * empty blob for exactly that reason.
+ * **`reachable` is separate from `blob` on purpose.** An empty coordinate and an
+ * unreachable relay are the same absence and must not be the same answer: the
+ * caller refuses to publish when it cannot find out, so collapsing them means a
+ * brand-new installation — whose coordinate is legitimately empty — never
+ * publishes at all, and never says why.
  */
-export async function fetchOwnSlot(
-  seam: RelaySeam,
-  slotId: string,
-): Promise<ReadStateBlob | undefined> {
+export async function fetchOwnSlot(seam: RelaySeam, slotId: string): Promise<OwnSlotResult> {
   const { ok, events } = await queryRelay(
     seam.relayUrl,
     [readStateSlotFilter(seam.pubkey, slotId)],
     seam.accessToken,
     seam.pubkey,
   )
-  if (!ok) return undefined
+  if (!ok) return { reachable: false }
   const newest = events.sort((a, b) => b.created_at - a.created_at)[0]
-  if (!newest) return undefined
-  return parseReadStateBlob(await decryptBlob(newest.content, seam.accessToken))
+  if (!newest) return { reachable: true }
+  return { reachable: true, blob: parseReadStateBlob(await decryptBlob(newest.content, seam.accessToken)) }
 }
 
 /** Encrypt, sign and publish one slot's blob. */

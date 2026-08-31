@@ -30,9 +30,15 @@ function fakeTimers() {
 /** The queue's publish callback, typed so `mock.calls[n][0]` is the blob. */
 type Publish = (contexts: Record<string, number>) => Promise<boolean>
 
-function blob(contexts: Record<string, number>): ReadStateBlob {
-  return { v: 1, client_id: 'peek-test', contexts }
+/** A reachable slot holding these contexts. */
+function blob(contexts: Record<string, number>): { reachable: true; blob: ReadStateBlob } {
+  return { reachable: true, blob: { v: 1, client_id: 'peek-test', contexts } }
 }
+
+/** A reachable slot with nothing in it — every installation's first run. */
+const emptySlot = { reachable: true as const }
+/** The relay could not be asked. */
+const unreachable = { reachable: false as const }
 
 describe('createReadStateQueue', () => {
   it('batches a burst of markers into one publish', async () => {
@@ -125,8 +131,8 @@ describe('createReadStateQueue', () => {
    */
   it('refuses to publish while hydration has not succeeded, and retries', async () => {
     const publish = vi.fn<Publish>(async () => true)
-    const hydrate = vi.fn<() => Promise<ReadStateBlob | undefined>>()
-    hydrate.mockResolvedValueOnce(undefined).mockResolvedValueOnce(blob({ [OTHER_UUID]: 500 }))
+    const hydrate = vi.fn<() => Promise<{ reachable: boolean; blob?: ReadStateBlob }>>()
+    hydrate.mockResolvedValueOnce(unreachable).mockResolvedValueOnce(blob({ [OTHER_UUID]: 500 }))
     const queue = createReadStateQueue({ hydrate, publish, ...fakeTimers() })
 
     queue.record(UUID, 1000)
@@ -175,6 +181,22 @@ describe('createReadStateQueue', () => {
     await queue.flush()
     expect(publish).toHaveBeenCalledTimes(2)
     expect(publish.mock.calls[1][0]).toEqual({ [UUID]: 1000 })
+  })
+
+  /**
+   * The bug the browser run surfaced: an empty coordinate read as "could not
+   * find out", so a brand-new installation refused to publish — forever, and
+   * silently. Every first run hits this.
+   */
+  it('publishes on a first run, when the coordinate is legitimately empty', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const queue = createReadStateQueue({ hydrate: async () => emptySlot, publish, ...fakeTimers() })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(publish.mock.calls[0][0]).toEqual({ [UUID]: 1000 })
   })
 
   it('hydrates once, not on every flush', async () => {
