@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
+import type { ForeignObject } from '../../interop/projection'
 import { MessageBody } from './ui/MessageBody'
 
 // ── Reply More Menu ──
@@ -175,6 +176,8 @@ interface ThreadReplyCardProps {
    *  - resolved=false → parent reopens (user removed the resolution from the editor) */
   onResolutionChange?: (resolved: boolean, message?: string) => void
   nostrReferences?: string[]
+  /** Already-resolved reference objects, keyed by naddr (stories/tests — no relay). */
+  resolvedObjects?: Record<string, ForeignObject>
   className?: string
 }
 
@@ -197,6 +200,7 @@ export function ThreadReplyCard({
   resolutionMsg,
   onResolutionChange,
   nostrReferences,
+  resolvedObjects,
   className,
 }: ThreadReplyCardProps) {
   const [isHovered, setIsHovered] = useState(false)
@@ -541,7 +545,7 @@ export function ThreadReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} />
+              <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} resolvedObjects={resolvedObjects} />
             </div>
             {attachments && attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">
