@@ -167,7 +167,7 @@ export function ActionFormPanel({
         ))}
       </div>
 
-      <div className="flex items-center justify-end h-14 px-4 border-t border-border-subtle shrink-0">
+      <div className="flex items-center justify-end px-4 pb-4 shrink-0">
         <Button variant="primary" onClick={submit} disabled={incomplete}>
           {action.submitLabel}
         </Button>

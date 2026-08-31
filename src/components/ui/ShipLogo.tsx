@@ -24,7 +24,7 @@ export function ShipLogoMark({ height = 24, className }: { height?: number; clas
       <path
         d="M16.6 7c0-2.1-2.1-3.4-4.6-3.4S7.4 4.9 7.4 7c0 4.8 9.2 3 9.2 10 0 2.1-2.1 3.4-4.6 3.4S7.4 19.1 7.4 17"
         stroke="currentColor"
-        strokeWidth="2.6"
+        strokeWidth="3.2"
         strokeLinecap="round"
         fill="none"
       />

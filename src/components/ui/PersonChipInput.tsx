@@ -75,6 +75,8 @@ export function PersonChipInput({
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Backspace' && query === '' && value.length > 0) {
+      // Consumed: removing a chip must not double as the launcher's "back".
+      e.preventDefault()
       removePerson(value[value.length - 1].id)
       return
     }

@@ -122,7 +122,7 @@ const SHIP: LauncherApp = {
       // with an input of exactly `{ title }`. The launcher was built because
       // the consumer runtime skips it: an object-creating action needs a form.
       id: 'add-issue',
-      label: 'Create issue...',
+      label: 'Create issue',
       appliesTo: '30850',
       emits: { kind: 30851, setTag: 'a', toAddressOf: 'self' },
       submitLabel: 'Create issue',
@@ -133,7 +133,7 @@ const SHIP: LauncherApp = {
           label: 'Title',
           control: 'string',
           required: true,
-          placeholder: 'What needs doing?',
+          placeholder: 'Issue title',
           declaredToday: true,
         },
         {
@@ -166,7 +166,7 @@ const SHIP: LauncherApp = {
       // Proposed whole: Ship declares no `add-project` yet. Same shape as
       // `add-issue` so declaring it is a manifest line, not a UI change.
       id: 'add-project',
-      label: 'Create project...',
+      label: 'Create project',
       emits: { kind: 30850 },
       submitLabel: 'Create project',
       fields: [
@@ -175,7 +175,7 @@ const SHIP: LauncherApp = {
           label: 'Name',
           control: 'string',
           required: true,
-          placeholder: 'What is this project called?',
+          placeholder: 'New project title',
         },
         {
           key: 'status',
@@ -208,7 +208,7 @@ const PEEK: LauncherApp = {
       // (`src/nostr/manifest.ts`). STARTING a conversation is the case that
       // fits the existing vocabulary: a kind:9 root under a topic's Folder.
       id: 'say',
-      label: 'Start a conversation...',
+      label: 'Start a conversation',
       emits: { kind: 9, toAddressOf: 'self' },
       submitLabel: 'Start conversation',
       fields: [
@@ -227,13 +227,13 @@ const PEEK: LauncherApp = {
           label: 'Message',
           control: 'text',
           required: true,
-          placeholder: 'Say something to kick it off...',
+          placeholder: 'Start a new conversation...',
         },
       ],
     },
     {
       id: 'create-topic',
-      label: 'Create a topic...',
+      label: 'Create a topic',
       emits: { kind: 9007 },
       submitLabel: 'Create topic',
       fields: [
@@ -242,13 +242,13 @@ const PEEK: LauncherApp = {
           label: 'Name',
           control: 'string',
           required: true,
-          placeholder: 'What is this topic about?',
+          placeholder: "What's this topic about?",
         },
         {
           key: 'about',
           label: 'Description',
           control: 'text',
-          placeholder: 'Optional — help people decide whether to follow it.',
+          placeholder: 'Description (optional)',
         },
       ],
     },

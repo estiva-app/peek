@@ -19,6 +19,8 @@ interface Row {
   key: string
   render: (isHighlighted: boolean) => React.ReactNode
   onSelect: () => void
+  /** Single line of text, no tile: 36px instead of the 48px two-line row. */
+  compact?: boolean
 }
 
 interface CommandLauncherProps {
@@ -121,8 +123,31 @@ export function CommandLauncher({
     onClose()
   }
 
-  const appIcon = (app: LauncherApp, size = 20) =>
+  const appIcon = (app: LauncherApp, size = 14) =>
     app.id === 'peek' ? <PeekLogoMark height={size} /> : <ShipLogoMark height={size} />
+
+  /**
+   * The app's tile: its mark, small, on a wash of its own brand colour —
+   * minimal and discreet (Katerina 2026-08-31). Peek's is the accent-muted
+   * badge the app already uses; Ship has no token here, so its wash and
+   * letter come from `estiva-ui/tokens.css` `[data-theme='ship']`
+   * (--accent-primary #4b58d4 / --accent-hover #5c69dc), stated inline
+   * because Peek's palette deliberately does not carry another app's brand.
+   */
+  const appTile = (app: LauncherApp) => (
+    <div
+      className={cn(
+        'flex items-center justify-center size-8 rounded-sm shrink-0',
+        app.id === 'peek' ? 'bg-accent-muted' : 'bg-[rgba(75,88,212,0.14)]',
+      )}
+    >
+      {app.id === 'peek' ? (
+        <PeekLogoMark height={14} />
+      ) : (
+        <ShipLogoMark height={14} className="text-[#5c69dc]" />
+      )}
+    </div>
+  )
 
   const enterHint = (
     <span className="text-caption text-text-secondary whitespace-nowrap shrink-0 signal:font-mono signal:text-[10px] signal:tracking-[0.04em]">↩ Enter</span>
@@ -154,7 +179,7 @@ export function CommandLauncher({
 
     const simpleRow = (
       key: string,
-      icon: React.ReactNode,
+      icon: React.ReactNode | null,
       title: React.ReactNode,
       subtitle: string | undefined,
       onSelect: () => void,
@@ -164,7 +189,7 @@ export function CommandLauncher({
       onSelect,
       render: (isHl) => (
         <>
-          {iconTile(icon)}
+          {icon != null && iconTile(icon)}
           <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
             <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{title}</div>
             {subtitle && <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{subtitle}</div>}
@@ -183,15 +208,9 @@ export function CommandLauncher({
         : scope.actions
       if (actions.length > 0) headers.set(0, sectionHeader(`${scope.label} actions`))
       for (const action of actions) {
-        rows.push(
-          simpleRow(
-            action.id,
-            appIcon(scope),
-            action.label,
-            scope.label,
-            () => enterForm(action)
-          )
-        )
+        // No tile and no app name: the scope chip above already says both
+        // (Katerina 2026-08-31 — they were redundant on every row).
+        rows.push({ ...simpleRow(action.id, null, action.label, undefined, () => enterForm(action)), compact: true })
       }
       return { rows, headers }
     }
@@ -216,16 +235,20 @@ export function CommandLauncher({
       : LAUNCHER_APPS
     if (apps.length > 0) headers.set(rows.length, sectionHeader('Apps'))
     for (const a of apps) {
-      rows.push(
-        simpleRow(
-          a.id,
-          appIcon(a),
-          a.label,
-          `${a.description} · ${a.actions.length} actions`,
-          () => enterScope(a),
-          <IconChevronRight size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-        )
-      )
+      rows.push({
+        key: a.id,
+        onSelect: () => enterScope(a),
+        render: (isHl) => (
+          <>
+            {appTile(a)}
+            <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
+              <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{a.label}</div>
+              <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{`${a.description} · ${a.actions.length} actions`}</div>
+            </div>
+            {isHl ? enterHint : <IconChevronRight size={16} stroke={1.5} className="text-text-secondary shrink-0" />}
+          </>
+        ),
+      })
     }
     return { rows, headers }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -252,17 +275,28 @@ export function CommandLauncher({
     if (e.defaultPrevented) return
     if (e.key === 'Escape') {
       e.preventDefault()
-      // In the form, Escape is the keyboard's way BACK (Katerina 2026-08-31);
-      // one more Escape from the list closes, same as everywhere else.
-      if (formAction) popLevel()
-      else onClose()
+      // Escape ONLY closes; Backspace is the way back (Katerina 2026-08-31 —
+      // two meanings on one key was a duplicate command).
+      onClose()
       return
     }
-    /*
-     * Form mode owns the rest of its keyboard: fields need Backspace, arrows
-     * and Enter to mean what they mean in a form.
-     */
-    if (formAction) return
+    if (formAction) {
+      /*
+       * The form owns its keyboard, with one exception: Backspace with
+       * nothing to delete steps back to the action list — the same gesture
+       * the list levels use. A field that consumed it (text being edited,
+       * a chip being removed) preventDefaults and never reaches here.
+       */
+      if (e.key === 'Backspace') {
+        const t = e.target as HTMLElement
+        const editable = t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement
+        if (!editable || (t as HTMLInputElement | HTMLTextAreaElement).value === '') {
+          e.preventDefault()
+          popLevel()
+        }
+      }
+      return
+    }
     if (e.key === 'Backspace' && query === '' && scope) {
       e.preventDefault()
       popLevel()
@@ -303,10 +337,8 @@ export function CommandLauncher({
   const placeholder = scope ? scope.placeholder : 'Search Peek or choose an action...'
 
   // The chip names the level: "Ship" while listing, "Ship · Create issue"
-  // in the form (the row label without its trailing ellipsis).
-  const chipLabel = formAction
-    ? `${scope?.label} · ${formAction.label.replace(/\.\.\.$/, '')}`
-    : scope?.label
+  // in the form.
+  const chipLabel = formAction ? `${scope?.label} · ${formAction.label}` : scope?.label
 
   return createPortal(
     <>
@@ -327,7 +359,7 @@ export function CommandLauncher({
                 an empty input) to pop one level back out. */}
             {scope && (
               <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
-                {appIcon(scope, 14)}
+                {appIcon(scope, 10)}
                 <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap">
                   {chipLabel}
                 </span>
@@ -377,9 +409,6 @@ export function CommandLauncher({
                 className="flex-1 min-w-0 bg-transparent text-input-value text-text-primary placeholder:text-text-muted outline-none"
               />
             )}
-            <div className="flex items-center justify-center px-1 py-px rounded-sm bg-bg-inset border border-border-strong shrink-0 signal:bg-[rgba(255,255,255,0.05)] signal:border-border-default signal:border-b-2 signal:rounded">
-              <span className="text-caption text-text-secondary whitespace-nowrap signal:font-mono signal:text-[10px]">esc</span>
-            </div>
           </div>
 
           {/* Body: the action's form in form mode, rows otherwise */}
@@ -398,7 +427,8 @@ export function CommandLauncher({
                 <div
                   data-highlighted={highlight === i}
                   className={cn(
-                    'flex items-center gap-3 h-12 px-3 cursor-pointer transition-colors rounded-lg',
+                    'flex items-center gap-3 px-3 cursor-pointer transition-colors rounded-lg',
+                    row.compact ? 'h-9' : 'h-12',
                     highlight === i && 'bg-bg-hover'
                   )}
                   onMouseEnter={() => setHighlight(i)}
@@ -420,30 +450,27 @@ export function CommandLauncher({
           </div>
           )}
 
-          {/* Footer. In form mode it carries the shortcuts in every theme
-              (the submit tip lives here, not beside the button); the list
-              levels keep the signal-only navigation tips. */}
-          {formAction ? (
-            <div className="flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 select-none text-caption text-text-secondary signal:font-mono signal:text-[10px] signal:text-text-muted">
-              <span className="flex items-center gap-1.5">
-                {keyBadge('⌘ ↩')} {formAction.submitLabel.toLowerCase()}
-              </span>
-              <span className="flex items-center gap-1.5">{keyBadge('esc')} back</span>
-            </div>
-          ) : (
-            <div className="hidden signal:flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 font-mono text-[10px] text-text-muted select-none">
-              <span className="flex items-center gap-1.5">
-                <kbd>↑</kbd>
-                <kbd>↓</kbd> navigate
-              </span>
-              <span className="flex items-center gap-1.5">
-                <kbd>enter</kbd> open
-              </span>
-              <span className="flex items-center gap-1.5">
-                <kbd>esc</kbd> close
-              </span>
-            </div>
-          )}
+          {/* The footer carries the shortcuts in every theme — the input row
+              stopped duplicating esc (Katerina 2026-08-31). */}
+          <div className="flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 select-none text-caption text-text-secondary signal:font-mono signal:text-[10px] signal:text-text-muted">
+            {formAction ? (
+              <>
+                <span className="flex items-center gap-1.5">
+                  {keyBadge('⌘ ↩')} {formAction.submitLabel.toLowerCase()}
+                </span>
+                <span className="flex items-center gap-1.5">{keyBadge('⌫')} back</span>
+              </>
+            ) : (
+              <>
+                <span className="flex items-center gap-1.5">
+                  {keyBadge('↑')}
+                  {keyBadge('↓')} navigate
+                </span>
+                <span className="flex items-center gap-1.5">{keyBadge('↩')} open</span>
+              </>
+            )}
+            <span className="flex items-center gap-1.5">{keyBadge('esc')} close</span>
+          </div>
         </div>
       </div>
     </>,
