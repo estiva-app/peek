@@ -33,10 +33,12 @@ import { Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-a
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { HANDLED_KINDS, MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
+import { widgetChainProblem } from '../interop/projection'
 
 const RELAY_URL = process.env.RELAY_URL ?? 'http://localhost:3000'
 const KEY_FILE = new URL('../.manifest-key', import.meta.url).pathname
 const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/'
+const CLOSED_LIST = 'card, row, table, stat'
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -101,6 +103,28 @@ async function main() {
   console.log(`relay    ${RELAY_URL}`)
   console.log(`manifest ${identity.pubkey.slice(0, 16)}…  (31990:<pubkey>:${MANIFEST_D_TAG})\n`)
   assertUrlsAgree(RELAY_URL, APP_URL)
+
+  /*
+    Every widget declaration is publishable — checked before signing, PRO-3.
+
+    A chain that does not terminate in a type RFC 0.4 §13.3 closes is valid
+    JSON, publishes fine, and renders as *nothing* in every consumer that has
+    not heard of its first entry — which is the PEE-10 failure arriving in
+    somebody else's app, caused by us, with no error anywhere.
+
+    Refused rather than warned. A manifest is read by apps that cannot ask what
+    was meant, and this is the one moment where the mistake is still cheap:
+    `kind:31990` is replaceable, but every consumer that fetched the bad one
+    holds it until it refetches.
+  */
+  for (const [kind, projection] of Object.entries(manifestContent().projections)) {
+    const problem = widgetChainProblem((projection as { widget: unknown }).widget)
+    if (problem) {
+      console.error(`\n✋ Refusing to publish. kind:${kind} — ${problem}\n`)
+      process.exit(1)
+    }
+  }
+  check('every widget chain terminates in a closed type', true, CLOSED_LIST)
 
   const event = buildManifest(identity.pubkey, Date.now(), APP_URL)
   const published = await relay.publish(signEvent(event, identity.secretKeyHex))

@@ -21,7 +21,7 @@
  * fills, which is the claim the whole projection layer exists to make.
  */
 import { describe, expect, it } from 'vitest'
-import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject, resolveForeignObject, pickWidget } from './projection'
+import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject, resolveForeignObject, pickWidget, widgetChainProblem, CLOSED_WIDGETS } from './projection'
 import type { SignedEvent } from '@estiva-app/protocol'
 
 const FOLDER = '7b32200c-e4c0-4216-b79a-8490fc05e0bd'
@@ -1337,5 +1337,64 @@ describe('a Folder’s own discovery record', () => {
       relay([manifest(), peekManifest, folderRecord, chatter, globalProject, issue('t1', 'Billing')]),
     )
     expect(found).not.toBeNull()
+  })
+})
+
+/**
+ * The producer half of the fallback chain — PRO-3.
+ *
+ * `pickWidget` makes a consumer safe against a chain it does not fully
+ * understand. This stops the unrenderable chain being published at all, and the
+ * two fail differently: without the consumer half an unknown widget renders
+ * blank; without this one a *conformant* consumer renders blank through no
+ * fault of its own, having done exactly what it was told.
+ */
+describe('widgetChainProblem', () => {
+  const ok = (declared: unknown) => expect(widgetChainProblem(declared)).toBeNull()
+  const bad = (declared: unknown) => expect(widgetChainProblem(declared)).toEqual(expect.any(String))
+
+  it('accepts a bare closed type, which is the older form', () => {
+    for (const w of CLOSED_WIDGETS) ok(w)
+  })
+
+  it('accepts a chain ending in a closed type', () => {
+    ok(['message', 'card'])
+    ok(['profile', 'kanban', 'row'])
+  })
+
+  it('rejects a chain that ends in a type nobody must implement', () => {
+    // The whole point. This is valid JSON, publishes fine, and renders as
+    // nothing in every consumer that has not heard of `profile`.
+    bad(['profile'])
+    bad(['message', 'profile'])
+  })
+
+  it('rejects a bare unknown type and says how to fix it', () => {
+    const problem = widgetChainProblem('profile')
+    expect(problem).toContain('"profile", "card"')
+  })
+
+  it('names the offending entry rather than saying "invalid"', () => {
+    // Read by a person publishing a manifest. "invalid widget" tells them
+    // neither which one nor what to do about it.
+    expect(widgetChainProblem(['gantt'])).toContain('gantt')
+  })
+
+  it('rejects the shapes that are not chains at all', () => {
+    bad([])
+    bad(undefined)
+    bad(42)
+    bad(['card', ''])
+  })
+
+  it('agrees with pickWidget about what is safe', () => {
+    // The two halves must not drift: anything this accepts must leave
+    // pickWidget something to draw for a consumer implementing only the
+    // closed set.
+    const safe: (string | string[])[] = [['message', 'card'], ['profile', 'kanban', 'row'], 'stat']
+    for (const declared of safe) {
+      ok(declared)
+      expect(CLOSED_WIDGETS).toContain(pickWidget(declared, CLOSED_WIDGETS, 'card'))
+    }
   })
 })
