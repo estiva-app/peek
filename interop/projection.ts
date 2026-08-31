@@ -1362,10 +1362,37 @@ export async function resolveFolderProject(
   //    archived is itself a folded field.
   const childKinds = [...new Set([...containers.values()].map((c) => c.childKind))]
   const discoveredRule = discovered?.records
-  const inFolder = await query([
+  const inFolderRaw = await query([
     { '#h': [folder], kinds: [...containers.keys(), ...childKinds], limit: 200 },
     ...(discoveredRule ? [{ '#h': [folder], kinds: [discoveredRule.changeKind], limit: 500 }] : []),
   ])
+
+  /*
+    **A Folder is not a file inside itself.**
+
+    A channel's own `kind:39000` comes back from an `#h` query for that channel.
+    It carries no `h` tag — the relay scopes a discovery event to the channel it
+    describes, so it arrives with the contents. What marks it out is that its
+    `d` *is* the folder uuid; a file sitting in a Folder has its own uuid,
+    different from the Folder's.
+
+    Dropped here, once, rather than at each use. Two places downstream ask "does
+    this Folder hold a container", and they have to agree: `holdsContainer`
+    decides whether to go looking for a project the Folder does not hold, and
+    `roots` decides which container is the subject. Filtering only the second
+    makes them disagree and the panel resolves to nothing at all.
+
+    Until Peek published a manifest this could not bite, because only Ship's
+    kinds were containers and a `39000` was never a candidate. PRO-6 declared
+    Topic a container — it holds messages — so the Topic became a candidate,
+    won the contest against the actual project, and the sidebar listed the
+    *messages* as tickets. Each was titled with its author's pubkey, because a
+    message resolved through Peek's own projection has `title: {field: "pubkey"}`.
+
+    App-neutral on purpose: this is a fact about folders and discovery events,
+    not about Peek.
+  */
+  const inFolder = inFolderRaw.filter((e) => tagValue(e, 'd') !== folder)
 
   const addressOfEvent = (event: SignedEvent) =>
     pointerToAddress({

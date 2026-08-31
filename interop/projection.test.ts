@@ -158,6 +158,22 @@ function relay(events: SignedEvent[]) {
     for (const [key, values] of Object.entries(filter)) {
       if (!key.startsWith('#')) continue
       const held = e.tags.filter((t) => t[0] === key.slice(1)).map((t) => t[1])
+      /*
+        **A channel's own `kind:39000` answers an `#h` query for that channel**,
+        even though it carries no `h` tag — the relay scopes a discovery event to
+        the channel it describes. Measured on production 2026-08-31: an `#h`
+        query for a folder returns `{"9":8,"30851":6,"39000":1}`, and that
+        `39000`'s tags are `[["d","<folder>"],["name",…]]` with no `h` anywhere.
+
+        This fake had no such rule, so the bug that reached production — the
+        Folder's own record beating the project it holds — was **invisible
+        here**. A fixture that is easier than the real thing tests something
+        nobody runs. Removing the fix now fails a test, which it did not before.
+      */
+      if (key === '#h' && e.kind === 39000) {
+        const d = e.tags.find((t) => t[0] === 'd')?.[1]
+        if (d !== undefined && (values as string[]).includes(d)) continue
+      }
       if (!held.some((v) => (values as string[]).includes(v))) return false
     }
     return true
@@ -967,24 +983,36 @@ describe('a child that names its parent by identifier, not address', () => {
   const message = (id: string) =>
     event({ kind: 9, tags: [['d', id], ['h', FOLDER]], content: `msg ${id}` })
 
+  /*
+    Reached by address, never through `resolveFolderProject` — and that is not
+    an implementation detail of the test.
+
+    `via: 'h'` with `match: 'identifier'` compares a message's `h` to the
+    topic's `d`, and those are equal only when the topic *is* the folder. A
+    Folder is not a file inside itself, so `resolveFolderProject` excludes its
+    own discovery record — which means Peek's Topic list is resolvable on the
+    by-address path and nowhere else.
+  */
+  const TOPIC_ADDRESS = `${CHANNEL}:${RELAY_KEY}:${FOLDER}`
+
   it('finds children when the manifest says the tag holds an identifier', async () => {
-    const found = await resolveFolderProject(
-      FOLDER,
+    const found = await resolveForeignObject(
+      TOPIC_ADDRESS,
       relay([peekManifest('identifier'), topic, message('m1'), message('m2')]),
     )
-    expect(found?.project.slots.title.value).toBe('design')
-    expect(found?.tickets).toHaveLength(2)
+    expect(found?.slots.title.value).toBe('design')
+    expect(found?.children).toHaveLength(2)
   })
 
   it('finds none when it defaults to address, which is why match exists', async () => {
     // `h` holds the uuid, never `39000:<relay>:<uuid>`. Without `match` the
     // comparison is against the address and every topic lists zero messages —
     // silently, because an empty list is what a quiet topic looks like too.
-    const found = await resolveFolderProject(
-      FOLDER,
+    const found = await resolveForeignObject(
+      TOPIC_ADDRESS,
       relay([peekManifest(), topic, message('m1'), message('m2')]),
     )
-    expect(found?.tickets).toHaveLength(0)
+    expect(found?.children).toHaveLength(0)
   })
 
   it('keeps address matching the default, so Ship’s manifest is unchanged', async () => {
@@ -1018,9 +1046,9 @@ describe('a slot whose value is the event’s author', () => {
         },
       }),
     })
-    const found = await resolveFolderProject(FOLDER, relay([withPubkeyTitle, m]))
-    expect(found?.project.slots.title.value).toBe(AUTHOR_B)
-    expect(found?.project.slots.title.isPubkey).toBe(true)
+    const found = await resolveForeignObject(`39000:${AUTHOR_B}:${FOLDER}`, relay([withPubkeyTitle, m]))
+    expect(found?.slots.title.value).toBe(AUTHOR_B)
+    expect(found?.slots.title.isPubkey).toBe(true)
   })
 })
 
@@ -1055,14 +1083,16 @@ describe('an app whose records never change', () => {
   })
   const topic = event({ kind: 39000, tags: [['d', FOLDER], ['name', 'design'], ['h', FOLDER]] })
 
+  const ADDRESS = `39000:${AUTHOR}:${FOLDER}`
+
   it('renders rather than returning nothing', async () => {
-    const found = await resolveFolderProject(FOLDER, relay([noRecords, topic]))
-    expect(found?.project.slots.title.value).toBe('design')
+    const found = await resolveForeignObject(ADDRESS, relay([noRecords, topic]))
+    expect(found?.slots.title.value).toBe('design')
   })
 
   it('falls a fold slot through to its declared default', async () => {
-    const found = await resolveFolderProject(FOLDER, relay([noRecords, topic]))
-    expect(found?.project.slots.status.value).toBe('open')
+    const found = await resolveForeignObject(ADDRESS, relay([noRecords, topic]))
+    expect(found?.slots.status.value).toBe('open')
   })
 })
 
@@ -1226,5 +1256,86 @@ describe('pickWidget', () => {
     // §13.3's whole argument is that blank reads as "that app is broken".
     expect(pickWidget(['kanban', 'gantt'], CLOSED, 'card')).toBe('card')
     expect(pickWidget([], CLOSED, 'card')).toBe('card')
+  })
+})
+
+/**
+ * A Folder is not a file inside itself.
+ *
+ * A channel's own `kind:39000` comes back from an `#h` query for that channel
+ * — it carries no `h` tag, but the relay scopes a discovery event to the
+ * channel it describes. Its `d` is the folder uuid, which is what marks it out.
+ *
+ * This reached production. PRO-6 declared Topic a container (it holds
+ * messages), so the Folder's own `39000` became a candidate for "which project
+ * is in this Folder", beat the actual Ship project, and the sidebar listed the
+ * folder's *messages* as tickets — each titled with its author's pubkey,
+ * because a message resolved through Peek's own projection has
+ * `title: {field: "pubkey"}`.
+ */
+describe('a Folder’s own discovery record', () => {
+  const RELAY_KEY = 'c'.repeat(64)
+
+  const peekManifest = event({
+    kind: 31990,
+    tags: [['d', 'peek'], ['k', '39000'], ['k', '9']],
+    content: JSON.stringify({
+      name: 'Peek',
+      projections: {
+        39000: {
+          widget: 'card',
+          slots: {
+            title: { tag: 'name' },
+            list: { children: { kind: 9, via: 'h', match: 'identifier' } },
+          },
+        },
+        9: { widget: ['message', 'card'], slots: { title: { field: 'pubkey', as: 'pubkey' } } },
+      },
+    }),
+  })
+
+  /** The channel's own record: `d` IS the folder, and it carries no `h`. */
+  const folderRecord = event({
+    kind: 39000,
+    pubkey: RELAY_KEY,
+    tags: [['d', FOLDER], ['name', 'Peek’s Intelligence']],
+  })
+  const chatter = event({ kind: 9, tags: [['h', FOLDER]], content: 'unrelated talk' })
+
+  /*
+    **The project is global and carries no `h`** — REW-11 made a Ship project a
+    global record, so an `#h` read of its Folder does not return it. It is found
+    by adoption, from the `a` tag its issues carry.
+
+    That is not incidental to this bug, it *is* the bug: with the project absent
+    from the Folder read, the Folder's own `39000` was the only candidate left,
+    so it won by default. The fixture used elsewhere in this file gives a project
+    an `h`, which is why nothing here caught it.
+  */
+  const globalProject = project('p1', { tags: [['d', 'p1'], ['title', 'Peek’s Intelligence'], ['buzz-channel', FOLDER]] })
+
+  it('is not mistaken for the project whose work the Folder holds', async () => {
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([manifest(), peekManifest, folderRecord, chatter, globalProject, issue('t1', 'Billing')]),
+    )
+    expect(found?.project.kind).toBe(PROJECT_KIND)
+    expect(found?.tickets.map((t) => t.slots.title.value)).toEqual(['Billing'])
+    // The failure this replaces: kind:9 messages listed as tickets, each titled
+    // with its author's pubkey because they resolved through Peek's Message
+    // projection rather than Ship's Issue one.
+    expect(found?.tickets.every((t) => t.kind === ISSUE_KIND)).toBe(true)
+    expect(found?.tickets.some((t) => t.slots.title.isPubkey)).toBe(false)
+  })
+
+  it('does not stop the Folder resolving at all', async () => {
+    // The subtle half: `holdsContainer` and `roots` must agree about what the
+    // Folder holds. Excluding the record from one and not the other makes the
+    // panel resolve to nothing — a different bug, not a fix.
+    const found = await resolveFolderProject(
+      FOLDER,
+      relay([manifest(), peekManifest, folderRecord, chatter, globalProject, issue('t1', 'Billing')]),
+    )
+    expect(found).not.toBeNull()
   })
 })
