@@ -33,7 +33,9 @@ import {
   readStateSlotFilter,
   serializeReadStateBlob,
   type ReadStateBlob,
+  allSlotsFilter,
 } from '../src/nostr/readState'
+import { mergeSlots, type SlotBlob } from '../src/nostr/readStateMerge'
 
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
 const RELAY_URL = process.env.RELAY_URL ?? 'https://estiva.estiva.app'
@@ -43,9 +45,16 @@ const CLIENT_SECRET = process.env.ESTIVA_ID_CLIENT_SECRET ?? ''
 /** A channel uuid and two event ids that exist nowhere — contexts need no referent. */
 const CONTAINER = 'f1e2d3c4-b5a6-4978-8b1c-2d3e4f5a6b7c'
 const THREAD = `thread:${'1'.repeat(64)}`
-const SLOT = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
-  b.toString(16).padStart(2, '0'),
-).join('')
+const randomSlot = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
+
+/**
+ * Two slots for one identity — which is exactly what "two installations" means
+ * to NIP-RS (CRO-5's done-when says two browsers is *enough*, not required).
+ * SLOT is this run's "Peek"; SLOT_B is its "Ship".
+ */
+const SLOT = randomSlot()
+const SLOT_B = randomSlot()
 
 let failures = 0
 function check(label: string, ok: boolean, detail = ''): boolean {
@@ -119,6 +128,7 @@ async function publish(
   contexts: Record<string, number>,
   t: { accessToken: string; pubkey: string },
   clientId: string,
+  slot: string = SLOT,
 ): Promise<{ accepted: boolean; reason?: string }> {
   const blob: ReadStateBlob = { v: 1, client_id: clientId, contexts }
   const { ciphertext } = await nip44<{ ciphertext: string }>(
@@ -126,7 +136,7 @@ async function publish(
     { plaintext: serializeReadStateBlob(blob) },
     t.accessToken,
   )
-  const signed = await sign(buildReadStateEvent(t.pubkey, Date.now(), SLOT, ciphertext), t.accessToken)
+  const signed = await sign(buildReadStateEvent(t.pubkey, Date.now(), slot, ciphertext), t.accessToken)
   const { status, text } = await bridge('/events', signed, t)
   // HTTP 200 does not mean accepted — the `accepted` field is authoritative.
   const parsed = JSON.parse(text) as { accepted?: boolean; message?: string }
@@ -135,8 +145,11 @@ async function publish(
 }
 
 /** Read this slot back and decrypt it. */
-async function readBack(t: { accessToken: string; pubkey: string }): Promise<ReadStateBlob | undefined> {
-  const { status, text } = await bridge('/query', [readStateSlotFilter(t.pubkey, SLOT)], t)
+async function readBack(
+  t: { accessToken: string; pubkey: string },
+  slot: string = SLOT,
+): Promise<ReadStateBlob | undefined> {
+  const { status, text } = await bridge('/query', [readStateSlotFilter(t.pubkey, slot)], t)
   if (status !== 200) throw new Error(`POST /query: ${status} ${text}`)
   const body = JSON.parse(text) as { events?: SignedEvent[] }
   const newest = (body.events ?? []).sort((a, b) => b.created_at - a.created_at)[0]
@@ -147,6 +160,26 @@ async function readBack(t: { accessToken: string; pubkey: string }): Promise<Rea
     t.accessToken,
   )
   return parseReadStateBlob(plaintext)
+}
+
+/** Every read-state slot this identity owns, as `mergeSlots` wants them. */
+async function fetchSlots(t: { accessToken: string; pubkey: string }): Promise<SlotBlob[]> {
+  const { status, text } = await bridge('/query', [allSlotsFilter(t.pubkey, Date.now())], t)
+  if (status !== 200) throw new Error(`POST /query: ${status} ${text}`)
+  const events = (JSON.parse(text) as { events?: SignedEvent[] }).events ?? []
+  const slots: SlotBlob[] = []
+  for (const event of events) {
+    const dTag = event.tags.find((tag) => tag[0] === 'd')?.[1]
+    if (!dTag?.startsWith('read-state:')) continue
+    const { plaintext } = await nip44<{ plaintext: string }>(
+      'decrypt',
+      { ciphertext: event.content },
+      t.accessToken,
+    )
+    const blob = parseReadStateBlob(plaintext)
+    if (blob) slots.push({ dTag, eventId: event.id, createdAt: event.created_at, blob })
+  }
+  return slots
 }
 
 async function main() {
@@ -242,6 +275,45 @@ async function main() {
     'an older marker does not lower the stored one (§11.4)',
     third[CONTAINER] === 1_700_000_000,
     `container = ${third[CONTAINER]}`,
+  )
+
+  // --- 4. CRO-5: two slots converge, and a stale one cannot lower them -------
+  console.log('\n— CRO-5: fetch every slot and merge —')
+
+  // The second "installation" records the same container, later.
+  const bPublished = await publish({ [CONTAINER]: 1_700_050_000 }, t, 'probe-b', SLOT_B)
+  check('relay accepted the second installation’s slot', bPublished.accepted, bPublished.reason)
+
+  const all = await fetchSlots(t)
+  check('both slots come back from one #t query', all.length >= 2, `${all.length} slot(s)`)
+  check(
+    'the query asked only for this pubkey’s own slots',
+    (allSlotsFilter(t.pubkey, Date.now()).authors as string[]).length === 1,
+  )
+
+  const merged = mergeSlots(all)
+  check(
+    'the merge takes the LATER container marker across installations',
+    merged[CONTAINER] === 1_700_050_000,
+    `container = ${merged[CONTAINER]}`,
+  )
+  check(
+    'and keeps a context only one installation has',
+    merged[THREAD] === 1_700_009_999,
+    `thread = ${merged[THREAD]}`,
+  )
+
+  // Idempotence, on real data rather than a fixture.
+  check('re-merging the same slots is the same answer', JSON.stringify(mergeSlots(all)) === JSON.stringify(merged))
+
+  // A stale blob arriving late: republish slot B with an OLD timestamp.
+  const stale = await publish({ [CONTAINER]: 1 }, t, 'probe-b', SLOT_B)
+  check('relay accepted the stale republish', stale.accepted, stale.reason)
+  const afterStale = mergeSlots(await fetchSlots(t))
+  check(
+    'a stale blob arriving late does NOT lower the merged frontier',
+    afterStale[CONTAINER] === 1_700_000_000,
+    `container = ${afterStale[CONTAINER]} (slot A still holds it)`,
   )
 
   console.log(`\n${failures === 0 ? '✅ all checks passed' : `❌ ${failures} check(s) failed`}`)
