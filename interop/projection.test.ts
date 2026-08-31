@@ -21,7 +21,7 @@
  * fills, which is the claim the whole projection layer exists to make.
  */
 import { describe, expect, it } from 'vitest'
-import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject, resolveForeignObject } from './projection'
+import { resolveFolderProjectSlotsForTest, commentKindsOf, resolveFolderProject, resolveForeignObject, pickWidget } from './projection'
 import type { SignedEvent } from '@estiva-app/protocol'
 
 const FOLDER = '7b32200c-e4c0-4216-b79a-8490fc05e0bd'
@@ -1192,5 +1192,39 @@ describe('resolveForeignObject — the list slot', () => {
     expect(child.slots.title.value).toBe('Billing')
     expect(child.address).toBe(`${ISSUE_KIND}:${AUTHOR}:t1`)
     expect(child.ref).toBe(child.address)
+  })
+})
+
+/**
+ * The widget fallback chain — RFC 0.4 §13.3, found live by PRO-7.
+ *
+ * `ForeignObject.widget` was typed `string` while Peek's own manifest declares
+ * `["message","card"]`, so the type said one thing and the wire said another.
+ * A consumer writing `widget === 'card'` compared a string to an array and
+ * silently drew the wrong layout — Peek's own card did, and it had never bitten
+ * because Peek only consumes Ship, whose widgets are bare strings.
+ */
+describe('pickWidget', () => {
+  const CLOSED = ['card', 'row', 'table', 'stat'] as const
+
+  it('takes the first type the consumer implements', () => {
+    expect(pickWidget(['message', 'card'], CLOSED, 'card')).toBe('card')
+    expect(pickWidget(['message', 'card'], ['message', ...CLOSED] as const, 'card')).toBe('message')
+  })
+
+  it('honours the whole chain, not only its first entry', () => {
+    expect(pickWidget(['gantt', 'burndown', 'row'], CLOSED, 'card')).toBe('row')
+  })
+
+  it('accepts a bare string, which is the older form and a chain of one', () => {
+    expect(pickWidget('row', CLOSED, 'card')).toBe('row')
+  })
+
+  it('falls back rather than returning nothing, even for an unterminated chain', () => {
+    // A producer must terminate its chain in a closed type. This is what
+    // happens when one does not, and drawing a card beats drawing a blank:
+    // §13.3's whole argument is that blank reads as "that app is broken".
+    expect(pickWidget(['kanban', 'gantt'], CLOSED, 'card')).toBe('card')
+    expect(pickWidget([], CLOSED, 'card')).toBe('card')
   })
 })
