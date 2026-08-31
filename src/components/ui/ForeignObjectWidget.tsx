@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { pickWidget } from '../../../interop/projection'
 import type {
   ForeignObject,
   People,
@@ -284,7 +285,17 @@ export function ForeignObjectCard({
   onAct?: (actionId: string, value: string) => void
   className?: string
 }) {
-  const { slots, meta, widget } = object
+  const { slots, meta } = object
+  /*
+    The declared layout, walked rather than compared — PRO-7.
+
+    This read `object.widget` directly and compared it to `'card'`. The field is
+    a type *or an ordered chain* of them (RFC 0.4 §13.3), and Peek's own
+    manifest declares `["message","card"]` — so the comparison silently failed
+    against an array and this card lost its subtitle. It had never bitten
+    because Peek only consumes Ship, whose widgets are bare strings.
+  */
+  const widget = pickWidget(object.widget, ['card', 'row', 'table', 'stat'] as const, 'card')
 
   /**
    * Only the controls that set a field.

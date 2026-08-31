@@ -273,7 +273,7 @@ interface Manifest {
   about?: string
   actions?: ManifestAction[]
   records?: RecordsRule
-  projections?: Record<string, { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }>
+  projections?: Record<string, { widget: string | string[]; slots: Record<string, SlotSpec | SlotSpec[]> }>
   vocabularies?: Record<string, { value: string; label: string; colour: string; stage?: string }[]>
 }
 
@@ -501,6 +501,35 @@ function truncate(text: string, limit?: number) {
   return `${text.slice(0, limit).trimEnd()}…`
 }
 
+/**
+ * Which layout to draw, from a declared type or an ordered chain of them.
+ *
+ * RFC 0.4 §13.3. A widget is a layout *hint* rather than a semantic, so an
+ * unknown one can degrade honestly: `["message", "card"]` means *render me as a
+ * message if you know it, else as a card*, and a chain must terminate in a type
+ * the spec closes.
+ *
+ * **It lives here rather than in each consumer** because two implementations
+ * would disagree the first time a chain had three entries, and the whole point
+ * of the chain is that producers and consumers upgrade at different times. The
+ * consumer supplies what it implements; the runtime does the walking.
+ *
+ * `fallback` is what to draw when the chain runs out — never "nothing". §13.3's
+ * argument is that a blank object is indistinguishable from one the reader may
+ * not be allowed to see, and reports "that app is broken" about an app doing
+ * exactly what it was told.
+ */
+export function pickWidget<T extends string>(
+  declared: string | string[],
+  implemented: readonly T[],
+  fallback: T,
+): T {
+  for (const candidate of Array.isArray(declared) ? declared : [declared]) {
+    if ((implemented as readonly string[]).includes(candidate)) return candidate as T
+  }
+  return fallback
+}
+
 /** A slot, resolved to something a renderer can put on screen. */
 export interface ResolvedSlot {
   label?: string
@@ -680,7 +709,22 @@ export interface ForeignObject {
    */
   children?: ForeignObject[]
   kind: number
-  widget: string
+  /**
+   * The layout hint the owner declared — **a type or an ordered chain of them.**
+   *
+   * `["message", "card"]` means *render me as a message if you know it, else as
+   * a card*, and a chain MUST terminate in a type RFC 0.4 §13.3 closes
+   * (`card`/`row`/`table`/`stat`). A bare string is the older form and is a
+   * chain of one.
+   *
+   * **This was typed `string` until PRO-7**, while Peek's own published manifest
+   * declares `["message","card"]` — so the type said one thing and the wire said
+   * another, and a consumer writing `widget === 'card'` compared a string to an
+   * array and silently drew nothing. Found by Ship, the second consumer, the
+   * first time anything typechecked a renderer against a real chain. That is
+   * the answer to PRO-1's "what did the second consumer force to change".
+   */
+  widget: string | string[]
   appName?: string
   /** Named single slots: title, subtitle, status. */
   slots: Record<string, ResolvedSlot>
@@ -747,7 +791,7 @@ function buildObject(args: {
   root: SignedEvent
   pointer: AddressPointer
   manifest: Manifest
-  projection: { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }
+  projection: { widget: string | string[]; slots: Record<string, SlotSpec | SlotSpec[]> }
   folded: Record<string, { value: string }>
   viaRecommendation: boolean
   webTemplate?: string
@@ -951,7 +995,7 @@ export async function resolveForeignObject(
  * nothing" from "this holds no list".
  */
 async function resolveChildren(args: {
-  projection: { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }
+  projection: { widget: string | string[]; slots: Record<string, SlotSpec | SlotSpec[]> }
   root: SignedEvent
   manifest: Manifest
   query: QueryFn
@@ -1003,7 +1047,7 @@ async function resolveChildren(args: {
 function buildChildObject(args: {
   root: SignedEvent
   manifest: Manifest
-  projection: { widget: string; slots: Record<string, SlotSpec | SlotSpec[]> }
+  projection: { widget: string | string[]; slots: Record<string, SlotSpec | SlotSpec[]> }
   records: RecordsRule
   webTemplate?: string
   viaRecommendation: boolean
