@@ -83,6 +83,27 @@ async function findItem(ctx: MutationCtx, userId: Id<'users'>, kind: 'topic' | '
   return rows.find((r) => r.kind === kind && r.targetId === targetId) ?? null
 }
 
+/**
+ * Already committed to: an item in Desk Open Work must not screen (PEE-6).
+ *
+ * The Screener previews things that *want* your attention; Open Work holds
+ * what you have already given it to. One conversation in both reads as a
+ * duplicate — "you're trying to open an item that is already open" — and its
+ * attention signal is the unread badge the Open Work row already carries.
+ */
+async function inOpenWork(
+  ctx: MutationCtx | QueryCtx,
+  userId: Id<'users'>,
+  kind: 'topic' | 'dm',
+  targetId: string,
+): Promise<boolean> {
+  const rows = await ctx.db
+    .query('deskOpenWork')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .collect()
+  return rows.some((w) => w.kind === kind && w.targetId === targetId)
+}
+
 /** One row per conversation: create it, or refresh its preview in place. */
 async function upsert(
   ctx: MutationCtx,
@@ -132,7 +153,11 @@ export async function screenMessage(ctx: MutationCtx, m: Doc<'messages'>) {
         .unique()
       screen = seen === null
     }
-    if (screen) await upsert(ctx, user._id, target.kind, target.targetId, snippet(m.body), m._id)
+    // Checked only for someone about to be screened: `candidates` is every
+    // user, and most of them are not (PEE-6).
+    if (screen && !(await inOpenWork(ctx, user._id, target.kind, target.targetId))) {
+      await upsert(ctx, user._id, target.kind, target.targetId, snippet(m.body), m._id)
+    }
   }
 }
 
@@ -168,7 +193,10 @@ export async function screenReply(ctx: MutationCtx, reply: Doc<'replies'>) {
     const mentioned = mentionsUser(reply.body, user.name)
     if (!mentioned && !members.has(user._id)) continue
     const existing = await findItem(ctx, user._id, target.kind, target.targetId)
-    if (mentioned || existing || participants.has(user._id as string)) {
+    if (
+      (mentioned || existing || participants.has(user._id as string)) &&
+      !(await inOpenWork(ctx, user._id, target.kind, target.targetId))
+    ) {
       await upsert(ctx, user._id, target.kind, target.targetId, snippet(reply.body), parent._id)
     }
   }

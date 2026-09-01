@@ -12,7 +12,7 @@ import { highlightType, fileAttachment } from './schema'
 import { viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
 import { isUrgentBody, screenReply } from './screener'
-import { resolveFileAttachments, deleteAttachmentBlobs, userFaces } from './messages'
+import { foldReactionRows, resolveFileAttachments, deleteAttachmentBlobs, userFaces } from './messages'
 import { ensureTopicMember } from './topics'
 import type { Doc } from './_generated/dataModel'
 
@@ -44,10 +44,24 @@ export const list = query({
     // set when you open its thread panel, not when you open the container.
     const me = await viewerId(ctx)
     const threadWm = me ? (await watermarks(ctx, me)).get(message._id as string) : undefined
+    // Reply reactions live on the parent's index, keyed by replyId (PEE-12).
+    // One collect for the whole thread, folded per reply below — this is what
+    // makes a reaction on a reply survive a reload.
+    const reactionRows = await ctx.db
+      .query('reactions')
+      .withIndex('by_message', (q) => q.eq('messageId', message._id))
+      .collect()
+    const reactionsByReply = new Map<string, typeof reactionRows>()
+    for (const r of reactionRows) {
+      if (!r.replyId) continue
+      const key = r.replyId as string
+      reactionsByReply.set(key, [...(reactionsByReply.get(key) ?? []), r])
+    }
     const sorted = rows.sort((a, b) => a.createdAt - b.createdAt)
     const out = []
     for (const r of sorted) {
       out.push({
+        reactions: foldReactionRows(reactionsByReply.get(r._id as string) ?? [], me ?? undefined, faces),
         id: r.seedKey ?? (r._id as string),
         authorId: r.authorId as string,
         authorName: faces.get(r.authorId)?.name ?? 'Unknown',
@@ -123,6 +137,17 @@ export const remove = mutation({
     if (!r) return { nostrEventIds: [] }
     const me = await viewerId(ctx)
     const mine = r.nostrEventId && me && r.authorId === me ? [r.nostrEventId] : []
+    // Its reactions go with it (PEE-12). Only the viewer's own published ones
+    // can be tombstoned — the relay refuses a kind:5 for anyone else's event.
+    const reactionRows = await ctx.db
+      .query('reactions')
+      .withIndex('by_message', (q) => q.eq('messageId', r.messageId))
+      .collect()
+    for (const reaction of reactionRows) {
+      if (reaction.replyId !== r._id) continue
+      if (reaction.nostrEventId && me && reaction.userId === me) mine.push(reaction.nostrEventId)
+      await ctx.db.delete(reaction._id)
+    }
     await deleteAttachmentBlobs(ctx, r.fileAttachments)
     await ctx.db.delete(r._id)
     return { nostrEventIds: mine }

@@ -8,7 +8,7 @@
  * silently blank every mock portrait in Storybook and the demo dataset.
  */
 import { describe, expect, it } from 'vitest'
-import { toConversationData, type RemoteMessage } from './messages'
+import { pruneConfirmed, toConversationData, type RemoteMessage } from './messages'
 
 const base: RemoteMessage = {
   id: 'm1',
@@ -57,5 +57,30 @@ describe('toConversationData — author avatar', () => {
       { name: 'linear-lite-7cc069', avatarSrc: 'https://cdn.test/face.png' },
       { name: 'Alice Johnson', avatarSrc: undefined },
     ])
+  })
+})
+
+describe('pruneConfirmed — PEE-13, the deleted message that resurrected', () => {
+  const copy = (id: string) => ({ id, body: `optimistic ${id}` })
+
+  it('drops a copy the moment its row has been seen — deletion then has nothing to resurrect', () => {
+    const store = { t1: [copy('sent_1'), copy('sent_2')] }
+    // The row for sent_1 arrived in the query answer.
+    const pruned = pruneConfirmed(store, 't1', new Set(['sent_1']))
+    expect(pruned.t1!.map((c) => c.id)).toEqual(['sent_2'])
+    // The row is later deleted — absent from every future answer. The old
+    // behaviour re-showed the copy at exactly this moment; there is no copy.
+    expect(pruneConfirmed(pruned, 't1', new Set()).t1!.map((c) => c.id)).toEqual(['sent_2'])
+  })
+
+  it('never prunes a copy whose row has not appeared — a failed send stays visible', () => {
+    const store = { t1: [copy('sent_1')] }
+    expect(pruneConfirmed(store, 't1', new Set(['someone_elses_row']))).toBe(store)
+  })
+
+  it('returns the same reference when there is nothing to prune, so setters do not churn', () => {
+    const store = { t1: [copy('sent_1')] }
+    expect(pruneConfirmed(store, 't1', new Set())).toBe(store)
+    expect(pruneConfirmed(store, 'other-topic', new Set(['sent_1']))).toBe(store)
   })
 })

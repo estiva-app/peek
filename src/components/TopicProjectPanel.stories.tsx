@@ -20,6 +20,13 @@ import { TopicProjectPanelView } from './TopicProjectPanel'
  */
 const person = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 
+/** The assignee picker's people (PEE-1) — the app reads every kind:0. */
+const DIRECTORY = {
+  [person]: { displayName: 'Jan Miky' },
+  ['d'.repeat(64)]: { displayName: 'Alice Johnson' },
+  ['e'.repeat(64)]: { displayName: 'Amie Miles' },
+}
+
 /**
  * Who that key belongs to, resolved from their kind:0 alongside the object.
  *
@@ -217,6 +224,7 @@ export const WithControls: Story = {
       },
     },
     onAct: () => {},
+    directory: DIRECTORY,
   },
 }
 

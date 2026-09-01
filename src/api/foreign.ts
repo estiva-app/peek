@@ -11,18 +11,20 @@
  * throwing. A reference that cannot be resolved must degrade to plain text; a
  * message is never broken because an attachment failed.
  */
-import { useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { validToken } from '@/auth/estivaId'
+import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { hasConvex } from './store'
 import {
   applyActionAsViewer,
+  directoryAsViewer,
   resolveFolderProjectAsViewer,
   resolveObjectAsViewer,
   type ActResult,
 } from '@/nostr/foreign'
-import type { FolderProject, ForeignObject } from '@estiva-app/interop'
+import type { FolderProject, ForeignObject, People } from '@estiva-app/interop'
 
 /**
  * The relay origin and the viewer's token, or null when either is missing.
@@ -70,4 +72,60 @@ export function useForeignObjects() {
   )
 
   return { resolveObject, resolveFolderProject, applyAction }
+}
+
+/**
+ * The demo dataset as a People map. Pseudo-keys, clearly marked: demo mode has
+ * no relay and no pubkeys, and an action applied against one of these fails at
+ * the sign-in gate long before the value could matter.
+ */
+const DEMO_DIRECTORY: People = Object.fromEntries(
+  MOCK_PEOPLE.map((person) => [
+    `demo:${person.id}`,
+    { displayName: person.name, picture: avatarFor(person.name) },
+  ]),
+)
+
+/** One fetch per minute, shared by every picker on screen. */
+let directoryCache: { at: number; people: People } | null = null
+
+/**
+ * Everyone with a published profile — the assignee picker's list (PEE-1).
+ *
+ * `undefined` while loading; demo mode answers immediately from the mock
+ * dataset so Storybook and no-backend checkouts render a working picker.
+ */
+export function useWorkspaceDirectory(): People | undefined {
+  const viewer = useRelayViewer()
+  const [people, setPeople] = useState<People | undefined>(() =>
+    hasConvex ? directoryCache?.people : DEMO_DIRECTORY,
+  )
+
+  useEffect(() => {
+    if (!hasConvex || people !== undefined) return
+    let cancelled = false
+    const cached = directoryCache
+    // A fresh shared cache is adopted asynchronously — setState stays out of
+    // the effect body — and the fetch is skipped for a minute across every
+    // picker on screen.
+    const source =
+      cached && Date.now() - cached.at < 60_000
+        ? Promise.resolve(cached.people)
+        : (() => {
+            const v = viewer()
+            if (!v) return null
+            return directoryAsViewer(v.relayUrl, v.token).then((result) => {
+              directoryCache = { at: Date.now(), people: result }
+              return result
+            })
+          })()
+    // A failed read leaves the picker with Unassigned plus whoever the
+    // object itself names — degraded, never broken.
+    source?.then((result) => !cancelled && setPeople(result)).catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [viewer, people])
+
+  return people
 }

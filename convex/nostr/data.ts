@@ -441,6 +441,43 @@ export const removeByNostrEventId = internalMutation({
   },
 })
 
+/** Newest reply event ids in a topic — reaction targets too (PEE-12). */
+export const listReplyEventIdsForTopic = internalQuery({
+  args: { topicId: v.id('topics'), limit: v.number() },
+  handler: async (ctx, { topicId, limit }) => {
+    const messages = await ctx.db
+      .query('messages')
+      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .collect()
+    const out: { createdAt: number; id: string }[] = []
+    for (const m of messages) {
+      const replies = await ctx.db
+        .query('replies')
+        .withIndex('by_message', (q) => q.eq('messageId', m._id))
+        .collect()
+      for (const r of replies) {
+        if (r.nostrEventId) out.push({ createdAt: r.createdAt, id: r.nostrEventId })
+      }
+    }
+    return out
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((r) => r.id)
+  },
+})
+
+/** Local reply for a relay event id — a kind:7 may target a reply (PEE-12). */
+export const replyByNostrEventId = internalQuery({
+  args: { nostrEventId: v.string() },
+  handler: async (ctx, { nostrEventId }) => {
+    const r = await ctx.db
+      .query('replies')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    return r ? { messageId: r.messageId, replyId: r._id } : null
+  },
+})
+
 /** Local message for a relay event id — resolves a NIP-10 `e` tag to a parent. */
 export const messageByNostrEventId = internalQuery({
   args: { nostrEventId: v.string() },
@@ -485,6 +522,7 @@ export const markReactionPublished = internalMutation({
 export const importReaction = internalMutation({
   args: {
     messageId: v.id('messages'),
+    replyId: v.optional(v.id('replies')),
     userId: v.id('users'),
     emoji: v.string(),
     createdAt: v.number(),

@@ -133,9 +133,20 @@ export const screenerList = query({
       .query('screenerItems')
       .withIndex('by_user', (q) => q.eq('userId', you._id))
       .collect()
+    /*
+     * Filtered at read time as well as at write time (PEE-6): the write-side
+     * skip stops NEW duplicates, and this heals every stale row already in
+     * the table — plus whatever a future writer forgets — without a sweep.
+     */
+    const openWork = await ctx.db
+      .query('deskOpenWork')
+      .withIndex('by_user', (q) => q.eq('userId', you._id))
+      .collect()
+    const inOpenWork = new Set(openWork.map((w) => `${w.kind}:${w.targetId}`))
     const out = []
     for (const item of rows.sort((a, b) => b.createdAt - a.createdAt)) {
       if (item.snoozedUntil !== undefined && item.snoozedUntil > now) continue
+      if (inOpenWork.has(`${item.kind}:${item.targetId}`)) continue
       if (item.kind === 'topic') {
         const topic = (await resolveTarget(ctx, 'topic', item.targetId)) as Doc<'topics'> | null
         if (!topic) continue
@@ -260,10 +271,22 @@ export const addTopicsToOpenWork = mutation({
     // Strictly increasing timestamps: a batch inserted within one millisecond
     // would tie on addedAt and sort back to click order, flipping rows the
     // client's optimistic overlay showed newest-first (a visible swap).
+    // The Screener rows for these topics go too, whether or not the topic is
+    // newly added — same behaviour the Screener's own Open button has always
+    // had, from the other direction (PEE-6).
+    const screened = await ctx.db
+      .query('screenerItems')
+      .withIndex('by_user', (q) => q.eq('userId', you._id))
+      .collect()
     let addedAt = Date.now()
     for (const key of topicKeys) {
       const topic = (await resolveTarget(ctx, 'topic', key)) as Doc<'topics'> | null
       if (!topic) continue
+      for (const item of screened) {
+        if (item.kind === 'topic' && item.targetId === (topic._id as string)) {
+          await ctx.db.delete(item._id)
+        }
+      }
       if (existing.some((w) => w.kind === 'topic' && w.targetId === (topic._id as string))) continue
       await ctx.db.insert('deskOpenWork', {
         userId: you._id,

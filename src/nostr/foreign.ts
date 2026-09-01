@@ -257,3 +257,34 @@ export async function applyActionAsViewer(
   if (!result.ok) return fail(result.reason ?? 'The relay rejected the change.')
   return { ok: true }
 }
+
+/**
+ * Everyone with a published profile, keyed by pubkey — the assignee picker's
+ * list (PEE-1).
+ *
+ * kind:0 is replaceable, so the relay answers with one event per pubkey and
+ * "the directory" is exactly this query. Estiva ID is the sole publisher of
+ * these profiles, which is what makes the list the workspace's members rather
+ * than whoever happened to write a name for themselves.
+ *
+ * A profile that cannot be parsed is skipped rather than shown broken — same
+ * bargain as everywhere else in this file: a person picker with one person
+ * missing beats no picker because one profile was malformed.
+ */
+export async function directoryAsViewer(relayUrl: string, token: StoredToken): Promise<People> {
+  const query = viewerQuery(relayUrl, token)
+  const events = await query([{ kinds: [0], limit: 500 }])
+  const people: People = {}
+  for (const event of events) {
+    try {
+      const content = JSON.parse(event.content) as { display_name?: string; name?: string; picture?: string }
+      people[event.pubkey] = {
+        displayName: content.display_name ?? content.name,
+        picture: content.picture,
+      }
+    } catch {
+      // skip: an unreadable profile is not a reason to lose the rest
+    }
+  }
+  return people
+}

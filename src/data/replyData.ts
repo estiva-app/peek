@@ -1,4 +1,4 @@
-import type { HighlightType, FileAttachment } from './topicData'
+import type { HighlightType, FileAttachment, ReactionData } from './topicData'
 
 export interface ReplyData {
   id: string
@@ -22,6 +22,8 @@ export interface ReplyData {
   createdAtMs?: number
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** Persisted per-reply reactions (PEE-12). */
+  reactions?: ReactionData[]
 }
 
 /**

@@ -154,7 +154,8 @@ export const unsignedReaction = query({
     const me = await viewerId(ctx)
     if (!me || me !== r.userId) return { ok: false, reason: 'only the reactor may publish their reaction' }
 
-    const target = await ctx.db.get(r.messageId)
+    // A reply reaction points at the reply's own event (PEE-12).
+    const target = r.replyId ? await ctx.db.get(r.replyId) : await ctx.db.get(r.messageId)
     if (!target?.nostrEventId) return { ok: false, reason: 'the message reacted to is not on the relay yet' }
 
     const reactor = await ctx.db.get(r.userId)

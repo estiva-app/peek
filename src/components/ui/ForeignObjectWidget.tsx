@@ -6,9 +6,9 @@ import type {
   ResolvedAction,
   ResolvedSlot,
 } from '@estiva-app/interop'
-import { hasConvex, useForeignObjects } from '@/api'
+import { hasConvex, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
-import { Button } from './Button'
+import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
 import { SkeletonBar } from './Skeleton'
@@ -109,6 +109,7 @@ function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
 export function ActionControl({
   action,
   people,
+  directory,
   busy = false,
   onAct,
   className,
@@ -116,6 +117,10 @@ export function ActionControl({
   action: ResolvedAction
   /** Only read by the `pubkey` control, which names who holds the field now. */
   people?: People
+  /** The workspace directory (`useWorkspaceDirectory`) — the pubkey picker's
+   *  option list. Without it the picker still offers Unassigned and the
+   *  current holder, degraded rather than broken. */
+  directory?: People
   busy?: boolean
   onAct: (actionId: string, value: string) => void
   className?: string
@@ -146,35 +151,46 @@ export function ActionControl({
   }
 
   if (action.control === 'pubkey') {
-    // `@me` — the server swaps in this user's key. The browser never handles
-    // key material.
-    //
-    // The face shows who holds the field now, so this one control both reports
-    // and sets it (PEEK-18) — the same bargain the status select makes.
-    // `aria-label` stays fixed on what pressing it *does*, because that does not
-    // change when the value does.
+    /*
+     * A person picker, not a self-assign button (PEE-1 — "a list of available
+     * people, like in Ship"). Ship's exact option shape (`ProjectRail.
+     * peopleOptions`): **Unassigned first** — value `''` is a real option, and
+     * picking it clears the field, which the relay folds as a clear — then
+     * everyone with a published profile, each with their face. The trigger
+     * therefore reads "Unassigned" when nobody holds the field, and face +
+     * name with no caption when somebody does — the same rule as the meta
+     * line. The old control could only say "assign to me"; yourself is now
+     * simply one row of the list.
+     */
+    const known = directory ?? {}
+    const entries = Object.entries(known)
+    // The current holder stays visible and pickable even while the directory
+    // is loading, or if they are no longer in it: the object itself names them.
+    if (action.current && !known[action.current]) {
+      entries.push([action.current, people?.[action.current] ?? {}])
+    }
+    const options = [
+      { value: '', label: 'Unassigned' },
+      ...entries
+        .map(([pubkey, profile]) => ({
+          value: pubkey,
+          // The em dash for an unnameable person, as `Person` renders — never
+          // the key (FEE-1, Katerina 2026-08-19).
+          label: profile.displayName ?? '—',
+          leading: <Avatar size={16} src={profile.picture} alt={profile.displayName ?? ''} />,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    ]
     return (
-      <Button
-        type="button"
-        variant="outlined"
-        size="small"
+      <Select
+        ariaLabel={action.label}
         disabled={busy}
-        aria-label={`${action.label} to me`}
-        onClick={() => onAct(action.id, '@me')}
-        className={className}
-      >
-        {/*
-         * Who holds it, with nothing said about it — the same rule as the meta
-         * line. Unassigned still needs words, because there is no face to read
-         * and "press this to take it" is not something an empty control can
-         * convey on its own.
-         */}
-        {action.current ? (
-          <Person pubkey={action.current} people={people} />
-        ) : (
-          `${action.label} to me`
-        )}
-      </Button>
+        size="small"
+        value={action.current ?? ''}
+        onChange={(next) => onAct(action.id, next)}
+        options={options}
+        className={cn('w-auto', className)}
+      />
     )
   }
 
@@ -202,12 +218,14 @@ export function ActionControl({
 function Actions({
   actions,
   people,
+  directory,
   busy,
   error,
   onAct,
 }: {
   actions: ResolvedAction[]
   people?: People
+  directory?: People
   busy: boolean
   error?: string
   onAct: (actionId: string, value: string) => void
@@ -222,6 +240,7 @@ function Actions({
             key={action.id}
             action={action}
             people={people}
+            directory={directory}
             busy={busy}
             onAct={onAct}
           />
@@ -276,6 +295,7 @@ export function ForeignObjectCard({
   busy = false,
   error,
   onAct,
+  directory,
   className,
 }: {
   object: ForeignObject
@@ -283,6 +303,8 @@ export function ForeignObjectCard({
   error?: string
   /** Omit to render the object read-only, with no manifest controls. */
   onAct?: (actionId: string, value: string) => void
+  /** The workspace directory, for the assignee picker (PEE-1). */
+  directory?: People
   className?: string
 }) {
   const { slots, meta } = object
@@ -415,6 +437,7 @@ export function ForeignObjectCard({
         <Actions
           actions={actions}
           people={object.people}
+          directory={directory}
           busy={busy}
           error={error}
           onAct={onAct}
@@ -468,6 +491,7 @@ export function ForeignObjectWidget({
   resolved?: ForeignObject
 }) {
   const { resolveObject: resolve, applyAction } = useForeignObjects()
+  const directory = useWorkspaceDirectory()
   const [object, setObject] = useState<ForeignObject | null | 'loading'>(resolved ?? 'loading')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>()
@@ -556,6 +580,7 @@ export function ForeignObjectWidget({
       busy={busy}
       error={actionError}
       onAct={onAct}
+      directory={directory}
       className="mt-1"
     />
   )

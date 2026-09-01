@@ -16,6 +16,7 @@ import type { FolderProject, ForeignObject, ResolvedSlot } from '@estiva-app/int
 import { hasConvex, useForeignObjects } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
+import { useWorkspaceDirectory } from '@/api'
 import { Person } from '@/components/ui/Person'
 import { Property } from '@/components/ui/Property'
 import { ProjectTickets } from '@/components/ui/ProjectTickets'
@@ -84,10 +85,13 @@ function Properties({
   object,
   busy,
   onAct,
+  directory,
 }: {
   object: ForeignObject
   busy: boolean
   onAct?: (actionId: string, value: string) => void
+  /** The workspace directory, for the assignee picker (PEE-1). */
+  directory?: ReturnType<typeof useWorkspaceDirectory>
 }) {
   const editable = object.actions.filter((action) => action.field)
   const rows = editable.length
@@ -120,6 +124,7 @@ function Properties({
             <ActionControl
               action={row.action}
               people={object.people}
+              directory={directory}
               busy={busy}
               onAct={onAct}
             />
@@ -148,6 +153,7 @@ export function TopicProjectPanelView({
   onAct,
   actingOn,
   errors = {},
+  directory,
 }: {
   /**
    * `'loading'` while the relay is being read; `null` when there is genuinely no
@@ -165,6 +171,10 @@ export function TopicProjectPanelView({
   actingOn?: string
   /** Per-object failure text, keyed by naddr. */
   errors?: Record<string, string>
+  /** The workspace directory, for the assignee picker (PEE-1). A prop rather
+   *  than a hook so this view stays pure — tests and stories render it with
+   *  no provider behind it. The container fetches it. */
+  directory?: ReturnType<typeof useWorkspaceDirectory>
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -254,6 +264,7 @@ export function TopicProjectPanelView({
                 object={project}
                 busy={actingOn === project.ref}
                 onAct={onAct ? (id, value) => onAct(project, id, value) : undefined}
+                directory={directory}
               />
             </div>
             {error && <p className="text-xs text-error-default">{error}</p>}
@@ -276,6 +287,8 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
     hasConvex && topicKey ? { topicKey } : 'skip',
   )
   const { resolveFolderProject: resolveProject, applyAction } = useForeignObjects()
+  // The assignee picker's option list (PEE-1). Demo mode answers from mocks.
+  const directory = useWorkspaceDirectory()
   /** Kept with the Folder it came from, so switching topics cannot show the
    *  previous topic's project while the next one resolves. */
   const [resolved, setResolved] = useState<{
@@ -447,6 +460,7 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
       onAct={onAct}
       actingOn={actingOn}
       errors={errors}
+      directory={directory}
     />
   )
 }
