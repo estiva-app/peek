@@ -70,7 +70,7 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
               role="option"
               aria-selected={checked}
               className={cn(
-                'flex items-center gap-3 h-12 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover',
+                'flex shrink-0 items-center gap-3 h-12 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover',
                 checked && 'bg-bg-selected',
               )}
               onClick={() => toggle(t.id)}
