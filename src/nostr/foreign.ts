@@ -33,6 +33,7 @@ import {
   type ForeignObject,
   type People,
   type PeopleFn,
+  type ResolvedAction,
   type QueryFn,
 } from '@estiva-app/interop'
 
@@ -130,6 +131,63 @@ export async function resolveFolderProjectAsViewer(
 }
 
 /**
+ * Ship's object-creating actions, from its live manifest, and the objects a new
+ * one could hang under (PRO-4).
+ *
+ * The launcher's Ship section was a hardcoded registry, and its own comment
+ * said why: *"Ship's project list stays the registry's mock until the runtime
+ * can query kind:30850 records."* It can now.
+ *
+ * Two reads, and they answer different questions. The **objects** are what a
+ * person picks a parent from; the **manifest** is what says a form may be drawn
+ * at all and which fields it has. One object is resolved to learn the second,
+ * because a projection is per kind rather than per object — so which project is
+ * resolved does not matter, only that one is.
+ *
+ * `null` when nothing can be offered: no readable project of that kind, or an
+ * app that declares no creating action for it. The launcher then shows what it
+ * always showed, which is the right degradation — an action that cannot succeed
+ * should not be listed.
+ */
+export async function creatableUnderAsViewer(
+  parentKind: number,
+  relayUrl: string,
+  token: StoredToken,
+  limit = 50,
+): Promise<{ actions: ResolvedAction[]; parents: { address: string; title: string }[] } | null> {
+  const query = viewerQuery(relayUrl, token)
+  const roots = await query([{ kinds: [parentKind], limit }])
+  if (roots.length === 0) return null
+
+  const people = cachedPeople(query)
+  // Newest first, so the picker opens on what somebody is most likely to want.
+  const ordered = [...roots].sort((a, b) => b.created_at - a.created_at)
+
+  const parents: { address: string; title: string }[] = []
+  let actions: ResolvedAction[] | null = null
+  for (const root of ordered) {
+    const identifier = root.tags.find((t) => t[0] === 'd')?.[1]
+    if (!identifier) continue
+    const address = pointerToAddress({ kind: root.kind, pubkey: root.pubkey, identifier, relays: [] })
+    if (!actions) {
+      // The one resolve. Its projection is the kind's, not this object's.
+      const object = await resolveForeignObject(address, query, people)
+      if (!object) continue
+      actions = object.actions.filter((a) => a.control === 'form')
+      parents.push({ address, title: object.slots.title?.value ?? identifier })
+      continue
+    }
+    // Every other parent needs only a label, which the projection's title slot
+    // gives without a second resolve each — 50 resolves to fill a dropdown
+    // would be the expensive way to ask a cheap question.
+    parents.push({ address, title: root.tags.find((t) => t[0] === 'title' || t[0] === 'name')?.[1] ?? identifier })
+  }
+
+  if (!actions || actions.length === 0) return null
+  return { actions, parents }
+}
+
+/**
  * Perform a manifest-declared action on a foreign object.
  *
  * Returns `{ ok: false, reason }` rather than throwing: every failure here is
@@ -145,10 +203,18 @@ export async function resolveFolderProjectAsViewer(
  * another app's object even if it wanted to, and does not need to.
  */
 export async function applyActionAsViewer(
-  args: { naddr: string; actionId: string; value: string },
+  args: {
+    naddr: string
+    actionId: string
+    /**
+     * A scalar for a change or a comment; `{ property: value }` for an
+     * object-creating action, whose form has several fields (PRO-4).
+     */
+    value: string | Record<string, string>
+  },
   relayUrl: string,
   token: StoredToken,
-): Promise<ActResult> {
+): Promise<ActResult & { created?: string }> {
   let pointer
   try {
     // Same tolerance as reading: a widget rendered from an `a` tag address must
@@ -176,8 +242,21 @@ export async function applyActionAsViewer(
 
   // `@me` lets the UI offer "assign to me" without the caller composing a
   // pubkey. It resolves against the signed-in viewer, which is the only
-  // identity this could honestly mean.
-  const value = args.value === '@me' ? token.pubkey : args.value
+  // identity this could honestly mean. Applied per field for a form, because a
+  // person picker inside one means the same thing it does on its own.
+  const me = (v: string) => (v === '@me' ? token.pubkey : v)
+  const value =
+    typeof args.value === 'string'
+      ? me(args.value)
+      : Object.fromEntries(Object.entries(args.value).map(([k, v]) => [k, me(v)]))
+
+  /*
+    An object being created needs an identifier, and the runtime will not invent
+    one (ADR 0002 §10 constraint 2 — it reaches for nothing). Generated here
+    because *this* is the environment: a `d` is a uuid by RFC 0.4 §4.3, and it
+    is what gives the new object an address at all.
+  */
+  const newId = typeof args.value === 'string' ? undefined : crypto.randomUUID()
 
   const built = buildActionEvent({
     manifest: resolved.manifest,
@@ -187,6 +266,7 @@ export async function applyActionAsViewer(
     folder,
     actionId: args.actionId,
     value,
+    newId,
     pubkey: token.pubkey,
     createdAtMs: Date.now(),
   })
@@ -195,7 +275,17 @@ export async function applyActionAsViewer(
   const signed = await signViaEstivaId(built, token.accessToken, token.pubkey)
   const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
   if (!result.ok) return fail(result.reason ?? 'The relay rejected the change.')
-  return { ok: true }
+  /*
+    The address of what was just created, so the caller can reference it — the
+    launcher drops it into the active composer and the reply renders it as a
+    widget, which is the end of the round trip rather than a flourish.
+
+    Only for a creation: a change is a statement about an object that already
+    had an address, and returning that one would read as "here is the new
+    thing" when nothing new exists.
+  */
+  const created = newId ? `${built.kind}:${token.pubkey}:${newId}` : undefined
+  return { ok: true, ...(created ? { created } : {}) }
 }
 
 /**

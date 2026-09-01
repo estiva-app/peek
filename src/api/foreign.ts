@@ -19,6 +19,7 @@ import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { hasConvex } from './store'
 import {
   applyActionAsViewer,
+  creatableUnderAsViewer,
   directoryAsViewer,
   resolveFolderProjectAsViewer,
   resolveObjectAsViewer,
@@ -63,7 +64,12 @@ export function useForeignObjects() {
   )
 
   const applyAction = useCallback(
-    async (args: { naddr: string; actionId: string; value: string }): Promise<ActResult> => {
+    async (args: {
+      naddr: string
+      actionId: string
+      /** `{ property: value }` for an object-creating action (PRO-4). */
+      value: string | Record<string, string>
+    }): Promise<ActResult & { created?: string }> => {
       const v = viewer()
       if (!v) return { ok: false, reason: 'Sign in to change another app’s object.' }
       return applyActionAsViewer(args, v.relayUrl, v.token)
@@ -71,7 +77,16 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  return { resolveObject, resolveFolderProject, applyAction }
+  /** See `creatableUnderAsViewer`. Null when signed out, as everything here is. */
+  const creatableUnder = useCallback(
+    async (parentKind: number) => {
+      const v = viewer()
+      return v ? creatableUnderAsViewer(parentKind, v.relayUrl, v.token) : null
+    },
+    [viewer],
+  )
+
+  return { resolveObject, resolveFolderProject, applyAction, creatableUnder }
 }
 
 /**
