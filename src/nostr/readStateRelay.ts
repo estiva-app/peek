@@ -14,6 +14,7 @@ import {
   type ReadStateBlob,
   READ_STATE_D_PREFIX,
   type SlotIdentity,
+  PEEK_HORIZON_DAYS,
   allSlotsFilter,
   buildReadStateEvent,
   readStateDTag,
@@ -100,7 +101,7 @@ export async function publishReadState(
 export async function fetchAllSlots(
   seam: RelaySeam,
   nowMs: number = Date.now(),
-  horizonDays?: number,
+  horizonDays: number = PEEK_HORIZON_DAYS,
 ): Promise<SlotBlob[] | undefined> {
   const { ok, events } = await queryRelay(
     seam.relayUrl,
@@ -147,7 +148,7 @@ export async function loadMergedReadState(
   nowMs: number = Date.now(),
   horizonDays?: number,
 ): Promise<MergedReadState | undefined> {
-  const slots = await fetchAllSlots(seam, nowMs, horizonDays)
+  const slots = await fetchAllSlots(seam, nowMs, horizonDays ?? PEEK_HORIZON_DAYS)
   if (!slots) return undefined
   return {
     merged: mergeSlots(slots),
