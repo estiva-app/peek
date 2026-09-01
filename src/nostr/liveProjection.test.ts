@@ -65,6 +65,7 @@ function harness(apiOverrides: Partial<LiveProjectionApi> = {}) {
   const { api, calls } = stubApi(apiOverrides)
   const timers: (() => void)[] = []
   const logs: string[] = []
+  const foreign: string[] = []
   const projection = createLiveProjection({
     subscriptions: subs.subscriptions,
     api,
@@ -74,6 +75,7 @@ function harness(apiOverrides: Partial<LiveProjectionApi> = {}) {
     },
     clearTimer: () => {},
     log: (message) => logs.push(message),
+    onForeignActivity: (channelUuid) => foreign.push(channelUuid),
   })
   const handle = projection.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
   return {
@@ -82,6 +84,7 @@ function harness(apiOverrides: Partial<LiveProjectionApi> = {}) {
     api,
     calls,
     logs,
+    foreign,
     emit: subs.emit,
     releaseCount: subs.releaseCount,
     /** Fire the batch window and wait for the flush to settle. */
@@ -336,5 +339,62 @@ describe('stopping', () => {
     h.handle.stop()
     h.handle.stop()
     expect(h.releaseCount()).toBe(1)
+  })
+})
+
+/**
+ * Another app's records arriving on the socket — PRO-10.
+ *
+ * They always did: the subscription is kindless. They were dropped because the
+ * projection has nothing to do with them, and the panel that renders them
+ * polled instead. Now they are reported.
+ */
+describe('another app’s records', () => {
+  /** A Ship change event — kind:1851, and not one this projection handles. */
+  const SHIP_CHANGE = 1851
+  const SHIP_ISSUE = 30851
+
+  it('reports the channel when only foreign records arrive', async () => {
+    // The case that matters, and the one the "nothing to do" early return would
+    // swallow: a Ship issue moved and nobody said anything in the conversation.
+    const h = harness()
+    h.emit(event('c1', SHIP_CHANGE))
+    await h.tick()
+
+    expect(h.foreign).toEqual([CHANNEL])
+    expect(h.api.importChannel).not.toHaveBeenCalled()
+  })
+
+  it('reports alongside a real message without disturbing the import', async () => {
+    const h = harness()
+    h.emit(event('m1', KIND.STREAM_MESSAGE), event('i1', SHIP_ISSUE))
+    await h.tick()
+
+    expect(h.foreign).toEqual([CHANNEL])
+    expect(h.api.importChannel).toHaveBeenCalledWith({
+      topicKey: TOPIC,
+      events: [expect.objectContaining({ id: 'm1' })],
+      profiles: [],
+    })
+  })
+
+  it('says nothing when everything in the batch is projected', async () => {
+    // A conversation that is only a conversation must not make the panel
+    // re-read the relay for nothing.
+    const h = harness()
+    h.emit(event('m1', KIND.STREAM_MESSAGE), event('m2', KIND.COMMENT))
+    await h.tick()
+
+    expect(h.foreign).toEqual([])
+  })
+
+  it('reports once per batch, not once per event', async () => {
+    // Three issues moving in one burst is one reason to re-read, and the panel
+    // does a relay round trip each time it is told.
+    const h = harness()
+    h.emit(event('i1', SHIP_ISSUE), event('i2', SHIP_ISSUE), event('c1', SHIP_CHANGE))
+    await h.tick()
+
+    expect(h.foreign).toEqual([CHANNEL])
   })
 })

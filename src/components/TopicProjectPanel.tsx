@@ -6,6 +6,7 @@ import {
   type RelayFailureKind,
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
+import { peekLiveTopics } from '@/nostr/liveTopics'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from 'convex/react'
@@ -326,6 +327,44 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
     }
   }, [folder, load])
 
+  /*
+    The socket now drives this, and the timer became the fallback (PRO-10).
+
+    This block used to end "routing 30850/30851 into a panel refresh would make
+    this instant instead of eventual… worth its own". It was, and this is it.
+    The subscription has always been kindless, so a Ship issue moving already
+    arrived in the browser the moment it was published; `liveProjection` dropped
+    it for want of anywhere to put it. It now reports the Folder, and the panel
+    re-reads.
+
+    No event is carried and none is stored. Peek does not hold Ship's records —
+    the panel reads them off the relay, which is ADR 0001's split working — so
+    the useful signal is "re-read now". That is also what keeps this correct for
+    an app nobody has written yet: a fourth app's records make this panel live
+    without Peek learning what they are.
+
+    **The interval stays**, and is now genuinely a fallback rather than the
+    mechanism: a change published while this tab was closed arrives on focus, and
+    a socket that is quietly dead stops being indistinguishable from a quiet
+    workspace.
+  */
+  useEffect(() => {
+    if (!folder) return
+    // The instance the topic view already built. Null before it has connected,
+    // which is a real state rather than an error — the timer below covers it.
+    const live = peekLiveTopics()
+    if (!live) return
+    return live.onForeignActivity(folder, () => {
+      // The same guard the timer uses. An action in flight re-reads on its own
+      // completion, and a refresh landing after it would put the pre-change
+      // state back on screen.
+      if (actingOn) return
+      void load(folder).then((next) => {
+        if (next.folder === folder) setResolved(next)
+      })
+    })
+  }, [folder, actingOn, load])
+
   /**
    * Re-resolve on focus, visibility and a slow interval (PEE-2).
    *
@@ -333,17 +372,6 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
    * life of the panel — so the panel read once and never again. That is the
    * reported "a project created in Ship does not show until you navigate away
    * and back": navigating away and back *is* the remount.
-   *
-   * **The interval does not idle on the socket**, unlike the topic sync. The
-   * socket projects channel messages into Convex; this panel reads Ship's
-   * project and issue records off the relay directly, and `liveProjection`
-   * routes none of those kinds. Live delivery does not cover it, so the timer
-   * is the mechanism rather than a fallback.
-   *
-   * (Routing `30850`/`30851` into a panel refresh would make this instant
-   * instead of eventual. It is a bigger change than this ticket, and worth its
-   * own: the socket already delivers those events, since the subscription is
-   * kindless.)
    */
   useRefreshTriggers(
     () => {

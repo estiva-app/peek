@@ -126,6 +126,12 @@ export function createLiveProjection(options: {
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
   log?: (message: string, detail?: Record<string, unknown>) => void
+  /**
+   * Called with the channel uuid when events arrive that this does not project
+   * — another app's records. Injected rather than reached for, so a test needs
+   * no module state (ADR 0002 §10 constraint 2).
+   */
+  onForeignActivity?: (channelUuid: string) => void
 }): LiveProjection {
   const {
     subscriptions,
@@ -134,6 +140,7 @@ export function createLiveProjection(options: {
     setTimer = (fn, ms) => setTimeout(fn, ms),
     clearTimer = (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     log = () => {},
+    onForeignActivity = () => {},
   } = options
 
   /** Keyed by channel uuid, which is what a subscription delivers under. */
@@ -147,6 +154,7 @@ export function createLiveProjection(options: {
     const reactions: SignedEvent[] = []
     const deletions: SignedEvent[] = []
     const assertions: SignedEvent[] = []
+    const unprojected: SignedEvent[] = []
     for (const event of events) {
       switch (event.kind) {
         // Both, permanently — see the header.
@@ -168,14 +176,35 @@ export function createLiveProjection(options: {
           // unknown kinds are expected rather than exceptional. Dropping them
           // here is what keeps a new relay kind from reaching the projection as
           // a malformed message.
+          //
+          // Dropped from the *projection*, and now reported: these are another
+          // app's records, and something on screen may be rendering them
+          // straight off the relay. Peek does not store them and should not —
+          // the useful signal is "re-read now" rather than the event itself,
+          // which is also what keeps this correct for a kind nobody has
+          // invented yet.
+          unprojected.push(event)
           log('ignoring an unprojected kind', { kind: event.kind })
       }
     }
-    return { messages, reactions, deletions, assertions }
+    return { messages, reactions, deletions, assertions, unprojected }
   }
 
   async function runFlush(channelUuid: string, topicKey: string, events: SignedEvent[]) {
-    const { messages, reactions, deletions, assertions } = partition(events)
+    const { messages, reactions, deletions, assertions, unprojected } = partition(events)
+
+    /*
+      Reported before the early return, and that placement is the whole point.
+
+      A batch containing *only* another app's records — a Ship issue moved, and
+      nothing said in the conversation — has no messages, no reactions, no
+      deletions and no assertions, so it takes the return below. Notifying after
+      it would mean the panel updates when somebody happens to speak and not
+      when the thing it renders actually changes, which is the precise case this
+      exists for.
+    */
+    if (unprojected.length > 0) onForeignActivity(channelUuid)
+
     if (
       messages.length === 0 &&
       reactions.length === 0 &&
