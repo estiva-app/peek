@@ -762,7 +762,10 @@ export function CommandLauncher({
                 <MenuItem
                   data-highlighted={highlight === i}
                   size={row.compact ? 'default' : 'tall'}
-                  className={row.compact ? 'gap-3 px-3' : undefined}
+                  // The launcher keeps its shipped geometry exactly: 36px compact
+                  // rows, 48px full rows (Katerina, 2026-09-01 — the rows shrank in
+                  // the first conversion, and she caught it).
+                  className={row.compact ? 'h-9 gap-3 px-3' : 'min-h-12'}
                   selected={highlight === i}
                   onMouseEnter={() => setHighlight(i)}
                   onMouseDown={(e) => {
