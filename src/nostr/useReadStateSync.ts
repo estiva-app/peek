@@ -116,6 +116,32 @@ function ensureQueue(): ReadStateQueue {
   return queue
 }
 
+/**
+ * Which cached markers are worth re-anchoring onto the relay (CRO-6).
+ *
+ * Only the ones the relay does not already hold at least as recently. Anything
+ * it has is not "forgotten by the horizon" — it is simply there, and
+ * republishing it puts a context into **this installation's** slot that this
+ * installation never read.
+ *
+ * That distinction was missing, and check 3 found it: a second browser profile
+ * came up with a slot holding 67 contexts, identical to the first, because
+ * Convex is per *deployment* and not per device — so every new Peek install read
+ * the shared cache and republished the whole thing as its own. Nothing is lost
+ * that way (the merge is a maximum) but every slot grows toward the 32,768-byte
+ * plaintext limit together, and `client_id` stops meaning "the installation that
+ * read this". Ship had the same shape by a different route, fixed in ship#62.
+ */
+export function reanchorable(
+  cached: readonly { context: string; atSeconds: number }[],
+  onRelay: Readonly<Record<string, number>>,
+): { context: string; atSeconds: number }[] {
+  return cached.filter(({ context, atSeconds }) => {
+    const have = onRelay[context]
+    return have === undefined || have < atSeconds
+  })
+}
+
 /** Test seam: drop the tab's queue so a suite can build a fresh one. */
 export function resetReadStateQueueForTests(): void {
   queue?.cancel()
@@ -138,26 +164,11 @@ export function useReadStateSync(): void {
   // A query rather than a build-time variable, so the bundle and the backend
   // cannot disagree about where the relay is (convex/nostr/config.ts).
   const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
-  const cached = useQuery(api.readState.cachedReadContexts, hasConvex ? {} : 'skip')
 
   useEffect(() => {
     relayOrigin = relayUrl ?? null
   }, [relayUrl])
 
-  /*
-   * The cache's other direction (CRO-6): re-anchor markers the horizon has
-   * forgotten by feeding them back into the publish queue, so they land inside
-   * the window again instead of relying on the cache forever.
-   *
-   * This cannot loop even though the cache is also written from the merge:
-   * every hop takes the max, so a value that is already there advances nothing,
-   * `record` schedules no publish, and the cycle settles after one pass.
-   */
-  useEffect(() => {
-    if (!cached?.length) return
-    const queue = ensureQueue()
-    for (const { context, atSeconds } of cached) queue.record(context, atSeconds)
-  }, [cached])
 
   useEffect(() => {
     const onHidden = () => {
@@ -208,6 +219,25 @@ export function flushReadState(): Promise<void> {
  * list of what is kept in sync, which is the shape `MentionDirectorySync` and
  * `TopicDirectorySync` already established.
  */
+/**
+ * Re-anchor what the horizon has genuinely dropped, and nothing else.
+ *
+ * Lives here rather than in `useReadStateSync` because the decision needs the
+ * merged frontier, which is this component's to read. Gated on `ready` so the
+ * first pass does not compare against an empty merge and conclude the relay has
+ * forgotten everything.
+ */
+function useCacheReanchor(merged: Record<string, number>, ready: boolean): void {
+  const cached = useQuery(api.readState.cachedReadContexts, hasConvex ? {} : 'skip')
+  useEffect(() => {
+    if (!ready || !cached?.length) return
+    const queue = ensureQueue()
+    for (const { context, atSeconds } of reanchorable(cached, merged)) {
+      queue.record(context, atSeconds)
+    }
+  }, [cached, merged, ready])
+}
+
 export function ReadStateSync(): null {
   useReadStateSync()
   /*
@@ -223,13 +253,14 @@ export function ReadStateSync(): null {
    * Nothing renders from it yet; that is still the cutover's job. What changes
    * here is that the cache gets filled and the diff gets data.
    */
-  const { refresh } = useMergedReadState()
+  const { merged, ready, refresh } = useMergedReadState()
   useEffect(() => {
     void refresh()
   }, [refresh])
   // Focus, visibility and a slow interval — the same triggers every other
   // background read in this app uses, for the same reasons.
   useRefreshTriggers(() => void refresh())
+  useCacheReanchor(merged, ready)
   return null
 }
 
