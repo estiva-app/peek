@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { IconX } from '@tabler/icons-react'
+import { MenuItem } from '@estiva-app/ui'
 import { Avatar } from './ui/Avatar'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { usePeople } from '@/api'
@@ -141,27 +142,20 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
         </div>
         {focused && suggestions.length > 0 && (
           <div className="absolute left-0 right-0 bottom-full mb-1 bg-bg-elevated border border-border-default rounded-lg shadow-md py-1 max-h-[200px] overflow-y-auto z-50">
-            {suggestions.map((person, i) => {
-              const isActive = i === suggestionIndex
-              return (
-                <button
-                  key={person.id}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setSuggestionIndex(i)}
-                  onClick={() => addRecipient(person.name)}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 transition-colors cursor-pointer',
-                    isActive ? 'bg-bg-hover' : 'hover:bg-bg-hover'
-                  )}
-                >
-                  <Avatar size={24} name={person.name} alt={person.name} />
-                  <div className="flex flex-col items-start">
-                    <span className="text-sm text-text-primary">{person.name}</span>
-                    <span className="text-caption text-text-muted">{person.role}</span>
-                  </div>
-                </button>
-              )
-            })}
+            {suggestions.map((person, i) => (
+              <MenuItem
+                key={person.id}
+                size="tall"
+                className="rounded-none"
+                leading={<Avatar size={24} name={person.name} alt={person.name} />}
+                label={person.name}
+                description={person.role}
+                selected={i === suggestionIndex}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setSuggestionIndex(i)}
+                onClick={() => addRecipient(person.name)}
+              />
+            ))}
           </div>
         )}
       </div>

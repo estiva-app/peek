@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { IconX } from '@tabler/icons-react'
+import { MenuItem } from '@estiva-app/ui'
 import { Avatar } from './Avatar'
 import { usePeople, type Person } from '@/api'
 import { cn } from '@/lib/utils'
@@ -160,24 +161,20 @@ export function PersonChipInput({
           }}
         >
           {matches.map((p, i) => (
-            <div
+            <MenuItem
               key={p.id}
-              className={cn(
-                'flex items-center gap-3 h-12 px-3 py-1.5 cursor-pointer transition-colors',
-                i === highlight ? 'bg-bg-hover' : ''
-              )}
+              size="tall"
+              className="rounded-none"
+              leading={<Avatar size={32} name={p.name} alt={p.name} />}
+              label={p.name}
+              description={p.role}
+              selected={i === highlight}
               onMouseEnter={() => setHighlight(i)}
               onMouseDown={(e) => {
                 e.preventDefault()
                 addPerson(p)
               }}
-            >
-              <Avatar size={32} name={p.name} alt={p.name} />
-              <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
-                <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{p.name}</div>
-                <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{p.role}</div>
-              </div>
-            </div>
+            />
           ))}
         </div>,
         document.body
