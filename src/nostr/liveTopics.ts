@@ -32,6 +32,7 @@
  */
 import { validToken } from '@/auth/estivaId'
 import { createChannelSubscriptions, type ChannelSubscriptions } from '@estiva-app/protocol'
+import { createForeignActivity } from './foreignActivity'
 import {
   createLiveProjection,
   type LiveProjection,
@@ -54,6 +55,16 @@ export interface LiveTopics {
   state(): RelayState
   /** Subscribe to connection-state changes. Returns an unsubscribe. PEE-9 consumes this. */
   onState(listener: (state: RelayState) => void): () => void
+  /**
+   * Watch one Folder for *another app's* records changing — a Ship issue moved,
+   * a project renamed. Returns an unsubscribe.
+   *
+   * The socket already delivers these because the subscription is kindless;
+   * they were dropped for want of anywhere to put them. This is that place, and
+   * it carries no event: Peek does not store other apps' records, so the useful
+   * signal is "re-read now".
+   */
+  onForeignActivity(folder: string, listener: () => void): () => void
 }
 
 interface Instance extends LiveTopics {
@@ -110,10 +121,15 @@ function build(relayUrl: string, api: LiveProjectionApi): Instance {
     onListenerError: (error) => console.warn('[relay] a channel listener threw:', error),
   })
 
+  const foreignActivity = createForeignActivity()
+
   const projection = createLiveProjection({
     subscriptions,
     api,
     log: (message, detail) => console.warn('[relay]', message, detail ?? ''),
+    // A channel uuid *is* the Folder id (RFC 0.4 §5.2, measured across all 50
+    // production channels), so no translation is needed here.
+    onForeignActivity: (channelUuid) => foreignActivity.notify(channelUuid),
   })
 
   /*
@@ -146,6 +162,7 @@ function build(relayUrl: string, api: LiveProjectionApi): Instance {
     projection,
     watch: (args) => projection.watch(args),
     state: () => state,
+    onForeignActivity: (folder, listener) => foreignActivity.watch(folder, listener),
     onState(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -173,6 +190,23 @@ export function getLiveTopics(relayUrl: string, api: LiveProjectionApi): LiveTop
 }
 
 /** Test seam. Drops the instance so the next `getLiveTopics` builds a new one. */
+/**
+ * The live instance if one exists, without building it.
+ *
+ * `getLiveTopics` needs the Convex actions because it may have to *construct*
+ * the projection. A consumer that only wants to listen — the project panel
+ * watching for another app's records — has no business holding those, and
+ * making it pass them would put Convex in the dependency list of a component
+ * that reads the relay directly.
+ *
+ * Returns null before the topic view has connected, which is a real state
+ * rather than an error: the panel falls back to its timer, which is what it did
+ * for everything until now.
+ */
+export function peekLiveTopics(): LiveTopics | null {
+  return instance
+}
+
 export function resetLiveTopicsForTests(): void {
   if (instance) {
     instance.projection.stopAll()
