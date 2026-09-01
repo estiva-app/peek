@@ -526,7 +526,11 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
                     <MenuItem
                       key={item.trigger}
                       label={item.label}
-                      shortcut={item.trigger}
+                      trailing={
+                        <kbd className="inline-flex items-center justify-center bg-bg-inset border border-border-strong rounded-sm px-1 py-[1px] text-[11px] text-text-secondary leading-[1.2] min-w-[18px] shrink-0">
+                          {item.trigger}
+                        </kbd>
+                      }
                       selected={globalIdx === slashHighlight}
                       onMouseEnter={() => setSlashHighlight(globalIdx)}
                       onMouseDown={(e) => {

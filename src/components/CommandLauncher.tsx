@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { EnterHint, MenuItem, SectionLabel } from '@estiva-app/ui'
+import { MenuItem, SectionLabel } from '@estiva-app/ui'
 import { ActionFormPanel } from './ActionFormPanel'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
@@ -359,7 +359,11 @@ export function CommandLauncher({
     </div>
   )
 
-  const enterHint = <EnterHint />
+  // The launcher keeps its own, caption-sized hint — its shipped look
+  // (restored 2026-09-01; the shared EnterHint is the pickers' 9px voice).
+  const enterHint = (
+    <span className="text-caption text-text-secondary whitespace-nowrap shrink-0 signal:font-mono signal:text-[10px] signal:tracking-[0.04em]">↩ Enter</span>
+  )
 
   /** The `esc` badge's styling, reused for every shortcut the footer names. */
   const keyBadge = (label: string) => (
