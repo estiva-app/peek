@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { EnterHint, MenuItem, SectionLabel } from '@estiva-app/ui'
 import { ActionFormPanel } from './ActionFormPanel'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
@@ -358,9 +359,7 @@ export function CommandLauncher({
     </div>
   )
 
-  const enterHint = (
-    <span className="text-caption text-text-secondary whitespace-nowrap shrink-0 signal:font-mono signal:text-[10px] signal:tracking-[0.04em]">↩ Enter</span>
-  )
+  const enterHint = <EnterHint />
 
   /** The `esc` badge's styling, reused for every shortcut the footer names. */
   const keyBadge = (label: string) => (
@@ -374,8 +373,8 @@ export function CommandLauncher({
   )
 
   const sectionHeader = (label: string) => (
-    <div key={`hdr-${label}`} className="flex items-center h-7 px-3">
-      <span className="text-[12px] font-medium leading-none text-text-secondary signal:font-mono signal:text-[10px] signal:uppercase signal:tracking-[0.14em]">{label}</span>
+    <div key={`hdr-${label}`} className="flex items-center h-8 px-2">
+      <SectionLabel className="text-text-secondary">{label}</SectionLabel>
     </div>
   )
 
@@ -760,13 +759,11 @@ export function CommandLauncher({
             {rows.map((row, i) => (
               <div key={row.key}>
                 {headers.get(i)}
-                <div
+                <MenuItem
                   data-highlighted={highlight === i}
-                  className={cn(
-                    'flex items-center gap-3 px-3 cursor-pointer transition-colors rounded-lg',
-                    row.compact ? 'h-9' : 'h-12',
-                    highlight === i && 'bg-bg-hover'
-                  )}
+                  size={row.compact ? 'default' : 'tall'}
+                  className={row.compact ? 'gap-3 px-3' : undefined}
+                  selected={highlight === i}
                   onMouseEnter={() => setHighlight(i)}
                   onMouseDown={(e) => {
                     e.preventDefault()
@@ -774,7 +771,7 @@ export function CommandLauncher({
                   }}
                 >
                   {row.render(highlight === i)}
-                </div>
+                </MenuItem>
               </div>
             ))}
             {rows.length === 0 && headers.get(0)}
