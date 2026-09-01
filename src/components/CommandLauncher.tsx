@@ -139,6 +139,30 @@ export function CommandLauncher({
     }
   }, [scope, creatableUnder])
 
+  /*
+    The live declaration REPLACES the registry's of the same id.
+
+    This is the step that was missing, and the failure was quiet in the worst
+    way: the rows still came from the registry, so Ship's create-issue form
+    drew the mock's fields — three invented projects, a status and an assignee
+    Ship's manifest does not declare — while `submitAction` matched on the id,
+    found no `__parent` (the mock names that field `project`), and closed
+    without publishing. It looked like it worked.
+
+    Proposals for actions no manifest declares are left in place. They were
+    inert before this and remain so; removing them would take away the design's
+    own record of what a manifest should grow.
+  */
+  const scopeActions = useMemo<LauncherAction[]>(() => {
+    if (!scope) return []
+    if (scope.id !== 'ship' || !liveShip) return scope.actions
+    const live = new Map(liveShip.actions.map((a) => [a.id, a]))
+    return [
+      ...liveShip.actions,
+      ...scope.actions.filter((a) => !live.has(a.id)),
+    ]
+  }, [scope, liveShip])
+
   const liveParents = useMemo<Record<string, VocabOption[]>>(() => {
     const out: Record<string, VocabOption[]> = {}
     if (scope?.id === 'peek') {
@@ -188,13 +212,26 @@ export function CommandLauncher({
     }
     setSubmitting(true)
     setSubmitError(null)
-    // The parent is addressed, not named: `applyAction` resolves the manifest
-    // from the object being acted on, which is what keeps this ignorant of Ship.
-    const result = await applyAction({
-      naddr: addrToNaddr(parent, []),
-      actionId: action.id,
-      value: properties,
-    })
+    /*
+      Wrapped because the caller is `void submitAction(…)`, so anything thrown
+      here goes nowhere at all — the form would simply sit there. `addrToNaddr`
+      throws on an author that is not 32 bytes, which is exactly the sort of
+      thing a bad parent list would produce.
+    */
+    let result: Awaited<ReturnType<typeof applyAction>>
+    try {
+      // The parent is addressed, not named: `applyAction` resolves the manifest
+      // from the object being acted on, which keeps this ignorant of Ship.
+      result = await applyAction({
+        naddr: addrToNaddr(parent, []),
+        actionId: action.id,
+        value: properties,
+      })
+    } catch (error) {
+      setSubmitting(false)
+      setSubmitError(error instanceof Error ? error.message : String(error))
+      return
+    }
     setSubmitting(false)
     if (!result.ok) {
       // The runtime's own words — "title is required", "urgent is not one of
@@ -287,8 +324,8 @@ export function CommandLauncher({
 
     if (scope) {
       const actions = q
-        ? scope.actions.filter((a) => a.label.toLowerCase().includes(q))
-        : scope.actions
+        ? scopeActions.filter((a) => a.label.toLowerCase().includes(q))
+        : scopeActions
       if (actions.length > 0) headers.set(0, sectionHeader(`${scope.label} actions`))
       for (const action of actions) {
         // No tile and no app name: the scope chip above already says both
@@ -335,7 +372,7 @@ export function CommandLauncher({
     }
     return { rows, headers }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, query, scope, formAction, contextCleared])
+  }, [q, query, scope, scopeActions, formAction, contextCleared])
 
   // Reset the highlight on every level/query change.
   const didInitHighlight = useRef(false)
