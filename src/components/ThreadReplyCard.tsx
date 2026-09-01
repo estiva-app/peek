@@ -11,7 +11,6 @@ import {
   IconDotsVertical,
   IconPaperclip,
   IconSquareForbid2,
-  IconChevronRight,
   IconX,
   IconAlertSquareRounded,
 } from '@tabler/icons-react'
@@ -25,7 +24,6 @@ import { Avatar } from './ui/Avatar'
 import ReactionPicker from './ReactionPicker'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { Divider } from './ui/Divider'
-import { PEOPLE } from '@/api'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { useIsTopicResolved } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
