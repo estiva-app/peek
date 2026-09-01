@@ -135,3 +135,40 @@ describe('the launcher draws Ship’s form from Ship’s manifest (PRO-4)', () =
     expect(call.naddr.startsWith('naddr')).toBe(true)
   })
 })
+
+describe('while the manifest is still being read (the 1.5 s window)', () => {
+  it('offers no Ship action rather than the registry’s, and says why', async () => {
+    /*
+      Measured against production: listing the projects takes ~510 ms and
+      resolving one for its manifest ~940 ms, so for about a second and a half
+      the registry's declaration is the only one to hand. Offering it means
+      offering a form whose parent field the runtime refuses — which closes
+      silently and looks like success, the exact failure this whole ticket kept
+      producing. The launcher's own rule is to list only what can succeed.
+    */
+    let release!: (v: Awaited<ReturnType<typeof creatableUnder>>) => void
+    creatableUnder.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve
+      }),
+    )
+    open()
+
+    expect(await screen.findByText(/reading ship’s manifest/i)).toBeInTheDocument()
+    expect(screen.queryByText('Create issue')).not.toBeInTheDocument()
+    expect(screen.queryByText('Create project')).not.toBeInTheDocument()
+
+    release({ actions: [liveAddIssue], parents: [{ address: PROJECT_A, title: 'Projection layer' }] })
+    expect(await screen.findByText('Add issue')).toBeInTheDocument()
+  })
+
+  it('says so when the read fails, instead of falling back to a mock', async () => {
+    // A failure used to be silence: the effect had no catch, so a refused read
+    // left the registry on screen looking authoritative.
+    creatableUnder.mockRejectedValueOnce(new Error('relay_membership_required'))
+    open()
+
+    expect(await screen.findByText(/could not read ship’s manifest/i)).toBeInTheDocument()
+    expect(screen.queryByText('Create issue')).not.toBeInTheDocument()
+  })
+})

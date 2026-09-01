@@ -117,23 +117,52 @@ export function CommandLauncher({
   const [liveShip, setLiveShip] = useState<{
     actions: LauncherAction[]
     parents: VocabOption[]
-    addressOf: Record<string, string>
   } | null>(null)
+  /**
+   * Where the live read has got to.
+   *
+   * `loading` is a state the launcher must show rather than paper over. The
+   * read takes about a second and a half against production, and for that
+   * second and a half the registry's declaration is the only one available —
+   * so offering it means offering a form whose parent field the runtime will
+   * refuse, which closes silently and looks like success. The launcher's own
+   * rule is to list only what can succeed.
+   */
+  const [liveState, setLiveState] = useState<'idle' | 'loading' | 'ready' | 'none' | 'failed'>('idle')
 
   useEffect(() => {
     if (scope?.id !== 'ship') return
     let cancelled = false
-    void creatableUnder(SHIP_PROJECT_KIND).then((found) => {
-      if (cancelled || !found) return
-      const actions = found.actions
-        .map((a) => launcherActionFrom(a, { parentNoun: 'project', submitLabel: a.label }))
-        .filter((a): a is LauncherAction => a !== null)
-      setLiveShip({
-        actions,
-        parents: found.parents.map((p) => ({ value: p.address, label: p.title })),
-        addressOf: Object.fromEntries(found.parents.map((p) => [p.address, p.address])),
+    setLiveState('loading')
+    creatableUnder(SHIP_PROJECT_KIND)
+      .then((found) => {
+        if (cancelled) return
+        if (!found) {
+          // Signed out, or the app declares nothing creatable. Not an error,
+          // and not something to draw a mock in place of.
+          setLiveState('none')
+          return
+        }
+        const actions = found.actions
+          .map((a) => launcherActionFrom(a, { parentNoun: 'project', submitLabel: a.label }))
+          .filter((a): a is LauncherAction => a !== null)
+        setLiveShip({
+          actions,
+          parents: found.parents.map((p) => ({ value: p.address, label: p.title })),
+        })
+        setLiveState('ready')
       })
-    })
+      .catch((error: unknown) => {
+        /*
+          Every other caller of this hook catches, classifies and logs; this one
+          did not, and that is why a failure here took a screenshot and an hour
+          to find rather than saying so. A read that fails must produce a
+          sentence, not silence.
+        */
+        if (cancelled) return
+        console.warn('[nostr] reading another app’s creatable actions failed:', error)
+        setLiveState('failed')
+      })
     return () => {
       cancelled = true
     }
@@ -155,13 +184,21 @@ export function CommandLauncher({
   */
   const scopeActions = useMemo<LauncherAction[]>(() => {
     if (!scope) return []
-    if (scope.id !== 'ship' || !liveShip) return scope.actions
+    if (scope.id !== 'ship') return scope.actions
+    /*
+      While the manifest is still in flight, offer none of Ship's registry
+      entries — not even the ones the manifest will not replace. Which of them
+      it replaces is not known until it arrives, so showing any is showing a
+      declaration that may be about to be contradicted.
+    */
+    // No live declaration, for any reason — still loading, refused, or the app
+    // offers nothing. In every one of those the registry's entry is a mock, and
+    // a mock here is a form whose submission the runtime refuses and which
+    // therefore closes saying nothing. None is better than that.
+    if (!liveShip) return []
     const live = new Map(liveShip.actions.map((a) => [a.id, a]))
-    return [
-      ...liveShip.actions,
-      ...scope.actions.filter((a) => !live.has(a.id)),
-    ]
-  }, [scope, liveShip])
+    return [...liveShip.actions, ...scope.actions.filter((a) => !live.has(a.id))]
+  }, [scope, liveShip, liveState])
 
   const liveParents = useMemo<Record<string, VocabOption[]>>(() => {
     const out: Record<string, VocabOption[]> = {}
@@ -326,6 +363,32 @@ export function CommandLauncher({
       const actions = q
         ? scopeActions.filter((a) => a.label.toLowerCase().includes(q))
         : scopeActions
+      /*
+        Say what is happening rather than showing an empty section. A blank
+        list reads as "this app offers nothing", which is a different and wrong
+        statement — and the one thing worse than a slow answer is a confident
+        wrong one.
+      */
+      const liveNote =
+        scope.id !== 'ship' || actions.length > 0
+          ? null
+          : liveState === 'failed'
+            ? `Could not read ${scope.label}’s manifest — its actions are unavailable.`
+            : liveState === 'none'
+              ? `${scope.label} offers nothing to create here.`
+              : `Reading ${scope.label}’s manifest…`
+      if (liveNote) {
+        headers.set(0, sectionHeader(`${scope.label} actions`))
+        rows.push({
+          key: 'live-note',
+          compact: true,
+          onSelect: () => {},
+          render: () => (
+            <div className="px-3 py-2 text-[13px] leading-[1.2] text-text-secondary">{liveNote}</div>
+          ),
+        })
+        return { rows, headers }
+      }
       if (actions.length > 0) headers.set(0, sectionHeader(`${scope.label} actions`))
       for (const action of actions) {
         // No tile and no app name: the scope chip above already says both
@@ -372,7 +435,7 @@ export function CommandLauncher({
     }
     return { rows, headers }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, query, scope, scopeActions, formAction, contextCleared])
+  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared])
 
   // Reset the highlight on every level/query change.
   const didInitHighlight = useRef(false)

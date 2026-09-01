@@ -237,7 +237,26 @@ export async function applyActionAsViewer(
   if (!root) {
     return fail('That object is not readable from here — you may not have access to its Folder.')
   }
-  const folder = root.tags.find((t) => t[0] === 'h')?.[1]
+  /*
+    Two spellings, and reading only one made five of Ship's fifteen projects
+    unactionable from here.
+
+    A Folder is named by NIP-29's `h` on most events. But a record published
+    *globally* — belonging to no Folder itself while still naming one — carries
+    `buzz-channel` instead, which is the relay's own tag rather than any app's
+    invention. Ship's projects moved to that shape in REW-11, and its fold has
+    read both ever since (`projectFolder` in `ship/src/fold.ts`); this did not,
+    so acting on a project created after that change failed with "That object
+    has no Folder, so there is nowhere to write." — on the five newest, which
+    are exactly the ones somebody would reach for.
+
+    Both tags are protocol-level, so knowing them is not knowing what Ship is.
+    It does belong one layer down in the runtime, where every consumer would
+    get it rather than each discovering it; filed rather than done here, because
+    a person is blocked on this now.
+  */
+  const folderTag = (name: string) => root.tags.find((t) => t[0] === name)?.[1]
+  const folder = folderTag('h') ?? folderTag('buzz-channel')
   if (!folder) return fail('That object has no Folder, so there is nowhere to write.')
 
   // `@me` lets the UI offer "assign to me" without the caller composing a
