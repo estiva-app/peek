@@ -2,12 +2,12 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { IconMenu2, IconHelpCircle, IconLogout, IconUser } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
+import { PersonTrigger } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
-import { Avatar } from './ui/Avatar'
 import { SearchInput } from './ui/SearchInput'
 import { DebugMenu } from './DebugMenu'
 import { ProfileDialog } from './ProfileDialog'
-import { hasConvex, useCurrentUser, CURRENT_USER_NAME } from '@/api'
+import { hasConvex, useAvatarSrc, useCurrentUser, CURRENT_USER_NAME } from '@/api'
 
 interface TopBarProps {
   onMenuToggle?: () => void
@@ -18,6 +18,7 @@ interface TopBarProps {
 export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
   const signOut = useSignOut()
   const me = useCurrentUser()
+  const avatarSrcFor = useAvatarSrc()
   const [menuOpen, setMenuOpen] = useState(false)
   /* The element the debug menu hangs off, captured when it is opened rather
      than read from a ref during render — the menu item that opens it unmounts
@@ -82,14 +83,19 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
             </IconButton>
           </div>
         )}
-        <button
+        {/* The shared PersonTrigger in its compact shape — the face alone, as
+            this top bar has always drawn it (2026-09-01). Peek resolves the
+            picture; the menu below stays Peek's. */}
+        <PersonTrigger
+          compact
           ref={avatarRef}
+          size={36}
+          name={CURRENT_USER_NAME}
+          picture={avatarSrcFor(CURRENT_USER_NAME)}
+          open={menuOpen}
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Account menu"
-          className="rounded-full cursor-pointer focus:outline-none"
-        >
-          <Avatar size={36} name={CURRENT_USER_NAME} alt="Your avatar" />
-        </button>
+        />
       </div>
 
       {/* Avatar menu: identity, profile, sign out */}
