@@ -24,5 +24,5 @@ export const PROFILE_EDIT_URL = 'https://id.estiva.app/account'
  * the section.
  */
 export function useRelayUrl(): string | undefined {
-  return useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  return useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl ?? undefined
 }
