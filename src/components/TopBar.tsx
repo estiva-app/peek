@@ -78,6 +78,10 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
             Copy public key, because Peek has no viewer key to offer. */}
         <IdentityMenu
           compact
+          // flex, so the wrapper hugs the face exactly: as a block it grows a
+          // line-box under the inline button and the face slips a pixel or
+          // two down the bar (the shot diff caught it, 7 stories × 1271px).
+          className="flex"
           me={{ name: displayName, picture: avatarSrcFor(displayName) ?? undefined, email: me?.email }}
           signedIn={hasConvex && me !== undefined}
           relayUrl={relayUrl}
