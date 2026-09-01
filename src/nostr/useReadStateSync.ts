@@ -51,6 +51,7 @@ import { fetchOwnSlot, loadMergedReadState, publishReadState } from './readState
 import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
 import { buildDiffReport } from './readStateDiff'
 import { useDebug } from '@/lib/debug'
+import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 
 /**
  * The previous merge, kept so a *regression* between fetches is detectable
@@ -209,6 +210,26 @@ export function flushReadState(): Promise<void> {
  */
 export function ReadStateSync(): null {
   useReadStateSync()
+  /*
+   * **Run the read path.** Without this line nothing on it executes.
+   *
+   * `useMergedReadState` was written by CRO-5, given a cache to fill by CRO-6
+   * and a dual-run diff by CRO-7, and never mounted by any of them — each ticket
+   * ended "nothing consumes it yet, that is the next one", and the next one
+   * added to it rather than turning it on. So publishing worked, and every
+   * consequence of reading — the merge, the horizon cache, the comparison the
+   * cutover is gated on — silently did nothing.
+   *
+   * Nothing renders from it yet; that is still the cutover's job. What changes
+   * here is that the cache gets filled and the diff gets data.
+   */
+  const { refresh } = useMergedReadState()
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+  // Focus, visibility and a slow interval — the same triggers every other
+  // background read in this app uses, for the same reasons.
+  useRefreshTriggers(() => void refresh())
   return null
 }
 
