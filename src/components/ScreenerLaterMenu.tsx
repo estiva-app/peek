@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useRef, useState } from 'react'
+import { Menu, MenuItem, MenuSection } from '@estiva-app/ui'
 import { Button } from './ui/Button'
 
 /** "Later" reminder options (user request 2026-07-15). Each returns an
@@ -12,64 +12,42 @@ const OPTIONS: { label: string; ms: number }[] = [
 ]
 
 /**
- * The "Later" button + its reminder-duration menu. Portalled so it escapes the
- * Desk panel's overflow clip; closes on outside click, Escape, and after pick.
+ * The "Later" button + its reminder-duration menu, on the shared shell
+ * (2026-09-01): the portal, the container, the heading row and both exits
+ * come from @estiva-app/ui's Menu — left-anchored to the trigger, which is
+ * why the shell's `position` learnt a left edge. The button swallows its own
+ * mousedown so the shell's outside-close and the click's toggle don't fight.
  */
 export function ScreenerLaterMenu({ onPick }: { onPick: (untilMs: number) => void }) {
   const btnRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
   const [rect, setRect] = useState<DOMRect | null>(null)
-
-  useEffect(() => {
-    if (!rect) return
-    const close = (e: MouseEvent) => {
-      if (menuRef.current?.contains(e.target as Node)) return
-      if (btnRef.current?.contains(e.target as Node)) return
-      setRect(null)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setRect(null)
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', close)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [rect])
 
   return (
     <div ref={btnRef}>
       <Button
         variant="outlined"
         size="small"
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={() => setRect(rect ? null : (btnRef.current?.getBoundingClientRect() ?? null))}
       >
         Later
       </Button>
-      {rect &&
-        createPortal(
-          <div
-            ref={menuRef}
-            className="fixed z-50 bg-bg-elevated border border-border-default rounded-lg shadow-lg p-1 min-w-[160px]"
-            style={{ top: rect.bottom + 4, left: rect.left }}
-          >
-            <div className="flex items-center h-7 px-3">
-              <span className="text-[12px] font-medium leading-none text-text-secondary signal:font-mono signal:text-[10px] signal:uppercase signal:tracking-[0.14em]">Remind me</span>
-            </div>
+      {rect && (
+        <Menu onClose={() => setRect(null)} position={{ top: rect.bottom + 4, left: rect.left }}>
+          <MenuSection label="Remind me">
             {OPTIONS.map((o) => (
-              <div
+              <MenuItem
                 key={o.label}
-                className="flex items-center h-9 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover"
+                label={o.label}
                 onClick={() => {
                   setRect(null)
                   onPick(Date.now() + o.ms)
                 }}
-              >
-                <span className="text-[14px] font-normal leading-[1.4] text-text-primary">{o.label}</span>
-              </div>
+              />
             ))}
-          </div>,
-          document.body,
-        )}
+          </MenuSection>
+        </Menu>
+      )}
     </div>
   )
 }
