@@ -167,7 +167,7 @@ export function ActionFormPanel({
         }
       }}
     >
-      <div className="flex flex-col gap-4 p-4 max-h-[400px] overflow-y-auto">
+      <div className="flex flex-col gap-4 p-4 max-h-[400px] overflow-y-auto [&>*]:shrink-0">
         {action.fields.map((field, i) => (
           <Field key={field.key} label={field.label} required={field.required}>
             {control(field, i === 0)}

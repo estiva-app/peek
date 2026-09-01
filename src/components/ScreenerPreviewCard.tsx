@@ -18,7 +18,7 @@ export function ScreenerPreviewCardView({
   isTopicResolved: (topicId: string) => boolean
 }) {
   return (
-    <div className="w-[360px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-3 flex flex-col gap-3 max-h-[300px] overflow-y-auto">
+    <div className="w-[360px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-3 flex flex-col gap-3 max-h-[300px] overflow-y-auto [&>*]:shrink-0">
       {rows === undefined ? (
         <div className="flex flex-col gap-2">
           <SkeletonBar className="w-32" />
