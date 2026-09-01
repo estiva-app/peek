@@ -64,6 +64,9 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               tooltip="Debug"
               tooltipPlacement="bottom"
               aria-label="Debug"
+              // Swallowed so the shared shell's outside-mousedown dismiss
+              // does not fire first and turn the toggle into close-reopen.
+              onMouseDown={(event) => event.stopPropagation()}
               onClick={(e) => setDebugAnchor((a) => (a ? null : e.currentTarget))}
             >
               <IconHelpCircle size={16} stroke={1.5} />
@@ -120,6 +123,10 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               className="flex items-center gap-3 h-9 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover min-w-[160px]"
               onMouseDown={(e) => {
                 e.preventDefault()
+                // Swallowed: the debug menu's shared shell arms its outside-
+                // mousedown dismiss during this very event and would close on
+                // the mousedown that opens it (see DebugMenu's header note).
+                e.stopPropagation()
                 const anchor = avatarRef.current
                 setMenuOpen(false)
                 setDebugAnchor(anchor)
