@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
-import { IconX, IconArrowLeft, IconUserPlus } from '@tabler/icons-react'
+import { DialogShell } from '@estiva-app/ui'
+import { IconArrowLeft, IconUserPlus } from '@tabler/icons-react'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { Chip } from './ui/Chip'
@@ -27,7 +27,11 @@ interface MembersDialogProps {
  * Two layers in one dialog: the member roster with an "Add members" row on
  * top, and the invite layer (back arrow returns to the roster). Inviting
  * returns to the roster so the new members are immediately visible.
- * Visual shell mirrors StartHuddleDialog.
+ *
+ * On the shared DialogShell (2026-09-01): the roster layer is the footerless
+ * shape (a list that simply ends), the invite layer the standard one, and
+ * the back button and member-count chip ride in through `headerContent`.
+ * Escape closes it now, which the hand-rolled shell never did.
  */
 export function MembersDialog({
   memberNames = [],
@@ -60,99 +64,89 @@ export function MembersDialog({
     setView('list')
   }
 
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
-
-      {/* Dialog */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-        <div className="w-[502px] bg-bg-elevated border border-border-subtle rounded-lg shadow-lg pointer-events-auto flex flex-col overflow-hidden">
-
-          {/* Header */}
-          <div className="h-12 flex items-center justify-between pl-5 pr-4 border-b border-border-subtle shrink-0">
-            <div className="flex items-center gap-2 min-w-0">
-              {view === 'add' && (
-                <IconButton
-                  tooltip="Back to members"
-                  aria-label="Back to members"
-                  className="-ml-2"
-                  onClick={() => setView('list')}
-                >
-                  <IconArrowLeft size={16} stroke={1.5} />
-                </IconButton>
-              )}
-              <span className="text-h4 text-text-primary truncate">
-                {view === 'add' ? 'Add members' : 'Members'}
-              </span>
-              {view === 'list' && <Chip label={String(memberNames.length)} />}
-            </div>
-            <IconButton tooltip="Close" aria-label="Close" onClick={onClose}>
-              <IconX size={16} stroke={1.5} />
+  if (view === 'add') {
+    return (
+      <DialogShell
+        title="Add members"
+        onClose={onClose}
+        headerContent={
+          <div className="flex items-center gap-2 min-w-0">
+            <IconButton
+              tooltip="Back to members"
+              aria-label="Back to members"
+              className="-ml-2"
+              onClick={() => setView('list')}
+            >
+              <IconArrowLeft size={16} stroke={1.5} />
             </IconButton>
+            <span className="text-h4 text-text-primary truncate">Add members</span>
           </div>
-
-          {view === 'list' ? (
-            /* ── Roster layer ── */
-            <div className="py-2 max-h-[400px] overflow-y-auto">
-              {canAdd && (
-                <div
-                  role="button"
-                  className="flex items-center gap-3 h-12 px-5 cursor-pointer hover:bg-bg-hover transition-colors"
-                  onClick={() => setView('add')}
-                >
-                  <div className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
-                    <IconUserPlus size={16} stroke={1.5} />
-                  </div>
-                  <span className="text-[14px] font-medium leading-[1.4] text-text-primary">Add members</span>
-                </div>
-              )}
-              {memberNames.map((name) => {
-                const role = roleFor(name)
-                return (
-                  <div key={name} className="flex items-center gap-3 h-12 px-5">
-                    <Avatar size={32} name={name} alt={name} />
-                    <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
-                      <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{name}</div>
-                      {role && (
-                        <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{role}</div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            /* ── Add layer ── */
-            <>
-              <div className="pl-5 pr-4 py-4 flex flex-col gap-6 border-b border-border-subtle overflow-y-auto">
-                <div className="flex flex-col gap-2">
-                  <label className="text-input-label text-text-primary flex items-center">
-                    Invite people
-                    <span className="text-error-default ml-0.5">*</span>
-                  </label>
-                  <PersonChipInput
-                    value={invitees}
-                    onChange={setInvitees}
-                    placeholder="Search people..."
-                    excludeIds={memberIds}
-                    autoFocus
-                  />
-                </div>
-              </div>
-
-              <div className="h-12 flex items-center justify-end gap-2 pl-5 pr-4 shrink-0">
-                <Button variant="muted" onClick={onClose}>Cancel</Button>
-                <Button variant="primary" disabled={!canConfirm} onClick={confirmInvite}>
-                  Invite
-                </Button>
-              </div>
-            </>
-          )}
-
+        }
+        bodyClassName="flex flex-col gap-6 overflow-y-auto"
+        footer={
+          <>
+            <Button variant="muted" onClick={onClose}>Cancel</Button>
+            <Button variant="primary" disabled={!canConfirm} onClick={confirmInvite}>
+              Invite
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-2">
+          <label className="text-input-label text-text-primary flex items-center">
+            Invite people
+            <span className="text-error-default ml-0.5">*</span>
+          </label>
+          <PersonChipInput
+            value={invitees}
+            onChange={setInvitees}
+            placeholder="Search people..."
+            excludeIds={memberIds}
+            autoFocus
+          />
         </div>
-      </div>
-    </>,
-    document.body
+      </DialogShell>
+    )
+  }
+
+  return (
+    <DialogShell
+      title="Members"
+      onClose={onClose}
+      headerContent={
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-h4 text-text-primary truncate">Members</span>
+          <Chip label={String(memberNames.length)} />
+        </div>
+      }
+      bodyClassName="p-0 py-2 max-h-[400px] overflow-y-auto"
+    >
+      {canAdd && (
+        <div
+          role="button"
+          className="flex items-center gap-3 h-12 px-5 cursor-pointer hover:bg-bg-hover transition-colors"
+          onClick={() => setView('add')}
+        >
+          <div className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
+            <IconUserPlus size={16} stroke={1.5} />
+          </div>
+          <span className="text-[14px] font-medium leading-[1.4] text-text-primary">Add members</span>
+        </div>
+      )}
+      {memberNames.map((name) => {
+        const role = roleFor(name)
+        return (
+          <div key={name} className="flex items-center gap-3 h-12 px-5">
+            <Avatar size={32} name={name} alt={name} />
+            <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
+              <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{name}</div>
+              {role && (
+                <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{role}</div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </DialogShell>
   )
 }
