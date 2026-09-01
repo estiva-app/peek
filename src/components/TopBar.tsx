@@ -94,17 +94,18 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
           had), and one Divider separates the groups where two hairlines used
           to stack. */}
       {menuOpen && rect && (
-        <Menu onClose={() => setMenuOpen(false)} position={{ top: rect.bottom + 6, right: window.innerWidth - rect.right }}>
+        <Menu onClose={() => setMenuOpen(false)} position={{ top: rect.bottom + 6, right: window.innerWidth - rect.right }} className="min-w-[160px] p-1">
           {/* Signed-in identity (Convex mode; mock mode has no session) */}
           {hasConvex && me && (
             <>
-              <MenuRow>
+              <MenuRow className="px-3 py-2">
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-[14px] font-medium leading-[1.4] text-text-primary">{me.name}</span>
                   {me.email && <span className="truncate text-[12px] leading-[120%] text-text-secondary">{me.email}</span>}
                 </span>
               </MenuRow>
               <MenuItem
+                className="h-9 gap-3 px-3"
                 leading={<IconUser size={16} stroke={1.5} className="text-text-secondary" />}
                 label="Edit profile"
                 onClick={() => {
@@ -141,6 +142,7 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
             <>
               <Divider className="my-1" />
               <MenuItem
+                className="h-9 gap-3 px-3"
                 leading={<IconLogout size={16} stroke={1.5} className="text-text-secondary" />}
                 label="Sign out"
                 onClick={() => {

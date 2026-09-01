@@ -31,11 +31,12 @@ export function MentionMenu({
   return (
     <div className="w-[658px] max-h-[360px] overflow-y-auto bg-bg-elevated border border-border-default rounded-lg shadow-lg">
       <div className="p-2">
-        <MenuSection label={isUrgent ? 'Urgent mention' : 'People'}>
+        <MenuSection label={isUrgent ? 'Urgent mention' : 'People'} className="px-3 py-1">
           {people.map((person, i) => (
             <MenuItem
               key={person.id}
               size="tall"
+              className="h-12"
               ref={i === highlight ? scrollRef : undefined}
               leading={<Avatar size={32} alt={person.name} />}
               label={person.name}

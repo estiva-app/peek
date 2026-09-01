@@ -27,7 +27,7 @@ export function TopicMenu({
   return (
     <div className="w-fit min-w-[420px] bg-bg-elevated border border-border-default rounded-lg overflow-hidden shadow-lg">
       <div className="p-2">
-        <MenuSection label="Topics">
+        <MenuSection label="Topics" className="px-3">
           {topics.map((topic, i) => (
             <MenuItem
               key={topic.id}

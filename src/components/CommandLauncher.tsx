@@ -373,7 +373,7 @@ export function CommandLauncher({
   )
 
   const sectionHeader = (label: string) => (
-    <div key={`hdr-${label}`} className="flex items-center h-8 px-2">
+    <div key={`hdr-${label}`} className="flex items-center h-7 px-3">
       <SectionLabel className="text-text-secondary">{label}</SectionLabel>
     </div>
   )

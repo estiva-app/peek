@@ -245,7 +245,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(
           {entries.map((entry, i) => {
             if (entry.type === 'header') {
               return (
-                <div key={`h-${entry.label}`} className={cn('flex items-center h-8 px-2', i > 0 && 'mt-1')}>
+                <div key={`h-${entry.label}`} className={cn('flex items-center h-8 px-3 py-1', i > 0 && 'mt-1')}>
                   <SectionLabel className="text-text-secondary">{entry.label}</SectionLabel>
                 </div>
               )
@@ -259,6 +259,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(
                 <MenuItem
                   key={`nav-${cat.app}`}
                   size="tall"
+                  className="h-12"
                   ref={isHighlighted ? scrollRef : undefined}
                   leading={<AppIcon app={cat.app} />}
                   label={cat.label}
@@ -303,6 +304,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(
               <MenuItem
                 key={`${item.kind}-${item.data.id}`}
                 size="tall"
+                className="h-12"
                 ref={isHighlighted ? scrollRef : undefined}
                 leading={leading}
                 label={item.data.title}

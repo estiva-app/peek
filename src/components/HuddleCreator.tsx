@@ -145,16 +145,18 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
             {suggestions.map((person, i) => (
               <MenuItem
                 key={person.id}
-                size="tall"
-                className="rounded-none"
-                leading={<Avatar size={24} name={person.name} alt={person.name} />}
-                label={person.name}
-                description={person.role}
+                className="rounded-none gap-2 px-3"
                 selected={i === suggestionIndex}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setSuggestionIndex(i)}
                 onClick={() => addRecipient(person.name)}
-              />
+              >
+                <Avatar size={24} name={person.name} alt={person.name} />
+                <div className="flex flex-col items-start">
+                  <span className="text-sm text-text-primary">{person.name}</span>
+                  <span className="text-caption text-text-muted">{person.role}</span>
+                </div>
+              </MenuItem>
             ))}
           </div>
         )}

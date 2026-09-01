@@ -164,7 +164,7 @@ export function PersonChipInput({
             <MenuItem
               key={p.id}
               size="tall"
-              className="rounded-none"
+              className="h-12 rounded-none"
               leading={<Avatar size={32} name={p.name} alt={p.name} />}
               label={p.name}
               description={p.role}

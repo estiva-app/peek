@@ -33,11 +33,12 @@ export function ScreenerLaterMenu({ onPick }: { onPick: (untilMs: number) => voi
         Later
       </Button>
       {rect && (
-        <Menu onClose={() => setRect(null)} position={{ top: rect.bottom + 4, left: rect.left }}>
-          <MenuSection label="Remind me">
+        <Menu onClose={() => setRect(null)} position={{ top: rect.bottom + 4, left: rect.left }} className="min-w-[160px] p-1">
+          <MenuSection label="Remind me" className="h-7 px-3">
             {OPTIONS.map((o) => (
               <MenuItem
                 key={o.label}
+                className="h-9 px-3"
                 label={o.label}
                 onClick={() => {
                   setRect(null)
