@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
+import { EnterHint, MenuItem, SectionLabel } from '@estiva-app/ui'
 import { TopicState } from './TopicState'
 import { cn } from '@/lib/utils'
 import { useIsTopicResolved } from '@/api'
@@ -214,7 +215,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(
       },
     }))
 
-    const scrollRef = useCallback((el: HTMLDivElement | null) => {
+    const scrollRef = useCallback((el: HTMLElement | null) => {
       el?.scrollIntoView({ block: 'nearest' })
     }, [])
 
@@ -244,8 +245,8 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(
           {entries.map((entry, i) => {
             if (entry.type === 'header') {
               return (
-                <div key={`h-${entry.label}`} className={cn('flex items-center h-8 px-3 py-1', i > 0 && 'mt-1')}>
-                  <span className="text-[12px] font-medium leading-none text-text-secondary signal:font-mono signal:text-[10px] signal:uppercase signal:tracking-[0.14em]">{entry.label}</span>
+                <div key={`h-${entry.label}`} className={cn('flex items-center h-8 px-2', i > 0 && 'mt-1')}>
+                  <SectionLabel className="text-text-secondary">{entry.label}</SectionLabel>
                 </div>
               )
             }
@@ -255,95 +256,65 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(
             if (entry.type === 'app-nav') {
               const cat = entry.category
               return (
-                <div
+                <MenuItem
                   key={`nav-${cat.app}`}
+                  size="tall"
                   ref={isHighlighted ? scrollRef : undefined}
-                  className={cn(
-                    'flex items-center gap-3 h-12 px-3 py-1.5 rounded-lg cursor-pointer transition-colors',
-                    isHighlighted ? 'bg-bg-hover' : ''
-                  )}
+                  leading={<AppIcon app={cat.app} />}
+                  label={cat.label}
+                  description={cat.description}
+                  selected={isHighlighted}
+                  trailing={
+                    isHighlighted ? (
+                      <EnterHint />
+                    ) : (
+                      <IconChevronRight size={14} stroke={1.5} className="text-text-muted" />
+                    )
+                  }
                   onMouseEnter={() => setHighlight(entry.navIndex)}
                   onMouseDown={(e) => {
                     e.preventDefault()
                     drillIn(cat.app)
                   }}
-                >
-                  <AppIcon app={cat.app} />
-                  <div className="flex-1 min-w-0 flex flex-col gap-[2px] justify-center">
-                    <div className="text-[14px] font-normal leading-[1.4] text-text-primary">{cat.label}</div>
-                    <div className="text-[12px] leading-[1.2] text-text-secondary">{cat.description}</div>
-                  </div>
-                  {isHighlighted ? (
-                    <div className="flex items-center gap-2 shrink-0 text-text-muted">
-                      <span className="text-[12px] leading-[1.2]">↩</span>
-                      <span className="text-[9px] font-medium leading-[1.15] signal:font-mono signal:text-[9.5px] signal:tracking-[0.04em]">Enter</span>
-                    </div>
-                  ) : (
-                    <span className="text-text-muted shrink-0">
-                      <IconChevronRight size={14} stroke={1.5} />
-                    </span>
-                  )}
-                </div>
+                />
               )
             }
 
             // Regular item
             const { item } = entry
-            return (
-              <div
-                key={`${item.kind}-${item.data.id}`}
-                ref={isHighlighted ? scrollRef : undefined}
-                className={cn(
-                  'flex items-center gap-3 h-12 px-3 py-1.5 rounded-lg cursor-pointer transition-colors',
-                  isHighlighted ? 'bg-bg-hover' : ''
-                )}
-                onMouseEnter={() => setHighlight(entry.navIndex)}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  onSelect(item)
-                }}
-              >
-                {/* Icon */}
-                {item.kind === 'topic' && (
-                  <span className="flex items-center justify-center size-8 shrink-0 rounded-sm bg-bg-inset">
-                    <TopicState
-                      type="topic"
-                      status={isTopicResolved(item.data.id) ? 'resolved' : 'unresolved'}
-                    />
-                  </span>
-                )}
-                {item.kind === 'app' && (
-                  <AppIcon app={item.data.app} />
-                )}
-                {item.kind === 'document' && (() => {
+            const leading =
+              item.kind === 'topic' ? (
+                <span className="flex items-center justify-center size-8 shrink-0 rounded-sm bg-bg-inset">
+                  <TopicState type="topic" status={isTopicResolved(item.data.id) ? 'resolved' : 'unresolved'} />
+                </span>
+              ) : item.kind === 'app' ? (
+                <AppIcon app={item.data.app} />
+              ) : (
+                (() => {
                   const Icon = DOC_ICONS[item.data.docType] ?? IconFile
                   return (
                     <span className="flex items-center justify-center size-8 shrink-0 rounded-sm bg-bg-inset text-text-secondary">
                       <Icon size={16} stroke={1.5} />
                     </span>
                   )
-                })()}
-
-                {/* Text */}
-                <div className="flex-1 min-w-0 flex flex-col gap-[2px] justify-center">
-                  <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">
-                    {item.data.title}
-                  </div>
-                  {item.kind !== 'topic' && item.data.subtitle && (
-                    <div className="text-[12px] leading-[1.2] text-text-secondary truncate">
-                      {item.data.subtitle}
-                    </div>
-                  )}
-                </div>
-
-                {/* Hint on highlight */}
-                {isHighlighted && (
-                  <div className="flex items-center gap-2 shrink-0 text-text-muted">
-                    <span className="text-[12px] leading-[1.2]">↩</span>
-                    <span className="text-[9px] font-medium leading-[1.15] signal:font-mono signal:text-[9.5px] signal:tracking-[0.04em]">Enter</span>
-                  </div>
-                )}
-              </div>
+                })()
+              )
+            return (
+              <MenuItem
+                key={`${item.kind}-${item.data.id}`}
+                size="tall"
+                ref={isHighlighted ? scrollRef : undefined}
+                leading={leading}
+                label={item.data.title}
+                description={item.kind !== 'topic' ? item.data.subtitle : undefined}
+                selected={isHighlighted}
+                trailing={isHighlighted ? <EnterHint /> : undefined}
+                onMouseEnter={() => setHighlight(entry.navIndex)}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onSelect(item)
+                }}
+              />
             )
           })}
         </div>
