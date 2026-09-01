@@ -25,7 +25,7 @@ import { RelayReadError } from './relayRead'
 import { pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
 import {
   buildActionEvent,
-  peopleViaRelay,
+  createPeopleCache,
   resolveFolderProject,
   resolveForeignObject,
   resolveManifest,
@@ -63,85 +63,25 @@ function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
 }
 
 /**
- * Profiles already looked up this session (FEE-1).
+ * Profiles already looked up this session (FEE-1), now from the runtime.
  *
- * A topic with ten reference widgets resolves ten times, each one asking who
- * the same handful of people are. Module-level rather than per-call, so the
- * sidebar and every widget in the conversation share one answer.
+ * A topic with ten reference widgets resolves ten times, each asking who the
+ * same handful of people are. Module scope rather than per-call, so the sidebar
+ * and every widget in the conversation share one answer — and so the store
+ * outlives `viewerQuery`, which is rebuilt per call because it carries the
+ * viewer's token.
  *
- * Misses are cached too — someone with no published profile would otherwise be
- * asked about on every single resolve, which is the common case for anyone who
- * has not finished setting up their Estiva ID.
- *
- * **Entries expire now (PEE-3).** They did not, and the file used to say the
- * cost was "a profile published mid-session appears on the next reload rather
- * than immediately, which is the right way round for something read this often
- * and changed this rarely". That was true while nothing else refreshed either.
- * Once the topic sync and the project panel re-read on a timer, this became the
- * remaining reason a newly named person still rendered as `nostr:<8 chars>`
- * until a full reload — and it would have read as "the refresh does not work".
- *
- * **A miss expires much faster than a hit**, which is the whole point. A hit is
- * a name, and names change rarely. A miss is somebody who has not finished
- * setting up their Estiva ID — which is to say, precisely the person whose name
- * is about to arrive.
+ * The implementation was here and is now `@estiva-app/interop`'s (SHA-16),
+ * unchanged: one batched lookup for the whole unknown set, and a miss expiring
+ * much sooner than a hit — a hit is a name and names change rarely, a miss is
+ * somebody who has not finished setting up their Estiva ID, which is precisely
+ * the person whose name is about to arrive (PEE-3). Ship needed the same
+ * behaviour, and a second consumer is what moves something out of one app
+ * rather than duplicating it. Its tests moved with it.
  */
-export const PROFILE_HIT_TTL_MS = 10 * 60_000
-export const PROFILE_MISS_TTL_MS = 60_000
+const profiles = createPeopleCache()
 
-interface CachedProfile {
-  person: People[string]
-  /** When it stops being trusted. A miss gets a much sooner one. */
-  expiresAt: number
-}
-
-const knownPeople = new Map<string, CachedProfile>()
-
-/** A profile with nothing in it is a miss — the relay had no `kind:0`. */
-const isMiss = (person: People[string]) => Object.keys(person).length === 0
-
-/** Test seam, and what a sign-out should call if this ever grows one. */
-export function clearProfileCacheForTests(): void {
-  knownPeople.clear()
-}
-
-/**
- * The caching wrapper, with the relay lookup injected.
- *
- * Split from {@link cachedPeople} so a test can supply the lookup and a clock
- * without a relay — the behaviour worth pinning here is the batching and the
- * two TTLs, none of which is about HTTP.
- */
-function cacheAround(fromRelay: PeopleFn, now: () => number = Date.now): PeopleFn {
-  return async (pubkeys) => {
-    const at = now()
-    // Still one lookup for the whole set, not one per pubkey: a topic with ten
-    // reference widgets asks about the same handful of people, and splitting
-    // this would turn one query into N.
-    const unknown = pubkeys.filter((key) => {
-      const cached = knownPeople.get(key)
-      return cached === undefined || cached.expiresAt <= at
-    })
-    if (unknown.length > 0) {
-      const found = await fromRelay(unknown)
-      for (const key of unknown) {
-        const person = found[key] ?? {}
-        knownPeople.set(key, {
-          person,
-          expiresAt: at + (isMiss(person) ? PROFILE_MISS_TTL_MS : PROFILE_HIT_TTL_MS),
-        })
-      }
-    }
-    return Object.fromEntries(pubkeys.map((key) => [key, knownPeople.get(key)?.person ?? {}]))
-  }
-}
-
-function cachedPeople(query: QueryFn): PeopleFn {
-  return cacheAround(peopleViaRelay(query))
-}
-
-/** Test seam — see {@link cacheAround}. */
-export const peopleCacheForTests = cacheAround
+const cachedPeople = (query: QueryFn): PeopleFn => profiles.viaRelay(query)
 
 /**
  * Resolve a `nostr:naddr…` into a renderable widget.
