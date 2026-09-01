@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, useRef } from 'react'
 import { IconMenu2, IconHelpCircle, IconLogout, IconUser } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
-import { PersonTrigger } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuRow, PersonTrigger } from '@estiva-app/ui'
+import { Divider } from './ui/Divider'
 import { IconButton } from './ui/IconButton'
 import { SearchInput } from './ui/SearchInput'
 import { DebugMenu } from './DebugMenu'
@@ -26,19 +26,6 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
   const [debugAnchor, setDebugAnchor] = useState<HTMLElement | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
   const avatarRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  // Close theme menu on outside click
-  useEffect(() => {
-    if (!menuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current?.contains(e.target as Node)) return
-      if (avatarRef.current?.contains(e.target as Node)) return
-      setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [menuOpen])
 
   // Position the menu below the avatar
   const rect = avatarRef.current?.getBoundingClientRect()
@@ -93,37 +80,35 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
           name={CURRENT_USER_NAME}
           picture={avatarSrcFor(CURRENT_USER_NAME)}
           open={menuOpen}
+          onMouseDown={(event) => event.stopPropagation()}
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="Account menu"
         />
       </div>
 
-      {/* Avatar menu: identity, profile, sign out */}
-      {menuOpen && rect && createPortal(
-        <div
-          ref={menuRef}
-          className="fixed z-50 bg-bg-elevated border border-border-default rounded-lg shadow-lg p-1"
-          style={{ top: rect.bottom + 6, right: window.innerWidth - rect.right }}
-        >
+      {/* Avatar menu: identity, profile, sign out — the shared shell owns the
+          container and both exits now (Escape included, which this menu never
+          had), and one Divider separates the groups where two hairlines used
+          to stack. */}
+      {menuOpen && rect && (
+        <Menu onClose={() => setMenuOpen(false)} position={{ top: rect.bottom + 6, right: window.innerWidth - rect.right }}>
           {/* Signed-in identity (Convex mode; mock mode has no session) */}
           {hasConvex && me && (
             <>
-              <div className="flex flex-col gap-0.5 px-3 py-2 min-w-[160px]">
-                <span className="text-[14px] font-medium leading-[1.4] text-text-primary">{me.name}</span>
-                {me.email && <span className="text-[12px] leading-[1.2] text-text-secondary">{me.email}</span>}
-              </div>
-              <div
-                className="flex items-center gap-3 h-9 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover min-w-[160px]"
-                onMouseDown={(e) => {
-                  e.preventDefault()
+              <MenuRow>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-[14px] font-medium leading-[1.4] text-text-primary">{me.name}</span>
+                  {me.email && <span className="truncate text-[12px] leading-[120%] text-text-secondary">{me.email}</span>}
+                </span>
+              </MenuRow>
+              <MenuItem
+                leading={<IconUser size={16} stroke={1.5} className="text-text-secondary" />}
+                label="Edit profile"
+                onClick={() => {
                   setMenuOpen(false)
                   setProfileOpen(true)
                 }}
-              >
-                <IconUser size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-                <span className="flex-1 text-[14px] font-normal leading-[1.4] text-text-primary">Edit profile</span>
-              </div>
-              <div className="border-t border-border-subtle my-1" />
+              />
             </>
           )}
           {/* Read state (Convex mode). The dual-run readout lives in the debug
@@ -147,22 +132,18 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
           {/* Sign out (Convex mode only) */}
           {hasConvex && (
             <>
-              <div className="border-t border-border-subtle my-1" />
-              <div
-                className="flex items-center gap-3 h-9 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover min-w-[160px]"
-                onMouseDown={(e) => {
-                  e.preventDefault()
+              <Divider className="my-1" />
+              <MenuItem
+                leading={<IconLogout size={16} stroke={1.5} className="text-text-secondary" />}
+                label="Sign out"
+                onClick={() => {
                   setMenuOpen(false)
                   void signOut()
                 }}
-              >
-                <IconLogout size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-                <span className="flex-1 text-[14px] font-normal leading-[1.4] text-text-primary">Sign out</span>
-              </div>
+              />
             </>
           )}
-        </div>,
-        document.body
+        </Menu>
       )}
 
       {/* Debug menu */}
