@@ -5,7 +5,9 @@ import { cn } from '@/lib/utils'
 import { ActionFormPanel } from './ActionFormPanel'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
-import { useTopics } from '@/api'
+import { useForeignObjects, useTopics } from '@/api'
+import { PARENT_FIELD, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
+import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
 import {
   LAUNCHER_APPS,
@@ -13,6 +15,17 @@ import {
   type LauncherApp,
   type VocabOption,
 } from '@/lib/launcherActions'
+
+/**
+ * The kind whose objects a Ship issue hangs under.
+ *
+ * A number rather than a name because NIP-89 discovery *is* by kind: the
+ * launcher asks "what can be created under one of these?" and the manifest
+ * answers. Naming Ship's project type here would be the launcher knowing what
+ * Ship is, which is the thing the projection layer exists to avoid — every
+ * other fact about the action comes off the manifest at runtime.
+ */
+const SHIP_PROJECT_KIND = 30850
 
 /** One selectable row: what it renders and what selecting it does. */
 interface Row {
@@ -85,6 +98,47 @@ export function CommandLauncher({
    * kind:30850 records.
    */
   const topics = useTopics()
+
+  /*
+    Ship's half is live now (PRO-4). `creatableUnder` reads the manifest Ship
+    actually publishes and the projects a new issue could hang under, so the
+    form is drawn from a declaration rather than from the registry's copy of
+    one. `launcherActions.ts` set the bar: swapping the constant for a live read
+    must not reshape any UI — and it does not, because the conversion in
+    `lib/liveAction` produces the same shape `ActionFormPanel` already took.
+
+    Null while loading, and null when signed out or when Ship declares nothing:
+    the registry's entry stays in that case, which is the right degradation for
+    a launcher whose rule is to list only what can succeed.
+  */
+  const { creatableUnder, applyAction } = useForeignObjects()
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [liveShip, setLiveShip] = useState<{
+    actions: LauncherAction[]
+    parents: VocabOption[]
+    addressOf: Record<string, string>
+  } | null>(null)
+
+  useEffect(() => {
+    if (scope?.id !== 'ship') return
+    let cancelled = false
+    void creatableUnder(SHIP_PROJECT_KIND).then((found) => {
+      if (cancelled || !found) return
+      const actions = found.actions
+        .map((a) => launcherActionFrom(a, { parentNoun: 'project', submitLabel: a.label }))
+        .filter((a): a is LauncherAction => a !== null)
+      setLiveShip({
+        actions,
+        parents: found.parents.map((p) => ({ value: p.address, label: p.title })),
+        addressOf: Object.fromEntries(found.parents.map((p) => [p.address, p.address])),
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [scope, creatableUnder])
+
   const liveParents = useMemo<Record<string, VocabOption[]>>(() => {
     const out: Record<string, VocabOption[]> = {}
     if (scope?.id === 'peek') {
@@ -92,8 +146,9 @@ export function CommandLauncher({
         .filter((t) => !t.isResolved)
         .map((t) => ({ value: t.id, label: t.title }))
     }
+    if (scope?.id === 'ship' && liveShip) out[PARENT_FIELD] = liveShip.parents
     return out
-  }, [scope, topics])
+  }, [scope, topics, liveShip])
 
   const enterScope = (app: LauncherApp) => {
     setScope(app)
@@ -118,8 +173,36 @@ export function CommandLauncher({
    * `nostr:naddr…` reference into the active composer so the reply renders it
    * as a widget (`MessageBody` already does that half). Inert v1: close.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const submitAction = (action: LauncherAction, values: Record<string, string>) => {
+  const submitAction = async (action: LauncherAction, values: Record<string, string>) => {
+    /*
+      Only Ship's live actions publish. Everything else in the registry is a
+      proposal for a manifest that does not declare it yet, and publishing a
+      guess at another app's object is exactly what the honour system forbids —
+      so those still close, as they always did.
+    */
+    const live = liveShip?.actions.some((a) => a.id === action.id)
+    const { parent, properties } = splitSubmission(values)
+    if (!live || !parent) {
+      onClose()
+      return
+    }
+    setSubmitting(true)
+    setSubmitError(null)
+    // The parent is addressed, not named: `applyAction` resolves the manifest
+    // from the object being acted on, which is what keeps this ignorant of Ship.
+    const result = await applyAction({
+      naddr: addrToNaddr(parent, []),
+      actionId: action.id,
+      value: properties,
+    })
+    setSubmitting(false)
+    if (!result.ok) {
+      // The runtime's own words — "title is required", "urgent is not one of
+      // …" — rather than a generic failure. It is the only participant that
+      // knows what the manifest allowed.
+      setSubmitError(result.reason ?? 'The relay rejected it.')
+      return
+    }
     onClose()
   }
 
@@ -413,12 +496,26 @@ export function CommandLauncher({
 
           {/* Body: the action's form in form mode, rows otherwise */}
           {formAction && scope ? (
-            <ActionFormPanel
-              app={scope}
-              action={formAction}
-              parentOptions={liveParents}
-              onSubmit={(values) => submitAction(formAction, values)}
-            />
+            <div>
+              <ActionFormPanel
+                app={scope}
+                action={formAction}
+                parentOptions={liveParents}
+                onSubmit={(values) => void submitAction(formAction, values)}
+              />
+              {/* The runtime's own words — "title is required by Add issue",
+                  "urgent is not one of todo, …". It is the only participant
+                  that knows what the manifest allowed, and a generic failure
+                  here would throw that away. */}
+              {submitError && (
+                <p role="alert" className="px-4 pb-3 -mt-1 text-[12px] leading-[1.4] text-error-default">
+                  {submitError}
+                </p>
+              )}
+              {submitting && (
+                <p className="px-4 pb-3 -mt-1 text-[12px] leading-[1.4] text-text-secondary">Creating…</p>
+              )}
+            </div>
           ) : (
           <div ref={listRef} className="max-h-[400px] overflow-y-auto p-1">
             {rows.map((row, i) => (
