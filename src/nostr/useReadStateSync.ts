@@ -49,6 +49,16 @@ import {
 } from './readState'
 import { fetchOwnSlot, loadMergedReadState, publishReadState } from './readStateRelay'
 import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
+import { buildDiffReport } from './readStateDiff'
+import { useDebug } from '@/lib/debug'
+
+/**
+ * The previous merge, kept so a *regression* between fetches is detectable
+ * (CRO-7). The merge takes a maximum, so its output can only grow — a value
+ * going down is a bug in the merge, not in the data, and it is the one class
+ * that blocks the cutover.
+ */
+let previousRelayMerge: Record<string, number> | undefined
 
 /** Set by the hook, read at call time. Null disables publishing entirely. */
 let relayOrigin: string | null = null
@@ -111,6 +121,7 @@ export function resetReadStateQueueForTests(): void {
   queue = undefined
   identity = undefined
   relayOrigin = null
+  previousRelayMerge = undefined
 }
 
 /**
@@ -237,6 +248,15 @@ export function useMergedReadState(): MergedReadStateView {
   const [ready, setReady] = useState(false)
   const [staleDuplicates, setStaleDuplicates] = useState<string[]>([])
   const applyToCache = useMutation(api.readState.applyRelayReadState)
+  const { state: debug, setReadStateDiff } = useDebug()
+  const dualRun = debug.readState.dualRun
+  /*
+   * The Convex side, as protocol contexts — the same query CRO-6 uses to
+   * re-anchor aged-out markers, read here as side A of the comparison. The UI
+   * still renders from A; this change computes B and records the difference,
+   * and nothing switches until CRO-7 step 2.
+   */
+  const localContexts = useQuery(api.readState.cachedReadContexts, hasConvex ? {} : 'skip')
 
   const refresh = useCallback(async () => {
     const current = seam()
@@ -273,11 +293,30 @@ export function useMergedReadState(): MergedReadStateView {
         console.warn('[read-state] our slot coordinate belongs to another installation; rotating')
         identity = rotateSlotId(currentIdentity())
       }
+      /*
+       * Dual-run (CRO-7 step 1). Compared *before* the merge is written into
+       * the cache above would be wrong — the write is what makes them agree —
+       * so this reads the local side as it was when this refresh started.
+       */
+      if (dualRun && localContexts) {
+        const local: Record<string, number> = {}
+        for (const { context, atSeconds } of localContexts) local[context] = atSeconds
+        setReadStateDiff(
+          buildDiffReport({
+            local,
+            relay: state.merged,
+            previousRelay: previousRelayMerge,
+            nowMs: Date.now(),
+          }),
+        )
+      }
+      previousRelayMerge = state.merged
+
       setReady(true)
     } catch (error) {
       console.warn('[read-state] could not merge read state from the relay:', error)
     }
-  }, [applyToCache])
+  }, [applyToCache, dualRun, localContexts, setReadStateDiff])
 
   return { merged, ready, refresh, staleDuplicates }
 }

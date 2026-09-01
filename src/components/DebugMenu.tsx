@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useDebug } from '@/lib/debug'
+import { needsAttention } from '@/nostr/readStateDiff'
 import { cn } from '@/lib/utils'
 
 interface DebugMenuProps {
@@ -10,7 +11,7 @@ interface DebugMenuProps {
 
 export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
   const ref = useRef<HTMLDivElement>(null)
-  const { state, setDesk, setUnreads, setHuddles } = useDebug()
+  const { state, setDesk, setUnreads, setHuddles, setReadState } = useDebug()
 
   useEffect(() => {
     const click = (e: MouseEvent) => {
@@ -121,6 +122,19 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
         />
       </DebugSection>
 
+      <DebugSection title="Read state">
+        <DebugRow
+          label="Dual-run vs relay"
+          options={[
+            { label: 'Off', value: false },
+            { label: 'On', value: true },
+          ]}
+          value={state.readState.dualRun}
+          onChange={(v) => setReadState('dualRun', v)}
+        />
+        <ReadStateDiffRow />
+      </DebugSection>
+
       <DebugSection title="Huddles">
         <DebugRow
           label="Variant"
@@ -135,6 +149,49 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
       </DebugSection>
     </div>,
     document.body
+  )
+}
+
+/**
+ * The dual-run result (CRO-7 step 1).
+ *
+ * Two benign classes are expected forever — `relay-ahead` is the feature
+ * working, and `local-ahead-recent` is a debounced publish in flight — so they
+ * are counted quietly. What gets called out is the pair the cutover is gated on:
+ * a persistent local-ahead (a lost publish, or a context id under the wrong
+ * scheme) and a regression (the merge going backwards, which §11.4 forbids).
+ */
+function ReadStateDiffRow() {
+  const { state, readStateDiff: report } = useDebug()
+  if (!state.readState.dualRun) return null
+  if (!report) {
+    return (
+      <div className="px-2 py-1.5 text-[11px] text-text-muted">
+        No comparison yet — needs one relay fetch.
+      </div>
+    )
+  }
+  const persistent = report.divergences.filter((d) => d.kind === 'local-ahead-persistent')
+  const benign = report.divergences.length - persistent.length
+  const attention = needsAttention(report)
+  return (
+    <div className="px-2 py-1.5 flex flex-col gap-0.5 text-[11px]">
+      <div className="text-text-secondary">
+        {report.localCount} local · {report.relayCount} relay · {benign} benign
+      </div>
+      <div className={cn(attention ? 'text-warning-default' : 'text-text-muted')}>
+        {attention
+          ? `${persistent.length} unpublished · ${report.regressions.length} regressed`
+          : 'Nothing outside the benign classes'}
+      </div>
+      {/* The context ids themselves, because "which one" is the whole question
+          when a publish is being lost. Capped — a long list is a diff, not a menu. */}
+      {persistent.slice(0, 3).map((d) => (
+        <div key={d.context} className="text-text-muted font-mono truncate">
+          {d.context.slice(0, 24)}… +{d.deltaSeconds}s
+        </div>
+      ))}
+    </div>
   )
 }
 
