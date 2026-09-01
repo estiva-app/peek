@@ -3,6 +3,9 @@ import { useEffect } from 'react'
 import { addons } from 'storybook/preview-api'
 import { GLOBALS_UPDATED } from 'storybook/internal/core-events'
 import { themes } from 'storybook/theming'
+import { PeekDataProvider } from '../src/api'
+import { DebugProvider } from '../src/lib/debug'
+import { TopicStoreProvider } from '../src/api/internal/topicStore'
 import '../src/index.css'
 import './preview.css'
 import './signal.css'
@@ -71,6 +74,28 @@ const withTheme: Decorator = (Story, context) => {
   return <Story />
 }
 
+/**
+ * Every story runs inside the app's ambient providers. Components deep in a
+ * tree reach for useDebug and the topic store — the read-state sync mounts
+ * with the app since peek#97 — and a story rendering them without these
+ * crashed to Storybook's error page. 67 of 316 stories were error pages
+ * before this, silently, until a pixel run compared them (2026-09-01).
+ *
+ * PeekDataProvider is safe here because Storybook pins VITE_CONVEX_URL to ''
+ * (main.ts): the dummy client only answers the context lookup — every query
+ * in mock mode passes 'skip', but Convex's useQuery demands the provider
+ * even then, which is what took NavRail down. Same nesting as main.tsx.
+ */
+const withProviders: Decorator = (Story) => (
+  <DebugProvider>
+    <PeekDataProvider>
+      <TopicStoreProvider>
+        <Story />
+      </TopicStoreProvider>
+    </PeekDataProvider>
+  </DebugProvider>
+)
+
 const preview: Preview = {
   // Every component gets a Docs tab from its JSDoc + argTypes (D4: global autodocs).
   tags: ['autodocs'],
@@ -116,7 +141,7 @@ const preview: Preview = {
       },
     },
   },
-  decorators: [withTheme],
+  decorators: [withProviders, withTheme],
 }
 
 export default preview
