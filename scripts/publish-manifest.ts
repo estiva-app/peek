@@ -33,7 +33,7 @@ import { Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-a
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { HANDLED_KINDS, MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
-import { widgetChainProblem } from '@estiva-app/interop'
+import { widgetChainProblem, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
 
 const RELAY_URL = process.env.RELAY_URL ?? 'http://localhost:3000'
 const KEY_FILE = new URL('../.manifest-key', import.meta.url).pathname
@@ -89,7 +89,23 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
       // NIP-89's `web` tag. `<bech32>` is substituted by the consumer with the
       // entity it holds. A topic is addressable so an naddr resolves; a message
       // is not, which is recorded on the check below rather than papered over.
+      /*
+        One `web` tag per NIP-19 entity type, because Peek owns two shapes of
+        object and they are not interchangeable.
+
+        A Topic is addressable — the relay's `kind:39000`, whose `d` is the
+        channel uuid — so `naddr` names it. A Message is a `kind:9` with no `d`
+        at all, so **nothing but its event id can name it** and `nevent` is the
+        only form that works. Declaring only the first is what PRO-11 found:
+        a consumer rendering a message had no way to offer "open this in Peek",
+        and `<bech32>` had nothing to substitute.
+
+        Both point at the same route. It resolves the reference and then decides
+        which surface to show, the way Ship's `#/o/` does — the entity type
+        tells the *consumer* what it is holding, not the app what to do.
+      */
       ['web', `${appUrl.replace(/\/+$/, '')}/#/o/<bech32>`, 'naddr'],
+      ['web', `${appUrl.replace(/\/+$/, '')}/#/o/<bech32>`, 'nevent'],
     ],
     content: JSON.stringify(manifestContent()),
   }
@@ -225,10 +241,43 @@ async function main() {
       JSON.stringify(manifest.projections[String(MESSAGE_KIND)].widget),
     )
     check(
-      '  a message carries no `d`, so it is NOT addressable — PRO-7 must resolve it by id',
+      '  a message carries no `d`, so it is NOT addressable — resolved by id instead',
       !message.tags.some((t: string[]) => t[0] === 'd'),
       'recorded, not a failure',
     )
+
+    /*
+      The message actually resolves by id — PRO-11.
+
+      This was recorded as a known gap for two tickets: a projection could be
+      declared for kind:9 and nothing could look one up. Now it can, and the
+      check is the resolve rather than the declaration, because a manifest that
+      declares a Message projection nothing can reach is exactly what the gap
+      was.
+    */
+    const resolved = await resolveForeignEvent(message.id, ((filters) => relay.query(filters as never)) as QueryFn)
+    check(
+      '  …and resolveForeignEvent reaches it from a bare event id',
+      resolved !== null && resolved.eventId === message.id,
+      resolved ? `ref ${resolved.ref.slice(0, 16)}…` : 'null',
+    )
+    check(
+      '  …with no address and no naddr, which is the point',
+      resolved?.address === undefined && resolved?.naddr === undefined,
+    )
+    check(
+      '  …and a web link that opens it, from the nevent template',
+      typeof resolved?.openUrl === 'string' && resolved.openUrl.includes('nevent1'),
+      resolved?.openUrl ?? '(none)',
+    )
+  }
+
+  {
+    // Both entity types are declared. One `web` tag cannot serve both: a Topic
+    // is addressable and a Message is not, so a consumer holding a message and
+    // finding only an `naddr` template has nothing to substitute.
+    const types = stored.tags.filter((t: string[]) => t[0] === 'web').map((t: string[]) => t[2])
+    check('the manifest declares a web template per entity type', types.includes('naddr') && types.includes('nevent'), types.join(', '))
   }
 
   console.log(
