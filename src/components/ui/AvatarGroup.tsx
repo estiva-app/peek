@@ -1,25 +1,13 @@
-import { Avatar } from './Avatar'
+import { AvatarGroup as UiAvatarGroup } from '@estiva-app/ui'
+import { useAvatarSrc } from '@/api'
 
-/** Up to 3 overlapping 24px avatars with a border-bg-surface outline — the member
- *  stack used in the ConversationHeader members pill. Matches the Figma members component.
- *
- *  The ring sits on the Avatar itself (2026-09-01): the old extra wrapper was a
- *  24px window minus a 2px border with a fixed 24px Avatar inside, so
- *  overflow-hidden clipped 4px of face — and the right edge of the initials
- *  with it, which is how "CO" rendered as "C(". One box, whole letters. */
+/**
+ * Peek's member stack: the shared one from @estiva-app/ui (2026-09-01),
+ * given the pictures Peek knows about — same lookup as Peek's Avatar
+ * wrapper, uploaded avatar > seeded portrait > initials. Callers keep
+ * passing bare names.
+ */
 export function AvatarGroup({ members }: { members: string[] }) {
-  const visible = members.slice(0, 3)
-  return (
-    <div className="flex items-center pr-2">
-      {visible.map((name, i) => (
-        <Avatar
-          key={i}
-          size={24}
-          name={name}
-          alt={name}
-          className="-mr-2 relative border-2 border-bg-surface"
-        />
-      ))}
-    </div>
-  )
+  const avatarSrcFor = useAvatarSrc()
+  return <UiAvatarGroup members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} />
 }
