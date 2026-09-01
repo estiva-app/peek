@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { hasConvex } from '@/api'
 import { useDebug } from '@/lib/debug'
 import { needsAttention } from '@/nostr/readStateDiff'
 import { cn } from '@/lib/utils'
@@ -44,7 +45,9 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
       }}
       className="w-[300px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2 flex flex-col gap-1"
     >
-      <DebugSection title="Desk">
+      {/* Desk, Unreads and Huddles drive the MOCK dataset — on the real app they
+          toggle nothing, and showing them would suggest otherwise (issue #6). */}
+      {!hasConvex && <DebugSection title="Desk">
         <DebugRow
           label="Screener"
           options={[
@@ -99,9 +102,9 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
           value={state.desk.starredHasData}
           onChange={(v) => setDesk('starredHasData', v)}
         />
-      </DebugSection>
+      </DebugSection>}
 
-      <DebugSection title="Unreads">
+      {!hasConvex && <DebugSection title="Unreads">
         <DebugRow
           label="Topics"
           options={[
@@ -120,7 +123,7 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
           value={state.unreads.people}
           onChange={(v) => setUnreads('people', v)}
         />
-      </DebugSection>
+      </DebugSection>}
 
       <DebugSection title="Read state">
         <DebugRow
@@ -135,7 +138,7 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
         <ReadStateDiffRow />
       </DebugSection>
 
-      <DebugSection title="Huddles">
+      {!hasConvex && <DebugSection title="Huddles">
         <DebugRow
           label="Variant"
           options={[
@@ -146,7 +149,7 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
           value={state.huddles.variant}
           onChange={(v) => setHuddles('variant', v)}
         />
-      </DebugSection>
+      </DebugSection>}
     </div>,
     document.body
   )
