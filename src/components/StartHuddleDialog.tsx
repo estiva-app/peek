@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DialogShell } from '@estiva-app/ui'
+import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { PersonChipInput } from './ui/PersonChipInput'
 import type { Person } from '@/api'

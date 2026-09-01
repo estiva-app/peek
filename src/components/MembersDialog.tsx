@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DialogShell } from '@estiva-app/ui'
+import { DialogShell } from './ui/DialogShell'
 import { IconArrowLeft, IconUserPlus } from '@tabler/icons-react'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
