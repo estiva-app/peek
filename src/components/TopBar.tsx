@@ -19,10 +19,12 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
   const signOut = useSignOut()
   const me = useCurrentUser()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [debugOpen, setDebugOpen] = useState(false)
+  /* The element the debug menu hangs off, captured when it is opened rather
+     than read from a ref during render — the menu item that opens it unmounts
+     as the account menu closes, so its ref is null by the time it is needed. */
+  const [debugAnchor, setDebugAnchor] = useState<HTMLElement | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
   const avatarRef = useRef<HTMLButtonElement>(null)
-  const helpRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Close theme menu on outside click
@@ -69,12 +71,12 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
         {/* Debug menu is a dev affordance over the mock dataset — hidden on the
             real (Convex-backed) app (issue #6). */}
         {!hasConvex && (
-          <div ref={helpRef}>
+          <div>
             <IconButton
               tooltip="Debug"
               tooltipPlacement="bottom"
               aria-label="Debug"
-              onClick={() => setDebugOpen((v) => !v)}
+              onClick={(e) => setDebugAnchor((a) => (a ? null : e.currentTarget))}
             >
               <IconHelpCircle size={16} stroke={1.5} />
             </IconButton>
@@ -118,6 +120,24 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               <div className="border-t border-border-subtle my-1" />
             </>
           )}
+          {/* Read state (Convex mode). The dual-run readout lives in the debug
+              menu, and the debug BUTTON is hidden here (issue #6) because its
+              other sections drive the mock dataset — so on the real app the
+              panel existed and nothing could open it. This is the way in. */}
+          {hasConvex && (
+            <div
+              className="flex items-center gap-3 h-9 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover min-w-[160px]"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                const anchor = avatarRef.current
+                setMenuOpen(false)
+                setDebugAnchor(anchor)
+              }}
+            >
+              <IconHelpCircle size={16} stroke={1.5} className="text-text-secondary shrink-0" />
+              <span className="flex-1 text-[14px] font-normal leading-[1.4] text-text-primary">Read state</span>
+            </div>
+          )}
           {/* Sign out (Convex mode only) */}
           {hasConvex && (
             <>
@@ -140,8 +160,8 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
       )}
 
       {/* Debug menu */}
-      {debugOpen && (
-        <DebugMenu anchorEl={helpRef.current} onClose={() => setDebugOpen(false)} />
+      {debugAnchor && (
+        <DebugMenu anchorEl={debugAnchor} onClose={() => setDebugAnchor(null)} />
       )}
 
       {/* Profile */}
