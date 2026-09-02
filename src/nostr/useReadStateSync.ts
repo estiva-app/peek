@@ -61,6 +61,12 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
  */
 let previousRelayMerge: Record<string, number> | undefined
 
+/** Facts the diagnostic reports that live outside the queue. */
+let readPathRuns = 0
+let lastMergeAt: number | undefined
+let lastCacheSize: number | undefined
+let lastDiffSummary: { benign: number; unpublished: number; regressed: number } | undefined
+
 /** Set by the hook, read at call time. Null disables publishing entirely. */
 let relayOrigin: string | null = null
 let queue: ReadStateQueue | undefined
@@ -149,6 +155,10 @@ export function resetReadStateQueueForTests(): void {
   identity = undefined
   relayOrigin = null
   previousRelayMerge = undefined
+  readPathRuns = 0
+  lastMergeAt = undefined
+  lastCacheSize = undefined
+  lastDiffSummary = undefined
 }
 
 /**
@@ -319,6 +329,8 @@ export function useMergedReadState(): MergedReadStateView {
       const state = await loadMergedReadState(current, currentIdentity())
       if (!state) return
       setMerged(state.merged)
+      readPathRuns += 1
+      lastMergeAt = Date.now()
       setStaleDuplicates(state.verdict.staleDuplicates.map((s) => s.dTag))
       /*
        * Into the horizon cache (CRO-6). Max only, on the Convex side, so this
@@ -353,14 +365,19 @@ export function useMergedReadState(): MergedReadStateView {
       if (dualRun && localContexts) {
         const local: Record<string, number> = {}
         for (const { context, atSeconds } of localContexts) local[context] = atSeconds
-        setReadStateDiff(
-          buildDiffReport({
-            local,
-            relay: state.merged,
-            previousRelay: previousRelayMerge,
-            nowMs: Date.now(),
-          }),
-        )
+        const report = buildDiffReport({
+          local,
+          relay: state.merged,
+          previousRelay: previousRelayMerge,
+          nowMs: Date.now(),
+        })
+        lastCacheSize = Object.keys(local).length
+        lastDiffSummary = {
+          benign: report.divergences.filter((d) => d.kind !== 'local-ahead-persistent').length,
+          unpublished: report.divergences.filter((d) => d.kind === 'local-ahead-persistent').length,
+          regressed: report.regressions.length,
+        }
+        setReadStateDiff(report)
       }
       previousRelayMerge = state.merged
 
@@ -371,4 +388,81 @@ export function useMergedReadState(): MergedReadStateView {
   }, [applyToCache, dualRun, localContexts, setReadStateDiff])
 
   return { merged, ready, refresh, staleDuplicates }
+}
+
+// ---------------------------------------------------------------------------
+// The diagnostic
+// ---------------------------------------------------------------------------
+
+/**
+ * `window.__readState()` — what this tab believes about read state (CRO-14).
+ *
+ * Ship has the same (ship#72). Peek needed it more: five separate times this
+ * subsystem was correct and did not run, and none of it was visible to a unit
+ * suite because every case lived in the seam between the code and whatever was
+ * supposed to invoke it.
+ *
+ * **`hasRun` is the field that matters.** `useMergedReadState` was written by
+ * CRO-5, given a cache to fill by CRO-6 and a diff by CRO-7, and mounted by none
+ * of them — three green tickets over a dead path. One command answering "the
+ * merge has never executed this session" would have caught it the first time
+ * anybody looked.
+ *
+ * ```
+ * __readState()                    the queue, the cache, the diff, and whether it has run
+ * __readState.flush()              publish now instead of waiting on the debounce
+ * __readState.marker('<context>')  one context's merged value, as a date
+ * ```
+ *
+ * Read-only apart from `flush()`, which does only what the debounce would.
+ */
+export interface PeekReadStateDiagnostic {
+  slot: string
+  clientId: string
+  /** False means nothing on the read path has executed — the CRO-97 failure. */
+  hasRun: boolean
+  mergeRuns: number
+  lastMergeAt: string | undefined
+  /** Contexts in the merged frontier, and in Convex's horizon cache. */
+  relayContexts: number
+  cacheContexts: number | undefined
+  /** The dual-run, without needing the debug menu. */
+  diff: typeof lastDiffSummary
+  queue: ReturnType<ReadStateQueue['diagnostic']> | 'queue not created yet'
+}
+
+function snapshot(): PeekReadStateDiagnostic {
+  const id = currentIdentity()
+  return {
+    slot: `read-state:${id.slotId}`,
+    clientId: id.clientId,
+    hasRun: readPathRuns > 0,
+    mergeRuns: readPathRuns,
+    lastMergeAt: lastMergeAt === undefined ? undefined : new Date(lastMergeAt).toISOString(),
+    relayContexts: Object.keys(previousRelayMerge ?? {}).length,
+    cacheContexts: lastCacheSize,
+    diff: lastDiffSummary,
+    queue: queue ? queue.diagnostic() : 'queue not created yet',
+  }
+}
+
+/**
+ * Attach it. Called at module scope from the api barrel, so it is present before
+ * anything asks — including on a page opened straight from a URL.
+ *
+ * Not gated on a build flag, for the reason ship#72 gives: a diagnostic that is
+ * absent from production is one that is never there when it is needed.
+ */
+export function installReadStateDiagnostic(): void {
+  if (typeof window === 'undefined') return
+  const fn = () => snapshot()
+  fn.flush = async () => {
+    await flushReadState()
+    return snapshot().queue
+  }
+  fn.marker = (context: string) => {
+    const at = previousRelayMerge?.[context]
+    return at === undefined ? 'absent' : `${at}  ${new Date(at * 1000).toISOString()}`
+  }
+  ;(window as unknown as Record<string, unknown>).__readState = fn
 }

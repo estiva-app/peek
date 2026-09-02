@@ -15,6 +15,10 @@ export * from './desk'
 export * from './currentUser'
 export * from './people'
 export * from './topics'
+/* `window.__readState()` — see src/nostr/useReadStateSync.ts (CRO-14). At module
+   scope so it exists before anything asks, including on a cold URL load. */
+import { installReadStateDiagnostic } from '@/nostr/useReadStateSync'
+installReadStateDiagnostic()
 export * from './huddles'
 export * from './messages'
 export * from './actions'
