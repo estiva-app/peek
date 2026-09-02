@@ -12,12 +12,14 @@
  * So this drives the launcher itself, from the outside, and asserts on what a
  * person sees.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ResolvedAction } from '@estiva-app/interop'
+import { addrToNaddr } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
+import type { LauncherContext } from '@/lib/launcherContext'
 import { CommandLauncher } from './CommandLauncher'
 
 /*
@@ -56,7 +58,15 @@ const liveAddIssue: ResolvedAction = {
   `npm run build` does.
 */
 type ApplyArgs = { naddr: string; actionId: string; value: string | Record<string, string> }
-const applyAction = vi.fn(async (_args: ApplyArgs) => ({ ok: true as const, created: '30851:me:new' }))
+/*
+  `created` has to be an address the encoder will accept, for the same reason
+  SHIP_AUTHOR does: `addrToNaddr` needs 32 bytes, and the reference insert
+  (PEE-2) runs it. The old fixture here was `30851:me:new` — inert while
+  nothing encoded it, and a throw swallowed by `void submitAction(…)` the
+  moment something did.
+*/
+const CREATED = `30851:${SHIP_AUTHOR}:0f68a3f3-e44e-46c8-82dd-76432b358a18`
+const applyAction = vi.fn(async (_args: ApplyArgs) => ({ ok: true as const, created: CREATED }))
 const creatableUnder = vi.fn(async () => ({
   actions: [liveAddIssue],
   parents: [
@@ -64,6 +74,24 @@ const creatableUnder = vi.fn(async () => ({
     { address: PROJECT_B, title: 'Cross-app read state' },
   ],
 }))
+
+/*
+  The insert itself is covered against the real `findNaddrs`/`stripNaddrs` in
+  `lib/composerRegistry.test.ts`. What this file is for is what the launcher
+  passes it, and whether it acts on the answer.
+*/
+/*
+  `vi.hoisted`, because `vi.mock` is hoisted above every top-level `const` and
+  `CommandLauncher` imports the registry at module scope — a plain const is
+  still uninitialised when the factory runs. The `@/api` mock above gets away
+  with a plain one only because its reference sits inside an arrow the renderer
+  calls later.
+*/
+const { insertReference } = vi.hoisted(() => ({ insertReference: vi.fn(() => true) }))
+vi.mock('@/lib/composerRegistry', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/composerRegistry')>('@/lib/composerRegistry')
+  return { ...actual, insertReferenceIntoActiveComposer: insertReference }
+})
 
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
@@ -79,14 +107,25 @@ vi.mock('@/api', async () => {
   }
 })
 
-function open() {
+function open(context: LauncherContext = {}, onClose = vi.fn()) {
   render(
     <DebugProvider>
       <PeekDataProvider>
-        <CommandLauncher context={{}} onClose={vi.fn()} initialAppId="ship" />
+        <CommandLauncher context={context} onClose={onClose} initialAppId="ship" />
       </PeekDataProvider>
     </DebugProvider>,
   )
+  return { onClose }
+}
+
+/** Fill in Ship's `add-issue` form and submit it. */
+async function createIssue(title = 'Billing entry') {
+  await userEvent.click(await screen.findByText('Add issue'))
+  await userEvent.type(screen.getByRole('textbox'), title)
+  await userEvent.click(screen.getByLabelText('Project'))
+  await userEvent.click(await screen.findByText('Projection layer'))
+  // Exact, because the chip that leaves the form is also "…Add issue".
+  await userEvent.click(screen.getByRole('button', { name: 'Add issue' }))
 }
 
 describe('the launcher draws Ship’s form from Ship’s manifest (PRO-4)', () => {
@@ -119,12 +158,7 @@ describe('the launcher draws Ship’s form from Ship’s manifest (PRO-4)', () =
 
   it('publishes what the form collected, with the parent split back out', async () => {
     open()
-    await userEvent.click(await screen.findByText('Add issue'))
-    await userEvent.type(screen.getByRole('textbox'), 'Billing entry')
-    await userEvent.click(screen.getByLabelText('Project'))
-    await userEvent.click(await screen.findByText('Projection layer'))
-    // Exact, because the chip that leaves the form is also "…Add issue".
-    await userEvent.click(screen.getByRole('button', { name: 'Add issue' }))
+    await createIssue()
 
     expect(applyAction).toHaveBeenCalledTimes(1)
     const call = applyAction.mock.calls[0][0]
@@ -170,5 +204,82 @@ describe('while the manifest is still being read (the 1.5 s window)', () => {
 
     expect(await screen.findByText(/could not read ship’s manifest/i)).toBeInTheDocument()
     expect(screen.queryByText('Create issue')).not.toBeInTheDocument()
+  })
+})
+
+describe('the created object leaves a trace in the thread (PEE-2)', () => {
+  /*
+    > Katerina, 2026-08-19 — *"Now I have no clue this whole conversation has an
+    > issue assigned, as I have to open the thread first."*
+
+    Creating the issue elsewhere solves the typing and not the knowing. A
+    version that files it and says nothing in the thread is the context switch
+    with an extra step.
+  */
+  beforeEach(() => {
+    insertReference.mockClear()
+    insertReference.mockReturnValue(true)
+    applyAction.mockClear()
+  })
+
+  it('puts the new object’s reference in the composer, and closes', async () => {
+    const { onClose } = open({ composer: { isFocused: true, hasDraft: false, label: 'Reply to Katerina' } })
+    await createIssue()
+
+    // The address off the runtime, encoded — not recomposed from the form.
+    expect(insertReference).toHaveBeenCalledWith(addrToNaddr(CREATED, []))
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('closes without a reference when a change was made rather than an object created', async () => {
+    // Only a creation returns an address. A change is a statement about an
+    // object that already had one, so there is nothing new to point at.
+    applyAction.mockResolvedValueOnce({ ok: true as const } as never)
+    const { onClose } = open({ composer: { isFocused: true, hasDraft: false } })
+    await createIssue()
+
+    expect(insertReference).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('closes quietly when no conversation is open', async () => {
+    /*
+      The launcher is global, so creating an object with nothing open is a
+      normal thing to do — there is nowhere to leave a reference and that is
+      not a failure. The object exists either way.
+    */
+    insertReference.mockReturnValue(false)
+    const { onClose } = open()
+    await createIssue()
+
+    expect(onClose).toHaveBeenCalled()
+    expect(screen.queryByText(/could not be placed/i)).not.toBeInTheDocument()
+  })
+
+  it('says the trace went missing when a conversation WAS open', async () => {
+    /*
+      The distinction the captured context buys. Same `false` from the registry,
+      opposite meaning: a conversation surface was open at the invoking
+      keystroke, so the reference should have landed somewhere and did not.
+      Silence here is the object created and the thread none the wiser, which is
+      the whole defect this ticket exists for.
+    */
+    insertReference.mockReturnValue(false)
+    const { onClose } = open({ composer: { isFocused: true, hasDraft: false } })
+    await createIssue()
+
+    expect(await screen.findByText(/could not be placed/i)).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not report a create as failed when only the encode broke', async () => {
+    // The object was created. Saying "failed" would be a lie about the half
+    // that worked, so the message names the half that did not.
+    applyAction.mockResolvedValueOnce({ ok: true as const, created: 'not-an-address' } as never)
+    const { onClose } = open({ composer: { isFocused: true, hasDraft: false } })
+    await createIssue()
+
+    expect(await screen.findByText(/^Created, but/i)).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

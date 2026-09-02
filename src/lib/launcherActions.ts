@@ -17,8 +17,11 @@
  *   grow. Peek's own manifest deliberately declares no actions yet
  *   (`src/nostr/manifest.ts` says why), so both Peek actions are proposals.
  *
- * Submitting a form publishes nothing in v1. The seam where the runtime plugs
- * in is `CommandLauncher`'s `submitAction`.
+ * Submitting a form publishes for real where the live manifest declares the
+ * action (PEE-1) and leaves its reference in the composer (PEE-2) — see
+ * `CommandLauncher`'s `submitAction`. Rows that are only proposals stay inert,
+ * because publishing a guess at another app's object is what the honour system
+ * forbids.
  */
 
 export interface VocabOption {
