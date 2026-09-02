@@ -8,6 +8,7 @@ import type {
 } from '@estiva-app/interop'
 import { hasConvex, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
+import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
@@ -404,6 +405,10 @@ export function ForeignObjectCard({
           {widget === 'card' && slots.subtitle && (
             <p className="mt-1 text-xs text-text-secondary">{slots.subtitle.value}</p>
           )}
+          {/* The description, in whichever content model its own app writes —
+              PRO-2. A card only, for the reason the subtitle is: a row is a
+              single line by definition and a body is not one. */}
+          {widget === 'card' && slots.body && <ForeignBody slot={slots.body} className="mt-1" />}
           {visibleMeta.length > 0 && (
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
               {visibleMeta.map((slot, i) => (

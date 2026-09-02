@@ -389,3 +389,37 @@ describe('ForeignObjectWidget', () => {
     })
   })
 })
+
+/**
+ * PRO-2's `body` slot at the widget boundary. `ForeignBody.test.tsx` covers how
+ * a body is rendered; this covers *whether* — the same card/row rule the
+ * subtitle follows, and that an app declaring no body still renders.
+ */
+describe('the body slot', () => {
+  const body = { value: '# Goal\n\nStripe **Checkout**.', format: 'marker' as const }
+  // The module is imported lazily above for the same reason: this file mocks
+  // the resolver, and a top-level import would bind before the mock is set.
+
+  it('draws a card’s body through the manifest', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const { container } = render(<ForeignObjectCard object={object({ widget: 'card', slots: { title: { value: 'Payments' }, body } })} />)
+    expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
+    expect(container.querySelector('[data-foreign-body] .font-semibold')?.textContent).toBe('Checkout')
+  })
+
+  it('leaves it off a row, which is a single line by definition', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const { container } = render(<ForeignObjectCard object={object({ widget: 'row', slots: { title: { value: 'Payments' }, body } })} />)
+    expect(container.querySelector('[data-foreign-body]')).toBeNull()
+  })
+
+  it('renders the rest for an app that declares no body at all', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    // §7.2's obligation, from the other side: a consumer that has learned a new
+    // slot must not start requiring it. Every manifest published before PRO-2
+    // declares none.
+    const { container } = render(<ForeignObjectCard object={object({ widget: 'card' })} />)
+    expect(container.querySelector('[data-foreign-body]')).toBeNull()
+    expect(container.textContent).toContain('Billing entry')
+  })
+})
