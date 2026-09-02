@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Menu } from '@estiva-app/ui'
 import { hasConvex } from '@/api'
 import { useDebug } from '@/lib/debug'
@@ -12,17 +13,31 @@ interface DebugMenuProps {
 export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
   const { state, setDesk, setUnreads, setHuddles, setReadState } = useDebug()
 
+  /*
+   * The shared shell owns the exits now, and it arms its outside-mousedown
+   * dismiss during the very event that opens this menu (React flushes effects
+   * during a discrete event) — so a close in the same tick as mount is the
+   * opening mousedown reaching `document`, not a person. Ignore it: the
+   * property the outside-click test pins, kept from the pre-shell fix because
+   * it does not depend on who opens the menu. The known openers ALSO swallow
+   * their mousedown (see TopBar), which spares even the invisible flicker.
+   */
+  const armed = useRef(false)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      armed.current = true
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
+
   if (!anchorEl) return null
   const rect = anchorEl.getBoundingClientRect()
 
-  // The shared shell owns the exits now. Its outside-mousedown listener arms
-  // during the very event that opens this menu (React flushes effects during
-  // a discrete event — the lesson the old deferred-arming comment recorded),
-  // so every opener swallows its own mousedown: the debug button and the
-  // account menu's Read state row alike (see TopBar).
   return (
     <Menu
-      onClose={onClose}
+      onClose={() => {
+        if (armed.current) onClose()
+      }}
       position={{ top: rect.bottom + 6, right: window.innerWidth - rect.right }}
       className="w-[300px] gap-1"
     >
