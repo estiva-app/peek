@@ -35,14 +35,53 @@ interface LanguageModelSession {
   destroy: () => void
 }
 
+/** Sampling options, which Chrome requires rather than defaults. See `SAMPLING`. */
+export interface SamplingOptions {
+  samplingMode?: 'most-predictable'
+  temperature?: number
+  topK?: number
+}
+
 interface LanguageModelStatic {
-  availability: () => Promise<ModelAvailability>
-  create: (options?: { initialPrompts?: { role: string; content: string }[] }) => Promise<LanguageModelSession>
+  availability: (options?: SamplingOptions) => Promise<ModelAvailability>
+  create: (options?: SamplingOptions & { initialPrompts?: { role: string; content: string }[] }) => Promise<LanguageModelSession>
 }
 
 declare global {
   var LanguageModel: LanguageModelStatic | undefined
 }
+
+/**
+ * The sampling configurations to try, in order.
+ *
+ * **Chrome refuses a session with no sampling options at all**, measured in the
+ * browser on 2026-09-02 — `create()` threw:
+ *
+ * > *The sampling options are incompatible with speculative decoding (MTP).
+ * > Prompt API sessions must specify compatible sampling options, i.e.
+ * > `samplingMode:'most-predictable'` or `topK:1` or `temperature:0`.*
+ *
+ * This code passed none, so every `create()` threw, `promptForObject` caught it
+ * and returned null, and prefill silently never ran. Nothing failed visibly —
+ * which is exactly what PEE-6 makes it look like on a machine with no model, so
+ * the bug was indistinguishable from working correctly.
+ *
+ * `{temperature: 0, topK: 1}` was *also* refused in the same measurement, so
+ * the list is ordered by what the browser itself named first and falls back
+ * rather than guessing which build wants which. A browser that accepts none of
+ * them gets no prefill, which is the honest outcome.
+ *
+ * **Determinism is right here regardless of the error.** The output is
+ * constrained to a schema and drops straight into a form somebody is about to
+ * publish from; sampling creatively over a colleague's conversation is not a
+ * feature. `most-predictable` is what this would have asked for had the API
+ * made it a choice from the start.
+ */
+export const SAMPLING: SamplingOptions[] = [
+  { samplingMode: 'most-predictable' },
+  { temperature: 0, topK: 1 },
+  { topK: 1 },
+]
 
 /**
  * Whether prefill can run **right now**, without downloading anything.
@@ -91,9 +130,10 @@ export async function promptForObject(
   schema: object,
 ): Promise<Record<string, unknown> | null> {
   if (typeof globalThis.LanguageModel === 'undefined') return null
-  let session: LanguageModelSession | undefined
+  let session: LanguageModelSession | null = null
   try {
-    session = await globalThis.LanguageModel.create()
+    session = await createSession(globalThis.LanguageModel)
+    if (!session) return null
     const answer = await session.prompt(instruction, { responseConstraint: schema })
     const parsed: unknown = JSON.parse(answer)
     // Constrained decoding should make this impossible; a non-object here means
@@ -108,4 +148,22 @@ export async function promptForObject(
     // life of the page, and the launcher opens a form per capture.
     session?.destroy()
   }
+}
+
+/**
+ * A session, trying each sampling configuration until one is accepted.
+ *
+ * Returns null rather than throwing when every one is refused — the caller
+ * treats that as "no prefill", which is the same outcome as no model at all.
+ */
+async function createSession(model: LanguageModelStatic): Promise<LanguageModelSession | null> {
+  for (const options of SAMPLING) {
+    try {
+      return await model.create(options)
+    } catch {
+      // Refused for these options. Try the next spelling; a browser that
+      // refuses all of them simply does not get prefill.
+    }
+  }
+  return null
 }
