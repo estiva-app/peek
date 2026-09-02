@@ -1,6 +1,6 @@
 import { Avatar } from './Avatar'
 import { HighlightPill } from './HighlightPill'
-import { stripInlineFormatting } from '@/lib/textParsing'
+import { stripInlineFormatting } from '@estiva-app/protocol'
 import type { HighlightType } from '@/api'
 
 // ── Pinned Initial Message (compact) ──

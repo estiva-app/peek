@@ -7,7 +7,7 @@ import { Avatar } from './ui/Avatar'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { useIsTopicResolved } from '@/api'
-import { stripInlineFormatting } from '@/lib/textParsing'
+import { stripInlineFormatting } from '@estiva-app/protocol'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
 
 interface ScreenerItemProps {

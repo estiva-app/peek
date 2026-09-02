@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 import { HIGHLIGHT_META, hasConvex, useUploadActions, type HighlightType, type UploadedFile } from '@/api'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { FILE_ACCEPT_ATTR, validateFile, isImageAttachment, formatBytes, fileTypeLabel } from '@/lib/fileAttachments'
-import { wrapInlineMarks } from '@/lib/textParsing'
+import { wrapInlineMarks } from '@estiva-app/protocol'
 
 export interface SendPayload {
   text: string

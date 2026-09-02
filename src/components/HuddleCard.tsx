@@ -14,7 +14,7 @@ import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
 import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
-import { stripInlineFormatting } from '@/lib/textParsing'
+import { stripInlineFormatting } from '@estiva-app/protocol'
 import { useReplyCount, useReplyMeta, type Huddle } from '@/api'
 
 interface HuddleCardProps {
