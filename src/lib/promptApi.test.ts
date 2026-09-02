@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SAMPLING, canPrefill, jsonHint, looseParse, prefillAvailability, promptForObject } from './promptApi'
+import { OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, jsonHint, looseParse, prefillAvailability, promptForObject } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -195,12 +195,35 @@ describe('sampling options are required, not optional (measured in Chrome)', () 
     expect(passed).toBeDefined()
     // Whichever spelling is first, it must be one the browser named.
     expect(Object.keys(passed ?? {}).length).toBeGreaterThan(0)
-    expect(passed).toEqual(SAMPLING[0])
+    expect(passed).toEqual(SESSION_OPTIONS[0])
   })
 
   it('asks for the most predictable output, because it fills a form to be published', async () => {
     // Sampling creatively over a colleague's conversation is not a feature.
-    expect(SAMPLING[0]).toEqual({ samplingMode: 'most-predictable' })
+    expect(SESSION_OPTIONS[0].samplingMode).toBe('most-predictable')
+    // Every fallback keeps determinism one way or another; none samples freely.
+    for (const options of SESSION_OPTIONS) {
+      const deterministic =
+        options.samplingMode === 'most-predictable' || options.topK === 1 || options.temperature === 0
+      expect(deterministic).toBe(true)
+    }
+  })
+
+  it('names an output language, which both browsers asked for', async () => {
+    /*
+      Measured 2026-09-02. Edge 154 named the set it accepts —
+      `[de, en, es, fr, ja]` — where Chrome said `[*]`. Asked for "to ensure
+      optimal output quality and properly attest to output safety", so it is
+      not decoration.
+    */
+    expect(SESSION_OPTIONS[0].outputLanguage).toBe(OUTPUT_LANGUAGE)
+    expect(['de', 'en', 'es', 'fr', 'ja']).toContain(OUTPUT_LANGUAGE)
+  })
+
+  it('falls back to a session with no language rather than none at all', async () => {
+    // A build that rejects the option is still better served by a suggestion
+    // than by silence, so the language is dropped before the feature is.
+    expect(SESSION_OPTIONS.some((o) => !o.outputLanguage && !o.expectedOutputs)).toBe(true)
   })
 
   it('falls back when a build refuses the first spelling', async () => {
@@ -209,14 +232,14 @@ describe('sampling options are required, not optional (measured in Chrome)', () 
       refused no-options, so the list is tried in order rather than assumed.
     */
     const create = vi.fn(async (options: unknown) => {
-      if (JSON.stringify(options) === JSON.stringify(SAMPLING[0])) throw new Error(CHROME_REFUSAL)
+      if (JSON.stringify(options) === JSON.stringify(SESSION_OPTIONS[0])) throw new Error(CHROME_REFUSAL)
       return { prompt: async () => '{"title":"x"}', destroy: () => {} }
     })
     stubModel({ availability: async () => 'available', create: create as unknown as Stub['create'] })
 
     expect(await promptForObject('go', schema)).toEqual({ title: 'x' })
     expect(create).toHaveBeenCalledTimes(2)
-    expect(create.mock.calls[1]?.[0]).toEqual(SAMPLING[1])
+    expect(create.mock.calls[1]?.[0]).toEqual(SESSION_OPTIONS[1])
   })
 
   it('gives up quietly when every spelling is refused', async () => {
@@ -228,7 +251,7 @@ describe('sampling options are required, not optional (measured in Chrome)', () 
     stubModel({ availability: async () => 'available', create: create as unknown as Stub['create'] })
 
     expect(await promptForObject('go', schema)).toBeNull()
-    expect(create).toHaveBeenCalledTimes(SAMPLING.length)
+    expect(create).toHaveBeenCalledTimes(SESSION_OPTIONS.length)
   })
 })
 
