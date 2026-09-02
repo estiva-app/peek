@@ -56,12 +56,33 @@ interface LanguageModelSession {
   destroy: () => void
 }
 
-/** Sampling options, which some builds require rather than default. See `SAMPLING`. */
+/** Session options some builds require rather than default. See `SESSION_OPTIONS`. */
 export interface SamplingOptions {
   samplingMode?: 'most-predictable'
   temperature?: number
   topK?: number
+  outputLanguage?: string
+  expectedOutputs?: { type: string; languages: string[] }[]
 }
+
+/**
+ * The language the suggestion comes back in.
+ *
+ * **Both browsers asked for one, and Edge named the set.** Measured 2026-09-02:
+ *
+ * > *No output language was specified in a LanguageModel API request. An output
+ * > language should be specified to ensure optimal output quality and properly
+ * > attest to output safety. Please specify a supported output language code:*
+ * > `[de, en, es, fr, ja]` *(Edge 154)* — Chrome said `[*]`.
+ *
+ * **Hardcoding this is a decision, not a detail.** It suits a workspace that
+ * writes English, and it is wrong for a conversation held in another language:
+ * the thread would be read in Czech and the issue drafted in English. Reading
+ * it off the conversation is the better answer and needs a way to know, which
+ * nothing here has yet. Stated rather than buried so the next person can find
+ * the seam.
+ */
+export const OUTPUT_LANGUAGE = 'en'
 
 interface LanguageModelStatic {
   availability: (options?: SamplingOptions) => Promise<ModelAvailability>
@@ -98,11 +119,15 @@ declare global {
  * feature. `most-predictable` is what this would have asked for had the API
  * made it a choice from the start.
  */
-export const SAMPLING: SamplingOptions[] = [
+export const SESSION_OPTIONS: SamplingOptions[] = [
+  { samplingMode: 'most-predictable', outputLanguage: OUTPUT_LANGUAGE },
+  { samplingMode: 'most-predictable', expectedOutputs: [{ type: 'text', languages: [OUTPUT_LANGUAGE] }] },
   { samplingMode: 'most-predictable' },
+  { temperature: 0, topK: 1, outputLanguage: OUTPUT_LANGUAGE },
   { temperature: 0, topK: 1 },
   { topK: 1 },
 ]
+
 
 /**
  * Whether prefill can run **right now**, without downloading anything.
@@ -220,7 +245,7 @@ export async function promptForObject(
  * treats that as "no prefill", which is the same outcome as no model at all.
  */
 async function createSession(model: LanguageModelStatic): Promise<LanguageModelSession | null> {
-  for (const options of SAMPLING) {
+  for (const options of SESSION_OPTIONS) {
     try {
       return await model.create(options)
     } catch {
