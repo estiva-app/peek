@@ -141,9 +141,23 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
  * still adds no extra nodes.
  */
 function renderWithMentions(text: string, isTopicResolved: (id: string) => boolean): ReactNode {
+  return renderMarks(text, (run) => renderTokens(run, isTopicResolved))
+}
+
+/**
+ * SPEC §13.1's inline marks, with the runs between them rendered by the caller.
+ *
+ * The `renderRun` seam is what lets a **foreign** body share this. Peek's own
+ * messages put mentions, `[Topic]` chips and `PEEK-`/`PR#` tokens inside a run;
+ * another app's body must not get that layer, because those tokens mean
+ * something in Peek's corpus and nothing in Ship's — rendering `PEE-8` in a Ship
+ * description as a Peek reference chip would be inventing meaning. The marks
+ * are the protocol's and are shared; the token vocabulary is Peek's and is not.
+ */
+export function renderMarks(text: string, renderRun: (run: string) => ReactNode): ReactNode {
   const spans = parseInlineMarks(text)
   if (spans.length === 1 && !spans[0].bold && !spans[0].italic && !spans[0].underline && !spans[0].code) {
-    return renderTokens(text, isTopicResolved)
+    return renderRun(text)
   }
   return (
     <>
@@ -163,7 +177,7 @@ function renderWithMentions(text: string, isTopicResolved: (id: string) => boole
               s.underline && 'underline underline-offset-2'
             )}
           >
-            {renderTokens(s.text, isTopicResolved)}
+            {renderRun(s.text)}
           </span>
         )
       )}
@@ -196,6 +210,103 @@ function dedupeReferences(refs: string[]): string[] {
   return out
 }
 
+/**
+ * SPEC §13.2's block structure, laid out. One layout, two callers.
+ *
+ * `renderLine` is the seam: Peek's own messages render mentions and chips
+ * inside a line, another app's body renders marks only. Extracted rather than
+ * copied because a second implementation would disagree the first time the
+ * dialect gained a construct — and §13.2 is a *specified* dialect now, so it
+ * will.
+ *
+ * A fence is literal by definition: no marks, no mentions, no chips. That is
+ * §13.1's rule about `code` one level up, and it is why `renderLine` is not
+ * applied to one.
+ */
+export function BodySegments({
+  text,
+  renderLine,
+}: {
+  text: string
+  renderLine: (line: string) => ReactNode
+}) {
+  const segments = text ? parseBodySegments(text) : []
+  return (
+    <>
+      {segments.map((seg, i) => {
+        // Lists are native ul/ol so sent messages and the composer share the
+        // exact same markers, indent, and item spacing (see index.css).
+        if (seg.type === 'bullet') {
+          return (
+            <ul key={i}>
+              {seg.items.map((item, j) => (
+                <li key={j} className="break-words">{renderLine(item)}</li>
+              ))}
+            </ul>
+          )
+        }
+        if (seg.type === 'numbered') {
+          return (
+            <ol key={i}>
+              {seg.items.map((item, j) => (
+                <li key={j} className="break-words">{renderLine(item)}</li>
+              ))}
+            </ol>
+          )
+        }
+        if (seg.type === 'heading') {
+          // Same sizes the composer's h1/h2 get in index.css.
+          return seg.level === 1 ? (
+            <h1 key={i}>{renderLine(seg.text)}</h1>
+          ) : (
+            <h2 key={i}>{renderLine(seg.text)}</h2>
+          )
+        }
+        if (seg.type === 'code') {
+          // A fence is literal by definition: no mentions, no marks, no
+          // reference chips. Scrolls on its own so a long line cannot widen
+          // the card.
+          return (
+            <pre
+              key={i}
+              className="overflow-x-auto rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
+              data-language={seg.language}
+            >
+              <code>{seg.lines.join('\n')}</code>
+            </pre>
+          )
+        }
+        if (seg.type === 'quote') {
+          // Native blockquote so sent messages and the composer share the
+          // exact same border/padding/color (see index.css).
+          return (
+            <blockquote key={i}>
+              <p>
+                {seg.lines.map((line, j) => (
+                  <span key={j}>
+                    {j > 0 && <br />}
+                    {renderLine(line)}
+                  </span>
+                ))}
+              </p>
+            </blockquote>
+          )
+        }
+        return (
+          <p key={i}>
+            {seg.lines.map((line, j) => (
+              <span key={j}>
+                {j > 0 && <br />}
+                {renderLine(line)}
+              </span>
+            ))}
+          </p>
+        )
+      })}
+    </>
+  )
+}
+
 export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedObjects }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[]; resolvedObjects?: Record<string, ForeignObject> }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
@@ -222,81 +333,12 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedOb
   // trades a rare need against every reader of every message: the widget below
   // already says what the reference is, and says it in words.
   const text = stripNaddrs(body)
-  // A message that was *only* a reference has nothing left to lay out. Skip the
-  // paragraph entirely rather than emitting an empty one that still takes a gap.
-  const segments = text ? parseBodySegments(text) : []
+  // A message that was *only* a reference has nothing left to lay out.
+  // `BodySegments` emits nothing for an empty string rather than an empty
+  // paragraph that still takes a gap.
   return (
     <div data-message-body className="flex flex-col gap-1 text-sm text-text-secondary leading-[1.4] break-words">
-      {segments.map((seg, i) => {
-        // Lists are native ul/ol so sent messages and the composer share the
-        // exact same markers, indent, and item spacing (see index.css).
-        if (seg.type === 'bullet') {
-          return (
-            <ul key={i}>
-              {seg.items.map((item, j) => (
-                <li key={j} className="break-words">{renderWithMentions(item, isTopicResolved)}</li>
-              ))}
-            </ul>
-          )
-        }
-        if (seg.type === 'numbered') {
-          return (
-            <ol key={i}>
-              {seg.items.map((item, j) => (
-                <li key={j} className="break-words">{renderWithMentions(item, isTopicResolved)}</li>
-              ))}
-            </ol>
-          )
-        }
-        if (seg.type === 'heading') {
-          // Same sizes the composer's h1/h2 get in index.css.
-          return seg.level === 1 ? (
-            <h1 key={i}>{renderWithMentions(seg.text, isTopicResolved)}</h1>
-          ) : (
-            <h2 key={i}>{renderWithMentions(seg.text, isTopicResolved)}</h2>
-          )
-        }
-        if (seg.type === 'code') {
-          // A fence is literal by definition: no mentions, no marks, no
-          // reference chips. Scrolls on its own so a long line cannot widen
-          // the card.
-          return (
-            <pre
-              key={i}
-              className="overflow-x-auto rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
-              data-language={seg.language}
-            >
-              <code>{seg.lines.join('\n')}</code>
-            </pre>
-          )
-        }
-        if (seg.type === 'quote') {
-          // Native blockquote so sent messages and the composer share the
-          // exact same border/padding/color (see index.css).
-          return (
-            <blockquote key={i}>
-              <p>
-                {seg.lines.map((line, j) => (
-                  <span key={j}>
-                    {j > 0 && <br />}
-                    {renderWithMentions(line, isTopicResolved)}
-                  </span>
-                ))}
-              </p>
-            </blockquote>
-          )
-        }
-        return (
-          <p key={i}>
-            {seg.lines.map((line, j) => (
-              <span key={j}>
-                {j > 0 && <br />}
-                {renderWithMentions(line, isTopicResolved)}
-              </span>
-            ))}
-          </p>
-        )
-      })}
+      <BodySegments text={text} renderLine={(line) => renderWithMentions(line, isTopicResolved)} />
       {references.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={resolvedObjects?.[naddr]} />
       ))}
