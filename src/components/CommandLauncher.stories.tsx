@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { CommandLauncher } from './CommandLauncher'
 
@@ -18,12 +19,15 @@ const meta = {
   component: CommandLauncher,
   parameters: { layout: 'fullscreen' },
   decorators: [
+    // A search result row navigates (PEE-4), so the launcher needs a router.
     (Story) => (
-      <PeekDataProvider>
-        <div className="h-[560px] bg-bg-default">
-          <Story />
-        </div>
-      </PeekDataProvider>
+      <MemoryRouter initialEntries={['/desk']}>
+        <PeekDataProvider>
+          <div className="h-[560px] bg-bg-default">
+            <Story />
+          </div>
+        </PeekDataProvider>
+      </MemoryRouter>
     ),
   ],
   args: {
