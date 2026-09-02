@@ -8,9 +8,10 @@ import { ActionFormPanel } from './ActionFormPanel'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { useForeignObjects, useMessageSearch, useTopics, usePeople, useWorkspaceDirectory } from '@/api'
+import type { ResolvedAction } from '@estiva-app/interop'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { topicPath } from '@/lib/objectUrl'
-import { PARENT_FIELD, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
+import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { insertReferenceIntoActiveComposer } from '@/lib/composerRegistry'
@@ -116,6 +117,7 @@ export function CommandLauncher({
   const navigate = useNavigate()
   const { state: messageState, hits: messageHits } = useMessageSearch(query)
 
+
   /*
     Ship's half is live now (PRO-4). `creatableUnder` reads the manifest Ship
     actually publishes and the projects a new issue could hang under, so the
@@ -128,7 +130,72 @@ export function CommandLauncher({
     the registry's entry stays in that case, which is the right degradation for
     a launcher whose rule is to list only what can succeed.
   */
-  const { creatableUnder, applyAction } = useForeignObjects()
+  const { creatableUnder, applyAction, resolveObject } = useForeignObjects()
+
+  /*
+    PEE-3's targets: the objects this conversation already refers to, resolved
+    for their titles and their declared field-setting actions. Captured at the
+    invoking keystroke (`lib/conversationRegistry`), so the list is the thread
+    the person was actually looking at.
+
+    Resolution is per object and needs the relay, so it happens once when the
+    launcher opens rather than per keystroke. A reference that will not resolve
+    is dropped: the person may not be able to read it, and an action row for an
+    object nobody can fetch is a row that cannot succeed.
+  */
+  const [targets, setTargets] = useState<{ address: string; label: string; actions: ResolvedAction[] }[]>([])
+  const conversationRefs = context.conversation?.references
+  useEffect(() => {
+    if (!conversationRefs?.length) return
+    let cancelled = false
+    Promise.all(
+      conversationRefs.map((ref) =>
+        resolveObject(ref)
+          .then((object) => {
+            /*
+              `naddr` is absent for a non-addressable object — a regular event
+              like a Peek message has no `d` at all — and the runtime is
+              explicit that *"a consumer that has no naddr correctly offers no
+              actions"*. So those are dropped rather than offered: acting on
+              one is addressed by naddr, and there would be nothing to send.
+            */
+            if (!object?.naddr) return null
+            return {
+              // The title is a declared SLOT, not a property of the object.
+              // Falling back to the app's name beats an empty row label.
+              address: object.naddr,
+              label: object.slots?.title?.value ?? object.appName ?? 'Untitled',
+              actions: object.actions ?? [],
+            }
+          })
+          .catch(() => null),
+      ),
+    ).then((resolved) => {
+      if (!cancelled) setTargets(resolved.filter((t): t is NonNullable<typeof t> => t !== null))
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationRefs?.join('|')])
+
+  /*
+    One row per (object, field-setting action) pair, because both halves are
+    chosen in the same gesture — "Set status · PEE-3" is the thing somebody
+    means, and splitting it into two levels would make the launcher ask which
+    object before it can say what it could do to it.
+  */
+  const changeRows = useMemo(() => {
+    const out: { action: LauncherAction; vocabularies: Record<string, VocabOption[]> }[] = []
+    for (const target of targets) {
+      for (const resolved of target.actions) {
+        const action = changeActionFrom(resolved, target)
+        if (action) out.push({ action, vocabularies: changeVocabulariesFrom(resolved) })
+      }
+    }
+    return out
+  }, [targets])
+
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [liveShip, setLiveShip] = useState<{
@@ -257,6 +324,36 @@ export function CommandLauncher({
       guess at another app's object is exactly what the honour system forbids —
       so those still close, as they always did.
     */
+    /*
+      Two shapes, and they are not interchangeable (PEE-3).
+
+      A CHANGE carries a target chosen when the row was, and the runtime takes
+      a scalar for it — `applyActionAsViewer` branches on exactly that: a
+      string is a change, a property bag is a creation with a parent. It is
+      also already known to be declared, because the action came off the
+      object's own resolved manifest rather than off the registry, so the
+      liveShip check below does not apply to it.
+    */
+    if (action.target) {
+      const value = values[action.fields[0]?.key ?? '']
+      if (!value) {
+        onClose()
+        return
+      }
+      setSubmitting(true)
+      setSubmitError(null)
+      const result = await applyAction({ naddr: action.target, actionId: action.id, value })
+      setSubmitting(false)
+      if (!result.ok) {
+        setSubmitError(result.reason ?? 'The relay rejected the change.')
+        return
+      }
+      // Nothing to leave in the thread: the object was already referenced
+      // there, which is how it came to be a target at all.
+      onClose()
+      return
+    }
+
     const live = liveShip?.actions.some((a) => a.id === action.id)
     const { parent, properties } = splitSubmission(values)
     if (!live || !parent) {
@@ -455,6 +552,33 @@ export function CommandLauncher({
 
     // ── Global level ──
     /*
+      PEE-3 — changing an object the thread already refers to. Above the
+      found things, because these are actions rather than results: they
+      change the shared record, and burying them under search results would
+      put the destructive half of the launcher last.
+    */
+    const changeHits = q
+      ? changeRows.filter(
+          ({ action }) =>
+            action.label.toLowerCase().includes(q) || (action.targetLabel ?? '').toLowerCase().includes(q),
+        )
+      : changeRows
+    if (changeHits.length > 0) headers.set(rows.length, sectionHeader('In this conversation'))
+    for (const { action } of changeHits) {
+      rows.push({
+        ...simpleRow(
+          `change-${action.target}-${action.id}`,
+          <IconPencil size={16} stroke={1.5} className="text-text-secondary" />,
+          action.label,
+          action.targetLabel,
+          () => enterForm(action),
+        ),
+        compact: true,
+      })
+    }
+
+
+    /*
       Finding things, which used to be one inert row reading "Search Peek for
       …" (PEE-4). The launcher is the one surface where "do a thing" and "find
       a thing" are the same gesture, so results sit above the apps rather than
@@ -577,7 +701,7 @@ export function CommandLauncher({
     }
     return { rows, headers }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate])
+  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate, changeRows])
 
   // Reset the highlight on every level/query change.
   const didInitHighlight = useRef(false)
@@ -663,7 +787,10 @@ export function CommandLauncher({
 
   // The chip names the level: "Ship" while listing, "Ship · Create issue"
   // in the form.
-  const chipLabel = formAction ? `${scope?.label} · ${formAction.label}` : scope?.label
+  const chipLabel = formAction
+    ? // A targeted change names the OBJECT, not an app scope it was not reached through.
+      `${formAction.targetLabel ?? scope?.label} · ${formAction.label}`
+    : scope?.label
 
   return createPortal(
     <>
@@ -737,12 +864,20 @@ export function CommandLauncher({
           </div>
 
           {/* Body: the action's form in form mode, rows otherwise */}
-          {formAction && scope ? (
+          {formAction && (scope || formAction.target) ? (
             <div>
               <ActionFormPanel
-                app={scope}
+                app={scope ?? undefined}
                 action={formAction}
                 parentOptions={liveParents}
+                /* A change's vocabulary comes off the resolved action, not off
+                   an app scope there is none of here (PEE-3). */
+                vocabularies={
+                  formAction.target
+                    ? changeRows.find((r) => r.action.target === formAction.target && r.action.id === formAction.id)
+                        ?.vocabularies
+                    : undefined
+                }
                 onSubmit={(values) => void submitAction(formAction, values)}
               />
               {/* The runtime's own words — "title is required by Add issue",

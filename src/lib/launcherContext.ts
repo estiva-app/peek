@@ -1,4 +1,5 @@
 import { getComposerTarget, type ComposerTarget } from './composerRegistry'
+import { getActiveConversation, type ConversationSnapshot } from './conversationRegistry'
 
 /**
  * What the user was doing at the moment they invoked the command launcher.
@@ -14,12 +15,16 @@ export interface LauncherContext {
   /** The composer a launcher insert/attach would land in (last touched).
    *  Present iff a conversation surface is open. */
   composer?: ComposerTarget
+  /** The objects the open thread already refers to — the target list for a
+   *  field-setting action (PEE-3). Absent when no thread is open. */
+  conversation?: ConversationSnapshot
 }
 
 export function captureLauncherContext(): LauncherContext {
   return {
     selection: captureComposerSelection(),
     composer: getComposerTarget() ?? undefined,
+    conversation: getActiveConversation() ?? undefined,
   }
 }
 

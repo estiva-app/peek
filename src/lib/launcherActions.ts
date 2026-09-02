@@ -70,6 +70,18 @@ export interface LauncherAction {
   submitLabel: string
   /** The whole action exists in the live manifest (vs proposed). */
   declaredToday?: boolean
+  /**
+   * The object this action changes, as an address (PEE-3).
+   *
+   * Set only for a **field-setting** action, where the target already exists
+   * and was chosen when the row was — an object-creating action has no target,
+   * it has a parent, and that travels as a form field the person fills in.
+   * Its presence is what tells `submitAction` to send a scalar to an existing
+   * object rather than a property bag to a parent.
+   */
+  target?: string
+  /** What the target is called, for the row and the form's chip. */
+  targetLabel?: string
 }
 
 export interface LauncherApp {
