@@ -86,7 +86,13 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               // line-box under the inline button and the face slips a pixel or
               // two down the bar (the shot diff caught it, 7 stories × 1271px).
               className="flex"
-              me={{ name: displayName, picture: avatarSrcFor(displayName) ?? undefined, email: me?.email }}
+              // The picture is looked up by CURRENT_USER_NAME, never the
+              // display name: the registry's viewer branch — the only place
+              // the uploaded avatar lives — is keyed by the literal "You"
+              // (src/api/avatars.tsx). Looking up by me.name silently
+              // degrades a signed-in face to initials (shipped 2026-09-02;
+              // pinned by TopBar.avatar.test.tsx).
+              me={{ name: displayName, picture: avatarSrcFor(CURRENT_USER_NAME) ?? undefined, email: me?.email }}
               signedIn={hasConvex && me !== undefined}
               relayUrl={relayUrl}
               idBase={hasConvex ? PROFILE_EDIT_URL : undefined}
