@@ -52,6 +52,30 @@ export interface ReadStateQueue {
   snapshot: () => Record<string, number>
   /** Cancel the pending timer. Does not flush — see `dispose` in the hook. */
   cancel: () => void
+  /**
+   * Everything this queue knows about itself, for `window.__readState()`.
+   *
+   * `pending` non-empty with a named `lastAttempt` is the smell — it means a
+   * marker was recorded and has not reached the relay, and the outcome says
+   * which gate stopped it. That is the fact no external probe can observe, and
+   * it is what five bugs in this subsystem needed and nobody had.
+   */
+  diagnostic: () => ReadStateQueueDiagnostic
+}
+
+export type FlushOutcome =
+  | 'nothing-pending'
+  | 'unreachable'
+  | 'unchanged'
+  | 'published'
+  | 'rejected'
+
+export interface ReadStateQueueDiagnostic {
+  known: Record<string, number>
+  pending: Record<string, number>
+  published: Record<string, number> | undefined
+  hydrated: boolean
+  lastAttempt: { at: number; outcome: FlushOutcome; contexts?: number } | undefined
 }
 
 export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueue {
@@ -70,6 +94,10 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
   let timer: ReturnType<typeof setTimeout> | undefined
   /** Serializes publishes, so a flush during a publish queues behind it. */
   let inFlight: Promise<void> = Promise.resolve()
+  let lastAttempt: ReadStateQueueDiagnostic['lastAttempt']
+  const note = (outcome: FlushOutcome, contexts?: number) => {
+    lastAttempt = { at: Date.now(), outcome, ...(contexts !== undefined ? { contexts } : {}) }
+  }
 
   async function hydrate(): Promise<void> {
     if (hydrated) return
@@ -123,7 +151,7 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
       timer = undefined
     }
     inFlight = inFlight.then(async () => {
-      if (Object.keys(pending).length === 0) return
+      if (Object.keys(pending).length === 0) return note('nothing-pending')
       await hydrate()
       /*
        * Hydration failed, so what the relay holds is unknown. Publishing now
@@ -132,7 +160,7 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
        * exists to prevent, and one that is invisible until this is the last
        * slot standing. Keep the markers and try again on the next flush.
        */
-      if (!hydrated) return
+      if (!hydrated) return note('unreachable')
       // Snapshot before awaiting: markers recorded while the publish is in
       // flight belong to the *next* publish, and clearing `pending` afterwards
       // would swallow them.
@@ -145,11 +173,13 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
        * identical blob costs a `/sign` and a `/nip44/encrypt` against a
        * 120-per-minute budget and changes nothing.
        */
-      if (published && sameContexts(published, contexts)) return
+      if (published && sameContexts(published, contexts)) return note('unchanged')
       const ok = await opts.publish(contexts)
       if (ok) {
         published = contexts
+        note('published', Object.keys(contexts).length)
       } else {
+        note('rejected')
         // Put them back, so a failed publish retries on the next marker or flush
         // rather than losing the markers it was carrying.
         pending = advanceContexts(pending, sending)
@@ -162,6 +192,13 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
     record,
     flush,
     snapshot: () => ({ ...known }),
+    diagnostic: () => ({
+      known: { ...known },
+      pending: { ...pending },
+      published: published ? { ...published } : undefined,
+      hydrated,
+      lastAttempt,
+    }),
     cancel: () => {
       if (timer !== undefined) {
         clearTimer(timer)
