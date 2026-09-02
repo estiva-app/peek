@@ -23,9 +23,24 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
-    document.addEventListener('mousedown', click)
+    /*
+     * The mousedown listener is attached a tick late, so it cannot see the
+     * click that opened this menu.
+     *
+     * React flushes effects during a discrete event, so a listener added here
+     * synchronously catches the very mousedown still bubbling towards
+     * `document` — and since the opener is usually not inside `ref` or
+     * `anchorEl`, the menu closes ~1ms after it opens. That is invisible: it
+     * reads as the button doing nothing at all.
+     *
+     * It survived while the opener WAS the anchor, because `anchorEl.contains`
+     * bailed out. Moving the anchor to the avatar broke that accident, and
+     * deferring is the fix that does not depend on who opens it.
+     */
+    const armed = setTimeout(() => document.addEventListener('mousedown', click), 0)
     document.addEventListener('keydown', key)
     return () => {
+      clearTimeout(armed)
       document.removeEventListener('mousedown', click)
       document.removeEventListener('keydown', key)
     }
