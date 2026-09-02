@@ -5,6 +5,7 @@ import {
   // IconBrackets,
   // IconFiles,
 } from '@tabler/icons-react'
+import { Rail } from '@estiva-app/ui'
 import { NavItem } from './NavItem'
 import { FreshnessIndicator } from './FreshnessIndicator'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -33,13 +34,13 @@ export function NavRail() {
   ]
 
   return (
-    <nav className="w-16 flex flex-col gap-2 items-start px-2 py-3 shrink-0">
+    <Rail>
       {navItems.map((item) => (
         <NavItem key={item.label} {...item} />
       ))}
       {/* Once, in the persistent chrome — see FreshnessIndicator's header for
           why this is not a badge per panel and not part of AuthGate. */}
       <FreshnessIndicator />
-    </nav>
+    </Rail>
   )
 }
