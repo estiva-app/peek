@@ -9,6 +9,7 @@ import { useForeignObjects, useTopics } from '@/api'
 import { PARENT_FIELD, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
+import { insertReferenceIntoActiveComposer } from '@/lib/composerRegistry'
 import {
   LAUNCHER_APPS,
   type LauncherAction,
@@ -57,10 +58,11 @@ interface CommandLauncherProps {
  * one input, one result set, no history.
  *
  * The apps and actions come from `lib/launcherActions.ts`, which mirrors the
- * NIP-89 manifest action shape — the Intelligence runtime will feed this
- * modal real manifests, and an agent will fill the same forms from context
- * instead of by hand (RFC 0.4 §13.4). Until that runtime lands, submitting a
- * form is inert: see `submitAction` below, which is the seam.
+ * NIP-89 manifest action shape. Ship's own manifest now REPLACES the registry's
+ * entries of the same id, so its form is drawn from what Ship actually
+ * declares; the registry's remaining rows are proposals for manifests that do
+ * not declare them yet, and stay inert. An agent filling the same forms from
+ * context instead of by hand is PEE-5.
  *
  * The third-party mock apps that used to live here (Figma, Linear, GitHub,
  * Zendesk — and the Figma find mode) were removed 2026-08-31 with the design
@@ -227,12 +229,11 @@ export function CommandLauncher({
   }
 
   /**
-   * THE SEAM. A validated form arrives here as `{ fieldKey: value }` plus the
-   * manifest-shaped action that produced it. The Intelligence runtime turns
-   * this into the event the declaration's `emits` describes, signs and
-   * publishes it — and, invoked from a conversation, drops the new object's
-   * `nostr:naddr…` reference into the active composer so the reply renders it
-   * as a widget (`MessageBody` already does that half). Inert v1: close.
+   * A validated form arrives here as `{ fieldKey: value }` plus the
+   * manifest-shaped action that produced it. `applyAction` turns it into the
+   * event the declaration's `emits` describes, signs and publishes it (PEE-1),
+   * and the new object's `nostr:naddr…` reference goes into the active
+   * composer so the reply renders it as a widget (PEE-2).
    */
   const submitAction = async (action: LauncherAction, values: Record<string, string>) => {
     /*
@@ -276,6 +277,43 @@ export function CommandLauncher({
       // knows what the manifest allowed.
       setSubmitError(result.reason ?? 'The relay rejected it.')
       return
+    }
+    /*
+      The trace, which is the half that changes behaviour (PEE-2).
+
+      > Katerina, 2026-08-19 — *"Now I have no clue this whole conversation has
+      > an issue assigned, as I have to open the thread first."*
+
+      The address comes off the runtime rather than being recomposed here, and
+      only a creation returns one — a change is a statement about an object
+      that already had an address, so there is nothing new to point at.
+    */
+    if (result.created) {
+      let placed: boolean
+      try {
+        placed = insertReferenceIntoActiveComposer(addrToNaddr(result.created, []))
+      } catch (error) {
+        /*
+          The object WAS created, so "failed" would be a lie about the half
+          that worked. Only a malformed address out of the runtime reaches
+          here, which is a bug rather than anything a person did.
+        */
+        setSubmitError(
+          `Created, but its reference could not be encoded: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        return
+      }
+      /*
+        No composer is usually legitimate — the launcher is global, so creating
+        an object with nothing open is a normal thing to do and there is simply
+        nowhere to leave a reference. But the context captured at the invoking
+        keystroke says whether a conversation surface WAS open, and if it was,
+        this is the trace going missing rather than being unnecessary.
+      */
+      if (!placed && context.composer) {
+        setSubmitError('Created, but its reference could not be placed — the composer is gone.')
+        return
+      }
     }
     onClose()
   }
