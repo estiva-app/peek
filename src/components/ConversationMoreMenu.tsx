@@ -1,4 +1,3 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   IconCircleDashed,
   IconCircleCheck,
@@ -7,7 +6,7 @@ import {
   IconHighlight,
   IconX,
 } from '@tabler/icons-react'
-import { MenuItem, MenuSection } from '@estiva-app/ui'
+import { MenuItem, MenuSection, MenuSub } from '@estiva-app/ui'
 import { Divider } from './ui/Divider'
 import { HighlightSwatch } from './ui/HighlightPill'
 import { cn } from '@/lib/utils'
@@ -15,14 +14,15 @@ import { HIGHLIGHT_META, type HighlightType } from '@/api'
 
 /**
  * The conversation's ⋯ menu. Its rows are the shared MenuItem now
- * (2026-09-01) — including the highlight trigger, which needs the hover
- * handlers MenuItem passes through, and the swatch rows in the submenu.
+ * (2026-09-01), and the highlight submenu is the shared MenuSub
+ * (2026-09-03) — "the day the shell learns it" arrived when this menu's
+ * hand-rolled copy was duplicated into the reply menu and the copy dropped
+ * the ref its edge-flip measured, shipping a submenu cut off by the screen.
+ * The shell's version portals and measures real rects, so it cannot be.
  *
  * The container is deliberately not the shared Menu shell: this panel is
  * placed and dismissed by its caller (the quick-menu opens it against a
- * measured rect and owns when it goes), and the hover-timed submenu with its
- * left-flip is this menu's own. If a second menu ever needs a submenu, that
- * is the day the shell learns it.
+ * measured rect and owns when it goes).
  */
 interface ConversationMoreMenuProps {
   isTopic?: boolean
@@ -60,28 +60,6 @@ export function ConversationMoreMenu({
   onDelete,
   className,
 }: ConversationMoreMenuProps) {
-  const [showHighlightSub, setShowHighlightSub] = useState(false)
-  const [subOnLeft, setSubOnLeft] = useState(false)
-  const closeTimer = useRef<ReturnType<typeof setTimeout>>(null)
-  const triggerRef = useRef<HTMLDivElement>(null)
-
-  const openSub = useCallback(() => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    setShowHighlightSub(true)
-  }, [])
-
-  const closeSub = useCallback(() => {
-    closeTimer.current = setTimeout(() => setShowHighlightSub(false), 150)
-  }, [])
-
-  // Measure whether the submenu fits to the right; if not, flip to left
-  useEffect(() => {
-    if (!showHighlightSub || !triggerRef.current) return
-    const rect = triggerRef.current.getBoundingClientRect()
-    const subWidth = 160 + 8 // w-[160px] + ml-1 gap
-    setSubOnLeft(rect.right + subWidth > window.innerWidth)
-  }, [showHighlightSub])
-
   return (
     <div
       data-interactive
@@ -127,45 +105,30 @@ export function ConversationMoreMenu({
         />
 
         {onHighlight && (
-          <div className="relative" ref={triggerRef}>
-            <MenuItem
-              leading={<IconHighlight size={16} stroke={1.5} className="text-text-secondary" />}
-              label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
-              submenu
-              onMouseEnter={openSub}
-              onMouseLeave={closeSub}
-            />
-            {showHighlightSub && (
-              <div
-                className={cn(
-                  'absolute top-0 bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[160px] p-2 z-50',
-                  subOnLeft ? 'right-full mr-1' : 'left-full ml-1'
-                )}
-                onMouseEnter={openSub}
-                onMouseLeave={closeSub}
-              >
-                {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
-                  <MenuItem
-                    key={type}
-                    leading={<HighlightSwatch type={type} />}
-                    label={HIGHLIGHT_META[type].label}
-                    selected={currentHighlight === type}
-                    onClick={() => onHighlight(type)}
-                  />
-                ))}
-                {currentHighlight && (
-                  <>
-                    <Divider className="mx-1 my-1" />
-                    <MenuItem
-                      leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
-                      label="Remove"
-                      onClick={() => onHighlight(undefined)}
-                    />
-                  </>
-                )}
-              </div>
+          <MenuSub
+            leading={<IconHighlight size={16} stroke={1.5} className="text-text-secondary" />}
+            label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
+          >
+            {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
+              <MenuItem
+                key={type}
+                leading={<HighlightSwatch type={type} />}
+                label={HIGHLIGHT_META[type].label}
+                selected={currentHighlight === type}
+                onClick={() => onHighlight(type)}
+              />
+            ))}
+            {currentHighlight && (
+              <>
+                <Divider className="mx-1 my-1" />
+                <MenuItem
+                  leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
+                  label="Remove"
+                  onClick={() => onHighlight(undefined)}
+                />
+              </>
             )}
-          </div>
+          </MenuSub>
         )}
       </MenuSection>
 

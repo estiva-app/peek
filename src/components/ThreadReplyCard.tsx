@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { MenuItem } from '@estiva-app/ui'
+import { MenuItem, MenuSub } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
@@ -45,71 +45,36 @@ function ReplyMoreMenu({ onEdit, onDelete, currentHighlight, onHighlight, isOwnM
   isOwnMessage?: boolean
   className?: string
 }) {
-  const [showHighlightSub, setShowHighlightSub] = useState(false)
-  const [subOnLeft, setSubOnLeft] = useState(false)
-  const closeTimer = useRef<ReturnType<typeof setTimeout>>(null)
-  const triggerRef = useRef<HTMLDivElement>(null)
-
-  const openSub = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    setShowHighlightSub(true)
-  }
-
-  const closeSub = () => {
-    closeTimer.current = setTimeout(() => setShowHighlightSub(false), 150)
-  }
-
-  // Measure whether the submenu fits to the right; if not, flip to left
-  useEffect(() => {
-    if (!showHighlightSub || !triggerRef.current) return
-    const rect = triggerRef.current.getBoundingClientRect()
-    const subWidth = 160 + 8
-    setSubOnLeft(rect.right + subWidth > window.innerWidth)
-  }, [showHighlightSub])
-
   return (
     <div className={cn('bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[180px] p-2 flex flex-col gap-2', className)}>
       <div className="flex flex-col">
         {isOwnMessage && <MenuItem label="Edit message" onClick={onEdit} />}
         {onHighlight && (
-          <div className="relative">
-            <MenuItem
-              label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
-              submenu
-              onMouseEnter={openSub}
-              onMouseLeave={closeSub}
-            />
-            {showHighlightSub && (
-              <div
-                className={cn(
-                  'absolute top-0 bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[160px] p-2 z-50',
-                  subOnLeft ? 'right-full mr-1' : 'left-full ml-1'
-                )}
-                onMouseEnter={openSub}
-                onMouseLeave={closeSub}
-              >
-                {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
-                  <MenuItem
-                    key={type}
-                    leading={<HighlightSwatch type={type} />}
-                    label={HIGHLIGHT_META[type].label}
-                    selected={currentHighlight === type}
-                    onClick={() => onHighlight(type)}
-                  />
-                ))}
-                {currentHighlight && (
-                  <>
-                    <Divider className="mx-1 my-1" />
-                    <MenuItem
-                      leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
-                      label="Remove"
-                      onClick={() => onHighlight(undefined)}
-                    />
-                  </>
-                )}
-              </div>
+          /* The shared submenu (2026-09-03). This menu's hand-rolled copy is
+             the one that dropped the ref its edge-flip measured — it measured
+             nothing, always opened rightward, and shipped cut off by the
+             screen edge. MenuSub portals and measures real rects. */
+          <MenuSub label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}>
+            {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
+              <MenuItem
+                key={type}
+                leading={<HighlightSwatch type={type} />}
+                label={HIGHLIGHT_META[type].label}
+                selected={currentHighlight === type}
+                onClick={() => onHighlight(type)}
+              />
+            ))}
+            {currentHighlight && (
+              <>
+                <Divider className="mx-1 my-1" />
+                <MenuItem
+                  leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
+                  label="Remove"
+                  onClick={() => onHighlight(undefined)}
+                />
+              </>
             )}
-          </div>
+          </MenuSub>
         )}
       </div>
       {isOwnMessage && (
