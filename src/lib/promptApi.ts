@@ -107,9 +107,24 @@ export async function prefillAvailability(): Promise<ModelAvailability> {
   }
 }
 
-/** True only when a prompt would run against a model already on the machine. */
+/**
+ * Whether to attempt a session at all.
+ *
+ * **Not `availability() === 'available'`, which was too strict.** Measured in
+ * Chrome on 2026-09-02: `availability()` answered `'unavailable'` while
+ * `create()` on the same page succeeded and produced a working session. Gating
+ * on `'available'` meant prefill never even tried on a machine that could run
+ * it — the exact machine this feature was written for.
+ *
+ * So the gate is inverted: it refuses only the two answers that mean *touching
+ * this starts a download* — the 22 GB fetch nobody asked for, which is the one
+ * thing PEE-6 forbids. `'unavailable'` is attempted, because this browser
+ * demonstrated that answer is not the last word, and a refusal costs one fast
+ * throw that `promptForObject` already swallows.
+ */
 export async function canPrefill(): Promise<boolean> {
-  return (await prefillAvailability()) === 'available'
+  const availability = await prefillAvailability()
+  return availability !== 'downloadable' && availability !== 'downloading'
 }
 
 /**
@@ -134,13 +149,36 @@ export async function promptForObject(
   try {
     session = await createSession(globalThis.LanguageModel)
     if (!session) return null
-    const answer = await session.prompt(instruction, { responseConstraint: schema })
-    const parsed: unknown = JSON.parse(answer)
-    // Constrained decoding should make this impossible; a non-object here means
-    // the constraint was not applied, and guessing at it would put invented
-    // values in a form somebody is about to publish from.
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-    return parsed as Record<string, unknown>
+    /*
+      The constrained path first, because where it works the schema does the
+      work and nothing can come back malformed.
+
+      **It is refused outright on some builds.** Measured in Chrome on
+      2026-09-02: `prompt(…, {responseConstraint})` threw *"Constrained
+      decoding (responseConstraint) cannot be used with speculative decoding
+      (MTP)"* — while the very same build REQUIRES sampling options because MTP
+      is on. The two demands are mutually exclusive there, so PEE-5's premise
+      that the declaration can always be the constraint does not hold, and a
+      consumer that only knows the constrained path gets nothing at all.
+    */
+    try {
+      /*
+        Strict here on purpose. Constrained decoding should make a non-object
+        impossible, so one means the constraint was NOT applied — and being
+        lenient about that would hide a real problem behind values invented for
+        a form somebody is about to publish from.
+      */
+      return strictParse(await session.prompt(instruction, { responseConstraint: schema }))
+    } catch {
+      /*
+        Ask in words instead, and parse leniently. Strictly worse — the model
+        may return prose, fences or an extra sentence — which is why it is the
+        fallback and not the path. `looseParse` treats anything unusable as no
+        answer, so the failure mode stays "no prefill" rather than junk in a
+        form somebody is about to publish from.
+      */
+      return looseParse(await session.prompt(`${instruction}\n\n${jsonHint(schema)}`))
+    }
   } catch {
     return null
   } finally {
@@ -166,4 +204,66 @@ async function createSession(model: LanguageModelStatic): Promise<LanguageModelS
     }
   }
   return null
+}
+
+/**
+ * The instruction that replaces a schema the browser will not honour.
+ *
+ * Built from the same schema, so the fields asked for cannot drift from the
+ * fields drawn — which is the property that made the constrained path worth
+ * having, kept as far as words can keep it.
+ */
+export function jsonHint(schema: object): string {
+  const properties = (schema as { properties?: Record<string, unknown> }).properties ?? {}
+  const keys = Object.keys(properties)
+  return [
+    `Reply with only a JSON object, no prose and no code fence.`,
+    `It must have exactly these keys, each a string: ${keys.join(', ')}.`,
+    `Use "" for a field the conversation does not answer.`,
+  ].join(' ')
+}
+
+/**
+ * The constrained answer, taken at face value or not at all.
+ *
+ * Catches its own parse error rather than throwing, so a mangled *constrained*
+ * reply does not fall through to the unconstrained retry: the constraint was
+ * honoured and produced junk, which is a different problem from the browser
+ * refusing constraints, and retrying would paper over it.
+ */
+export function strictParse(answer: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(answer)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A JSON object out of whatever came back.
+ *
+ * Only for the unconstrained fallback, where the reply may carry a fence, a
+ * leading sentence, or both. It takes the text between the first `{` and the
+ * last `}`, which means a lone object wrapped in an array is unwrapped — a
+ * model doing that has still answered, and `usablePrefill` filters the keys
+ * either way. Several objects in an array do not survive it, which is correct:
+ * that is a different answer, not a wrapped one.
+ *
+ * Returns null rather than throwing, so a mangled answer is indistinguishable
+ * from no model: no prefill, no error to read.
+ */
+export function looseParse(answer: string | null): Record<string, unknown> | null {
+  if (!answer) return null
+  const start = answer.indexOf('{')
+  const end = answer.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  try {
+    const parsed: unknown = JSON.parse(answer.slice(start, end + 1))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
 }
