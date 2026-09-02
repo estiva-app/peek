@@ -14,6 +14,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
@@ -109,11 +110,13 @@ vi.mock('@/api', async () => {
 
 function open(context: LauncherContext = {}, onClose = vi.fn()) {
   render(
-    <DebugProvider>
-      <PeekDataProvider>
-        <CommandLauncher context={context} onClose={onClose} initialAppId="ship" />
-      </PeekDataProvider>
-    </DebugProvider>,
+    <MemoryRouter initialEntries={['/desk']}>
+      <DebugProvider>
+        <PeekDataProvider>
+          <CommandLauncher context={context} onClose={onClose} initialAppId="ship" />
+        </PeekDataProvider>
+      </DebugProvider>
+    </MemoryRouter>,
   )
   return { onClose }
 }

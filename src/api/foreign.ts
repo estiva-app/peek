@@ -24,8 +24,12 @@ import {
   directoryAsViewer,
   resolveFolderProjectAsViewer,
   resolveObjectAsViewer,
+  searchMessagesAsViewer,
   type ActResult,
 } from '@/nostr/foreign'
+import { RelayReadError } from '@/nostr/relayRead'
+import type { MessageSearchState } from '@/lib/launcherSearch'
+import type { SignedEvent } from '@estiva-app/protocol'
 import type { FolderProject, ForeignObject, People } from '@estiva-app/interop'
 
 /**
@@ -153,4 +157,106 @@ export function useWorkspaceDirectory(): People | undefined {
   }, [viewer, people])
 
   return people
+}
+
+/** One search result, flattened to what a launcher row needs. */
+export interface MessageHit {
+  id: string
+  /** The message body. Trimmed for display by the caller, not here. */
+  content: string
+  /** Author pubkey — resolved to a name by the caller's directory. */
+  pubkey: string
+  createdAt: number
+  /** The Folder (NIP-29 channel uuid) the message was posted in, if it names one. */
+  folder?: string
+}
+
+/**
+ * Search message content over NIP-50 (PEE-4).
+ *
+ * Debounced, because the relay is a round trip and a launcher fires on every
+ * keystroke. 250 ms is short enough to feel live and long enough that typing a
+ * word is one request rather than six.
+ *
+ * **The state is the point, not just the results.** PEE-4's done-when requires
+ * the empty state to tell "nothing matched" from "nothing you can read", so a
+ * failure is reported with its `RelayReadError` classification rather than
+ * flattened to an empty list — that flattening is the exact defect PEE-10
+ * fixed one layer down, and re-introducing it here would undo it.
+ */
+export function useMessageSearch(query: string): { state: MessageSearchState; hits: MessageHit[] } {
+  const viewer = useRelayViewer()
+  /*
+    Only the ANSWER is state, and it carries the term it answered. Everything
+    else — idle, signed-out, searching — is derived below, so no `setState`
+    runs in the effect body. `useWorkspaceDirectory` above keeps the same rule
+    for the same reason, and deriving `searching` from "the answer on hand is
+    for an older term" also resets it on every keystroke for free.
+  */
+  const [answer, setAnswer] = useState<{
+    term: string
+    state: MessageSearchState
+    hits: MessageHit[]
+  } | null>(null)
+  const term = query.trim()
+
+  useEffect(() => {
+    // Nothing to ask, or nowhere to ask it: both are derived states, not
+    // fetches. Demo mode has no relay at all.
+    if (!term || !hasConvex) return
+    let cancelled = false
+    // Debounced: the relay is a round trip and a launcher fires on every
+    // keystroke. 250 ms is short enough to feel live and long enough that
+    // typing a word is one request rather than six.
+    const timer = setTimeout(() => {
+      const v = viewer()
+      if (!v) {
+        if (!cancelled) setAnswer({ term, state: { kind: 'signed-out' }, hits: [] })
+        return
+      }
+      searchMessagesAsViewer(term, v.relayUrl, v.token)
+        .then((events: SignedEvent[]) => {
+          if (cancelled) return
+          setAnswer({
+            term,
+            state: { kind: 'done', count: events.length },
+            hits: events.map((e) => ({
+              id: e.id,
+              content: e.content,
+              pubkey: e.pubkey,
+              createdAt: e.created_at,
+              folder: e.tags.find((t) => t[0] === 'h')?.[1],
+            })),
+          })
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return
+          /*
+            The classification survives to the UI, which is the whole ticket:
+            PEE-4's empty state has to tell "nothing matched" from "nothing you
+            can read", and flattening a failure to an empty list is the exact
+            defect PEE-10 fixed one layer down.
+          */
+          setAnswer({
+            term,
+            state: { kind: 'failed', failure: error instanceof RelayReadError ? error.kind : 'unreachable' },
+            hits: [],
+          })
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [term, viewer])
+
+  const fresh = answer?.term === term ? answer : null
+  const state: MessageSearchState = !term
+    ? { kind: 'idle' }
+    : // "No messages matched" would be a claim about a corpus nobody searched.
+      !hasConvex
+      ? { kind: 'signed-out' }
+      : (fresh?.state ?? { kind: 'searching' })
+
+  return { state, hits: fresh?.hits ?? [] }
 }

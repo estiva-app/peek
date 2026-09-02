@@ -20,9 +20,12 @@
  * keys, and a service credential would be a member of nothing.
  */
 import type { StoredToken } from '@/auth/estivaId'
+import type { SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
 const KIND_TOPIC = 39000
+/** NIP-29 channel message — what a Peek message is on the wire. */
+const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
 import { decodeNevent, pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
@@ -356,6 +359,33 @@ export async function applyActionAsViewer(
   */
   const created = newId ? `${built.kind}:${token.pubkey}:${newId}` : undefined
   return { ok: true, ...(created ? { created } : {}) }
+}
+
+/**
+ * Messages matching a term, over NIP-50 (PEE-4).
+ *
+ * **Whole tokens only**, measured against production rather than assumed —
+ * `scripts/probe-nip50-search.ts`, 2026-09-02: `"Cla"` returns nothing where
+ * `"Claude"` returns two, and a nonsense token returns nothing at all, which is
+ * what proves the relay is honouring `search` instead of dropping an unknown
+ * field and answering with everything of that kind.
+ *
+ * Ordering comes back newest-first with no relevance score, so the order here
+ * is the relay's and there is nothing to rank by. A count is "of what I
+ * fetched", never a total.
+ *
+ * Throws `RelayReadError` on a failed read, like every other read in this file
+ * — the whole point for PEE-4 is that a refused search and an empty one must
+ * not arrive as the same empty array (PEE-10).
+ */
+export async function searchMessagesAsViewer(
+  term: string,
+  relayUrl: string,
+  token: StoredToken,
+  limit = 20,
+): Promise<SignedEvent[]> {
+  const query = viewerQuery(relayUrl, token)
+  return query([{ kinds: [KIND_MESSAGE], search: term, limit }])
 }
 
 /**

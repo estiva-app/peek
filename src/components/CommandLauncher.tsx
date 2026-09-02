@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { IconSearch, IconChevronRight, IconX, IconPencil } from '@tabler/icons-react'
+import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash } from '@tabler/icons-react'
+import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { ActionFormPanel } from './ActionFormPanel'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
-import { useForeignObjects, useTopics } from '@/api'
+import { useForeignObjects, useMessageSearch, useTopics, usePeople, useWorkspaceDirectory } from '@/api'
+import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
+import { topicPath } from '@/lib/objectUrl'
 import { PARENT_FIELD, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
@@ -100,6 +103,17 @@ export function CommandLauncher({
    * kind:30850 records.
    */
   const topics = useTopics()
+
+  /*
+    PEE-4's three corpora. Topics and people are already in the app and match
+    on any fragment; messages are unbounded and live on the relay, which
+    matches whole tokens only — measured, not assumed. `lib/launcherSearch`
+    carries the reasoning and the empty-state wording that difference forces.
+  */
+  const people = usePeople()
+  const directory = useWorkspaceDirectory()
+  const navigate = useNavigate()
+  const { state: messageState, hits: messageHits } = useMessageSearch(query)
 
   /*
     Ship's half is live now (PRO-4). `creatableUnder` reads the manifest Ship
@@ -437,18 +451,105 @@ export function CommandLauncher({
     }
 
     // ── Global level ──
+    /*
+      Finding things, which used to be one inert row reading "Search Peek for
+      …" (PEE-4). The launcher is the one surface where "do a thing" and "find
+      a thing" are the same gesture, so results sit above the apps rather than
+      behind a separate mode.
+    */
     if (q) {
-      rows.push(
-        simpleRow(
-          'search',
-          <IconSearch size={16} stroke={1.5} className="text-text-secondary" />,
-          <>
-            Search Peek for "<span className="font-medium">{query.trim()}</span>"
-          </>,
-          undefined,
-          () => onClose() // inert v1
-        )
-      )
+      const go = (path: string) => () => {
+        navigate(path)
+        onClose()
+      }
+
+      const topicHits = matchTopics(topics ?? [], query)
+      if (topicHits.length > 0) {
+        headers.set(rows.length, sectionHeader('Topics'))
+        for (const t of topicHits) {
+          rows.push({
+            ...simpleRow(
+              `topic-${t.id}`,
+              <IconHash size={16} stroke={1.5} className="text-text-secondary" />,
+              t.title,
+              t.isResolved ? 'Resolved' : undefined,
+              go(topicPath(t)),
+            ),
+            compact: true,
+          })
+        }
+      }
+
+      const peopleHits = matchPeople(people ?? [], query)
+      if (peopleHits.length > 0) {
+        headers.set(rows.length, sectionHeader('People'))
+        for (const person of peopleHits) {
+          rows.push({
+            ...simpleRow(
+              `person-${person.id}`,
+              <IconUser size={16} stroke={1.5} className="text-text-secondary" />,
+              person.name,
+              person.role,
+              go(`/people/${encodeURIComponent(person.id)}`),
+            ),
+            compact: true,
+          })
+        }
+      }
+
+      /*
+        A message names its Folder on the `h` tag, and a Topic carries the same
+        uuid as `folderId` — so that is the join, and it is also the reason a
+        hit can be unroutable: a message in a channel this person has no topic
+        row for has nowhere to go. Those are dropped rather than rendered as a
+        row that cannot succeed, and the count of what was dropped is shown,
+        because a silent cap reads as "that is all there was".
+      */
+      const byFolder = new Map((topics ?? []).filter((t) => t.folderId).map((t) => [t.folderId as string, t]))
+      const routable = messageHits.filter((h) => h.folder && byFolder.has(h.folder))
+      const unroutable = messageHits.length - routable.length
+      const emptyNote = messageEmptyState(messageState, query)
+
+      if (routable.length > 0 || emptyNote || unroutable > 0) {
+        headers.set(rows.length, sectionHeader('Messages'))
+      }
+      for (const hit of routable) {
+        const topic = byFolder.get(hit.folder as string)!
+        const who = directory?.[hit.pubkey]?.displayName
+        rows.push({
+          ...simpleRow(
+            `message-${hit.id}`,
+            <IconMessage size={16} stroke={1.5} className="text-text-secondary" />,
+            // The match in context, not the first 80 characters — a hit whose
+            // term is late in a long message would otherwise show none of it.
+            snippetAround(hit.content, query.trim()),
+            [who, topic.title].filter(Boolean).join(' · '),
+            go(topicPath(topic)),
+          ),
+          compact: true,
+        })
+      }
+      /*
+        Said rather than shown as rows: the honest empty state PEE-4's done-when
+        asks for, which has to tell "nothing matched" from "nothing you can
+        read". `messageEmptyState` owns the wording; this only has to render it.
+      */
+      const notes = [
+        emptyNote,
+        unroutable > 0
+          ? `${unroutable} more in conversations not in your sidebar.`
+          : null,
+      ].filter(Boolean) as string[]
+      for (const [i, note] of notes.entries()) {
+        rows.push({
+          key: `message-note-${i}`,
+          compact: true,
+          onSelect: () => {},
+          render: () => (
+            <div className="px-3 py-2 text-[13px] leading-[1.2] text-text-secondary">{note}</div>
+          ),
+        })
+      }
     }
 
     const apps = q
@@ -473,7 +574,7 @@ export function CommandLauncher({
     }
     return { rows, headers }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared])
+  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate])
 
   // Reset the highlight on every level/query change.
   const didInitHighlight = useRef(false)
