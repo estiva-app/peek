@@ -1,6 +1,7 @@
 import { PEOPLE } from '@/data/peopleData'
 import { TOPICS } from '@/data/topicData'
 import { APP_FILES, DOCUMENT_FILES } from '@/data/filesData'
+import { parseInlineMarks, wrapInlineMarks } from '@estiva-app/protocol'
 
 // ── Mention regex ──
 //
@@ -143,111 +144,6 @@ export function matchReference(part: string): ReferenceMatch | null {
   return null
 }
 
-// ── Inline formatting marks (rich text, 2026-07) ──
-//
-// Storage stays plain text; formatting is markdown-style markers:
-//   **bold**   *italic*   __underline__   ***bold italic***
-// plus `# ` / `## ` line prefixes for headline / subheading (see
-// parseBodySegments). Rules that keep old messages rendering unchanged:
-//   - a marker pair only counts when the inner text has no whitespace at its
-//     edges (`** text**` stays literal), and
-//   - markers must sit on word boundaries (`2*3*4` stays literal math).
-// Nesting is parsed recursively, so `__**both**__` works.
-
-export interface InlineMarkSpan {
-  text: string
-  bold?: boolean
-  italic?: boolean
-  underline?: boolean
-}
-
-type MarkKey = 'bold' | 'italic' | 'underline'
-
-// Longest token first so `***` isn't consumed as `**` + dangling `*`.
-const MARK_TOKENS: Array<{ token: string; keys: MarkKey[] }> = [
-  { token: '***', keys: ['bold', 'italic'] },
-  { token: '**', keys: ['bold'] },
-  { token: '__', keys: ['underline'] },
-  { token: '*', keys: ['italic'] },
-]
-
-const isWordChar = (ch: string | undefined) => ch !== undefined && /[A-Za-z0-9]/.test(ch)
-
-function findMarkClose(text: string, token: string, from: number): number {
-  let idx = text.indexOf(token, from)
-  while (idx !== -1) {
-    if (!isWordChar(text[idx + token.length])) return idx
-    idx = text.indexOf(token, idx + 1)
-  }
-  return -1
-}
-
-function toMarkSpan(text: string, active: MarkKey[]): InlineMarkSpan {
-  const span: InlineMarkSpan = { text }
-  for (const key of active) span[key] = true
-  return span
-}
-
-function scanMarks(text: string, active: MarkKey[]): InlineMarkSpan[] {
-  for (let i = 0; i < text.length; i++) {
-    for (const { token, keys } of MARK_TOKENS) {
-      if (keys.some((k) => active.includes(k))) continue
-      if (!text.startsWith(token, i)) continue
-      if (isWordChar(text[i - 1])) continue
-      const close = findMarkClose(text, token, i + token.length)
-      if (close === -1) continue
-      const inner = text.slice(i + token.length, close)
-      if (!inner || /^\s/.test(inner) || /\s$/.test(inner)) continue
-      const spans: InlineMarkSpan[] = []
-      const before = text.slice(0, i)
-      if (before) spans.push(toMarkSpan(before, active))
-      spans.push(...scanMarks(inner, [...active, ...keys]))
-      spans.push(...scanMarks(text.slice(close + token.length), active))
-      return spans
-    }
-  }
-  return text ? [toMarkSpan(text, active)] : []
-}
-
-/** Parse one plain-text run (no mentions/refs — split those out first) into
- *  styled spans. Returns a single unstyled span when there's nothing to do. */
-export function parseInlineMarks(text: string): InlineMarkSpan[] {
-  return scanMarks(text, [])
-}
-
-/** Wrap a text node's content in storage markers for its Tiptap marks.
- *  Edge whitespace is hoisted outside the markers (`**word **` would not
- *  parse back), so bolding "word " round-trips as `**word** `. */
-export function wrapInlineMarks(text: string, markNames: ReadonlySet<string>): string {
-  if (!text) return text
-  const bold = markNames.has('bold')
-  const italic = markNames.has('italic')
-  const underline = markNames.has('underline')
-  if (!bold && !italic && !underline) return text
-  const m = text.match(/^(\s*)([\s\S]*?)(\s*)$/)!
-  const [, lead, core, trail] = m
-  if (!core) return text
-  let out = core
-  if (bold && italic) out = `***${out}***`
-  else if (bold) out = `**${out}**`
-  else if (italic) out = `*${out}*`
-  if (underline) out = `__${out}__`
-  return lead + out + trail
-}
-
-/** Markers + heading prefixes removed — for one-line previews/snippets that
- *  render raw body text outside MessageBody. */
-export function stripInlineFormatting(text: string): string {
-  return text
-    .split('\n')
-    .map((line) =>
-      parseInlineMarks(line.replace(/^#{1,2}\s/, '').replace(/^>\s/, ''))
-        .map((s) => s.text)
-        .join('')
-    )
-    .join('\n')
-}
-
 // ── Inline content parser ──
 
 /** Parse a single line into Tiptap inline JSON nodes (text + mention nodes,
@@ -345,84 +241,12 @@ export function serializeInline(node: TiptapNode): string {
   return text
 }
 
-// ── Body segments (for read-only rendering of plain-text bodies) ──
-
-export type BodySegment =
-  | { type: 'text'; lines: string[] }
-  | { type: 'bullet'; items: string[] }
-  | { type: 'numbered'; items: string[] }
-  | { type: 'heading'; level: 1 | 2; text: string }
-  | { type: 'quote'; lines: string[] }
-
+/** `# ` / `## ` at a line start. Shared with `textToTiptapContent` below;
+ *  the block *parser* moved to `@estiva-app/protocol` but the edit-mode
+ *  Tiptap builder is Peek's own and still reads the same prefixes. */
 const HEADING_LINE_RE = /^#{1,2}\s/
-/** `> ` with the space required — a bare `>` (e.g. "5 > 3" typed at a line
- *  start) stays literal text, same conservatism as the other markers. */
+/** `> ` with the space required — see the note on the package's copy. */
 const QUOTE_LINE_RE = /^>\s/
-
-/** Split a multi-line body string into a list of segments (text / bullet /
- *  numbered / heading). Blank lines split runs of plain text into separate
- *  `text` segments. `# ` and `## ` prefixes become heading segments; three or
- *  more #s (or `#123` refs, no space) stay plain text. */
-export function parseBodySegments(body: string): BodySegment[] {
-  const lines = body.split('\n')
-  const segments: BodySegment[] = []
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    if (HEADING_LINE_RE.test(line) && !line.startsWith('###')) {
-      segments.push({
-        type: 'heading',
-        level: line.startsWith('##') ? 2 : 1,
-        text: line.replace(HEADING_LINE_RE, ''),
-      })
-      i++
-    } else if (/^[-•]\s/.test(line)) {
-      const items: string[] = []
-      while (i < lines.length && /^[-•]\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^[-•]\s/, ''))
-        i++
-      }
-      segments.push({ type: 'bullet', items })
-    } else if (/^\d+\.\s/.test(line)) {
-      const items: string[] = []
-      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^\d+\.\s/, ''))
-        i++
-      }
-      segments.push({ type: 'numbered', items })
-    } else if (QUOTE_LINE_RE.test(line)) {
-      const quoteLines: string[] = []
-      while (i < lines.length && QUOTE_LINE_RE.test(lines[i])) {
-        quoteLines.push(lines[i].replace(QUOTE_LINE_RE, ''))
-        i++
-      }
-      segments.push({ type: 'quote', lines: quoteLines })
-    } else {
-      const textLines: string[] = []
-      while (
-        i < lines.length &&
-        !/^[-•]\s/.test(lines[i]) &&
-        !/^\d+\.\s/.test(lines[i]) &&
-        !QUOTE_LINE_RE.test(lines[i]) &&
-        !(HEADING_LINE_RE.test(lines[i]) && !lines[i].startsWith('###'))
-      ) {
-        textLines.push(lines[i])
-        i++
-      }
-      // Blank lines split a run of text into separate paragraph segments.
-      let chunk: string[] = []
-      for (const l of textLines) {
-        if (l === '') {
-          if (chunk.length > 0) { segments.push({ type: 'text', lines: chunk }); chunk = [] }
-        } else {
-          chunk.push(l)
-        }
-      }
-      if (chunk.length > 0) segments.push({ type: 'text', lines: chunk })
-    }
-  }
-  return segments
-}
 
 // ── textToTiptapContent (used by edit-mode editor) ──
 

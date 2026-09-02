@@ -5,13 +5,13 @@ import {
   matchReference,
   matchUrl,
   parseInlineContent,
-  parseBodySegments,
-  parseInlineMarks,
-  wrapInlineMarks,
-  stripInlineFormatting,
   serializeInline,
   textToTiptapContent,
 } from './textParsing'
+// The marker dialect lives in the package now (RIC-4). What is left here is
+// Peek's own layer on top of it: mentions, bracket references, and the Tiptap
+// builders. These stay so the swap is checked at the consumer too.
+import { parseBodySegments, stripInlineFormatting } from '@estiva-app/protocol'
 
 // Helper to consume MENTION_RE in a way that doesn't carry state between calls
 // (it's global, so matchAll is the safe form).
@@ -142,46 +142,6 @@ describe('parseInlineContent', () => {
     // single text node back.
     const out = parseInlineContent('see [Unknown Made-Up Title] please')
     expect(out).toEqual([{ type: 'text', text: 'see [Unknown Made-Up Title] please' }])
-  })
-})
-
-describe('parseBodySegments', () => {
-  it('returns a single text segment for plain text', () => {
-    expect(parseBodySegments('hello world')).toEqual([
-      { type: 'text', lines: ['hello world'] },
-    ])
-  })
-
-  it('groups consecutive bullet items into one bullet segment', () => {
-    const out = parseBodySegments('- one\n- two\n- three')
-    expect(out).toEqual([{ type: 'bullet', items: ['one', 'two', 'three'] }])
-  })
-
-  it('groups consecutive numbered items into one numbered segment', () => {
-    const out = parseBodySegments('1. one\n2. two\n3. three')
-    expect(out).toEqual([{ type: 'numbered', items: ['one', 'two', 'three'] }])
-  })
-
-  it('handles a mix of text + bullet + text in the right order', () => {
-    const out = parseBodySegments('intro\n- a\n- b\noutro')
-    expect(out).toEqual([
-      { type: 'text', lines: ['intro'] },
-      { type: 'bullet', items: ['a', 'b'] },
-      { type: 'text', lines: ['outro'] },
-    ])
-  })
-
-  it('splits text on blank lines into separate text segments', () => {
-    const out = parseBodySegments('para one\n\npara two')
-    expect(out).toEqual([
-      { type: 'text', lines: ['para one'] },
-      { type: 'text', lines: ['para two'] },
-    ])
-  })
-
-  it('accepts • as a bullet marker', () => {
-    const out = parseBodySegments('• alpha\n• beta')
-    expect(out).toEqual([{ type: 'bullet', items: ['alpha', 'beta'] }])
   })
 })
 
@@ -331,92 +291,6 @@ describe('matchReference', () => {
 })
 
 // ── Inline formatting marks (rich text) ──
-
-describe('parseInlineMarks', () => {
-  it('returns a single unstyled span for plain text', () => {
-    expect(parseInlineMarks('hello world')).toEqual([{ text: 'hello world' }])
-  })
-
-  it('parses **bold**', () => {
-    expect(parseInlineMarks('a **bold** word')).toEqual([
-      { text: 'a ' },
-      { text: 'bold', bold: true },
-      { text: ' word' },
-    ])
-  })
-
-  it('parses *italic* and __underline__', () => {
-    expect(parseInlineMarks('*it* and __un__')).toEqual([
-      { text: 'it', italic: true },
-      { text: ' and ' },
-      { text: 'un', underline: true },
-    ])
-  })
-
-  it('parses ***bold italic*** as one combined span', () => {
-    expect(parseInlineMarks('***both***')).toEqual([{ text: 'both', bold: true, italic: true }])
-  })
-
-  it('parses nested __**marks**__', () => {
-    expect(parseInlineMarks('__**both**__')).toEqual([{ text: 'both', bold: true, underline: true }])
-  })
-
-  it('parses multi-word content and multiple pairs on one line', () => {
-    expect(parseInlineMarks('**two words** then *more here*')).toEqual([
-      { text: 'two words', bold: true },
-      { text: ' then ' },
-      { text: 'more here', italic: true },
-    ])
-  })
-
-  it('leaves unmatched markers as literal text', () => {
-    expect(parseInlineMarks('a ** dangling')).toEqual([{ text: 'a ** dangling' }])
-    expect(parseInlineMarks('*unclosed')).toEqual([{ text: '*unclosed' }])
-  })
-
-  it('rejects pairs with whitespace at the inner edges', () => {
-    expect(parseInlineMarks('** not bold **')).toEqual([{ text: '** not bold **' }])
-  })
-
-  it('does not fire inside words (2*3*4 stays math)', () => {
-    expect(parseInlineMarks('2*3*4 = 24')).toEqual([{ text: '2*3*4 = 24' }])
-  })
-})
-
-describe('wrapInlineMarks', () => {
-  it('wraps by mark set and round-trips through parseInlineMarks', () => {
-    expect(wrapInlineMarks('bold', new Set(['bold']))).toBe('**bold**')
-    expect(wrapInlineMarks('it', new Set(['italic']))).toBe('*it*')
-    expect(wrapInlineMarks('un', new Set(['underline']))).toBe('__un__')
-    expect(wrapInlineMarks('both', new Set(['bold', 'italic']))).toBe('***both***')
-    expect(wrapInlineMarks('all', new Set(['bold', 'italic', 'underline']))).toBe('__***all***__')
-    expect(parseInlineMarks(wrapInlineMarks('all', new Set(['bold', 'italic', 'underline'])))).toEqual([
-      { text: 'all', bold: true, italic: true, underline: true },
-    ])
-  })
-
-  it('hoists edge whitespace outside the markers so the result parses back', () => {
-    expect(wrapInlineMarks('word ', new Set(['bold']))).toBe('**word** ')
-    expect(wrapInlineMarks(' word', new Set(['underline']))).toBe(' __word__')
-  })
-
-  it('returns text untouched when no known marks are present', () => {
-    expect(wrapInlineMarks('plain', new Set())).toBe('plain')
-    expect(wrapInlineMarks('linked', new Set(['link']))).toBe('linked')
-  })
-})
-
-describe('stripInlineFormatting', () => {
-  it('removes markers and heading prefixes, keeps text', () => {
-    expect(stripInlineFormatting('# Title\n**bold** and *it* and __un__')).toBe(
-      'Title\nbold and it and un'
-    )
-  })
-
-  it('leaves plain text and refs alone', () => {
-    expect(stripInlineFormatting('see PR #482 at 2*3*4')).toBe('see PR #482 at 2*3*4')
-  })
-})
 
 describe('parseInlineContent with marks', () => {
   it('turns markers into marked text nodes', () => {

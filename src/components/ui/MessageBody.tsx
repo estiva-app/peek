@@ -13,38 +13,37 @@ import figmaIcon from '@/assets/figma icon.svg'
 import linearIcon from '@/assets/linear icon.svg'
 import { TOPICS } from '@/api'
 import { APP_FILES, DOCUMENT_FILES } from '@/api'
-import { INLINE_TOKEN_RE, matchReference, matchUrl, parseBodySegments, parseInlineMarks } from '@/lib/textParsing'
+import { INLINE_TOKEN_RE, matchReference, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
-import { findNaddrs, pointerToAddress, referenceToPointer, stripNaddrs } from '@estiva-app/protocol'
+import {
+  findNaddrs,
+  parseBodySegments,
+  parseInlineMarks,
+  pointerToAddress,
+  referenceToPointer,
+  stripNaddrs,
+} from '@estiva-app/protocol'
 
 // Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
 // into pills, and PEEK-/PR#/build# tokens into ReferenceChips.
-/** Storage markers (`**`/`*`/`__`) → styled spans. Plain text comes back
- *  as-is so the common case adds no extra nodes. */
-function renderMarkedText(text: string): ReactNode {
-  const spans = parseInlineMarks(text)
-  if (spans.length === 1 && !spans[0].bold && !spans[0].italic && !spans[0].underline) return text
-  return spans.map((s, k) => (
-    <span
-      key={k}
-      className={cn(
-        s.bold && 'font-semibold',
-        s.italic && 'italic',
-        s.underline && 'underline underline-offset-2'
-      )}
-    >
-      {s.text}
-    </span>
-  ))
-}
 
-function renderWithMentions(text: string, isTopicResolved: (id: string) => boolean): ReactNode {
+/**
+ * Tokens inside one run of text that carries no `code` mark.
+ *
+ * **Marks are parsed before this runs, and the order is load-bearing.** It used
+ * to be the other way round — split on mention tokens, then parse marks in each
+ * part — which was fine while the dialect had no way to say *"this text is
+ * literal"*. `code` says exactly that (SPEC §13.1: its content MUST NOT be
+ * parsed for further marks), and under the old order `` `@Alice` `` would have
+ * rendered a mention chip inside a code span.
+ */
+function renderTokens(text: string, isTopicResolved: (id: string) => boolean): ReactNode {
   const parts = text.split(INLINE_TOKEN_RE)
-  if (parts.length === 1) return renderMarkedText(text)
+  if (parts.length === 1) return text
   return (
     <>
       {parts.map((part, i) => {
@@ -129,8 +128,45 @@ function renderWithMentions(text: string, isTopicResolved: (id: string) => boole
         if (matchReference(part)) {
           return <ReferenceChip key={i} label={part} />
         }
-        return part ? <span key={i}>{renderMarkedText(part)}</span> : null
+        return part ? <span key={i}>{part}</span> : null
       })}
+    </>
+  )
+}
+
+/**
+ * One line: marks first, then tokens inside every run that is not code.
+ *
+ * A run with no marks at all comes back as a bare string, so the common case
+ * still adds no extra nodes.
+ */
+function renderWithMentions(text: string, isTopicResolved: (id: string) => boolean): ReactNode {
+  const spans = parseInlineMarks(text)
+  if (spans.length === 1 && !spans[0].bold && !spans[0].italic && !spans[0].underline && !spans[0].code) {
+    return renderTokens(text, isTopicResolved)
+  }
+  return (
+    <>
+      {spans.map((s, k) =>
+        s.code ? (
+          // `code` never combines with another mark, so this branch needs none
+          // of the others — see SPEC §13.1.
+          <code key={k} className="rounded-sm bg-bg-active px-1 py-0.5 font-mono text-[0.9em] text-text-primary">
+            {s.text}
+          </code>
+        ) : (
+          <span
+            key={k}
+            className={cn(
+              s.bold && 'font-semibold',
+              s.italic && 'italic',
+              s.underline && 'underline underline-offset-2'
+            )}
+          >
+            {renderTokens(s.text, isTopicResolved)}
+          </span>
+        )
+      )}
     </>
   )
 }
@@ -218,6 +254,20 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedOb
             <h1 key={i}>{renderWithMentions(seg.text, isTopicResolved)}</h1>
           ) : (
             <h2 key={i}>{renderWithMentions(seg.text, isTopicResolved)}</h2>
+          )
+        }
+        if (seg.type === 'code') {
+          // A fence is literal by definition: no mentions, no marks, no
+          // reference chips. Scrolls on its own so a long line cannot widen
+          // the card.
+          return (
+            <pre
+              key={i}
+              className="overflow-x-auto rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
+              data-language={seg.language}
+            >
+              <code>{seg.lines.join('\n')}</code>
+            </pre>
           )
         }
         if (seg.type === 'quote') {
