@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { MenuItem, SectionLabel } from '@estiva-app/ui'
 import { ActionFormPanel } from './ActionFormPanel'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
@@ -358,6 +359,8 @@ export function CommandLauncher({
     </div>
   )
 
+  // The launcher keeps its own, caption-sized hint — its shipped look
+  // (restored 2026-09-01; the shared EnterHint is the pickers' 9px voice).
   const enterHint = (
     <span className="text-caption text-text-secondary whitespace-nowrap shrink-0 signal:font-mono signal:text-[10px] signal:tracking-[0.04em]">↩ Enter</span>
   )
@@ -375,7 +378,7 @@ export function CommandLauncher({
 
   const sectionHeader = (label: string) => (
     <div key={`hdr-${label}`} className="flex items-center h-7 px-3">
-      <span className="text-[12px] font-medium leading-none text-text-secondary signal:font-mono signal:text-[10px] signal:uppercase signal:tracking-[0.14em]">{label}</span>
+      <SectionLabel className="text-text-secondary">{label}</SectionLabel>
     </div>
   )
 
@@ -760,13 +763,14 @@ export function CommandLauncher({
             {rows.map((row, i) => (
               <div key={row.key}>
                 {headers.get(i)}
-                <div
+                <MenuItem
                   data-highlighted={highlight === i}
-                  className={cn(
-                    'flex items-center gap-3 px-3 cursor-pointer transition-colors rounded-lg',
-                    row.compact ? 'h-9' : 'h-12',
-                    highlight === i && 'bg-bg-hover'
-                  )}
+                  size={row.compact ? 'default' : 'tall'}
+                  // The launcher keeps its shipped geometry exactly: 36px compact
+                  // rows, 48px full rows (Katerina, 2026-09-01 — the rows shrank in
+                  // the first conversion, and she caught it).
+                  className={row.compact ? 'h-9 gap-3 px-3' : 'min-h-12'}
+                  selected={highlight === i}
                   onMouseEnter={() => setHighlight(i)}
                   onMouseDown={(e) => {
                     e.preventDefault()
@@ -774,7 +778,7 @@ export function CommandLauncher({
                   }}
                 >
                   {row.render(highlight === i)}
-                </div>
+                </MenuItem>
               </div>
             ))}
             {rows.length === 0 && headers.get(0)}

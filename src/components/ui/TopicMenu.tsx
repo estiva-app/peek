@@ -1,58 +1,49 @@
+import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
 import { TopicState } from './TopicState'
-import { cn } from '@/lib/utils'
 import { useIsTopicResolved } from '@/api'
 import { type Topic } from '@/api'
 
-interface TopicMenuProps {
+/**
+ * The topic picker the composer's #-mention opens. Its rows are the shared
+ * MenuItem at its tall size (2026-09-01) — the picker row TopicMenu,
+ * MentionMenu, the files menu and the launcher all hand-rolled — with the
+ * highlight-follow riding through the shared item's props and the shared
+ * EnterHint for the "↩ #topic" hint.
+ */
+export function TopicMenu({
+  topics,
+  highlight,
+  onSelect,
+  onHighlightChange,
+}: {
   topics: Topic[]
   highlight: number
   onSelect: (topic: Topic) => void
   onHighlightChange: (index: number) => void
-}
-
-export function TopicMenu({ topics, highlight, onSelect, onHighlightChange }: TopicMenuProps) {
+}) {
   const isTopicResolved = useIsTopicResolved()
   if (topics.length === 0) return null
 
   return (
     <div className="w-fit min-w-[420px] bg-bg-elevated border border-border-default rounded-lg overflow-hidden shadow-lg">
       <div className="p-2">
-        {/* Section header */}
-        <div className="flex items-center h-8 px-3">
-          <span className="text-h5 text-text-secondary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.14em]">Topics</span>
-        </div>
-
-        {/* Rows */}
-        {topics.map((topic, i) => (
-          <div
-            key={topic.id}
-            className={cn(
-              'flex items-center gap-3 h-10 px-3 py-1.5 rounded-lg cursor-pointer transition-colors',
-              i === highlight ? 'bg-bg-hover' : ''
-            )}
-            onMouseEnter={() => onHighlightChange(i)}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              onSelect(topic)
-            }}
-          >
-            <TopicState
-              type="topic"
-              status={isTopicResolved(topic.id) ? 'resolved' : 'unresolved'}
+        <MenuSection label="Topics" className="px-3">
+          {topics.map((topic, i) => (
+            <MenuItem
+              key={topic.id}
+              size="tall"
+              leading={<TopicState type="topic" status={isTopicResolved(topic.id) ? 'resolved' : 'unresolved'} />}
+              label={topic.title}
+              selected={i === highlight}
+              trailing={i === highlight ? <EnterHint label="#topic" /> : undefined}
+              onMouseEnter={() => onHighlightChange(i)}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                onSelect(topic)
+              }}
             />
-
-            <div className="flex-1 min-w-0 text-[14px] font-normal leading-[1.4] text-text-primary truncate">
-              {topic.title}
-            </div>
-
-            {i === highlight && (
-              <div className="flex items-center gap-2 shrink-0 text-text-muted">
-                <span className="text-[12px] leading-[1.2]">↩</span>
-                <span className="text-[9px] font-medium leading-[1.15] signal:font-mono signal:text-[9.5px] signal:tracking-[0.04em]">#topic</span>
-              </div>
-            )}
-          </div>
-        ))}
+          ))}
+        </MenuSection>
       </div>
     </div>
   )

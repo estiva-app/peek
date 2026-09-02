@@ -9,6 +9,7 @@ import {
   IconChecks,
   IconArrowNarrowRight,
 } from '@tabler/icons-react'
+import { MenuItem } from '@estiva-app/ui'
 import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
@@ -394,18 +395,9 @@ export function HuddleCard({
             }}
           >
             <div className="bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[244px] p-2 flex flex-col gap-2">
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover">
-                  <span className="flex-1 text-sm text-text-secondary signal:text-text-primary">View details</span>
-                </div>
-              </div>
+              <MenuItem label="View details" />
               <Divider className="mx-0" />
-              <div
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover"
-                onClick={handleDelete}
-              >
-                <span className="flex-1 text-sm text-error-default">Delete</span>
-              </div>
+              <MenuItem label="Delete" destructive onClick={handleDelete} />
             </div>
           </div>,
           document.body
