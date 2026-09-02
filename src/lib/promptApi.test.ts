@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SAMPLING, canPrefill, prefillAvailability, promptForObject } from './promptApi'
+import { SAMPLING, canPrefill, jsonHint, looseParse, prefillAvailability, promptForObject } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -47,28 +47,43 @@ describe('prefillAvailability', () => {
   })
 })
 
-describe('canPrefill', () => {
-  it('is true only for a model already on the machine', async () => {
+describe('canPrefill — the gate, loosened on measurement', () => {
+  it('is true for a model already on the machine', async () => {
     stubModel({ availability: async () => 'available' })
     expect(await canPrefill()).toBe(true)
   })
 
   it('is FALSE for "downloadable", so opening a form never starts a 22 GB fetch', async () => {
     /*
-      The assertion this file exists for. `'downloadable'` means the model
-      could be fetched — and treating that as "yes" would make filing an issue
-      the trigger for a multi-gigabyte download nobody asked for. A person who
-      wants the model gets it from a Chrome affordance that says so.
+      The one thing PEE-6 forbids. A person who wants the model gets it from a
+      browser affordance that says so, not as a side effect of filing an issue.
     */
     stubModel({ availability: async () => 'downloadable' })
     expect(await canPrefill()).toBe(false)
   })
 
   it('is false while a download is already in flight', async () => {
-    // Nothing blocks on it (PEE-6), so a form opened mid-download is simply a
-    // form.
     stubModel({ availability: async () => 'downloading' })
     expect(await canPrefill()).toBe(false)
+  })
+
+  it('ATTEMPTS anyway on "unavailable", because that answer proved not to be final', async () => {
+    /*
+      Measured in Chrome on 2026-09-02: `availability()` answered
+      'unavailable' while `create()` on the same page succeeded and produced a
+      working session. Gating on === 'available' meant prefill never tried on
+      exactly the machine it was written for. A refusal costs one fast throw
+      that `promptForObject` already swallows; a wrong refusal costs the
+      feature.
+    */
+    stubModel({ availability: async () => 'unavailable' })
+    expect(await canPrefill()).toBe(true)
+  })
+
+  it('attempts where the API is absent too, and the prompt path returns null', async () => {
+    // No stub at all. Cheap, and it keeps the decision in one place.
+    expect(await canPrefill()).toBe(true)
+    expect(await promptForObject('go', { type: 'object', properties: {} })).toBeNull()
   })
 })
 
@@ -125,9 +140,13 @@ describe('promptForObject', () => {
     expect(await promptForObject('go', schema)).toBeNull()
   })
 
-  it('returns null for an array, which means the constraint was not applied', async () => {
-    // Guessing at it would put invented values in a form somebody is about to
-    // publish from.
+  it('returns null for an array on the CONSTRAINED path, which means the constraint was not applied', async () => {
+    /*
+      Strict here, deliberately: the constraint was honoured and produced the
+      wrong shape, which is a different problem from a browser that refuses
+      constraints, and guessing would put invented values in a form somebody is
+      about to publish from. The unconstrained fallback is the lenient one.
+    */
     stubModel({
       availability: async () => 'available',
       create: async () => ({ prompt: async () => '[{"title":"x"}]', destroy: () => {} }),
@@ -210,5 +229,92 @@ describe('sampling options are required, not optional (measured in Chrome)', () 
 
     expect(await promptForObject('go', schema)).toBeNull()
     expect(create).toHaveBeenCalledTimes(SAMPLING.length)
+  })
+})
+
+/**
+ * The MTP finding, measured in Chrome on 2026-09-02.
+ *
+ * The same build that REQUIRES sampling options because speculative decoding
+ * is on also REFUSES `responseConstraint` for the same reason:
+ *
+ * > *Failed to execute 'prompt' on 'LanguageModel': Constrained decoding
+ * > (responseConstraint) cannot be used with speculative decoding (MTP).*
+ *
+ * So PEE-5's premise — that a manifest's declaration can always be the
+ * constraint — is false on that build, and a consumer that knows only the
+ * constrained path gets nothing.
+ */
+describe('falling back when the browser refuses constrained decoding', () => {
+  const schema = { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' } } }
+  const MTP_REFUSAL =
+    "Failed to execute 'prompt' on 'LanguageModel': Constrained decoding (responseConstraint) cannot be used with speculative decoding (MTP)."
+
+  /** Refuses any constrained prompt, answers an unconstrained one. */
+  function mtpModel(reply: string) {
+    const prompt = vi.fn(async (_input: string, options?: { responseConstraint?: object }) => {
+      if (options?.responseConstraint) throw new Error(MTP_REFUSAL)
+      return reply
+    })
+    stubModel({
+      availability: async () => 'available',
+      create: async () => ({ prompt, destroy: () => {} }),
+    } as unknown as Partial<Stub>)
+    return prompt
+  }
+
+  it('asks again in words and still returns the object', async () => {
+    const prompt = mtpModel('{"title":"Build is broken","description":"since the interop bump"}')
+    expect(await promptForObject('go', schema)).toEqual({
+      title: 'Build is broken',
+      description: 'since the interop bump',
+    })
+    expect(prompt).toHaveBeenCalledTimes(2)
+    // The retry carries no constraint, and names the same fields in words.
+    expect(prompt.mock.calls[1]?.[1]).toBeUndefined()
+    expect(prompt.mock.calls[1]?.[0]).toContain('title, description')
+  })
+
+  it('survives a code fence, which is what an unconstrained model does', async () => {
+    mtpModel('```json\n{"title":"Build is broken"}\n```')
+    expect(await promptForObject('go', schema)).toEqual({ title: 'Build is broken' })
+  })
+
+  it('survives a leading sentence', async () => {
+    mtpModel('Sure! Here is the object: {"title":"Build is broken"} Hope that helps.')
+    expect(await promptForObject('go', schema)).toEqual({ title: 'Build is broken' })
+  })
+
+  it('returns null for prose with no object, rather than inventing one', async () => {
+    mtpModel('The team seems to be discussing a broken build.')
+    expect(await promptForObject('go', schema)).toBeNull()
+  })
+
+  it('tries the constrained path FIRST, so a capable browser is never degraded', async () => {
+    const prompt = vi.fn(async () => '{"title":"x"}')
+    stubModel({ availability: async () => 'available', create: async () => ({ prompt, destroy: () => {} }) } as unknown as Partial<Stub>)
+    await promptForObject('go', schema)
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect((prompt.mock.calls[0] as unknown[])[1]).toEqual({ responseConstraint: schema })
+  })
+})
+
+describe('looseParse and jsonHint', () => {
+  it('names exactly the schema keys, so asked-for cannot drift from drawn', () => {
+    expect(jsonHint({ type: 'object', properties: { title: {}, description: {} } })).toContain('title, description')
+  })
+
+  it('unwraps a lone object an unconstrained model put in an array', () => {
+    // It has still answered. `usablePrefill` filters the keys either way.
+    expect(looseParse('[{"title":"x"}]')).toEqual({ title: 'x' })
+  })
+
+  it('refuses several objects, which is a different answer rather than a wrapped one', () => {
+    expect(looseParse('[{"title":"a"},{"title":"b"}]')).toBeNull()
+  })
+
+  it('refuses nothing at all', () => {
+    expect(looseParse(null)).toBeNull()
+    expect(looseParse('')).toBeNull()
   })
 })
