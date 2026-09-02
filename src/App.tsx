@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { DeskPage } from './pages/DeskPage'
 import { TopicsPage } from './pages/TopicsPage'
 import { PeoplePage } from './pages/PeoplePage'
+import { ObjectPage } from './pages/ObjectPage'
 
 function App() {
   return (
@@ -17,6 +18,10 @@ function App() {
           that has ever opened a topic. TopicsPage replaces the URL with the
           canonical one once the topic resolves. */}
       <Route path="/topics/:id" element={<TopicsPage />} />
+      {/* What the NIP-89 manifest advertises: any consumer holding one of
+          Peek's objects can open it here, whether it is addressed by naddr or
+          named by nevent (PRO-11). */}
+      <Route path="/o/:ref" element={<ObjectPage />} />
       <Route path="/people" element={<PeoplePage />} />
       <Route path="/people/:id" element={<PeoplePage />} />
     </Routes>

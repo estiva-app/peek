@@ -20,6 +20,7 @@ import { hasConvex } from './store'
 import {
   applyActionAsViewer,
   creatableUnderAsViewer,
+  folderForReferenceAsViewer,
   directoryAsViewer,
   resolveFolderProjectAsViewer,
   resolveObjectAsViewer,
@@ -86,7 +87,16 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  return { resolveObject, resolveFolderProject, applyAction, creatableUnder }
+  /** The Folder a `nostr:` reference points into — see `folderForReferenceAsViewer`. */
+  const folderForReference = useCallback(
+    async (reference: string) => {
+      const v = viewer()
+      return v ? folderForReferenceAsViewer(reference, v.relayUrl, v.token) : null
+    },
+    [viewer],
+  )
+
+  return { resolveObject, resolveFolderProject, applyAction, creatableUnder, folderForReference }
 }
 
 /**

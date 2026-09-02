@@ -20,9 +20,12 @@
  * keys, and a service credential would be a member of nothing.
  */
 import type { StoredToken } from '@/auth/estivaId'
+
+/** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
+const KIND_TOPIC = 39000
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
-import { pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
+import { decodeNevent, pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
 import {
   buildActionEvent,
   createPeopleCache,
@@ -128,6 +131,54 @@ export async function resolveFolderProjectAsViewer(
 ): Promise<FolderProject | null> {
   const query = viewerQuery(relayUrl, token)
   return resolveFolderProject(folder, query, cachedPeople(query))
+}
+
+/**
+ * The Peek Folder a `nostr:` reference points into, or null (PRO-11).
+ *
+ * This is what makes the manifest's `web` template true. NIP-89 lets an app say
+ * *"open one of my objects at this URL"*, and Peek published one before it had
+ * any route to serve it — a consumer holding a Topic or a Message resolved it,
+ * offered "open in Peek", and landed the person on their desk.
+ *
+ * Two shapes, and only one of them needs the relay:
+ *
+ * - **A Topic is an `naddr`,** and a Topic's `d` **is** the channel uuid —
+ *   measured across all 50 production channels (RFC 0.4 §5.2). So the answer is
+ *   in the pointer and no read is required.
+ * - **A Message is an `nevent`,** because a `kind:9` has no `d` at all, so
+ *   nothing but its event id can name it. Its Folder is the `h` tag, which
+ *   means fetching it.
+ *
+ * Returns null for anything else — a Ship project's `naddr` is a perfectly good
+ * reference that Peek has nowhere to open, and saying so beats redirecting
+ * somewhere arbitrary.
+ */
+export async function folderForReferenceAsViewer(
+  reference: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<string | null> {
+  const bare = reference.replace(/^nostr:/i, '')
+
+  try {
+    const pointer = referenceToPointer(bare)
+    // Only Peek's own container kind. Another app's addressable object is not
+    // ours to open, however well-formed its reference is.
+    return pointer.kind === KIND_TOPIC && pointer.identifier ? pointer.identifier : null
+  } catch {
+    // Not an address — fall through to the event forms below.
+  }
+
+  let id: string
+  try {
+    id = /^[0-9a-f]{64}$/i.test(bare) ? bare.toLowerCase() : decodeNevent(bare).id
+  } catch {
+    return null
+  }
+
+  const [event] = await viewerQuery(relayUrl, token)([{ ids: [id], limit: 1 }])
+  return event?.tags.find((t) => t[0] === 'h')?.[1] ?? null
 }
 
 /**
