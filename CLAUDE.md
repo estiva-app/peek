@@ -75,8 +75,16 @@ without a deployment (`"use node"` files may export only actions).
   parent hover state, close on outside click and Escape.
 - **Only offer actions that can succeed** — an action appears only in contexts
   where it works; the enabling surface advertises the capability.
-- **No AI features** in this app for now (product decision 2026-07-08); the
-  prototype keeps them for reference.
+- **On-device AI only.** The 2026-07-08 "no AI features" decision was narrowed
+  on 2026-08-31 by PEE-5, which asked for Prompt API prefill in the launcher.
+  What that settles: a model may run **locally** (Chrome's Prompt API / Gemini
+  Nano) over a thread the viewer can already read, and a work thread must never
+  be sent to a cloud model — that would be a disclosure, and the suite's whole
+  position is that a Folder is readable only by its members. Anything
+  cloud-hosted still needs a decision, not an implementation. It must also
+  degrade to nothing: the API is desktop-Chrome-only and needs a downloaded
+  model, so most people never see it and nothing may look broken for them
+  (PEE-6). The prototype's cloud-shaped AI features stay for reference only.
 - **Data access only through the seam.** Components/pages/extensions import
   app data exclusively from `@/api` (stories: `@/api/fixtures`) — never from
   `@/data/*` or `@/api/internal/*`. All writes go through `usePeekActions()`

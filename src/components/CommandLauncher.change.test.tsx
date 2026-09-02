@@ -91,7 +91,7 @@ Element.prototype.scrollIntoView = vi.fn()
 /** A launcher invoked from a thread that already refers to the issue. */
 const inThread: LauncherContext = {
   composer: { isFocused: true, hasDraft: false },
-  conversation: { references: [ISSUE_ADDR] },
+  conversation: { references: [ISSUE_ADDR], messages: [] },
 }
 
 function open(context: LauncherContext = inThread, onClose = vi.fn()) {

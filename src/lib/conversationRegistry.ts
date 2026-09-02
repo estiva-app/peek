@@ -39,6 +39,14 @@ export interface ConversationSnapshot {
    * takes either, so normalising here would only lose information.
    */
   references: string[]
+  /**
+   * The message bodies, oldest first — the material prefill reads (PEE-5).
+   *
+   * Bodies only: no authors, no timestamps. What a capture needs is what was
+   * said, and every extra field is context window spent on something the model
+   * was not asked about. `lib/prefill` bounds how much of this is sent.
+   */
+  messages: string[]
 }
 
 let active: ConversationSnapshot | null = null

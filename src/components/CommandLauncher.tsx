@@ -11,6 +11,8 @@ import { useForeignObjects, useMessageSearch, useTopics, usePeople, useWorkspace
 import type { ResolvedAction } from '@estiva-app/interop'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { topicPath } from '@/lib/objectUrl'
+import { canPrefill, promptForObject } from '@/lib/promptApi'
+import { formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
@@ -304,6 +306,43 @@ export function CommandLauncher({
     setFormAction(action)
     setQuery('')
   }
+
+  /*
+    PEE-5 — the form arrives filled in from the conversation, where the machine
+    to do it is already on the person's own device.
+
+    Nothing here is offered, announced or waited for (PEE-6). The form opens
+    immediately and this either lands values in it or does not; a person on a
+    phone, in Safari, or on a desktop that has never downloaded the model sees
+    exactly the form they saw before this ticket, with no sparkle greyed out
+    and no apology. `canPrefill` reports 'downloadable' as unavailable, so
+    opening a form never starts a multi-gigabyte fetch.
+  */
+  const [prefill, setPrefill] = useState<Record<string, string> | undefined>()
+  useEffect(() => {
+    setPrefill(undefined)
+    // A change acts on an object that already exists; there is nothing to
+    // suggest. Only a creation has empty fields worth filling.
+    if (!formAction || formAction.target) return
+    const conversation = threadContext(context.conversation?.messages ?? [])
+    if (!conversation) return
+    const built = formSchema(formAction.fields, scope ? scope.vocabularies : {})
+    if (!built) return
+    let cancelled = false
+    void (async () => {
+      if (!(await canPrefill())) return
+      const answer = await promptForObject(prefillInstruction(formAction.label, conversation), built.schema)
+      if (cancelled) return
+      const usable = usablePrefill(answer, built.keys)
+      // An empty answer is left as undefined rather than as `{}`, so the form's
+      // prefill effect has nothing to react to.
+      if (Object.keys(usable).length) setPrefill(usable)
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formAction, scope, context.conversation?.messages?.join('\u0000')])
   const popLevel = () => {
     if (formAction) setFormAction(null)
     else if (scope) setScope(null)
@@ -878,6 +917,7 @@ export function CommandLauncher({
                         ?.vocabularies
                     : undefined
                 }
+                prefill={prefill}
                 onSubmit={(values) => void submitAction(formAction, values)}
               />
               {/* The runtime's own words — "title is required by Add issue",

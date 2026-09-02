@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Person } from '@/api'
 import type { FormField, LauncherAction, LauncherApp, VocabOption } from '@/lib/launcherActions'
 import { Button } from './ui/Button'
@@ -53,6 +53,11 @@ export interface ActionFormPanelProps {
   /** Pre-filled values, keyed by field key (stories, and later: an agent
    *  filling the form from context instead of by hand — RFC 0.4 §13.4). */
   initialValues?: Record<string, string>
+  /**
+   * Values suggested from the conversation, arriving **after** the form opened
+   * (PEE-5). Applied only to fields nobody has touched — see the effect below.
+   */
+  prefill?: Record<string, string>
   onSubmit: (values: Record<string, string>) => void
 }
 
@@ -62,6 +67,7 @@ export function ActionFormPanel({
   action,
   parentOptions,
   initialValues,
+  prefill,
   onSubmit,
 }: ActionFormPanelProps) {
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -76,7 +82,46 @@ export function ActionFormPanel({
   // to `person.id`), `people` keeps the whole list (ids comma-joined).
   const [people, setPeople] = useState<Record<string, Person[]>>({})
 
-  const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
+  /**
+   * Which fields the person has edited. The answer to PEE-6's typing race.
+   *
+   * > *"Prefill arriving after the person has started typing … Overwriting what
+   * > somebody typed is unacceptable; discarding a useful suggestion silently
+   * > is a waste. This needs a designed answer rather than whichever the
+   * > implementation makes easy."*
+   *
+   * The designed answer is per **field**, not per form: a suggestion lands in
+   * every box the person has not touched, and never in one they have. Typing a
+   * title while the model is still thinking keeps the title and still gets the
+   * description. Whole-form rules — first-write-wins, or last — each throw away
+   * one half of that for no reason.
+   */
+  const [touched, setTouched] = useState<Set<string>>(() => new Set())
+
+  const set = (key: string, value: string) => {
+    setTouched((t) => (t.has(key) ? t : new Set(t).add(key)))
+    setValues((v) => ({ ...v, [key]: value }))
+  }
+
+  /*
+    A suggestion is not an edit: applying it must not mark the field touched,
+    or a second suggestion could never correct the first — and the person
+    overtyping it is what makes it theirs.
+  */
+  useEffect(() => {
+    if (!prefill) return
+    setValues((v) => {
+      let changed = false
+      const next = { ...v }
+      for (const [key, value] of Object.entries(prefill)) {
+        if (touched.has(key)) continue
+        if (next[key] === value) continue
+        next[key] = value
+        changed = true
+      }
+      return changed ? next : v
+    })
+  }, [prefill, touched])
 
   const valueOf = (field: FormField): string => {
     if (field.control === 'pubkey') return people[field.key]?.[0]?.id ?? ''
