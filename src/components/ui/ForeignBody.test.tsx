@@ -24,25 +24,49 @@ describe('ForeignBody', () => {
     expect(container.querySelector('.font-semibold')?.textContent).toBe('bold')
   })
 
-  it('leaves a block document as text rather than drawing its JSON as markup', () => {
-    // §13.5: declining to format is conformant; interpreting the body as markup
-    // is what is forbidden. Nothing writes one of these yet — a real renderer is
-    // RIC-5 — so the guarantee that matters is that no `#` inside the JSON
-    // becomes a heading.
-    //
-    // The JSON is deliberately shaped so that parsing it as marker text would
-    // be *visible*: a line beginning `# ` and a `**bold**` run. A document
-    // whose braces merely sit on one line passes this test either way, which is
-    // no test at all.
-    const doc = [
-      '{"type":"doc","content":[',
-      '# {"type":"paragraph","id":"b1","content":[',
-      '{"type":"text","text":"**stet**"}]}]}',
-    ].join('\n')
+  it('renders a block document as blocks, not as its JSON', () => {
+    // The reason this file changed. It used to assert the opposite — a block
+    // document drawn as raw JSON — which was conformant under §13.5's "may
+    // render as plain text" and was still JSON in front of a person.
+    // `toRenderTree` (RIC-6) resolves both models into one tree, so there is no
+    // longer a trade between rendering it and not re-implementing §13.3.
+    const doc = JSON.stringify({
+      type: 'doc',
+      content: [
+        { type: 'heading', id: 'b1', attrs: { level: 1 }, content: [{ type: 'text', text: 'Goal' }] },
+        {
+          type: 'paragraph',
+          id: 'b2',
+          content: [{ type: 'text', text: 'Ship it', marks: [{ type: 'bold' }] }],
+        },
+      ],
+    })
     const { container } = render(<ForeignBody slot={slot(doc, 'blocks')} />)
-    expect(container.querySelector('h1')).toBeNull()
-    expect(container.querySelector('.font-semibold')).toBeNull()
-    expect(container.textContent).toContain('**stet**')
+    expect(container.querySelector('h1')?.textContent).toBe('Goal')
+    expect(container.querySelector('.font-semibold')?.textContent).toBe('Ship it')
+    expect(container.textContent).not.toContain('"type"')
+  })
+
+  it('degrades a malformed block document to a paragraph rather than throwing', () => {
+    // A body that claims `estiva-blocks-1` and is not one. Dropping it is the
+    // PEE-10 failure — blank reads as "that app is broken" — and throwing takes
+    // the whole card with it.
+    const { container } = render(<ForeignBody slot={slot('{"type":"doc", not json', 'blocks')} />)
+    expect(container.querySelector('p')?.textContent).toBe('{"type":"doc", not json')
+  })
+
+  it('renders an unknown block type’s text rather than dropping it', () => {
+    // §13.3: "A reader encountering an unknown block type MUST render that
+    // block's inline text rather than dropping it, and MUST NOT drop the block
+    // silently." Peek has no design for a `table`, and that is not a licence to
+    // show nothing.
+    const doc = JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'kanban', id: 'b1', content: [{ type: 'text', text: 'still readable' }] }],
+    })
+    const { container } = render(<ForeignBody slot={slot(doc, 'blocks')} />)
+    expect(container.textContent).toContain('still readable')
+    expect(container.querySelector('[data-block-type]')?.getAttribute('data-block-type')).toBe('kanban')
   })
 
   it('refuses to parse a format it does not know', () => {

@@ -20,12 +20,12 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import {
   findNaddrs,
-  parseBodySegments,
-  parseInlineMarks,
   pointerToAddress,
   referenceToPointer,
   stripNaddrs,
+  toRenderTree,
 } from '@estiva-app/protocol'
+import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protocol'
 
 // Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
@@ -134,56 +134,7 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
   )
 }
 
-/**
- * One line: marks first, then tokens inside every run that is not code.
- *
- * A run with no marks at all comes back as a bare string, so the common case
- * still adds no extra nodes.
- */
-function renderWithMentions(text: string, isTopicResolved: (id: string) => boolean): ReactNode {
-  return renderMarks(text, (run) => renderTokens(run, isTopicResolved))
-}
 
-/**
- * SPEC §13.1's inline marks, with the runs between them rendered by the caller.
- *
- * The `renderRun` seam is what lets a **foreign** body share this. Peek's own
- * messages put mentions, `[Topic]` chips and `PEEK-`/`PR#` tokens inside a run;
- * another app's body must not get that layer, because those tokens mean
- * something in Peek's corpus and nothing in Ship's — rendering `PEE-8` in a Ship
- * description as a Peek reference chip would be inventing meaning. The marks
- * are the protocol's and are shared; the token vocabulary is Peek's and is not.
- */
-export function renderMarks(text: string, renderRun: (run: string) => ReactNode): ReactNode {
-  const spans = parseInlineMarks(text)
-  if (spans.length === 1 && !spans[0].bold && !spans[0].italic && !spans[0].underline && !spans[0].code) {
-    return renderRun(text)
-  }
-  return (
-    <>
-      {spans.map((s, k) =>
-        s.code ? (
-          // `code` never combines with another mark, so this branch needs none
-          // of the others — see SPEC §13.1.
-          <code key={k} className="rounded-sm bg-bg-active px-1 py-0.5 font-mono text-[0.9em] text-text-primary">
-            {s.text}
-          </code>
-        ) : (
-          <span
-            key={k}
-            className={cn(
-              s.bold && 'font-semibold',
-              s.italic && 'italic',
-              s.underline && 'underline underline-offset-2'
-            )}
-          >
-            {renderRun(s.text)}
-          </span>
-        )
-      )}
-    </>
-  )
-}
 
 /**
  * One entry per referenced object, whichever notation it arrived in.
@@ -223,86 +174,127 @@ function dedupeReferences(refs: string[]): string[] {
  * §13.1's rule about `code` one level up, and it is why `renderLine` is not
  * applied to one.
  */
-export function BodySegments({
-  text,
-  renderLine,
-}: {
-  text: string
-  renderLine: (line: string) => ReactNode
-}) {
-  const segments = text ? parseBodySegments(text) : []
+/**
+ * A resolved body, laid out. One parse path, whichever content model it is in.
+ *
+ * `toRenderTree` (SPEC §13.5, `@estiva-app/protocol`) hands back a tree with
+ * marks decided and blocks decided — **nothing left to parse and nothing to
+ * interpolate**. That is where the safety lives: an app mapping this cannot
+ * accidentally render markup, because there is no markup in it. This component
+ * only creates elements and sets text.
+ *
+ * It replaced a version that parsed marker segments here and rendered a block
+ * document as raw JSON, because a block renderer would have been a second
+ * implementation of §13.3.
+ *
+ * `renderRun` is the seam between the two callers: Peek's own messages resolve
+ * mentions, `[Topic]` chips and `PEEK-`/`PR #` references inside a run, and
+ * another app's body renders the run as text. The marks are the protocol's and
+ * are shared; that token vocabulary is Peek's and is not.
+ */
+function withBreaks(text: string, renderRun: (run: string) => ReactNode): ReactNode {
+  // §13.5: "a `\n` inside `inline` text is a line break, in both content
+  // models... splitting on it is the consumer's whole obligation."
+  const lines = text.split('\n')
+  if (lines.length === 1) return renderRun(text)
+  return lines.map((line, i) => (
+    <span key={i}>
+      {i > 0 && <br />}
+      {renderRun(line)}
+    </span>
+  ))
+}
+
+function Inline({ runs, renderRun }: { runs?: RenderInline[]; renderRun: (run: string) => ReactNode }) {
   return (
     <>
-      {segments.map((seg, i) => {
-        // Lists are native ul/ol so sent messages and the composer share the
-        // exact same markers, indent, and item spacing (see index.css).
-        if (seg.type === 'bullet') {
-          return (
-            <ul key={i}>
-              {seg.items.map((item, j) => (
-                <li key={j} className="break-words">{renderLine(item)}</li>
-              ))}
-            </ul>
-          )
-        }
-        if (seg.type === 'numbered') {
-          return (
-            <ol key={i}>
-              {seg.items.map((item, j) => (
-                <li key={j} className="break-words">{renderLine(item)}</li>
-              ))}
-            </ol>
-          )
-        }
-        if (seg.type === 'heading') {
-          // Same sizes the composer's h1/h2 get in index.css.
-          return seg.level === 1 ? (
-            <h1 key={i}>{renderLine(seg.text)}</h1>
-          ) : (
-            <h2 key={i}>{renderLine(seg.text)}</h2>
-          )
-        }
-        if (seg.type === 'code') {
-          // A fence is literal by definition: no mentions, no marks, no
-          // reference chips. Scrolls on its own so a long line cannot widen
-          // the card.
-          return (
-            <pre
-              key={i}
-              className="overflow-x-auto rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
-              data-language={seg.language}
-            >
-              <code>{seg.lines.join('\n')}</code>
-            </pre>
-          )
-        }
-        if (seg.type === 'quote') {
-          // Native blockquote so sent messages and the composer share the
-          // exact same border/padding/color (see index.css).
-          return (
-            <blockquote key={i}>
-              <p>
-                {seg.lines.map((line, j) => (
-                  <span key={j}>
-                    {j > 0 && <br />}
-                    {renderLine(line)}
-                  </span>
-                ))}
-              </p>
-            </blockquote>
-          )
-        }
-        return (
-          <p key={i}>
-            {seg.lines.map((line, j) => (
-              <span key={j}>
-                {j > 0 && <br />}
-                {renderLine(line)}
-              </span>
-            ))}
-          </p>
+      {(runs ?? []).map((run, k) =>
+        run.marks.includes('code') ? (
+          // `code` never combines with another mark and its content is never
+          // parsed further — SPEC §13.1.
+          <code key={k} className="rounded-sm bg-bg-active px-1 py-0.5 font-mono text-[0.9em] text-text-primary">
+            {run.text}
+          </code>
+        ) : (
+          <span
+            key={k}
+            className={cn(
+              run.marks.includes('bold') && 'font-semibold',
+              run.marks.includes('italic') && 'italic',
+              run.marks.includes('underline') && 'underline underline-offset-2'
+            )}
+          >
+            {withBreaks(run.text, renderRun)}
+          </span>
         )
-      })}
+      )}
+    </>
+  )
+}
+
+function Block({ block, renderRun }: { block: RenderBlock; renderRun: (run: string) => ReactNode }) {
+  const inline = <Inline runs={block.inline} renderRun={renderRun} />
+  switch (block.type) {
+    // Lists are native ul/ol so sent messages and the composer share the exact
+    // same markers, indent, and item spacing (see index.css).
+    case 'bulletList':
+      return <ul>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} /></li>)}</ul>
+    case 'orderedList':
+      return <ol>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} /></li>)}</ol>
+    case 'heading':
+      // Same sizes the composer's h1/h2 get in index.css. Level 3 exists only
+      // in a block document — §13.2's marker dialect stops at `##`.
+      if (block.level === 1) return <h1>{inline}</h1>
+      if (block.level === 3) return <h3>{inline}</h3>
+      return <h2>{inline}</h2>
+    case 'codeBlock':
+      // A fence is literal by definition: no mentions, no marks, no reference
+      // chips. Scrolls on its own so a long line cannot widen the card.
+      return (
+        <pre
+          className="overflow-x-auto rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
+          data-language={block.language}
+        >
+          <code>{(block.inline ?? []).map((run) => run.text).join('')}</code>
+        </pre>
+      )
+    case 'blockquote':
+      // Native blockquote so sent messages and the composer share the exact
+      // same border/padding/color (see index.css).
+      return <blockquote><p>{inline}</p></blockquote>
+    case 'horizontalRule':
+      return <hr className="border-border-subtle" />
+    default:
+      /*
+        paragraph, and everything Peek has no design for — `table`,
+        `attachment`, `widget`, and a block type published after this was
+        written (`unknown`).
+
+        §13.3 is explicit: *"A reader encountering an unknown block type MUST
+        render that block's inline text rather than dropping it, and MUST NOT
+        drop the block silently."* A paragraph of its text is the honest
+        degradation; a blank is the PEE-10 failure, where an object that renders
+        empty is indistinguishable from one the reader may not see.
+      */
+      return <p data-block-type={block.type === 'paragraph' ? undefined : (block.typeName ?? block.type)}>{inline}</p>
+  }
+}
+
+export function RenderBlocks({
+  value,
+  format,
+  renderRun,
+}: {
+  value: string
+  format: RenderFormat
+  renderRun: (run: string) => ReactNode
+}) {
+  const blocks = value ? toRenderTree(value, format) : []
+  return (
+    <>
+      {blocks.map((block, i) => (
+        <Block key={i} block={block} renderRun={renderRun} />
+      ))}
     </>
   )
 }
@@ -338,7 +330,7 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedOb
   // paragraph that still takes a gap.
   return (
     <div data-message-body className="flex flex-col gap-1 text-sm text-text-secondary leading-[1.4] break-words">
-      <BodySegments text={text} renderLine={(line) => renderWithMentions(line, isTopicResolved)} />
+      <RenderBlocks value={text} format="marker" renderRun={(run) => renderTokens(run, isTopicResolved)} />
       {references.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={resolvedObjects?.[naddr]} />
       ))}
