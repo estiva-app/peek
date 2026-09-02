@@ -326,7 +326,7 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedOb
   // already says what the reference is, and says it in words.
   const text = stripNaddrs(body)
   // A message that was *only* a reference has nothing left to lay out.
-  // `BodySegments` emits nothing for an empty string rather than an empty
+  // `RenderBlocks` emits nothing for an empty string rather than an empty
   // paragraph that still takes a gap.
   return (
     <div data-message-body className="flex flex-col gap-1 text-sm text-text-secondary leading-[1.4] break-words">
