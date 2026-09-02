@@ -104,8 +104,20 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
         which surface to show, the way Ship's `#/o/` does — the entity type
         tells the *consumer* what it is holding, not the app what to do.
       */
-      ['web', `${appUrl.replace(/\/+$/, '')}/#/o/<bech32>`, 'naddr'],
-      ['web', `${appUrl.replace(/\/+$/, '')}/#/o/<bech32>`, 'nevent'],
+      /*
+        A path, not a hash. The hash form was published before Peek had any
+        routing at all, so it advertised `#/o/<bech32>` to every consumer in the
+        ecosystem while the app served nothing of the sort — the link opened
+        Peek, the hash was ignored, and the person landed on their desk with
+        nothing to say it had failed (PRO-11).
+
+        `/o/:ref` exists now and resolves both entity types to the topic that
+        holds them. Peek is served with an index.html fallback, so a deep path
+        survives a cold load; Ship's manifest uses a hash for the opposite
+        reason, its nginx has `try_files … =404` with no rewrite.
+      */
+      ['web', `${appUrl.replace(/\/+$/, '')}/o/<bech32>`, 'naddr'],
+      ['web', `${appUrl.replace(/\/+$/, '')}/o/<bech32>`, 'nevent'],
     ],
     content: JSON.stringify(manifestContent()),
   }
