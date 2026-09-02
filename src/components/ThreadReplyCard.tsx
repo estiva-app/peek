@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { MenuItem } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
@@ -10,7 +11,6 @@ import {
   IconDotsVertical,
   IconPaperclip,
   IconSquareForbid2,
-  IconChevronRight,
   IconX,
   IconAlertSquareRounded,
 } from '@tabler/icons-react'
@@ -24,7 +24,6 @@ import { Avatar } from './ui/Avatar'
 import ReactionPicker from './ReactionPicker'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { Divider } from './ui/Divider'
-import { PEOPLE } from '@/api'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { useIsTopicResolved } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
@@ -71,27 +70,15 @@ function ReplyMoreMenu({ onEdit, onDelete, currentHighlight, onHighlight, isOwnM
   return (
     <div className={cn('bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[180px] p-2 flex flex-col gap-2', className)}>
       <div className="flex flex-col">
-        {isOwnMessage && (
-          <div
-            className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
-            onClick={onEdit}
-          >
-            <span className="flex-1 text-sm text-text-secondary signal:text-text-primary">Edit message</span>
-          </div>
-        )}
+        {isOwnMessage && <MenuItem label="Edit message" onClick={onEdit} />}
         {onHighlight && (
           <div className="relative">
-            <div
-              ref={triggerRef}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
+            <MenuItem
+              label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
+              submenu
               onMouseEnter={openSub}
               onMouseLeave={closeSub}
-            >
-              <span className="flex-1 text-sm text-text-secondary signal:text-text-primary">
-                {currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
-              </span>
-              <IconChevronRight size={16} stroke={1.5} className="text-text-muted shrink-0" />
-            </div>
+            />
             {showHighlightSub && (
               <div
                 className={cn(
@@ -102,28 +89,22 @@ function ReplyMoreMenu({ onEdit, onDelete, currentHighlight, onHighlight, isOwnM
                 onMouseLeave={closeSub}
               >
                 {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
-                  <div
+                  <MenuItem
                     key={type}
-                    className={cn(
-                      'flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover',
-                      currentHighlight === type && 'bg-bg-hover'
-                    )}
+                    leading={<HighlightSwatch type={type} />}
+                    label={HIGHLIGHT_META[type].label}
+                    selected={currentHighlight === type}
                     onClick={() => onHighlight(type)}
-                  >
-                    <HighlightSwatch type={type} />
-                    <span className="text-sm text-text-secondary signal:text-text-primary">{HIGHLIGHT_META[type].label}</span>
-                  </div>
+                  />
                 ))}
                 {currentHighlight && (
                   <>
-                    <div className="h-px bg-border-subtle mx-1 my-1" />
-                    <div
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover"
+                    <Divider className="mx-1 my-1" />
+                    <MenuItem
+                      leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
+                      label="Remove"
                       onClick={() => onHighlight(undefined)}
-                    >
-                      <IconX size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-                      <span className="text-sm text-text-secondary signal:text-text-primary">Remove</span>
-                    </div>
+                    />
                   </>
                 )}
               </div>
@@ -134,12 +115,7 @@ function ReplyMoreMenu({ onEdit, onDelete, currentHighlight, onHighlight, isOwnM
       {isOwnMessage && (
         <>
           <Divider className="mx-0" />
-          <div
-            className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
-            onClick={onDelete}
-          >
-            <span className="flex-1 text-sm text-error-default">Delete</span>
-          </div>
+          <MenuItem label="Delete" destructive onClick={onDelete} />
         </>
       )}
     </div>

@@ -7,7 +7,8 @@ import { ResolutionBlock, extractResolution } from '@/extensions/resolution'
 import { HighlightTag, extractHighlightType } from '@/extensions/highlight'
 import { IconPaperclip, IconSquareForbid2, IconArrowUp, IconHighlight, IconX, IconLoader2, IconAlertCircle } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
-import { SectionLabel } from './SectionHeader'
+import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
+import { Divider } from './Divider'
 import { HighlightSwatch } from './HighlightPill'
 import { FrameArt } from './FrameArt'
 import { FrameLightbox } from '../FrameLightbox'
@@ -496,69 +497,50 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
         <div className="absolute left-0 right-0 bottom-full mb-1 z-50">
           <div className="w-[244px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2 flex flex-col gap-2">
             {highlightItems.length > 0 && (
-              <div className="flex flex-col">
-                <div className="flex items-center h-[32px] px-2">
-                  <SectionLabel>Highlights</SectionLabel>
-                </div>
+              <MenuSection label="Highlights">
                 {highlightItems.map((item) => {
                   const globalIdx = filteredSlashItems.indexOf(item)
                   return (
-                    <div
+                    <MenuItem
                       key={item.type}
-                      className={cn(
-                        'flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors',
-                        globalIdx === slashHighlight ? 'bg-bg-hover' : ''
-                      )}
+                      leading={<HighlightSwatch type={item.type} />}
+                      label={item.label}
+                      selected={globalIdx === slashHighlight}
+                      trailing={globalIdx === slashHighlight ? <EnterHint /> : undefined}
                       onMouseEnter={() => setSlashHighlight(globalIdx)}
                       onMouseDown={(e) => {
                         e.preventDefault()
                         handleSlashSelect(item)
                       }}
-                    >
-                      <HighlightSwatch type={item.type} />
-                      <span className="flex-1 text-sm text-text-secondary signal:text-text-primary">{item.label}</span>
-                      {globalIdx === slashHighlight && (
-                        <div className="flex items-center gap-2 shrink-0 text-text-muted">
-                          <span className="text-[12px] leading-[1.2]">↩</span>
-                          <span className="text-[9px] font-medium leading-[1.15] signal:font-mono signal:text-[9.5px] signal:tracking-[0.04em]">Enter</span>
-                        </div>
-                      )}
-                    </div>
+                    />
                   )
                 })}
-              </div>
+              </MenuSection>
             )}
-            {highlightItems.length > 0 && shortcutItems.length > 0 && (
-              <div className="h-px bg-border-subtle mx-0" />
-            )}
+            {highlightItems.length > 0 && shortcutItems.length > 0 && <Divider className="mx-0" />}
             {shortcutItems.length > 0 && (
-              <div className="flex flex-col">
-                <div className="flex items-center h-[32px] px-2">
-                  <SectionLabel>Shortcuts</SectionLabel>
-                </div>
+              <MenuSection label="Shortcuts">
                 {shortcutItems.map((item) => {
                   const globalIdx = filteredSlashItems.indexOf(item)
                   return (
-                    <div
+                    <MenuItem
                       key={item.trigger}
-                      className={cn(
-                        'flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors',
-                        globalIdx === slashHighlight ? 'bg-bg-hover' : ''
-                      )}
+                      label={item.label}
+                      trailing={
+                        <kbd className="inline-flex items-center justify-center bg-bg-inset border border-border-strong rounded-sm px-1 py-[1px] text-[11px] text-text-secondary leading-[1.2] min-w-[18px] shrink-0">
+                          {item.trigger}
+                        </kbd>
+                      }
+                      selected={globalIdx === slashHighlight}
                       onMouseEnter={() => setSlashHighlight(globalIdx)}
                       onMouseDown={(e) => {
                         e.preventDefault()
                         handleSlashSelect(item)
                       }}
-                    >
-                      <span className="flex-1 text-sm text-text-secondary signal:text-text-primary">{item.label}</span>
-                      <kbd className="inline-flex items-center justify-center bg-bg-inset border border-border-strong rounded-sm px-1 py-[1px] text-[11px] text-text-secondary leading-[1.2] min-w-[18px] shrink-0">
-                        {item.trigger}
-                      </kbd>
-                    </div>
+                    />
                   )
                 })}
-              </div>
+              </MenuSection>
             )}
           </div>
         </div>
@@ -569,18 +551,16 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
         <div ref={highlightPickerRef} className="absolute left-0 bottom-full mb-1 z-50">
           <div className="w-[180px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2">
             {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
-              <div
+              <MenuItem
                 key={type}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover"
+                leading={<HighlightSwatch type={type} />}
+                label={HIGHLIGHT_META[type].label}
                 onMouseDown={(e) => {
                   e.preventDefault()
                   insertHighlightTag(type)
                   setShowHighlightPicker(false)
                 }}
-              >
-                <HighlightSwatch type={type} />
-                <span className="text-sm text-text-secondary signal:text-text-primary">{HIGHLIGHT_META[type].label}</span>
-              </div>
+              />
             ))}
           </div>
         </div>

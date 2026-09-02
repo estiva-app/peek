@@ -1,6 +1,2 @@
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
+/** Peek's `cn` is the shared one (2026-09-01) — same clsx + tailwind-merge body it always had; this file keeps the import path. */
+export { cn } from '@estiva-app/ui'

@@ -1,7 +1,13 @@
-import { NavLink, useLocation } from 'react-router-dom'
-import { cn } from '@/lib/utils'
-import { type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { type ReactNode, type MouseEvent } from 'react'
+import { RailItem } from '@estiva-app/ui'
 
+/**
+ * Peek's rail entry: the shared RailItem, with the route-matching that a
+ * shared component cannot know (2026-09-02). The tile and its label moved
+ * to the package; what stayed here is which routes light it up, and the
+ * router navigation.
+ */
 interface NavItemProps {
   to: string
   icon: ReactNode
@@ -14,38 +20,25 @@ interface NavItemProps {
 
 export function NavItem({ to, icon, label, match }: NavItemProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const matchPrefixes = match === undefined ? [to] : Array.isArray(match) ? match : [match]
   const isActive = matchPrefixes.some(
     (prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`),
   )
 
   return (
-    <NavLink to={to} className="group flex flex-col gap-0.5 items-center px-2 py-0.5 w-full">
-      <>
-        <div
-          className={cn(
-            'flex items-center justify-center p-2 rounded-lg transition-colors',
-            isActive ? 'bg-bg-selected' : 'group-hover:bg-bg-hover'
-          )}
-        >
-          <span
-            className={cn(
-              'flex items-center transition-colors',
-              isActive ? 'text-text-primary signal:text-[color:var(--text-interactive)]' : 'text-text-secondary'
-            )}
-          >
-            {icon}
-          </span>
-        </div>
-        <span
-          className={cn(
-            'text-[9px] font-medium text-center leading-[115%]',
-            isActive ? 'text-text-primary' : 'text-text-secondary'
-          )}
-        >
-          {label}
-        </span>
-      </>
-    </NavLink>
+    <RailItem
+      href={to}
+      icon={icon}
+      label={label}
+      active={isActive}
+      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+        // A plain left click navigates in place; modified clicks keep the
+        // browser's open-in-new-tab behaviour, as the router link allowed.
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        navigate(to)
+      }}
+    />
   )
 }

@@ -1,18 +1,28 @@
 import { useCallback } from 'react'
+import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
 import { Avatar } from './Avatar'
-import { cn } from '@/lib/utils'
 import { type Person } from '@/api'
 
-interface MentionMenuProps {
+/**
+ * The people picker the composer's @-mention opens. Rows are the shared
+ * MenuItem at its tall size (2026-09-01): the face, the name, the role line,
+ * and the shared EnterHint while highlighted. Keyboard follows the highlight
+ * through the row ref, as before.
+ */
+export function MentionMenu({
+  people,
+  highlight,
+  isUrgent,
+  onSelect,
+  onHighlightChange,
+}: {
   people: Person[]
   highlight: number
   isUrgent: boolean
   onSelect: (person: Person) => void
   onHighlightChange: (index: number) => void
-}
-
-export function MentionMenu({ people, highlight, isUrgent, onSelect, onHighlightChange }: MentionMenuProps) {
-  const scrollRef = useCallback((el: HTMLDivElement | null) => {
+}) {
+  const scrollRef = useCallback((el: HTMLElement | null) => {
     el?.scrollIntoView({ block: 'nearest' })
   }, [])
 
@@ -21,47 +31,26 @@ export function MentionMenu({ people, highlight, isUrgent, onSelect, onHighlight
   return (
     <div className="w-[658px] max-h-[360px] overflow-y-auto bg-bg-elevated border border-border-default rounded-lg shadow-lg">
       <div className="p-2">
-        {/* Section header */}
-        <div className="flex items-center h-8 px-3 py-1">
-          <span className="text-[12px] font-medium leading-none text-text-secondary signal:font-mono signal:text-[10px] signal:uppercase signal:tracking-[0.14em]">
-            {isUrgent ? 'Urgent mention' : 'People'}
-          </span>
-        </div>
-
-        {/* Rows */}
-        {people.map((person, i) => (
-          <div
-            key={person.id}
-            ref={i === highlight ? scrollRef : undefined}
-            className={cn(
-              'flex items-center gap-3 h-12 px-3 py-1.5 rounded-lg cursor-pointer transition-colors',
-              i === highlight ? 'bg-bg-hover' : ''
-            )}
-            onMouseEnter={() => onHighlightChange(i)}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              onSelect(person)
-            }}
-          >
-            <Avatar size={32} alt={person.name} />
-
-            <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
-              <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">
-                {person.name}
-              </div>
-              <div className="text-[12px] leading-[1.2] text-text-secondary truncate">
-                {person.role}
-              </div>
-            </div>
-
-            {i === highlight && (
-              <div className="flex items-center gap-2 shrink-0 text-text-muted">
-                <span className="text-[12px] leading-[1.2]">↩</span>
-                <span className="text-[9px] font-medium leading-[1.15] signal:font-mono signal:text-[9.5px] signal:tracking-[0.04em]">Enter</span>
-              </div>
-            )}
-          </div>
-        ))}
+        <MenuSection label={isUrgent ? 'Urgent mention' : 'People'} className="px-3 py-1">
+          {people.map((person, i) => (
+            <MenuItem
+              key={person.id}
+              size="tall"
+              className="h-12"
+              ref={i === highlight ? scrollRef : undefined}
+              leading={<Avatar size={32} alt={person.name} />}
+              label={person.name}
+              description={person.role}
+              selected={i === highlight}
+              trailing={i === highlight ? <EnterHint /> : undefined}
+              onMouseEnter={() => onHighlightChange(i)}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                onSelect(person)
+              }}
+            />
+          ))}
+        </MenuSection>
       </div>
     </div>
   )

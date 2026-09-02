@@ -11,6 +11,8 @@ import type { ConversationData, HighlightType, ReactionData, ResolutionEvent, Th
 import { PinnedMessage } from './ui/PinnedMessage'
 import { SkeletonConversationList } from './ui/Skeleton'
 import { partitionRepliesAroundPromotion } from '@/lib/threadPartition'
+import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
+import { findNaddrs } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { useTopicPath } from '@/lib/useTopicPath'
 
@@ -243,6 +245,29 @@ export function ThreadPanel({
 }: ThreadPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pathForTopic = useTopicPath()
+
+  /*
+    Publish what this thread refers to, so Cmd+K can offer those objects as the
+    target of a field-setting action (PEE-3). Both notations are collected for
+    the reason `MessageBody` merges them: a message composed here carries
+    `nostr:naddr1…` in its body, and the same message read back off the relay
+    carries a plain address on an `a` tag. Newest first, because the thing just
+    discussed is the likeliest target.
+  */
+  const messages = [conversation, ...replies, ...sentReplies]
+  const references = messages.flatMap((m) => [...(m.nostrReferences ?? []), ...findNaddrs(m.body ?? '')])
+  const referenceKey = references.join('|')
+  const bodyKey = messages.map((m) => m.body ?? '').join('\u0000')
+  useEffect(() => {
+    const unique = [...new Set(referenceKey ? referenceKey.split('|') : [])]
+    registerActiveConversation({
+      references: unique,
+      messages: bodyKey ? bodyKey.split('\u0000') : [],
+    })
+    return unregisterActiveConversation
+    // Joined keys rather than the arrays: a new array identity every render
+    // would re-register on every keystroke in the composer.
+  }, [referenceKey, bodyKey])
 
   // Delayed skeleton: switching threads keeps the panel mounted, but the
   // replies query reloads and a full skeleton flash reads as the panel

@@ -1,21 +1,7 @@
-import type { ReactNode } from 'react'
-
 /**
- * A labelled property row — "Status", "Lead", and whatever else an app declares.
- *
- * Extracted from the Files panel so the topic details dialog can show a project
- * the same way the panel does (PEE-2). Two renderings of one thing is how they
- * drift, and these two sit a click apart.
- *
- * The 68px label column is what lines the values up into a column of their own;
- * `--text-secondary` rather than muted because a property label is content, not
- * a placeholder.
+ * Peek's Property is the shared one (2026-09-01). The label column keeps its
+ * 68px; the label itself moves from `text-xs` — a Tailwind default that was
+ * never the ramp — to the caption token, and the package brings the
+ * `stacked` layout Ship's rail grew. This file only keeps the import path.
  */
-export function Property({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-[68px] shrink-0 text-xs text-text-secondary">{label}</span>
-      {children}
-    </div>
-  )
-}
+export { Property, type PropertyProps } from '@estiva-app/ui'

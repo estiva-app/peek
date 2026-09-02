@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import { Menu } from '@estiva-app/ui'
 import { hasConvex } from '@/api'
 import { useDebug } from '@/lib/debug'
 import { needsAttention } from '@/nostr/readStateDiff'
@@ -11,54 +11,35 @@ interface DebugMenuProps {
 }
 
 export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
-  const ref = useRef<HTMLDivElement>(null)
   const { state, setDesk, setUnreads, setHuddles, setReadState } = useDebug()
 
+  /*
+   * The shared shell owns the exits now, and it arms its outside-mousedown
+   * dismiss during the very event that opens this menu (React flushes effects
+   * during a discrete event) — so a close in the same tick as mount is the
+   * opening mousedown reaching `document`, not a person. Ignore it: the
+   * property the outside-click test pins, kept from the pre-shell fix because
+   * it does not depend on who opens the menu. The known openers ALSO swallow
+   * their mousedown (see TopBar), which spares even the invisible flicker.
+   */
+  const armed = useRef(false)
   useEffect(() => {
-    const click = (e: MouseEvent) => {
-      if (ref.current?.contains(e.target as Node)) return
-      if (anchorEl?.contains(e.target as Node)) return
-      onClose()
-    }
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    /*
-     * The mousedown listener is attached a tick late, so it cannot see the
-     * click that opened this menu.
-     *
-     * React flushes effects during a discrete event, so a listener added here
-     * synchronously catches the very mousedown still bubbling towards
-     * `document` — and since the opener is usually not inside `ref` or
-     * `anchorEl`, the menu closes ~1ms after it opens. That is invisible: it
-     * reads as the button doing nothing at all.
-     *
-     * It survived while the opener WAS the anchor, because `anchorEl.contains`
-     * bailed out. Moving the anchor to the avatar broke that accident, and
-     * deferring is the fix that does not depend on who opens it.
-     */
-    const armed = setTimeout(() => document.addEventListener('mousedown', click), 0)
-    document.addEventListener('keydown', key)
-    return () => {
-      clearTimeout(armed)
-      document.removeEventListener('mousedown', click)
-      document.removeEventListener('keydown', key)
-    }
-  }, [anchorEl, onClose])
+    const t = setTimeout(() => {
+      armed.current = true
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
 
   if (!anchorEl) return null
   const rect = anchorEl.getBoundingClientRect()
 
-  return createPortal(
-    <div
-      ref={ref}
-      style={{
-        position: 'fixed',
-        top: rect.bottom + 6,
-        right: window.innerWidth - rect.right,
-        zIndex: 50,
+  return (
+    <Menu
+      onClose={() => {
+        if (armed.current) onClose()
       }}
-      className="w-[300px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2 flex flex-col gap-1"
+      position={{ top: rect.bottom + 6, right: window.innerWidth - rect.right }}
+      className="w-[300px] gap-1"
     >
       {/* Desk, Unreads and Huddles drive the MOCK dataset — on the real app they
           toggle nothing, and showing them would suggest otherwise (issue #6). */}
@@ -165,8 +146,7 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
           onChange={(v) => setHuddles('variant', v)}
         />
       </DebugSection>}
-    </div>,
-    document.body
+    </Menu>
   )
 }
 

@@ -1,19 +1,29 @@
-﻿import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   IconCircleDashed,
   IconCircleCheck,
   IconPlus,
   IconArrowBack,
   IconHighlight,
-  IconChevronRight,
   IconX,
 } from '@tabler/icons-react'
+import { MenuItem, MenuSection } from '@estiva-app/ui'
 import { Divider } from './ui/Divider'
 import { HighlightSwatch } from './ui/HighlightPill'
 import { cn } from '@/lib/utils'
-import { SectionLabel } from './ui/SectionHeader'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
 
+/**
+ * The conversation's ⋯ menu. Its rows are the shared MenuItem now
+ * (2026-09-01) — including the highlight trigger, which needs the hover
+ * handlers MenuItem passes through, and the swatch rows in the submenu.
+ *
+ * The container is deliberately not the shared Menu shell: this panel is
+ * placed and dismissed by its caller (the quick-menu opens it against a
+ * measured rect and owns when it goes), and the hover-timed submenu with its
+ * left-flip is this menu's own. If a second menu ever needs a submenu, that
+ * is the day the shell learns it.
+ */
 interface ConversationMoreMenuProps {
   isTopic?: boolean
   isResolved?: boolean
@@ -31,44 +41,6 @@ interface ConversationMoreMenuProps {
   onViewDetails?: () => void
   onDelete?: () => void
   className?: string
-}
-
-function MenuItem({
-  icon,
-  label,
-  shortcut,
-  destructive,
-  onClick,
-}: {
-  icon?: React.ReactNode
-  label: string
-  shortcut?: string
-  destructive?: boolean
-  onClick?: () => void
-}) {
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full',
-      )}
-      onClick={onClick}
-    >
-      {icon && <span className="shrink-0">{icon}</span>}
-      <span
-        className={cn(
-          'flex-1 text-sm truncate',
-          destructive ? 'text-error-default' : 'text-text-secondary signal:text-text-primary'
-        )}
-      >
-        {label}
-      </span>
-      {shortcut && (
-        <kbd className="inline-flex items-center justify-center bg-bg-inset border border-border-strong rounded-sm px-1 py-[1px] text-caption text-text-secondary shrink-0">
-          {shortcut}
-        </kbd>
-      )}
-    </div>
-  )
 }
 
 export function ConversationMoreMenu({
@@ -118,22 +90,16 @@ export function ConversationMoreMenu({
         className
       )}
     >
-      <div className="flex flex-col">
-        <div className="flex h-[32px] items-center px-2">
-          <SectionLabel>Utilities</SectionLabel>
-        </div>
-
+      <MenuSection label="Utilities">
         {isTopic ? (
-          <>
-            <MenuItem
-              icon={<IconArrowBack size={16} stroke={1.5} className="text-text-secondary" />}
-              label="Revert to conversation"
-              onClick={onRevertToConversation}
-            />
-          </>
+          <MenuItem
+            leading={<IconArrowBack size={16} stroke={1.5} className="text-text-secondary" />}
+            label="Revert to conversation"
+            onClick={onRevertToConversation}
+          />
         ) : showCreateTopic ? (
           <MenuItem
-            icon={<IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />}
+            leading={<IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />}
             label="Start topic"
             onClick={onCreateTopic}
           />
@@ -141,13 +107,13 @@ export function ConversationMoreMenu({
 
         {isResolved ? (
           <MenuItem
-            icon={<IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />}
+            leading={<IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />}
             label="Reopen"
             onClick={onReopen}
           />
         ) : (
           <MenuItem
-            icon={<IconCircleCheck size={16} stroke={1.5} className="text-text-secondary" />}
+            leading={<IconCircleCheck size={16} stroke={1.5} className="text-text-secondary" />}
             label="Resolve"
             shortcut="→"
             onClick={onResolve}
@@ -155,25 +121,20 @@ export function ConversationMoreMenu({
         )}
 
         <MenuItem
-          icon={<IconPlus size={16} stroke={1.5} className="text-text-secondary" />}
+          leading={<IconPlus size={16} stroke={1.5} className="text-text-secondary" />}
           label="Open work"
           onClick={onOpenWork}
         />
 
         {onHighlight && (
-          <div className="relative">
-            <div
-              ref={triggerRef}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover w-full"
+          <div className="relative" ref={triggerRef}>
+            <MenuItem
+              leading={<IconHighlight size={16} stroke={1.5} className="text-text-secondary" />}
+              label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
+              submenu
               onMouseEnter={openSub}
               onMouseLeave={closeSub}
-            >
-              <IconHighlight size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-              <span className="flex-1 text-sm text-text-secondary signal:text-text-primary">
-                {currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
-              </span>
-              <IconChevronRight size={16} stroke={1.5} className="text-text-muted shrink-0" />
-            </div>
+            />
             {showHighlightSub && (
               <div
                 className={cn(
@@ -184,35 +145,29 @@ export function ConversationMoreMenu({
                 onMouseLeave={closeSub}
               >
                 {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
-                  <div
+                  <MenuItem
                     key={type}
-                    className={cn(
-                      'flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover',
-                      currentHighlight === type && 'bg-bg-hover'
-                    )}
+                    leading={<HighlightSwatch type={type} />}
+                    label={HIGHLIGHT_META[type].label}
+                    selected={currentHighlight === type}
                     onClick={() => onHighlight(type)}
-                  >
-                    <HighlightSwatch type={type} />
-                    <span className="text-sm text-text-secondary signal:text-text-primary">{HIGHLIGHT_META[type].label}</span>
-                  </div>
+                  />
                 ))}
                 {currentHighlight && (
                   <>
-                    <div className="h-px bg-border-subtle mx-1 my-1" />
-                    <div
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-bg-hover"
+                    <Divider className="mx-1 my-1" />
+                    <MenuItem
+                      leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
+                      label="Remove"
                       onClick={() => onHighlight(undefined)}
-                    >
-                      <IconX size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-                      <span className="text-sm text-text-secondary signal:text-text-primary">Remove</span>
-                    </div>
+                    />
                   </>
                 )}
               </div>
             )}
           </div>
         )}
-      </div>
+      </MenuSection>
 
       <Divider className="mx-0" />
 
