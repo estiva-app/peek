@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { canPrefill, prefillAvailability, promptForObject } from './promptApi'
+import { SAMPLING, canPrefill, prefillAvailability, promptForObject } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -133,5 +133,82 @@ describe('promptForObject', () => {
       create: async () => ({ prompt: async () => '[{"title":"x"}]', destroy: () => {} }),
     })
     expect(await promptForObject('go', schema)).toBeNull()
+  })
+})
+
+/**
+ * The bug these guard, measured in Chrome on 2026-09-02.
+ *
+ * `create()` was called with **no options at all** and the browser threw:
+ *
+ * > *The sampling options are incompatible with speculative decoding (MTP).
+ * > Prompt API sessions must specify compatible sampling options, i.e.
+ * > `samplingMode:'most-predictable'` or `topK:1` or `temperature:0`.*
+ *
+ * `promptForObject` caught it and returned null, so prefill silently never ran
+ * — indistinguishable from the no-model case PEE-6 deliberately makes silent.
+ * The old tests passed throughout, because their stub accepted any `create()`.
+ * These assert the argument, which is the thing that was wrong.
+ */
+describe('sampling options are required, not optional (measured in Chrome)', () => {
+  const schema = { type: 'object', properties: { title: { type: 'string' } } }
+  const CHROME_REFUSAL =
+    'The sampling options are incompatible with speculative decoding (MTP). ' +
+    "Prompt API sessions must specify compatible sampling options, i.e. `samplingMode:'most-predictable'`" +
+    ' or `topK:1` or `temperature:0`.'
+
+  it('never asks for a session without them', async () => {
+    /*
+      Typed with `vi.fn<T>`, not `async () => …`: a zero-parameter mock gives
+      `mock.calls` the tuple type `[]`, so reading `calls[0][0]` is a type
+      error vitest never sees — it strips types. `npm run build` catches it,
+      which is exactly what happened here. `CommandLauncher.live.test.tsx`
+      documents the same trap.
+    */
+    const create = vi.fn<(options?: unknown) => Promise<{ prompt: () => Promise<string>; destroy: () => void }>>(
+      async () => ({ prompt: async () => '{"title":"x"}', destroy: () => {} }),
+    )
+    stubModel({ availability: async () => 'available', create: create as unknown as Stub['create'] })
+
+    await promptForObject('go', schema)
+    expect(create).toHaveBeenCalled()
+    const passed = create.mock.calls[0]?.[0] as Record<string, unknown> | undefined
+    expect(passed).toBeDefined()
+    // Whichever spelling is first, it must be one the browser named.
+    expect(Object.keys(passed ?? {}).length).toBeGreaterThan(0)
+    expect(passed).toEqual(SAMPLING[0])
+  })
+
+  it('asks for the most predictable output, because it fills a form to be published', async () => {
+    // Sampling creatively over a colleague's conversation is not a feature.
+    expect(SAMPLING[0]).toEqual({ samplingMode: 'most-predictable' })
+  })
+
+  it('falls back when a build refuses the first spelling', async () => {
+    /*
+      `{temperature: 0, topK: 1}` was refused in the same measurement that
+      refused no-options, so the list is tried in order rather than assumed.
+    */
+    const create = vi.fn(async (options: unknown) => {
+      if (JSON.stringify(options) === JSON.stringify(SAMPLING[0])) throw new Error(CHROME_REFUSAL)
+      return { prompt: async () => '{"title":"x"}', destroy: () => {} }
+    })
+    stubModel({ availability: async () => 'available', create: create as unknown as Stub['create'] })
+
+    expect(await promptForObject('go', schema)).toEqual({ title: 'x' })
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(create.mock.calls[1]?.[0]).toEqual(SAMPLING[1])
+  })
+
+  it('gives up quietly when every spelling is refused', async () => {
+    // A browser that accepts none simply gets no prefill — the same outcome as
+    // no model, and never an error a person has to read.
+    const create = vi.fn<(options?: unknown) => Promise<never>>(async () => {
+      throw new Error(CHROME_REFUSAL)
+    })
+    stubModel({ availability: async () => 'available', create: create as unknown as Stub['create'] })
+
+    expect(await promptForObject('go', schema)).toBeNull()
+    expect(create).toHaveBeenCalledTimes(SAMPLING.length)
   })
 })
