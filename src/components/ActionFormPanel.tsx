@@ -35,7 +35,17 @@ import { TextInput } from './ui/TextInput'
  */
 
 export interface ActionFormPanelProps {
-  app: LauncherApp
+  /**
+   * The scoped app, whose declared vocabularies feed `enum` fields.
+   *
+   * Optional since PEE-3: a field-setting action is reached from the global
+   * level with an object as its target rather than an app as its scope, and
+   * its vocabulary comes off the resolved action instead — see `vocabularies`.
+   */
+  app?: LauncherApp
+  /** Live vocabularies, keyed by field key. Overrides the app's declared ones,
+   *  the way `parentOptions` does for a `parent` control. */
+  vocabularies?: Record<string, VocabOption[]>
   action: LauncherAction
   /** Live options for `parent` fields, keyed by field key. Overrides the
    *  registry's mock list — the launcher passes real topics for Peek. */
@@ -48,6 +58,7 @@ export interface ActionFormPanelProps {
 
 export function ActionFormPanel({
   app,
+  vocabularies,
   action,
   parentOptions,
   initialValues,
@@ -90,7 +101,8 @@ export function ActionFormPanel({
   }
 
   const optionsFor = (field: FormField): VocabOption[] => {
-    if (field.control === 'enum') return app.vocabularies[field.vocabulary ?? ''] ?? []
+    if (field.control === 'enum')
+      return vocabularies?.[field.key] ?? app?.vocabularies[field.vocabulary ?? ''] ?? []
     if (field.control === 'parent') {
       const live = parentOptions?.[field.key]
       return live && live.length > 0 ? live : (field.parentOptions ?? [])

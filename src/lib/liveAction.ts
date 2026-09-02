@@ -132,3 +132,70 @@ export function splitSubmission(values: Record<string, string>): {
   const { [PARENT_FIELD]: parent, ...properties } = values
   return { ...(parent ? { parent } : {}), properties }
 }
+
+/**
+ * A **field-setting** action bound to an object that already exists (PEE-3).
+ *
+ * > **Katerina, 2026-08-19** — *"it would also be useful to assign existing
+ * > issue, not just create new one"*
+ *
+ * `launcherActionFrom` above returns null for these, and said why: *"a change
+ * or a comment is one control and the launcher is not where it belongs."* That
+ * was right while there was no way to choose a target — a change needs one, and
+ * an action list with nothing to apply it to is a form that cannot succeed.
+ * PEE-3 supplies the target: the objects the open conversation already refers
+ * to. So the action and its target are resolved together and offered as one
+ * row, and this converts that pair.
+ *
+ * One field, because a change **is** one control — the earlier comment's point
+ * survives, it just no longer rules the launcher out. `ActionFormPanel` draws
+ * it with no changes, which is the bar `launcherActions.ts` set.
+ *
+ * `current` becomes the control's default, so a status select opens on the
+ * status the object actually has rather than on the vocabulary's first entry.
+ * Returns null for `form` (that is the other function) and for `text`, whose
+ * one control is a comment box and belongs in the thread rather than here.
+ */
+export function changeActionFrom(
+  action: ResolvedAction,
+  target: { address: string; label: string },
+): LauncherAction | null {
+  if (action.control !== 'select' && action.control !== 'pubkey') return null
+  if (action.control === 'select' && !action.options?.length) return null
+
+  const key = action.field ?? 'value'
+  const field: FormField = {
+    key,
+    label: labelFor(action.field ?? action.label),
+    control: action.control === 'pubkey' ? 'pubkey' : 'enum',
+    required: true,
+    declaredToday: true,
+    ...(action.options?.length
+      ? {
+          vocabulary: key,
+          // The value it holds right now, not the vocabulary's first entry.
+          defaultValue: action.current ?? action.options[0]?.value,
+        }
+      : {}),
+  }
+
+  return {
+    id: action.id,
+    label: action.label,
+    fields: [field],
+    submitLabel: action.label,
+    declaredToday: true,
+    target: target.address,
+    targetLabel: target.label,
+  }
+}
+
+/**
+ * The vocabulary a converted change action needs, keyed the way
+ * `ActionFormPanel` looks one up — by the field key, which for a change is the
+ * manifest's own field name.
+ */
+export function changeVocabulariesFrom(action: ResolvedAction): Record<string, { value: string; label: string }[]> {
+  if (!action.options?.length) return {}
+  return { [action.field ?? 'value']: action.options.map((o) => ({ value: o.value, label: o.label })) }
+}
