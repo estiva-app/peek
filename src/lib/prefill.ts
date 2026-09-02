@@ -2,10 +2,20 @@
  * Prefilling a launcher form from the conversation (PEE-5).
  *
  * **The insight the whole feature rests on:** a manifest action's `input` is
- * already a JSON Schema, and Chrome's Prompt API takes a JSON Schema as
+ * already a JSON Schema, and the Prompt API takes a JSON Schema as
  * `responseConstraint`. So the same declaration that draws the form constrains
  * the model — no mapping layer, no per-app prompt engineering, and an HR tool
  * declaring `add-candidate` gets prefill on the day it publishes its manifest.
+ *
+ * **The second half of that is conditional, and PEE-5 assumed it was not.**
+ * Measured in Chrome on 2026-09-02: a build with speculative decoding (MTP)
+ * enabled *refuses* `responseConstraint` outright, while simultaneously
+ * requiring explicit sampling options for the same reason. So the declaration
+ * cannot always be the constraint. What survives is the more important half —
+ * the fields asked for are still generated from the declaration, as words
+ * rather than as a schema (`promptApi`'s `jsonHint`), so an app nobody here
+ * wrote still gets prefill the day it publishes a manifest. The elegance was
+ * conditional; the interoperability was not.
  *
  * The schema here is rebuilt from the **fields the form actually drew**
  * (`FormField[]`) rather than from the manifest's raw `input`. The runtime does
