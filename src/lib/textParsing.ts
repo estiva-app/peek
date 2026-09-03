@@ -80,35 +80,17 @@ export function setMentionNames(names: string[]) {
   INLINE_TOKEN_RE = _buildInlineTokenRe()
 }
 
-// ── External references (auto-linked) ──
-//
-// Text patterns that clearly point at something in a connected app become
-// clickable reference chips in read-only message bodies (same pill treatment
-// as [file] mentions, plus a pointer cursor + hover underline).
-//
-// Order matters: the worded forms ("Zendesk ticket #48821", "PR #482",
-// "Build #4821") must come before the bare `#123` fallback so the context
-// word is captured as part of the chip label.
-
-const _referenceAlternation = [
-  '(?:Zendesk )?[Tt]icket #\\d+',
-  'PR #\\d+',
-  '[Bb]uild #\\d+',
-  'PEEK-\\d+',
-  '#\\d+(?!\\d)',
-].join('|')
-
 /** Bare http(s) URL. Listed FIRST in the tokenizer so a URL is matched
- *  whole (greedily to the next whitespace) before its inner `#123` etc. can
- *  be mistaken for a reference. */
+ *  whole (greedily to the next whitespace) before an inner `@` or `[` can
+ *  be mistaken for a mention. */
 const _urlPattern = 'https?:\\/\\/[^\\s]+'
 
-/** Tokenizer for read-only rendering: URLs, mentions, [refs], and external
- *  references. Single capture group so String.split() interleaves cleanly.
+/** Tokenizer for read-only rendering: URLs, mentions and [refs].
+ *  Single capture group so String.split() interleaves cleanly.
  *  Rebuilt alongside MENTION_RE when the workspace directory changes. */
 function _buildInlineTokenRe(): RegExp {
   return new RegExp(
-    `(${_urlPattern}|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\]|${_referenceAlternation})`,
+    `(${_urlPattern}|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\])`,
     'g'
   )
 }
@@ -142,33 +124,6 @@ export function findUrls(body: string): string[] {
     if (url && !out.includes(url.href)) out.push(url.href)
   }
   return out
-}
-
-export type ReferenceKind = 'linear' | 'github' | 'build' | 'ticket'
-
-export interface ReferenceMatch {
-  kind: ReferenceKind
-  href: string
-}
-
-/** Classify a token produced by INLINE_TOKEN_RE as an external reference.
- *  Returns null for mentions/brackets/plain text. Hrefs are plausible
- *  destinations in the connected apps (prototype: links are inert). */
-export function matchReference(part: string): ReferenceMatch | null {
-  const num = part.match(/\d+/)?.[0]
-  if (/^PEEK-\d+$/.test(part)) {
-    return { kind: 'linear', href: `https://linear.app/peek/issue/${part}` }
-  }
-  if (/^(?:Zendesk )?[Tt]icket #\d+$/.test(part)) {
-    return { kind: 'ticket', href: `https://peek.zendesk.com/agent/tickets/${num}` }
-  }
-  if (/^[Bb]uild #\d+$/.test(part)) {
-    return { kind: 'build', href: `https://github.com/peek/peek/actions/runs/${num}` }
-  }
-  if (/^(?:PR )?#\d+$/.test(part)) {
-    return { kind: 'github', href: `https://github.com/peek/peek/pull/${num}` }
-  }
-  return null
 }
 
 // ── Inline content parser ──

@@ -30,4 +30,3 @@ export type {
   FileItem,
   AppCategory,
 } from '@/data/filesData'
-export type { LinearIssue, LinearStatus } from '@/data/linearData'

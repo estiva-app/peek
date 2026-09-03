@@ -4,7 +4,6 @@ import { CommentAnchor } from './CommentAnchor'
 import {
   IconCircleCheck,
   IconCircleDashed,
-  IconBrandGithub,
   IconFile,
   IconFileTypePdf,
   IconPhoto,
@@ -12,12 +11,10 @@ import {
   IconPresentation,
 } from '@tabler/icons-react'
 import figmaIcon from '@/assets/figma icon.svg'
-import linearIcon from '@/assets/linear icon.svg'
 import { TOPICS } from '@/api'
 import { APP_FILES, DOCUMENT_FILES } from '@/api'
-import { INLINE_TOKEN_RE, findUrls, matchReference, matchUrl } from '@/lib/textParsing'
+import { INLINE_TOKEN_RE, findUrls, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
-import { ReferenceChip } from './ReferenceChip'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import {
@@ -31,7 +28,7 @@ import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protoc
 
 // Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
-// into pills, and PEEK-/PR#/build# tokens into ReferenceChips.
+// into pills.
 
 /**
  * Tokens inside one run of text that carries no `code` mark.
@@ -91,9 +88,9 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           const appFile = APP_FILES.find((f) => f.title === title)
           const docFile = DOCUMENT_FILES.find((f) => f.title === title)
           const fileApp = appFile?.app ?? docFile?.docType ?? ''
-          const svgIcons: Record<string, string> = { figma: figmaIcon, linear: linearIcon }
+          const svgIcons: Record<string, string> = { figma: figmaIcon }
           const tablerIcons: Record<string, FC<{ size: number; stroke: number; className?: string }>> = {
-            github: IconBrandGithub, pdf: IconFileTypePdf, image: IconPhoto,
+            pdf: IconFileTypePdf, image: IconPhoto,
             spreadsheet: IconTable, presentation: IconPresentation,
           }
           const svgSrc = svgIcons[fileApp]
@@ -126,9 +123,6 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
               {part}
             </span>
           )
-        }
-        if (matchReference(part)) {
-          return <ReferenceChip key={i} label={part} />
         }
         return part ? <span key={i}>{part}</span> : null
       })}

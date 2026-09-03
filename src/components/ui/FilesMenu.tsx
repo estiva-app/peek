@@ -6,7 +6,6 @@ import { useIsTopicResolved } from '@/api'
 import { type Topic } from '@/api'
 import { type AppFile, type DocumentFile, type AppCategory, APP_CATEGORIES } from '@/api'
 import {
-  IconBrandGithub,
   IconFile,
   IconFileTypePdf,
   IconPhoto,
@@ -16,19 +15,12 @@ import {
   IconArrowLeft,
 } from '@tabler/icons-react'
 import figmaIcon from '@/assets/figma icon.svg'
-import linearIcon from '@/assets/linear icon.svg'
 
 // ─── Icons ───
 
 // Apps with SVG brand icons (already include background)
 const APP_SVG_ICONS: Record<string, string> = {
   figma: figmaIcon,
-  linear: linearIcon,
-}
-
-// Apps that use Tabler icons (need bg-bg-inset container)
-const APP_TABLER_ICONS: Record<string, React.FC<{ size: number; stroke: number; className?: string }>> = {
-  github: IconBrandGithub,
 }
 
 const DOC_ICONS: Record<string, React.FC<{ size: number; stroke: number; className?: string }>> = {
@@ -44,10 +36,9 @@ function AppIcon({ app, size = 32 }: { app: string; size?: number }) {
   if (svgSrc) {
     return <img src={svgSrc} width={size} height={size} alt={app} className="rounded-sm" />
   }
-  const TablerIcon = APP_TABLER_ICONS[app] ?? IconFile
   return (
     <span className="flex items-center justify-center size-8 shrink-0 rounded-sm bg-bg-inset text-text-secondary">
-      <TablerIcon size={16} stroke={1.5} />
+      <IconFile size={16} stroke={1.5} />
     </span>
   )
 }

@@ -30,7 +30,7 @@ Fresh Storybook on `main` (Storybook 10.4 + `@storybook/react-vite`, reuses `vit
 - [x] **HighlightPill + HighlightSwatch** — 5 types + swatch row
 - [x] **Reaction** — yours vs others, double-digit, row
 - [x] **TopicState** — all 6 types, resolved, group count, DM avatar + matrix
-- [x] **ReferenceChip** — linear/PR/build/ticket/unmatched + in-text paragraph
+- [~] **ReferenceChip** — retired 2026-09-03 with the third-party mock apps (the chips linked a fictional `peek/peek` repo and never navigated)
 - [x] **Toast** — extracted presentational `src/components/ui/Toast.tsx` from `src/lib/toast.tsx` (provider now renders it); 3 types × icon × action + matrix
 
 ### Tier 2 — Molecules ✅ (all done 2026-07-08)
