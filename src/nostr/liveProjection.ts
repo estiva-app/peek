@@ -58,7 +58,7 @@
  * `kind:0` for each author alongside the messages. `kind:0` is not
  * channel-scoped, so a `#h` subscription never delivers one and there is
  * nothing to pass. A first-time author therefore appears under a placeholder
- * until `pubkeysMissingProfile`/`recordProfiles` fills it in — which is exactly
+ * until `pubkeysToRefresh`/`recordProfiles` fills it in — which is exactly
  * the gap PEEK-72 built that pair to close, and it runs on its own schedule.
  *
  * **No deduplication and no cursor arithmetic.** Live and backfill overlap by
