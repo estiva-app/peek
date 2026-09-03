@@ -47,8 +47,16 @@
 /** What `LanguageModel.availability()` answers. */
 export type ModelAvailability = 'unavailable' | 'downloadable' | 'downloading' | 'available'
 
-interface LanguageModelSession {
+export interface LanguageModelSession {
   prompt: (input: string, options?: { responseConstraint?: object }) => Promise<string>
+  /**
+   * What an input would cost, without generating anything.
+   *
+   * Feature-detected rather than assumed: it is the cheap way to measure a
+   * thread against `inputQuota` (INT-1), and a build without it has to spend a
+   * real `prompt()` to learn the same number.
+   */
+  measureInputUsage?: (input: string) => Promise<number>
   /** Tokens this session may hold. */
   readonly inputQuota?: number
   /** Tokens used so far. */
@@ -197,8 +205,9 @@ export async function promptForObject(
   if (typeof globalThis.LanguageModel === 'undefined') return null
   let session: LanguageModelSession | null = null
   try {
-    session = await createSession(globalThis.LanguageModel)
-    if (!session) return null
+    const created = await createSession(globalThis.LanguageModel)
+    if (!created) return null
+    session = created.session
     /*
       The constrained path first, because where it works the schema does the
       work and nothing can come back malformed.
@@ -244,10 +253,13 @@ export async function promptForObject(
  * Returns null rather than throwing when every one is refused — the caller
  * treats that as "no prefill", which is the same outcome as no model at all.
  */
-async function createSession(model: LanguageModelStatic): Promise<LanguageModelSession | null> {
+export async function createSession(
+  model: LanguageModelStatic = globalThis.LanguageModel as LanguageModelStatic,
+): Promise<{ session: LanguageModelSession; options: SamplingOptions } | null> {
+  if (!model) return null
   for (const options of SESSION_OPTIONS) {
     try {
-      return await model.create(options)
+      return { session: await model.create(options), options }
     } catch {
       // Refused for these options. Try the next spelling; a browser that
       // refuses all of them simply does not get prefill.

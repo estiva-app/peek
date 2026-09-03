@@ -19,6 +19,11 @@ export * from './topics'
    scope so it exists before anything asks, including on a cold URL load. */
 import { installReadStateDiagnostic } from '@/nostr/useReadStateSync'
 installReadStateDiagnostic()
+
+/* `window.__promptContext()` — see src/nostr/promptContextDiagnostic.ts (INT-1).
+   Same reason and the same module-load registration. */
+import { installPromptContextDiagnostic } from '@/nostr/promptContextDiagnostic'
+installPromptContextDiagnostic()
 export * from './huddles'
 export * from './messages'
 export * from './actions'
