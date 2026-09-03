@@ -26,6 +26,9 @@ export const list = query({
         name: u.name,
         role: u.role ?? '',
         avatarUrl: await avatarUrl(ctx, u),
+        // The key a mention names on the wire (SPEC §13.1). Optional because a
+        // person who has not signed in with Estiva ID has none yet.
+        pubkey: u.nostrPubkey,
       })
     }
     return out.sort((a, b) => a.name.localeCompare(b.name))

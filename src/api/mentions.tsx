@@ -25,6 +25,24 @@ export function mentionPeople(): Person[] {
   return directory
 }
 
+/**
+ * Who a `nostr:npub…` in a body names — SPEC §13.1's `reference` mark.
+ *
+ * Module-level for the same reason the suggestion lists are: the renderer that
+ * needs it is inside a `RenderBlocks` callback rather than a component that can
+ * hold a hook, and it must answer synchronously while drawing a run.
+ *
+ * **Returning `undefined` is a normal answer, not a failure.** A key belonging
+ * to somebody outside this workspace, or to a person whose profile has not
+ * arrived, resolves to nobody — and §13.1 says what to draw then: the URI's own
+ * shortened form, never blank. That is the whole point of writing the key
+ * instead of the name; the mention still says *who*, even where nothing can say
+ * what they are called.
+ */
+export function personByPubkey(pubkey: string): Person | undefined {
+  return directory.find((p) => p.pubkey === pubkey)
+}
+
 /** Suggestion list for the `[` topic-reference command — same pattern. */
 let topicDirectory: Topic[] = MOCK_TOPICS
 

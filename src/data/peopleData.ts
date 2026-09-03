@@ -13,6 +13,15 @@ export interface Person {
   name: string
   role: string
   avatarSrc?: string
+  /**
+   * The 64-hex Nostr public key, when this person has one — SPEC §13.1.
+   *
+   * Peek's own id is a Peek fact; this is the one every app shares, and it is
+   * what makes a mention resolvable by an app that does not hold this
+   * directory. Absent for the mock cast and for anyone who has not signed in
+   * with Estiva ID, and a mention of them stays a display name.
+   */
+  pubkey?: string
 }
 
 export const PEOPLE: Person[] = [
