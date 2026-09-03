@@ -11,7 +11,7 @@
  * That last distinction is the one INT-1 calls the measurement that matters:
  * silent truncation produces a confident answer about half a conversation.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { installPromptContextDiagnostic, type PromptContextDiagnostic } from './promptContextDiagnostic'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
 import { THREAD_CONTEXT_CHARS } from '@/lib/prefill'
@@ -239,5 +239,86 @@ describe('a measurement that hangs is abandoned, not waited on', () => {
     const out = await diag()()
     expect(out.hasMeasureInputUsage).toBe(false)
     expect(out.notes.join(' ')).toMatch(/each measurement is a real prompt/i)
+  })
+})
+
+/**
+ * What the first Chrome run taught, encoded so it cannot regress.
+ *
+ * Measured 2026-09-02 on the live app: `availability` said `available`,
+ * `SESSION_OPTIONS[0]` was accepted, and then **every measurement timed out**
+ * because the harness prompted with the raw thread and let the model generate
+ * freely. It measured generation time, not the cost of the input.
+ *
+ * Chrome also reports neither `inputQuota` nor `inputUsage`, so token
+ * accounting was never going to answer "does this fit". What it can answer is
+ * whether an answer arrives and how long it takes.
+ */
+describe('measuring behaviour, since the token numbers are not on offer', () => {
+  it('caps the generation instead of letting the model ramble', async () => {
+    const prompt = vi.fn<(input: string) => Promise<string>>(async () => 'ok')
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({ inputQuota: undefined, inputUsage: undefined, prompt, destroy: () => {} }),
+    }
+    registerActiveConversation({ references: [], messages: ['the build broke'] })
+
+    await diag()()
+    // The thread is still sent; what is added is a bound on the answer.
+    expect(prompt.mock.calls[0]?.[0]).toContain('the build broke')
+    expect(prompt.mock.calls[0]?.[0]).toMatch(/single word: ok/i)
+  })
+
+  it('records how long each size took, and whether it answered', async () => {
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({ prompt: async () => 'ok', destroy: () => {} }),
+    }
+    registerActiveConversation({ references: [], messages: ['short thread'] })
+
+    const out = await diag()()
+    expect(out.timings.length).toBeGreaterThan(0)
+    expect(out.timings[0].chars).toBeGreaterThan(0)
+    expect(out.timings[0].answered).toBe(true)
+    expect(out.notes.join(' ')).toMatch(/Slowest answer/)
+  })
+
+  it('says the latency is worse than the budget rather than unknown', async () => {
+    // The honest reading of "nothing answered in 45s".
+    registerActiveConversation({ references: [], messages: ['a'.repeat(300)] })
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({ prompt: () => new Promise<string>(() => {}), destroy: () => {} }),
+    }
+
+    const out = await diag()(1_500)
+    expect(out.timings.every((t) => !t.answered)).toBe(true)
+    expect(out.notes.join(' ')).toMatch(/worse than the budget/)
+  }, 20_000)
+
+  it('does not leak an uncaught rejection when a measurement is abandoned', async () => {
+    /*
+      Observed in Chrome: a constrained-decoding check timed out, the abandoned
+      prompt rejected a moment later, and it surfaced as
+      `Uncaught (in promise) NotSupportedError` in the console somebody was
+      reading the report in.
+    */
+    const unhandled: unknown[] = []
+    const onUnhandled = (e: PromiseRejectionEvent) => unhandled.push(e.reason)
+    window.addEventListener('unhandledrejection', onUnhandled)
+
+    registerActiveConversation({ references: [], messages: ['x'.repeat(200)] })
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({
+        prompt: () => new Promise<string>((_r, reject) => setTimeout(() => reject(new Error('MTP')), 50)),
+        destroy: () => {},
+      }),
+    }
+
+    await diag()(10)
+    await new Promise((r) => setTimeout(r, 200))
+    window.removeEventListener('unhandledrejection', onUnhandled)
+    expect(unhandled).toEqual([])
   })
 })

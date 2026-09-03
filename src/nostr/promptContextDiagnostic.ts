@@ -72,6 +72,14 @@ function budget(limit = RUN_LIMIT_MS) {
 
 /** Bound one measurement by whatever the run has left, and say so. */
 async function within<T>(promise: Promise<T>, msLeft: number): Promise<T | 'timeout'> {
+  /*
+    **The loser of a race still settles.** Observed in Chrome 2026-09-02: a
+    constrained-decoding check timed out, the abandoned prompt rejected a moment
+    later, and it surfaced as `Uncaught (in promise) NotSupportedError` in a
+    console somebody was reading a report in. Swallowing it here is not hiding
+    anything — the race already recorded the outcome as a timeout.
+  */
+  void promise.catch(() => {})
   if (msLeft <= 0) return 'timeout'
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -95,6 +103,12 @@ export interface PromptContextDiagnostic {
   availability: ModelAvailability
   /** Present when the browser can price an input without generating one. */
   hasMeasureInputUsage: boolean
+  /**
+   * **The measurement INT-3 can actually use.** How long a thread of each size
+   * took, and whether an answer arrived at all — because Chrome reports no
+   * token numbers and a feature nobody waits for is not shipped.
+   */
+  timings: { chars: number; ms: number; answered: boolean }[]
   /** Which entry of `SESSION_OPTIONS` the browser accepted, or why none did. */
   createdWith: SamplingOptions | string
   /** How the usage numbers were obtained — the cheap way or a real prompt. */
@@ -126,7 +140,22 @@ export interface PromptContextDiagnostic {
   notes: string[]
 }
 
-/** Usage for one input: cheaply where the browser allows, else a real prompt. */
+/**
+ * What INT-3 actually needs to know, since the token numbers are not on offer.
+ *
+ * **Chrome reports neither `inputQuota` nor `inputUsage`** (measured
+ * 2026-09-02), so token accounting was never going to answer "does this fit".
+ * What it will answer is the question underneath: **does a thread this size get
+ * an answer, and how long does it take.** A feature nobody waits for is not
+ * shipped whatever its token budget says.
+ *
+ * The generation is capped by asking for one word. The first version prompted
+ * with the raw thread and let the model ramble, so it measured *generation*
+ * time rather than the cost of the input — every measurement timed out and the
+ * number that came back was about the wrong thing.
+ */
+const SHORT_ANSWER = '\n\nAnswer with the single word: ok'
+
 async function usageOf(
   session: LanguageModelSession,
   input: string,
@@ -150,7 +179,7 @@ async function usageOf(
     written for. A test caught it. Callers that merely want a number catch it
     themselves — see `measured` in `snapshot`.
   */
-  await session.prompt(input)
+  await session.prompt(`${input}${SHORT_ANSWER}`)
   return { usage: session.inputUsage, how: 'prompt' }
 }
 
@@ -159,6 +188,7 @@ async function usageOf(
 async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic> {
   const notes: string[] = []
   const clock = budget(limitMs)
+  const timings: PromptContextDiagnostic['timings'] = []
   const conversation = getActiveConversation()
   const messages = conversation?.messages ?? []
   const threadChars = messages.join('\n').length
@@ -168,6 +198,7 @@ async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic
   const base: PromptContextDiagnostic = {
     availability: await prefillAvailability(),
     hasMeasureInputUsage: false,
+    timings,
     createdWith: 'not attempted',
     measuredBy: 'unavailable',
     inputQuota: undefined,
@@ -208,8 +239,11 @@ async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic
 
   /** A measurement that failed is no measurement, not a zero. */
   const measured = async (s: LanguageModelSession, input: string) => {
+    const startedAt = Date.now()
+    const elapsed = () => Date.now() - startedAt
     try {
       const result = await within(usageOf(s, input), clock.left())
+      timings.push({ chars: input.length, ms: elapsed(), answered: result !== 'timeout' })
       if (result === 'timeout') {
         notes.push(
           clock.spent()
@@ -283,6 +317,13 @@ async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic
   }
   if (base.wholeThreadFits === false) {
     notes.push('The whole thread does NOT fit. INT-3 needs retrieval or map-reduce, not a bigger window.')
+  }
+  const answered = timings.filter((t) => t.answered)
+  if (answered.length) {
+    const slowest = Math.max(...answered.map((t) => t.ms))
+    notes.push(`Slowest answer: ${(slowest / 1000).toFixed(1)}s. That is the latency INT-3 inherits.`)
+  } else if (timings.length) {
+    notes.push('Nothing answered inside the budget, so the latency is worse than the budget rather than unknown.')
   }
   step('done')
   return base
