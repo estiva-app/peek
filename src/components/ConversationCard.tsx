@@ -24,6 +24,7 @@ import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
+import { AvatarGroup } from '@estiva-app/ui'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
@@ -34,7 +35,7 @@ import { ResolveDialog } from './ResolveDialog'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useIsTopicResolved } from '@/api'
+import { useIsTopicResolved, useAvatarSrc } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
 import { HighlightPill } from './ui/HighlightPill'
 import { MessageBody } from './ui/MessageBody'
@@ -129,17 +130,17 @@ export function ConversationCard({
 }: ConversationCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const pathForTopic = useTopicPath()
-  const [showMoreMenu, setShowMoreMenu] = useState(false)
-  const [moreMenuPos, setMoreMenuPos] = useState<{
-    top?: number
-    bottom?: number
-    right: number
-  } | null>(null)
-  const moreMenuRef = useRef<HTMLDivElement>(null)
+  // The ⋯ menu: the quick-menu's measured rect, or closed. The shared Menu
+  // shell owns placement and every exit (2026-09-03).
+  const [moreMenuAnchor, setMoreMenuAnchor] = useState<DOMRect | null>(null)
 
-  // Reactions
+  // Reactions. The picker portals above the quick bar (ThreadReplyCard's
+  // pattern) — in-flow it was clipped by the panel's scroll container on the
+  // topmost card.
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
-  const [showReactionPicker, setShowReactionPicker] = useState(false)
+  const [reactionPickerPos, setReactionPickerPos] = useState<{ top: number; right: number } | null>(null)
+  const reactButtonRef = useRef<HTMLDivElement>(null)
+  const reactionPickerRef = useRef<HTMLDivElement>(null)
 
   // Sync local reaction state if the parent passes a different override (e.g. after navigation back).
   useEffect(() => {
@@ -292,17 +293,18 @@ export function ConversationCard({
     }
   }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close more menu on click outside (the portal div stops propagation internally)
+  // Close the reaction picker on click outside (the more menu's exits are the
+  // shared shell's own).
   useEffect(() => {
-    if (!showMoreMenu) return
+    if (!reactionPickerPos) return
     const close = (e: MouseEvent) => {
-      if (moreMenuRef.current?.contains(e.target as Node)) return
-      setShowMoreMenu(false)
-      setMoreMenuPos(null)
+      if (reactionPickerRef.current?.contains(e.target as Node)) return
+      if (reactButtonRef.current?.contains(e.target as Node)) return
+      setReactionPickerPos(null)
     }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
-  }, [showMoreMenu])
+  }, [reactionPickerPos])
 
   // Resolved state - sync from parent when prop changes
   const [resolved, setResolved] = useState(initialResolved)
@@ -330,23 +332,16 @@ export function ConversationCard({
   // Resolved-state of any *referenced* topic (for inline [Topic] mentions and the
   // topic-anchor icon). Reads runtime mutations so the icon reflects user changes.
   const isTopicResolved = useIsTopicResolved()
+  /** Reply authors' faces, resolved as Peek's Avatar wrapper resolves any other. */
+  const avatarSrcFor = useAvatarSrc()
 
   const handleMore = (rect: DOMRect) => {
-    // Toggle
-    if (showMoreMenu) {
-      setShowMoreMenu(false)
-      setMoreMenuPos(null)
+    // Toggle; the shared shell decides above/below from the real room.
+    if (moreMenuAnchor) {
+      setMoreMenuAnchor(null)
       return
     }
-    const MENU_HEIGHT = 300
-    const right = window.innerWidth - rect.right
-    if (window.innerHeight - rect.bottom < MENU_HEIGHT) {
-      // Not enough space below - anchor bottom of menu to just above the button
-      setMoreMenuPos({ bottom: window.innerHeight - rect.top + 4, right })
-    } else {
-      setMoreMenuPos({ top: rect.bottom + 4, right })
-    }
-    setShowMoreMenu(true)
+    setMoreMenuAnchor(rect)
     onMore?.()
   }
 
@@ -362,26 +357,25 @@ export function ConversationCard({
     setResolved(false)
     setResolvedBy('')
     setResolutionMsg('')
-    setShowMoreMenu(false)
+    setMoreMenuAnchor(null)
     onResolvedChange?.(false)
   }
 
   const handleDelete = () => {
-    setShowMoreMenu(false)
+    setMoreMenuAnchor(null)
     onDelete?.()
   }
 
   const handleConvHighlight = (type: HighlightType | undefined) => {
     setHighlightState(type)
     onHighlightChange?.(type)
-    setShowMoreMenu(false)
-    setMoreMenuPos(null)
+    setMoreMenuAnchor(null)
     setIsHovered(false)
   }
 
   const handleEditStart = () => {
     setIsEditing(true)
-    setShowMoreMenu(false)
+    setMoreMenuAnchor(null)
   }
 
   const handleEditSave = () => {
@@ -434,7 +428,7 @@ export function ConversationCard({
   editCancelFnRef.current = handleEditCancel
 
   const openCreateTopic = () => {
-    setShowMoreMenu(false)
+    setMoreMenuAnchor(null)
     setShowTopicDialog(true)
   }
 
@@ -451,7 +445,7 @@ export function ConversationCard({
   const handleRevertToConversation = () => {
     setIsTopic(false)
     setTopicTitle('')
-    setShowMoreMenu(false)
+    setMoreMenuAnchor(null)
   }
 
   const handleReact = (emoji: string) => {
@@ -475,7 +469,7 @@ export function ConversationCard({
       onReactionsChange?.(next, emoji)
       return next
     })
-    setShowReactionPicker(false)
+    setReactionPickerPos(null)
   }
 
   return (
@@ -508,14 +502,14 @@ export function ConversationCard({
         onClick={(e) => {
           if (!onClick || isEditing) return
           // Don't open thread when any overlay is active
-          if (showMoreMenu || showResolveDialog || showTopicDialog || showReactionPicker) return
+          if (moreMenuAnchor || showResolveDialog || showTopicDialog || reactionPickerPos) return
           // Don't open thread when clicking interactive children
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
           onClick()
         }}
         onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => { setIsHovered(false); setShowReactionPicker(false) }}
+        onMouseLeave={() => { setIsHovered(false); setReactionPickerPos(null) }}
       >
 
         {/* ── Topic anchor header (existing isTopic) - hidden while editing ── */}
@@ -702,16 +696,16 @@ export function ConversationCard({
             <div className="flex items-center gap-2 pl-8 pr-2 pb-1.5 w-full">
               <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-[color:var(--accent-wash-2)] signal:hover:bg-[color:var(--accent-wash)] signal:transition-colors">
                 {replyAuthors && replyAuthors.length > 0 && (
+                  /* The shared stack at 18px (2026-09-03). This row hand-rolled
+                     its own for want of a size prop, and drifted while it did:
+                     four faces where the shared rule is three, and its own ring.
+                     The picture chain is Peek's Avatar wrapper's, kept exactly —
+                     the message's own face, else the registry's for that name. */
                   <div className="hidden signal:flex items-center shrink-0">
-                    {replyAuthors.slice(0, 4).map((a, i) => (
-                      <Avatar
-                        key={a.name}
-                        size={18}
-                        src={a.avatarSrc}
-                        alt={a.name}
-                        className={cn('ring-[1.5px] ring-bg-surface', i > 0 && '-ml-1.5')}
-                      />
-                    ))}
+                    <AvatarGroup
+                      size={18}
+                      members={replyAuthors.map((a) => ({ name: a.name, picture: a.avatarSrc ?? avatarSrcFor(a.name) }))}
+                    />
                   </div>
                 )}
                 <IconMessage2
@@ -773,58 +767,61 @@ export function ConversationCard({
 
         {/* ── Quick menu on hover ── */}
         {isHovered && !isEditing && (
-          <div className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
+          <div ref={reactButtonRef} className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
             <ConversationQuickMenu
               isResolved={resolved}
-              onReact={() => setShowReactionPicker((v) => !v)}
+              onReact={() => {
+                const rect = reactButtonRef.current?.getBoundingClientRect()
+                setReactionPickerPos((prev) => (prev || !rect ? null : { top: rect.top - 4, right: window.innerWidth - rect.right }))
+              }}
               onReply={onReply}
               onResolve={() => setShowResolveDialog(true)}
               onReopen={handleReopen}
               onMore={handleMore}
             />
-            {showReactionPicker && (
-              <div
-                className="absolute right-0 bottom-full mb-1 z-50"
-                onMouseLeave={() => setShowReactionPicker(false)}
-              >
-                <ReactionPicker onSelect={handleReact} />
-              </div>
-            )}
           </div>
         )}
 
-        {/* ── More menu (portalled) ── */}
-        {showMoreMenu && moreMenuPos &&
+        {/* ── Reaction picker (portalled — in-flow it was clipped by the panel's
+            scroll container on the topmost card) ── */}
+        {reactionPickerPos &&
           createPortal(
             <div
-              ref={moreMenuRef}
+              ref={reactionPickerRef}
               onMouseDown={(e) => e.stopPropagation()}
-              onMouseLeave={() => { setShowMoreMenu(false); setMoreMenuPos(null) }}
+              onMouseLeave={() => setReactionPickerPos(null)}
               style={{
                 position: 'fixed',
-                ...(moreMenuPos.top !== undefined ? { top: moreMenuPos.top } : {}),
-                ...(moreMenuPos.bottom !== undefined ? { bottom: moreMenuPos.bottom } : {}),
-                right: moreMenuPos.right,
+                top: reactionPickerPos.top,
+                right: reactionPickerPos.right,
+                transform: 'translateY(-100%)',
                 zIndex: 50,
               }}
             >
-              <ConversationMoreMenu
-                isTopic={isTopic}
-                isResolved={resolved}
-                showCreateTopic={showCreateTopic}
-                isOwnMessage={authorName === 'You'}
-                currentHighlight={highlightState}
-                onHighlight={handleConvHighlight}
-                onCreateTopic={openCreateTopic}
-                onRevertToConversation={handleRevertToConversation}
-                onResolve={() => { setShowMoreMenu(false); setShowResolveDialog(true) }}
-                onReopen={handleReopen}
-                onEditMessage={!isTopic ? handleEditStart : undefined}
-                onDelete={handleDelete}
-              />
+              <ReactionPicker onSelect={handleReact} />
             </div>,
             document.body
           )}
+
+        {/* ── More menu — the shared shell portals, fits, and owns the exits ── */}
+        {moreMenuAnchor && (
+          <ConversationMoreMenu
+            anchor={moreMenuAnchor}
+            onClose={() => setMoreMenuAnchor(null)}
+            isTopic={isTopic}
+            isResolved={resolved}
+            showCreateTopic={showCreateTopic}
+            isOwnMessage={authorName === 'You'}
+            currentHighlight={highlightState}
+            onHighlight={handleConvHighlight}
+            onCreateTopic={openCreateTopic}
+            onRevertToConversation={handleRevertToConversation}
+            onResolve={() => { setMoreMenuAnchor(null); setShowResolveDialog(true) }}
+            onReopen={handleReopen}
+            onEditMessage={!isTopic ? handleEditStart : undefined}
+            onDelete={handleDelete}
+          />
+        )}
       </div>
 
       {showResolveDialog && (

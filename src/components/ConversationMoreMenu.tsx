@@ -1,4 +1,3 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   IconCircleDashed,
   IconCircleCheck,
@@ -7,7 +6,7 @@ import {
   IconHighlight,
   IconX,
 } from '@tabler/icons-react'
-import { MenuItem, MenuSection } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSection, MenuSub } from '@estiva-app/ui'
 import { Divider } from './ui/Divider'
 import { HighlightSwatch } from './ui/HighlightPill'
 import { cn } from '@/lib/utils'
@@ -15,16 +14,20 @@ import { HIGHLIGHT_META, type HighlightType } from '@/api'
 
 /**
  * The conversation's ⋯ menu. Its rows are the shared MenuItem now
- * (2026-09-01) — including the highlight trigger, which needs the hover
- * handlers MenuItem passes through, and the swatch rows in the submenu.
+ * (2026-09-01), the highlight submenu is the shared MenuSub, and the
+ * container is the shared Menu shell (both 2026-09-03) — hand it the
+ * quick-menu's measured rect as `anchor` and the shell portals, fits the
+ * viewport, and owns every exit (outside click, Escape, pointer leaving —
+ * the leave grace shared with the submenu, so crossing into it never
+ * closes the menu). The old caller-side portal with its own `< 200px`
+ * flip heuristic and outside-click listener is gone.
  *
- * The container is deliberately not the shared Menu shell: this panel is
- * placed and dismissed by its caller (the quick-menu opens it against a
- * measured rect and owns when it goes), and the hover-timed submenu with its
- * left-flip is this menu's own. If a second menu ever needs a submenu, that
- * is the day the shell learns it.
+ * Without an anchor (the stories) it stands in flow, pinned open.
  */
 interface ConversationMoreMenuProps {
+  /** The quick-menu ⋯ rect. Absent: in-flow, for the stories. */
+  anchor?: DOMRect | HTMLElement | null
+  onClose?: () => void
   isTopic?: boolean
   isResolved?: boolean
   showCreateTopic?: boolean
@@ -44,6 +47,8 @@ interface ConversationMoreMenuProps {
 }
 
 export function ConversationMoreMenu({
+  anchor,
+  onClose,
   isTopic = false,
   isResolved = false,
   showCreateTopic = true,
@@ -60,35 +65,13 @@ export function ConversationMoreMenu({
   onDelete,
   className,
 }: ConversationMoreMenuProps) {
-  const [showHighlightSub, setShowHighlightSub] = useState(false)
-  const [subOnLeft, setSubOnLeft] = useState(false)
-  const closeTimer = useRef<ReturnType<typeof setTimeout>>(null)
-  const triggerRef = useRef<HTMLDivElement>(null)
-
-  const openSub = useCallback(() => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    setShowHighlightSub(true)
-  }, [])
-
-  const closeSub = useCallback(() => {
-    closeTimer.current = setTimeout(() => setShowHighlightSub(false), 150)
-  }, [])
-
-  // Measure whether the submenu fits to the right; if not, flip to left
-  useEffect(() => {
-    if (!showHighlightSub || !triggerRef.current) return
-    const rect = triggerRef.current.getBoundingClientRect()
-    const subWidth = 160 + 8 // w-[160px] + ml-1 gap
-    setSubOnLeft(rect.right + subWidth > window.innerWidth)
-  }, [showHighlightSub])
-
   return (
-    <div
-      data-interactive
-      className={cn(
-        'bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[244px] p-2 flex flex-col gap-2',
-        className
-      )}
+    <Menu
+      anchor={anchor ?? undefined}
+      align="right"
+      closeOnLeave={!!anchor}
+      onClose={onClose ?? (() => {})}
+      className={cn('w-[244px] gap-2', !anchor && 'static', className)}
     >
       <MenuSection label="Utilities">
         {isTopic ? (
@@ -127,45 +110,30 @@ export function ConversationMoreMenu({
         />
 
         {onHighlight && (
-          <div className="relative" ref={triggerRef}>
-            <MenuItem
-              leading={<IconHighlight size={16} stroke={1.5} className="text-text-secondary" />}
-              label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
-              submenu
-              onMouseEnter={openSub}
-              onMouseLeave={closeSub}
-            />
-            {showHighlightSub && (
-              <div
-                className={cn(
-                  'absolute top-0 bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[160px] p-2 z-50',
-                  subOnLeft ? 'right-full mr-1' : 'left-full ml-1'
-                )}
-                onMouseEnter={openSub}
-                onMouseLeave={closeSub}
-              >
-                {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
-                  <MenuItem
-                    key={type}
-                    leading={<HighlightSwatch type={type} />}
-                    label={HIGHLIGHT_META[type].label}
-                    selected={currentHighlight === type}
-                    onClick={() => onHighlight(type)}
-                  />
-                ))}
-                {currentHighlight && (
-                  <>
-                    <Divider className="mx-1 my-1" />
-                    <MenuItem
-                      leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
-                      label="Remove"
-                      onClick={() => onHighlight(undefined)}
-                    />
-                  </>
-                )}
-              </div>
+          <MenuSub
+            leading={<IconHighlight size={16} stroke={1.5} className="text-text-secondary" />}
+            label={currentHighlight ? 'Change highlight' : 'Mark as Highlight'}
+          >
+            {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
+              <MenuItem
+                key={type}
+                leading={<HighlightSwatch type={type} />}
+                label={HIGHLIGHT_META[type].label}
+                selected={currentHighlight === type}
+                onClick={() => onHighlight(type)}
+              />
+            ))}
+            {currentHighlight && (
+              <>
+                <Divider className="mx-1 my-1" />
+                <MenuItem
+                  leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
+                  label="Remove"
+                  onClick={() => onHighlight(undefined)}
+                />
+              </>
             )}
-          </div>
+          </MenuSub>
         )}
       </MenuSection>
 
@@ -184,6 +152,6 @@ export function ConversationMoreMenu({
           <MenuItem label="Delete" destructive onClick={onDelete} />
         </>
       )}
-    </div>
+    </Menu>
   )
 }
