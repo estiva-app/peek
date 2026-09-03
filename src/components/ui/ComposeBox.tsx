@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { encodeNpub } from '@estiva-app/protocol'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekStarterKit } from '@/extensions/editorKit'
@@ -56,9 +57,16 @@ function serializeInline(node: { forEach: (cb: (child: { type: { name: string };
     if (child.type.name === 'hardBreak') {
       text += '\n'
     } else if (child.type.name === 'mention') {
-      text += `@${child.attrs.label}`
+      // SPEC §13.1 — a key, when we have one. `label` is what a person typed
+      // and reads well; it is also the thing that goes stale on a rename and
+      // means nothing to another app, so it is the fallback rather than the
+      // form. Somebody with no Estiva ID key still mentions by name, which is
+      // exactly what every existing message already does.
+      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `@${child.attrs.label}`
     } else if (child.type.name === 'urgentMention') {
-      text += `!@${child.attrs.label}`
+      // The urgency is Peek's own affordance and has no wire form, so an
+      // urgent mention of somebody with a key is still just a mention of them.
+      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `!@${child.attrs.label}`
     } else if (child.type.name === 'topicMention') {
       text += `[${child.attrs.label}]`
     } else if (child.type.name === 'fileMention') {
