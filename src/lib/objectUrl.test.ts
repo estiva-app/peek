@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { slugify, objectRef, identifierFromRef, topicPath } from './objectUrl'
+import { slugify, objectRef, identifierFromRef, topicPath, shareableTopicUrl } from './objectUrl'
 
 /** A real production channel uuid, from RFC 0.5 §7.2's own example. */
 const UUID = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -94,5 +94,39 @@ describe('topicPath', () => {
   it('round-trips: the path it builds resolves back to the same identity', () => {
     const path = topicPath({ id: '3', title: 'Ongoing onboarding issues', folderId: UUID })
     expect(identifierFromRef(path.slice('/topic/'.length))).toBe(UUID)
+  })
+})
+
+describe('shareableTopicUrl', () => {
+  it('builds an absolute URL in RFC 0.5 §7.2 grammar', () => {
+    expect(shareableTopicUrl({ id: '7', title: 'Design review', folderId: UUID }, 'https://peek.estiva.app')).toBe(
+      `https://peek.estiva.app/topic/design-review-${UUID}`,
+    )
+  })
+
+  it('is null for a topic whose only link is Peek-private', () => {
+    // A topic created before Nostr emission, and every mock in Storybook.
+    expect(shareableTopicUrl({ id: '1', title: 'Old topic', folderId: null }, 'https://peek.estiva.app')).toBe(null)
+    expect(shareableTopicUrl({ id: '1', title: 'Old topic' }, 'https://peek.estiva.app')).toBe(null)
+  })
+
+  it('does not double the slash when the origin carries one', () => {
+    expect(shareableTopicUrl({ id: '7', title: 'X', folderId: UUID }, 'https://peek.estiva.app/')).toBe(
+      `https://peek.estiva.app/topic/x-${UUID}`,
+    )
+  })
+
+  it('still resolves when the title slugs to nothing', () => {
+    // The uuid is the whole identity; the slug is decoration that may be absent.
+    expect(shareableTopicUrl({ id: '7', title: '日本語', folderId: UUID }, 'https://peek.estiva.app')).toBe(
+      `https://peek.estiva.app/topic/${UUID}`,
+    )
+  })
+
+  it('round-trips: what it builds is what the router reads', () => {
+    // The property the whole grammar rests on — a link is only useful if the
+    // identity survives being written and read back.
+    const url = shareableTopicUrl({ id: '7', title: 'A very, very long name — with punctuation', folderId: UUID }, 'https://peek.estiva.app')!
+    expect(url.endsWith(UUID)).toBe(true)
   })
 })

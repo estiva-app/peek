@@ -1,3 +1,4 @@
+import { shareableTopicUrl } from '@/lib/objectUrl'
 import { useMarkRead } from '@/lib/useMarkRead'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { isNearBottom } from './scrollPolicy'
@@ -572,6 +573,13 @@ export function useTopicView({
     <div className="flex flex-col h-full">
       <ConversationHeader
         folderId={topicFolderId}
+        /* PEE-17. Null for a topic with no channel uuid — its only link is
+           Peek-private, so offering to copy one would hand somebody a URL that
+           resolves nowhere else. */
+        topicLink={shareableTopicUrl(
+          { id: String(topicId ?? ''), title: topicTitle, folderId: topicFolderId },
+          window.location.origin,
+        )}
         // Only where a Folder exists to show: a topic with no `h` has no panel
         // behind the button.
         onToggleFolderPanel={topicFolderId && !isV2HuddleView ? onToggleFolderPanel : undefined}

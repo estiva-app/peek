@@ -109,3 +109,20 @@ export function topicPath(
     : `/topics/${encodeURIComponent(topic.id)}`
   return opts?.huddleId ? `${base}?huddle=${encodeURIComponent(opts.huddleId)}` : base
 }
+
+/**
+ * A topic's shareable URL, or null when it has none — PEE-17.
+ *
+ * **Null is the point.** `topicPath` falls back to `/topics/<peek-id>` for a
+ * topic with no channel uuid, and that link resolves nowhere but this
+ * deployment: the id is Peek-private, and for seeded data literally `'1'`. A
+ * "Copy link" that handed somebody one of those would be worse than having no
+ * button, because it looks like it worked.
+ *
+ * The origin is passed rather than read from `location`, so the grammar stays
+ * testable without a document and a link built on the server is the same link.
+ */
+export function shareableTopicUrl(topic: TopicLinkTarget, origin: string): string | null {
+  if (!topic.folderId) return null
+  return `${origin.replace(/\/+$/, '')}${topicPath(topic)}`
+}
