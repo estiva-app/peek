@@ -14,6 +14,7 @@
  *
  * ```
  * __promptContext()          measure this tab's open thread against the model
+ * __promptContext.sweep()    the latency curve, which decides INT-3's architecture
  * __promptContext.overflow() deliberately exceed the quota and report what happens
  * ```
  *
@@ -336,6 +337,75 @@ async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic
  * a confident answer about half a conversation, and is indistinguishable from a
  * complete one unless somebody has looked.
  */
+/**
+ * Prose of a given length, because repeated characters do not tokenise like a
+ * conversation.
+ *
+ * `'x'.repeat(n)` compresses to almost nothing and would report a ceiling
+ * several times too generous. Sentences of the shape a work thread actually
+ * contains are the only honest filler.
+ */
+function proseOf(chars: number): string {
+  const sentence = 'The deployment failed again on main and Katerina asked whether the interop bump caused it. '
+  return sentence.repeat(Math.ceil(chars / sentence.length)).slice(0, chars)
+}
+
+/**
+ * `__promptContext.sweep()` — the curve that decides INT-3's architecture.
+ *
+ * **The single-thread measurement could not answer this.** Run against a real
+ * 13-message conversation on 2026-09-02 it produced two timings of 2327 and
+ * 2328 characters, because the thread fitted the budget whole and so the
+ * bounded and unbounded cases were the same measurement twice. It established
+ * that a 2.3k thread answers in 2.6s warm and said nothing about scaling.
+ *
+ * What INT-3 needs is where it stops: if latency stays tolerable to 32k then a
+ * bounded window is enough and retrieval is only the accuracy mitigation; if it
+ * degrades at 8k then retrieval is a latency requirement and the design is not
+ * optional.
+ *
+ * Each size gets its own session, so a growing context is not measuring the
+ * previous answers as well. Stops at the first size that does not answer —
+ * beyond a ceiling the numbers are all the same number.
+ */
+async function sweep(limitMs = 120_000): Promise<Record<string, unknown>> {
+  const clock = budget(limitMs)
+  const sizes = [2_000, 4_000, 8_000, 16_000, 32_000, 64_000]
+  const rows: { chars: number; ms: number; answered: boolean }[] = []
+
+  for (const chars of sizes) {
+    if (clock.spent()) {
+      step(`stopping at ${chars} chars — the ${limitMs / 1000}s budget is spent`)
+      break
+    }
+    const created = await createSession()
+    if (!created) return { result: 'no session', rows }
+    step(`sweeping ${chars} chars`)
+    const startedAt = Date.now()
+    const result = await within(usageOf(created.session, proseOf(chars)), clock.left())
+    rows.push({ chars, ms: Date.now() - startedAt, answered: result !== 'timeout' })
+    created.session.destroy()
+    if (result === 'timeout') {
+      step(`${chars} chars did not answer — stopping`)
+      break
+    }
+  }
+
+  const answered = rows.filter((r) => r.answered)
+  const largest = answered.length ? answered[answered.length - 1] : undefined
+  step('sweep done')
+  return {
+    rows,
+    largestThatAnswered: largest ? `${largest.chars} chars in ${(largest.ms / 1000).toFixed(1)}s` : 'none',
+    verdict: !largest
+      ? 'Nothing answered. Prefill and INT-3 are both out of reach on this machine.'
+      : largest.chars >= 32_000
+        ? 'A bounded window is enough; retrieval is only the accuracy mitigation.'
+        : `Latency degrades before 32k. Retrieval is a requirement, not a mitigation — INT-3 should summarise selected messages rather than a window.`,
+    note: 'Prose filler, not repeated characters: `x`.repeat() compresses and would report a ceiling several times too generous.',
+  }
+}
+
 async function overflow(multiplier = 4): Promise<Record<string, unknown>> {
   const created = await createSession()
   if (!created) return { result: 'no session', createdWith: 'every entry refused' }
@@ -344,7 +414,7 @@ async function overflow(multiplier = 4): Promise<Record<string, unknown>> {
   // Characters, not tokens — deliberately generous, since a token is several
   // characters and the point is to be far past the ceiling rather than near it.
   const size = (quota ?? 4096) * multiplier
-  const filler = `${'The team discussed the deployment at length. '.repeat(Math.ceil(size / 44))}`.slice(0, size)
+  const filler = proseOf(size)
   try {
     const { usage, how } = await usageOf(session, filler)
     return {
@@ -372,6 +442,7 @@ export function installPromptContextDiagnostic(): void {
   if (typeof window === 'undefined') return
   const fn = (limitMs?: number) => snapshot(limitMs)
   fn.overflow = overflow
+  fn.sweep = sweep
   fn.options = () => SESSION_OPTIONS
   ;(window as unknown as Record<string, unknown>).__promptContext = fn
 }

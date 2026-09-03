@@ -18,6 +18,7 @@ import { THREAD_CONTEXT_CHARS } from '@/lib/prefill'
 
 type Diag = ((limitMs?: number) => Promise<PromptContextDiagnostic>) & {
   overflow: (multiplier?: number) => Promise<Record<string, unknown>>
+  sweep: (limitMs?: number) => Promise<Record<string, unknown>>
   options: () => unknown[]
 }
 const diag = () => (window as unknown as { __promptContext: Diag }).__promptContext
@@ -320,5 +321,106 @@ describe('measuring behaviour, since the token numbers are not on offer', () => 
     await new Promise((r) => setTimeout(r, 200))
     window.removeEventListener('unhandledrejection', onUnhandled)
     expect(unhandled).toEqual([])
+  })
+})
+
+/**
+ * `sweep()` — the measurement the single-thread run could not make.
+ *
+ * Against a real 13-message conversation on 2026-09-02 it produced two timings
+ * of 2327 and 2328 characters, because the thread fitted the budget whole: the
+ * bounded and unbounded cases were the same measurement twice. It established
+ * that 2.3k answers in 2.6s warm and said nothing whatever about scaling, and
+ * scaling is what chooses between a bounded window and retrieval.
+ */
+describe('sweep — where latency stops being tolerable', () => {
+  /** A model whose answer time grows with the input. */
+  function scalingModel(msPerChar: number, failAbove = Infinity) {
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({
+        prompt: (input: string) =>
+          input.length > failAbove
+            ? new Promise<string>(() => {})
+            : new Promise<string>((r) => setTimeout(() => r('ok'), input.length * msPerChar)),
+        destroy: () => {},
+      }),
+    }
+  }
+
+  it('sends prose, not repeated characters', async () => {
+    /*
+      `x`.repeat() compresses to almost nothing and would report a ceiling
+      several times too generous. The filler has to tokenise like a
+      conversation or the number is a fiction.
+    */
+    const seen: string[] = []
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({
+        prompt: async (input: string) => {
+          seen.push(input)
+          return 'ok'
+        },
+        destroy: () => {},
+      }),
+    }
+    await diag().sweep(5_000)
+    expect(seen[0]).toMatch(/deployment failed again/i)
+    expect(seen[0]).not.toMatch(/^x+/)
+  })
+
+  it('reports the largest size that answered', async () => {
+    /*
+      A 2s budget, not 20s: the sizes that answer do so instantly here, and the
+      one that hangs then times out against whatever is left. A large budget
+      makes the test wait out a hang it deliberately created.
+    */
+    scalingModel(0, 9_000)
+    const out = await diag().sweep(2_000)
+    expect(String(out.largestThatAnswered)).toMatch(/8000 chars/)
+  }, 15_000)
+
+  it('calls retrieval a requirement when latency degrades early', async () => {
+    // The verdict INT-3 acts on, rather than a table somebody has to read.
+    scalingModel(0, 5_000)
+    const out = await diag().sweep(2_000)
+    expect(String(out.verdict)).toMatch(/Retrieval is a requirement/)
+  }, 15_000)
+
+  it('calls a bounded window enough when it holds to 32k', async () => {
+    scalingModel(0)
+    const out = await diag().sweep(20_000)
+    expect(String(out.verdict)).toMatch(/bounded window is enough/)
+  })
+
+  it('stops at the first size that does not answer', async () => {
+    // Beyond a ceiling the numbers are all the same number.
+    scalingModel(0, 5_000)
+    const out = await diag().sweep(2_000)
+    const rows = out.rows as { chars: number }[]
+    expect(rows.map((r) => r.chars)).toEqual([2_000, 4_000, 8_000])
+  }, 15_000)
+
+  it('gives each size its own session', async () => {
+    /*
+      A reused session accumulates the previous answers, so a later measurement
+      would be pricing the earlier ones too.
+    */
+    let creates = 0
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => {
+        creates++
+        return { prompt: async () => 'ok', destroy: () => {} }
+      },
+    }
+    await diag().sweep(20_000)
+    expect(creates).toBe(6)
+  })
+
+  it('says so when no session can be had', async () => {
+    const out = await diag().sweep(1_000)
+    expect(out.result).toBe('no session')
   })
 })
