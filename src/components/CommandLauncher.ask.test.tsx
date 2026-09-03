@@ -69,7 +69,9 @@ describe('the Ask row is offered, not triggered (INT-2)', () => {
   it('shows the question it would ask, so the row says what it does', async () => {
     open()
     await userEvent.type(input(), 'what did we decide')
-    expect(await screen.findByText('what did we decide')).toBeInTheDocument()
+    // Scoped to the row: INT-4 added a second row that quotes the same
+    // sentence back, read as a brief rather than a question.
+    expect(await askRow()).toHaveTextContent('Ask about this conversation: "what did we decide"')
   })
 
   it('is absent where no model could answer', async () => {

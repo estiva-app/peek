@@ -15,6 +15,7 @@ import { addrToNaddr, findNaddrs, stripNaddrs } from '@estiva-app/protocol'
 import type { Editor } from '@tiptap/react'
 import {
   insertReferenceIntoActiveComposer,
+  insertTextIntoActiveComposer,
   registerActiveComposer,
   unregisterComposer,
   type ComposerHandle,
@@ -111,5 +112,97 @@ describe('insertReferenceIntoActiveComposer (PEE-2)', () => {
 
     expect(insertReferenceIntoActiveComposer(addrToNaddr(NEW_ISSUE, []))).toBe(false)
     expect(inserted).toHaveLength(0)
+  })
+})
+
+describe('a drafted reply goes in, and only in (INT-4)', () => {
+  beforeEach(() => {
+    // Same reset as above: the registry is module state.
+    const stale = fakeComposer()
+    registerActiveComposer(stale.handle)
+    unregisterComposer(stale.editor)
+  })
+
+  it('inserts the text at the cursor', () => {
+    const { handle, inserted } = fakeComposer()
+    registerActiveComposer(handle)
+
+    expect(insertTextIntoActiveComposer('Sounds good — I can pick it up tomorrow.')).toBe(true)
+    expect(inserted).toEqual([[{ type: 'text', text: 'Sounds good — I can pick it up tomorrow.' }]])
+  })
+
+  it('inserts rather than replaces, so a half-typed message survives', () => {
+    /*
+      INT-4's stated promise, and the reason this is `insertContent` and not
+      `setContent`. Tiptap's insert lands at the selection and leaves the rest
+      of the document alone — asserted through the absence of any step that
+      would clear it, because `setContent` is a one-word edit away.
+    */
+    const { handle, steps } = fakeComposer()
+    registerActiveComposer(handle)
+    insertTextIntoActiveComposer('a draft')
+
+    expect(steps).not.toContain('setContent')
+    expect(steps).not.toContain('clearContent')
+  })
+
+  it('turns newlines into hard breaks, not paragraphs', () => {
+    // A drafted reply is one message. Paragraph nodes would change what the
+    // composer serialises on send.
+    const { handle, inserted } = fakeComposer()
+    registerActiveComposer(handle)
+    insertTextIntoActiveComposer('First line.\n\nSecond line.')
+
+    expect(inserted).toEqual([
+      [
+        { type: 'text', text: 'First line.' },
+        { type: 'hardBreak' },
+        { type: 'text', text: 'Second line.' },
+      ],
+    ])
+  })
+
+  it('clears marks before inserting', () => {
+    // A cursor inside a bold run would otherwise wrap the entire draft.
+    const { handle, steps } = fakeComposer()
+    registerActiveComposer(handle)
+    insertTextIntoActiveComposer('a draft')
+
+    expect(steps).toContain('unsetAllMarks')
+    expect(steps).toContain('run')
+  })
+
+  it('does not insert a blank draft', () => {
+    // The model returning whitespace must not put an empty edit in somebody's
+    // undo history.
+    const { handle, inserted } = fakeComposer()
+    registerActiveComposer(handle)
+
+    expect(insertTextIntoActiveComposer('   \n ')).toBe(false)
+    expect(inserted).toHaveLength(0)
+  })
+
+  it('reports false with no composer open, rather than throwing', () => {
+    expect(insertTextIntoActiveComposer('a draft')).toBe(false)
+  })
+
+  it('reports false for a composer that has been destroyed', () => {
+    const { handle, editor, inserted } = fakeComposer()
+    registerActiveComposer(handle)
+    ;(editor as unknown as { isDestroyed: boolean }).isDestroyed = true
+
+    expect(insertTextIntoActiveComposer('a draft')).toBe(false)
+    expect(inserted).toHaveLength(0)
+  })
+
+  it('never sends — nothing in the registry can', () => {
+    /*
+      The ticket's central promise, asserted where it is actually kept: the
+      composer handle exposes an editor and an attachment hook and no way to
+      publish. A send would have to be added here first, and this test is what
+      would notice.
+    */
+    const { handle } = fakeComposer()
+    expect(Object.keys(handle)).toEqual(['editor', 'attachFrames', 'label'])
   })
 })

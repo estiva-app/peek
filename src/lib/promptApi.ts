@@ -350,3 +350,31 @@ export function looseParse(answer: string | null): Record<string, unknown> | nul
     return null
   }
 }
+
+/**
+ * Ask for prose rather than an object (INT-4).
+ *
+ * `promptForObject` exists because a form needs named fields. A draft is one
+ * piece of writing, so there is nothing to constrain and nothing to parse —
+ * which also sidesteps the MTP refusal entirely, since no `responseConstraint`
+ * is involved.
+ *
+ * Returns null rather than throwing on anything, like everything else here: a
+ * draft that did not arrive is the same to the caller as a browser that cannot
+ * write one.
+ */
+export async function promptForText(instruction: string): Promise<string | null> {
+  if (typeof globalThis.LanguageModel === 'undefined') return null
+  let session: LanguageModelSession | null = null
+  try {
+    const created = await createSession(globalThis.LanguageModel)
+    if (!created) return null
+    session = created.session
+    const answer = (await session.prompt(instruction)).trim()
+    return answer || null
+  } catch {
+    return null
+  } finally {
+    session?.destroy()
+  }
+}
