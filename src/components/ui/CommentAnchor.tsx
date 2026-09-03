@@ -26,6 +26,12 @@ import { cn } from '@/lib/utils'
  * Saying "that paragraph was deleted" in either case would be a confident wrong
  * answer about somebody else's data, which is the failure RFC 0.4 §13.1 warns
  * about throughout the projection layer.
+ *
+ * **`text-text-muted`, not `text-text-tertiary`.** The latter is not a token
+ * this app defines, so Tailwind emits nothing for it and the text silently
+ * inherits whatever colour surrounds it. `ForeignObjectWidget` records the same
+ * mistake being made and found once already — a jsdom test cannot see it,
+ * because it never evaluates CSS.
  */
 export function CommentAnchor({
   blockId,
@@ -43,7 +49,7 @@ export function CommentAnchor({
     <div
       data-comment-anchor={state}
       data-block-id={blockId}
-      className={cn('border-l-2 border-border-default pl-2 text-xs text-text-tertiary', className)}
+      className={cn('border-l-2 border-border-default pl-2 text-xs text-text-muted', className)}
     >
       {children}
     </div>
@@ -63,7 +69,7 @@ export function CommentAnchor({
       <div
         data-comment-anchor="resolved"
         data-block-id={blockId}
-        className={cn('border-l-2 border-border-strong pl-2 text-xs text-text-tertiary', className)}
+        className={cn('border-l-2 border-border-strong pl-2 text-xs text-text-muted', className)}
       >
         <span className="line-clamp-2 italic">{text || 'an empty block'}</span>
       </div>
