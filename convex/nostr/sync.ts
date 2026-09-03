@@ -20,6 +20,7 @@
  * socket and pushing into Convex; nothing here needs to change for that.
  */
 import { v } from 'convex/values'
+import { blockAnchorOf } from '@estiva-app/protocol'
 import { action, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
@@ -253,6 +254,17 @@ async function syncTopic(
           // Addresses this message references — NIP-27 `a` tags, and NIP-22's
           // uppercase `A` for a comment's thread root.
           const addresses = referencedAddresses(e)
+          /*
+            SPEC §13.6 — which part of the referenced object, when the author
+            was commenting on one. Read here because the tags do not survive
+            the import, and an anchor inferred afterwards from a failed lookup
+            cannot tell "about the whole object" from "that block is gone".
+
+            Messages only. A reply is a `kind:9` in a thread; Ship anchors a
+            root comment, and inventing an anchor for a reply would be Peek
+            deciding what another app meant.
+          */
+          const blockId = blockAnchorOf(e)
 
           await ctx.runMutation(internal.nostr.data.importMessage, {
             topicId: topic.topicId,
@@ -262,6 +274,7 @@ async function syncTopic(
             createdAt: e.created_at * 1000,
             nostrEventId: e.id,
             nostrReferences: addresses.length > 0 ? addresses : undefined,
+            nostrBlockId: blockId,
           })
         }
       }

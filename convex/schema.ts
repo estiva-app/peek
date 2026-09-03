@@ -171,6 +171,16 @@ export default defineSchema({
      *  objects like Ship projects/issues). Stored separately so they persist
      *  even if the message body is edited. */
     nostrReferences: v.optional(v.array(v.string())),
+    /**
+     * The block of the referenced object this comment is about — SPEC §13.6.
+     *
+     * `nostrReferences` says *which object*; this says *which part of it*.
+     * Absent means a comment about the whole object, and that is a different
+     * fact from an anchor that no longer resolves — §13.6 forbids collapsing
+     * the two, so the absence has to survive the import rather than being
+     * inferred later from a failed lookup.
+     */
+    nostrBlockId: v.optional(v.string()),
   })
     .index('by_parent', ['parentKind', 'parentId'])
     .index('by_seedKey', ['seedKey'])

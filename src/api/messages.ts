@@ -52,6 +52,8 @@ export interface RemoteMessage {
   replyCount?: number
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** Which block of the referenced object this comment is about — SPEC §13.6. */
+  nostrBlockId?: string
   /** Distinct reply authors in first-reply order (list only). */
   replyAuthors?: { id: string; name: string; avatarUrl?: string }[]
   /** Send time of the newest reply (list only). */
@@ -134,6 +136,7 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
     lastReplyTime: r.lastReplyAt !== undefined ? formatLastReplyTimestamp(r.lastReplyAt, r.createdAt) : undefined,
     createdAtMs: r.createdAt,
     nostrReferences: r.nostrReferences,
+    nostrBlockId: r.nostrBlockId,
   }
 }
 

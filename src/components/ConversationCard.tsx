@@ -68,6 +68,8 @@ interface ConversationCardProps {
   topicTitle?: string
   highlightType?: HighlightType
   nostrReferences?: string[]
+  /** Which block of the referenced object this is about — SPEC §13.6. */
+  nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
   onBodyChange?: (body: string) => void
   showCreateTopic?: boolean
@@ -107,6 +109,7 @@ export function ConversationCard({
   resolutionMessage: initialResolutionMessage = '',
   isTopic: initialIsTopic = false,
   nostrReferences,
+  nostrBlockId,
   topicTitle: initialTopicTitle = '',
   highlightType,
   onHighlightChange,
@@ -638,7 +641,7 @@ export function ConversationCard({
           </div>
 
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
-            <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} />
+            <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} />
           </div>
 
           {/* Figma frame attachments - preview cards, click to view full screen */}

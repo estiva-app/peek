@@ -92,6 +92,14 @@ export interface ConversationData {
   lastReplyTime?: string
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /**
+   * Which block of the referenced object this comment is about — SPEC §13.6.
+   *
+   * `nostrReferences` says which object; this says which part. Absent means a
+   * comment about the whole object, which §13.6 requires a reader to keep
+   * distinct from an anchor that no longer resolves.
+   */
+  nostrBlockId?: string
 }
 
 export interface ConvGroup {

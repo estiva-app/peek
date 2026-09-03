@@ -1,4 +1,5 @@
 import type { FC, ReactNode } from 'react'
+import { CommentAnchor } from './CommentAnchor'
 import {
   IconCircleCheck,
   IconCircleDashed,
@@ -299,7 +300,7 @@ export function RenderBlocks({
   )
 }
 
-export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedObjects }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[]; resolvedObjects?: Record<string, ForeignObject> }) {
+export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlockId, resolvedObjects }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject> }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
@@ -330,6 +331,10 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, resolvedOb
   // paragraph that still takes a gap.
   return (
     <div data-message-body className="flex flex-col gap-1 text-sm text-text-secondary leading-[1.4] break-words">
+      {/* Which part of the referenced object this is about (SPEC §13.6).
+          Above the text, because it is the subject of the remark rather than
+          part of it — the same reason a quoted line goes above a reply. */}
+      <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />
       <RenderBlocks value={text} format="marker" renderRun={(run) => renderTokens(run, isTopicResolved)} />
       {references.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={resolvedObjects?.[naddr]} />

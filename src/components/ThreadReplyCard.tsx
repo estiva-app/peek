@@ -152,6 +152,8 @@ interface ThreadReplyCardProps {
    *  - resolved=false → parent reopens (user removed the resolution from the editor) */
   onResolutionChange?: (resolved: boolean, message?: string) => void
   nostrReferences?: string[]
+  /** Which block of the referenced object this is about — SPEC §13.6. */
+  nostrBlockId?: string
   /** Already-resolved reference objects, keyed by naddr (stories/tests — no relay). */
   resolvedObjects?: Record<string, ForeignObject>
   className?: string
@@ -176,6 +178,7 @@ export function ThreadReplyCard({
   resolutionMsg,
   onResolutionChange,
   nostrReferences,
+  nostrBlockId,
   resolvedObjects,
   className,
 }: ThreadReplyCardProps) {
@@ -521,7 +524,7 @@ export function ThreadReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} resolvedObjects={resolvedObjects} />
+              <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} />
             </div>
             {attachments && attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">
