@@ -424,3 +424,64 @@ describe('sweep — where latency stops being tolerable', () => {
     expect(out.result).toBe('no session')
   })
 })
+
+/**
+ * The sweep's own first run destroyed its results.
+ *
+ * Chrome, 2026-09-02: it answered at 2k, 4k, 8k, 16k and 32k, then 64k threw
+ * `QuotaExceededError: The input is too large` — which propagated out and took
+ * all five collected rows with it. **The refusal was the ceiling the function
+ * exists to find**, and losing the run to it made the whole sweep pointless.
+ */
+describe('a refusal is a result, not the end of the run', () => {
+  /** Answers below `refuseAbove`, throws above it — Chrome's actual behaviour. */
+  function ceilingModel(refuseAbove: number) {
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({
+        prompt: async (input: string) => {
+          if (input.length > refuseAbove) throw new Error('QuotaExceededError: The input is too large.')
+          return 'ok'
+        },
+        destroy: () => {},
+      }),
+    }
+  }
+
+  it('keeps every row collected before the refusal', async () => {
+    ceilingModel(40_000)
+    const out = await diag().sweep(20_000)
+    const rows = out.rows as { chars: number; answered: boolean }[]
+    expect(rows.map((r) => r.chars)).toEqual([2_000, 4_000, 8_000, 16_000, 32_000, 64_000])
+    expect(rows.filter((r) => r.answered).map((r) => r.chars)).toEqual([2_000, 4_000, 8_000, 16_000, 32_000])
+  }, 20_000)
+
+  it('reports the ceiling as a bracket, with the browser own words', async () => {
+    ceilingModel(40_000)
+    const out = await diag().sweep(20_000)
+    expect(String(out.ceiling)).toMatch(/between 32000 and 64000/)
+    expect(String(out.ceiling)).toMatch(/input is too large/i)
+  }, 20_000)
+
+  it('names the current budget when a bounded window turns out to be enough', async () => {
+    // The verdict should say what to change, not only that something could.
+    ceilingModel(40_000)
+    const out = await diag().sweep(20_000)
+    expect(String(out.verdict)).toMatch(/THREAD_CONTEXT_CHARS is currently 4000/)
+    expect(String(out.verdict)).toMatch(/far below what answered/)
+  }, 20_000)
+
+  it('says the ceiling was not reached when everything answers', async () => {
+    ceilingModel(Infinity)
+    const out = await diag().sweep(20_000)
+    expect(String(out.ceiling)).toMatch(/not reached/)
+  }, 20_000)
+
+  it('stops at the refusal rather than trying larger sizes', async () => {
+    // Beyond a ceiling every larger size is refused for the same reason.
+    ceilingModel(5_000)
+    const out = await diag().sweep(20_000)
+    const rows = out.rows as { chars: number }[]
+    expect(rows.map((r) => r.chars)).toEqual([2_000, 4_000, 8_000])
+  }, 20_000)
+})

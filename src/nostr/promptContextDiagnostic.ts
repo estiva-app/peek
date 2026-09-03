@@ -371,7 +371,7 @@ function proseOf(chars: number): string {
 async function sweep(limitMs = 120_000): Promise<Record<string, unknown>> {
   const clock = budget(limitMs)
   const sizes = [2_000, 4_000, 8_000, 16_000, 32_000, 64_000]
-  const rows: { chars: number; ms: number; answered: boolean }[] = []
+  const rows: { chars: number; ms: number; answered: boolean; refused?: string }[] = []
 
   for (const chars of sizes) {
     if (clock.spent()) {
@@ -382,9 +382,32 @@ async function sweep(limitMs = 120_000): Promise<Record<string, unknown>> {
     if (!created) return { result: 'no session', rows }
     step(`sweeping ${chars} chars`)
     const startedAt = Date.now()
-    const result = await within(usageOf(created.session, proseOf(chars)), clock.left())
-    rows.push({ chars, ms: Date.now() - startedAt, answered: result !== 'timeout' })
+    /*
+      **A refusal is a result, and the first version treated it as fatal.**
+      Run in Chrome on 2026-09-02 the sweep answered at 2k, 4k, 8k, 16k and
+      32k, then 64k threw `QuotaExceededError: The input is too large` — which
+      propagated out and destroyed all five rows it had already collected. The
+      refusal WAS the ceiling this function exists to find, and losing the run
+      to it was the one outcome that made the whole sweep pointless.
+    */
+    let result: Awaited<ReturnType<typeof usageOf>> | 'timeout' | 'refused' = 'refused'
+    let refusal: string | undefined
+    try {
+      result = await within(usageOf(created.session, proseOf(chars)), clock.left())
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error)
+    }
+    rows.push({
+      chars,
+      ms: Date.now() - startedAt,
+      answered: result !== 'timeout' && refusal === undefined,
+      ...(refusal ? { refused: refusal } : {}),
+    })
     created.session.destroy()
+    if (refusal !== undefined) {
+      step(`${chars} chars was refused — ${refusal}`)
+      break
+    }
     if (result === 'timeout') {
       step(`${chars} chars did not answer — stopping`)
       break
@@ -393,14 +416,18 @@ async function sweep(limitMs = 120_000): Promise<Record<string, unknown>> {
 
   const answered = rows.filter((r) => r.answered)
   const largest = answered.length ? answered[answered.length - 1] : undefined
+  const refused = rows.find((r) => r.refused)
   step('sweep done')
   return {
     rows,
     largestThatAnswered: largest ? `${largest.chars} chars in ${(largest.ms / 1000).toFixed(1)}s` : 'none',
+    ceiling: refused
+      ? `between ${largest?.chars ?? 0} and ${refused.chars} characters — ${refused.chars} was refused with "${refused.refused}"`
+      : 'not reached; every size answered',
     verdict: !largest
       ? 'Nothing answered. Prefill and INT-3 are both out of reach on this machine.'
       : largest.chars >= 32_000
-        ? 'A bounded window is enough; retrieval is only the accuracy mitigation.'
+        ? `A bounded window is enough; retrieval is only the accuracy mitigation. THREAD_CONTEXT_CHARS is currently ${THREAD_CONTEXT_CHARS}, which is far below what answered.`
         : `Latency degrades before 32k. Retrieval is a requirement, not a mitigation — INT-3 should summarise selected messages rather than a window.`,
     note: 'Prose filler, not repeated characters: `x`.repeat() compresses and would report a ceiling several times too generous.',
   }
