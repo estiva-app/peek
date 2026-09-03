@@ -26,5 +26,6 @@ export function usePeople(): Person[] | undefined {
     name: p.name,
     role: p.role,
     avatarSrc: p.avatarUrl ?? avatarFor(p.name),
+    pubkey: p.pubkey,
   }))
 }

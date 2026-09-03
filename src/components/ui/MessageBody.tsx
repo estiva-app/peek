@@ -1,4 +1,5 @@
 import type { FC, ReactNode } from 'react'
+import { MentionChip } from './MentionChip'
 import { CommentAnchor } from './CommentAnchor'
 import {
   IconCircleCheck,
@@ -210,7 +211,16 @@ function Inline({ runs, renderRun }: { runs?: RenderInline[]; renderRun: (run: s
   return (
     <>
       {(runs ?? []).map((run, k) =>
-        run.marks.includes('code') ? (
+        run.reference ? (
+          /*
+            A `nostr:` reference — SPEC §13.1. Drawn here rather than passed to
+            `renderRun`, because the parser has already decided this run *is* a
+            reference; handing it back as text would invite each caller to
+            re-detect it with a regex, which is how the display-name mention
+            ended up needing a directory in the first place.
+          */
+          <MentionChip key={k} uri={run.reference} />
+        ) : run.marks.includes('code') ? (
           // `code` never combines with another mark and its content is never
           // parsed further — SPEC §13.1.
           <code key={k} className="rounded-sm bg-bg-active px-1 py-0.5 font-mono text-[0.9em] text-text-primary">
