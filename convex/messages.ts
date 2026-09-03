@@ -343,6 +343,7 @@ export async function shape(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>, fac
     attachments: m.attachments,
     files: await resolveFileAttachments(ctx, m.fileAttachments),
     nostrReferences: m.nostrReferences,
+    nostrBlockId: m.nostrBlockId,
   }
 }
 
