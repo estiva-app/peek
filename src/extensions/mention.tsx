@@ -157,7 +157,7 @@ function makeSuggestion(isUrgent: boolean): Omit<SuggestionOptions<Person>, 'edi
         .chain()
         .focus()
         .insertContentAt(range, [
-          { type: nodeType, attrs: { id: person.id, label: person.name } },
+          { type: nodeType, attrs: { id: person.id, label: person.name, pubkey: person.pubkey ?? null } },
           { type: 'text', text: ' ' },
         ])
         .run()
@@ -174,6 +174,14 @@ export const PeekMention = Mention.extend({
     return {
       id: { default: null },
       label: { default: null },
+      /**
+       * The mentioned person's Nostr key, when they have one — SPEC §13.1.
+       *
+       * `id` is Peek's own identifier and means nothing to another app; this is
+       * what the body is serialised with, so a mention survives a rename and
+       * resolves for a reader who does not hold this directory.
+       */
+      pubkey: { default: null },
     }
   },
 
@@ -205,6 +213,14 @@ export const UrgentMention = Mention.extend({
     return {
       id: { default: null },
       label: { default: null },
+      /**
+       * The mentioned person's Nostr key, when they have one — SPEC §13.1.
+       *
+       * `id` is Peek's own identifier and means nothing to another app; this is
+       * what the body is serialised with, so a mention survives a rename and
+       * resolves for a reader who does not hold this directory.
+       */
+      pubkey: { default: null },
     }
   },
 

@@ -1,4 +1,6 @@
 import { PEOPLE } from '@/data/peopleData'
+import { decodeNpub, encodeNpub } from '@estiva-app/protocol'
+import { personByPubkey } from '@/api/mentions'
 import { TOPICS } from '@/data/topicData'
 import { APP_FILES, DOCUMENT_FILES } from '@/data/filesData'
 import { parseInlineMarks, wrapInlineMarks } from '@estiva-app/protocol'
@@ -57,7 +59,11 @@ const _wordStart = '(?<![A-Za-z0-9._%+-])'
 
 function _buildMentionRe(): RegExp {
   return new RegExp(
-    `(${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\])`,
+    // `nostr:npub…` first, so a key is recognised whole before any of the
+    // name-shaped alternatives can match part of it. It is listed here rather
+    // than parsed separately because this regex is what decides where a run of
+    // plain text ends, and a key is not plain text.
+    `(nostr:npub1[023456789acdefghjklmnpqrstuvwxyz]+|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\])`,
     'g'
   )
 }
@@ -153,7 +159,34 @@ export function parseInlineContent(line: string): Record<string, unknown>[] {
   const content: Record<string, unknown>[] = []
   for (const part of parts) {
     if (!part) continue
-    if (part.startsWith('!@') && part.length > 2) {
+    if (/^nostr:npub1/i.test(part)) {
+      /*
+        A key, loaded back into the editor as the chip it was written as —
+        SPEC §13.1. Without this an author who edits a message finds a wall of
+        bech32 where a name used to be, which is a worse experience than the
+        display-name form it replaced.
+
+        The label is resolved *now*, from the directory as it stands. That is
+        the point of storing the key: the name is a rendering of it rather than
+        the thing itself, so a person who has since been renamed shows their
+        current name here and in every message they were ever mentioned in.
+      */
+      let pubkey: string | null = null
+      try {
+        pubkey = decodeNpub(part)
+      } catch {
+        pubkey = null
+      }
+      const known = pubkey ? personByPubkey(pubkey) : undefined
+      content.push({
+        type: 'mention',
+        attrs: {
+          id: known?.id ?? pubkey ?? part,
+          label: known?.name ?? `${part.replace(/^nostr:/i, '').slice(0, 12)}…`,
+          pubkey,
+        },
+      })
+    } else if (part.startsWith('!@') && part.length > 2) {
       const name = part.slice(2)
       const person = PEOPLE.find((p) => p.name === name)
       content.push({ type: 'urgentMention', attrs: { id: person?.id ?? name, label: name } })
@@ -226,9 +259,16 @@ export function serializeInline(node: TiptapNode): string {
     else if (child.type.name === 'hardBreak') {
       text += '\n'
     } else if (child.type.name === 'mention') {
-      text += `@${child.attrs.label}`
+      // SPEC §13.1 — a key, when we have one. `label` is what a person typed
+      // and reads well; it is also the thing that goes stale on a rename and
+      // means nothing to another app, so it is the fallback rather than the
+      // form. Somebody with no Estiva ID key still mentions by name, which is
+      // exactly what every existing message already does.
+      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `@${child.attrs.label}`
     } else if (child.type.name === 'urgentMention') {
-      text += `!@${child.attrs.label}`
+      // The urgency is Peek's own affordance and has no wire form, so an
+      // urgent mention of somebody with a key is still just a mention of them.
+      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `!@${child.attrs.label}`
     } else if (child.type.name === 'topicMention') {
       text += `[${child.attrs.label}] `
     } else if (child.type.name === 'fileMention') {
