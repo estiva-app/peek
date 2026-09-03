@@ -38,13 +38,23 @@ function draw(prefill?: Record<string, string>) {
 }
 
 /*
-  By placeholder, not by label. `getByLabelText` does not work here because
-  `TextInput` and `Textarea` never associate their label with the control —
-  which is **SHA-17**, filed and open. Worth noting that a test reaching for the
-  obvious query is what runs into it: the same gap a screen reader hits.
+  By label, which is the query a person's screen reader makes too.
+
+  It was by placeholder, because `getByLabelText` could not find these controls:
+  `Field` rendered its `<label>` with no `htmlFor` and the control as a sibling,
+  so nothing associated the two. That was **SHA-17**, fixed in
+  `@estiva-app/ui@0.4.0`, and this is the workaround coming out — the reason the
+  fix was worth making rather than a note about it.
+
+  A test reaching for the obvious query is what ran into it in the first place.
+
+  Anchored rather than exact, because `Field` puts the required marker *inside*
+  the label — so the accessible name of a required field is "Title*", asterisk
+  included. That is worth knowing beyond this file: it is what a screen reader
+  announces.
 */
-const titleBox = () => screen.getByPlaceholderText('Title…')
-const descBox = () => screen.getByPlaceholderText('Description…')
+const titleBox = () => screen.getByLabelText(/^Title/)
+const descBox = () => screen.getByLabelText(/^Description/)
 
 describe('prefill lands in the form (PEE-5)', () => {
   it('fills a field that arrives after the form opened', () => {
