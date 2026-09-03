@@ -30,6 +30,8 @@ import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
 import { decodeNevent, pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
 import {
+  matchObjectUrl,
+  urlPatternsOf,
   buildActionEvent,
   createPeopleCache,
   resolveFolderProject,
@@ -102,14 +104,90 @@ const cachedPeople = (query: QueryFn): PeopleFn => profiles.viaRelay(query)
  * reference widget is inline in somebody's sentence; the worst thing it can do
  * is turn a message into an error.
  */
+/**
+ * Every URL shape any app has published, cached for the session.
+ *
+ * One query answers it for the whole ecosystem — `kind:31990` is global, so
+ * this is the registry, and there is no service to keep alive (RFC 0.5 §7.5).
+ * Cached because a conversation full of links would otherwise ask once per
+ * link, and the answer changes only when somebody republishes a manifest.
+ */
+let shapesPromise: Promise<ReturnType<typeof urlPatternsOf>> | null = null
+
+/** Forget the cached shapes — for tests, and after a manifest is republished. */
+export function forgetUrlShapes(): void {
+  shapesPromise = null
+}
+
+async function urlShapes(query: QueryFn) {
+  shapesPromise ??= query([{ kinds: [31990], limit: 100 }]).then((manifests) =>
+    manifests.flatMap((manifest) => urlPatternsOf(manifest)),
+  )
+  try {
+    return await shapesPromise
+  } catch (error) {
+    // A failed read must not poison the session — the next message tries again.
+    shapesPromise = null
+    throw error
+  }
+}
+
+/**
+ * The address a pasted app URL names, or null — RFC 0.5 §7.5, PRO-15.
+ *
+ * **Two steps, and the second is why this cannot be a pure function.**
+ * `matchObjectUrl` recovers the kind and the `d`; a NIP-33 address also needs
+ * the author, and only the relay knows who that is. So a matched URL costs one
+ * `#d` query, which §7.4's measurement makes unambiguous: no `(kind, d)` is
+ * shared by two authors.
+ *
+ * A URL no manifest claims returns null and stays a plain link, which §7.5 says
+ * is the honest outcome — it is a link, and nothing should pretend otherwise.
+ */
+export async function addressFromUrlAsViewer(
+  url: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<string | null> {
+  const query = viewerQuery(relayUrl, token)
+  try {
+    const hit = matchObjectUrl(url, await urlShapes(query))
+    if (!hit) return null
+    const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 1 }
+    // Narrow by kind when the app named one. Without it the `d` alone is still
+    // unambiguous, but the query is cheaper and the intent is clearer.
+    if (hit.kind !== undefined) filter.kinds = [hit.kind]
+    const [found] = await query([filter])
+    if (!found) return null
+    return `${found.kind}:${found.pubkey}:${hit.identifier}`
+  } catch (error) {
+    if (error instanceof RelayReadError) return null
+    throw error
+  }
+}
+
 export async function resolveObjectAsViewer(
-  naddr: string,
+  reference: string,
   relayUrl: string,
   token: StoredToken,
 ): Promise<ForeignObject | null> {
   const query = viewerQuery(relayUrl, token)
   try {
-    return await resolveForeignObject(naddr, query, cachedPeople(query))
+    /*
+      A pasted app URL is a reference too (PRO-15).
+
+      Taken here rather than at each call site so every surface that already
+      renders an `naddr` — a message, a thread reply, a comment — renders a
+      pasted link with no further wiring. `addressFromUrlAsViewer` returns null
+      for a URL no manifest claims, and null is what the widget draws nothing
+      for, so an ordinary link is unaffected.
+    */
+    if (/^https?:\/\//i.test(reference)) {
+      const address = await addressFromUrlAsViewer(reference, relayUrl, token)
+      if (!address) return null
+      return await resolveForeignObject(address, query, cachedPeople(query))
+    }
+    return await resolveForeignObject(reference, query, cachedPeople(query))
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error

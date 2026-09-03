@@ -15,7 +15,7 @@ import figmaIcon from '@/assets/figma icon.svg'
 import linearIcon from '@/assets/linear icon.svg'
 import { TOPICS } from '@/api'
 import { APP_FILES, DOCUMENT_FILES } from '@/api'
-import { INLINE_TOKEN_RE, matchReference, matchUrl } from '@/lib/textParsing'
+import { INLINE_TOKEN_RE, findUrls, matchReference, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { ReferenceChip } from './ReferenceChip'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -348,6 +348,19 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlock
       <RenderBlocks value={text} format="marker" renderRun={(run) => renderTokens(run, isTopicResolved)} />
       {references.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={resolvedObjects?.[naddr]} />
+      ))}
+      {/*
+        A pasted app URL, rendered as the object it names — RFC 0.5 §7.5,
+        PRO-15. The link stays in the prose: unlike an `naddr`, which PEEK-18
+        strips because the widget says it in words, a URL is something a person
+        deliberately wrote and may want to click.
+
+        `quiet` because most links are only links. One that no manifest claims
+        resolves to null and draws nothing, and drawing a skeleton under every
+        ordinary link meanwhile would be worse than the gap it fills.
+      */}
+      {findUrls(text).map((url) => (
+        <ForeignObjectWidget key={url} naddr={url} resolved={resolvedObjects?.[url]} quiet />
       ))}
     </div>
   )
