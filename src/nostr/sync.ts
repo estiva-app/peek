@@ -189,12 +189,16 @@ export async function syncTopicFromRelay(
 }
 
 /**
- * Fill in names and faces for anyone still showing a placeholder (PEEK-72).
+ * Re-read names and faces from Estiva ID (PEEK-72, widened by SHA-22).
  *
- * Asks who is *missing* a profile rather than reacting to new activity — the
- * distinction the ticket turned on. Anyone whose messages predate the sync
- * cursor is never revisited by the channel path, so waiting for them to speak
- * fixes only whoever spoke most recently.
+ * Asks the whole roster rather than reacting to new activity — the distinction
+ * the original ticket turned on. Anyone whose messages predate the sync cursor
+ * is never revisited by the channel path, so waiting for them to speak fixes
+ * only whoever spoke most recently.
+ *
+ * *Stale*, not *missing*: the query behind this once returned only rows with no
+ * picture, which made the cache write-once and stranded every later profile
+ * edit. See `convex/nostr/sync.ts`'s `pubkeysToRefresh`.
  *
  * `kind:0` is not channel-scoped, so membership is not in play here; only auth.
  */
@@ -202,11 +206,11 @@ export async function syncStaleProfilesFromRelay(
   relayUrl: string,
   token: StoredToken,
   api: {
-    pubkeysMissingProfile: () => Promise<string[]>
+    pubkeysToRefresh: () => Promise<string[]>
     recordProfiles: (args: { profiles: unknown[] }) => Promise<{ ok: boolean; reason?: string }>
   },
 ): Promise<void> {
-  const pubkeys = await api.pubkeysMissingProfile()
+  const pubkeys = await api.pubkeysToRefresh()
   if (pubkeys.length === 0) return
 
   const profiles = await queryRelay(

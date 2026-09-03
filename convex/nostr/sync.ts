@@ -12,7 +12,7 @@
  * **No `"use node"`.** It was here because signing needed entropy the default
  * runtime does not provide; nothing in this file signs any more. Removing it
  * matters beyond tidiness: a Node-runtime file may export *only actions*, so
- * with it in place `syncPlan` and `pubkeysMissingProfile` below could not exist
+ * with it in place `syncPlan` and `pubkeysToRefresh` below could not exist
  * — and that failure appears at deploy, not at type-check or test.
  *
  * **Polling, not subscribing.** Convex functions are request-scoped and cannot
@@ -619,15 +619,40 @@ export const importResolutions = action({
   },
 })
 
-export const pubkeysMissingProfile = query({
+/**
+ * Every pubkey whose `kind:0` is worth re-reading — which is all of them.
+ *
+ * This used to return only rows with a placeholder name or **no image at all**,
+ * which is what the old name `pubkeysMissingProfile` described. It made the
+ * cache write-once: a row that already held a picture was never asked about
+ * again, so a profile edited in Estiva ID never reached Peek. The caller has
+ * always been called `syncStaleProfilesFromRelay` — *stale*, not *missing* —
+ * and the narrowing here is what quietly made that untrue.
+ *
+ * Found via SHA-22. Buzz now requires a signed header on `/media/*` reads that
+ * an `<img>` cannot send, so Estiva ID republished every `picture` as a URL it
+ * serves itself. Ship reads `kind:0` straight from the relay and picked the new
+ * URL up immediately; Peek renders `users.image`, and every row still held the
+ * old `/media/` URL with nothing that would ever replace it.
+ *
+ * The same measurement showed the write-once bug was already there: one row
+ * held a *superseded* avatar hash, not merely an unmapped one — Peek had been
+ * missing that person's avatar change for some time. Both URLs answered `401`,
+ * so one bug hid the other.
+ *
+ * Cheap enough to be unconditional. `users` is already `collect()`ed here, the
+ * client batches every author into one `{kinds:[0], authors:[…]}` filter, this
+ * runs once per sign-in (`auth/AuthGate.tsx`) and is not awaited, and
+ * `resolveExternalUser` patches only when a value actually differs — so a
+ * workspace where nothing changed does one relay query and no writes.
+ */
+export const pubkeysToRefresh = query({
   args: {},
   handler: async (ctx): Promise<string[]> => {
     const me = await viewerId(ctx)
     if (!me) return []
     const users = await ctx.db.query('users').collect()
-    return users
-      .filter((u) => u.nostrPubkey && (/^nostr:[0-9a-f]{8}$/.test(u.name) || !u.image))
-      .map((u) => u.nostrPubkey as string)
+    return users.filter((u) => u.nostrPubkey).map((u) => u.nostrPubkey as string)
   },
 })
 

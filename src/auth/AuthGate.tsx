@@ -80,17 +80,19 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
         // From here a token expiring is an interruption, not a cold boot, and
         // the shell must ask before navigating away (PEEK-123).
         markEntered()
-        // Fill in names and faces from Estiva ID (PEEK-72) — for everyone still
-        // showing a placeholder, not just the viewer. Sync only resolves a
-        // profile for authors of *newly imported* messages, so anyone already
-        // past the cursor would keep `nostr:<8 chars>` forever.
+        // Re-read names and faces from Estiva ID (PEEK-72) — for the whole
+        // roster, not just the viewer. Sync only resolves a profile for authors
+        // of *newly imported* messages, so anyone already past the cursor would
+        // keep `nostr:<8 chars>` forever — and, until SHA-22 widened the query
+        // behind this, anyone who already had a picture kept the old one
+        // forever too.
         //
         // Deliberately not awaited: a slow or unreachable relay must not hold up
         // sign-in, and a name is cosmetic until it arrives.
         const token = validToken()
         if (!token || !relayUrl) return
         void syncStaleProfilesFromRelay(relayUrl, token, {
-          pubkeysMissingProfile: () => convex.query(api.nostr.sync.pubkeysMissingProfile, {}),
+          pubkeysToRefresh: () => convex.query(api.nostr.sync.pubkeysToRefresh, {}),
           recordProfiles: (args) => convex.action(api.nostr.sync.recordProfiles, args as never),
         }).catch((error) => console.warn('[nostr] profile sync failed:', error))
       })
