@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash } from '@tabler/icons-react'
+import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { MenuItem, SectionLabel } from '@estiva-app/ui'
@@ -318,6 +318,34 @@ export function CommandLauncher({
     and no apology. `canPrefill` reports 'downloadable' as unavailable, so
     opening a form never starts a multi-gigabyte fetch.
   */
+  /*
+    INT-2 — asking about the open conversation instead of searching it.
+
+    A third level beside `scope` and `formAction`, holding the question rather
+    than an app or an action. **No model is called here.** This ticket is the
+    surface only: the gesture, the chip, and where an answer will go. INT-3
+    fills it.
+  */
+  const [asking, setAsking] = useState<string | null>(null)
+
+  /*
+    Whether a model could answer at all, resolved once per open.
+
+    The launcher's own rule is that an action appears only where it can succeed,
+    so the row is absent rather than disabled where nothing can run — Edge 154
+    gates generative execution outright, and a row that always fails there is
+    worse than no row. This is also why the check is not `availability()`
+    directly: `canPrefill` refuses only the answers that would start a download.
+  */
+  const [modelReady, setModelReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void canPrefill().then((ready) => !cancelled && setModelReady(ready))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const [prefill, setPrefill] = useState<Record<string, string> | undefined>()
   useEffect(() => {
     setPrefill(undefined)
@@ -344,6 +372,15 @@ export function CommandLauncher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formAction, scope, context.conversation?.messages?.join('\u0000')])
   const popLevel = () => {
+    /*
+      Leaving Ask keeps what was typed. The text is sovereign in this design
+      (INT-2): changing how a sentence is interpreted must never cost somebody
+      the sentence, in either direction.
+    */
+    if (asking !== null) {
+      setAsking(null)
+      return
+    }
     if (formAction) setFormAction(null)
     else if (scope) setScope(null)
     setQuery('')
@@ -549,6 +586,8 @@ export function CommandLauncher({
 
     // The form step renders ActionFormPanel instead of rows.
     if (formAction) return { rows, headers }
+    // Asking replaces the list with the answer panel, so there are no rows.
+    if (asking !== null) return { rows, headers }
 
     if (scope) {
       const actions = q
@@ -590,6 +629,33 @@ export function CommandLauncher({
     }
 
     // ── Global level ──
+    /*
+      INT-2 — interpret what was typed as a question about this conversation.
+
+      Above the results and above the actions, because it is what a person
+      typing a sentence rather than a term is most likely to have meant. It
+      appears only with something typed, only with a conversation open (there
+      is nothing to ask about otherwise), and only where a model could answer.
+    */
+    if (q && context.conversation?.messages?.length && modelReady) {
+      headers.set(rows.length, sectionHeader('Ask'))
+      rows.push({
+        ...simpleRow(
+          'ask',
+          <IconMessageQuestion size={16} stroke={1.5} className="text-text-secondary" />,
+          <>
+            Ask about this conversation: "<span className="font-medium">{query.trim()}</span>"
+          </>,
+          undefined,
+          () => {
+            // The query is deliberately NOT cleared — see popLevel.
+            setAsking(query.trim())
+          },
+        ),
+        compact: true,
+      })
+    }
+
     /*
       PEE-3 — changing an object the thread already refers to. Above the
       found things, because these are actions rather than results: they
@@ -740,7 +806,7 @@ export function CommandLauncher({
     }
     return { rows, headers }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate, changeRows])
+  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate, changeRows, modelReady, context.conversation?.messages?.length])
 
   // Reset the highlight on every level/query change.
   const didInitHighlight = useRef(false)
@@ -785,7 +851,7 @@ export function CommandLauncher({
       }
       return
     }
-    if (e.key === 'Backspace' && query === '' && scope) {
+    if (e.key === 'Backspace' && query === '' && (scope || asking !== null)) {
       e.preventDefault()
       popLevel()
       return
@@ -848,6 +914,26 @@ export function CommandLauncher({
 
             {/* Scope chip - the state made visible. Click the X (or Backspace on
                 an empty input) to pop one level back out. */}
+            {/* Ask chip — deliberately its own, not the scope chip's shape with
+                an app icon in it. Ask is a mode, and drawing it beside Ship and
+                Peek would read as a third application that does not exist. */}
+            {asking !== null && (
+              <div className="inline-flex items-center gap-1.5 bg-accent-muted border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
+                <IconMessageQuestion size={10} stroke={1.5} className="text-text-secondary" />
+                <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap max-w-[220px] truncate">
+                  {asking}
+                </span>
+                <button
+                  type="button"
+                  onClick={popLevel}
+                  className="size-4 flex items-center justify-center rounded-full hover:bg-bg-hover text-text-secondary"
+                  aria-label="Leave Ask"
+                >
+                  <IconX size={10} stroke={1.5} />
+                </button>
+              </div>
+            )}
+
             {scope && (
               <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
                 {appIcon(scope, 10)}
@@ -902,8 +988,23 @@ export function CommandLauncher({
             )}
           </div>
 
-          {/* Body: the action's form in form mode, rows otherwise */}
-          {formAction && (scope || formAction.target) ? (
+          {/* Body: the answer panel while asking, the action's form in form
+              mode, rows otherwise */}
+          {asking !== null ? (
+            /*
+              INT-2 ships this surface empty on purpose. The gesture, the chip
+              and the place an answer goes can all be judged before a single
+              prompt exists — which is the whole point of splitting the model
+              out of this ticket. INT-3 replaces the placeholder with a
+              retrieved-and-cited answer.
+            */
+            <div className="px-4 py-6 flex flex-col gap-2" data-surface="ask">
+              <p className="text-[14px] leading-[1.4] text-text-primary">{asking}</p>
+              <p className="text-[13px] leading-[1.4] text-text-secondary">
+                Answering is not built yet. Leave Ask to go back to searching — what you typed is still there.
+              </p>
+            </div>
+          ) : formAction && (scope || formAction.target) ? (
             <div>
               <ActionFormPanel
                 app={scope ?? undefined}
