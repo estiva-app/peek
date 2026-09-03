@@ -341,3 +341,46 @@ describe('looseParse and jsonHint', () => {
     expect(looseParse('')).toBeNull()
   })
 })
+
+/**
+ * Two complaints Chrome logged on every launcher open, observed in production
+ * on 2026-09-02:
+ *
+ * > *The sampling options are incompatible with speculative decoding (MTP)…*
+ * > *No output language was specified in a LanguageModel API request…*
+ *
+ * Both were true of a bare `availability()`, and both were ours. The existing
+ * tests passed throughout because their stubs ignore arguments — the same
+ * blind spot that hid the `create()` bug. These assert the argument.
+ */
+describe('availability is asked with the options a session would use', () => {
+  it('passes them, rather than asking a question it will not act on', async () => {
+    const availability = vi.fn<(options?: unknown) => Promise<string>>(async () => 'available')
+    stubModel({ availability: availability as unknown as Stub['availability'] })
+
+    await prefillAvailability()
+    expect(availability).toHaveBeenCalledWith(SESSION_OPTIONS[0])
+  })
+
+  it('falls back to the bare call on a build that rejects options', async () => {
+    // An answer with a warning beats no answer.
+    const availability = vi.fn<(options?: unknown) => Promise<string>>(async (options) => {
+      if (options) throw new TypeError('availability takes no arguments')
+      return 'available'
+    })
+    stubModel({ availability: availability as unknown as Stub['availability'] })
+
+    expect(await prefillAvailability()).toBe('available')
+    expect(availability).toHaveBeenCalledTimes(2)
+    expect(availability.mock.calls[1]?.[0]).toBeUndefined()
+  })
+
+  it('is unavailable when both spellings throw', async () => {
+    const availability = vi.fn<(options?: unknown) => Promise<string>>(async () => {
+      throw new Error('no')
+    })
+    stubModel({ availability: availability as unknown as Stub['availability'] })
+
+    expect(await prefillAvailability()).toBe('unavailable')
+  })
+})

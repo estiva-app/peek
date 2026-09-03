@@ -154,13 +154,34 @@ export const SESSION_OPTIONS: SamplingOptions[] = [
  * a browser reporting `'unavailable'` was measured creating working sessions.
  */
 export async function prefillAvailability(): Promise<ModelAvailability> {
-  if (typeof globalThis.LanguageModel === 'undefined') return 'unavailable'
+  const model = globalThis.LanguageModel
+  if (typeof model === 'undefined') return 'unavailable'
+  /*
+    **Asked with the options a session would actually use.** A bare
+    `availability()` made Chrome log two complaints on every launcher open,
+    observed in production 2026-09-02:
+
+    > *The sampling options are incompatible with speculative decoding (MTP)…*
+    > *No output language was specified in a LanguageModel API request…*
+
+    Both are true of a call carrying no options, and both were mine. Beyond the
+    noise it was the wrong question: asking whether a model is available *in
+    general* is not asking whether it is available for the session this code
+    goes on to create, and only the second is actionable.
+
+    A build that rejects options on `availability` falls back to the bare call,
+    since an answer with a warning beats no answer.
+  */
   try {
-    return await globalThis.LanguageModel.availability()
+    return await model.availability(SESSION_OPTIONS[0])
   } catch {
-    // A throw here is the API refusing to answer — indistinguishable, for our
-    // purposes, from not having it.
-    return 'unavailable'
+    try {
+      return await model.availability()
+    } catch {
+      // A throw from both is the API refusing to answer — indistinguishable,
+      // for our purposes, from not having it.
+      return 'unavailable'
+    }
   }
 }
 
