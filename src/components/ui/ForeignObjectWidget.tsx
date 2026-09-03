@@ -489,8 +489,15 @@ export function ForeignObjectSkeleton({ className }: { className?: string }) {
 export function ForeignObjectWidget({
   naddr,
   resolved,
+  quiet = false,
 }: {
+  /** An `naddr`, an `nevent`, an address, or a pasted app URL (PRO-15). */
   naddr: string
+  /**
+   * Draw nothing while resolving, for a reference that might not be one.
+   * See the branch below.
+   */
+  quiet?: boolean
   /** The already-resolved object, for surfaces with no relay to ask (stories,
    *  tests). Skips resolution entirely; actions still render but cannot land. */
   resolved?: ForeignObject
@@ -564,7 +571,17 @@ export function ForeignObjectWidget({
    *
    * The state already told these apart; only this branch did not.
    */
-  if (object === 'loading') return <ForeignObjectSkeleton className="mt-1" />
+  /*
+    `quiet` is for a reference that is only a *candidate*.
+
+    An `naddr` in a message is certainly a reference, so a skeleton is right:
+    the alternative is a message that settles at one height and then grows
+    (FEE-3). A pasted URL is not — most links in most messages are just links,
+    and RFC 0.5 §7.5 says one no manifest claims stays a plain link. Drawing a
+    skeleton under every one of those and then removing it is the same flicker
+    FEE-3 fixed, pointed the other way.
+  */
+  if (object === 'loading') return quiet ? null : <ForeignObjectSkeleton className="mt-1" />
 
   // A reference we cannot resolve degrades to nothing, leaving the message text
   // intact. Never break a message because an attachment failed.
