@@ -467,7 +467,11 @@ describe('a refusal is a result, not the end of the run', () => {
     // The verdict should say what to change, not only that something could.
     ceilingModel(40_000)
     const out = await diag().sweep(20_000)
-    expect(String(out.verdict)).toMatch(/THREAD_CONTEXT_CHARS is currently 4000/)
+    // Against the constant, not a literal: this asserts that the verdict names
+    // the budget, which is the useful property. Pinning the number here made it
+    // fail the moment INT-1's measurement changed it, which is the opposite of
+    // what the test is for.
+    expect(String(out.verdict)).toContain(`THREAD_CONTEXT_CHARS is currently ${THREAD_CONTEXT_CHARS}`)
     expect(String(out.verdict)).toMatch(/far below what answered/)
   }, 20_000)
 

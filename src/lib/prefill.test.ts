@@ -153,3 +153,46 @@ describe('usablePrefill', () => {
     expect(usablePrefill(null, ['title'])).toEqual({})
   })
 })
+
+/**
+ * The budget, once it stopped being a guess (INT-1).
+ *
+ * Measured in Chrome via `__promptContext.sweep()` on 2026-09-02: 4k answers in
+ * 1.8s, 8k in 2.3s, 16k in 4.1s, 32k in 9.1s, and 64k is refused outright. The
+ * cost is **super-linear**, so the ceiling is not the interesting bound — the
+ * shoulder of the curve is.
+ */
+describe('THREAD_CONTEXT_CHARS is set from the curve, not from what fits', () => {
+  it('is well inside the region where an answer is cheap', () => {
+    // 16k already costs 4.1s before a single word is generated, and a real
+    // feature generates a paragraph on top of that.
+    expect(THREAD_CONTEXT_CHARS).toBeLessThanOrEqual(16_000)
+  })
+
+  it('is far below the measured ceiling, which is between 32k and 64k', () => {
+    // Not a safety margin for its own sake: the room is deliberately left for
+    // INT-3, where a person has asked and knows they are waiting.
+    expect(THREAD_CONTEXT_CHARS).toBeLessThan(32_000)
+  })
+
+  it('is bigger than the value that demonstrably discarded a real conversation', () => {
+    /*
+      A real 9-message thread of 5795 characters was cut to 2465 by the old
+      4000 — 57% discarded — and the untruncated version answered faster than
+      the truncated one. The bound cost conversation and bought nothing.
+    */
+    expect(THREAD_CONTEXT_CHARS).toBeGreaterThan(5_795)
+  })
+
+  it('carries a thread the size of the real one whole', () => {
+    // 9 messages of ~650 characters — 5850 in total, matching the 5795-character
+    // conversation the old bound cut to 2465.
+    const thread = Array.from({ length: 9 }, (_, i) => `Message ${i} `.repeat(65))
+    expect(thread.join('\n').length).toBeGreaterThan(5_795)
+
+    const kept = threadContext(thread)
+    // Nothing skipped: every message survives, which 4000 could not manage.
+    for (let i = 0; i < 9; i++) expect(kept).toContain(`Message ${i}`)
+    expect(threadContext(thread, 4_000).length).toBeLessThan(kept.length)
+  })
+})
