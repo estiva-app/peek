@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
 import { Avatar } from './ui/Avatar'
@@ -257,17 +257,36 @@ export function ThreadPanel({
   const messages = [conversation, ...replies, ...sentReplies]
   const references = messages.flatMap((m) => [...(m.nostrReferences ?? []), ...findNaddrs(m.body ?? '')])
   const referenceKey = references.join('|')
-  const bodyKey = messages.map((m) => m.body ?? '').join('\u0000')
+  /*
+    Identity as well as prose since INT-3: an answer has to say which messages
+    it came from, and a citation has to reach the message in the thread behind
+    the modal. `id` is the same one the reply wrapper renders as
+    `data-reply-id`, which is what a citation scrolls to.
+  */
+  const bodyKey = messages
+    .map((m) => [m.id, m.authorName, m.timestamp, m.body ?? ''].join('\u0001'))
+    .join('\u0000')
+  /*
+    Rebuilt from the key rather than from `messages`, which is the round-trip
+    this effect already did for bodies: a new array identity every render would
+    re-register on every keystroke in the composer, and the key is what says
+    whether anything actually changed.
+  */
+  const snapshot = useMemo(
+    () =>
+      bodyKey
+        ? bodyKey.split('\u0000').map((row) => {
+            const [id, author, timestamp, ...body] = row.split('\u0001')
+            return { id, author, timestamp, body: body.join('\u0001') }
+          })
+        : [],
+    [bodyKey],
+  )
   useEffect(() => {
     const unique = [...new Set(referenceKey ? referenceKey.split('|') : [])]
-    registerActiveConversation({
-      references: unique,
-      messages: bodyKey ? bodyKey.split('\u0000') : [],
-    })
+    registerActiveConversation({ references: unique, messages: snapshot })
     return unregisterActiveConversation
-    // Joined keys rather than the arrays: a new array identity every render
-    // would re-register on every keystroke in the composer.
-  }, [referenceKey, bodyKey])
+  }, [referenceKey, snapshot])
 
   // Delayed skeleton: switching threads keeps the panel mounted, but the
   // replies query reloads and a full skeleton flash reads as the panel
@@ -368,8 +387,9 @@ export function ThreadPanel({
 
       {/* Scrollable content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
-        {/* Initial message */}
-        <div className="px-4 pt-4 pb-2">
+        {/* Initial message. Anchored like a reply (INT-3): a citation has to be
+            able to reach the message that opened the thread too. */}
+        <div className="px-4 pt-4 pb-2" data-reply-id={conversation.id}>
           {huddleMemberCount != null ? (
             /* Huddle: show full message like a reply */
             <ThreadReplyCard

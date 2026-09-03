@@ -40,13 +40,43 @@ export interface ConversationSnapshot {
    */
   references: string[]
   /**
-   * The message bodies, oldest first — the material prefill reads (PEE-5).
+   * The thread's messages, oldest first — the material the model reads.
    *
-   * Bodies only: no authors, no timestamps. What a capture needs is what was
-   * said, and every extra field is context window spent on something the model
-   * was not asked about. `lib/prefill` bounds how much of this is sent.
+   * **Bodies alone were enough until INT-3.** PEE-5 captured only what was
+   * said, on the reasoning that every extra field is context window spent on
+   * something the model was not asked about — and that still holds for what is
+   * *sent*: `bodies()` is what goes in a prompt. But INT-3 has to show which
+   * messages an answer came from and let a person click through to them, and
+   * neither is possible from a string. So the snapshot carries the identity
+   * and the prompt still carries only the prose.
    */
-  messages: string[]
+  messages: ConversationMessage[]
+}
+
+/**
+ * One message, in the two capacities INT-3 needs it in: prose for the model,
+ * and enough identity to point at the message in the thread behind the modal.
+ *
+ * `id` matches the `data-reply-id` the thread renders, which is the anchor a
+ * citation scrolls to.
+ */
+export interface ConversationMessage {
+  id: string
+  author: string
+  /** As the thread displays it ("9:41 AM") — shown on a citation, never parsed. */
+  timestamp: string
+  body: string
+}
+
+/**
+ * Just the prose, oldest first.
+ *
+ * Every prompt-facing caller goes through this rather than reaching into the
+ * snapshot, so there is one derivation and nothing to drift: the identity a
+ * citation needs never reaches a context window it was not asked for.
+ */
+export function bodies(snapshot: Pick<ConversationSnapshot, 'messages'> | null | undefined): string[] {
+  return (snapshot?.messages ?? []).map((m) => m.body)
 }
 
 let active: ConversationSnapshot | null = null

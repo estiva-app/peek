@@ -33,10 +33,14 @@ vi.mock('@/api', async () => {
 
 Element.prototype.scrollIntoView = vi.fn()
 
+/** A thread message, with the identity a citation needs (INT-3). */
+let seq = 0
+const reply = (body: string) => ({ id: `r${seq++}`, author: 'Katerina', timestamp: '9:41 AM', body })
+
 /** A launcher invoked from a thread with something in it to ask about. */
 const inThread: LauncherContext = {
   composer: { isFocused: true, hasDraft: false },
-  conversation: { references: [], messages: ['the build broke on main after the interop bump'] },
+  conversation: { references: [], messages: [reply('the build broke on main after the interop bump')] },
 }
 
 function open(context: LauncherContext = inThread) {
@@ -129,21 +133,21 @@ describe('the query is sovereign (INT-2)', () => {
 
     await userEvent.clear(input())
     await userEvent.keyboard('{Backspace}')
-    expect(screen.queryByText(/not built yet/i)).not.toBeInTheDocument()
+    // The chip is the marker for "in Ask", not the panel copy — INT-3 replaced
+    // the placeholder that used to be asserted here.
+    expect(screen.queryByRole('button', { name: /Leave Ask/i })).not.toBeInTheDocument()
   })
 })
 
 describe('the Ask surface (INT-2)', () => {
-  it('names the question and says answering is not built', async () => {
-    // Shipping it empty is the point: the gesture is judgeable without a model.
+  it('names the question in the chip and in the panel', async () => {
+    // Deliberately both: the chip is the state, and the panel is the question
+    // the answer is about.
     open()
     await userEvent.type(input(), 'what did we decide')
     await userEvent.click(await askRow())
 
-    // It is in the chip and in the panel, deliberately: the chip is the state
-    // and the panel is the question the answer will be about.
     expect(screen.getAllByText('what did we decide')).toHaveLength(2)
-    expect(screen.getByText(/not built yet/i)).toBeInTheDocument()
   })
 
   it('replaces the result list rather than sitting under it', async () => {
@@ -189,7 +193,7 @@ describe('nothing PEE-4 built has changed (INT-2)', () => {
     open()
     await userEvent.type(input(), 'zzqxvwmkjjbtplfd')
 
-    expect(screen.queryByText(/not built yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Leave Ask/i })).not.toBeInTheDocument()
     expect(await askRow()).toBeInTheDocument()
   })
 })
