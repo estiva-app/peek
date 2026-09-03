@@ -24,6 +24,7 @@ import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
+import { AvatarGroup } from '@estiva-app/ui'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
@@ -34,7 +35,7 @@ import { ResolveDialog } from './ResolveDialog'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useIsTopicResolved } from '@/api'
+import { useIsTopicResolved, useAvatarSrc } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
 import { HighlightPill } from './ui/HighlightPill'
 import { MessageBody } from './ui/MessageBody'
@@ -331,6 +332,8 @@ export function ConversationCard({
   // Resolved-state of any *referenced* topic (for inline [Topic] mentions and the
   // topic-anchor icon). Reads runtime mutations so the icon reflects user changes.
   const isTopicResolved = useIsTopicResolved()
+  /** Reply authors' faces, resolved as Peek's Avatar wrapper resolves any other. */
+  const avatarSrcFor = useAvatarSrc()
 
   const handleMore = (rect: DOMRect) => {
     // Toggle; the shared shell decides above/below from the real room.
@@ -693,16 +696,16 @@ export function ConversationCard({
             <div className="flex items-center gap-2 pl-8 pr-2 pb-1.5 w-full">
               <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-[color:var(--accent-wash-2)] signal:hover:bg-[color:var(--accent-wash)] signal:transition-colors">
                 {replyAuthors && replyAuthors.length > 0 && (
+                  /* The shared stack at 18px (2026-09-03). This row hand-rolled
+                     its own for want of a size prop, and drifted while it did:
+                     four faces where the shared rule is three, and its own ring.
+                     The picture chain is Peek's Avatar wrapper's, kept exactly —
+                     the message's own face, else the registry's for that name. */
                   <div className="hidden signal:flex items-center shrink-0">
-                    {replyAuthors.slice(0, 4).map((a, i) => (
-                      <Avatar
-                        key={a.name}
-                        size={18}
-                        src={a.avatarSrc}
-                        alt={a.name}
-                        className={cn('ring-[1.5px] ring-bg-surface', i > 0 && '-ml-1.5')}
-                      />
-                    ))}
+                    <AvatarGroup
+                      size={18}
+                      members={replyAuthors.map((a) => ({ name: a.name, picture: a.avatarSrc ?? avatarSrcFor(a.name) }))}
+                    />
                   </div>
                 )}
                 <IconMessage2
