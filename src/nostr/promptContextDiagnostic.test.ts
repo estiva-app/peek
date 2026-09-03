@@ -16,7 +16,7 @@ import { installPromptContextDiagnostic, type PromptContextDiagnostic } from './
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
 import { THREAD_CONTEXT_CHARS } from '@/lib/prefill'
 
-type Diag = (() => Promise<PromptContextDiagnostic>) & {
+type Diag = ((limitMs?: number) => Promise<PromptContextDiagnostic>) & {
   overflow: (multiplier?: number) => Promise<Record<string, unknown>>
   options: () => unknown[]
 }
@@ -184,5 +184,60 @@ describe('overflow — the measurement that matters', () => {
   it('says there was no session rather than pretending to measure', async () => {
     const out = await diag().overflow()
     expect(out.result).toBe('no session')
+  })
+})
+
+/**
+ * The first version returned nothing at all when run in Chrome — it was still
+ * generating. Where `measureInputUsage` is absent every measurement is a real
+ * prompt, and there are three, one over a deliberately oversized input.
+ *
+ * A diagnostic that can hang forever and says nothing is indistinguishable
+ * from a broken one, which is the failure mode this whole subsystem keeps
+ * producing. Partial numbers beat a promise that never settles.
+ */
+describe('a measurement that hangs is abandoned, not waited on', () => {
+  it('returns a result with a note rather than never settling', async () => {
+    registerActiveConversation({ references: [], messages: ['a'.repeat(500)] })
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({
+        inputQuota: 4096,
+        inputUsage: 0,
+        // No measureInputUsage, and a prompt that never resolves.
+        prompt: () => new Promise<string>(() => {}),
+        destroy: () => {},
+      }),
+    }
+
+    // A 2s budget rather than the 45s default: the behaviour under test is the
+    // deadline, not its length, and the suite should not wait one out.
+    const out = await Promise.race([
+      diag()(2_000),
+      new Promise<'never settled'>((r) => setTimeout(() => r('never settled'), 20_000)),
+    ])
+
+    expect(out).not.toBe('never settled')
+    const report = out as PromptContextDiagnostic
+    expect(report.boundedUsage).toBeUndefined()
+    expect(report.notes.join(' ')).toMatch(/timed out|budget for the whole run/i)
+  }, 30_000)
+
+  it('reports whether the browser can price an input without generating one', async () => {
+    // The field that explains why a run took seconds or minutes.
+    stubModel({ quota: 4096 })
+    expect((await diag()()).hasMeasureInputUsage).toBe(true)
+  })
+
+  it('warns when every measurement will cost a real generation', async () => {
+    ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({ inputQuota: 4096, inputUsage: 7, prompt: async () => 'ok', destroy: () => {} }),
+    }
+    registerActiveConversation({ references: [], messages: ['short'] })
+
+    const out = await diag()()
+    expect(out.hasMeasureInputUsage).toBe(false)
+    expect(out.notes.join(' ')).toMatch(/each measurement is a real prompt/i)
   })
 })

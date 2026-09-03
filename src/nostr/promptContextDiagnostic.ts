@@ -36,8 +36,65 @@ import {
 import { THREAD_CONTEXT_CHARS, threadContext } from '@/lib/prefill'
 import { getActiveConversation } from '@/lib/conversationRegistry'
 
+/**
+ * How long any single measurement may take before it is abandoned.
+ *
+ * **Because the first version could hang forever and said nothing.** Where
+ * `measureInputUsage` is absent every measurement is a real generation, and
+ * this makes three — one of them over a deliberately oversized input. Run in
+ * Chrome on 2026-09-02 it returned no result at all, which read exactly like a
+ * broken diagnostic and was a slow one.
+ *
+ * A measurement that times out is reported as a timeout. Partial numbers are
+ * worth more than a promise that never settles.
+ */
+const MEASUREMENT_LIMIT_MS = 30_000
+
+/**
+ * A budget for the whole run, not for each measurement.
+ *
+ * **A test caught this being the wrong shape.** Per-measurement timeouts are
+ * sequential, so three hanging measurements meant ninety seconds — a
+ * diagnostic that still looks broken, just less permanently. One deadline caps
+ * the run however many measurements stall, and the ones that never started are
+ * reported as skipped rather than as zero.
+ */
+const RUN_LIMIT_MS = 45_000
+
+/** A run's clock. Measurements consult it rather than each starting their own. */
+function budget(limit = RUN_LIMIT_MS) {
+  const deadline = Date.now() + limit
+  return {
+    left: () => deadline - Date.now(),
+    spent: () => Date.now() >= deadline,
+  }
+}
+
+/** Bound one measurement by whatever the run has left, and say so. */
+async function within<T>(promise: Promise<T>, msLeft: number): Promise<T | 'timeout'> {
+  if (msLeft <= 0) return 'timeout'
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), Math.min(msLeft, MEASUREMENT_LIMIT_MS))
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+/** Visible progress, because a silent minute is indistinguishable from a hang. */
+function step(message: string): void {
+  console.info(`[__promptContext] ${message}`)
+}
+
 export interface PromptContextDiagnostic {
   availability: ModelAvailability
+  /** Present when the browser can price an input without generating one. */
+  hasMeasureInputUsage: boolean
   /** Which entry of `SESSION_OPTIONS` the browser accepted, or why none did. */
   createdWith: SamplingOptions | string
   /** How the usage numbers were obtained — the cheap way or a real prompt. */
@@ -97,15 +154,20 @@ async function usageOf(
   return { usage: session.inputUsage, how: 'prompt' }
 }
 
-async function snapshot(): Promise<PromptContextDiagnostic> {
+/** `limitMs` is the run's budget — overridable so a caller in a hurry, or a
+ *  test exercising a hang, need not wait the default out. */
+async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic> {
   const notes: string[] = []
+  const clock = budget(limitMs)
   const conversation = getActiveConversation()
   const messages = conversation?.messages ?? []
   const threadChars = messages.join('\n').length
   const bounded = threadContext(messages)
 
+  step('asking availability')
   const base: PromptContextDiagnostic = {
     availability: await prefillAvailability(),
+    hasMeasureInputUsage: false,
     createdWith: 'not attempted',
     measuredBy: 'unavailable',
     inputQuota: undefined,
@@ -134,13 +196,29 @@ async function snapshot(): Promise<PromptContextDiagnostic> {
   }
   const { session, options } = created
   base.createdWith = options
+  base.hasMeasureInputUsage = typeof session.measureInputUsage === 'function'
+  if (!base.hasMeasureInputUsage) {
+    notes.push(
+      `This build cannot price an input without generating one, so each measurement is a real prompt. The whole run is capped at ${limitMs / 1000}s.`,
+    )
+  }
+  step(`session created${base.hasMeasureInputUsage ? ' (can measure cheaply)' : ' (must generate to measure)'}`)
   base.inputQuota = session.inputQuota
   base.baselineUsage = session.inputUsage
 
   /** A measurement that failed is no measurement, not a zero. */
   const measured = async (s: LanguageModelSession, input: string) => {
     try {
-      return await usageOf(s, input)
+      const result = await within(usageOf(s, input), clock.left())
+      if (result === 'timeout') {
+        notes.push(
+          clock.spent()
+            ? `Measuring ${input.length} characters was skipped — the ${limitMs / 1000}s budget for the whole run was already spent.`
+            : `Measuring ${input.length} characters timed out.`,
+        )
+        return { usage: undefined, how: 'prompt' as const }
+      }
+      return result
     } catch (error) {
       notes.push(`Measuring ${input.length} characters failed: ${error instanceof Error ? error.message : String(error)}`)
       return { usage: undefined, how: 'prompt' as const }
@@ -149,6 +227,7 @@ async function snapshot(): Promise<PromptContextDiagnostic> {
 
   try {
     if (bounded) {
+      step(`measuring the bounded thread (${bounded.length} chars)`)
       const { usage, how } = await measured(session, bounded)
       base.boundedUsage = usage
       base.measuredBy = how
@@ -160,6 +239,7 @@ async function snapshot(): Promise<PromptContextDiagnostic> {
       usage to the bounded measurement and report a number that is neither.
     */
     if (threadChars > bounded.length) {
+      step(`measuring the whole thread (${threadChars} chars)`)
       const second = await createSession()
       if (second) {
         const { usage } = await measured(second.session, messages.join('\n'))
@@ -177,13 +257,18 @@ async function snapshot(): Promise<PromptContextDiagnostic> {
 
     // Does this build honour a schema? PEE-5 assumed yes; Chrome with
     // speculative decoding refuses (measured 2026-09-02).
+    step('testing constrained decoding')
     const third = await createSession()
     if (third) {
       try {
-        await third.session.prompt('Reply with an object.', {
-          responseConstraint: { type: 'object', properties: { ok: { type: 'string' } } },
-        })
-        base.constrainedDecoding = 'works'
+        const attempt = await within(
+          third.session.prompt('Reply with an object.', {
+            responseConstraint: { type: 'object', properties: { ok: { type: 'string' } } },
+          }),
+          clock.left(),
+        )
+        base.constrainedDecoding = attempt === 'timeout' ? 'untested' : 'works'
+        if (attempt === 'timeout') notes.push('The constrained-decoding check timed out rather than answering.')
       } catch {
         base.constrainedDecoding = 'refused'
       }
@@ -199,6 +284,7 @@ async function snapshot(): Promise<PromptContextDiagnostic> {
   if (base.wholeThreadFits === false) {
     notes.push('The whole thread does NOT fit. INT-3 needs retrieval or map-reduce, not a bigger window.')
   }
+  step('done')
   return base
 }
 
@@ -243,7 +329,7 @@ async function overflow(multiplier = 4): Promise<Record<string, unknown>> {
 /** Installed at module load from `@/api`, exactly as `__readState` is. */
 export function installPromptContextDiagnostic(): void {
   if (typeof window === 'undefined') return
-  const fn = () => snapshot()
+  const fn = (limitMs?: number) => snapshot(limitMs)
   fn.overflow = overflow
   fn.options = () => SESSION_OPTIONS
   ;(window as unknown as Record<string, unknown>).__promptContext = fn
