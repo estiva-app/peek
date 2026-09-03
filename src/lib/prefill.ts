@@ -81,24 +81,42 @@ export function formSchema(
 }
 
 /**
- * How much of the thread to send.
+ * How much of the thread to send. **Measured, not guessed (INT-1).**
  *
- * PEE-5 leaves this open — *"a long topic will not fit the context window …
- * the choice is worth testing rather than deciding on paper"* — so this is a
- * **stated default, not a settled answer**: the most recent messages, newest
- * last, bounded by characters rather than by count.
+ * PEE-5 left this open — *"the choice is worth testing rather than deciding on
+ * paper"* — and 4000 was a stated default nobody had tested. Chrome, Gemini
+ * Nano, 2026-09-02, via `__promptContext.sweep()`, asking for a one-word answer
+ * so the number is the cost of the *input* rather than of a generation:
  *
- * Bounded by characters because a message is not a unit of size: ten one-word
- * replies and one pasted stack trace are both "ten messages". The bound is
- * deliberately well under any plausible context window, since overflowing it
- * costs a silent truncation somewhere we cannot see, and the tail of a
- * conversation is where the thing being captured was decided anyway.
+ * | characters | time to answer |
+ * | --- | --- |
+ * | 4 000 | 1.8 s |
+ * | 8 000 | 2.3 s |
+ * | 16 000 | 4.1 s |
+ * | 32 000 | 9.1 s |
+ * | 64 000 | refused — *"The input is too large."* |
  *
- * Whoever tests this against a real topic should change the number and say what
- * they measured. `inputUsage` against `inputQuota` is how to find the real
- * ceiling honestly.
+ * **The cost is super-linear**, which is what attention does: the marginal cost
+ * per character roughly triples between 4k and 32k. So the ceiling is not the
+ * interesting bound — 32k answers, and takes nine seconds doing it.
+ *
+ * **8000 is chosen for where the curve is still cheap**, not for how much fits.
+ * It doubles what a capture sees for half a second, covers roughly 34 messages
+ * at this workspace's ~234 characters each, and leaves the whole super-linear
+ * region unspent. Two reasons not to take more:
+ *
+ * - The sweep asked for one word. A real feature generates a paragraph, and
+ *   that time lands **on top** of every figure above.
+ * - Prefill is unsolicited. It races somebody already typing into the form, so
+ *   it is the latency-sensitive caller — INT-3, where a person has asked and
+ *   knows they are waiting, can afford a larger budget of its own.
+ *
+ * The measured evidence that 4000 was too small: a real 9-message thread of
+ * 5795 characters was cut to 2465 by this bound — 57% of the conversation
+ * discarded — and the untruncated version answered *faster* than the truncated
+ * one, both being inside the noise floor.
  */
-export const THREAD_CONTEXT_CHARS = 4000
+export const THREAD_CONTEXT_CHARS = 8000
 
 /**
  * The thread, trimmed from the *oldest* end so the newest survives.
