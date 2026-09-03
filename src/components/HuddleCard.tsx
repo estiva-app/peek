@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { useState } from 'react'
 import {
   IconMessage2,
   IconChevronRight,
@@ -9,7 +8,7 @@ import {
   IconChecks,
   IconArrowNarrowRight,
 } from '@tabler/icons-react'
-import { MenuItem } from '@estiva-app/ui'
+import { Menu, MenuItem } from '@estiva-app/ui'
 import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
@@ -80,9 +79,8 @@ export function HuddleCard({
   const inStream = variant === 'inStream'
   const isResolved = huddle.state === 'resolved'
   const [isHovered, setIsHovered] = useState(false)
-  const [showMenu, setShowMenu] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+  // The ⋯ menu: the trigger's rect, or closed (shared Menu shell).
+  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null)
 
   // Grid keeps the legacy "first + N" truncation; inStream shows full comma-joined
   // names (the user-side label is "you and these other people").
@@ -113,33 +111,16 @@ export function HuddleCard({
 
   const handleMore = (e: React.MouseEvent) => {
     e.stopPropagation()
-    const btn = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const MENU_HEIGHT = 100
-    const right = window.innerWidth - btn.right
-    if (window.innerHeight - btn.bottom < MENU_HEIGHT) {
-      setMenuPos({ bottom: window.innerHeight - btn.top + 4, right })
-    } else {
-      setMenuPos({ top: btn.bottom + 4, right })
-    }
-    setShowMenu((v) => !v)
+    // Toggle; the shared shell decides above/below from the real room, and
+    // owns the outside-click and Escape exits (2026-09-03).
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setMenuAnchor((prev) => (prev ? null : rect))
   }
 
   const handleDelete = () => {
-    setShowMenu(false)
+    setMenuAnchor(null)
     onDelete?.()
   }
-
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showMenu) return
-    const close = (e: MouseEvent) => {
-      if (menuRef.current?.contains(e.target as Node)) return
-      setShowMenu(false)
-      setMenuPos(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [showMenu])
 
   // Single-line preview body for the inStream variant — strip newlines so the
   // truncate happens cleanly at the card's right edge.
@@ -176,14 +157,14 @@ export function HuddleCard({
           className
         )}
         onClick={(e) => {
-          if (showMenu) return
+          if (menuAnchor) return
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
           onClick?.()
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
-          if (showMenu) return
+          if (menuAnchor) return
           setIsHovered(false)
         }}
       >
@@ -379,29 +360,20 @@ export function HuddleCard({
         </div>
       </div>
 
-      {/* More menu (portalled) */}
-      {showMenu && menuPos &&
-        createPortal(
-          <div
-            ref={menuRef}
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseLeave={() => { setShowMenu(false); setMenuPos(null); setIsHovered(false) }}
-            style={{
-              position: 'fixed',
-              ...(menuPos.top !== undefined ? { top: menuPos.top } : {}),
-              ...(menuPos.bottom !== undefined ? { bottom: menuPos.bottom } : {}),
-              right: menuPos.right,
-              zIndex: 50,
-            }}
-          >
-            <div className="bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[244px] p-2 flex flex-col gap-2">
-              <MenuItem label="View details" />
-              <Divider className="mx-0" />
-              <MenuItem label="Delete" destructive onClick={handleDelete} />
-            </div>
-          </div>,
-          document.body
-        )}
+      {/* More menu — the shared shell portals, fits, and owns the exits */}
+      {menuAnchor && (
+        <Menu
+          anchor={menuAnchor}
+          align="right"
+          closeOnLeave
+          onClose={() => { setMenuAnchor(null); setIsHovered(false) }}
+          className="w-[244px] gap-2"
+        >
+          <MenuItem label="View details" />
+          <Divider className="mx-0" />
+          <MenuItem label="Delete" destructive onClick={handleDelete} />
+        </Menu>
+      )}
     </>
   )
 }

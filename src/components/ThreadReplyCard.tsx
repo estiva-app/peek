@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { MenuItem, MenuSub } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSub } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
@@ -36,7 +36,10 @@ import { MessageBody } from './ui/MessageBody'
 
 // ── Reply More Menu ──
 
-function ReplyMoreMenu({ onEdit, onDelete, currentHighlight, onHighlight, isOwnMessage = false, className }: {
+function ReplyMoreMenu({ anchor, onClose, onEdit, onDelete, currentHighlight, onHighlight, isOwnMessage = false, className }: {
+  /** The ⋯ trigger's rect — the shared shell portals, fits and owns the exits. */
+  anchor: DOMRect | HTMLElement
+  onClose: () => void
   onEdit?: () => void
   onDelete?: () => void
   currentHighlight?: HighlightType
@@ -46,7 +49,7 @@ function ReplyMoreMenu({ onEdit, onDelete, currentHighlight, onHighlight, isOwnM
   className?: string
 }) {
   return (
-    <div className={cn('bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[180px] p-2 flex flex-col gap-2', className)}>
+    <Menu anchor={anchor} align="right" closeOnLeave onClose={onClose} className={cn('w-[180px] gap-2', className)}>
       <div className="flex flex-col">
         {isOwnMessage && <MenuItem label="Edit message" onClick={onEdit} />}
         {onHighlight && (
@@ -83,7 +86,7 @@ function ReplyMoreMenu({ onEdit, onDelete, currentHighlight, onHighlight, isOwnM
           <MenuItem label="Delete" destructive onClick={onDelete} />
         </>
       )}
-    </div>
+    </Menu>
   )
 }
 
@@ -148,9 +151,9 @@ export function ThreadReplyCard({
   className,
 }: ThreadReplyCardProps) {
   const [isHovered, setIsHovered] = useState(false)
-  const [showMoreMenu, setShowMoreMenu] = useState(false)
-  const [moreMenuPos, setMoreMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null)
-  const moreMenuRef = useRef<HTMLDivElement>(null)
+  // The ⋯ menu: the trigger's rect, or closed. The shared Menu shell owns
+  // placement and every exit (2026-09-03).
+  const [moreMenuAnchor, setMoreMenuAnchor] = useState<DOMRect | null>(null)
   const moreButtonRef = useRef<HTMLDivElement>(null)
 
   const isTopicResolved = useIsTopicResolved()
@@ -283,32 +286,14 @@ export function ThreadReplyCard({
     }
   }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!showMoreMenu) return
-    const close = (e: MouseEvent) => {
-      if (moreMenuRef.current?.contains(e.target as Node)) return
-      setShowMoreMenu(false)
-      setMoreMenuPos(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [showMoreMenu])
-
   const handleMore = () => {
-    if (showMoreMenu) { setShowMoreMenu(false); setMoreMenuPos(null); return }
-    const el = moreButtonRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const right = window.innerWidth - rect.right
-    if (window.innerHeight - rect.bottom < 200) {
-      setMoreMenuPos({ bottom: window.innerHeight - rect.top + 4, right })
-    } else {
-      setMoreMenuPos({ top: rect.bottom + 4, right })
-    }
-    setShowMoreMenu(true)
+    // Toggle; the shared shell decides above/below from the real room.
+    if (moreMenuAnchor) { setMoreMenuAnchor(null); return }
+    const rect = moreButtonRef.current?.getBoundingClientRect()
+    if (rect) setMoreMenuAnchor(rect)
   }
 
-  const handleEditStart = () => { setIsEditing(true); setShowMoreMenu(false) }
+  const handleEditStart = () => { setIsEditing(true); setMoreMenuAnchor(null) }
 
   const handleEditSave = () => {
     if (!editEditor) return
@@ -351,13 +336,12 @@ export function ThreadReplyCard({
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
 
-  const handleDelete = () => { setShowMoreMenu(false); onDelete?.() }
+  const handleDelete = () => { setMoreMenuAnchor(null); onDelete?.() }
 
   const handleHighlightChange = (type: HighlightType | undefined) => {
     setHighlightState(type)
     onHighlightChange?.(type)
-    setShowMoreMenu(false)
-    setMoreMenuPos(null)
+    setMoreMenuAnchor(null)
     setIsHovered(false)
   }
 
@@ -432,7 +416,7 @@ export function ThreadReplyCard({
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
-          if (showReactionPicker || showMoreMenu) return
+          if (showReactionPicker || moreMenuAnchor) return
           setIsHovered(false)
         }}
       >
@@ -559,31 +543,18 @@ export function ThreadReplyCard({
           </div>
         )}
 
-        {/* More menu (portalled) */}
-        {showMoreMenu && moreMenuPos &&
-          createPortal(
-            <div
-              ref={moreMenuRef}
-              onMouseDown={(e) => e.stopPropagation()}
-              onMouseLeave={() => { setShowMoreMenu(false); setMoreMenuPos(null); setIsHovered(false) }}
-              style={{
-                position: 'fixed',
-                ...(moreMenuPos.top !== undefined ? { top: moreMenuPos.top } : {}),
-                ...(moreMenuPos.bottom !== undefined ? { bottom: moreMenuPos.bottom } : {}),
-                right: moreMenuPos.right,
-                zIndex: 50,
-              }}
-            >
-              <ReplyMoreMenu
-                isOwnMessage={authorName === 'You'}
-                onEdit={handleEditStart}
-                onDelete={handleDelete}
-                currentHighlight={highlightState}
-                onHighlight={handleHighlightChange}
-              />
-            </div>,
-            document.body
-          )}
+        {/* More menu — the shared shell portals, fits, and owns the exits */}
+        {moreMenuAnchor && (
+          <ReplyMoreMenu
+            anchor={moreMenuAnchor}
+            onClose={() => { setMoreMenuAnchor(null); setIsHovered(false) }}
+            isOwnMessage={authorName === 'You'}
+            onEdit={handleEditStart}
+            onDelete={handleDelete}
+            currentHighlight={highlightState}
+            onHighlight={handleHighlightChange}
+          />
+        )}
       </div>
 
       {/* Reaction picker (portalled) */}

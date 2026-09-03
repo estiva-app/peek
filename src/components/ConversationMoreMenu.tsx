@@ -6,7 +6,7 @@ import {
   IconHighlight,
   IconX,
 } from '@tabler/icons-react'
-import { MenuItem, MenuSection, MenuSub } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSection, MenuSub } from '@estiva-app/ui'
 import { Divider } from './ui/Divider'
 import { HighlightSwatch } from './ui/HighlightPill'
 import { cn } from '@/lib/utils'
@@ -14,17 +14,20 @@ import { HIGHLIGHT_META, type HighlightType } from '@/api'
 
 /**
  * The conversation's ⋯ menu. Its rows are the shared MenuItem now
- * (2026-09-01), and the highlight submenu is the shared MenuSub
- * (2026-09-03) — "the day the shell learns it" arrived when this menu's
- * hand-rolled copy was duplicated into the reply menu and the copy dropped
- * the ref its edge-flip measured, shipping a submenu cut off by the screen.
- * The shell's version portals and measures real rects, so it cannot be.
+ * (2026-09-01), the highlight submenu is the shared MenuSub, and the
+ * container is the shared Menu shell (both 2026-09-03) — hand it the
+ * quick-menu's measured rect as `anchor` and the shell portals, fits the
+ * viewport, and owns every exit (outside click, Escape, pointer leaving —
+ * the leave grace shared with the submenu, so crossing into it never
+ * closes the menu). The old caller-side portal with its own `< 200px`
+ * flip heuristic and outside-click listener is gone.
  *
- * The container is deliberately not the shared Menu shell: this panel is
- * placed and dismissed by its caller (the quick-menu opens it against a
- * measured rect and owns when it goes).
+ * Without an anchor (the stories) it stands in flow, pinned open.
  */
 interface ConversationMoreMenuProps {
+  /** The quick-menu ⋯ rect. Absent: in-flow, for the stories. */
+  anchor?: DOMRect | HTMLElement | null
+  onClose?: () => void
   isTopic?: boolean
   isResolved?: boolean
   showCreateTopic?: boolean
@@ -44,6 +47,8 @@ interface ConversationMoreMenuProps {
 }
 
 export function ConversationMoreMenu({
+  anchor,
+  onClose,
   isTopic = false,
   isResolved = false,
   showCreateTopic = true,
@@ -61,12 +66,12 @@ export function ConversationMoreMenu({
   className,
 }: ConversationMoreMenuProps) {
   return (
-    <div
-      data-interactive
-      className={cn(
-        'bg-bg-elevated border border-border-default rounded-lg shadow-lg w-[244px] p-2 flex flex-col gap-2',
-        className
-      )}
+    <Menu
+      anchor={anchor ?? undefined}
+      align="right"
+      closeOnLeave={!!anchor}
+      onClose={onClose ?? (() => {})}
+      className={cn('w-[244px] gap-2', !anchor && 'static', className)}
     >
       <MenuSection label="Utilities">
         {isTopic ? (
@@ -147,6 +152,6 @@ export function ConversationMoreMenu({
           <MenuItem label="Delete" destructive onClick={onDelete} />
         </>
       )}
-    </div>
+    </Menu>
   )
 }
