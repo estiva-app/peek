@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import type { FormField } from './launcherActions'
 import {
   THREAD_CONTEXT_CHARS,
+  draftInstruction,
   formSchema,
   prefillInstruction,
   threadContext,
@@ -194,5 +195,48 @@ describe('THREAD_CONTEXT_CHARS is set from the curve, not from what fits', () =>
     // Nothing skipped: every message survives, which 4000 could not manage.
     for (let i = 0; i < 9; i++) expect(kept).toContain(`Message ${i}`)
     expect(threadContext(thread, 4_000).length).toBeLessThan(kept.length)
+  })
+})
+
+describe('draftInstruction (INT-4)', () => {
+  const conversation = 'Katerina: the interop bump broke the build\nJan: reverting for now'
+
+  it('carries both the conversation and the request', () => {
+    // Neither works alone: "make it shorter" means nothing without the thread,
+    // and the thread does not say what the person wants written.
+    const instruction = draftInstruction(conversation, 'offer to take a look tomorrow')
+
+    expect(instruction).toContain(conversation)
+    expect(instruction).toContain('offer to take a look tomorrow')
+  })
+
+  it('asks for the message text only', () => {
+    /*
+      A small model otherwise returns "Sure! Here's a draft:" plus an offer to
+      revise, and every word of that would land in somebody's composer for them
+      to delete. Same reason `prefillInstruction` forbids inventing a field.
+    */
+    const instruction = draftInstruction(conversation, 'agree')
+
+    expect(instruction).toMatch(/message text only/i)
+    expect(instruction).toMatch(/no preamble/i)
+  })
+
+  it('puts the request last, after the material', () => {
+    // The brief is what the model should still be holding when it starts
+    // writing; an 8000-character thread in between would bury it.
+    const instruction = draftInstruction(conversation, 'offer to take a look tomorrow')
+
+    expect(instruction.indexOf('offer to take a look tomorrow')).toBeGreaterThan(instruction.indexOf(conversation))
+  })
+
+  it('does not name the person or sign off for them', () => {
+    /*
+      INT-4 hands the draft over for editing; it does not publish in anybody's
+      voice. A sign-off is the one part of a message a person cannot see is
+      wrong at a glance, because it looks exactly like something they would
+      write.
+    */
+    expect(draftInstruction(conversation, 'agree')).toMatch(/no sign-off/i)
   })
 })

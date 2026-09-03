@@ -93,6 +93,37 @@ export function insertReferenceIntoActiveComposer(naddr: string): boolean {
   return true
 }
 
+/**
+ * Put a drafted reply at the composer's cursor (INT-4).
+ *
+ * **At the cursor, never replacing.** A person may already have typed
+ * something, and a draft that overwrote it would be the whole-form version of
+ * the mistake PEE-6 avoided per field: overwriting what somebody wrote is
+ * unacceptable, and inserting is the non-destructive move that needs no rule.
+ *
+ * It does not send. That is INT-4's central promise and it is the same one
+ * PEE-2 settled for a different payload: the text goes out in the person's
+ * words, on their send, and nothing is ever published in their voice.
+ *
+ * Marks are cleared first, for the reason `insertReferenceIntoActiveComposer`
+ * gives: a cursor inside a bold run would otherwise wrap the whole draft.
+ */
+export function insertTextIntoActiveComposer(text: string): boolean {
+  if (!activeComposer || activeComposer.editor.isDestroyed) return false
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  /*
+    Newlines become hard breaks rather than paragraphs. A drafted reply is one
+    message, and splitting it into paragraph nodes would change what the
+    composer serialises on send.
+  */
+  const content = trimmed.split(/\n+/).flatMap((line, i) =>
+    i === 0 ? [{ type: 'text', text: line }] : [{ type: 'hardBreak' }, { type: 'text', text: line }],
+  )
+  activeComposer.editor.chain().focus().unsetAllMarks().insertContent(content).run()
+  return true
+}
+
 /** Attach Figma frames to the active composer's attachment strip (previews
  *  below the text, carried on send). Returns false when no composer exists. */
 export function attachFramesToActiveComposer(frameIds: string[]): boolean {

@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, jsonHint, looseParse, prefillAvailability, promptForObject } from './promptApi'
+import { OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -382,5 +382,85 @@ describe('availability is asked with the options a session would use', () => {
     stubModel({ availability: availability as unknown as Stub['availability'] })
 
     expect(await prefillAvailability()).toBe('unavailable')
+  })
+})
+
+describe('promptForText — prose, deliberately unconstrained (INT-4)', () => {
+  it('returns nothing where the API does not exist', async () => {
+    // Every browser but recent desktop Chrome. The caller draws no draft
+    // surface at all in that case; it must not throw on the way to saying so.
+    expect(await promptForText('write a reply')).toBeNull()
+  })
+
+  it('returns the answer, trimmed', async () => {
+    stubModel({
+      availability: async () => 'available',
+      create: async () => ({ prompt: async () => '  Sounds good — I can pick it up tomorrow.\n', destroy: () => {} }),
+    })
+    expect(await promptForText('write a reply')).toBe('Sounds good — I can pick it up tomorrow.')
+  })
+
+  it('treats a blank answer as no answer', async () => {
+    // An empty string would render as a draft panel with a button that inserts
+    // nothing. `null` is the state the caller already draws honestly.
+    stubModel({
+      availability: async () => 'available',
+      create: async () => ({ prompt: async () => '   \n  ', destroy: () => {} }),
+    })
+    expect(await promptForText('write a reply')).toBeNull()
+  })
+
+  it('never passes a responseConstraint', async () => {
+    /*
+      The measured reason this function exists. Chrome refuses constrained
+      decoding outright under multi-token prediction — `promptForObject` carries
+      a whole fallback ladder for it — and a reply is prose, so there is nothing
+      to constrain. Asserting on the *arguments*, because three bugs in this
+      subsystem got through tests that only asserted a call happened.
+    */
+    const prompt = vi.fn(async () => 'a reply')
+    stubModel({ availability: async () => 'available', create: async () => ({ prompt, destroy: () => {} }) })
+
+    await promptForText('write a reply')
+    expect(prompt).toHaveBeenCalledWith('write a reply')
+    expect(prompt.mock.calls[0]).toHaveLength(1)
+  })
+
+  it('still asks for a session with sampling options', async () => {
+    // Chrome refuses `create()` with no sampling options under MTP. This path
+    // goes through the same ladder rather than around it.
+    const create = vi.fn(async () => ({ prompt: async () => 'a reply', destroy: () => {} }))
+    stubModel({ availability: async () => 'available', create })
+
+    await promptForText('write a reply')
+    expect(create).toHaveBeenCalledWith(SESSION_OPTIONS[0])
+  })
+
+  it('destroys the session even when the model throws mid-answer', async () => {
+    // A leaked session holds the model resident. The failure is silent, which
+    // is why it is asserted rather than reasoned about.
+    const destroy = vi.fn()
+    stubModel({
+      availability: async () => 'available',
+      create: async () => ({
+        prompt: async () => {
+          throw new Error('QuotaExceededError')
+        },
+        destroy,
+      }),
+    })
+
+    expect(await promptForText('write a reply')).toBeNull()
+    expect(destroy).toHaveBeenCalled()
+  })
+
+  it('returns nothing when every session spelling is refused', async () => {
+    stubModel({
+      availability: async () => 'available',
+      create: async () => {
+        throw new Error('NotSupportedError')
+      },
+    })
+    expect(await promptForText('write a reply')).toBeNull()
   })
 })

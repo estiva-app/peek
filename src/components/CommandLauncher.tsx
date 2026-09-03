@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion } from '@tabler/icons-react'
+import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { MenuItem, SectionLabel } from '@estiva-app/ui'
@@ -11,12 +11,12 @@ import { useForeignObjects, useMessageSearch, useTopics, usePeople, useWorkspace
 import type { ResolvedAction } from '@estiva-app/interop'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { topicPath } from '@/lib/objectUrl'
-import { canPrefill, promptForObject } from '@/lib/promptApi'
-import { formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
+import { canPrefill, promptForObject, promptForText } from '@/lib/promptApi'
+import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
-import { insertReferenceIntoActiveComposer } from '@/lib/composerRegistry'
+import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
 import {
   LAUNCHER_APPS,
   type LauncherAction,
@@ -326,7 +326,14 @@ export function CommandLauncher({
     surface only: the gesture, the chip, and where an answer will go. INT-3
     fills it.
   */
-  const [asking, setAsking] = useState<string | null>(null)
+  const [asking, setAsking] = useState<{ request: string; intent: 'ask' | 'draft' } | null>(null)
+
+  /*
+    INT-4 — the draft itself. `null` while it is being written, so the panel can
+    say it is working rather than looking empty; `false` once the model has been
+    asked and produced nothing.
+  */
+  const [draft, setDraft] = useState<string | null | false>(null)
 
   /*
     Whether a model could answer at all, resolved once per open.
@@ -345,6 +352,22 @@ export function CommandLauncher({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    setDraft(null)
+    if (asking?.intent !== 'draft') return
+    const conversation = threadContext(context.conversation?.messages ?? [])
+    if (!conversation) return
+    let cancelled = false
+    void (async () => {
+      const answer = await promptForText(draftInstruction(conversation, asking.request))
+      if (!cancelled) setDraft(answer ?? false)
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asking, context.conversation?.messages?.join('\u0000')])
 
   const [prefill, setPrefill] = useState<Record<string, string> | undefined>()
   useEffect(() => {
@@ -649,11 +672,41 @@ export function CommandLauncher({
           undefined,
           () => {
             // The query is deliberately NOT cleared — see popLevel.
-            setAsking(query.trim())
+            setAsking({ request: query.trim(), intent: 'ask' })
           },
         ),
         compact: true,
       })
+
+      /*
+        INT-4 — the same sentence, read as a brief rather than a question.
+
+        A second row rather than a model deciding which was meant. Asking and
+        drafting fail in opposite directions: a question answered as a draft
+        wastes a read, a draft answered as a question wastes the request, and
+        the launcher already refused that guess once when PEE-4 ruled out
+        "no search hits means they meant something else". Two rows cost one
+        arrow key and are never wrong.
+
+        It needs a composer as well as a conversation — with nowhere to put a
+        draft there is no point writing one.
+      */
+      if (context.composer) {
+        rows.push({
+          ...simpleRow(
+            'draft',
+            <IconWriting size={16} stroke={1.5} className="text-text-secondary" />,
+            <>
+              Draft a reply: "<span className="font-medium">{query.trim()}</span>"
+            </>,
+            undefined,
+            () => {
+              setAsking({ request: query.trim(), intent: 'draft' })
+            },
+          ),
+          compact: true,
+        })
+      }
     }
 
     /*
@@ -919,15 +972,19 @@ export function CommandLauncher({
                 Peek would read as a third application that does not exist. */}
             {asking !== null && (
               <div className="inline-flex items-center gap-1.5 bg-accent-muted border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
-                <IconMessageQuestion size={10} stroke={1.5} className="text-text-secondary" />
+                {asking.intent === 'draft' ? (
+                  <IconWriting size={10} stroke={1.5} className="text-text-secondary" />
+                ) : (
+                  <IconMessageQuestion size={10} stroke={1.5} className="text-text-secondary" />
+                )}
                 <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap max-w-[220px] truncate">
-                  {asking}
+                  {asking.request}
                 </span>
                 <button
                   type="button"
                   onClick={popLevel}
                   className="size-4 flex items-center justify-center rounded-full hover:bg-bg-hover text-text-secondary"
-                  aria-label="Leave Ask"
+                  aria-label={asking.intent === 'draft' ? 'Leave Draft' : 'Leave Ask'}
                 >
                   <IconX size={10} stroke={1.5} />
                 </button>
@@ -992,17 +1049,62 @@ export function CommandLauncher({
               mode, rows otherwise */}
           {asking !== null ? (
             /*
-              INT-2 ships this surface empty on purpose. The gesture, the chip
-              and the place an answer goes can all be judged before a single
-              prompt exists — which is the whole point of splitting the model
-              out of this ticket. INT-3 replaces the placeholder with a
+              One panel, two modes, and the sentence at the top of both.
+
+              **Ask** is still empty on purpose. INT-2 shipped the gesture, the
+              chip and the place an answer goes so all three could be judged
+              before a prompt existed; INT-3 replaces that placeholder with a
               retrieved-and-cited answer.
+
+              **Draft** (INT-4) is the same sentence read as a brief. It has a
+              model behind it, which is why it has three states — writing, a
+              draft, and nothing came back — where Ask has one.
             */
-            <div className="px-4 py-6 flex flex-col gap-2" data-surface="ask">
-              <p className="text-[14px] leading-[1.4] text-text-primary">{asking}</p>
-              <p className="text-[13px] leading-[1.4] text-text-secondary">
-                Answering is not built yet. Leave Ask to go back to searching — what you typed is still there.
-              </p>
+            <div className="px-4 py-6 flex flex-col gap-3" data-surface="ask">
+              <p className="text-[14px] leading-[1.4] text-text-primary">{asking.request}</p>
+
+              {asking.intent === 'ask' ? (
+                <p className="text-[13px] leading-[1.4] text-text-secondary">
+                  Answering is not built yet. Leave Ask to go back to searching — what you typed is still there.
+                </p>
+              ) : draft === null ? (
+                // Saying it is working, because a blank panel for several
+                // seconds reads as a broken one. Measured: 8000 characters of
+                // thread costs about 2.3s before a word is generated (INT-1).
+                <p className="text-[13px] leading-[1.4] text-text-secondary">Writing a draft…</p>
+              ) : draft === false ? (
+                <p className="text-[13px] leading-[1.4] text-text-secondary">
+                  No draft came back. Leave Draft to go back to searching — what you typed is still there.
+                </p>
+              ) : (
+                <>
+                  {/* The draft is shown BEFORE it goes anywhere. An unwanted
+                      draft in the composer costs a selection and a delete;
+                      seeing it first costs nothing. */}
+                  <p
+                    data-testid="draft"
+                    className="text-[14px] leading-[1.5] text-text-primary whitespace-pre-wrap border-l-2 border-border-default pl-3"
+                  >
+                    {draft}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // At the cursor, never replacing, and never sending.
+                        insertTextIntoActiveComposer(draft)
+                        onClose()
+                      }}
+                      className="h-7 px-3 rounded-md bg-accent-primary hover:bg-accent-hover text-text-inverse text-[13px] leading-[1.2] font-medium"
+                    >
+                      Put it in the composer
+                    </button>
+                    <span className="text-[12px] leading-[1.2] text-text-secondary">
+                      It will not send — edit it first.
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           ) : formAction && (scope || formAction.target) ? (
             <div>

@@ -185,3 +185,26 @@ export function usablePrefill(
   }
   return out
 }
+
+/**
+ * The instruction for a drafted reply (INT-4).
+ *
+ * The thread is the material and the person's request is the brief. Both are
+ * needed: "make it shorter" means nothing without the conversation, and the
+ * conversation alone does not say what they want written.
+ *
+ * **It asks for the message only.** A small model will otherwise return "Sure!
+ * Here is a draft:" and a closing offer to revise, and every word of that would
+ * land in somebody's composer for them to delete. The same reason
+ * `prefillInstruction` says to leave a field empty rather than invent one.
+ */
+export function draftInstruction(conversation: string, request: string): string {
+  return [
+    'A team is having this conversation:',
+    '',
+    conversation,
+    '',
+    `Write a reply for me to send. What I want: ${request}`,
+    'Reply with the message text only — no preamble, no sign-off, no quotation marks, and nothing about being an assistant.',
+  ].join('\n')
+}
