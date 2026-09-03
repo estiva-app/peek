@@ -210,8 +210,24 @@ export async function syncStaleProfilesFromRelay(
     recordProfiles: (args: { profiles: unknown[] }) => Promise<{ ok: boolean; reason?: string }>
   },
 ): Promise<void> {
+  /*
+    Every bail below says so (SHA-22). This function had three silent returns
+    and a `.catch(console.warn)` at its only call site, and it spent an unknown
+    length of time never running at all — the caller latched before `relayUrl`
+    existed. Nothing anywhere said a word.
+
+    What made it survive that long is that `importChannel` writes the same
+    `users.image` rows for the authors of newly imported messages, so anybody
+    who had just posted got a correct avatar regardless. A quiet person is the
+    only one who shows the difference, and nobody is watching a quiet person.
+
+    Cosmetic work, so a warning is the right volume — but silence is not.
+  */
   const pubkeys = await api.pubkeysToRefresh()
-  if (pubkeys.length === 0) return
+  if (pubkeys.length === 0) {
+    console.warn('[nostr] profile sync: nobody to refresh (no viewer row, or an empty roster)')
+    return
+  }
 
   const profiles = await queryRelay(
     relayUrl,
@@ -219,7 +235,14 @@ export async function syncStaleProfilesFromRelay(
     token.accessToken,
     token.pubkey,
   )
-  if (!profiles.ok || profiles.events.length === 0) return
+  if (!profiles.ok) {
+    console.warn(`[nostr] profile sync: the relay refused the kind:0 query for ${pubkeys.length} authors`)
+    return
+  }
+  if (profiles.events.length === 0) {
+    console.warn(`[nostr] profile sync: the relay returned no profiles for ${pubkeys.length} authors`)
+    return
+  }
 
   const result = await api.recordProfiles({ profiles: profiles.events })
   if (!result.ok) console.warn('[nostr] recordProfiles failed:', result.reason)
