@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting } from '@tabler/icons-react'
+import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting, IconSparkles } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { MenuItem, SectionLabel } from '@estiva-app/ui'
@@ -12,10 +12,19 @@ import type { ResolvedAction } from '@estiva-app/interop'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { topicPath } from '@/lib/objectUrl'
 import { canPrefill, promptForObject, promptForText } from '@/lib/promptApi'
+import {
+  PROPOSAL_SCHEMA,
+  isProposable,
+  probeable,
+  proposalInstruction,
+  readProposal,
+  type CatalogueEntry,
+  type Proposal,
+} from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
 import { scrollToMessage } from '@/lib/messageAnchor'
-import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
+import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission, vocabulariesFrom } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
@@ -36,7 +45,6 @@ import {
  * Ship is, which is the thing the projection layer exists to avoid — every
  * other fact about the action comes off the manifest at runtime.
  */
-const SHIP_PROJECT_KIND = 30850
 
 /** One selectable row: what it renders and what selecting it does. */
 interface Row {
@@ -109,6 +117,16 @@ export function CommandLauncher({
     const app = LAUNCHER_APPS.find((a) => a.id === initialAppId)
     return app?.actions.find((a) => a.id === initialActionId) ?? null
   })
+  /*
+    The catalogue entry a form came from when it was not reached by scoping
+    into an app (INT-5).
+
+    A proposal opens another app's form directly, so its vocabularies and its
+    parent list have to travel with it — there is no scope to read them off,
+    and a form drawn without either is one the runtime refuses, which closes
+    silently and looks like success (PEE-1).
+  */
+  const [formEntry, setFormEntry] = useState<CatalogueEntry | null>(null)
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(0)
   const [contextCleared, setContextCleared] = useState(false)
@@ -238,10 +256,12 @@ export function CommandLauncher({
   const [liveState, setLiveState] = useState<'idle' | 'loading' | 'ready' | 'none' | 'failed'>('idle')
 
   useEffect(() => {
-    if (scope?.id !== 'ship') return
+    // Whatever the app says to query, rather than a number this file knows
+    // (INT-5). An app that declares no parent kind is simply not probed.
+    if (!scope?.parentKind) return
     let cancelled = false
     setLiveState('loading')
-    creatableUnder(SHIP_PROJECT_KIND)
+    creatableUnder(scope.parentKind)
       .then((found) => {
         if (cancelled) return
         if (!found) {
@@ -291,7 +311,7 @@ export function CommandLauncher({
   */
   const scopeActions = useMemo<LauncherAction[]>(() => {
     if (!scope) return []
-    if (scope.id !== 'ship') return scope.actions
+    if (!scope.parentKind) return scope.actions
     /*
       While the manifest is still in flight, offer none of Ship's registry
       entries — not even the ones the manifest will not replace. Which of them
@@ -314,13 +334,18 @@ export function CommandLauncher({
         .filter((t) => !t.isResolved)
         .map((t) => ({ value: t.id, label: t.title }))
     }
-    if (scope?.id === 'ship' && liveShip) out[PARENT_FIELD] = liveShip.parents
+    if (scope?.parentKind && liveShip) out[PARENT_FIELD] = liveShip.parents
+    // Same list, carried on the entry: a proposal opens the form without
+    // scoping in, and a parent field with no options is a form the runtime
+    // refuses — which closes silently and looks like success (PEE-1).
+    if (!scope && formEntry) out[PARENT_FIELD] = formEntry.parents
     return out
-  }, [scope, topics, liveShip])
+  }, [scope, topics, liveShip, formEntry])
 
   const enterScope = (app: LauncherApp) => {
     setScope(app)
     setFormAction(null)
+    setFormEntry(null)
     setQuery('')
   }
   const enterForm = (action: LauncherAction) => {
@@ -347,7 +372,7 @@ export function CommandLauncher({
     surface only: the gesture, the chip, and where an answer will go. INT-3
     fills it.
   */
-  const [asking, setAsking] = useState<{ request: string; intent: 'ask' | 'draft' } | null>(null)
+  const [asking, setAsking] = useState<{ request: string; intent: 'ask' | 'draft' | 'propose' } | null>(null)
 
   /*
     INT-4 — the draft itself. `null` while it is being written, so the panel can
@@ -365,6 +390,13 @@ export function CommandLauncher({
 
   /** A cited message the thread has not loaded. See the source row's onClick. */
   const [unreachable, setUnreachable] = useState<string | null>(null)
+
+  /*
+    INT-5 — what the conversation calls for, chosen from what apps declare.
+    Same tri-state again: `null` while looking, `false` once nothing came back
+    or nothing fitted.
+  */
+  const [proposal, setProposal] = useState<Proposal | null | false>(null)
 
   /*
     Whether a model could answer at all, resolved once per open.
@@ -388,6 +420,7 @@ export function CommandLauncher({
     setDraft(null)
     setAnswer(null)
     setUnreachable(null)
+    setProposal(null)
     if (!asking) return
     const messages = context.conversation?.messages ?? []
     if (messages.length === 0) return
@@ -404,6 +437,65 @@ export function CommandLauncher({
         return
       }
 
+      if (asking.intent === 'propose') {
+        // The whole thread, bounded — a proposal is about what the
+        // conversation is, not about one claim in it, so there is nothing to
+        // retrieve against and nothing to cite.
+        const conversation = threadContext(bodies(context.conversation))
+        if (!conversation) return
+
+        /*
+          INT-5 — every probeable app, not one.
+
+          A label alone means nothing across apps: two of them may declare
+          something plausibly matching, so the catalogue carries which app each
+          action belongs to and so does the proposal. Which apps to ask comes off
+          the registry's `parentKind`; nothing here names one.
+        */
+        const found = await Promise.all(
+          probeable(LAUNCHER_APPS).map(async (app) => {
+            try {
+              const live = await creatableUnder(app.parentKind as number)
+              if (!live) return []
+              return live.actions.filter(isProposable).flatMap((action) => {
+                const launcher = launcherActionFrom(action, { parentNoun: 'parent', submitLabel: action.label })
+                if (!launcher) return []
+                return [
+                  {
+                    appId: app.id,
+                    appLabel: app.label,
+                    action,
+                    launcher,
+                    vocabularies: vocabulariesFrom(action),
+                    parents: live.parents.map((p) => ({ value: p.address, label: p.title })),
+                  },
+                ]
+              })
+            } catch (error: unknown) {
+              // A read that fails must produce a sentence, not silence — the
+              // lesson the scoped read above was fixed for.
+              console.warn('[nostr] reading an app’s creatable actions failed:', error)
+              return []
+            }
+          }),
+        )
+        const entries = found.flat()
+        if (cancelled) return
+        if (entries.length === 0) {
+          setProposal(false)
+          return
+        }
+        const answered = await promptForObject(proposalInstruction(conversation, entries), PROPOSAL_SCHEMA)
+        if (cancelled) return
+        /*
+          Validated against the real set. Structured output is refused on some
+          builds, so this answer arrived through the lenient path and can be
+          anything at all — an id nothing declared is dropped rather than guessed
+          at, the discipline `buildCreationEvent` already applies to properties.
+        */
+        setProposal(readProposal(answered, entries) ?? false)
+        return
+      }
       /*
         Retrieval first, generation second (INT-3). Which messages the answer
         could have come from is decided here, deterministically and without a
@@ -425,14 +517,13 @@ export function CommandLauncher({
         this feature exists to prevent.
       */
       const sources = cited.length > 0 ? selection.chosen.filter((c) => cited.includes(c.n)) : selection.chosen
-      setAnswer({ text, sources, byRecency: selection.byRecency, omitted: selection.omitted })
-    })()
+      setAnswer({ text, sources, byRecency: selection.byRecency, omitted: selection.omitted })    })()
 
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asking, bodies(context.conversation).join('\u0000')])
+  }, [asking, bodies(context.conversation).join('\u0000'), creatableUnder])
 
   const [prefill, setPrefill] = useState<Record<string, string> | undefined>()
   useEffect(() => {
@@ -442,7 +533,10 @@ export function CommandLauncher({
     if (!formAction || formAction.target) return
     const conversation = threadContext(bodies(context.conversation))
     if (!conversation) return
-    const built = formSchema(formAction.fields, scope ? scope.vocabularies : {})
+    // A proposed form was never scoped into, so its vocabularies come off the
+    // entry the proposal carried (INT-5) — otherwise the prefill constraint
+    // would offer a free string where the manifest declared an enum.
+    const built = formSchema(formAction.fields, scope?.vocabularies ?? formEntry?.vocabularies ?? {})
     if (!built) return
     let cancelled = false
     void (async () => {
@@ -458,7 +552,7 @@ export function CommandLauncher({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formAction, scope, bodies(context.conversation).join('\u0000')])
+  }, [formAction, scope, formEntry, bodies(context.conversation).join('\u0000')])
   const popLevel = () => {
     /*
       Leaving Ask keeps what was typed. The text is sovereign in this design
@@ -469,8 +563,11 @@ export function CommandLauncher({
       setAsking(null)
       return
     }
-    if (formAction) setFormAction(null)
-    else if (scope) setScope(null)
+    if (formAction) {
+      setFormAction(null)
+      // Or the next form drawn would inherit a proposal's vocabularies.
+      setFormEntry(null)
+    } else if (scope) setScope(null)
     setQuery('')
   }
 
@@ -756,6 +853,28 @@ export function CommandLauncher({
         It needs a composer as well as a conversation — with nowhere to put a
         draft there is no point writing one.
       */
+      /*
+        INT-5 — the same sentence read as "make something of this".
+
+        A third row for the same reason there is a second one: asking, drafting
+        and making are three things a typed sentence could mean, and the
+        launcher does not guess which. What it needs is a conversation and a
+        model; whether any app declares anything usable is not known until it
+        looks, and the panel says so rather than the row pretending to know.
+      */
+      rows.push({
+        ...simpleRow(
+          'propose',
+          <IconSparkles size={16} stroke={1.5} className="text-text-secondary" />,
+          <>Make something from this conversation</>,
+          undefined,
+          () => {
+            setAsking({ request: query.trim(), intent: 'propose' })
+          },
+        ),
+        compact: true,
+      })
+
       if (context.composer) {
         rows.push({
           ...simpleRow(
@@ -1051,17 +1170,21 @@ export function CommandLauncher({
               <div className="inline-flex items-center gap-1.5 bg-accent-muted border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
                 {asking.intent === 'draft' ? (
                   <IconWriting size={10} stroke={1.5} className="text-text-secondary" />
+                ) : asking.intent === 'propose' ? (
+                  <IconSparkles size={10} stroke={1.5} className="text-text-secondary" />
                 ) : (
                   <IconMessageQuestion size={10} stroke={1.5} className="text-text-secondary" />
                 )}
                 <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap max-w-[220px] truncate">
-                  {asking.request}
+                  {asking.intent === 'propose' && !asking.request ? 'Make something' : asking.request}
                 </span>
                 <button
                   type="button"
                   onClick={popLevel}
                   className="size-4 flex items-center justify-center rounded-full hover:bg-bg-hover text-text-secondary"
-                  aria-label={asking.intent === 'draft' ? 'Leave Draft' : 'Leave Ask'}
+                  aria-label={
+                    asking.intent === 'draft' ? 'Leave Draft' : asking.intent === 'propose' ? 'Leave Make' : 'Leave Ask'
+                  }
                 >
                   <IconX size={10} stroke={1.5} />
                 </button>
@@ -1126,21 +1249,77 @@ export function CommandLauncher({
               mode, rows otherwise */}
           {asking !== null ? (
             /*
-              One panel, two modes, and the sentence at the top of both.
+              One panel, three modes, and the sentence at the top of each.
 
-              **Ask** is still empty on purpose. INT-2 shipped the gesture, the
-              chip and the place an answer goes so all three could be judged
-              before a prompt existed; INT-3 replaces that placeholder with a
-              retrieved-and-cited answer.
+              INT-2 shipped this surface empty on purpose — the gesture, the
+              chip and the place an answer goes could all be judged before a
+              prompt existed. What fills it now are three readings of the same
+              typed sentence, and the launcher never guesses which was meant:
 
-              **Draft** (INT-4) is the same sentence read as a brief. It has a
-              model behind it, which is why it has three states — writing, a
-              draft, and nothing came back — where Ask has one.
+              - **Ask** (INT-3) answers it from retrieved messages, and cites
+                them.
+              - **Draft** (INT-4) treats it as a brief and writes a reply.
+              - **Make** (INT-5) ignores the words and asks what the
+                *conversation* calls for, over what any app declares.
+
+              All three have the same three states — working, a result, and
+              nothing came back — because all three have a model behind them
+              and a person who pressed Enter is owed an answer or a reason.
             */
             <div className="px-4 py-6 flex flex-col gap-3" data-surface="ask">
-              <p className="text-[14px] leading-[1.4] text-text-primary">{asking.request}</p>
+              {/* Make is about the conversation rather than the words, so it
+                  has nothing to echo back. */}
+              {asking.intent !== 'propose' && (
+                <p className="text-[14px] leading-[1.4] text-text-primary">{asking.request}</p>
+              )}
 
-              {asking.intent === 'ask' ? (
+              {asking.intent === 'propose' ? (
+                proposal === null ? (
+                  // Two waits behind this one: a relay read for the manifests
+                  // and then the model. Saying so beats a blank panel.
+                  <p className="text-[13px] leading-[1.4] text-text-secondary">Reading the conversation…</p>
+                ) : proposal === false ? (
+                  <p className="text-[13px] leading-[1.4] text-text-secondary">
+                    Nothing here matches what any app offers to make. Leave Make to go back to searching.
+                  </p>
+                ) : (
+                  <>
+                    {/*
+                      Which app, always. A label alone means nothing across
+                      apps — two of them may declare something plausibly
+                      matching, and this names the one about to be written to.
+                    */}
+                    <p className="text-[12px] leading-[1.2] text-text-secondary">
+                      {proposal.entry.appLabel} · {proposal.entry.launcher.label}
+                    </p>
+                    <p data-testid="proposal" className="text-[14px] leading-[1.5] text-text-primary">
+                      {proposal.preview}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          /*
+                            Opens the form; it does not publish. The model
+                            proposed and a person submits — PEE-5's "nothing
+                            submits without a person", reached here through a
+                            declared field rather than a rule invented in Peek.
+                          */
+                          setFormEntry(proposal.entry)
+                          setAsking(null)
+                          enterForm(proposal.entry.launcher)
+                        }}
+                        className="h-7 px-3 rounded-md bg-accent-primary hover:bg-accent-hover text-text-inverse text-[13px] leading-[1.2] font-medium"
+                      >
+                        Open the form
+                      </button>
+                      <span className="text-[12px] leading-[1.2] text-text-secondary">
+                        Nothing is created until you submit it.
+                      </span>
+                    </div>
+                  </>
+                )
+              ) : asking.intent === 'ask' ? (
                 answer === null ? (
                   <p className="text-[13px] leading-[1.4] text-text-secondary">Reading the thread…</p>
                 ) : answer === false ? (
@@ -1259,7 +1438,7 @@ export function CommandLauncher({
                 </>
               )}
             </div>
-          ) : formAction && (scope || formAction.target) ? (
+          ) : formAction && (scope || formAction.target || formEntry) ? (
             <div>
               <ActionFormPanel
                 app={scope ?? undefined}
@@ -1271,7 +1450,10 @@ export function CommandLauncher({
                   formAction.target
                     ? changeRows.find((r) => r.action.target === formAction.target && r.action.id === formAction.id)
                         ?.vocabularies
-                    : undefined
+                    : // A proposed action was never scoped into, so its own
+                      // declaration is the only place its vocabularies are
+                      // (INT-5).
+                      formEntry?.vocabularies
                 }
                 prefill={prefill}
                 onSubmit={(values) => void submitAction(formAction, values)}
