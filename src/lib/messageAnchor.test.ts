@@ -7,7 +7,7 @@
  * never offered.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { scrollToMessage } from './messageAnchor'
+import { scrollToMessage, scrollToMessageWhenReady } from './messageAnchor'
 
 let scrollIntoView: ReturnType<typeof vi.fn>
 
@@ -76,5 +76,44 @@ describe('scrollToMessage', () => {
     // Ids come off the relay. A selector built by concatenation would throw.
     document.body.innerHTML = `<div data-reply-id='a"b'>odd</div>`
     expect(scrollToMessage('a"b')).toBe(true)
+  })
+})
+
+describe('scrollToMessageWhenReady (INT-8)', () => {
+  it('scrolls at once when the message is already there', async () => {
+    await expect(scrollToMessageWhenReady('r1')).resolves.toBe(true)
+    expect(scrollIntoView).toHaveBeenCalled()
+  })
+
+  it('waits for a conversation that is still rendering', async () => {
+    /*
+      The reason this exists. Opening a conversation is React state, so the
+      panel mounts a render or more after the request — the element cannot be
+      looked up until it does.
+    */
+    const pending = scrollToMessageWhenReady('r-late')
+    document.body.insertAdjacentHTML('beforeend', '<div data-reply-id="r-late">late</div>')
+    await vi.advanceTimersByTimeAsync(100)
+
+    await expect(pending).resolves.toBe(true)
+  })
+
+  it('gives up rather than waiting forever', async () => {
+    // "Still waiting" and "never worked" look identical to the person who
+    // clicked, so the wait is bounded and the answer is false.
+    const pending = scrollToMessageWhenReady('r-never', 500)
+    await vi.advanceTimersByTimeAsync(600)
+
+    await expect(pending).resolves.toBe(false)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('marks the message it eventually lands on', async () => {
+    const pending = scrollToMessageWhenReady('r-late')
+    document.body.insertAdjacentHTML('beforeend', '<div data-reply-id="r-late">late</div>')
+    await vi.advanceTimersByTimeAsync(100)
+    await pending
+
+    expect(document.querySelector('[data-reply-id="r-late"]')).toHaveAttribute('data-cited', 'true')
   })
 })

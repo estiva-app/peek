@@ -49,3 +49,43 @@ export function scrollToMessage(id: string): boolean {
   )
   return true
 }
+
+/**
+ * How long to wait for a conversation to mount before giving up (INT-8).
+ *
+ * A citation into a conversation that is not open asks the topic view to open
+ * it and then has to wait — React has to render, and the messages may still be
+ * loading. Bounded, because "waiting forever" and "never worked" look
+ * identical to the person who clicked.
+ */
+const WAIT_MS = 3000
+const POLL_MS = 50
+
+/**
+ * Scroll to a message that may not be in the DOM yet.
+ *
+ * Used when a citation points into a conversation the caller has just asked to
+ * be opened: the request is React state, so the panel mounts a render or more
+ * later, and the element cannot be looked up until it does.
+ *
+ * Resolves `true` once it scrolled, `false` if the message never appeared —
+ * which the caller must surface. A click that appears to work and does not is
+ * worse than a row that was never offered.
+ */
+export function scrollToMessageWhenReady(id: string, waitMs = WAIT_MS): Promise<boolean> {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + waitMs
+    const attempt = () => {
+      if (scrollToMessage(id)) {
+        resolve(true)
+        return
+      }
+      if (Date.now() >= deadline) {
+        resolve(false)
+        return
+      }
+      window.setTimeout(attempt, POLL_MS)
+    }
+    attempt()
+  })
+}

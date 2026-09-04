@@ -66,6 +66,25 @@ export interface ConversationMessage {
   /** As the thread displays it ("9:41 AM") — shown on a citation, never parsed. */
   timestamp: string
   body: string
+  /**
+   * The conversation this message belongs to, when that is not the thread on
+   * screen (INT-8).
+   *
+   * A topic-wide snapshot spans many conversations, and a citation into one
+   * that is not open has to open it before it can scroll — `data-reply-id`
+   * only exists inside the mounted panel. Absent for a thread snapshot, where
+   * every message is already in the conversation being read.
+   */
+  conversationId?: string
+  /**
+   * Replies this message has that the snapshot does **not** include (INT-8).
+   *
+   * A topic reads its conversations' opening messages; replies are fetched per
+   * thread and are not in memory until one is opened. That is a real limit on
+   * what an answer can have been drawn from, and it is carried here so the
+   * answer can say so rather than imply it read everything.
+   */
+  repliesNotRead?: number
 }
 
 /**
@@ -80,14 +99,41 @@ export function bodies(snapshot: Pick<ConversationSnapshot, 'messages'> | null |
 }
 
 let active: ConversationSnapshot | null = null
+let topic: ConversationSnapshot | null = null
 
-/** A snapshot of the open conversation, or null when none is. */
+/**
+ * What is being read, or null when nothing is.
+ *
+ * **The open thread wins over the topic around it (INT-8).** Two things can be
+ * on screen at once — a topic with all its conversations, and one of them open
+ * in the panel — and a question asked with a thread open is a question about
+ * that thread. The narrower context is the better answer to "what am I looking
+ * at", and it is what INT-3 shipped.
+ *
+ * Two slots rather than one register overwriting another: the panel mounts
+ * and unmounts inside a topic that stays put, so a single slot would make
+ * correctness depend on the order those effects run in. Priority does not.
+ */
 export function getActiveConversation(): ConversationSnapshot | null {
-  return active
+  return active ?? topic
 }
 
 export function registerActiveConversation(snapshot: ConversationSnapshot) {
   active = snapshot
+}
+
+/**
+ * Publish the whole topic — its conversations' opening messages (INT-8).
+ *
+ * Registered whenever a topic is on screen, open thread or not; the priority
+ * above is what decides which one a question is answered from.
+ */
+export function registerTopicConversation(snapshot: ConversationSnapshot) {
+  topic = snapshot
+}
+
+export function unregisterTopicConversation() {
+  topic = null
 }
 
 /**

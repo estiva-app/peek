@@ -1,6 +1,8 @@
 import { shareableTopicUrl } from '@/lib/objectUrl'
 import { useMarkRead } from '@/lib/useMarkRead'
-import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from 'react'
+import { registerTopicConversation, unregisterTopicConversation } from '@/lib/conversationRegistry'
+import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { isNearBottom } from './scrollPolicy'
 import { IconPlus } from '@tabler/icons-react'
 import { ConversationHeader } from '@/components/ConversationHeader'
@@ -373,10 +375,12 @@ export function useTopicView({
    *  the ThreadPanel doesn't keep showing huddle members/lock when the user clicks
    *  from a HuddleCard to a ConversationCard in V3's mixed stream. Huddle clicks
    *  use a separate `openHuddle` handler that sets selectedHuddleId directly. */
-  const openThread = (convId: string) => {
+  // `useCallback` over the two setters, which are stable — so the registration
+  // below has an honest dependency instead of re-running every render.
+  const openThread = useCallback((convId: string) => {
     setSelectedHuddleId(null)
     setThreadConvId(convId)
-  }
+  }, [])
   const closeThread = () => {
     setThreadConvId(null)
     setSelectedHuddleId(null)
@@ -555,6 +559,61 @@ export function useTopicView({
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [currentSent.length])
+
+  /*
+    Publish the topic to the launcher (INT-8).
+
+    Until now only `ThreadPanel` published anything, so a topic with no thread
+    open captured `conversation: undefined` and Cmd+K correctly offered nothing
+    to ask about — correct given the seam, and wrong for somebody looking
+    straight at the topic.
+
+    **Openers only, and that is a real limit rather than a simplification.**
+    Replies are fetched per thread and are not in memory until one is opened;
+    loading every thread on the chance somebody presses Cmd+K would be a query
+    per conversation for a question nobody has asked yet. `repliesNotRead`
+    carries what was left out so an answer can say so.
+
+    The registry gives the open thread priority over this, so opening one
+    narrows the question rather than competing with it.
+  */
+  const topicKey = [...currentGroups.flatMap((g) => g.convs), ...currentSent]
+    .map((c) => [c.id, c.authorName, c.timestamp, c.replyCount ?? 0, c.body ?? ''].join('\u0001'))
+    .join('\u0000')
+  // Rebuilt from the key, the round-trip `ThreadPanel` uses for the same
+  // reason: a new array identity every render would re-register constantly.
+  const topicSnapshot = useMemo(
+    () =>
+      topicKey
+        ? topicKey.split('\u0000').map((row) => {
+            const [id, author, timestamp, replies, ...body] = row.split('\u0001')
+            return {
+              id,
+              author,
+              timestamp,
+              body: body.join('\u0001'),
+              // Every message here IS a conversation, so the citation that
+              // opens it and the message it lands on are the same row.
+              conversationId: id,
+              repliesNotRead: Number(replies) || 0,
+            }
+          })
+        : [],
+    [topicKey],
+  )
+  useEffect(() => {
+    registerTopicConversation({ references: [], messages: topicSnapshot })
+    return unregisterTopicConversation
+  }, [topicSnapshot])
+
+  /*
+    And how to open one of them (INT-8). A citation into a conversation that is
+    not on screen has to open it before it can scroll to anything.
+  */
+  useEffect(() => {
+    registerThreadOpener(openThread)
+    return unregisterThreadOpener
+  }, [openThread])
 
   if (topicId == null || !topicTitle) {
     return {
