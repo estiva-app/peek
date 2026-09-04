@@ -85,22 +85,24 @@ describe('ForeignBody', () => {
   })
 
   it('renders none of Peek’s private token vocabulary', () => {
-    // `PEE-8` means something in Peek's corpus and nothing in Ship's. A
-    // reference chip here would be Peek inventing meaning in another app's
-    // content — and `[Topic]` would resolve against a directory that does not
-    // describe the writer.
+    // Peek's tokens mean something in Peek's corpus and nothing in Ship's:
+    // a mention here would name someone out of Peek's directory, and
+    // `[Topic]` would resolve against a corpus that does not describe the
+    // writer.
     //
-    // The tokens are chosen to be ones Peek *does* recognise — `PEEK-12`
-    // matches its Linear pattern and `PR #34` its GitHub one — because a token
-    // Peek would ignore anyway proves nothing about whether the layer ran. A
-    // Ship description mentioning `PR #34` means a PR in Ship's repo, and a
-    // chip linking it to `github.com/peek/peek` would be a wrong answer stated
-    // confidently.
-    const { container } = render(
-      <ForeignBody slot={slot('Fixed by PEEK-12 in PR #34', 'marker')} />,
-    )
+    // The tokens are chosen to be ones Peek *does* recognise — `[Ongoing
+    // onboarding issues]` is a real topic title and `@Alice Johnson` a real
+    // directory name — because a token Peek would ignore anyway proves nothing
+    // about whether the layer ran. (Until 2026-09-03 this test used `PEEK-12`
+    // and `PR #34`; Peek retired those chips, so they now prove nothing here.)
+    const body = 'Raised by @Alice Johnson in [Ongoing onboarding issues]'
+    const { container } = render(<ForeignBody slot={slot(body, 'marker')} />)
     expect(container.querySelectorAll('a')).toHaveLength(0)
-    expect(container.textContent).toBe('Fixed by PEEK-12 in PR #34')
+    // The two things Peek's layer would add: a mention pill, and a topic
+    // chip (which draws a status icon).
+    expect(container.querySelector('[class*="bg-accent-muted"]')).toBeNull()
+    expect(container.querySelectorAll('svg')).toHaveLength(0)
+    expect(container.textContent).toBe(body)
   })
 
   it('does not open a widget for an address in the body', () => {

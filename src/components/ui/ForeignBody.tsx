@@ -27,10 +27,14 @@ import { RenderBlocks } from './MessageBody'
  *
  * **Marks, not Peek's tokens.** The run renderer is the identity, so §13.1's
  * six marks arrive and nothing else. Peek's own messages additionally resolve
- * `[Topic]` chips, mentions and `PEEK-`/`PR #` references inside a run, and
- * another app's body must not get that layer: a Ship description saying
- * `PR #34` means a PR in Ship's repo, and a chip pointing it at
- * `github.com/peek/peek` is a wrong answer stated confidently.
+ * `[Topic]` chips and mentions inside a run, and another app's body must not
+ * get that layer: a Ship description's `[Title]` is not a topic in Peek.
+ *
+ * Peek's own bodies auto-linked `PEEK-`/`PR #` tokens too until 2026-09-03,
+ * and the argument this comment made against extending that here is what
+ * retired them everywhere: a description saying `PR #34` means a PR in the
+ * repo it was written in, and a chip pointing it at `github.com/peek/peek`
+ * is a wrong answer stated confidently.
  *
  * **No nested widgets either.** `MessageBody` renders a `nostr:naddr` in the
  * body as a widget below the text. Doing that here would put a widget inside a

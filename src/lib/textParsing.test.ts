@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   MENTION_RE,
   INLINE_TOKEN_RE,
-  matchReference,
   matchUrl,
   parseInlineContent,
   serializeInline,
@@ -187,46 +186,11 @@ describe('serializeInline', () => {
   })
 })
 
-// ── External references (INLINE_TOKEN_RE + matchReference) ──
+// ── Tokenizer (INLINE_TOKEN_RE) ──
 
 function tokenMatches(text: string): string[] {
   return Array.from(text.matchAll(INLINE_TOKEN_RE)).map((m) => m[0])
 }
-
-describe('INLINE_TOKEN_RE external references', () => {
-  it('matches Linear issue keys', () => {
-    expect(tokenMatches('PEEK-238 has no activity')).toEqual(['PEEK-238'])
-  })
-
-  it('matches "PR #123" as one token including the context word', () => {
-    expect(tokenMatches('PR #482 is ready for review')).toEqual(['PR #482'])
-  })
-
-  it('matches "Zendesk ticket #123" as one token', () => {
-    expect(tokenMatches('Zendesk ticket #48821 can be closed')).toEqual(['Zendesk ticket #48821'])
-  })
-
-  it('matches "ticket #123" without the Zendesk prefix', () => {
-    expect(tokenMatches('look at ticket #48821 today')).toEqual(['ticket #48821'])
-  })
-
-  it('matches Build/build #123', () => {
-    expect(tokenMatches('Build #4826 passed')).toEqual(['Build #4826'])
-    expect(tokenMatches('live in production, build #5102.')).toEqual(['build #5102'])
-  })
-
-  it('matches bare #123 references', () => {
-    expect(tokenMatches('review #485 and #486 please')).toEqual(['#485', '#486'])
-  })
-
-  it('still matches mentions alongside references', () => {
-    expect(tokenMatches('@Alice Johnson see PR #482')).toEqual(['@Alice Johnson', 'PR #482'])
-  })
-
-  it('does NOT match a # without digits', () => {
-    expect(tokenMatches('the #channel idea')).toEqual([])
-  })
-})
 
 describe('URL tokenization', () => {
   it('matches an http(s) URL as one whole token', () => {
@@ -234,14 +198,14 @@ describe('URL tokenization', () => {
       .toEqual(['https://linear.app/peek-app/document/x-49287455c230'])
   })
 
-  it('does not split a #fragment inside a URL as a reference', () => {
+  it('does not split a #fragment inside a URL', () => {
     expect(tokenMatches('https://example.com/page#section-123'))
       .toEqual(['https://example.com/page#section-123'])
   })
 
-  it('keeps mentions and references working alongside a URL', () => {
-    expect(tokenMatches('@Alice Johnson posted https://x.com and PR #482'))
-      .toEqual(['@Alice Johnson', 'https://x.com', 'PR #482'])
+  it('keeps mentions working alongside a URL', () => {
+    expect(tokenMatches('@Alice Johnson posted https://x.com'))
+      .toEqual(['@Alice Johnson', 'https://x.com'])
   })
 })
 
@@ -258,35 +222,6 @@ describe('matchUrl', () => {
   it('returns null for non-URLs', () => {
     expect(matchUrl('@Alice Johnson')).toBeNull()
     expect(matchUrl('just text')).toBeNull()
-  })
-})
-
-describe('matchReference', () => {
-  it('classifies PEEK keys as linear with an issue href', () => {
-    expect(matchReference('PEEK-238')).toEqual({
-      kind: 'linear',
-      href: 'https://linear.app/peek/issue/PEEK-238',
-    })
-  })
-
-  it('classifies PR and bare # as github pull hrefs', () => {
-    expect(matchReference('PR #482')?.kind).toBe('github')
-    expect(matchReference('#485')?.href).toBe('https://github.com/peek/peek/pull/485')
-  })
-
-  it('classifies tickets as zendesk hrefs', () => {
-    expect(matchReference('Zendesk ticket #48821')?.kind).toBe('ticket')
-    expect(matchReference('ticket #48821')?.href).toBe('https://peek.zendesk.com/agent/tickets/48821')
-  })
-
-  it('classifies builds as CI run hrefs', () => {
-    expect(matchReference('Build #4821')?.kind).toBe('build')
-  })
-
-  it('returns null for mentions, brackets, and plain text', () => {
-    expect(matchReference('@Alice Johnson')).toBeNull()
-    expect(matchReference('[Some Topic]')).toBeNull()
-    expect(matchReference('plain words')).toBeNull()
   })
 })
 

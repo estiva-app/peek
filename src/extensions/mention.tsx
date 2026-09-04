@@ -3,7 +3,7 @@ import { ReactRenderer, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/r
 import Mention from '@tiptap/extension-mention'
 import { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion'
 import { type NodeViewProps } from '@tiptap/react'
-import { IconCircleDashed, IconCircleCheck, IconBrandGithub, IconFile, IconFileTypePdf, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
+import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { mentionPeople, mentionTopics, type Person } from '@/api'
 import { APP_FILES, DOCUMENT_FILES, hasConvex } from '@/api'
 import { useIsTopicResolved } from '@/api'
@@ -465,15 +465,12 @@ export const TopicMention = Mention.extend({
 // ─── File mention (apps & documents) ───
 
 import figmaIcon from '@/assets/figma icon.svg'
-import linearIcon from '@/assets/linear icon.svg'
 
 const FILE_SVG_ICONS: Record<string, string> = {
   figma: figmaIcon,
-  linear: linearIcon,
 }
 
 const FILE_TABLER_ICONS: Record<string, React.FC<{ size: number; stroke: number; className?: string }>> = {
-  github: IconBrandGithub,
   pdf: IconFileTypePdf,
   image: IconPhoto,
   spreadsheet: IconTable,

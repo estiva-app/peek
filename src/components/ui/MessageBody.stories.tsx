@@ -48,12 +48,12 @@ export const NumberedList: Story = {
 
 /**
  * Inline chips: `@`/`!@` mentions, a `[Topic]` ref (live status icon), a `[File]`
- * ref (app icon), and auto-linked external references (PR, PEEK, build, ticket).
+ * ref (app icon), and a bare URL (auto-linked).
  */
 export const InlineTokens: Story = {
   args: {
     body:
-      'Pinging @Daniel Stanton and !@Alice Johnson — this ties into [Ongoing onboarding issues] and the new [Onboarding flow screens]. Fix is in PR #1234, tracked as PEEK-142; verify against build #5102 and Zendesk ticket #48821.',
+      'Pinging @Daniel Stanton and !@Alice Johnson — this ties into [Ongoing onboarding issues] and the new [Onboarding flow screens]. Notes are at https://example.com/onboarding-notes.',
   },
 }
 
