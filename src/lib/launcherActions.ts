@@ -85,7 +85,17 @@ export interface LauncherAction {
 }
 
 export interface LauncherApp {
-  id: 'ship' | 'peek'
+  /**
+   * Any app, not one of two.
+   *
+   * Widened by INT-5, whose done-when is that this works for an app added
+   * after it shipped — a union of the apps that existed when it was written is
+   * a type-level assertion that no others will. The two rendering helpers that
+   * still compare against `'peek'` fall back to the other mark, which is a gap
+   * a third app would fill by bringing its own; it is a registry concern, not
+   * a reason to keep the union.
+   */
+  id: string
   label: string
   description: string
   /** Input placeholder while this app is the active scope. */
@@ -94,6 +104,21 @@ export interface LauncherApp {
    *  fields. Ship's are verbatim from `ship/src/kinds.ts`. */
   vocabularies: Record<string, VocabOption[]>
   actions: LauncherAction[]
+  /**
+   * The kind whose records a new object hangs under, if this app creates
+   * anything — what `creatableUnder` is asked for.
+   *
+   * **The one app-specific fact discovery cannot avoid**, and it lives here
+   * rather than in whatever consumes it: a projection is per kind, so finding
+   * an app's manifest means querying one of its records, and something must
+   * name the kind. Adding an app is then a registry entry, not a change to any
+   * consumer — which is INT-5's whole test (RFC 0.4 §15: an app nobody here
+   * wrote publishes a manifest, and this works for it the same day).
+   *
+   * Absent for an app that creates nothing readable this way, and such an app
+   * is simply not probed.
+   */
+  parentKind?: number
 }
 
 /** Verbatim `ship/src/kinds.ts` `ISSUE_STATUSES` (values and labels). */
@@ -127,6 +152,8 @@ const SHIP: LauncherApp = {
   label: 'Ship',
   description: 'Projects & issues',
   placeholder: "Try 'create issue' or 'create project'...",
+  // Its projects. Nothing outside this literal knows that number.
+  parentKind: 30850,
   vocabularies: {
     issueStatuses: SHIP_ISSUE_STATUSES,
     statuses: SHIP_PROJECT_STATUSES,
