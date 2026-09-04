@@ -23,6 +23,8 @@ export interface TopicMoreMenuProps {
   position: { top: number; right: number }
   onClose: () => void
   onOpenDetails?: () => void
+  /** Absent when the topic has no shareable URL — see `shareableTopicUrl`. */
+  onCopyLink?: () => void
   /** The label states the direction that will work, so the menu never offers
    *  an action that is already true. */
   openWorkAction?: 'add' | 'remove'
@@ -34,6 +36,7 @@ export function TopicMoreMenu({
   position,
   onClose,
   onOpenDetails,
+  onCopyLink,
   openWorkAction,
   onToggleOpenWork,
   onDeleteTopic,
@@ -46,6 +49,7 @@ export function TopicMoreMenu({
   return (
     <Menu position={position} onClose={onClose}>
       {onOpenDetails && <MenuItem label="Topic details" onClick={run(onOpenDetails)} />}
+      {onCopyLink && <MenuItem label="Copy link" onClick={run(onCopyLink)} />}
       {openWorkAction && onToggleOpenWork && (
         <MenuItem
           label={openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}

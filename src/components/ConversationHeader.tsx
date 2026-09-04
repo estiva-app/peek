@@ -56,6 +56,14 @@ interface ConversationHeaderProps {
   /** Opens the topic details dialog (PEE-2) — the same menu item the sidebar
    *  row offers, so a topic reads the same from either end. */
   onOpenDetails?: () => void
+  /**
+   * The topic's shareable URL, or null when it has none.
+   *
+   * Built by the caller rather than here: only the view holds the channel uuid
+   * and the title, and `shareableTopicUrl` answers null for a topic whose only
+   * link is Peek-private (PEE-17).
+   */
+  topicLink?: string | null
   /** Deleting used to be reachable from the sidebar row only, so a topic could
    *  be deleted from the list but not from inside itself. One menu, both
    *  places (PEE-2). */
@@ -81,6 +89,7 @@ export function ConversationHeader({
   openWorkAction,
   onToggleOpenWork,
   onOpenDetails,
+  topicLink,
   onDeleteTopic,
   tabs,
   className,
@@ -97,7 +106,16 @@ export function ConversationHeader({
 
   // "More actions" menu (portalled). Menu rules: outside click + Escape close.
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const hasMoreMenu = !!onOpenDetails || !!onDeleteTopic || !!(openWorkAction && onToggleOpenWork)
+  const copyTopicLink = topicLink
+    ? () => {
+        void navigator.clipboard
+          ?.writeText(topicLink)
+          .catch(() => window.prompt('Copy this link:', topicLink))
+      }
+    : undefined
+
+  const hasMoreMenu =
+    !!onOpenDetails || !!onDeleteTopic || !!copyTopicLink || !!(openWorkAction && onToggleOpenWork)
 
 
   const openMoreMenu = (e: React.MouseEvent) => {
@@ -222,6 +240,7 @@ export function ConversationHeader({
           position={menuPos}
           onClose={() => setMenuPos(null)}
           onOpenDetails={onOpenDetails}
+          onCopyLink={copyTopicLink}
           openWorkAction={openWorkAction}
           onToggleOpenWork={onToggleOpenWork}
           onDeleteTopic={onDeleteTopic}
