@@ -47,10 +47,14 @@ vi.mock('@/api', async () => {
 
 Element.prototype.scrollIntoView = vi.fn()
 
+/** A thread message, with the identity a citation needs (INT-3). */
+let seq = 0
+const reply = (body: string) => ({ id: `r${seq++}`, author: 'Katerina', timestamp: '9:41 AM', body })
+
 /** A thread with a composer under it — where a draft has somewhere to go. */
 const inThread: LauncherContext = {
   composer: { isFocused: true, hasDraft: false },
-  conversation: { references: [], messages: ['the build broke on main after the interop bump'] },
+  conversation: { references: [], messages: [reply('the build broke on main after the interop bump')] },
 }
 
 const onClose = vi.fn()
@@ -101,7 +105,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
   })
 
   it('is absent with no composer, because a draft would have nowhere to go', async () => {
-    open({ conversation: { references: [], messages: ['the build broke on main'] } })
+    open({ conversation: { references: [], messages: [reply('the build broke on main')] } })
     await userEvent.type(input(), 'offer to take a look tomorrow')
 
     // Ask still stands: reading a conversation needs no composer.
@@ -227,13 +231,14 @@ describe('the draft is the person\'s to send (INT-4)', () => {
     expect(screen.queryByRole('button', { name: /Leave Ask/i })).not.toBeInTheDocument()
   })
 
-  it('does not offer to insert on the Ask path, which has no draft', async () => {
+  it('does not offer to insert on the Ask path, which answers rather than drafts', async () => {
+    // Both intents reach the same panel and both call a model (INT-3 filled
+    // Ask in). What separates them is what the panel then offers.
     open()
     await userEvent.type(input(), 'what did we decide')
     await userEvent.click(await screen.findByText(/Ask about this conversation/i))
 
-    expect(screen.getByText(/not built yet/i)).toBeInTheDocument()
+    expect(await screen.findByTestId('sources')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Put it in the composer/i })).not.toBeInTheDocument()
-    expect(promptForText).not.toHaveBeenCalled()
   })
 })

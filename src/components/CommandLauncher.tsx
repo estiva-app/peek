@@ -13,10 +13,13 @@ import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/li
 import { topicPath } from '@/lib/objectUrl'
 import { canPrefill, promptForObject, promptForText } from '@/lib/promptApi'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
+import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
+import { scrollToMessage } from '@/lib/messageAnchor'
 import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
+import { bodies } from '@/lib/conversationRegistry'
 import {
   LAUNCHER_APPS,
   type LauncherAction,
@@ -75,6 +78,24 @@ interface CommandLauncherProps {
  * Zendesk — and the Figma find mode) were removed 2026-08-31 with the design
  * decision to make the launcher list real Estiva apps only.
  */
+/**
+ * An answer and the messages it is allowed to have come from (INT-3).
+ *
+ * `sources` is a subset of what retrieval chose, never a superset — see where
+ * it is built. Nothing here is persisted, deliberately: the answer is shown and
+ * forgotten. "Save this answer" is the obvious next request and is exactly what
+ * the roadmap holds back, because `kind:9802` is append-only and a shape
+ * settled while the model is unsettled is permanent.
+ */
+interface AskAnswer {
+  text: string
+  sources: NumberedMessage[]
+  /** Nothing in the question matched, so recency chose the messages. */
+  byRecency: boolean
+  /** Messages the context budget could not take. */
+  omitted: number
+}
+
 export function CommandLauncher({
   context,
   onClose,
@@ -336,6 +357,16 @@ export function CommandLauncher({
   const [draft, setDraft] = useState<string | null | false>(null)
 
   /*
+    INT-3 — the answer, and the messages it is allowed to have come from.
+    Same tri-state as the draft: `null` while it is being written, `false` once
+    the model has been asked and produced nothing.
+  */
+  const [answer, setAnswer] = useState<AskAnswer | null | false>(null)
+
+  /** A cited message the thread has not loaded. See the source row's onClick. */
+  const [unreachable, setUnreachable] = useState<string | null>(null)
+
+  /*
     Whether a model could answer at all, resolved once per open.
 
     The launcher's own rule is that an action appears only where it can succeed,
@@ -355,19 +386,53 @@ export function CommandLauncher({
 
   useEffect(() => {
     setDraft(null)
-    if (asking?.intent !== 'draft') return
-    const conversation = threadContext(context.conversation?.messages ?? [])
-    if (!conversation) return
+    setAnswer(null)
+    setUnreachable(null)
+    if (!asking) return
+    const messages = context.conversation?.messages ?? []
+    if (messages.length === 0) return
     let cancelled = false
+
     void (async () => {
-      const answer = await promptForText(draftInstruction(conversation, asking.request))
-      if (!cancelled) setDraft(answer ?? false)
+      if (asking.intent === 'draft') {
+        // A draft is written from the thread as a whole: the brief is what to
+        // say, and there is no claim to trace back to a message.
+        const conversation = threadContext(bodies(context.conversation))
+        if (!conversation) return
+        const written = await promptForText(draftInstruction(conversation, asking.request))
+        if (!cancelled) setDraft(written ?? false)
+        return
+      }
+
+      /*
+        Retrieval first, generation second (INT-3). Which messages the answer
+        could have come from is decided here, deterministically and without a
+        model — so a citation cannot be invented, only chosen from or ignored.
+      */
+      const selection = selectMessages(asking.request, messages)
+      const raw = await promptForText(answerInstruction(asking.request, selection.chosen))
+      if (cancelled) return
+      if (!raw) {
+        setAnswer(false)
+        return
+      }
+      const { text, cited } = parseAnswer(raw, selection.chosen.length)
+      /*
+        Citations narrow the source list; they never widen it. A model that
+        cited nothing gets the whole retrieved set shown instead — those are
+        the only messages it saw, so the claim "the answer came from these" is
+        true either way, and an answer with no sources at all is the one thing
+        this feature exists to prevent.
+      */
+      const sources = cited.length > 0 ? selection.chosen.filter((c) => cited.includes(c.n)) : selection.chosen
+      setAnswer({ text, sources, byRecency: selection.byRecency, omitted: selection.omitted })
     })()
+
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asking, context.conversation?.messages?.join('\u0000')])
+  }, [asking, bodies(context.conversation).join('\u0000')])
 
   const [prefill, setPrefill] = useState<Record<string, string> | undefined>()
   useEffect(() => {
@@ -375,7 +440,7 @@ export function CommandLauncher({
     // A change acts on an object that already exists; there is nothing to
     // suggest. Only a creation has empty fields worth filling.
     if (!formAction || formAction.target) return
-    const conversation = threadContext(context.conversation?.messages ?? [])
+    const conversation = threadContext(bodies(context.conversation))
     if (!conversation) return
     const built = formSchema(formAction.fields, scope ? scope.vocabularies : {})
     if (!built) return
@@ -393,7 +458,7 @@ export function CommandLauncher({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formAction, scope, context.conversation?.messages?.join('\u0000')])
+  }, [formAction, scope, bodies(context.conversation).join('\u0000')])
   const popLevel = () => {
     /*
       Leaving Ask keeps what was typed. The text is sovereign in this design
@@ -937,6 +1002,18 @@ export function CommandLauncher({
     }
     if (e.key === 'Enter') {
       e.preventDefault()
+      /*
+        In the Ask panel there is no list, but `rows` is still computed and
+        `highlight` still points into it — so Enter used to fire a row nobody
+        could see (shipped in INT-2, fixed here). Asking again is what Enter
+        means on this level, and it is how a question gets refined: edit the
+        box, press Enter, same sources machinery, new answer.
+      */
+      if (asking !== null) {
+        const request = query.trim()
+        if (request) setAsking({ request, intent: asking.intent })
+        return
+      }
       rows[highlight]?.onSelect()
     }
   }
@@ -1064,9 +1141,85 @@ export function CommandLauncher({
               <p className="text-[14px] leading-[1.4] text-text-primary">{asking.request}</p>
 
               {asking.intent === 'ask' ? (
-                <p className="text-[13px] leading-[1.4] text-text-secondary">
-                  Answering is not built yet. Leave Ask to go back to searching — what you typed is still there.
-                </p>
+                answer === null ? (
+                  <p className="text-[13px] leading-[1.4] text-text-secondary">Reading the thread…</p>
+                ) : answer === false ? (
+                  /*
+                    Silence inverts here. PEE-6's "say nothing rather than
+                    apologise" was written for prefill nobody asked for; a
+                    person who typed a question and pressed Enter is owed an
+                    answer or a reason, never nothing.
+                  */
+                  <p className="text-[13px] leading-[1.4] text-text-secondary">
+                    No answer came back. Edit the question and press Enter to try again.
+                  </p>
+                ) : (
+                  <>
+                    <p
+                      data-testid="answer"
+                      className="text-[14px] leading-[1.5] text-text-primary whitespace-pre-wrap"
+                    >
+                      {answer.text}
+                    </p>
+
+                    {/*
+                      The sources are the frame, which is why there is no
+                      apologetic "AI may be wrong" badge — that would fight
+                      PEE-6's stance and say less. A wrong answer with three
+                      citations is recoverable in seconds.
+                    */}
+                    <SectionLabel>{answer.sources.length === 1 ? 'Source' : 'Sources'}</SectionLabel>
+                    <div data-testid="sources" className="flex flex-col">
+                      {answer.sources.map(({ n, message }) => (
+                        <button
+                          key={message.id}
+                          type="button"
+                          onClick={() => {
+                            /*
+                              Scroll first, close second. A thread paginates, so
+                              a cited message can sit above the loaded window —
+                              closing first would leave a click that appeared to
+                              work and did nothing, which is worse than a row
+                              that was never offered.
+                            */
+                            if (!scrollToMessage(message.id)) {
+                              setUnreachable(message.id)
+                              return
+                            }
+                            onClose()
+                          }}
+                          className="text-left px-3 py-2 rounded-md hover:bg-bg-hover flex flex-col gap-0.5"
+                        >
+                          <span className="text-[12px] leading-[1.2] text-text-secondary">
+                            [{n}] {message.author} · {message.timestamp}
+                          </span>
+                          <span className="text-[13px] leading-[1.4] text-text-primary line-clamp-2">
+                            {message.body}
+                          </span>
+                          {unreachable === message.id && (
+                            <span className="text-[12px] leading-[1.2] text-text-secondary">
+                              Not loaded in the thread — scroll up to load earlier messages.
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/*
+                      What retrieval did, when it did something other than
+                      retrieve. A silent cap reads as "that is all there was" —
+                      the failure PEE-4 named for unroutable hits, and the one
+                      `threadContext` still has.
+                    */}
+                    {(answer.byRecency || answer.omitted > 0) && (
+                      <p className="text-[12px] leading-[1.4] text-text-secondary">
+                        {answer.byRecency
+                          ? 'Nothing in the thread matched the question, so the most recent messages were read instead.'
+                          : `${answer.omitted} earlier ${answer.omitted === 1 ? 'message' : 'messages'} did not fit and ${answer.omitted === 1 ? 'was' : 'were'} not read.`}
+                      </p>
+                    )}
+                  </>
+                )
               ) : draft === null ? (
                 // Saying it is working, because a blank panel for several
                 // seconds reads as a broken one. Measured: 8000 characters of

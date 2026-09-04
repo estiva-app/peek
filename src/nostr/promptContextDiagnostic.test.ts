@@ -14,6 +14,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { installPromptContextDiagnostic, type PromptContextDiagnostic } from './promptContextDiagnostic'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
+
+/*
+  A thread message. Only the body matters here — the diagnostic measures
+  what prose costs a context window, and the identity INT-3 put on the
+  snapshot for citations never reaches one.
+*/
+let seq = 0
+const msg = (body: string) => ({ id: `m${seq++}`, author: 'Katerina', timestamp: '9:41 AM', body })
 import { THREAD_CONTEXT_CHARS } from '@/lib/prefill'
 
 type Diag = ((limitMs?: number) => Promise<PromptContextDiagnostic>) & {
@@ -99,7 +107,7 @@ describe('measuring a thread', () => {
       the whole point: what we send today versus what INT-3 was asked to send.
     */
     const long = 'The deployment broke again and we talked about it at length. '.repeat(200)
-    registerActiveConversation({ references: [], messages: [long] })
+    registerActiveConversation({ references: [], messages: [msg(long)] })
     stubModel({ quota: 100_000, usageFor: (i) => i.length / 4 })
 
     const out = await diag()()
@@ -111,7 +119,7 @@ describe('measuring a thread', () => {
 
   it('answers the question INT-1 exists for: does the whole thread fit', async () => {
     const long = 'x'.repeat(80_000)
-    registerActiveConversation({ references: [], messages: [long] })
+    registerActiveConversation({ references: [], messages: [msg(long)] })
     // 80k chars ≈ 20k tokens against a 4096 quota — comfortably over.
     stubModel({ quota: 4096, usageFor: (i) => i.length / 4 })
 
@@ -122,7 +130,7 @@ describe('measuring a thread', () => {
   })
 
   it('says the thread was never truncated when it already fits the budget', async () => {
-    registerActiveConversation({ references: [], messages: ['short enough'] })
+    registerActiveConversation({ references: [], messages: [msg('short enough')] })
     stubModel({ quota: 4096 })
 
     const out = await diag()()
@@ -131,7 +139,7 @@ describe('measuring a thread', () => {
   })
 
   it('derives characters-per-token, so any budget can be converted', async () => {
-    registerActiveConversation({ references: [], messages: ['a'.repeat(400)] })
+    registerActiveConversation({ references: [], messages: [msg('a'.repeat(400))] })
     stubModel({ quota: 4096, usageFor: (i) => i.length / 4 })
 
     const out = await diag()()
@@ -199,7 +207,7 @@ describe('overflow — the measurement that matters', () => {
  */
 describe('a measurement that hangs is abandoned, not waited on', () => {
   it('returns a result with a note rather than never settling', async () => {
-    registerActiveConversation({ references: [], messages: ['a'.repeat(500)] })
+    registerActiveConversation({ references: [], messages: [msg('a'.repeat(500))] })
     ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
       availability: async () => 'available',
       create: async () => ({
@@ -235,7 +243,7 @@ describe('a measurement that hangs is abandoned, not waited on', () => {
       availability: async () => 'available',
       create: async () => ({ inputQuota: 4096, inputUsage: 7, prompt: async () => 'ok', destroy: () => {} }),
     }
-    registerActiveConversation({ references: [], messages: ['short'] })
+    registerActiveConversation({ references: [], messages: [msg('short')] })
 
     const out = await diag()()
     expect(out.hasMeasureInputUsage).toBe(false)
@@ -262,7 +270,7 @@ describe('measuring behaviour, since the token numbers are not on offer', () => 
       availability: async () => 'available',
       create: async () => ({ inputQuota: undefined, inputUsage: undefined, prompt, destroy: () => {} }),
     }
-    registerActiveConversation({ references: [], messages: ['the build broke'] })
+    registerActiveConversation({ references: [], messages: [msg('the build broke')] })
 
     await diag()()
     // The thread is still sent; what is added is a bound on the answer.
@@ -275,7 +283,7 @@ describe('measuring behaviour, since the token numbers are not on offer', () => 
       availability: async () => 'available',
       create: async () => ({ prompt: async () => 'ok', destroy: () => {} }),
     }
-    registerActiveConversation({ references: [], messages: ['short thread'] })
+    registerActiveConversation({ references: [], messages: [msg('short thread')] })
 
     const out = await diag()()
     expect(out.timings.length).toBeGreaterThan(0)
@@ -286,7 +294,7 @@ describe('measuring behaviour, since the token numbers are not on offer', () => 
 
   it('says the latency is worse than the budget rather than unknown', async () => {
     // The honest reading of "nothing answered in 45s".
-    registerActiveConversation({ references: [], messages: ['a'.repeat(300)] })
+    registerActiveConversation({ references: [], messages: [msg('a'.repeat(300))] })
     ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
       availability: async () => 'available',
       create: async () => ({ prompt: () => new Promise<string>(() => {}), destroy: () => {} }),
@@ -308,7 +316,7 @@ describe('measuring behaviour, since the token numbers are not on offer', () => 
     const onUnhandled = (e: PromiseRejectionEvent) => unhandled.push(e.reason)
     window.addEventListener('unhandledrejection', onUnhandled)
 
-    registerActiveConversation({ references: [], messages: ['x'.repeat(200)] })
+    registerActiveConversation({ references: [], messages: [msg('x'.repeat(200))] })
     ;(globalThis as unknown as { LanguageModel?: unknown }).LanguageModel = {
       availability: async () => 'available',
       create: async () => ({

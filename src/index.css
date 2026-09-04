@@ -311,3 +311,24 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* A cited message, just after a citation was clicked (INT-3).
+
+   The scroll lands mid-thread and the message it landed on has to be
+   identifiable, or "click through to the message it came from" delivers a
+   scroll position rather than a message. Fades rather than latches: it marks
+   an arrival, and a mark that stays would read as a state the message is in.
+
+   Uses --accent-wash so it reads as a selection in every theme, and honours
+   prefers-reduced-motion the way the shimmer above does. */
+[data-cited='true'] {
+  animation: cited-flash 1.8s ease-out;
+  border-radius: var(--radius-md, 8px);
+}
+@keyframes cited-flash {
+  0%, 45% { background-color: var(--accent-wash); }
+  100%    { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-cited='true'] { animation: none; background-color: var(--accent-wash); }
+}

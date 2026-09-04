@@ -35,7 +35,7 @@ import {
   type SamplingOptions,
 } from '@/lib/promptApi'
 import { THREAD_CONTEXT_CHARS, threadContext } from '@/lib/prefill'
-import { getActiveConversation } from '@/lib/conversationRegistry'
+import { bodies, getActiveConversation } from '@/lib/conversationRegistry'
 
 /**
  * How long any single measurement may take before it is abandoned.
@@ -191,7 +191,9 @@ async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic
   const clock = budget(limitMs)
   const timings: PromptContextDiagnostic['timings'] = []
   const conversation = getActiveConversation()
-  const messages = conversation?.messages ?? []
+  // Prose only: this measures what a context window costs, and the identity
+  // INT-3 added to the snapshot never goes into one.
+  const messages = bodies(conversation)
   const threadChars = messages.join('\n').length
   const bounded = threadContext(messages)
 
