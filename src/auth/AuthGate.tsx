@@ -69,7 +69,9 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
   const relayUrl = useQuery(api.nostr.config.relayConfig, {})?.relayUrl
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
+  const [adopted, setAdopted] = useState(false)
   const ran = useRef(false)
+  const syncRan = useRef(false)
 
   useEffect(() => {
     if (ran.current) return
@@ -80,26 +82,45 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
         // From here a token expiring is an interruption, not a cold boot, and
         // the shell must ask before navigating away (PEEK-123).
         markEntered()
-        // Re-read names and faces from Estiva ID (PEEK-72) — for the whole
-        // roster, not just the viewer. Sync only resolves a profile for authors
-        // of *newly imported* messages, so anyone already past the cursor would
-        // keep `nostr:<8 chars>` forever — and, until SHA-22 widened the query
-        // behind this, anyone who already had a picture kept the old one
-        // forever too.
-        //
-        // Deliberately not awaited: a slow or unreachable relay must not hold up
-        // sign-in, and a name is cosmetic until it arrives.
-        const token = validToken()
-        if (!token || !relayUrl) return
-        void syncStaleProfilesFromRelay(relayUrl, token, {
-          pubkeysToRefresh: () => convex.query(api.nostr.sync.pubkeysToRefresh, {}),
-          recordProfiles: (args) => convex.action(api.nostr.sync.recordProfiles, args as never),
-        }).catch((error) => console.warn('[nostr] profile sync failed:', error))
+        setAdopted(true)
       })
       .catch((err: unknown) => {
         setFailed(err instanceof Error ? err.message : 'Could not set up your account.')
       })
-  }, [adopt, convex, relayUrl])
+  }, [adopt])
+
+  /*
+    Re-read names and faces from Estiva ID (PEEK-72), for the whole roster
+    rather than just the viewer. `importChannel` only resolves a profile for the
+    authors of *newly imported* messages, so anyone already past the sync cursor
+    is never revisited — they keep `nostr:<8 chars>`, and since SHA-22 they keep
+    a picture URL that no longer loads.
+
+    **Its own effect, and this is the bug it fixes (SHA-22).** All of this used
+    to sit inside the `.then()` above, which latched `ran` on the very first
+    render. `relayUrl` comes from a `useQuery`, and a `useQuery` is `undefined`
+    until it resolves — so on a cold page load the closure captured `undefined`,
+    `!relayUrl` returned, and by the time the URL arrived the latch had already
+    closed. The sync therefore never ran on a real page load, only ever looking
+    like it worked because `importChannel` writes the same rows for anyone who
+    had just posted.
+
+    So the precondition is now checked *when it can be true* instead of once at
+    mount. `syncRan` still keeps it to a single run per load.
+
+    Deliberately not awaited: a slow or unreachable relay must not hold up
+    sign-in, and a name is cosmetic until it arrives.
+  */
+  useEffect(() => {
+    if (!adopted || !relayUrl || syncRan.current) return
+    const token = validToken()
+    if (!token) return
+    syncRan.current = true
+    void syncStaleProfilesFromRelay(relayUrl, token, {
+      pubkeysToRefresh: () => convex.query(api.nostr.sync.pubkeysToRefresh, {}),
+      recordProfiles: (args) => convex.action(api.nostr.sync.recordProfiles, args as never),
+    }).catch((error) => console.warn('[nostr] profile sync failed:', error))
+  }, [adopted, relayUrl, convex])
 
   // Binding the identity to a row is app bootstrap, not authentication: the
   // token was fine. `token_rejected` is the honest reason — signing in again
