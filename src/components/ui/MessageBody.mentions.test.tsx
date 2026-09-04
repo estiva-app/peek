@@ -13,14 +13,22 @@ import { encodeNpub } from '@estiva-app/protocol'
 
 const ADA = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 
-vi.mock('@/api', () => ({ TOPICS: [], APP_FILES: [], DOCUMENT_FILES: [] }))
+vi.mock('@/api', () => ({
+  TOPICS: [],
+  APP_FILES: [],
+  DOCUMENT_FILES: [],
+  // RIC-10: a reference drawn mid-sentence needs the object resolved. Nothing
+  // resolves here, which is the state these tests want — the mapping to DOM is
+  // the subject, and an unresolved reference still draws a chip.
+  useResolvedReferences: () => ({}),
+}))
 vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 vi.mock('@/api/mentions', () => ({
   personByPubkey: (pubkey: string) =>
     pubkey === ADA ? { id: 'ada', name: 'Ada Lovelace', role: 'Engineer' } : undefined,
   // The chip subscribes so it can redraw when the real directory replaces the
   // mock cast. Nothing here exercises that, so this snapshot never changes —
-  // see MentionChip.test.tsx for the case that does.
+  // see Reference.test.tsx for the case that does.
   subscribeMentions: () => () => {},
   mentionsVersion: () => 0,
 }))

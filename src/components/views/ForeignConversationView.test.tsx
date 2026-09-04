@@ -22,6 +22,10 @@ vi.mock('@/api', async () => ({
   // The panel asks whether a *topic* is resolved so `MessageBody` can strike
   // through a resolved one. Nothing here is a topic; the seam just has to exist.
   useIsTopicResolved: () => () => false,
+  // RIC-10: a body resolves its inline references through the relay, which is
+  // a Convex query and needs a provider these tests do not mount. None of the
+  // comments here carries a pointer, so there is nothing to resolve.
+  useResolvedReferences: () => ({}),
 }))
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'

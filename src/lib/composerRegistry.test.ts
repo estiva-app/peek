@@ -30,8 +30,8 @@ const NEW_ISSUE = `30851:${SHIP_AUTHOR}:0f68a3f3-e44e-46c8-82dd-76432b358a18`
  * Tiptap's chain is fluent, so every step returns the same object and `run()`
  * ends it. `insertContent` is the only step whose argument this test is about;
  * `focus` and `unsetAllMarks` are recorded so the mark-clearing is not silently
- * dropped in a later edit — an inherited bold mark is what leaves `**` in the
- * prose once `stripNaddrs` removes the reference between the markers.
+ * dropped in a later edit — an inherited bold mark wraps the pointer in marker
+ * characters nobody typed.
  */
 function fakeComposer() {
   const inserted: unknown[] = []
@@ -83,9 +83,16 @@ describe('insertReferenceIntoActiveComposer (PEE-2)', () => {
     registerActiveComposer(handle)
     insertReferenceIntoActiveComposer(addrToNaddr(NEW_ISSUE, []))
 
-    // The widget IS the reference rendered (PEEK-18), so the pointer is dropped
-    // from the text. The trailing space the insert adds must not survive as a
-    // dangling one.
+    /*
+      What the insert owes the sentence: no dangling space.
+
+      This used to be the whole story — PEEK-18 cut every pointer out of the
+      prose, so the assertion was also what a reader saw. Since RIC-10 a pointer
+      following prose is drawn *in* the sentence instead, and only one standing
+      alone becomes a card below. So this is now a test of the insert's spacing
+      rather than of the rendering, and `MessageBody`'s own tests cover which
+      variant a body gets.
+    */
     expect(stripNaddrs(`Filed it — ${insertedText(inserted)}`)).toBe('Filed it —')
   })
 

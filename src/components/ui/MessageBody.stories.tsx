@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './MessageBody'
+import recorded from '@/data/recordedShipIssue.json'
 
 const meta = {
   title: 'Messages/MessageBody',
@@ -129,5 +131,42 @@ export const Links: Story = {
   args: {
     body:
       'Read [the widgets topic](https://peek.estiva.app/topic/widgets) first, then **[the plan](https://example.com/plan)** — the raw form is at https://example.com/raw.',
+  },
+}
+
+/**
+ * A pointer written **inside a sentence**, drawn where it was written — RIC-10.
+ *
+ * Miky, 2026-09-02: *"Imagine mentioning project in your message in the middle
+ * of sentence that shows the name, and maybe the status as icon or something."*
+ *
+ * The object is `recordedShipIssue.json`: a real Ship issue, resolved from 1074
+ * recorded production events through Peek's own `resolveObjectAsViewer` and the
+ * projection layer, then written down. Not a hand-made fixture — the title, the
+ * status and its colour are what Ship's manifest actually declares for that
+ * issue. `resolvedObjects` is the same seam the attachment card uses in
+ * Storybook, so both variants of one object are drawn from one answer.
+ *
+ * The body is **the same string Ship's `ric9-live-check.ts` puts on its two
+ * surfaces**, down to the relay hint inside the pointer. RIC-10's done-when
+ * asks for the same body to render the same way in both apps, and the only way
+ * to check that is to render the same body.
+ */
+export const InlineReference: Story = {
+  args: {
+    body: `Tracked in nostr:${recorded.naddr} for now.`,
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  },
+}
+
+/**
+ * The same object, the same message, one difference: the pointer is alone on
+ * its line. It becomes a card below the text, exactly as it always did — that
+ * variant is not replaced, and the position is what chooses between them.
+ */
+export const StandaloneReference: Story = {
+  args: {
+    body: `Tracked in it for now.\n\nnostr:${recorded.naddr}`,
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
   },
 }

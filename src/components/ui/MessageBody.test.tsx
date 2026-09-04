@@ -16,7 +16,15 @@ import { render, screen } from '@testing-library/react'
   segments to DOM. Mocking them keeps the test on that, and keeps it runnable
   without a convex deployment.
 */
-vi.mock('@/api', () => ({ TOPICS: [], APP_FILES: [], DOCUMENT_FILES: [] }))
+vi.mock('@/api', () => ({
+  TOPICS: [],
+  APP_FILES: [],
+  DOCUMENT_FILES: [],
+  // RIC-10: a reference drawn mid-sentence needs the object resolved. Nothing
+  // resolves here, which is the state these tests want — the mapping to DOM is
+  // the subject, and an unresolved reference still draws a chip.
+  useResolvedReferences: () => ({}),
+}))
 vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 
 import { MessageBody } from './MessageBody'

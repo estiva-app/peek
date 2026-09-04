@@ -17,6 +17,8 @@ storybook-static
 # Local verification scripts and screenshots (session scratch, never committed)
 .verify-*.mjs
 .verify-shots/
+# scripts/ric10-live-check.ts's screenshots
+.ric10/
 
 # Throwaway design explorations and private notes
 design-lab/
