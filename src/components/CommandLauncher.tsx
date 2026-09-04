@@ -23,7 +23,8 @@ import {
 } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
-import { scrollToMessage } from '@/lib/messageAnchor'
+import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
+import { openConversation } from '@/lib/threadOpener'
 import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission, vocabulariesFrom } from '@/lib/liveAction'
 import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
@@ -102,6 +103,11 @@ interface AskAnswer {
   byRecency: boolean
   /** Messages the context budget could not take. */
   omitted: number
+  /**
+   * Replies the snapshot never held (INT-8). Zero for a thread, which has all
+   * of its own; usually large for a topic, which has none of them.
+   */
+  repliesNotRead: number
 }
 
 export function CommandLauncher({
@@ -517,7 +523,15 @@ export function CommandLauncher({
         this feature exists to prevent.
       */
       const sources = cited.length > 0 ? selection.chosen.filter((c) => cited.includes(c.n)) : selection.chosen
-      setAnswer({ text, sources, byRecency: selection.byRecency, omitted: selection.omitted })    })()
+      setAnswer({
+        text,
+        sources,
+        byRecency: selection.byRecency,
+        omitted: selection.omitted,
+        // Counted over what was *read*, not over the topic: a reply under a
+        // conversation the budget dropped is already inside `omitted`.
+        repliesNotRead: selection.chosen.reduce((n, c) => n + (c.message.repliesNotRead ?? 0), 0),
+      })    })()
 
     return () => {
       cancelled = true
@@ -1361,11 +1375,27 @@ export function CommandLauncher({
                               work and did nothing, which is worse than a row
                               that was never offered.
                             */
-                            if (!scrollToMessage(message.id)) {
-                              setUnreachable(message.id)
+                            if (scrollToMessage(message.id)) {
+                              onClose()
                               return
                             }
-                            onClose()
+                            /*
+                              Not on screen. A topic-wide answer (INT-8) cites
+                              across conversations, and all but the open one are
+                              unmounted — so ask the topic view to open it and
+                              scroll once it has rendered.
+
+                              Closing here is deliberate even though the scroll
+                              may still miss: the conversation *did* open, so the
+                              person is looking at the right thread either way.
+                              That is a smaller failure than staying put.
+                            */
+                            if (message.conversationId && openConversation(message.conversationId)) {
+                              onClose()
+                              void scrollToMessageWhenReady(message.id)
+                              return
+                            }
+                            setUnreachable(message.id)
                           }}
                           className="text-left px-3 py-2 rounded-md hover:bg-bg-hover flex flex-col gap-0.5"
                         >
@@ -1390,11 +1420,27 @@ export function CommandLauncher({
                       the failure PEE-4 named for unroutable hits, and the one
                       `threadContext` still has.
                     */}
-                    {(answer.byRecency || answer.omitted > 0) && (
+                    {(answer.byRecency || answer.omitted > 0 || answer.repliesNotRead > 0) && (
                       <p className="text-[12px] leading-[1.4] text-text-secondary">
-                        {answer.byRecency
-                          ? 'Nothing in the thread matched the question, so the most recent messages were read instead.'
-                          : `${answer.omitted} earlier ${answer.omitted === 1 ? 'message' : 'messages'} did not fit and ${answer.omitted === 1 ? 'was' : 'were'} not read.`}
+                        {[
+                          answer.byRecency
+                            ? 'Nothing here matched the question, so the most recent messages were read instead.'
+                            : answer.omitted > 0
+                              ? `${answer.omitted} earlier ${answer.omitted === 1 ? 'message' : 'messages'} did not fit and ${answer.omitted === 1 ? 'was' : 'were'} not read.`
+                              : null,
+                          /*
+                            INT-8. Asking about a whole topic reads its
+                            conversations' opening messages; replies are fetched
+                            per thread and are not in memory. At topic scale that
+                            is usually most of what was said, so it is stated
+                            rather than left to be assumed away.
+                          */
+                          answer.repliesNotRead > 0
+                            ? `${answer.repliesNotRead} ${answer.repliesNotRead === 1 ? 'reply was' : 'replies were'} not read — open a conversation to ask about its replies.`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
                       </p>
                     )}
                   </>

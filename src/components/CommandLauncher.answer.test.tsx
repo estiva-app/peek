@@ -18,16 +18,19 @@ import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { CommandLauncher } from './CommandLauncher'
 
-const { canPrefill, promptForText, scrollToMessage } = vi.hoisted(() => ({
+const { canPrefill, promptForText, scrollToMessage, scrollToMessageWhenReady, openConversation } = vi.hoisted(() => ({
   canPrefill: vi.fn(async () => true),
   promptForText: vi.fn<(instruction: string) => Promise<string | null>>(),
   scrollToMessage: vi.fn<(id: string) => boolean>(),
+  scrollToMessageWhenReady: vi.fn<(id: string) => Promise<boolean>>(),
+  openConversation: vi.fn<(id: string) => boolean>(),
 }))
+vi.mock('@/lib/threadOpener', () => ({ openConversation }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
   return { ...actual, canPrefill, promptForText }
 })
-vi.mock('@/lib/messageAnchor', () => ({ scrollToMessage }))
+vi.mock('@/lib/messageAnchor', () => ({ scrollToMessage, scrollToMessageWhenReady }))
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
   return { ...actual, useMessageSearch: () => ({ state: { kind: 'idle' as const }, hits: [] }) }
@@ -74,6 +77,9 @@ beforeEach(() => {
   canPrefill.mockResolvedValue(true)
   promptForText.mockResolvedValue('Postponed until Thursday [3].')
   scrollToMessage.mockReturnValue(true)
+  scrollToMessageWhenReady.mockResolvedValue(true)
+  openConversation.mockReturnValue(true)
+  openConversation.mockClear()
   onClose.mockClear()
   promptForText.mockClear()
   scrollToMessage.mockClear()
@@ -212,14 +218,14 @@ describe('refining, and what retrieval admits to (INT-3)', () => {
     await ask('zzqxvwmkjjbtplfd')
 
     await screen.findByTestId('answer')
-    expect(screen.getByText(/Nothing in the thread matched/i)).toBeInTheDocument()
+    expect(screen.getByText(/Nothing here matched/i)).toBeInTheDocument()
   })
 
   it('does not claim recency when the question matched', async () => {
     await ask()
     await screen.findByTestId('answer')
 
-    expect(screen.queryByText(/Nothing in the thread matched/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nothing here matched/i)).not.toBeInTheDocument()
   })
 
   it('writes nothing anywhere', async () => {
@@ -234,5 +240,102 @@ describe('refining, and what retrieval admits to (INT-3)', () => {
     await screen.findByTestId('answer')
 
     expect({ local: { ...localStorage }, session: { ...sessionStorage } }).toEqual(before)
+  })
+})
+
+describe('asking about a whole topic (INT-8)', () => {
+  /*
+    A topic publishes its conversations' opening messages — replies are fetched
+    per thread and are not in memory. Each carries the conversation it opens and
+    how many replies were left behind.
+  */
+  const acrossConversations: LauncherContext = {
+    conversation: {
+      references: [],
+      messages: [
+        { id: 'c1', author: 'Daniel', timestamp: '9:22 AM', body: 'the migration is blocked on the interop bump', conversationId: 'c1', repliesNotRead: 4 },
+        { id: 'c2', author: 'Juan', timestamp: '11:04 AM', body: 'lunch?', conversationId: 'c2', repliesNotRead: 2 },
+        { id: 'c3', author: 'Katerina', timestamp: '2:15 PM', body: 'we decided to postpone the migration until Thursday', conversationId: 'c3', repliesNotRead: 0 },
+      ],
+    },
+  }
+
+  async function askTopic(question = 'what did we decide about the migration') {
+    open(acrossConversations)
+    await userEvent.type(input(), question)
+    await userEvent.click(await screen.findByText(/Ask about this conversation/i))
+  }
+
+  it('offers to answer with no thread open and no composer', async () => {
+    // The gap: a topic detail page has neither, and used to offer nothing.
+    open(acrossConversations)
+    await userEvent.type(input(), 'what did we decide')
+
+    expect(await screen.findByText(/Ask about this conversation/i)).toBeInTheDocument()
+    // Draft still needs somewhere to put a reply, and correctly stays away.
+    expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
+  })
+
+  it('cites messages from more than one conversation', async () => {
+    promptForText.mockResolvedValue('Blocked on interop [1], postponed to Thursday [3].')
+    await askTopic()
+
+    expect(await screen.findByTestId('answer')).toBeInTheDocument()
+    expect(sources()).toHaveTextContent('Daniel')
+    expect(sources()).toHaveTextContent('Katerina')
+  })
+
+  it('opens the conversation a citation points into, then scrolls', async () => {
+    /*
+      All but the open conversation are unmounted, so `scrollToMessage` finds
+      nothing. Asking the topic view to open it is the difference between a
+      citation that works and one that reports "not loaded" as its normal case.
+    */
+    scrollToMessage.mockReturnValue(false)
+    promptForText.mockResolvedValue('Postponed to Thursday [3].')
+    await askTopic()
+    await screen.findByTestId('answer')
+
+    await userEvent.click(sources().querySelectorAll('button')[0])
+    expect(openConversation).toHaveBeenCalledWith('c3')
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('says how many replies it never read', async () => {
+    /*
+      At topic scale this is usually most of what was said. A silent omission
+      here reads as "that is all there was" — the failure PEE-4 named.
+    */
+    promptForText.mockResolvedValue('Blocked on interop [1].')
+    await askTopic()
+    await screen.findByTestId('answer')
+
+    // Every conversation fits under the budget, so all three were read: 4 + 2 + 0.
+    expect(screen.getByText(/6 replies were not read/i)).toBeInTheDocument()
+  })
+
+  it('counts only the replies under conversations it actually read', async () => {
+    /*
+      A reply under a conversation the budget dropped is already inside the
+      "did not fit" count, and counting it again would overstate the gap twice
+      over. Forced with bodies too long to both fit — the topic-scale case the
+      three-line fixture above cannot reach.
+    */
+    const long = 'the migration is blocked '.repeat(300)
+    open({
+      conversation: {
+        references: [],
+        messages: [
+          { id: 'c1', author: 'Daniel', timestamp: '9:22 AM', body: long, conversationId: 'c1', repliesNotRead: 4 },
+          { id: 'c2', author: 'Juan', timestamp: '11:04 AM', body: long, conversationId: 'c2', repliesNotRead: 99 },
+        ],
+      },
+    })
+    await userEvent.type(input(), 'migration')
+    await userEvent.click(await screen.findByText(/Ask about this conversation/i))
+    await screen.findByTestId('answer')
+
+    expect(screen.getByText(/did not fit/i)).toBeInTheDocument()
+    expect(screen.queryByText(/103 replies/i)).not.toBeInTheDocument()
   })
 })
