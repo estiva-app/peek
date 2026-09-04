@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { eventIdFromRef } from '@estiva-app/interop'
 import { Navigate, useParams } from 'react-router-dom'
 import { useForeignObjects } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -32,7 +33,14 @@ export function ObjectPage() {
       return
     }
     let cancelled = false
-    folderForReference(decodeURIComponent(ref))
+    /*
+      A `/message/<slug>-<id>` path carries a slug in front of the identity, the
+      same way `/topic/<slug>-<d>` does. `eventIdFromRef` reads the tail; a ref
+      that is already a bare reference — an naddr, an nevent, an address — is
+      passed through untouched.
+    */
+    const decoded = decodeURIComponent(ref)
+    folderForReference(eventIdFromRef(decoded) ?? decoded)
       .then((folder) => {
         if (cancelled) return
         setState(folder ? { folder } : 'unopenable')

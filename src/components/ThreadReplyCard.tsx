@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Menu, MenuItem, MenuSub } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { shareableMessageUrl } from '@/lib/objectUrl'
 import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
 import { ResolutionBlock, extractResolution, extractResolutionFromText } from '@/extensions/resolution'
@@ -120,6 +121,9 @@ interface ThreadReplyCardProps {
    *  - resolved=false → parent reopens (user removed the resolution from the editor) */
   onResolutionChange?: (resolved: boolean, message?: string) => void
   nostrReferences?: string[]
+  /** The published event's id. When present the timestamp becomes the
+   *  message's permalink — see the render below (PEE-17). */
+  nostrEventId?: string
   /** Which block of the referenced object this is about — SPEC §13.6. */
   nostrBlockId?: string
   /** Already-resolved reference objects, keyed by naddr (stories/tests — no relay). */
@@ -146,10 +150,12 @@ export function ThreadReplyCard({
   resolutionMsg,
   onResolutionChange,
   nostrReferences,
+  nostrEventId,
   nostrBlockId,
   resolvedObjects,
   className,
 }: ThreadReplyCardProps) {
+  const messageLink = shareableMessageUrl(nostrEventId, window.location.origin)
   const [isHovered, setIsHovered] = useState(false)
   // The ⋯ menu: the trigger's rect, or closed. The shared Menu shell owns
   // placement and every exit (2026-09-03).
@@ -456,7 +462,31 @@ export function ThreadReplyCard({
               <div className="flex items-center gap-2 shrink-0 flex-1 min-w-0">
                 <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
                 <span className="text-body-2-strong text-text-primary min-w-0 truncate">{authorName}</span>
-                <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
+                {/*
+                  The timestamp is the permalink — Slack's idea, and the reason
+                  it is right here: there is no menu to find, and the browser's
+                  own "Copy link address" already does the copying. A message
+                  has no other affordance, and adding a fourth item to a menu
+                  people open for other reasons would hide it.
+
+                  A plain span when the message has no event id yet: a reply
+                  exists locally the moment it is sent and gains its id only
+                  when it reaches the relay, so an anchor there would point at
+                  nothing. `shareableMessageUrl` answers null and this falls
+                  back rather than rendering a dead link.
+                */}
+                {messageLink ? (
+                  <a
+                    href={messageLink}
+                    data-interactive
+                    title="Link to this message"
+                    className="text-caption text-text-muted shrink-0 whitespace-nowrap hover:underline signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums"
+                  >
+                    {timestamp}
+                  </a>
+                ) : (
+                  <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
+                )}
                 {highlightState && <HighlightPill type={highlightState} />}
               </div>
               {isNew && !isUrgent && (

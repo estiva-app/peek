@@ -52,6 +52,9 @@ export interface RemoteMessage {
   replyCount?: number
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** The published event's id — what a message link names (PEE-17). Absent
+   *  until the reply reaches the relay, and for anything never published. */
+  nostrEventId?: string
   /** Which block of the referenced object this comment is about — SPEC §13.6. */
   nostrBlockId?: string
   /** Distinct reply authors in first-reply order (list only). */
@@ -65,6 +68,8 @@ export interface RemoteMessage {
 /** Row shape returned by convex/replies.ts list. */
 interface RemoteReply {
   id: string
+  /** The published event's id — what a message link names (PEE-17). */
+  nostrEventId?: string
   authorId?: string
   /** Derived from YOUR thread watermark (§4.3). */
   isNew?: boolean
@@ -100,6 +105,7 @@ function toReplyData(r: RemoteReply, meId: string | undefined): ReplyData {
     files: r.files,
     createdAtMs: r.createdAt,
     nostrReferences: r.nostrReferences,
+    nostrEventId: r.nostrEventId,
     reactions: r.reactions,
   }
 }

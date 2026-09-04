@@ -118,6 +118,20 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
       */
       ['web', `${appUrl.replace(/\/+$/, '')}/o/<bech32>`, 'naddr'],
       ['web', `${appUrl.replace(/\/+$/, '')}/o/<bech32>`, 'nevent'],
+      /*
+        RFC 0.5 §7.5's `urls` — the inbound half, so a Peek link pasted into
+        another app renders as the object rather than as a blue link.
+
+        `web` is outbound and stays bech32: it is handed to NIP-19 machinery
+        rather than pasted by a person. These are what a person copies, so they
+        carry the identity unencoded — §7.3's objection to bech32 is about URLs.
+
+        Two identities, and the placeholder says which: `<d>` is a topic's
+        channel uuid, resolved with `#d`; `<id>` is a message's event id,
+        resolved with `ids`, because a kind:9 has no `d` at all (§7.6).
+      */
+      ['urls', `${appUrl.replace(/\/+$/, '')}/topic/<slug>-<d>`, String(TOPIC_KIND)],
+      ['urls', `${appUrl.replace(/\/+$/, '')}/message/<id>`, String(MESSAGE_KIND)],
     ],
     content: JSON.stringify(manifestContent()),
   }

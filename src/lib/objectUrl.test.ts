@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { slugify, objectRef, identifierFromRef, topicPath, shareableTopicUrl } from './objectUrl'
+import { slugify, objectRef, identifierFromRef, topicPath, shareableTopicUrl, shareableMessageUrl } from './objectUrl'
 
 /** A real production channel uuid, from RFC 0.5 §7.2's own example. */
 const UUID = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -128,5 +128,34 @@ describe('shareableTopicUrl', () => {
     // identity survives being written and read back.
     const url = shareableTopicUrl({ id: '7', title: 'A very, very long name — with punctuation', folderId: UUID }, 'https://peek.estiva.app')!
     expect(url.endsWith(UUID)).toBe(true)
+  })
+})
+
+describe('shareableMessageUrl', () => {
+  const EVENT = 'a3f1'.repeat(16)
+
+  it('names a message by its event id, not by an nevent', () => {
+    // RFC 0.5 §7.6, amended: bech32 in a URL is what §7.3 argues against, and
+    // its objections apply to `nevent` exactly as to `naddr`.
+    expect(shareableMessageUrl(EVENT, 'https://peek.estiva.app')).toBe(`https://peek.estiva.app/message/${EVENT}`)
+  })
+
+  it('is null for a message that has not reached the relay', () => {
+    // A reply exists in Convex the moment it is sent and gains its event id
+    // only on publish. An anchor before then points at nothing.
+    expect(shareableMessageUrl(undefined, 'https://peek.estiva.app')).toBe(null)
+    expect(shareableMessageUrl(null, 'https://peek.estiva.app')).toBe(null)
+  })
+
+  it('refuses anything that is not a full event id', () => {
+    // A truncated id resolves to nothing, or to something nobody intended.
+    expect(shareableMessageUrl(EVENT.slice(0, 63), 'https://peek.estiva.app')).toBe(null)
+    expect(shareableMessageUrl('not-hex', 'https://peek.estiva.app')).toBe(null)
+  })
+
+  it('lowercases, so a link built from an upper-cased id still resolves', () => {
+    expect(shareableMessageUrl(EVENT.toUpperCase(), 'https://peek.estiva.app')).toBe(
+      `https://peek.estiva.app/message/${EVENT}`,
+    )
   })
 })

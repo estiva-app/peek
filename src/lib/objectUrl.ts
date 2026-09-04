@@ -126,3 +126,22 @@ export function shareableTopicUrl(topic: TopicLinkTarget, origin: string): strin
   if (!topic.folderId) return null
   return `${origin.replace(/\/+$/, '')}${topicPath(topic)}`
 }
+
+/**
+ * A message's shareable URL, or null when it has none — PEE-17.
+ *
+ * A `kind:9` has no `d`, so its event id is the whole identity — RFC 0.5 §7.6,
+ * amended once it turned out that recommending an `nevent` here contradicted
+ * §7.3's argument against bech32 in URLs. The raw id has neither of §7.3's
+ * problems: nothing optional is encoded into it, and it resolves with
+ * `{ids: ["<id>"]}`.
+ *
+ * **Null until the message reaches the relay.** A reply exists in Convex the
+ * moment it is sent and gains its event id only when it is published, so the
+ * affordance is absent rather than broken for a message that has not landed —
+ * the same rule `shareableTopicUrl` follows for a topic with no channel uuid.
+ */
+export function shareableMessageUrl(eventId: string | undefined | null, origin: string): string | null {
+  if (!eventId || !/^[0-9a-f]{64}$/i.test(eventId)) return null
+  return `${origin.replace(/\/+$/, '')}/message/${eventId.toLowerCase()}`
+}

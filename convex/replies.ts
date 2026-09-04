@@ -73,6 +73,10 @@ export const list = query({
         attachments: r.attachments,
         files: await resolveFileAttachments(ctx, r.fileAttachments),
         nostrReferences: r.nostrReferences,
+        // The event id, so a reply can be linked to (PEE-17). Recorded on
+        // publish since RIC-2 and never returned until now — a message had no
+        // URL, so nothing had asked for it.
+        nostrEventId: r.nostrEventId,
         isNew:
           me && r.authorId !== me && (threadWm === undefined || r.createdAt > threadWm)
             ? true

@@ -447,6 +447,7 @@ export function ThreadPanel({
                     ownsResolution={resolvedByReplyId === reply.id}
                     resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
                     nostrReferences={reply.nostrReferences}
+                    nostrEventId={reply.nostrEventId}
                     onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
                     onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
                     onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}

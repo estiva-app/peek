@@ -22,6 +22,10 @@ function App() {
           Peek's objects can open it here, whether it is addressed by naddr or
           named by nevent (PRO-11). */}
       <Route path="/o/:ref" element={<ObjectPage />} />
+      {/* One message, RFC 0.5 §7.6's `<id>` identity — a kind:9 has no `d`, so
+          its event id is the whole of it. Resolved the same way `/o/` is: find
+          the event, open the topic that holds it (PEE-17). */}
+      <Route path="/message/:ref" element={<ObjectPage />} />
       <Route path="/people" element={<PeoplePage />} />
       <Route path="/people/:id" element={<PeoplePage />} />
     </Routes>
