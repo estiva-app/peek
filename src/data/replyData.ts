@@ -22,6 +22,9 @@ export interface ReplyData {
   createdAtMs?: number
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** The published event's id — what a message link names (PEE-17). Absent
+   *  until the reply reaches the relay. */
+  nostrEventId?: string
   /** Persisted per-reply reactions (PEE-12). */
   reactions?: ReactionData[]
 }
