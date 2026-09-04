@@ -19,9 +19,22 @@
  *
  * Submitting a form publishes for real where the live manifest declares the
  * action (PEE-1) and leaves its reference in the composer (PEE-2) — see
- * `CommandLauncher`'s `submitAction`. Rows that are only proposals stay inert,
- * because publishing a guess at another app's object is what the honour system
- * forbids.
+ * `CommandLauncher`'s `submitAction`. Publishing a guess at another app's
+ * object is what the honour system forbids.
+ *
+ * **The launcher no longer lists the actions below** (INT-9). It reads each
+ * app's manifest and offers what that declares; what is here is the app, its
+ * parent kind, its labels, and a proposal for each action the manifest should
+ * grow. Storybook draws the proposals — `ActionFormPanel.stories.tsx` is the
+ * only consumer — so the design's record of the intended field shapes survives
+ * without a person being offered a form that cannot publish.
+ *
+ * The three that stayed inert were `add-project`, `say` and `create-topic`,
+ * and Miky found all three the same way: open the form, fill it, submit,
+ * nothing happens. They become real when PRO-18 lets an action create a
+ * Folder — a Ship project is a Folder plus a record, and a Peek conversation
+ * is scoped by one — at which point Ship and Peek declare them and these
+ * literals go.
  */
 
 export interface VocabOption {
