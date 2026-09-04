@@ -76,12 +76,12 @@ interface CommandLauncherProps {
  * Backspace on an empty input pops one level. Esc always closes. Not a chat:
  * one input, one result set, no history.
  *
- * The apps and actions come from `lib/launcherActions.ts`, which mirrors the
- * NIP-89 manifest action shape. Ship's own manifest now REPLACES the registry's
- * entries of the same id, so its form is drawn from what Ship actually
- * declares; the registry's remaining rows are proposals for manifests that do
- * not declare them yet, and stay inert. An agent filling the same forms from
- * context instead of by hand is PEE-5.
+ * The apps come from `lib/launcherActions.ts`; **the actions come from the
+ * apps' own manifests, read at open time**. The registry's action declarations
+ * are drawn by Storybook and are never offered here — a row a person can
+ * select is a promise, and the registry's are proposals for manifests that do
+ * not declare them yet (INT-9). An agent filling the same forms from context
+ * instead of by hand is PEE-5.
  *
  * The third-party mock apps that used to live here (Figma, Linear, GitHub,
  * Zendesk — and the Figma find mode) were removed 2026-08-31 with the design
@@ -302,36 +302,43 @@ export function CommandLauncher({
   }, [scope, creatableUnder])
 
   /*
-    The live declaration REPLACES the registry's of the same id.
+    Only what an app actually declares — INT-9.
 
-    This is the step that was missing, and the failure was quiet in the worst
-    way: the rows still came from the registry, so Ship's create-issue form
-    drew the mock's fields — three invented projects, a status and an assignee
-    Ship's manifest does not declare — while `submitAction` matched on the id,
-    found no `__parent` (the mock names that field `project`), and closed
-    without publishing. It looked like it worked.
+    The rule this file already kept for Ship's *replaced* rows now covers every
+    row: a launcher entry exists because some manifest, read just now, says the
+    action exists. The registry contributes the app, its parent kind and the
+    labels; it no longer contributes an action.
 
-    Proposals for actions no manifest declares are left in place. They were
-    inert before this and remain so; removing them would take away the design's
-    own record of what a manifest should grow.
+    **Before this, three of the four create rows published nothing.** Ship
+    declares no `add-project` and Peek declares no actions at all, so Create
+    project, Create topic and Start a conversation each opened a form,
+    validated it, and closed on submit — `submitAction`'s `!live` branch,
+    reached in silence. Miky hit all three in a row on 2026-09-04 and read it,
+    correctly, as the app being broken.
+
+    Keeping them as proposals was the earlier call, on the argument that they
+    are the design's record of what a manifest should grow. That record is
+    worth having and the launcher is the wrong place for it: a row a person can
+    select is a promise. The declarations stay in `launcherActions.ts`, where
+    Storybook draws them and nothing publishes them, until PRO-18 lets Ship and
+    Peek declare them for real.
+
+    So the empty case is now normal rather than exceptional, and the section
+    note below is what says why — see `liveNote`, which had to grow past Ship
+    for exactly that reason.
   */
   const scopeActions = useMemo<LauncherAction[]>(() => {
     if (!scope) return []
-    if (!scope.parentKind) return scope.actions
-    /*
-      While the manifest is still in flight, offer none of Ship's registry
-      entries — not even the ones the manifest will not replace. Which of them
-      it replaces is not known until it arrives, so showing any is showing a
-      declaration that may be about to be contradicted.
-    */
+    // An app with no parent kind is never probed (see the effect above), so
+    // nothing about it is live and there is nothing honest to offer.
+    if (!scope.parentKind) return []
     // No live declaration, for any reason — still loading, refused, or the app
     // offers nothing. In every one of those the registry's entry is a mock, and
     // a mock here is a form whose submission the runtime refuses and which
     // therefore closes saying nothing. None is better than that.
     if (!liveShip) return []
-    const live = new Map(liveShip.actions.map((a) => [a.id, a]))
-    return [...liveShip.actions, ...scope.actions.filter((a) => !live.has(a.id))]
-  }, [scope, liveShip, liveState])
+    return liveShip.actions
+  }, [scope, liveShip])
 
   const liveParents = useMemo<Record<string, VocabOption[]>>(() => {
     const out: Record<string, VocabOption[]> = {}
@@ -629,10 +636,41 @@ export function CommandLauncher({
       return
     }
 
-    const live = liveShip?.actions.some((a) => a.id === action.id)
+    /*
+      Declared means "a manifest read just now says this exists", and a form
+      reaches here by **two** routes — INT-9.
+
+      Scoping into an app is the one this checked: `liveShip`. Accepting a
+      proposal is the other, and it has no scope at all, so `liveShip` is null
+      and every proposal's form took the silent close below. INT-5's own
+      safety tests pass either way — they assert `applyAction` is *not* called
+      before a person submits — so the half that publishes was never exercised
+      and Make could not create anything.
+
+      `formEntry` is the proposal's catalogue entry, built from the same live
+      manifests, which is why it counts as a declaration and the registry's
+      rows do not.
+    */
+    const declared =
+      liveShip?.actions.some((a) => a.id === action.id) === true ||
+      formEntry?.launcher.id === action.id
     const { parent, properties } = splitSubmission(values)
-    if (!live || !parent) {
-      onClose()
+    /*
+      Both branches used to be one silent `onClose()`. That is the bug this
+      ticket is named for: a submit that closes is indistinguishable from a
+      submit that worked, and it is how three dead rows survived being used.
+
+      Unreachable from the list now — `scopeActions` offers only declared
+      actions — and kept because unreachable is a claim about this file, not
+      about the app: a story passing `initialActionId`, a proposal, or the next
+      registry entry all arrive here.
+    */
+    if (!declared) {
+      setSubmitError(`${scope?.label ?? 'That app'} has not published this action, so there is nothing to send.`)
+      return
+    }
+    if (!parent) {
+      setSubmitError('Choose where this should go before creating it.')
       return
     }
     setSubmitting(true)
@@ -797,15 +835,28 @@ export function CommandLauncher({
         list reads as "this app offers nothing", which is a different and wrong
         statement — and the one thing worse than a slow answer is a confident
         wrong one.
+
+        **Every app, not only Ship** (INT-9). It was Ship-only because Ship was
+        the only app whose rows could be empty; now that a row exists only
+        where a manifest declares one, Peek's list is empty too and an
+        unexplained blank there is the same wrong statement.
+
+        Keyed off `scopeActions` rather than the filtered `actions`, because an
+        app that offers three things none of which match what was typed has not
+        stopped offering them. That case draws no rows and no note, which is
+        how every other section of the launcher already reports a miss.
       */
       const liveNote =
-        scope.id !== 'ship' || actions.length > 0
+        scopeActions.length > 0
           ? null
           : liveState === 'failed'
             ? `Could not read ${scope.label}’s manifest — its actions are unavailable.`
-            : liveState === 'none'
-              ? `${scope.label} offers nothing to create here.`
-              : `Reading ${scope.label}’s manifest…`
+            : // Never probed, or probed and finished: either way this is the
+              // whole answer. Only an app with a parent kind can still be
+              // mid-flight, and `idle` is the tick before the effect runs.
+              scope.parentKind && (liveState === 'idle' || liveState === 'loading')
+              ? `Reading ${scope.label}’s manifest…`
+              : `${scope.label} has not published anything to create here yet.`
       if (liveNote) {
         headers.set(0, sectionHeader(`${scope.label} actions`))
         rows.push({

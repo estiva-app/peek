@@ -50,7 +50,19 @@ const cullFlock: ResolvedAction = {
 const { canPrefill, promptForObject, applyAction, creatableUnder } = vi.hoisted(() => ({
   canPrefill: vi.fn(async () => true),
   promptForObject: vi.fn<(instruction: string, schema: object) => Promise<Record<string, unknown> | null>>(),
-  applyAction: vi.fn(async () => ({ ok: true as const, created: `30851:${AUTHOR}:x` })),
+  /*
+    Typed with its argument, not `async () => …`. A zero-parameter mock gives
+    `mock.calls` the tuple type `[]`, so reading `calls[0][0]` is an error
+    `vitest` never sees and `tsc -b` does — the same trap `CommandLauncher.
+    live.test.tsx` documents. It only surfaced here once something asserted on
+    what was published rather than that nothing was.
+  */
+  applyAction: vi.fn(
+    async (_args: { naddr: string; actionId: string; value: string | Record<string, string> }) => ({
+      ok: true as const,
+      created: `30851:${AUTHOR}:x`,
+    }),
+  ),
   creatableUnder: vi.fn<
     (kind: number) => Promise<{ actions: ResolvedAction[]; parents: { address: string; title: string }[] } | null>
   >(),
@@ -288,5 +300,37 @@ describe('the model proposes; a person creates', () => {
     await userEvent.click(screen.getByRole('button', { name: /Leave Make/i }))
     expect(applyAction).not.toHaveBeenCalled()
     expect(screen.queryByTestId('proposal')).not.toBeInTheDocument()
+  })
+
+  it('publishes when the person submits it', async () => {
+    /*
+      **The half this file never reached, and it did not work** (INT-9).
+
+      Every test above is negative — `applyAction` must NOT be called — and all
+      of them passed against a form that could not publish at all. `submitAction`
+      gated on `liveShip`, which is set only by scoping into an app; a proposal
+      opens the form with no scope, so the gate was `undefined` and every submit
+      took the silent `onClose()`. Make reached the form and stopped there
+      permanently.
+
+      A suite of negative assertions cannot tell "correctly does nothing yet"
+      from "does nothing ever". This is the positive one.
+    */
+    await propose()
+    await screen.findByTestId('proposal')
+    await userEvent.click(screen.getByRole('button', { name: /Open the form/i }))
+
+    await userEvent.type(await screen.findByLabelText(/species/i), 'Kingfisher')
+    await userEvent.click(screen.getByLabelText(/parent/i))
+    await userEvent.click(await screen.findByText('Weir colony'))
+    await userEvent.click(screen.getByRole('button', { name: 'Log a sighting' }))
+
+    expect(applyAction).toHaveBeenCalledTimes(1)
+    const call = applyAction.mock.calls[0][0]
+    expect(call.actionId).toBe('log-sighting')
+    expect(call.value).toEqual({ species: 'Kingfisher' })
+    // Addressed to the parent that was picked, never named — the runtime
+    // resolves the manifest from the object being acted on.
+    expect(call.naddr.startsWith('naddr')).toBe(true)
   })
 })

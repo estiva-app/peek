@@ -47,7 +47,10 @@ export const ShipScope: Story = {
   args: { initialAppId: 'ship' },
 }
 
-/** Drilled into Peek. */
+/**
+ * Drilled into Peek — which publishes no actions, so the note is the whole
+ * answer (INT-9). It used to list two forms that closed without publishing.
+ */
 export const PeekScope: Story = {
   args: { initialAppId: 'peek' },
 }
