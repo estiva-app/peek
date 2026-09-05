@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { Kbd } from '@estiva-app/ui'
 import { IconX } from '@tabler/icons-react'
 import { MenuItem } from '@estiva-app/ui'
 import { Avatar } from './ui/Avatar'
@@ -135,9 +136,7 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
             className="flex items-center gap-1.5 text-caption text-text-muted hover:text-text-primary transition-colors cursor-pointer"
           >
             Cancel
-            <kbd className="inline-flex items-center justify-center bg-bg-inset border border-border-strong rounded-sm px-1 py-[1px] text-caption text-text-secondary shrink-0">
-              ESC
-            </kbd>
+            <Kbd>Esc</Kbd>
           </button>
         </div>
         {focused && suggestions.length > 0 && (

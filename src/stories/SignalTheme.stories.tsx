@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { Kbd } from '@estiva-app/ui'
 import {
   IconArrowUp,
   IconAt,
@@ -68,10 +69,6 @@ function GradientAvatar({ name, color, size = 28 }: { name: string; color: strin
   )
 }
 
-function Kbd({ children }: { children: string }) {
-  return <kbd className="sig-kbd">{children}</kbd>
-}
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section style={{ marginBottom: 36 }}>
@@ -109,11 +106,6 @@ export const Specimens: Story = {
         .sig-eyebrow {
           font-family: ${mono}; font-size: 10px; font-weight: 500;
           letter-spacing: .16em; text-transform: uppercase; color: var(--text-muted);
-        }
-        .sig-kbd {
-          font-family: ${mono}; font-size: 10px; line-height: 1; color: var(--text-secondary);
-          background: rgba(255,255,255,.05); border: 1px solid var(--border-default);
-          border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px;
         }
         .sig-reply-row {
           display: inline-flex; align-items: center; gap: 7px; padding: 4px 9px 4px 6px;
@@ -364,10 +356,10 @@ export const Specimens: Story = {
             <Kbd>↓</Kbd> navigate
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <Kbd>enter</Kbd> open
+            <Kbd>Enter</Kbd> open
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <Kbd>esc</Kbd> close
+            <Kbd>Esc</Kbd> close
           </span>
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
             <Kbd>A</Kbd> accept

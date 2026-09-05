@@ -116,6 +116,20 @@
   padding: 0 0 0 10px;
   color: var(--text-secondary);
 }
+
+/* Inline code (backticks) — the one element in this section that was never
+   paired, which is why it read as plain text while you typed and as a chip
+   once sent. Values mirror MessageBody s own classes exactly: rounded-sm
+   (4px), bg-bg-active, px-1/py-0.5, font-mono, 0.9em, primary ink. */
+.tiptap code,
+[data-message-body] code {
+  border-radius: 4px;
+  background: var(--bg-active);
+  padding: 2px 4px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 0.9em;
+  color: var(--text-primary);
+}
 /* Composer-only list/quote boundaries: the sent card separates block
    segments with a 4px flex gap (list/quote above/below/between). The
    composer stacks blocks with no gap, so it carries the same 4px as
@@ -216,18 +230,12 @@
   --font-mono: 'Geist Mono', ui-monospace, 'Cascadia Mono', monospace;
 }
 
-/* keyboard chips app-wide: mono, faint fill, thicker bottom edge */
-.signal kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 1.2;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-default);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  padding: 2px 4px;
-}
+/* The keyboard chip lives in @estiva-app/ui as `Kbd` (2026-09-05). The rule
+   that used to sit here styled every <kbd> app-wide, and it outlived its
+   job: as an element+class selector it beat the shared component's own
+   utilities and quietly repainted its border --border-default, so the chip
+   Storybook showed (--border-strong) was not the chip Peek drew. Deleted.
+   Never restore it — style the component, not the tag. */
 
 /* skeletons: shimmer sweep instead of the opacity pulse */
 .signal .animate-pulse {
