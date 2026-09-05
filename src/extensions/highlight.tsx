@@ -1,4 +1,4 @@
-import { Node } from '@tiptap/core'
+import { Node, type Editor } from '@tiptap/core'
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
@@ -113,4 +113,42 @@ export function extractHighlightType(editor: {
     }
   })
   return found
+}
+
+/**
+ * Put a highlight tag at the head of the document, or swap the one already
+ * there — moved out of `ComposeBox` (2026-09-05) so the `/` menu can insert one
+ * from the suggestion plugin, where there is no React component to call into.
+ *
+ * The tag always sits first: it labels the whole message, not the caret.
+ */
+export function insertHighlightTag(editor: Editor, type: HighlightType) {
+  let tagFrom = -1
+  let tagTo = -1
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'highlightTag') {
+      tagFrom = pos
+      tagTo = pos + node.nodeSize
+    }
+  })
+
+  if (tagFrom >= 0) {
+    // Replace the existing tag in place, so surrounding text survives.
+    editor
+      .chain()
+      .deleteRange({ from: tagFrom, to: tagTo })
+      .insertContentAt(tagFrom, [{ type: 'highlightTag', attrs: { highlightType: type } }])
+      .focus()
+      .run()
+    return
+  }
+
+  editor
+    .chain()
+    .focus()
+    .insertContentAt(1, [
+      { type: 'highlightTag', attrs: { highlightType: type } },
+      { type: 'text', text: ' ' },
+    ])
+    .run()
 }

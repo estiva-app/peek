@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { shortcutLabel } from '@/lib/shortcuts'
 import { IconMenu2, IconHelpCircle } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
 import { IdentityMenu, MenuItem, TopBar as TopBarShell } from '@estiva-app/ui'
@@ -51,7 +52,7 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               onSearchClick?.()
             }}
           >
-            <SearchInput shortcut="⌘ K" className="w-[290px] pointer-events-none" />
+            <SearchInput shortcut={shortcutLabel('Mod-K')} className="w-[290px] pointer-events-none" />
           </div>
         }
         right={

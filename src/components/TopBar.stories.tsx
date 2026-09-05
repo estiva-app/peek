@@ -33,7 +33,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * The top bar: menu toggle (collapses the shell), the ⌘K search field (opens the command
+ * The top bar: menu toggle (collapses the shell), the Cmd/Ctrl+K search field (opens the command
  * launcher), the debug "?" (opens the scenario menu), and the avatar (opens the theme menu).
  * Click the avatar or "?" to open those menus.
  */

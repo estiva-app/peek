@@ -98,7 +98,7 @@ export function ConversationMoreMenu({
           <MenuItem
             leading={<IconCircleCheck size={16} stroke={1.5} className="text-text-secondary" />}
             label="Resolve"
-            shortcut="→"
+            shortcut="->"
             onClick={onResolve}
           />
         )}

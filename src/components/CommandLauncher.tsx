@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { Kbd } from '@estiva-app/ui'
+import { shortcutLabel } from '@/lib/shortcuts'
 import { createPortal } from 'react-dom'
 import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting, IconSparkles } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { MenuItem, SectionLabel } from '@estiva-app/ui'
+import { Button, EnterHint, MenuItem, SectionLabel } from '@estiva-app/ui'
 import { ActionFormPanel } from './ActionFormPanel'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
@@ -50,8 +52,12 @@ import {
 /** One selectable row: what it renders and what selecting it does. */
 interface Row {
   key: string
-  render: (isHighlighted: boolean) => React.ReactNode
+  render: () => React.ReactNode
   onSelect: () => void
+  /** The row's resting right edge — a chevron, a value. The "↩ Enter" hint is
+   *  not here: it is MenuItem's `hint` slot, revealed by the row's own hover
+   *  so it can never come apart from the highlight. */
+  trailing?: React.ReactNode
   /** Single line of text, no tile: 36px instead of the 48px two-line row. */
   compact?: boolean
 }
@@ -769,18 +775,31 @@ export function CommandLauncher({
     </div>
   )
 
-  // The launcher keeps its own, caption-sized hint — its shipped look
-  // (restored 2026-09-01; the shared EnterHint is the pickers' 9px voice).
-  const enterHint = (
-    <span className="text-caption text-text-secondary whitespace-nowrap shrink-0 signal:font-mono signal:text-[10px] signal:tracking-[0.04em]">↩ Enter</span>
-  )
+  /**
+   * The shared hint now (2026-09-05). This was the launcher's own
+   * caption-sized copy, restored deliberately on 2026-09-01 because the
+   * shared `EnterHint` was then the pickers' smaller 9px voice and this
+   * surface wanted caption.
+   *
+   * That difference is gone: `EnterHint` is the `Kbd` chip, at the same 10px
+   * mono the launcher's own footer uses two rows below it. Keeping a private
+   * copy now would mean a row saying `↩ Enter` in plain text directly above a
+   * footer saying it in a chip — the split Katerina asked to close.
+   */
+  const enterHint = <EnterHint />
 
-  /** The `esc` badge's styling, reused for every shortcut the footer names. */
-  const keyBadge = (label: string) => (
-    <span className="flex items-center justify-center px-1 py-px rounded-sm bg-bg-inset border border-border-strong signal:bg-[rgba(255,255,255,0.05)] signal:border-border-default signal:border-b-2 signal:rounded">
-      <span className="text-caption text-text-secondary whitespace-nowrap signal:font-mono signal:text-[10px]">{label}</span>
-    </span>
-  )
+  /**
+   * Every key the footer names, drawn as the shared chip — not a fourth copy
+   * of it: `SearchInput`, `MenuItem` and `Tooltip` all render the same `Kbd`.
+   *
+   * Labels are words (Katerina, 2026-09-05). `↩` and `⌫` are not in Geist
+   * Mono, so the browser borrowed each from another face — measured at 10px,
+   * a character the font owns advances 6px, `↩` came back 8.63px and `⌫`
+   * 12.81px, which is why those two chips sat wider than `↑` and `↓` beside
+   * them. `↑` and `↓` stay: the font has them, on the grid, and an arrow is
+   * what the key itself says.
+   */
+  const keyBadge = (label: string) => <Kbd>{label}</Kbd>
 
   const iconTile = (content: React.ReactNode) => (
     <div className="flex items-center justify-center size-8 rounded-sm bg-bg-inset shrink-0">{content}</div>
@@ -809,14 +828,18 @@ export function CommandLauncher({
     ): Row => ({
       key,
       onSelect,
-      render: (isHl) => (
+      // The hint is NOT rendered here: it rides MenuItem's `hint` slot, which
+      // reveals it from the row's own :hover on the same transition as the
+      // fill. Rendering it from `isHl` mounted it, and a mount is instant
+      // while the fill is a 150ms fade — the flicker Katerina caught.
+      trailing,
+      render: () => (
         <>
           {icon != null && iconTile(icon)}
           <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
             <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{title}</div>
             {subtitle && <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{subtitle}</div>}
           </div>
-          {isHl ? enterHint : trailing}
         </>
       ),
     })
@@ -1094,14 +1117,14 @@ export function CommandLauncher({
       rows.push({
         key: a.id,
         onSelect: () => enterScope(a),
-        render: (isHl) => (
+        trailing: <IconChevronRight size={16} stroke={1.5} className="text-text-secondary shrink-0" />,
+        render: () => (
           <>
             {appTile(a)}
             <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
               <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{a.label}</div>
               <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{`${a.description} · ${a.actions.length} actions`}</div>
             </div>
-            {isHl ? enterHint : <IconChevronRight size={16} stroke={1.5} className="text-text-secondary shrink-0" />}
           </>
         ),
       })
@@ -1361,8 +1384,9 @@ export function CommandLauncher({
                       {proposal.preview}
                     </p>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
+                      <Button
+                        variant="primary"
+                        size="small"
                         onClick={() => {
                           /*
                             Opens the form; it does not publish. The model
@@ -1374,10 +1398,9 @@ export function CommandLauncher({
                           setAsking(null)
                           enterForm(proposal.entry.launcher)
                         }}
-                        className="h-7 px-3 rounded-md bg-accent-primary hover:bg-accent-hover text-text-inverse text-[13px] leading-[1.2] font-medium"
                       >
                         Open the form
-                      </button>
+                      </Button>
                       <span className="text-[12px] leading-[1.2] text-text-secondary">
                         Nothing is created until you submit it.
                       </span>
@@ -1517,17 +1540,17 @@ export function CommandLauncher({
                     {draft}
                   </p>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
+                    <Button
+                      variant="primary"
+                      size="small"
                       onClick={() => {
                         // At the cursor, never replacing, and never sending.
                         insertTextIntoActiveComposer(draft)
                         onClose()
                       }}
-                      className="h-7 px-3 rounded-md bg-accent-primary hover:bg-accent-hover text-text-inverse text-[13px] leading-[1.2] font-medium"
                     >
                       Put it in the composer
-                    </button>
+                    </Button>
                     <span className="text-[12px] leading-[1.2] text-text-secondary">
                       It will not send — edit it first.
                     </span>
@@ -1581,13 +1604,15 @@ export function CommandLauncher({
                   // the first conversion, and she caught it).
                   className={row.compact ? 'h-9 gap-3 px-3' : 'min-h-12'}
                   selected={highlight === i}
+                  trailing={row.trailing}
+                  hint={enterHint}
                   onMouseEnter={() => setHighlight(i)}
                   onMouseDown={(e) => {
                     e.preventDefault()
                     row.onSelect()
                   }}
                 >
-                  {row.render(highlight === i)}
+                  {row.render()}
                 </MenuItem>
               </div>
             ))}
@@ -1606,9 +1631,9 @@ export function CommandLauncher({
             {formAction ? (
               <>
                 <span className="flex items-center gap-1.5">
-                  {keyBadge('⌘ ↩')} {formAction.submitLabel.toLowerCase()}
+                  {keyBadge(shortcutLabel('Mod-Enter'))} {formAction.submitLabel.toLowerCase()}
                 </span>
-                <span className="flex items-center gap-1.5">{keyBadge('⌫')} back</span>
+                <span className="flex items-center gap-1.5">{keyBadge('Backspace')} back</span>
               </>
             ) : (
               <>
@@ -1616,10 +1641,10 @@ export function CommandLauncher({
                   {keyBadge('↑')}
                   {keyBadge('↓')} navigate
                 </span>
-                <span className="flex items-center gap-1.5">{keyBadge('↩')} open</span>
+                <span className="flex items-center gap-1.5">{keyBadge('Enter')} open</span>
               </>
             )}
-            <span className="flex items-center gap-1.5">{keyBadge('esc')} close</span>
+            <span className="flex items-center gap-1.5">{keyBadge('Esc')} close</span>
           </div>
         </div>
       </div>

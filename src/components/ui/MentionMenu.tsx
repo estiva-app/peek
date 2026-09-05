@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
+import { EnterHint, MenuItem, MenuPanel, MenuSection } from '@estiva-app/ui'
 import { Avatar } from './Avatar'
 import { type Person } from '@/api'
 
@@ -29,20 +29,18 @@ export function MentionMenu({
   if (people.length === 0) return null
 
   return (
-    <div className="w-[658px] max-h-[360px] overflow-y-auto bg-bg-elevated border border-border-default rounded-lg shadow-lg">
-      <div className="p-2">
-        <MenuSection label={isUrgent ? 'Urgent mention' : 'People'} className="px-3 py-1">
+    <MenuPanel className="max-h-[360px] w-[658px] gap-2 overflow-y-auto">
+      <MenuSection label={isUrgent ? 'Urgent mention' : 'People'} className="px-3 py-1">
           {people.map((person, i) => (
             <MenuItem
               key={person.id}
               size="tall"
-              className="h-12"
               ref={i === highlight ? scrollRef : undefined}
               leading={<Avatar size={32} alt={person.name} />}
               label={person.name}
               description={person.role}
               selected={i === highlight}
-              trailing={i === highlight ? <EnterHint /> : undefined}
+              hint={<EnterHint />}
               onMouseEnter={() => onHighlightChange(i)}
               onMouseDown={(event) => {
                 event.preventDefault()
@@ -50,8 +48,7 @@ export function MentionMenu({
               }}
             />
           ))}
-        </MenuSection>
-      </div>
-    </div>
+      </MenuSection>
+    </MenuPanel>
   )
 }
