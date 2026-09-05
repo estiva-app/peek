@@ -5,11 +5,10 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
 import { ResolutionBlock, extractResolution } from '@/extensions/resolution'
-import { HighlightTag, extractHighlightType } from '@/extensions/highlight'
+import { HighlightTag, extractHighlightType, insertHighlightTag } from '@/extensions/highlight'
 import { IconPaperclip, IconSquareForbid2, IconArrowUp, IconHighlight, IconX, IconLoader2, IconAlertCircle } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
-import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
-import { Divider } from './Divider'
+import { Kbd, MenuItem, MenuPanel } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
 import { FrameArt } from './FrameArt'
 import { FrameLightbox } from '../FrameLightbox'
@@ -18,6 +17,8 @@ import { HIGHLIGHT_META, hasConvex, useUploadActions, type HighlightType, type U
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { FILE_ACCEPT_ATTR, validateFile, isImageAttachment, formatBytes, fileTypeLabel } from '@/lib/fileAttachments'
 import { wrapInlineMarks } from '@estiva-app/protocol'
+import { SelectionToolbar } from './SelectionToolbar'
+import { SlashCommands } from '@/extensions/slashCommands'
 
 export interface SendPayload {
   text: string
@@ -121,33 +122,11 @@ function serializeToText(editor: ReturnType<typeof useEditor>): string {
   return lines.join('\n').trim()
 }
 
-// ── Slash command items - all shortcuts ──
-
-type SlashItem =
-  | { kind: 'highlight'; type: HighlightType; label: string }
-  | { kind: 'shortcut'; label: string; trigger: string; input: string; description: string }
-
-const SLASH_ITEMS: SlashItem[] = [
-  // Highlights
-  { kind: 'highlight', type: 'insight',    label: 'Insight' },
-  { kind: 'highlight', type: 'concern',    label: 'Concern' },
-  { kind: 'highlight', type: 'conclusion', label: 'Conclusion' },
-  { kind: 'highlight', type: 'question',   label: 'Question' },
-  { kind: 'highlight', type: 'summary',    label: 'Summary' },
-  // Other shortcuts
-  { kind: 'shortcut', label: 'Mention',  trigger: '@',  input: '@',   description: 'Mention a person' },
-  { kind: 'shortcut', label: 'Urgent',   trigger: '!@', input: '!@',  description: 'Urgent mention' },
-  { kind: 'shortcut', label: 'Link',     trigger: '[',  input: '[',   description: 'Reference a file or topic' },
-  { kind: 'shortcut', label: 'Resolve',  trigger: '→',  input: '-> ', description: 'Resolve conversation' },
-]
 
 export function ComposeBox({ onSend, placeholder = 'default', contextLabel, className }: ComposeBoxProps) {
   const [isEmpty, setIsEmpty] = useState(true)
   const [hasUrgent, setHasUrgent] = useState(false)
   const [hasHighlight, setHasHighlight] = useState(false)
-  const [showSlashMenu, setShowSlashMenu] = useState(false)
-  const [slashQuery, setSlashQuery] = useState('')
-  const [slashHighlight, setSlashHighlight] = useState(0)
   const [attachedFrameIds, setAttachedFrameIds] = useState<string[]>([])
   const [previewFrame, setPreviewFrame] = useState<FigmaFrame | null>(null)
   const [pendingFiles, setPendingFiles] = useState<PendingUpload[]>([])
@@ -211,6 +190,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
       FileMention,
       ResolutionBlock,
       HighlightTag,
+      SlashCommands,
     ],
     editorProps: {
       attributes: {
@@ -314,17 +294,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
       setHasUrgent(urgent)
       setHasHighlight(hasHl)
 
-      // Slash command detection
-      const fullText = doc.textContent
-      if (fullText.startsWith('/') && doc.childCount === 1 && !hasHl) {
-        const query = fullText.slice(1).toLowerCase()
-        setSlashQuery(query)
-        setShowSlashMenu(true)
-        setSlashHighlight(0)
-      } else {
-        setShowSlashMenu(false)
-        setSlashQuery('')
-      }
     },
   })
 
@@ -350,45 +319,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
     }
   }, [editor, contextLabel])
 
-  // Insert a highlight tag into the editor at the start (preserving existing text)
-  const insertHighlightTag = useCallback((type: HighlightType) => {
-    const ed = editorRef.current
-    if (!ed) return
-
-    // Check if there's already a highlight tag
-    let tagFrom = -1
-    let tagTo = -1
-    ed.state.doc.descendants((node, pos) => {
-      if (node.type.name === 'highlightTag') {
-        tagFrom = pos
-        tagTo = pos + node.nodeSize
-      }
-    })
-
-    if (tagFrom >= 0) {
-      // Replace the existing tag in place (preserves surrounding text)
-      ed.chain()
-        .deleteRange({ from: tagFrom, to: tagTo })
-        .insertContentAt(tagFrom, [
-          { type: 'highlightTag', attrs: { highlightType: type } },
-        ])
-        .focus()
-        .run()
-    } else {
-      // No existing tag - if there's only slash text, clear it first; otherwise prepend
-      const docText = ed.state.doc.textContent
-      if (docText.startsWith('/')) {
-        ed.commands.clearContent(true)
-      }
-      ed.chain()
-        .focus()
-        .insertContentAt(1, [
-          { type: 'highlightTag', attrs: { highlightType: type } },
-          { type: 'text', text: ' ' },
-        ])
-        .run()
-    }
-  }, [])
 
   // Listen for tag clicks to reopen picker
   const [showHighlightPicker, setShowHighlightPicker] = useState(false)
@@ -417,58 +347,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
     return () => document.removeEventListener('mousedown', close)
   }, [showHighlightPicker])
 
-  // Filtered slash items
-  const filteredSlashItems = SLASH_ITEMS.filter((item) => {
-    if (!slashQuery) return true
-    if (item.kind === 'highlight') return item.label.toLowerCase().includes(slashQuery) || item.type.includes(slashQuery)
-    return item.label.toLowerCase().includes(slashQuery) || item.trigger.includes(slashQuery) || item.input.includes(slashQuery) || item.description.toLowerCase().includes(slashQuery)
-  })
 
-  const handleSlashSelect = useCallback((item: SlashItem) => {
-    setShowSlashMenu(false)
-    setSlashQuery('')
-    const ed = editorRef.current
-    if (!ed) return
 
-    if (item.kind === 'highlight') {
-      insertHighlightTag(item.type)
-    } else {
-      // For shortcuts: clear the / and type the trigger character
-      ed.commands.clearContent(true)
-      ed.commands.focus()
-      // Insert the trigger text so the suggestion plugin picks it up
-      requestAnimationFrame(() => {
-        ed.commands.insertContent(item.input)
-      })
-    }
-  }, [insertHighlightTag])
-
-  // Slash menu keyboard navigation
-  useEffect(() => {
-    if (!showSlashMenu) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setSlashHighlight((h) => Math.min(h + 1, filteredSlashItems.length - 1))
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setSlashHighlight((h) => Math.max(h - 1, 0))
-      } else if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
-        const item = filteredSlashItems[slashHighlight]
-        if (item) handleSlashSelect(item)
-      } else if (e.key === 'Escape') {
-        setShowSlashMenu(false)
-        const ed = editorRef.current
-        if (ed) {
-          ed.commands.clearContent(true)
-          ed.commands.focus()
-        }
-      }
-    }
-    document.addEventListener('keydown', handler, true)
-    return () => document.removeEventListener('keydown', handler, true)
-  }, [showSlashMenu, slashHighlight, filteredSlashItems, handleSlashSelect])
 
   const handleSend = () => {
     if (!editor) return
@@ -494,70 +374,18 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
     setPendingFiles([])
   }
 
-  // Split filtered items into sections for rendering
-  const highlightItems = filteredSlashItems.filter((i): i is SlashItem & { kind: 'highlight' } => i.kind === 'highlight')
-  const shortcutItems = filteredSlashItems.filter((i): i is SlashItem & { kind: 'shortcut' } => i.kind === 'shortcut')
 
   return (
     <div ref={composeRef} className={cn('relative', className)}>
-      {/* Slash command menu */}
-      {showSlashMenu && filteredSlashItems.length > 0 && (
-        <div className="absolute left-0 right-0 bottom-full mb-1 z-50">
-          <div className="w-[244px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2 flex flex-col gap-2">
-            {highlightItems.length > 0 && (
-              <MenuSection label="Highlights">
-                {highlightItems.map((item) => {
-                  const globalIdx = filteredSlashItems.indexOf(item)
-                  return (
-                    <MenuItem
-                      key={item.type}
-                      leading={<HighlightSwatch type={item.type} />}
-                      label={item.label}
-                      selected={globalIdx === slashHighlight}
-                      trailing={globalIdx === slashHighlight ? <EnterHint /> : undefined}
-                      onMouseEnter={() => setSlashHighlight(globalIdx)}
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        handleSlashSelect(item)
-                      }}
-                    />
-                  )
-                })}
-              </MenuSection>
-            )}
-            {highlightItems.length > 0 && shortcutItems.length > 0 && <Divider className="mx-0" />}
-            {shortcutItems.length > 0 && (
-              <MenuSection label="Shortcuts">
-                {shortcutItems.map((item) => {
-                  const globalIdx = filteredSlashItems.indexOf(item)
-                  return (
-                    <MenuItem
-                      key={item.trigger}
-                      label={item.label}
-                      trailing={
-                        <kbd className="inline-flex items-center justify-center bg-bg-inset border border-border-strong rounded-sm px-1 py-[1px] text-[11px] text-text-secondary leading-[1.2] min-w-[18px] shrink-0">
-                          {item.trigger}
-                        </kbd>
-                      }
-                      selected={globalIdx === slashHighlight}
-                      onMouseEnter={() => setSlashHighlight(globalIdx)}
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        handleSlashSelect(item)
-                      }}
-                    />
-                  )
-                })}
-              </MenuSection>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Highlight picker (from toolbar button or tag click) */}
       {showHighlightPicker && (
         <div ref={highlightPickerRef} className="absolute left-0 bottom-full mb-1 z-50">
-          <div className="w-[180px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-2">
+          {/* The shared box (2026-09-05) — a fourth hand-drawn copy of it
+              lived here. Not `Menu`: this picker is placed against the
+              composer and closes through the outside-click effect above, so
+              a second Escape-and-outside-click owner would fight it. */}
+          <MenuPanel className="w-[180px]">
             {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
               <MenuItem
                 key={type}
@@ -565,12 +393,12 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
                 label={HIGHLIGHT_META[type].label}
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  insertHighlightTag(type)
+                  if (editorRef.current) insertHighlightTag(editorRef.current, type)
                   setShowHighlightPicker(false)
                 }}
               />
             ))}
-          </div>
+          </MenuPanel>
         </div>
       )}
 
@@ -582,6 +410,10 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
           !hasUrgent && hasHighlight && 'border-l-[4px] border-border-strong pl-2'
         )}>
           <EditorContent editor={editor} />
+          {/* Bold / italic / underline over a selection. Rendered here rather
+              than in the menu because those marks need something selected, and
+              the `/` menu only opens on an empty composer. */}
+          <SelectionToolbar editor={editor} />
           {isEmpty && !hasHighlight && (
             <div className="absolute inset-0 pointer-events-none flex items-center gap-1 text-sm text-text-muted leading-[1.4] flex-wrap">
               {placeholder === 'reply' ? (
@@ -589,9 +421,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
               ) : (
                 <>
                   <span>Start a new conversation or type</span>
-                  <kbd className="inline-flex items-center border border-border-strong rounded-sm px-1 py-[1px] text-[12px] text-text-secondary leading-[1.2]">
-                    /
-                  </kbd>
+                  <Kbd>/</Kbd>
                   <span>for commands</span>
                 </>
               )}
@@ -726,22 +556,23 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
               <span className="hidden signal:inline font-mono text-[9px] tracking-[0.04em] text-text-muted select-none">
                 Enter to send · Shift+Enter new line
               </span>
-              <button
+              {/* The shared IconButton's `primary`, which this button was a
+                  hand-written copy of, class for class. Only the Signal glow
+                  is Peek's, and it rides in on className — a disabled send
+                  button does not glow. Focus must not leave the editor, so
+                  the press is onMouseDown with the default prevented. */}
+              <IconButton
+                variant="primary"
                 onMouseDown={(e) => {
                   e.preventDefault()
                   handleSend()
                 }}
                 disabled={!canSend}
                 aria-label="Send"
-                className={cn(
-                  'flex items-center justify-center p-1 rounded-lg transition-colors',
-                  canSend
-                    ? 'bg-accent-primary hover:bg-accent-hover text-text-inverse cursor-pointer signal:shadow-[shadow:var(--glow-accent)]'
-                    : 'bg-bg-disabled text-text-disabled pointer-events-none'
-                )}
+                className={cn(canSend && 'signal:shadow-[shadow:var(--glow-accent)]')}
               >
                 <IconArrowUp size={16} stroke={1.5} />
-              </button>
+              </IconButton>
               </div>
             )
           })()}

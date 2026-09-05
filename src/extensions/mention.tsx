@@ -5,7 +5,6 @@ import { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { mentionPeople, mentionTopics, type Person } from '@/api'
-import { APP_FILES, DOCUMENT_FILES, hasConvex } from '@/api'
 import { useIsTopicResolved } from '@/api'
 import { MentionMenu } from '@/components/ui/MentionMenu'
 import { FilesMenu, type FilesMenuItem, type FilesMenuRef } from '@/components/ui/FilesMenu'
@@ -75,6 +74,18 @@ let _lastCloseTime = 0
 
 export function isSuggestionActive(): boolean {
   return _openCount > 0 || (Date.now() - _lastCloseTime < 100)
+}
+
+/** Report a suggestion opening / closing from outside this file — the `/`
+ *  menu lives in its own extension but shares this counter, so ComposeBox
+ *  keeps one answer to "is a menu open?" rather than two. */
+export function openSuggestion() {
+  _openCount++
+}
+
+export function closeSuggestion() {
+  _openCount = Math.max(0, _openCount - 1)
+  _lastCloseTime = Date.now()
 }
 
 // ─── Suggestion popup controller ───
@@ -382,14 +393,15 @@ export const TopicMention = Mention.extend({
   suggestion: {
     char: '[',
     items: (): FilesMenuItem[] => {
-      // Real topics via the seam directory (kept in sync like @mentions).
-      // Files exist only as mocks, so they suggest only in mock mode — the
-      // real app never offers a reference that can't resolve (locked rule).
-      const topics: FilesMenuItem[] = mentionTopics().map((t) => ({ kind: 'topic', data: t }))
-      if (hasConvex) return topics
-      const apps: FilesMenuItem[] = APP_FILES.map((f) => ({ kind: 'app', data: f }))
-      const docs: FilesMenuItem[] = DOCUMENT_FILES.map((f) => ({ kind: 'document', data: f }))
-      return [...topics, ...apps, ...docs]
+      // Topics only (Katerina, 2026-09-05). The Apps and Documents sections
+      // were mock rows — a Figma category and a handful of invented files —
+      // and they only ever appeared in mock mode, so the menu you reviewed
+      // was not the menu the app shows. Placeholders retired, the way the
+      // prototype reference chips were in #148.
+      //
+      // APP_FILES / DOCUMENT_FILES stay in `src/data`: MessageBody still
+      // resolves them so reference chips in existing messages keep working.
+      return mentionTopics().map((t) => ({ kind: 'topic', data: t }))
     },
 
     render: () => {
@@ -403,61 +415,26 @@ export const TopicMention = Mention.extend({
     },
 
     command: ({ editor, range, props: item }: any) => {
-      const menuItem = item as FilesMenuItem
-      if (menuItem.kind === 'topic') {
-        const topic = menuItem.data
-        editor
-          .chain()
-          .focus()
-          .insertContentAt(range, [
-            {
-              type: 'topicMention',
-              attrs: {
-                id: topic.id,
-                label: topic.title,
-                isResolved: topic.isResolved,
-              },
+      // Topics are all `[` offers now, so this inserts a topicMention and
+      // nothing else. The `fileMention` node it used to insert still exists
+      // and MessageBody still renders it — messages already sent keep their
+      // file references; there is simply no longer a way to add a new one.
+      const topic = (item as FilesMenuItem).data
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(range, [
+          {
+            type: 'topicMention',
+            attrs: {
+              id: topic.id,
+              label: topic.title,
+              isResolved: topic.isResolved,
             },
-            { type: 'text', text: ' ' },
-          ])
-          .run()
-      } else if (menuItem.kind === 'app') {
-        const file = menuItem.data
-        editor
-          .chain()
-          .focus()
-          .insertContentAt(range, [
-            {
-              type: 'fileMention',
-              attrs: {
-                id: file.id,
-                label: file.title,
-                app: file.app,
-                subtitle: file.subtitle ?? '',
-              },
-            },
-            { type: 'text', text: ' ' },
-          ])
-          .run()
-      } else {
-        const doc = menuItem.data
-        editor
-          .chain()
-          .focus()
-          .insertContentAt(range, [
-            {
-              type: 'fileMention',
-              attrs: {
-                id: doc.id,
-                label: doc.title,
-                app: doc.docType,
-                subtitle: doc.subtitle ?? '',
-              },
-            },
-            { type: 'text', text: ' ' },
-          ])
-          .run()
-      }
+          },
+          { type: 'text', text: ' ' },
+        ])
+        .run()
     },
   },
 })

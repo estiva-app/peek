@@ -1,15 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { TOPICS } from '@/api'
-import { APP_FILES, DOCUMENT_FILES } from '@/api'
 import { PeekDataProvider } from '@/api'
 import { FilesMenu, type FilesMenuItem } from './FilesMenu'
 
-// Build the flat item list exactly as the `[` extension does (mention.tsx).
-const ITEMS: FilesMenuItem[] = [
-  ...TOPICS.map<FilesMenuItem>((t) => ({ kind: 'topic', data: t })),
-  ...APP_FILES.map<FilesMenuItem>((f) => ({ kind: 'app', data: f })),
-  ...DOCUMENT_FILES.map<FilesMenuItem>((f) => ({ kind: 'document', data: f })),
-]
+// Exactly what the `[` extension offers (mention.tsx): topics, and nothing
+// else. The Apps and Documents sections were mock rows and were retired on
+// 2026-09-05 — a story that shows them would be showing a menu the app has
+// never rendered.
+const ITEMS: FilesMenuItem[] = TOPICS.map<FilesMenuItem>((t) => ({ kind: 'topic', data: t }))
 
 const meta = {
   title: 'Messages/Composer/FilesMenu',
@@ -35,29 +33,18 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * Level 1: the three app categories (GitHub / Figma / Linear), then Topics with
- * their live status icon, then Documents. Click an app row (or press Enter / →
- * on it) to drill into that app's files (level 2); ← or Backspace drills back.
+ * What `[` offers: the topics you can reference, each with its live status
+ * icon. Rows are the shared `MenuItem` at its default size — one line of text
+ * beside a 16px icon — because a topic has no second line to carry.
  */
 export const Default: Story = {}
 
-/**
- * Level 2 preview — drill into Figma by keyboard/mouse from Default. Shown here
- * via a query that narrows to Figma files, surfacing their brand icon + subtitle.
- */
-export const AppMatches: Story = {
-  args: { query: 'figma' },
-}
-
-/**
- * Search mode: typing flattens the two levels into ranked sections
- * (Apps / Topics / Documents), each filtered by the query.
- */
+/** Search mode: the same section, filtered by what you have typed. */
 export const Filtered: Story = {
   args: { query: 'onboarding' },
 }
 
-/** Document results carry per-type icons (pdf, image, presentation, …). */
-export const Documents: Story = {
-  args: { query: '2026' },
+/** Nothing matches — the menu renders nothing rather than an empty box. */
+export const NoMatches: Story = {
+  args: { query: 'zzzz' },
 }
