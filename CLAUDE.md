@@ -6,6 +6,36 @@ at `k:\PeekApp` (GitHub `cath23/Peek`, tag `prototype-v1`). See `PROTOTYPE.md`
 and `MIGRATION.md` for lineage, and `PRDs/Peek-Product-Overview.md` for the
 feature spec.
 
+## UI: the shared package, and the rules every session follows
+
+@UI-RULES.md
+
+Every piece of UI in this app comes from `@estiva-app/ui`, or wraps it with
+what only Peek knows, or draws a product object nothing else has. There is no
+fourth kind. Before you write a component, a class list or a colour:
+
+1. `UI-RULES.md`, imported above, is already in your context. Act on it, all
+   of it.
+2. Read `node_modules/@estiva-app/ui/src/<Component>.mdx` for how to use a
+   component, and `Choosing.mdx` to pick one (in the `estiva-ui` checkout
+   beside this repository under `stories/`, or the package Storybook on
+   `:6008`). Do not use a component you have not read the page of.
+3. Look in `src/components/ui/` for the shim or wrapper this app already has.
+
+Never hand-write a popup, a menu, a dialog, a tooltip, keyboard navigation,
+outside-click or focus handling, or a form control; the files that still do
+are being replaced and are not to be copied. Never use a Tailwind default size
+or colour (`text-sm`, `bg-gray-100`), a hex value, an opacity modifier on a
+token (`border-warning-default/40`), or a class the preset does not define:
+the token classes are doubled, `bg-bg-surface` and `text-text-primary`, and
+`bg-surface` compiles to nothing. Until the lint that fails the build on these
+lands, prove a class exists by building the CSS (`UI-RULES.md` §4).
+
+If the component you need is missing or nearly fits: extend the package (a
+ticket in `estiva-ui`, a prop added there), never a fork here. A fork without a
+ticket is a defect. Every UI file has a story; a file without one is unreviewed
+and is treated as broken until it has one.
+
 ## Stack
 
 React 19 + Vite + TypeScript + Tailwind (custom design tokens in
@@ -66,11 +96,14 @@ without a deployment (`"use node"` files may export only actions).
 - **Type-check with `npx tsc -b`** — never `tsc --noEmit` (matches the Vercel
   build, which runs `tsc -b && vite build`).
 - **Pixel-perfect, no exceptions.** The prototype is the visual reference.
-  Use design tokens, never raw hex; reuse existing primitives
-  (Avatar/AvatarStack/ListRow/Chip/IconButton…) instead of re-hand-rolling.
-- **tw-merge pitfall:** custom text classes like `text-btn-small` get silently
-  dropped when followed by a `text-{color}` class in merged class lists — use
-  explicit arbitrary values (`text-[12px] leading-[12px]`) in shared components.
+  Tokens only, never raw hex; every primitive comes from `@estiva-app/ui`
+  through `src/components/ui/` (the UI section above, and `UI-RULES.md`),
+  never re-hand-rolled.
+- **tw-merge:** the package's `cn()`, re-exported from `src/lib/utils.ts`,
+  knows the type ramp, so token size classes (`text-body-2`, `text-btn-small`)
+  survive beside a text colour. Write the token; never bring a plain `twMerge`,
+  which drops them. The old rule "use arbitrary values in shared components" is
+  retired; migrate an arbitrary value to its token when you touch it.
 - **Menus/popovers:** stay open on hover, close on mouse leave, guard the
   parent hover state, close on outside click and Escape.
 - **Only offer actions that can succeed** — an action appears only in contexts
