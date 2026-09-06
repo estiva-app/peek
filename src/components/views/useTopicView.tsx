@@ -19,7 +19,9 @@ import { SkeletonConversationList, SkeletonHuddleGrid } from '@/components/ui/Sk
 import { Button } from '@/components/ui/Button'
 import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { TopicTabs, type TopicTab } from '@/components/ui/TopicTabs'
+import { TopicTabs, conversationTabs, type TopicTab } from '@/components/ui/TopicTabs'
+import { useFolderProject, partitionByRelation, subFileAddresses, subFileLabels } from '@/api/useFolderProject'
+import { TopicActivity } from '@/components/TopicActivity'
 import { IconButton } from '@/components/ui/IconButton'
 import {
   CURRENT_USER_NAME,
@@ -320,7 +322,7 @@ export function useTopicView({
   // All data arrives merged from the seam — overrides applied, deletions
   // filtered, replyCount final. Nothing below touches override maps.
   const {
-    groups: currentGroups,
+    groups: allGroups,
     sent: currentSent,
     openCount,
     resolvedCount,
@@ -330,6 +332,64 @@ export function useTopicView({
     hasEarlier,
     showEarlier,
   } = useTopicMessages(topicId)
+
+  /*
+    The two lists — CON-9. Identity merges; relation aggregates.
+
+    A topic and the project in its Folder are **the same file**, so a comment on
+    the project is this topic's conversation and stays in the stream. A comment
+    on one of that project's *tickets* is a different file's conversation — it
+    aggregates into Activity and leaves the stream.
+
+    **This is why the stream gets quieter.** Ship publishes a comment into the
+    project's Folder, which *is* this topic's channel, so every issue comment
+    ever written has arrived here as an ordinary message. Measured on production
+    2026-09-06: 422 of 453 threads across every paired topic, 93%. They were
+    never talk in the topic; they were another file's discussion filed in the
+    same container, and no reader could tell which was which.
+
+    `subFileAddresses` comes off the projection layer, so nothing here knows what
+    a Ship issue is. A fourth app's records split a topic correctly without Peek
+    learning what they are.
+  */
+  const { state: folderProject } = useFolderProject(topicId)
+  const subFiles = useMemo(() => subFileAddresses(folderProject), [folderProject])
+  const subFileLabel = useMemo(() => subFileLabels(folderProject), [folderProject])
+
+  /*
+    The partition itself is a pure function — `partitionByRelation`. It is the
+    claim this whole change rests on, and a `useMemo` is a bad place to prove
+    one; the rule that a message must be *tagged* rather than merely naming a
+    ticket is asserted there.
+  */
+  const split = useMemo(
+    () => partitionByRelation(allGroups.flatMap((g) => g.convs), subFiles),
+    [allGroups, subFiles],
+  )
+  const inStream = useMemo(() => new Set(split.own.map((c) => c.id)), [split])
+
+  const currentGroups = useMemo(
+    () =>
+      allGroups
+        .map((g) => ({ ...g, convs: g.convs.filter((c) => inStream.has(c.id)) }))
+        .filter((g) => g.convs.length > 0),
+    [allGroups, inStream],
+  )
+
+  /**
+   * Activity: the conversations of files related to this one, newest first.
+   *
+   * Sub-files today. Mentions are the other half and are not here yet — a Peek
+   * topic is not an addressable object until files nest, so "conversations that
+   * mention this topic" is not a question the relay can answer about it. The
+   * project in its Folder *is* addressable, and that is the shape the mentions
+   * half will take.
+   */
+  const activityItems = useMemo(
+    () => split.activity.map(({ message, about }) => ({ conv: message, about })),
+    [split],
+  )
+
   const currentHuddles = topicId != null ? huddleLookup(topicId) : []
 
   /** When the topic was promoted from a DM, this is the seed huddle. Drives the DM-origin empty state. */
@@ -577,7 +637,17 @@ export function useTopicView({
     The registry gives the open thread priority over this, so opening one
     narrows the question rather than competing with it.
   */
-  const topicKey = [...currentGroups.flatMap((g) => g.convs), ...currentSent]
+  /*
+    Everything in the Folder, not just the stream — CON-9.
+
+    `currentGroups` is now the topic's *own* conversation, with ticket comments
+    split out into Activity. The launcher's question is a different one: "find
+    something I can see", not "what is in this list". Keying this on the stream
+    would have made 93% of a paired topic's messages unfindable from Cmd+K on
+    the day the split landed, with nothing reporting it — the search would
+    simply stop having them.
+  */
+  const topicKey = [...allGroups.flatMap((g) => g.convs), ...currentSent]
     .map((c) => [c.id, c.authorName, c.timestamp, c.replyCount ?? 0, c.body ?? ''].join('\u0001'))
     .join('\u0000')
   // Rebuilt from the key, the round-trip `ThreadPanel` uses for the same
@@ -687,18 +757,27 @@ export function useTopicView({
               }
             : undefined
         }
+        /*
+          The tab row is unconditional now — CON-9.
+
+          It used to appear only under huddle variant 1, which was fine while
+          every tab was an extra view. Activity is not: it holds this Folder's
+          ticket conversations, 93% of what used to be in the stream on
+          production, so a tab behind a debug flag would have hidden almost
+          everything. Variant 1 keeps its fuller set; everyone else gets the two
+          lists and nothing more.
+        */
         tabs={
-          huddleVariant === 1 ? (
-            <TopicTabs
-              activeTab={activeTab}
-              onTabChange={(tab) => {
-                setActiveTab(tab)
-                setThreadConvId(null)
-                setSelectedHuddleId(null)
-                cancelHuddleCreation()
-              }}
-            />
-          ) : undefined
+          <TopicTabs
+            activeTab={activeTab}
+            tabs={huddleVariant === 1 ? undefined : conversationTabs({ conversations: currentGroups.reduce((n, g) => n + g.convs.length, 0) + currentSent.length, activity: activityItems.length })}
+            onTabChange={(tab) => {
+              setActiveTab(tab)
+              setThreadConvId(null)
+              setSelectedHuddleId(null)
+              cancelHuddleCreation()
+            }}
+          />
         }
       />
 
@@ -756,7 +835,20 @@ export function useTopicView({
       )}
 
       {/* Conversations tab — also the only body in V2/V3 (no tabs). Suppressed when a V2 huddle is open. */}
-      {!isV2HuddleView && (huddleVariant !== 1 || activeTab === 'conversations') && (() => {
+      {/*
+        Activity — the second of CON-9's two lists. The conversations of files
+        related to this one: today, the tickets in this topic's Folder.
+      */}
+      {!isV2HuddleView && activeTab === 'activity' && (
+        <TopicActivity
+          items={activityItems}
+          labelFor={subFileLabel}
+          selectedId={threadConvId}
+          onOpenThread={openThread}
+        />
+      )}
+
+      {!isV2HuddleView && activeTab === 'conversations' && (() => {
         // V3 unified stream: date-keyed groups holding convs, sent messages, and
         // huddles INTERLEAVED chronologically (QA #2.5 — huddles used to render
         // as a block at the end of their group, and huddle-only dates were
