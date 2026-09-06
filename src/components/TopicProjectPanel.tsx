@@ -1,19 +1,11 @@
-import {
-  RelayReadError,
-  classifyRelayFailure,
-  describeRelayFailure,
-  isOutage,
-  type RelayFailureKind,
-} from '@/nostr/relayRead'
-import { recordReadFailure } from '@/nostr/freshness'
-import { peekLiveTopics } from '@/nostr/liveTopics'
-import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
-import { useCallback, useEffect, useState } from 'react'
-import { useQuery } from 'convex/react'
+import { describeRelayFailure, type RelayFailureKind } from '@/nostr/relayRead'
+import { useCallback, useState } from 'react'
 import { IconChevronRight, IconFolderOpen } from '@tabler/icons-react'
-import { api } from '../../convex/_generated/api'
 import type { FolderProject, ForeignObject, ResolvedSlot } from '@estiva-app/interop'
 import { hasConvex, useForeignObjects } from '@/api'
+import type { FolderProjectState } from '@/api/useFolderProject'
+import { SectionLabel } from '@/components/ui/SectionHeader'
+import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
@@ -154,6 +146,10 @@ export function TopicProjectPanelView({
   actingOn,
   errors = {},
   directory,
+  activity = [],
+  subFileLabels = new Map(),
+  selectedConversationId,
+  onOpenThread,
 }: {
   /**
    * `'loading'` while the relay is being read; `null` when there is genuinely no
@@ -175,6 +171,19 @@ export function TopicProjectPanelView({
    *  than a hook so this view stays pure — tests and stories render it with
    *  no provider behind it. The container fetches it. */
   directory?: ReturnType<typeof useWorkspaceDirectory>
+  /**
+   * Activity — the conversations of the files in this Folder (CON-9).
+   *
+   * It belongs in this column rather than in a tab beside the conversation
+   * because it is *about the files this panel already draws*. The panel answers
+   * "what is in this Folder"; without this it stopped halfway, listing the
+   * tickets and saying nothing about what is being said on them.
+   */
+  activity?: TopicActivityItem[]
+  subFileLabels?: Map<string, string>
+  /** Which Activity row's thread is open, so the row can show it is selected. */
+  selectedConversationId?: string | null
+  onOpenThread?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -274,137 +283,87 @@ export function TopicProjectPanelView({
               second thing in the column beside it. */}
           <ProjectTickets tickets={tickets} openCount={openCount} doneCount={doneCount} />
         </div>
+
+        {/*
+          Activity — CON-9's second list, under the files it is about.
+
+          A separate block rather than inside the project card, because these
+          are not the project's own comments: they are conversations on the
+          tickets listed above, and putting them inside the card would say they
+          belong to the project the way its tickets do.
+        */}
+        {onOpenThread && (
+          <section className="mt-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <SectionLabel>Activity</SectionLabel>
+              {activity.length > 0 && (
+                <span className="font-mono text-caption text-text-muted">{activity.length}</span>
+              )}
+            </div>
+            <TopicActivity
+              items={activity}
+              labelFor={subFileLabels}
+              selectedId={selectedConversationId}
+              onOpenThread={onOpenThread}
+            />
+          </section>
+        )}
       </div>
     </PanelShell>
   )
 }
 
-export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
-  // Same query the conversation header already uses for its Folder link, so a
-  // topic's Folder is fetched once and shared, not resolved twice.
-  const folder = useQuery(
-    api.nostr.data.folderForTopic,
-    hasConvex && topicKey ? { topicKey } : 'skip',
+export function TopicProjectPanel({
+  topicKey,
+  folderProject,
+  reload,
+  onBusyChange,
+  activity = [],
+  subFileLabels,
+  selectedConversationId,
+  onOpenThread,
+}: {
+  topicKey: string
+  /*
+    Resolved by the page, not here — CON-9.
+
+    The conversation needs this same answer, to know which messages belong to a
+    file *under* this one and so leave the topic's own stream. Resolving it in
+    both places would be two cross-app relay reads per topic, repeated on every
+    focus and interval, with two chances to disagree about what is in the
+    Folder. The page reads it once and hands it to both.
+  */
+  folderProject: FolderProjectState
+  /** Re-read after a change: the relay is the authority on whether it happened. */
+  reload: () => Promise<void>
+  /**
+   * Tell the page a write is in flight.
+   *
+   * An automatic re-read that starts before an action lands can finish after it
+   * and put the pre-change state back on screen. The hook holds off while this
+   * is set, and only the panel knows when it is.
+   */
+  onBusyChange: (busy: string | undefined) => void
+  activity?: TopicActivityItem[]
+  subFileLabels?: Map<string, string>
+  selectedConversationId?: string | null
+  onOpenThread?: (id: string) => void
+}) {
+  const [actingOn, setActingOnState] = useState<string>()
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const setActingOn = useCallback(
+    (value: string | undefined) => {
+      setActingOnState(value)
+      onBusyChange(value)
+    },
+    [onBusyChange],
   )
-  const { resolveFolderProject: resolveProject, applyAction } = useForeignObjects()
+  const { applyAction } = useForeignObjects()
   // The assignee picker's option list (PEE-1). Demo mode answers from mocks.
   const directory = useWorkspaceDirectory()
-  /** Kept with the Folder it came from, so switching topics cannot show the
-   *  previous topic's project while the next one resolves. */
-  const [resolved, setResolved] = useState<{
-    folder: string
-    project: FolderProject | null
-    failed?: RelayFailureKind
-  }>()
-  const [actingOn, setActingOn] = useState<string>()
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // An action, not a query: this reads a relay over HTTP, which Convex's
-  // reactive layer cannot do. So the panel reflects the moment it resolved and
-  // does not live-update — acceptable for context beside a conversation, and
-  // the honest limitation to note rather than hide.
-  const load = useCallback(
-    (target: string): Promise<{
-      folder: string
-      project: FolderProject | null
-      failed?: RelayFailureKind
-    }> => {
-      return resolveProject(target)
-        .then((project) => ({ folder: target, project }))
-        .catch((error: unknown) => {
-          // Still swallowed — nothing throws, nothing interrupts, and the app
-          // keeps working off its Convex rows. What changed is that the failure
-          // is now *recorded* rather than only logged, so the panel can say
-          // which empty state this is.
-          const kind =
-            error instanceof RelayReadError
-              ? error.kind
-              : classifyRelayFailure((error as Error)?.message ?? '')
-          // Not a member is a real answer, arrived at successfully — it says
-          // nothing about the relay being reachable and must not light the
-          // connection indicator.
-          if (isOutage(kind)) recordReadFailure(kind)
-          console.warn('[nostr] folder project read failed:', error)
-          return { folder: target, project: null, failed: kind }
-        })
-    },
-    [resolveProject],
-  )
-
-  useEffect(() => {
-    if (!folder) return
-    let cancelled = false
-    load(folder).then((next) => !cancelled && setResolved(next))
-    return () => {
-      cancelled = true
-    }
-  }, [folder, load])
-
-  /*
-    The socket now drives this, and the timer became the fallback (PRO-10).
-
-    This block used to end "routing 30850/30851 into a panel refresh would make
-    this instant instead of eventual… worth its own". It was, and this is it.
-    The subscription has always been kindless, so a Ship issue moving already
-    arrived in the browser the moment it was published; `liveProjection` dropped
-    it for want of anywhere to put it. It now reports the Folder, and the panel
-    re-reads.
-
-    No event is carried and none is stored. Peek does not hold Ship's records —
-    the panel reads them off the relay, which is ADR 0001's split working — so
-    the useful signal is "re-read now". That is also what keeps this correct for
-    an app nobody has written yet: a fourth app's records make this panel live
-    without Peek learning what they are.
-
-    **The interval stays**, and is now genuinely a fallback rather than the
-    mechanism: a change published while this tab was closed arrives on focus, and
-    a socket that is quietly dead stops being indistinguishable from a quiet
-    workspace.
-  */
-  useEffect(() => {
-    if (!folder) return
-    // The instance the topic view already built. Null before it has connected,
-    // which is a real state rather than an error — the timer below covers it.
-    const live = peekLiveTopics()
-    if (!live) return
-    return live.onForeignActivity(folder, () => {
-      // The same guard the timer uses. An action in flight re-reads on its own
-      // completion, and a refresh landing after it would put the pre-change
-      // state back on screen.
-      if (actingOn) return
-      void load(folder).then((next) => {
-        if (next.folder === folder) setResolved(next)
-      })
-    })
-  }, [folder, actingOn, load])
-
-  /**
-   * Re-resolve on focus, visibility and a slow interval (PEE-2).
-   *
-   * The resolve effect is keyed on the folder id, which does not change for the
-   * life of the panel — so the panel read once and never again. That is the
-   * reported "a project created in Ship does not show until you navigate away
-   * and back": navigating away and back *is* the remount.
-   */
-  useRefreshTriggers(
-    () => {
-      if (!folder) return
-      // Never over an action in flight: `onAct` re-reads after a successful
-      // change, and a refresh started before it could land afterwards and put
-      // the pre-change state back on screen.
-      if (actingOn) return
-      void load(folder).then((next) => {
-        // Same guard the mount effect has, for the same reason — a slow resolve
-        // for the previous topic must not paint over the next one.
-        if (next.folder === folder) setResolved(next)
-      })
-    },
-    { enabled: hasConvex && !!folder },
-  )
 
   const onAct = useCallback(
     async (object: ForeignObject, actionId: string, value: string) => {
-      if (!folder) return
       setActingOn(object.ref)
       setErrors((prev) => ({ ...prev, [object.ref]: '' }))
       try {
@@ -424,7 +383,7 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // panel can never claim a change the shared record does not have.
-        if (result.ok) setResolved(await load(folder))
+        if (result.ok) await reload()
         else setErrors((prev) => ({ ...prev, [object.ref]: result.reason ?? 'Change refused.' }))
       } catch (e) {
         setErrors((prev) => ({ ...prev, [object.ref]: (e as Error).message }))
@@ -432,27 +391,13 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
         setActingOn(undefined)
       }
     },
-    [applyAction, folder, load],
+    [applyAction, reload, setActingOn],
   )
 
   // Peek runs on static mocks in tests, Storybook and checkouts with no backend.
   // There is no relay to ask in that mode, so the sidebar stays away entirely
   // rather than adding an empty column to every topic.
   if (!hasConvex) return null
-
-  // `undefined` is the Folder query still loading; `null` is a topic with no
-  // Folder at all (created before Nostr emission was wired up) — nothing to
-  // resolve, and the empty state is the honest answer.
-  const folderProject: FolderProject | null | 'loading' | { failed: RelayFailureKind } =
-    folder === undefined
-      ? 'loading'
-      : folder === null
-        ? null
-        : resolved?.folder === folder
-          ? resolved.failed
-            ? { failed: resolved.failed }
-            : resolved.project
-          : 'loading'
 
   return (
     <TopicProjectPanelView
@@ -461,6 +406,10 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
       actingOn={actingOn}
       errors={errors}
       directory={directory}
+      activity={activity}
+      subFileLabels={subFileLabels}
+      selectedConversationId={selectedConversationId}
+      onOpenThread={onOpenThread}
     />
   )
 }

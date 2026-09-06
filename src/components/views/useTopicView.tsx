@@ -20,6 +20,8 @@ import { Button } from '@/components/ui/Button'
 import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TopicTabs, type TopicTab } from '@/components/ui/TopicTabs'
+import { partitionByRelation, subFileAddresses, subFileLabels, type FolderProjectState } from '@/api/useFolderProject'
+import type { TopicActivityItem } from '@/components/TopicActivity'
 import { IconButton } from '@/components/ui/IconButton'
 import {
   CURRENT_USER_NAME,
@@ -69,6 +71,14 @@ interface UseTopicViewArgs {
    *  appears where it cannot do anything. */
   onToggleFolderPanel?: () => void
   folderPanelOpen?: boolean
+  /**
+   * What is in this topic's Folder, resolved by the page — CON-9.
+   *
+   * Taken rather than resolved here because the Folder panel needs the same
+   * answer, and two callers would mean two relay reads per topic and two
+   * chances to disagree about what is in it.
+   */
+  folderProject?: FolderProjectState
   /** Opens this topic's details dialog from the header's more-menu (PEE-2).
    *  The page owns the dialog, because the sidebar rows open the same one. */
   onOpenDetails?: () => void
@@ -79,6 +89,14 @@ interface UseTopicViewArgs {
 interface ViewSlots {
   rightPanel: ReactNode
   threadPanel: ReactNode | undefined
+  /** Conversations on files under this one, newest first — the Folder panel draws them. */
+  activity: TopicActivityItem[]
+  /** Sub-file address → the name its own app gives it, for an Activity row. */
+  subFileLabels: Map<string, string>
+  /** Open a conversation's thread in the right column. */
+  openThread: (convId: string) => void
+  /** Which conversation's thread is open, or null. */
+  openThreadId: string | null
   /**
    * This topic's Folder, or null when it has none.
    *
@@ -107,6 +125,7 @@ export function useTopicView({
   selectedHuddleId: externalSelectedHuddleId = null,
   onToggleFolderPanel,
   folderPanelOpen = false,
+  folderProject = 'loading',
   onOpenDetails,
   onDeleteTopic,
 }: UseTopicViewArgs): ViewSlots {
@@ -320,7 +339,7 @@ export function useTopicView({
   // All data arrives merged from the seam — overrides applied, deletions
   // filtered, replyCount final. Nothing below touches override maps.
   const {
-    groups: currentGroups,
+    groups: allGroups,
     sent: currentSent,
     openCount,
     resolvedCount,
@@ -330,6 +349,63 @@ export function useTopicView({
     hasEarlier,
     showEarlier,
   } = useTopicMessages(topicId)
+
+  /*
+    The two lists — CON-9. Identity merges; relation aggregates.
+
+    A topic and the project in its Folder are **the same file**, so a comment on
+    the project is this topic's conversation and stays in the stream. A comment
+    on one of that project's *tickets* is a different file's conversation — it
+    aggregates into Activity and leaves the stream.
+
+    **This is why the stream gets quieter.** Ship publishes a comment into the
+    project's Folder, which *is* this topic's channel, so every issue comment
+    ever written has arrived here as an ordinary message. Measured on production
+    2026-09-06: 422 of 453 threads across every paired topic, 93%. They were
+    never talk in the topic; they were another file's discussion filed in the
+    same container, and no reader could tell which was which.
+
+    `subFileAddresses` comes off the projection layer, so nothing here knows what
+    a Ship issue is. A fourth app's records split a topic correctly without Peek
+    learning what they are.
+  */
+  const subFiles = useMemo(() => subFileAddresses(folderProject), [folderProject])
+  const subFileLabel = useMemo(() => subFileLabels(folderProject), [folderProject])
+
+  /*
+    The partition itself is a pure function — `partitionByRelation`. It is the
+    claim this whole change rests on, and a `useMemo` is a bad place to prove
+    one; the rule that a message must be *tagged* rather than merely naming a
+    ticket is asserted there.
+  */
+  const split = useMemo(
+    () => partitionByRelation(allGroups.flatMap((g) => g.convs), subFiles),
+    [allGroups, subFiles],
+  )
+  const inStream = useMemo(() => new Set(split.own.map((c) => c.id)), [split])
+
+  const currentGroups = useMemo(
+    () =>
+      allGroups
+        .map((g) => ({ ...g, convs: g.convs.filter((c) => inStream.has(c.id)) }))
+        .filter((g) => g.convs.length > 0),
+    [allGroups, inStream],
+  )
+
+  /**
+   * Activity: the conversations of files related to this one, newest first.
+   *
+   * Sub-files today. Mentions are the other half and are not here yet — a Peek
+   * topic is not an addressable object until files nest, so "conversations that
+   * mention this topic" is not a question the relay can answer about it. The
+   * project in its Folder *is* addressable, and that is the shape the mentions
+   * half will take.
+   */
+  const activityItems = useMemo(
+    () => split.activity.map(({ message, about }) => ({ conv: message, about })),
+    [split],
+  )
+
   const currentHuddles = topicId != null ? huddleLookup(topicId) : []
 
   /** When the topic was promoted from a DM, this is the seed huddle. Drives the DM-origin empty state. */
@@ -577,7 +653,17 @@ export function useTopicView({
     The registry gives the open thread priority over this, so opening one
     narrows the question rather than competing with it.
   */
-  const topicKey = [...currentGroups.flatMap((g) => g.convs), ...currentSent]
+  /*
+    Everything in the Folder, not just the stream — CON-9.
+
+    `currentGroups` is now the topic's *own* conversation, with ticket comments
+    split out into Activity. The launcher's question is a different one: "find
+    something I can see", not "what is in this list". Keying this on the stream
+    would have made 93% of a paired topic's messages unfindable from Cmd+K on
+    the day the split landed, with nothing reporting it — the search would
+    simply stop having them.
+  */
+  const topicKey = [...allGroups.flatMap((g) => g.convs), ...currentSent]
     .map((c) => [c.id, c.authorName, c.timestamp, c.replyCount ?? 0, c.body ?? ''].join('\u0001'))
     .join('\u0000')
   // Rebuilt from the key, the round-trip `ThreadPanel` uses for the same
@@ -625,6 +711,11 @@ export function useTopicView({
       threadPanel: undefined,
       folderId: topicFolderId ?? null,
       relayState,
+      // No topic selected, so nothing is related to anything.
+      activity: [],
+      subFileLabels: new Map(),
+      openThread,
+      openThreadId: threadConvId,
     }
   }
 
@@ -1194,5 +1285,26 @@ export function useTopicView({
    * needs it to know when to idle its refetch interval. Exposing it here is
    * what stops either of them re-deriving it from a second socket.
    */
-  return { rightPanel, threadPanel, folderId: topicFolderId ?? null, relayState }
+  return {
+    rightPanel,
+    threadPanel,
+    folderId: topicFolderId ?? null,
+    relayState,
+    /*
+      Activity — CON-9's second list, handed to the page so it can put it in the
+      Folder panel beside the files it is about.
+
+      Returned rather than rendered here because it is not a view of the
+      conversation: it is the conversations of *other* files that happen to live
+      in this Folder, and the Folder is what the right-hand column already
+      draws. Computing it here is what keeps one partition rather than two.
+    */
+    activity: activityItems,
+    subFileLabels: subFileLabel,
+    /* So the Folder panel's Activity rows open a thread in the same column and
+       mark the open one selected — the same `openThread` the stream uses, not a
+       second way in. */
+    openThread,
+    openThreadId: threadConvId,
+  }
 }

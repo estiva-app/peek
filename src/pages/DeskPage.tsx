@@ -13,6 +13,7 @@ import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
+import { useFolderProject } from '@/api/useFolderProject'
 import {
   dmNameById,
   useUnread,
@@ -215,10 +216,24 @@ export function DeskPage() {
    * shows it, which read as the topic having no linked project at all.
    */
   const [folderPanelOpen, setFolderPanelOpen] = useState(true)
+  /*
+    The Folder resolved once for this topic — CON-9.
+
+    Both the conversation and the Folder panel need it: the conversation to know
+    which messages belong to a file *under* this one, the panel to draw the
+    files and the Activity beneath them. Held here, above both, so there is one
+    cross-app read per topic rather than two disagreeing ones.
+
+    `panelBusy` is the panel telling us a change is in flight, so an automatic
+    re-read cannot land over it and put the pre-change state back on screen.
+  */
+  const [panelBusy, setPanelBusy] = useState<string | undefined>()
+  const folderProject = useFolderProject(selected?.kind === 'topic' ? selected.topicId : null, panelBusy)
   /** Which topic's details are open. Desk offers the same header menu Topics
    *  does — a topic opened from here is the same topic (PEE-2). */
   const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
   const topicView = useTopicView({
+    folderProject: folderProject.state,
     topicId: selected?.kind === 'topic' ? selected.topicId : null,
     topicTitle: selected?.kind === 'topic' ? selected.topicTitle : undefined,
     onToggleStarred: selected?.kind === 'topic' ? handleToggleStarredOnDesk : undefined,
@@ -242,7 +257,16 @@ export function DeskPage() {
       ? dmView.threadPanel
       : (topicView.threadPanel ??
         (hasConvex && folderPanelOpen && selected?.kind === 'topic' && topicView.folderId ? (
-          <TopicProjectPanel topicKey={selected.topicId} />
+          <TopicProjectPanel
+            topicKey={selected.topicId}
+            folderProject={folderProject.state}
+            reload={folderProject.reload}
+            onBusyChange={setPanelBusy}
+            activity={topicView.activity}
+            subFileLabels={topicView.subFileLabels}
+            selectedConversationId={topicView.openThreadId}
+            onOpenThread={topicView.openThread}
+          />
         ) : undefined))
 
   return (
