@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
+import { useFolderProject } from '@/api/useFolderProject'
 import { CURRENT_USER_NAME, hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useHuddleLookup, useOpenWorkTopicIds, usePeekActions } from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
@@ -87,6 +88,20 @@ export function TopicsPage() {
     ? routeTopic ?? null
     : TOPICS?.find((t) => t.id === fallbackId) ?? null
   const selectedId = selectedTopic?.id ?? (hasRoute ? null : fallbackId)
+
+  /*
+    The Folder resolved once for this topic — CON-9.
+
+    Both the conversation and the Folder panel need it: the conversation to know
+    which messages belong to a file *under* this one, the panel to draw the
+    files and the Activity beneath them. Held here, above both, so there is one
+    cross-app read per topic rather than two disagreeing ones.
+
+    `panelBusy` is the panel telling us a change is in flight, so an automatic
+    re-read cannot land over it and put the pre-change state back on screen.
+  */
+  const [panelBusy, setPanelBusy] = useState<string | undefined>()
+  const folderProject = useFolderProject(selectedTopic?.id ?? null, panelBusy)
 
   /** A link that named a topic this viewer cannot reach — deleted, or never theirs. */
   const isDeadLink = hasRoute && routeTopic === null
@@ -168,6 +183,7 @@ export function TopicsPage() {
     : alphaSorted
 
   const view = useTopicView({
+    folderProject: folderProject.state,
     topicId: selectedTopic?.id ?? null,
     topicTitle: selectedTopic?.title,
     selectedHuddleId,
@@ -268,7 +284,16 @@ export function TopicsPage() {
         // the Folder is context they chose to keep open.
         view.threadPanel ??
         (hasConvex && folderPanelOpen && selectedTopic && view.folderId ? (
-          <TopicProjectPanel topicKey={selectedTopic.id} />
+          <TopicProjectPanel
+            topicKey={selectedTopic.id}
+            folderProject={folderProject.state}
+            reload={folderProject.reload}
+            onBusyChange={setPanelBusy}
+            activity={view.activity}
+            subFileLabels={view.subFileLabels}
+            selectedConversationId={view.openThreadId}
+            onOpenThread={view.openThread}
+          />
         ) : undefined)
       }
     />

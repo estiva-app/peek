@@ -3,7 +3,9 @@ import { useCallback, useState } from 'react'
 import { IconChevronRight, IconFolderOpen } from '@tabler/icons-react'
 import type { FolderProject, ForeignObject, ResolvedSlot } from '@estiva-app/interop'
 import { hasConvex, useForeignObjects } from '@/api'
-import { useFolderProject } from '@/api/useFolderProject'
+import type { FolderProjectState } from '@/api/useFolderProject'
+import { SectionLabel } from '@/components/ui/SectionHeader'
+import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
@@ -144,6 +146,10 @@ export function TopicProjectPanelView({
   actingOn,
   errors = {},
   directory,
+  activity = [],
+  subFileLabels = new Map(),
+  selectedConversationId,
+  onOpenThread,
 }: {
   /**
    * `'loading'` while the relay is being read; `null` when there is genuinely no
@@ -165,6 +171,19 @@ export function TopicProjectPanelView({
    *  than a hook so this view stays pure — tests and stories render it with
    *  no provider behind it. The container fetches it. */
   directory?: ReturnType<typeof useWorkspaceDirectory>
+  /**
+   * Activity — the conversations of the files in this Folder (CON-9).
+   *
+   * It belongs in this column rather than in a tab beside the conversation
+   * because it is *about the files this panel already draws*. The panel answers
+   * "what is in this Folder"; without this it stopped halfway, listing the
+   * tickets and saying nothing about what is being said on them.
+   */
+  activity?: TopicActivityItem[]
+  subFileLabels?: Map<string, string>
+  /** Which Activity row's thread is open, so the row can show it is selected. */
+  selectedConversationId?: string | null
+  onOpenThread?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -264,36 +283,87 @@ export function TopicProjectPanelView({
               second thing in the column beside it. */}
           <ProjectTickets tickets={tickets} openCount={openCount} doneCount={doneCount} />
         </div>
+
+        {/*
+          Activity — CON-9's second list, under the files it is about.
+
+          A separate block rather than inside the project card, because these
+          are not the project's own comments: they are conversations on the
+          tickets listed above, and putting them inside the card would say they
+          belong to the project the way its tickets do.
+        */}
+        {onOpenThread && (
+          <section className="mt-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <SectionLabel>Activity</SectionLabel>
+              {activity.length > 0 && (
+                <span className="font-mono text-caption text-text-muted">{activity.length}</span>
+              )}
+            </div>
+            <TopicActivity
+              items={activity}
+              labelFor={subFileLabels}
+              selectedId={selectedConversationId}
+              onOpenThread={onOpenThread}
+            />
+          </section>
+        )}
       </div>
     </PanelShell>
   )
 }
 
-export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
-  const [actingOn, setActingOn] = useState<string>()
-  const [errors, setErrors] = useState<Record<string, string>>({})
+export function TopicProjectPanel({
+  topicKey,
+  folderProject,
+  reload,
+  onBusyChange,
+  activity = [],
+  subFileLabels,
+  selectedConversationId,
+  onOpenThread,
+}: {
+  topicKey: string
   /*
-    The Folder's contents, from the hook CON-9 extracted out of this file.
+    Resolved by the page, not here — CON-9.
 
-    Everything that used to live here — the Folder query, the resolve, the
-    socket re-read, the refresh triggers, the "which kind of nothing is this"
-    collapse — moved unchanged into `useFolderProject`, because the topic's
-    conversation became a second caller: it has to know which objects are files
-    *under* this one so their comments go to Activity rather than into the
-    topic's own stream. Two resolves per topic would have been two chances to
-    disagree about what is in the Folder.
-
-    `actingOn` is passed so an automatic re-read never lands over a write in
-    flight and puts the pre-change state back on screen.
+    The conversation needs this same answer, to know which messages belong to a
+    file *under* this one and so leave the topic's own stream. Resolving it in
+    both places would be two cross-app relay reads per topic, repeated on every
+    focus and interval, with two chances to disagree about what is in the
+    Folder. The page reads it once and hands it to both.
   */
-  const { state: folderProject, folder, reload } = useFolderProject(topicKey, actingOn)
+  folderProject: FolderProjectState
+  /** Re-read after a change: the relay is the authority on whether it happened. */
+  reload: () => Promise<void>
+  /**
+   * Tell the page a write is in flight.
+   *
+   * An automatic re-read that starts before an action lands can finish after it
+   * and put the pre-change state back on screen. The hook holds off while this
+   * is set, and only the panel knows when it is.
+   */
+  onBusyChange: (busy: string | undefined) => void
+  activity?: TopicActivityItem[]
+  subFileLabels?: Map<string, string>
+  selectedConversationId?: string | null
+  onOpenThread?: (id: string) => void
+}) {
+  const [actingOn, setActingOnState] = useState<string>()
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const setActingOn = useCallback(
+    (value: string | undefined) => {
+      setActingOnState(value)
+      onBusyChange(value)
+    },
+    [onBusyChange],
+  )
   const { applyAction } = useForeignObjects()
   // The assignee picker's option list (PEE-1). Demo mode answers from mocks.
   const directory = useWorkspaceDirectory()
 
   const onAct = useCallback(
     async (object: ForeignObject, actionId: string, value: string) => {
-      if (!folder) return
       setActingOn(object.ref)
       setErrors((prev) => ({ ...prev, [object.ref]: '' }))
       try {
@@ -321,7 +391,7 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
         setActingOn(undefined)
       }
     },
-    [applyAction, folder, reload],
+    [applyAction, reload, setActingOn],
   )
 
   // Peek runs on static mocks in tests, Storybook and checkouts with no backend.
@@ -336,6 +406,10 @@ export function TopicProjectPanel({ topicKey }: { topicKey: string }) {
       actingOn={actingOn}
       errors={errors}
       directory={directory}
+      activity={activity}
+      subFileLabels={subFileLabels}
+      selectedConversationId={selectedConversationId}
+      onOpenThread={onOpenThread}
     />
   )
 }

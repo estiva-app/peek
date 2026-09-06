@@ -39,7 +39,13 @@ const meta = {
     (Story) => (
       <MemoryRouter>
         <PeekDataProvider>
-          <div className="w-[620px] h-[560px] flex flex-col bg-bg-base">
+          {/*
+          The real column, copied from `AppShell`: `w-[380px]`. Activity lives in
+          the Folder panel beside the files it is about, not in a tab, so a wider
+          frame here would review a layout the app never draws — and the width is
+          exactly what decides whether a ticket title and a message body wrap.
+        */}
+        <div className="w-[380px] h-[560px] flex flex-col bg-bg-base">
             <Story />
           </div>
         </PeekDataProvider>

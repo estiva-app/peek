@@ -54,6 +54,14 @@ export interface UseFolderProject {
   reload: () => Promise<void>
 }
 
+/**
+ * **Called once per topic, by the page.** Both the conversation and the Folder
+ * panel need this answer — the conversation to know which messages belong to a
+ * file under this one, the panel to draw the files themselves — and each
+ * calling it would mean two cross-app relay reads per topic, on mount and on
+ * every focus and interval, with two chances to disagree about what is in the
+ * Folder. The page resolves it and hands it to both.
+ */
 export function useFolderProject(
   topicKey: string | null | undefined,
   /**

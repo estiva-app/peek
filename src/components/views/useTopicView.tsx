@@ -19,9 +19,9 @@ import { SkeletonConversationList, SkeletonHuddleGrid } from '@/components/ui/Sk
 import { Button } from '@/components/ui/Button'
 import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { TopicTabs, conversationTabs, type TopicTab } from '@/components/ui/TopicTabs'
-import { useFolderProject, partitionByRelation, subFileAddresses, subFileLabels } from '@/api/useFolderProject'
-import { TopicActivity } from '@/components/TopicActivity'
+import { TopicTabs, type TopicTab } from '@/components/ui/TopicTabs'
+import { partitionByRelation, subFileAddresses, subFileLabels, type FolderProjectState } from '@/api/useFolderProject'
+import type { TopicActivityItem } from '@/components/TopicActivity'
 import { IconButton } from '@/components/ui/IconButton'
 import {
   CURRENT_USER_NAME,
@@ -71,6 +71,14 @@ interface UseTopicViewArgs {
    *  appears where it cannot do anything. */
   onToggleFolderPanel?: () => void
   folderPanelOpen?: boolean
+  /**
+   * What is in this topic's Folder, resolved by the page — CON-9.
+   *
+   * Taken rather than resolved here because the Folder panel needs the same
+   * answer, and two callers would mean two relay reads per topic and two
+   * chances to disagree about what is in it.
+   */
+  folderProject?: FolderProjectState
   /** Opens this topic's details dialog from the header's more-menu (PEE-2).
    *  The page owns the dialog, because the sidebar rows open the same one. */
   onOpenDetails?: () => void
@@ -81,6 +89,14 @@ interface UseTopicViewArgs {
 interface ViewSlots {
   rightPanel: ReactNode
   threadPanel: ReactNode | undefined
+  /** Conversations on files under this one, newest first — the Folder panel draws them. */
+  activity: TopicActivityItem[]
+  /** Sub-file address → the name its own app gives it, for an Activity row. */
+  subFileLabels: Map<string, string>
+  /** Open a conversation's thread in the right column. */
+  openThread: (convId: string) => void
+  /** Which conversation's thread is open, or null. */
+  openThreadId: string | null
   /**
    * This topic's Folder, or null when it has none.
    *
@@ -109,6 +125,7 @@ export function useTopicView({
   selectedHuddleId: externalSelectedHuddleId = null,
   onToggleFolderPanel,
   folderPanelOpen = false,
+  folderProject = 'loading',
   onOpenDetails,
   onDeleteTopic,
 }: UseTopicViewArgs): ViewSlots {
@@ -352,7 +369,6 @@ export function useTopicView({
     a Ship issue is. A fourth app's records split a topic correctly without Peek
     learning what they are.
   */
-  const { state: folderProject } = useFolderProject(topicId)
   const subFiles = useMemo(() => subFileAddresses(folderProject), [folderProject])
   const subFileLabel = useMemo(() => subFileLabels(folderProject), [folderProject])
 
@@ -695,6 +711,11 @@ export function useTopicView({
       threadPanel: undefined,
       folderId: topicFolderId ?? null,
       relayState,
+      // No topic selected, so nothing is related to anything.
+      activity: [],
+      subFileLabels: new Map(),
+      openThread,
+      openThreadId: threadConvId,
     }
   }
 
@@ -757,27 +778,18 @@ export function useTopicView({
               }
             : undefined
         }
-        /*
-          The tab row is unconditional now — CON-9.
-
-          It used to appear only under huddle variant 1, which was fine while
-          every tab was an extra view. Activity is not: it holds this Folder's
-          ticket conversations, 93% of what used to be in the stream on
-          production, so a tab behind a debug flag would have hidden almost
-          everything. Variant 1 keeps its fuller set; everyone else gets the two
-          lists and nothing more.
-        */
         tabs={
-          <TopicTabs
-            activeTab={activeTab}
-            tabs={huddleVariant === 1 ? undefined : conversationTabs({ conversations: currentGroups.reduce((n, g) => n + g.convs.length, 0) + currentSent.length, activity: activityItems.length })}
-            onTabChange={(tab) => {
-              setActiveTab(tab)
-              setThreadConvId(null)
-              setSelectedHuddleId(null)
-              cancelHuddleCreation()
-            }}
-          />
+          huddleVariant === 1 ? (
+            <TopicTabs
+              activeTab={activeTab}
+              onTabChange={(tab) => {
+                setActiveTab(tab)
+                setThreadConvId(null)
+                setSelectedHuddleId(null)
+                cancelHuddleCreation()
+              }}
+            />
+          ) : undefined
         }
       />
 
@@ -835,20 +847,7 @@ export function useTopicView({
       )}
 
       {/* Conversations tab — also the only body in V2/V3 (no tabs). Suppressed when a V2 huddle is open. */}
-      {/*
-        Activity — the second of CON-9's two lists. The conversations of files
-        related to this one: today, the tickets in this topic's Folder.
-      */}
-      {!isV2HuddleView && activeTab === 'activity' && (
-        <TopicActivity
-          items={activityItems}
-          labelFor={subFileLabel}
-          selectedId={threadConvId}
-          onOpenThread={openThread}
-        />
-      )}
-
-      {!isV2HuddleView && activeTab === 'conversations' && (() => {
+      {!isV2HuddleView && (huddleVariant !== 1 || activeTab === 'conversations') && (() => {
         // V3 unified stream: date-keyed groups holding convs, sent messages, and
         // huddles INTERLEAVED chronologically (QA #2.5 — huddles used to render
         // as a block at the end of their group, and huddle-only dates were
@@ -1286,5 +1285,26 @@ export function useTopicView({
    * needs it to know when to idle its refetch interval. Exposing it here is
    * what stops either of them re-deriving it from a second socket.
    */
-  return { rightPanel, threadPanel, folderId: topicFolderId ?? null, relayState }
+  return {
+    rightPanel,
+    threadPanel,
+    folderId: topicFolderId ?? null,
+    relayState,
+    /*
+      Activity — CON-9's second list, handed to the page so it can put it in the
+      Folder panel beside the files it is about.
+
+      Returned rather than rendered here because it is not a view of the
+      conversation: it is the conversations of *other* files that happen to live
+      in this Folder, and the Folder is what the right-hand column already
+      draws. Computing it here is what keeps one partition rather than two.
+    */
+    activity: activityItems,
+    subFileLabels: subFileLabel,
+    /* So the Folder panel's Activity rows open a thread in the same column and
+       mark the open one selected — the same `openThread` the stream uses, not a
+       second way in. */
+    openThread,
+    openThreadId: threadConvId,
+  }
 }

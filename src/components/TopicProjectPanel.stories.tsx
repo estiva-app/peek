@@ -295,3 +295,51 @@ export const LongTitles: Story = {
     },
   },
 }
+
+/**
+ * With Activity — CON-9's second list, under the files it is about.
+ *
+ * The panel answers "what is in this Folder". Before this it stopped halfway:
+ * it listed the tickets and said nothing about what was being said on them,
+ * while those conversations sat in the topic's stream with nothing marking them
+ * as another file's.
+ *
+ * `onOpenThread` is what turns the section on — without a way to open a thread,
+ * a list of threads is a dead end, so the panel draws none.
+ */
+export const WithActivity: Story = {
+  args: {
+    activity: [
+      {
+        about: `30851:${person}:1`,
+        conv: {
+          id: 'a1',
+          authorName: 'Amie Miles',
+          timestamp: '11:08 AM',
+          body: 'Blocked on the Stripe key — Jan has it in 1Password.',
+          nostrReferences: [`30851:${person}:1`],
+        },
+      },
+      {
+        about: `30851:${person}:2`,
+        conv: {
+          id: 'a2',
+          authorName: 'Alice Johnson',
+          timestamp: 'Yesterday',
+          body: 'Down to one fold per read. The second pass was the re-linked project.',
+          nostrReferences: [`30851:${person}:2`],
+        },
+      },
+    ],
+    subFileLabels: new Map([
+      [`30851:${person}:1`, 'Billing entry + add payment method'],
+      [`30851:${person}:2`, 'Fold the change stream once per read'],
+    ]),
+    onOpenThread: () => {},
+  },
+}
+
+/** A Folder whose files nobody has commented on — the honest empty, not a hidden section. */
+export const ActivityEmpty: Story = {
+  args: { activity: [], subFileLabels: new Map(), onOpenThread: () => {} },
+}
