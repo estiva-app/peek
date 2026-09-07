@@ -579,14 +579,51 @@ export async function findMessageByKey(
   return normalized ? await ctx.db.get(normalized) : null
 }
 
+/**
+ * Change what a message or a reply says — CON-8.
+ *
+ * ## This used to patch, and only patch
+ *
+ * The row changed and nothing was published, so a human edit never left Peek
+ * and every other reader — Ship's conversation view, the agent, any future app
+ * — kept the original text indefinitely, with nothing announcing the
+ * divergence. ADR 0001: *"Convex may never be the source of truth for something
+ * the relay owns"*, and `messages.body` was exactly that for a `kind:9`'s body.
+ * The browser publishes the `kind:40003` afterwards, from `unsignedEdit`.
+ *
+ * ## And it checked nobody at all
+ *
+ * There was no viewer here — not even a signed-in one. Any caller could rewrite
+ * anybody's message, the same shape as `remove` before PEE-18, and the UI's
+ * `isOwnMessage` was the only thing holding it shut. So the same two paths, for
+ * the same reason: an author-only rule would reproduce SHI-14 inside the
+ * backend, because the relay accepts an edit from the target's effective author
+ * **or** the NIP-OA owner of an authoring agent and no client can tell which it
+ * is looking at.
+ *
+ * - **The viewer is the author.** A local claim, so the row changes now.
+ * - **The viewer is not.** Nothing changes here. The browser publishes the edit,
+ *   the relay adjudicates, and the text arrives through the sync if it was
+ *   accepted — `applyEdits` folds it in from the relay's own event.
+ *
+ * A message that never reached the relay has no adjudicator, so a non-author is
+ * refused rather than left with an edit that can never complete.
+ */
 export const editBody = mutation({
   args: { key: v.string(), body: v.string() },
-  handler: async (ctx, { key, body }) => {
+  handler: async (ctx, { key, body }): Promise<{ patched: boolean }> => {
+    const you = await viewerOrThrow(ctx)
+
     const m = await findMessageByKey(ctx, key)
     if (m) {
+      if (m.authorId !== you._id) {
+        if (!m.nostrEventId) throw new Error('only the author may edit a message that is not on the relay')
+        return { patched: false }
+      }
       await ctx.db.patch(m._id, { body })
-      return
+      return { patched: true }
     }
+
     // The seam's editBody is id-keyed across messages AND replies.
     const bySeed = await ctx.db
       .query('replies')
@@ -594,7 +631,13 @@ export const editBody = mutation({
       .unique()
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
-    if (r) await ctx.db.patch(r._id, { body })
+    if (!r) return { patched: false }
+    if (r.authorId !== you._id) {
+      if (!r.nostrEventId) throw new Error('only the author may edit a reply that is not on the relay')
+      return { patched: false }
+    }
+    await ctx.db.patch(r._id, { body })
+    return { patched: true }
   },
 })
 

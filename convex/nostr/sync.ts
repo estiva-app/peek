@@ -61,6 +61,28 @@ const PAGE_LIMIT = 200
 const REACTION_TARGET_LIMIT = 100
 
 /**
+ * When an edit claims to have been made, in milliseconds — RFC 0.4 §7.2.1.
+ *
+ * `ts` is honoured only when it agrees with `created_at` to the second (SPEC
+ * §6.2). The relay bounds `created_at` and nothing bounds `ts`, so an unchecked
+ * one would let a client with a wrong clock reorder somebody else's edits.
+ */
+export function editOrderingTime(event: SignedEvent): number {
+  const raw = Number.parseInt(event.tags.find((t) => t[0] === 'ts')?.[1] ?? '', 10)
+  if (Number.isFinite(raw) && Math.floor(raw / 1000) === event.created_at) return raw
+  return event.created_at * 1000
+}
+
+/** Which of two edits wins: `ts`, then `created_at`, then event id. */
+export function editIsLater(a: SignedEvent, b: SignedEvent): boolean {
+  const at = editOrderingTime(a)
+  const bt = editOrderingTime(b)
+  if (at !== bt) return at > bt
+  if (a.created_at !== b.created_at) return a.created_at > b.created_at
+  return a.id > b.id
+}
+
+/**
  * Split the reaction-target budget between messages and replies.
  *
  * This was `[...messages, ...replies].slice(0, LIMIT)`, which is
@@ -267,7 +289,17 @@ async function syncTopic(
           profileByPubkey.set(pk, parseProfile(profileEvents.find((p) => p.pubkey === pk)))
         }
 
+        /*
+          Edits are applied AFTER the messages, and separately — CON-8.
+
+          An edit names a target that may be arriving in this very run, so
+          folding it inline would depend on the order the relay happened to
+          return events in. Two passes cost nothing and remove the question.
+        */
+        const edits = incoming.filter((e) => e.kind === KIND.MESSAGE_EDIT)
+
         for (const e of incoming) {
+          if (e.kind === KIND.MESSAGE_EDIT) continue
           const profile = profileByPubkey.get(e.pubkey) ?? {}
           const authorId: Id<'users'> = await ctx.runMutation(
             internal.nostr.data.resolveExternalUser,
@@ -334,6 +366,34 @@ async function syncTopic(
             nostrEventId: e.id,
             nostrReferences: addresses.length > 0 ? addresses : undefined,
             nostrBlockId: blockId,
+          })
+        }
+
+        /*
+          The second pass: apply the edits — CON-8.
+
+          Latest-wins is decided HERE rather than in the mutation, because only
+          this pass sees the whole batch. `applyEdit` then writes the body it is
+          given; it does not compare, so two edits arriving in one run cannot
+          land in relay order by accident.
+
+          Ordering per RFC 0.4 §7.2.1: `ts` when it agrees with `created_at` to
+          the second, then `created_at`, then event id. Ship's `edits.ts` folds
+          the same way — two apps with two orderings would disagree about what a
+          message says, which is worse than either answer.
+        */
+        const winners = new Map<string, SignedEvent>()
+        for (const e of edits) {
+          const target = e.tags.find((t) => t[0] === 'e')?.[1]
+          if (!target) continue
+          const held = winners.get(target)
+          if (!held || editIsLater(e, held)) winners.set(target, e)
+        }
+        for (const [target, e] of winners) {
+          await ctx.runMutation(internal.nostr.data.applyEdit, {
+            nostrEventId: target,
+            body: e.content,
+            editedAt: editOrderingTime(e),
           })
         }
       }

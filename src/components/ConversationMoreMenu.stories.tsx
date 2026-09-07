@@ -10,7 +10,6 @@ const meta = {
     isTopic: false,
     isResolved: false,
     showCreateTopic: true,
-    isOwnMessage: false,
     onHighlight: noop,
     onCreateTopic: noop,
     onRevertToConversation: noop,
@@ -54,12 +53,19 @@ export const Resolved: Story = {
   args: { isResolved: true },
 }
 
-/** Your own message adds Edit message + a destructive Delete. */
-export const OwnMessage: Story = {
-  args: { isOwnMessage: true },
-}
+/**
+ * Edit and Delete are on **every** message, not only your own.
+ *
+ * This story was `OwnMessage` and set `isOwnMessage: true`, from when both rows
+ * were gated on authorship. CON-3 and CON-8 removed that: the relay accepts a
+ * deletion or an edit from the target's effective author *or* the NIP-OA owner
+ * of an authoring agent, and no client can evaluate the second half — so a local
+ * author check hides the control from the one other party the relay would
+ * accept. The default story now shows what everybody sees.
+ */
+export const EveryMessage: Story = {}
 
 /** With a highlight set, the row reads "Change highlight" and the submenu gains Remove. */
 export const WithHighlight: Story = {
-  args: { currentHighlight: 'insight', isOwnMessage: true },
+  args: { currentHighlight: 'insight' },
 }

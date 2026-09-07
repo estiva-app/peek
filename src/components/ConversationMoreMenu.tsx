@@ -31,23 +31,6 @@ interface ConversationMoreMenuProps {
   isTopic?: boolean
   isResolved?: boolean
   showCreateTopic?: boolean
-  /**
-   * True when the message was authored by the current user.
-   *
-   * Gates **Edit** only, since CON-3. Delete is offered to everyone: the relay
-   * accepts a kind:5 from the target's author *or* from the NIP-OA owner of an
-   * authoring agent, and no client can evaluate the second half — ownership is
-   * written from the attestation and read server-side only. So this check is
-   * narrower than the relay's and hides the control from the one *other* party
-   * it would accept. On this workspace that is where the conversation is: 425 of
-   * 583 messages were written by a single agent identity.
-   *
-   * Edit keeps the gate for now, and deliberately: Peek's edit still only
-   * patches its own database (CON-8), so offering it on somebody else's message
-   * would silently rewrite their words for Peek's readers and nobody else's.
-   * It comes off when the edit publishes a kind:40003.
-   */
-  isOwnMessage?: boolean
   currentHighlight?: HighlightType
   onHighlight?: (type: HighlightType | undefined) => void
   onCreateTopic?: () => void
@@ -67,7 +50,6 @@ export function ConversationMoreMenu({
   isTopic = false,
   isResolved = false,
   showCreateTopic = true,
-  isOwnMessage = false,
   currentHighlight,
   onHighlight,
   onCreateTopic,
@@ -155,9 +137,17 @@ export function ConversationMoreMenu({
       <Divider className="mx-0" />
 
       <div className="flex flex-col">
-        {!isTopic && isOwnMessage && (
-          <MenuItem label="Edit message" onClick={onEditMessage} />
-        )}
+        {/*
+          Offered on every message since CON-8, like Delete before it.
+
+          The gate was right while Peek's edit only patched its own database:
+          offering it on somebody else's message would have rewritten their
+          words for Peek's readers and nobody else's. Now the edit publishes a
+          kind:40003 and the relay adjudicates — it accepts one from the
+          target's effective author or the NIP-OA owner of an authoring agent,
+          and no client can evaluate the second half.
+        */}
+        {!isTopic && <MenuItem label="Edit message" onClick={onEditMessage} />}
         <MenuItem label="View details" onClick={onViewDetails} />
       </div>
 

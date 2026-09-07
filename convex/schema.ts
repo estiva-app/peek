@@ -172,6 +172,18 @@ export default defineSchema({
      *  even if the message body is edited. */
     nostrReferences: v.optional(v.array(v.string())),
     /**
+     * When the body was last replaced by a `kind:40003` — CON-8, milliseconds.
+     *
+     * A reader MUST be told a message was edited (RFC 0.4 §7.2.1): the original
+     * event is immutable and still on the relay, so a body that quietly changed
+     * leaves two readers disagreeing with nothing to say which is current.
+     *
+     * Also the fold's memory. An edit is applied by whichever sync run sees it,
+     * and this is what lets a later run tell a newer edit from one it has
+     * already applied.
+     */
+    editedAt: v.optional(v.number()),
+    /**
      * The block of the referenced object this comment is about — SPEC §13.6.
      *
      * `nostrReferences` says *which object*; this says *which part of it*.
@@ -203,6 +215,18 @@ export default defineSchema({
     nostrEventId: v.optional(v.string()),
     /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
     nostrReferences: v.optional(v.array(v.string())),
+    /**
+     * When the body was last replaced by a `kind:40003` — CON-8, milliseconds.
+     *
+     * A reader MUST be told a message was edited (RFC 0.4 §7.2.1): the original
+     * event is immutable and still on the relay, so a body that quietly changed
+     * leaves two readers disagreeing with nothing to say which is current.
+     *
+     * Also the fold's memory. An edit is applied by whichever sync run sees it,
+     * and this is what lets a later run tell a newer edit from one it has
+     * already applied.
+     */
+    editedAt: v.optional(v.number()),
   })
     .index('by_message', ['messageId'])
     .index('by_seedKey', ['seedKey'])

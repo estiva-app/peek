@@ -22,8 +22,8 @@
  * plainly instead of surfacing later as a signature mismatch.
  */
 import { v } from 'convex/values'
-import { mutation, query } from '../_generated/server'
-import { buildMessage, buildReaction, buildResolution } from '@estiva-app/protocol'
+import { mutation, query, type QueryCtx } from '../_generated/server'
+import { buildEdit, buildMessage, buildReaction, buildResolution } from '@estiva-app/protocol'
 import { referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
 import type { UnsignedEvent } from '@estiva-app/protocol'
@@ -126,6 +126,105 @@ export const unsignedReply = query({
     }
   },
 })
+
+/**
+ * An edit of a message or a reply, as a `kind:40003` — CON-8, RFC 0.4 §7.2.1.
+ *
+ * ## Why Peek needed this at all
+ *
+ * `editBody` patched Convex and published nothing, so a human edit never left
+ * Peek and every other reader kept the original text indefinitely, with nothing
+ * announcing the divergence. By ADR 0001's own rule that is a conformance
+ * defect rather than a missing feature: *"Convex may never be the source of
+ * truth for something the relay owns"*, and `messages.body` was exactly that
+ * for the body of a `kind:9`.
+ *
+ * ## An edit is a new event
+ *
+ * `kind:9` and `kind:1111` are non-replaceable, so nothing is mutated: the
+ * original keeps its event id, replies pointing at it survive, and a reader
+ * folds the pair. `buildEdit` is the shared builder, so Ship and Peek cannot
+ * drift into two shapes.
+ *
+ * ## Unlike every other builder here, this does NOT gate on the author
+ *
+ * `unsignedMessage` and `unsignedReply` refuse for anyone but the author,
+ * correctly — you cannot publish somebody else's message *as* them. An edit is
+ * different: the relay accepts one from the target's effective author **or**
+ * the NIP-OA owner of an authoring agent, and re-checks channel membership on
+ * the author path. No client can evaluate the second half, so refusing here
+ * would hide the control from the one other party the relay would accept.
+ *
+ * The event is signed by the **viewer**, naming the target — which is exactly
+ * what `validate_edit_ownership` expects to adjudicate.
+ */
+export const unsignedEdit = query({
+  args: { key: v.string(), body: v.string() },
+  handler: async (ctx, { key, body }): Promise<UnsignedMessage> => {
+    const me = await viewerId(ctx)
+    if (!me) return { ok: false, reason: 'not signed in' }
+    const you = await ctx.db.get(me)
+    if (!you?.nostrPubkey) return { ok: false, reason: 'no Estiva ID pubkey to sign with' }
+
+    const target = await editTarget(ctx, key)
+    if (!target) return { ok: false, reason: 'unknown message' }
+    if (!target.nostrEventId) {
+      // Nothing on the relay to edit. Not a failure: the message is Peek-only
+      // (a DM, or one that never published), and the Convex patch is the whole
+      // of its record.
+      return { ok: false, reason: 'the message being edited is not on the relay' }
+    }
+    if (!target.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+
+    return {
+      ok: true,
+      unsigned: buildEdit(you.nostrPubkey, Date.now(), {
+        channelUuid: target.channelUuid,
+        targetEventId: target.nostrEventId,
+        body,
+      }),
+    }
+  },
+})
+
+/**
+ * The event id and channel of whatever `key` names — a message or a reply.
+ *
+ * The seam's edit is id-keyed across both tables (`editBody` resolves it the
+ * same way), and an edit needs the channel because 40003 is in the relay's
+ * `requires_h_channel_scope` — unlike a reaction or a deletion, where the
+ * channel is derived from the target.
+ */
+async function editTarget(
+  ctx: QueryCtx,
+  key: string,
+): Promise<{ nostrEventId?: string; channelUuid?: string } | null> {
+  const channelOf = async (parentKind: string, parentId: string) => {
+    if (parentKind !== 'topic') return undefined
+    const topicId = ctx.db.normalizeId('topics', parentId)
+    const topic = topicId ? await ctx.db.get(topicId) : null
+    return topic?.channelUuid
+  }
+
+  const bySeed = await ctx.db
+    .query('messages')
+    .withIndex('by_seedKey', (q) => q.eq('seedKey', key))
+    .unique()
+  const messageId = bySeed ? null : ctx.db.normalizeId('messages', key)
+  const m = bySeed ?? (messageId ? await ctx.db.get(messageId) : null)
+  if (m) return { nostrEventId: m.nostrEventId, channelUuid: await channelOf(m.parentKind, m.parentId) }
+
+  const replyBySeed = await ctx.db
+    .query('replies')
+    .withIndex('by_seedKey', (q) => q.eq('seedKey', key))
+    .unique()
+  const replyId = replyBySeed ? null : ctx.db.normalizeId('replies', key)
+  const r = replyBySeed ?? (replyId ? await ctx.db.get(replyId) : null)
+  if (!r) return null
+  const parent = await ctx.db.get(r.messageId)
+  if (!parent) return null
+  return { nostrEventId: r.nostrEventId, channelUuid: await channelOf(parent.parentKind, parent.parentId) }
+}
 
 export const recordReplyPublished = mutation({
   args: { replyId: v.id('replies'), nostrEventId: v.string() },

@@ -85,7 +85,12 @@ export async function syncTopicFromRelay(
     // Both kinds, permanently. A `kind:9` message is not replaceable at all, so
     // every comment written before the flip stays `kind:9` forever and there is
     // no migration that would let this list shrink later.
-    kinds: [KIND.STREAM_MESSAGE, KIND.COMMENT],
+    //
+    // `40003` is an edit (CON-8). It carries an `h`, unlike a reaction or a
+    // deletion, so it arrives on this same channel read rather than needing a
+    // second query addressed by target — and it must, or an edit made in Ship
+    // would never reach Peek and the two apps would show different text.
+    kinds: [KIND.STREAM_MESSAGE, KIND.COMMENT, KIND.MESSAGE_EDIT],
     '#h': [plan.channelUuid],
     limit: PAGE_LIMIT,
   }

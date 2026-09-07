@@ -811,7 +811,6 @@ export function ConversationCard({
             isTopic={isTopic}
             isResolved={resolved}
             showCreateTopic={showCreateTopic}
-            isOwnMessage={authorName === 'You'}
             currentHighlight={highlightState}
             onHighlight={handleConvHighlight}
             onCreateTopic={openCreateTopic}

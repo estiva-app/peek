@@ -400,9 +400,40 @@ export function usePeekActions() {
 
     /** Body edit — id-keyed, applies to messages and replies alike
      *  (the Convex mutation resolves the key against both tables). */
+    /**
+     * Change what a message says, and **say it on the relay** — CON-8.
+     *
+     * This used to be a Convex patch and nothing else, so a human edit never
+     * left Peek: the relay kept the original `kind:9` body and every other
+     * reader — Ship's conversation view, the agent — showed stale text
+     * indefinitely, with nothing announcing the divergence.
+     *
+     * The mutation writes the row where the viewer is the author, and the
+     * publish happens here for the same reason every other publish does: the
+     * browser holds the only Estiva ID token.
+     *
+     * **The publish is not conditional on the patch.** Where the viewer is not
+     * the author the row deliberately does not change (see `editBody` in
+     * `convex/messages.ts`), and the edit is exactly what asks the relay
+     * whether it may — the text then arrives through the sync if it was
+     * accepted.
+     */
     editBody(id: string, body: string) {
       m.setBodyOverrides((prev) => ({ ...prev, [id]: body }))
-      if (hasConvex) void editBodyRemote({ key: id, body })
+      if (!hasConvex) return
+      void (async () => {
+        await editBodyRemote({ key: id, body })
+        const token = tokenForPublish('edit')
+        if (!token) return
+        const built = await convex.query(api.nostr.outbox.unsignedEdit, { key: id, body })
+        if (!built.ok) {
+          // Ordinary cases live here too — a DM, a message that never reached
+          // the relay — so this is a debug line rather than a failure.
+          console.warn('[nostr] edit not published:', built.reason)
+          return
+        }
+        await signAndPublish(built.unsigned, token)
+      })().catch((error) => console.warn('[nostr] edit publish failed:', error))
     },
 
     /** Body edit for a huddle's SEED conversation (drives the card preview). */
