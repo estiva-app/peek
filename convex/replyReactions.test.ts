@@ -20,6 +20,8 @@ import type { Id } from './_generated/dataModel'
 const modules = import.meta.glob('./**/*.ts')
 
 const PUBKEY = 'a'.repeat(64)
+/** The reply's author — Ada reads it, Claude wrote it. */
+const AGENT = 'b'.repeat(64)
 const asUser = (pubkey: string) => ({ issuer: ESTIVA_ID_ISSUER, subject: pubkey })
 
 /** Ada (the viewer) plus an agent whose conversation-root and reply she reads. */
@@ -96,6 +98,17 @@ describe('reactions on replies', () => {
     expect(replies[0]!.reactions).toBeUndefined()
   })
 
+  /*
+    Deleted **as the reply's author**, which it was not until PEE-18.
+
+    This used to delete Claude's reply as Ada, and it passed — because
+    `replies.remove` deleted whatever it was handed. So the test was quietly
+    resting on the authorization hole while asserting something else entirely.
+    Fixing the mutation broke it, which is the test doing its second job.
+
+    Ada's reaction on Claude's reply is still the interesting fixture: the rows
+    cleaned up here belong to somebody other than the person deleting.
+  */
   it('deleting the reply takes its reaction rows with it', async () => {
     const t = convexTest(schema, modules)
     const { replyId } = await seed(t)
@@ -103,7 +116,7 @@ describe('reactions on replies', () => {
     await t
       .withIdentity(asUser(PUBKEY))
       .mutation(api.messages.toggleReaction, { key: replyId as string, emoji: '👍' })
-    await t.withIdentity(asUser(PUBKEY)).mutation(api.replies.remove, { key: replyId as string })
+    await t.withIdentity(asUser(AGENT)).mutation(api.replies.remove, { key: replyId as string })
 
     const rows = await t.run(async (ctx) => await ctx.db.query('reactions').collect())
     expect(rows).toEqual([])

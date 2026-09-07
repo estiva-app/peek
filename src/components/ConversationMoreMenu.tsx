@@ -31,7 +31,22 @@ interface ConversationMoreMenuProps {
   isTopic?: boolean
   isResolved?: boolean
   showCreateTopic?: boolean
-  /** True when the message was authored by the current user. Gates Edit/Delete. */
+  /**
+   * True when the message was authored by the current user.
+   *
+   * Gates **Edit** only, since CON-3. Delete is offered to everyone: the relay
+   * accepts a kind:5 from the target's author *or* from the NIP-OA owner of an
+   * authoring agent, and no client can evaluate the second half — ownership is
+   * written from the attestation and read server-side only. So this check is
+   * narrower than the relay's and hides the control from the one *other* party
+   * it would accept. On this workspace that is where the conversation is: 425 of
+   * 583 messages were written by a single agent identity.
+   *
+   * Edit keeps the gate for now, and deliberately: Peek's edit still only
+   * patches its own database (CON-8), so offering it on somebody else's message
+   * would silently rewrite their words for Peek's readers and nobody else's.
+   * It comes off when the edit publishes a kind:40003.
+   */
   isOwnMessage?: boolean
   currentHighlight?: HighlightType
   onHighlight?: (type: HighlightType | undefined) => void
@@ -146,12 +161,23 @@ export function ConversationMoreMenu({
         <MenuItem label="View details" onClick={onViewDetails} />
       </div>
 
-      {isOwnMessage && (
-        <>
-          <Divider className="mx-0" />
-          <MenuItem label="Delete" destructive onClick={onDelete} />
-        </>
-      )}
+      {/*
+        Offered on every message — CON-3, and the relay adjudicates.
+
+        This was `isOwnMessage &&`, written to SPEC §6.5's rule that a relay
+        "honours a deletion only from the pubkey that signed the original". That
+        rule was withdrawn on 2026-09-06; the reference relay accepts the author
+        or the author's NIP-OA owner, and a client cannot tell which it is
+        looking at.
+
+        Safe to remove only because `messages.remove` no longer deletes ahead of
+        the relay (PEE-18): with no local claim the rows stay put, the kind:5 is
+        published, and the row goes when the relay accepts it. Removing this
+        gate against the old mutation would have handed everybody the ability to
+        drop anybody's message from Peek while the relay kept it.
+      */}
+      <Divider className="mx-0" />
+      <MenuItem label="Delete" destructive onClick={onDelete} />
     </Menu>
   )
 }

@@ -223,19 +223,61 @@ export function usePeekActions() {
    * proves the seam without the extra machinery. The token now never leaves the
    * tab, so it can no longer appear in Convex's dashboard logs.
    */
-  const publishDeletions = (removed: Promise<{ nostrEventIds: string[] }>) => {
+  /** Undo an optimistic hide — the message is still there and still readable. */
+  const unhide = (id: string) =>
+    m.setDeletedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+
+  const publishDeletions = (
+    removed: Promise<{ removed: boolean; nostrEventIds: string[] }>,
+    /**
+     * Put it back — for the path where Peek has NOT deleted anything (PEE-18).
+     *
+     * When the viewer is not the author the mutation leaves the rows alone and
+     * hands back the target so the relay can decide. The row then goes only if
+     * the relay accepts the kind:5, through the sync's `applyDeletions`. So the
+     * optimistic hide is a *prediction* on that path, and a refusal has to undo
+     * it — otherwise a message the relay kept would be invisible in this tab
+     * until reload, which is the silent divergence the ticket is about.
+     *
+     * Not needed on the author path: the rows are already gone from Convex, and
+     * a failed tombstone leaves a relay copy that the next sync cannot remove
+     * either. That case is a warning, not a rollback.
+     */
+    restore?: () => void,
+  ) => {
     void (async () => {
-      const { nostrEventIds } = await removed
-      if (nostrEventIds.length === 0) return
+      const outcome = await removed
+      const { nostrEventIds } = outcome
+      if (nostrEventIds.length === 0) {
+        // Nothing to ask and nothing deleted: the viewer had no claim the relay
+        // could adjudicate, so the prediction was wrong.
+        if (!outcome.removed) restore?.()
+        return
+      }
       const token = tokenForPublish('deletion')
-      if (!token) return
+      if (!token) {
+        if (!outcome.removed) restore?.()
+        return
+      }
       // One kind:5 per target rather than one event with many `e` tags — that
       // is the shape Buzz accepts, and a rejected batch would lose every
       // tombstone in it instead of one.
+      let accepted = 0
       for (const targetEventId of nostrEventIds) {
-        await signAndPublish(buildDeletion(token.pubkey, Date.now(), { targetEventId }), token)
+        const id = await signAndPublish(buildDeletion(token.pubkey, Date.now(), { targetEventId }), token)
+        if (id) accepted += 1
       }
-    })().catch((error) => console.warn('[nostr] deletion publish failed:', error))
+      // The relay adjudicated and said no. `signAndPublish` has already logged
+      // its words.
+      if (!outcome.removed && accepted === 0) restore?.()
+    })().catch((error) => {
+      console.warn('[nostr] deletion publish failed:', error)
+      restore?.()
+    })
   }
 
   const buildMessage = ({ text, resolution, highlightType, attachments, files }: SendMessagePayload): ConversationData => ({
@@ -307,13 +349,13 @@ export function usePeekActions() {
     deleteTopicMessage(topicId: string, messageId: string) {
       m.setSentMessages((prev) => ({ ...prev, [topicId]: (prev[topicId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) publishDeletions(removeRemote({ key: messageId }))
+      if (hasConvex) publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
     },
 
     deleteDmMessage(dmId: string, messageId: string) {
       setSentDmMessages((prev) => ({ ...prev, [dmId]: (prev[dmId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) publishDeletions(removeRemote({ key: messageId }))
+      if (hasConvex) publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
     },
 
     /** Body edit — id-keyed, applies to messages and replies alike
@@ -510,6 +552,10 @@ export function usePeekActions() {
 
     deleteReply(messageId: string, replyId: string) {
       m.setSentReplies((prev) => ({ ...prev, [messageId]: (prev[messageId] ?? []).filter((r) => r.id !== replyId) }))
+      // No `restore` here: a reply is hidden by dropping it from `sentReplies`,
+      // which only ever held replies sent in this session. A persisted reply is
+      // not hidden optimistically at all, so there is nothing to put back — it
+      // simply stays until the sync removes it.
       if (hasConvex) publishDeletions(removeReplyRemote({ key: replyId }))
     },
 

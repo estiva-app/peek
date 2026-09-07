@@ -691,29 +691,86 @@ export async function deleteAttachmentBlobs(
 }
 
 /**
- * Delete a message, its replies, and its reactions — and hand back the relay
- * event ids that now need tombstoning.
+ * What `remove` did, and what the caller still has to do.
  *
- * The ids are collected BEFORE the rows go, because after the delete there is
- * nothing left to look them up from. The browser publishes the kind:5s (same
- * shape as `toggleReaction` → `publishReactionRemovalAsAuthor`): a bearer token
- * only exists there, and scheduled work has no identity the relay accepts.
+ * `removed: false` is the case worth naming: the rows are **still here**, and
+ * whether they go is the relay's decision, arriving later through the sync.
+ */
+export interface RemoveOutcome {
+  /** The rows are gone from Peek. */
+  removed: boolean
+  /** kind:5 targets for the browser to publish. */
+  nostrEventIds: string[]
+}
+
+/**
+ * Delete a message, its replies, and its reactions — or ask the relay whether
+ * you may (PEE-18).
  *
- * Only the viewer's OWN events are returned. The relay enforces that a kind:5
- * may delete nothing but its own author's event, so a reply or reaction someone
- * else wrote stays on the relay — collecting it would just produce a rejection.
- * A row that never reached the relay has no `nostrEventId` and needs no
- * tombstone at all.
+ * ## This used to delete unconditionally
+ *
+ * `me` was read and used only to decide what to *tombstone*, never whether the
+ * delete could happen. A `mutation` is a client-callable API surface, so any
+ * authenticated user could pass somebody else's message key and remove it, its
+ * replies and its reactions from Peek for everybody — while the relay copies
+ * survived, because no kind:5 was published for events they did not author. The
+ * record diverged permanently and nothing announced it. Peek's UI gated the
+ * control on `isOwnMessage`, which is why it went unnoticed; the mutation is the
+ * boundary, not the menu.
+ *
+ * ## Two paths, because a client cannot evaluate the relay's rule
+ *
+ * The relay accepts a deletion from the target's effective author **or** from
+ * the NIP-OA owner of an authoring agent (SPEC §6.5, corrected 2026-09-06), and
+ * ownership is written from the attestation and readable only server-side. So
+ * "author-only" here would reproduce SHI-14 inside Peek's backend — and on this
+ * workspace it would hide the control from the one party who could use it, since
+ * most messages are written by an agent.
+ *
+ * - **The viewer is the author.** A local claim, so the rows go now and the
+ *   browser tombstones the viewer's own events.
+ * - **The viewer is not.** They may still have a claim and only the relay knows.
+ *   So **nothing is deleted here.** The message's own event id goes back, the
+ *   browser publishes a kind:5, and if the relay accepts it the next sync
+ *   removes the row through `applyDeletions` — which acts only on a kind:5 the
+ *   relay actually returned. If the relay refuses, no such event exists and the
+ *   row correctly stays.
+ *
+ * That is what keeps Peek's row and the relay's copy from silently disagreeing:
+ * the row now goes *because* the relay accepted, rather than ahead of it.
+ *
+ * A message that never reached the relay has no adjudicator, so a non-author is
+ * refused outright rather than left with a delete that can never complete.
+ *
+ * ## Why the ids are collected first
+ *
+ * After the delete there is nothing left to look them up from. The browser
+ * publishes the kind:5s because a bearer token only exists there, and scheduled
+ * work has no identity the relay accepts.
  */
 export const remove = mutation({
   args: { key: v.string() },
-  handler: async (ctx, { key }): Promise<{ nostrEventIds: string[] }> => {
+  handler: async (ctx, { key }): Promise<RemoveOutcome> => {
     const m = await findMessageByKey(ctx, key)
-    if (!m) return { nostrEventIds: [] }
-    const me = await viewerId(ctx)
+    // Already gone. Idempotent rather than an error: a second click, or a sync
+    // that got there first, is not a failure.
+    if (!m) return { removed: true, nostrEventIds: [] }
+    const you = await viewerOrThrow(ctx)
+
+    if (m.authorId !== you._id) {
+      if (!m.nostrEventId) {
+        throw new Error('only the author may delete a message that is not on the relay')
+      }
+      // No local claim, and possibly a real one. Ask, do not act.
+      return { removed: false, nostrEventIds: [m.nostrEventId] }
+    }
+
     const nostrEventIds: string[] = []
     const tombstone = (eventId: string | undefined, author: Id<'users'>) => {
-      if (eventId && me && author === me) nostrEventIds.push(eventId)
+      // Still only the viewer's OWN events: a reply or reaction somebody else
+      // wrote stays on the relay, and collecting it would only produce a
+      // rejection.
+      if (eventId && author === you._id) nostrEventIds.push(eventId)
     }
 
     tombstone(m.nostrEventId, m.authorId)
@@ -736,6 +793,6 @@ export const remove = mutation({
     }
     await deleteAttachmentBlobs(ctx, m.fileAttachments)
     await ctx.db.delete(m._id)
-    return { nostrEventIds }
+    return { removed: true, nostrEventIds }
   },
 })
