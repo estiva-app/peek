@@ -15,9 +15,10 @@ import { HighlightSwatch } from './HighlightPill'
 import { FrameArt } from './FrameArt'
 import { FrameLightbox } from '../FrameLightbox'
 import { cn } from '@/lib/utils'
-import { HIGHLIGHT_META, hasConvex, useUploadActions, type HighlightType, type UploadedFile } from '@/api'
+import { HIGHLIGHT_META, hasConvex, type HighlightType, type UploadedFile } from '@/api'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
-import { FILE_ACCEPT_ATTR, validateFile, pastedImages } from '@/lib/fileAttachments'
+import { FILE_ACCEPT_ATTR, pastedImages } from '@/lib/fileAttachments'
+import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { AttachmentRemoveButton, PendingAttachmentChip } from './PendingAttachmentChip'
 import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
@@ -32,19 +33,6 @@ export interface SendPayload {
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
 }
-
-/** One picked file's lifecycle in the composer. */
-interface PendingUpload {
-  localId: string
-  name: string
-  size: number
-  contentType: string
-  status: 'uploading' | 'done' | 'error'
-  error?: string
-  uploaded?: UploadedFile
-}
-
-let uploadSeq = 0
 
 interface ComposeBoxProps {
   /**
@@ -157,9 +145,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const [hasHighlight, setHasHighlight] = useState(false)
   const [attachedFrameIds, setAttachedFrameIds] = useState<string[]>([])
   const [previewFrame, setPreviewFrame] = useState<FigmaFrame | null>(null)
-  const [pendingFiles, setPendingFiles] = useState<PendingUpload[]>([])
+  const uploads = usePendingAttachments()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { uploadFile, deleteUpload } = useUploadActions()
   const composeRef = useRef<HTMLDivElement>(null)
 
   const sendFnRef = useRef(onSend)
@@ -172,51 +159,16 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
 
-  // Mirror attachments into refs so the editorProps Enter handler (a stable
-  // closure) always sees the current lists.
+  // Mirror the frame ids into a ref so the editorProps Enter handler (a stable
+  // closure) always sees the current list. The uploads keep their own ref
+  // inside `usePendingAttachments`, for the same reason.
   const attachedFramesRef = useRef<string[]>([])
   attachedFramesRef.current = attachedFrameIds
-  const pendingFilesRef = useRef<PendingUpload[]>([])
-  pendingFilesRef.current = pendingFiles
-
-  /** Files that finished uploading and are ready to send. */
-  const readyFiles = (): UploadedFile[] =>
-    pendingFilesRef.current.filter((f) => f.status === 'done' && f.uploaded).map((f) => f.uploaded!)
-  const isUploading = pendingFiles.some((f) => f.status === 'uploading')
-
-  const handlePickFiles = (files: File[]) => {
-    for (const file of files) {
-      const localId = `u_${++uploadSeq}`
-      const err = validateFile(file)
-      if (err) {
-        setPendingFiles((prev) => [...prev, { localId, name: file.name, size: file.size, contentType: file.type, status: 'error', error: err }])
-        continue
-      }
-      setPendingFiles((prev) => [...prev, { localId, name: file.name, size: file.size, contentType: file.type, status: 'uploading' }])
-      uploadFile(file).then(
-        (uploaded) =>
-          setPendingFiles((prev) => prev.map((f) => (f.localId === localId ? { ...f, status: 'done', uploaded } : f))),
-        (e: unknown) =>
-          setPendingFiles((prev) =>
-            prev.map((f) => (f.localId === localId ? { ...f, status: 'error', error: e instanceof Error ? e.message : 'Upload failed.' } : f)),
-          ),
-      )
-    }
-  }
 
   /* The paste handler lives in `editorProps`, a closure from the first render
      — the same reason `sendFnRef` exists. */
-  const pickFilesRef = useRef(handlePickFiles)
-  pickFilesRef.current = handlePickFiles
-
-  const removePendingFile = (localId: string) => {
-    setPendingFiles((prev) => {
-      const slot = prev.find((f) => f.localId === localId)
-      // A successfully-uploaded blob that never got sent must be cleaned up.
-      if (slot?.uploaded) deleteUpload(slot.uploaded.storageId)
-      return prev.filter((f) => f.localId !== localId)
-    })
-  }
+  const uploadsRef = useRef(uploads)
+  uploadsRef.current = uploads
 
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
@@ -251,7 +203,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         if (!hasConvex) return false
         const images = pastedImages(event.clipboardData)
         if (images.length === 0) return false
-        pickFilesRef.current(images)
+        uploadsRef.current.add(images)
         return true
       },
       handleKeyDown: (view, event) => {
@@ -262,9 +214,9 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           const resolution = extractResolution(ed)
           const hl = extractHighlightType(ed)
           const attachments = attachedFramesRef.current
-          const files = readyFiles()
+          const files = uploadsRef.current.ready()
           // Hold Enter until in-flight uploads settle, so files aren't dropped.
-          if (pendingFilesRef.current.some((f) => f.status === 'uploading')) return true
+          if (uploadsRef.current.isUploading) return true
           if (text || resolution.hasResolution || attachments.length > 0 || files.length > 0) {
             const sent = sendFnRef.current?.({
               text,
@@ -290,7 +242,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
             const key = draftKeyRef.current
             if (key) draftsRef.current.clear(key)
             setAttachedFrameIds([])
-            setPendingFiles([])
+            uploadsRef.current.clear()
             void Promise.resolve(sent).then((ok) => {
               if (ok !== false) return
               // The draft store first, always: it survives the tab, and it is
@@ -473,11 +425,11 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
 
   const handleSend = () => {
     if (!editor) return
-    if (isUploading) return // wait for in-flight uploads
+    if (uploads.isUploading) return // wait for in-flight uploads
     const text = serializeToText(editor)
     const resolution = extractResolution(editor)
     const hl = extractHighlightType(editor)
-    const files = readyFiles()
+    const files = uploads.ready()
     if (!text && !resolution.hasResolution && attachedFrameIds.length === 0 && files.length === 0) return
     onSend?.({
       text,
@@ -492,7 +444,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     setHasUrgent(false)
     setHasHighlight(false)
     setAttachedFrameIds([])
-    setPendingFiles([])
+    uploads.clear()
   }
 
 
@@ -580,9 +532,9 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         )}
 
         {/* Pending / uploaded files — removable chips below the text. */}
-        {pendingFiles.length > 0 && (
+        {uploads.files.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {pendingFiles.map((f) => (
+            {uploads.files.map((f) => (
               <PendingAttachmentChip
                 key={f.localId}
                 name={f.name}
@@ -591,7 +543,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                 status={f.status}
                 error={f.error}
                 previewUrl={f.uploaded?.previewUrl}
-                onRemove={() => removePendingFile(f.localId)}
+                onRemove={() => uploads.remove(f.localId)}
               />
             ))}
           </div>
@@ -611,7 +563,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                   accept={FILE_ACCEPT_ATTR}
                   className="hidden"
                   onChange={(e) => {
-                    handlePickFiles(Array.from(e.target.files ?? []))
+                    uploads.add(Array.from(e.target.files ?? []))
                     e.target.value = '' // let the same file be re-picked
                   }}
                 />
@@ -633,8 +585,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           </div>
 
           {(() => {
-            const hasReadyFile = pendingFiles.some((f) => f.status === 'done')
-            const canSend = (!isEmpty || attachedFrameIds.length > 0 || hasReadyFile) && !isUploading
+            const hasReadyFile = uploads.files.some((f) => f.status === 'done')
+            const canSend = (!isEmpty || attachedFrameIds.length > 0 || hasReadyFile) && !uploads.isUploading
             return (
               <div className="flex items-center gap-2.5">
               <span className="hidden signal:inline font-mono text-[9px] tracking-[0.04em] text-text-muted select-none">
