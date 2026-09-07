@@ -32,12 +32,31 @@ import { viewerId } from '../users'
 const PAGE_LIMIT = 200
 
 /**
- * How many of a channel's newest messages to check for reactions each run.
+ * How many targets one run asks about — **SPEC §6.6's horizon, adopted**.
  *
  * Reactions have no cursor (see `listMessageEventIdsForTopic`), so this is a
- * deliberate trade: reactions on messages older than the newest N are not
- * picked up. Fine for a PoC; a real implementation would subscribe over
- * WebSocket instead of re-querying by target.
+ * trade rather than a completeness bug: reactions on messages older than the
+ * newest N are not picked up.
+ *
+ * **The number is not Peek's to pick.** §6.6 fixes N at 100 as a rule
+ * (estiva-docs#76, closing CON-1), and this adopts it — if the two ever
+ * disagree, this one is wrong. The reason is interoperability rather than
+ * performance: two apps showing one conversation with different N disagree
+ * about the count legitimately and unfixably, and a reader cannot tell that
+ * from a bug. Ship's `REACTION_TARGET_LIMIT` cites the same rule.
+ *
+ * Production, 2026-09-07: the busiest container holds 77 messages and nothing
+ * is at or over 100 — so this bites nowhere yet, which is the point of fixing
+ * it before it does.
+ *
+ * **Peek does not yet honour the other half of §6.6**, which requires a client
+ * to *report* when it truncates: an unreported cap is indistinguishable from
+ * "nobody reacted". Ship names the cap and the number skipped; Peek truncates
+ * silently. That gap is PEE-21, and SPEC's own compliance table says so rather
+ * than implying both apps comply.
+ *
+ * A real implementation would subscribe over WebSocket instead of re-querying
+ * by target.
  */
 const REACTION_TARGET_LIMIT = 100
 
