@@ -11,6 +11,7 @@
  * backend behind it. It has stories now, which is how it gets reviewed.
  */
 import { IconAlertCircle, IconLoader2, IconX } from '@tabler/icons-react'
+import { WithTooltip } from './WithTooltip'
 import { cn } from '@/lib/utils'
 import { formatBytes, fileTypeLabel, isImageAttachment } from '@/lib/fileAttachments'
 
@@ -78,7 +79,14 @@ export function PendingAttachmentChip({
         )}
       </div>
       <div className="flex flex-col gap-[1px] min-w-0">
-        <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{name}</span>
+        {/* A generated screenshot name does not fit in 200px, so the ellipsis
+            hides the time that tells two of them apart. Her ruling
+            (2026-09-07): the ellipsis is fine as long as the full name can be
+            read on hover. `wrapperClassName` is what keeps the truncation
+            working inside the inline-flex wrapper. */}
+        <WithTooltip label={name} wrapperClassName="min-w-0">
+          <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{name}</span>
+        </WithTooltip>
         <span
           className={cn(
             'text-[10px] leading-[1.2] truncate',

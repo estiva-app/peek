@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useMemo, useCallback, type ReactNode, type Dispatch, type SetStateAction } from 'react'
-import { TOPIC_CONVERSATIONS, type ConversationData, type HighlightType, type ReactionData } from '@/data/topicData'
+import { TOPIC_CONVERSATIONS, type ConversationData, type FileAttachment, type HighlightType, type ReactionData } from '@/data/topicData'
 import type { Huddle } from '@/data/huddleData'
 import type { ReplyData } from '@/data/replyData'
 
@@ -35,6 +35,11 @@ interface TopicMutationsValue {
   setSentReplies: Dispatch<SetStateAction<Record<string, ReplyData[]>>>
   bodyOverrides: Record<string, string>
   setBodyOverrides: Dispatch<SetStateAction<Record<string, string>>>
+  /** The uploaded files an edit left behind — PEE-16. Keyed like bodyOverrides,
+   *  so one map covers messages and replies alike. An entry means "this is the
+   *  whole list now", including the empty list when every file was removed. */
+  fileOverrides: Record<string, FileAttachment[]>
+  setFileOverrides: Dispatch<SetStateAction<Record<string, FileAttachment[]>>>
   highlightOverrides: Record<string, HighlightType | undefined>
   setHighlightOverrides: Dispatch<SetStateAction<Record<string, HighlightType | undefined>>>
   createdHuddles: Record<string, Huddle[]>
@@ -75,6 +80,7 @@ export function TopicMutationsProvider({ children }: { children: ReactNode }) {
   const [resolvedOverrides, setResolvedOverrides] = useState<Record<string, ResolvedOverride>>({})
   const [sentReplies, setSentReplies] = useState<Record<string, ReplyData[]>>({})
   const [bodyOverrides, setBodyOverrides] = useState<Record<string, string>>({})
+  const [fileOverrides, setFileOverrides] = useState<Record<string, FileAttachment[]>>({})
   const [highlightOverrides, setHighlightOverrides] = useState<Record<string, HighlightType | undefined>>({})
   const [createdHuddles, setCreatedHuddles] = useState<Record<string, Huddle[]>>({})
   const [deletedHuddleIds, setDeletedHuddleIds] = useState<Set<string>>(new Set())
@@ -106,6 +112,8 @@ export function TopicMutationsProvider({ children }: { children: ReactNode }) {
       setSentReplies,
       bodyOverrides,
       setBodyOverrides,
+      fileOverrides,
+      setFileOverrides,
       highlightOverrides,
       setHighlightOverrides,
       createdHuddles,
@@ -122,7 +130,7 @@ export function TopicMutationsProvider({ children }: { children: ReactNode }) {
       setPendingReactions,
       isTopicResolved,
     }),
-    [sentMessages, deletedIds, resolvedOverrides, sentReplies, bodyOverrides, highlightOverrides, createdHuddles, deletedHuddleIds, huddleBodyOverrides, huddleSentMessages, reactionOverrides, pendingReactions, isTopicResolved],
+    [sentMessages, deletedIds, resolvedOverrides, sentReplies, bodyOverrides, fileOverrides, highlightOverrides, createdHuddles, deletedHuddleIds, huddleBodyOverrides, huddleSentMessages, reactionOverrides, pendingReactions, isTopicResolved],
   )
 
   return <TopicMutationsContext.Provider value={value}>{children}</TopicMutationsContext.Provider>

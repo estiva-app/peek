@@ -295,6 +295,9 @@ function mergeConv(c: ConversationData, o: Overrides, recountReplies = true): Co
   return {
     ...c,
     body: o.bodyOverrides[c.id] ?? c.body,
+    // `in`, not `??`: an edit that removed the last file leaves an empty
+    // array, and that is a real answer, not a missing one (PEE-16).
+    files: c.id in o.fileOverrides ? o.fileOverrides[c.id] : c.files,
     highlightType: c.id in o.highlightOverrides ? o.highlightOverrides[c.id] : c.highlightType,
     reactions: applyPendingReactions(o.reactionOverrides[c.id] ?? c.reactions, o.pendingReactions[c.id]),
     isResolved: resolution?.resolved ?? c.isResolved,
@@ -329,6 +332,7 @@ function mergeReply(r: ReplyData, o: Overrides): ThreadReply {
   return {
     ...r,
     body: o.bodyOverrides[r.id] ?? r.body,
+    files: r.id in o.fileOverrides ? o.fileOverrides[r.id] : r.files,
     highlightType: r.id in o.highlightOverrides ? o.highlightOverrides[r.id] : r.highlightType,
     // Same layering a message gets (PEE-12): the persisted aggregate is the
     // base, the session override and the optimistic pending ride on top —
