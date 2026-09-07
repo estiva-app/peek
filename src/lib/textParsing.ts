@@ -126,6 +126,39 @@ export function wrapLink(text: string, href: string): string {
 }
 
 /**
+ * A link whose label is just its own address — PEE-22.
+ *
+ * Tiptap autolinks a bare URL the moment a body is loaded into the editor, so
+ * **opening a message to edit one word turns every plain URL in it into a link
+ * mark**, and writing that mark back as `[url](url)` rewrites text the person
+ * never touched. Measured on the first edit ever published (2026-09-07): an
+ * 89-character message became 196, and the URL was the only thing that changed
+ * besides the sentence the person added.
+ *
+ * It matters beyond tidiness because the marker does not travel. The shared
+ * inline vocabulary is four marks — bold, italic, underline, code — and **no
+ * link**; `[label](url)` is SPEC §13.1's syntax and PEE-25 is the ticket to
+ * implement it. Until then a reader outside Peek draws the brackets and
+ * parentheses as literal characters, which is what Ship did.
+ *
+ * So when the label already *is* the address, the bare address is written. It
+ * is the lossless case: a reader sees the URL, and loading it back autolinks it
+ * to the same mark.
+ *
+ * **`defaultProtocol` counts as the same address.** Typing `google.com` gives a
+ * label of `google.com` and an href of `https://google.com` — a completion
+ * rather than a decision, and re-loading the bare label completes it the same
+ * way. Anything else is a label somebody chose, and stays a link marker even
+ * though no other app can draw it yet: dropping the href to avoid the brackets
+ * would lose where the link goes, which is worse than showing them.
+ */
+function isBareAddress(label: string, href: string): boolean {
+  const text = label.trim()
+  if (!text) return false
+  return text === href || `https://${text}` === href
+}
+
+/**
  * One text child of the editor → marker text. The link goes *inside* the
  * other markers — `**[label](url)**`, never `[**label**](url)` — because a
  * reader parses the marks first (the package does) and would cut a label
@@ -137,7 +170,8 @@ export function serializeTextChild(child: TiptapInlineChild): string {
   const href = typeof link?.attrs?.href === 'string' ? link.attrs.href : undefined
   const text = child.text ?? ''
   const markNames = new Set(marks.filter((m) => m.type.name !== 'link').map((m) => m.type.name))
-  return wrapInlineMarks(href ? wrapLink(text, href) : text, markNames)
+  const linked = href && !isBareAddress(text, href) ? wrapLink(text, href) : text
+  return wrapInlineMarks(linked, markNames)
 }
 
 /**

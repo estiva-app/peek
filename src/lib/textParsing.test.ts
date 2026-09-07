@@ -353,6 +353,38 @@ describe('links — [label](url) (PEE-19)', () => {
       expect(serializeTextChild(child('widgets topic', [{ name: 'bold' }, { name: 'link', href: 'https://google.com' }]))).toBe('**[widgets topic](https://google.com)**')
     })
 
+    /*
+      PEE-22 — the case that made this necessary.
+
+      Tiptap autolinks a bare URL when a body is loaded into the editor, so
+      opening a message to change one word turned every plain URL in it into
+      `[url](url)`. Two costs: it rewrites text nobody touched, and the marker
+      does not travel — the shared vocabulary has no link, so Ship draws the
+      brackets as characters until PEE-25.
+    */
+    it('an autolinked bare URL stays a bare URL', () => {
+      expect(serializeTextChild(child('https://x.com/a', [{ name: 'link', href: 'https://x.com/a' }]))).toBe('https://x.com/a')
+    })
+
+    /* `defaultProtocol` completing a typed host is the same address, not a
+       label somebody chose. */
+    it('  …including one the editor completed to https', () => {
+      expect(serializeTextChild(child('google.com', [{ name: 'link', href: 'https://google.com' }]))).toBe('google.com')
+    })
+
+    /*
+      A chosen label keeps its marker even though no other app can draw it yet.
+      Dropping the href to avoid the brackets would lose where the link goes,
+      which is worse than showing them — and PEE-25 is the real fix.
+    */
+    it('a chosen label is still a link marker', () => {
+      expect(serializeTextChild(child('the docs', [{ name: 'link', href: 'https://x.com/a' }]))).toBe('[the docs](https://x.com/a)')
+    })
+
+    it('a bare URL carrying other marks keeps them, without the link brackets', () => {
+      expect(serializeTextChild(child('https://x.com/a', [{ name: 'bold' }, { name: 'link', href: 'https://x.com/a' }]))).toBe('**https://x.com/a**')
+    })
+
     it('a run without a link is the marks alone', () => {
       expect(serializeTextChild(child('plain'))).toBe('plain')
       expect(serializeTextChild(child('bold', [{ name: 'bold' }]))).toBe('**bold**')
