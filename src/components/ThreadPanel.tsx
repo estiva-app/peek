@@ -4,6 +4,7 @@ import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, I
 import { Avatar } from './ui/Avatar'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
+import { draftKeys } from '@/lib/drafts'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { DateDivider } from './ui/DateDivider'
 import { formatReplyTimestamp } from '@/api'
@@ -502,7 +503,7 @@ export function ThreadPanel({
 
       {/* Compose box */}
       <div className="p-3">
-        <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} />
+        <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
       </div>
     </div>
   )

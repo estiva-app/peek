@@ -1,4 +1,5 @@
 import { useMarkRead } from '@/lib/useMarkRead'
+import { draftKeys } from '@/lib/drafts'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { isNearBottom } from './scrollPolicy'
 import { ConversationHeader } from '@/components/ConversationHeader'
@@ -325,7 +326,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
         </div>
       )}
       <div className="p-3">
-        <ComposeBox onSend={handleSend} contextLabel={dmName ? `DM · ${dmName}` : undefined} />
+        <ComposeBox onSend={handleSend} contextLabel={dmName ? `DM · ${dmName}` : undefined} draftKey={dmId ? draftKeys.container(dmId) : undefined} />
       </div>
     </div>
   )
