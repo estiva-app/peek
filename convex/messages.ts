@@ -657,13 +657,27 @@ export const editBody = mutation({
  * Blobs dropped from the list are deleted here, for the same reason `remove`
  * deletes them: nothing will ever own them again. Storage ids that survive
  * the edit are left alone.
+ *
+ * ## Author only, and stricter than `editBody` on purpose
+ *
+ * `editBody` lets a non-author through with `patched: false`, because the
+ * browser publishes a `kind:40003`, the relay adjudicates, and an accepted
+ * edit arrives back through the sync (CON-8). **Files have no wire form at
+ * all**: `unsignedMessage` builds the event from the body and the addresses
+ * in it, and there is no event for an attachment. So the same branch here
+ * would not defer a decision to the relay, it would drop the edit in silence
+ * and wait for a fold that can never come. Until an attachment is addressable
+ * on the wire, the only honest answer to a non-author is no.
  */
 export const editFiles = mutation({
   args: { key: v.string(), files: v.array(fileAttachment) },
   handler: async (ctx, { key, files }) => {
+    const you = await viewerOrThrow(ctx)
     const kept = new Set(files.map((f) => f.storageId))
+
     const m = await findMessageByKey(ctx, key)
     if (m) {
+      if (m.authorId !== you._id) throw new Error("only the author may change a message's files")
       await deleteAttachmentBlobs(ctx, (m.fileAttachments ?? []).filter((f) => !kept.has(f.storageId)))
       await ctx.db.patch(m._id, { fileAttachments: files })
       return
@@ -676,6 +690,7 @@ export const editFiles = mutation({
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
     if (!r) return
+    if (r.authorId !== you._id) throw new Error("only the author may change a reply's files")
     await deleteAttachmentBlobs(ctx, (r.fileAttachments ?? []).filter((f) => !kept.has(f.storageId)))
     await ctx.db.patch(r._id, { fileAttachments: files })
   },
