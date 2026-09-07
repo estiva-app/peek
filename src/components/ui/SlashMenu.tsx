@@ -30,7 +30,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   ...FORMATS.map((f): SlashItem => ({ kind: 'format', id: f.id, label: f.label, trigger: f.trigger })),
   { kind: 'shortcut', label: 'Mention', trigger: '@', input: '@', description: 'Mention a person' },
   { kind: 'shortcut', label: 'Urgent', trigger: '!@', input: '!@', description: 'Urgent mention' },
-  { kind: 'shortcut', label: 'Link', trigger: '[', input: '[', description: 'Reference a file or topic' },
+  { kind: 'shortcut', label: 'Reference', trigger: '[', input: '[', description: 'Reference a file or topic' },
   // `->`, not `→`: the row shows what you would type, and the resolution
   // block's own input rule is /^->\s$/ — there is no `→` key to press. It
   // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide
