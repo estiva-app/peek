@@ -17,7 +17,7 @@ import { FrameLightbox } from '../FrameLightbox'
 import { cn } from '@/lib/utils'
 import { HIGHLIGHT_META, hasConvex, useUploadActions, type HighlightType, type UploadedFile } from '@/api'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
-import { FILE_ACCEPT_ATTR, validateFile } from '@/lib/fileAttachments'
+import { FILE_ACCEPT_ATTR, validateFile, pastedImages } from '@/lib/fileAttachments'
 import { AttachmentRemoveButton, PendingAttachmentChip } from './PendingAttachmentChip'
 import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
@@ -173,9 +173,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     pendingFilesRef.current.filter((f) => f.status === 'done' && f.uploaded).map((f) => f.uploaded!)
   const isUploading = pendingFiles.some((f) => f.status === 'uploading')
 
-  const handlePickFiles = (files: FileList | null) => {
-    if (!files) return
-    for (const file of Array.from(files)) {
+  const handlePickFiles = (files: File[]) => {
+    for (const file of files) {
       const localId = `u_${++uploadSeq}`
       const err = validateFile(file)
       if (err) {
@@ -193,6 +192,11 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
       )
     }
   }
+
+  /* The paste handler lives in `editorProps`, a closure from the first render
+     — the same reason `sendFnRef` exists. */
+  const pickFilesRef = useRef(handlePickFiles)
+  pickFilesRef.current = handlePickFiles
 
   const removePendingFile = (localId: string) => {
     setPendingFiles((prev) => {
@@ -220,6 +224,24 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
       attributes: {
         class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
         style: 'caret-color: var(--text-primary)',
+      },
+      /**
+       * A screenshot on the clipboard becomes an attachment — PEE-20.
+       *
+       * Uploads need storage, so a paste is inert without a deployment, for
+       * the same reason the paperclip is hidden there: an action only where
+       * it can succeed. `pastedImages` decides what is an image and what is
+       * a copy that merely carries one (text wins), and returning true keeps
+       * the picture out of the document — it belongs in a chip, not in the
+       * text. Anything it declines falls through untouched, which is how a
+       * pasted link stays a link.
+       */
+      handlePaste: (_view, event) => {
+        if (!hasConvex) return false
+        const images = pastedImages(event.clipboardData)
+        if (images.length === 0) return false
+        pickFilesRef.current(images)
+        return true
       },
       handleKeyDown: (view, event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
@@ -560,7 +582,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                   accept={FILE_ACCEPT_ATTR}
                   className="hidden"
                   onChange={(e) => {
-                    handlePickFiles(e.target.files)
+                    handlePickFiles(Array.from(e.target.files ?? []))
                     e.target.value = '' // let the same file be re-picked
                   }}
                 />
