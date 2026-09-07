@@ -171,43 +171,78 @@ export function usePeekActions() {
     })().catch((error) => console.warn('[nostr] resolution publish failed:', error))
   }
 
+  /**
+   * Write the message, then mirror it to the relay.
+   *
+   * **Returns whether CONVEX took it** — CON-10. That is the seam the draft
+   * turns on, and it is deliberately not the relay's answer: a message Peek
+   * stored has been sent, and a failed mirror leaves it visible to every Peek
+   * reader. Keeping the draft there would put the text back in the composer
+   * beside the message it already posted.
+   *
+   * The mutation failing is the case that loses work: nothing was written
+   * anywhere, and without this the typed text was already gone.
+   */
   const persistMessage = (
     parentKind: 'topic' | 'dm' | 'huddle',
     parentKey: string,
     msg: ConversationData,
     files?: UploadedFile[],
-  ) => {
-    if (!hasConvex) return
-    void (async () => {
-      const messageId = await sendRemote({
-        parentKind,
-        parentKey,
-        seedKey: msg.id,
-        body: msg.body,
-        highlightType: msg.highlightType,
-        resolved: msg.isResolved,
-        resolutionMessage: msg.resolutionMessage,
-        attachments: msg.attachments,
-        fileAttachments: toRemoteFiles(files),
-      })
-
-      // Signed and published from here, because this is the only place the
-      // bearer token exists — Convex does not hand it to scheduled work, and
-      // `/sign` will sign as nobody but that token's subject. Convex builds the
-      // unsigned event (it has the rows) and records the id afterwards (a fact,
-      // not a secret); the token never crosses the boundary.
-      const token = tokenForPublish('message')
-      if (!token) return
-      const built = await convex.query(api.nostr.outbox.unsignedMessage, { messageId })
-      if (!built.ok) {
-        // Includes the ordinary cases — already published, a DM, outside the
-        // relay's window — so this is a debug line, not a failure.
-        console.warn('[nostr] message not published:', built.reason)
-        return
+  ): Promise<boolean> => {
+    if (!hasConvex) return Promise.resolve(true)
+    return (async () => {
+      let messageId: Id<'messages'>
+      try {
+        messageId = await sendRemote({
+          parentKind,
+          parentKey,
+          seedKey: msg.id,
+          body: msg.body,
+          highlightType: msg.highlightType,
+          resolved: msg.isResolved,
+          resolutionMessage: msg.resolutionMessage,
+          attachments: msg.attachments,
+          fileAttachments: toRemoteFiles(files),
+        })
+      } catch (error) {
+        // Nothing was written anywhere. This is the only failure that means the
+        // message was not sent, and the only one the composer should hold a
+        // draft for.
+        console.warn('[convex] message not saved:', error)
+        return false
       }
-      const eventId = await signAndPublish(built.unsigned, token)
-      if (eventId) await recordMessagePublished({ messageId, nostrEventId: eventId })
-    })().catch((error) => console.warn('[nostr] message publish failed:', error))
+
+      /*
+        The relay mirror, and its outcome deliberately does NOT reach the
+        caller.
+
+        Signed and published from here, because this is the only place the
+        bearer token exists — Convex does not hand it to scheduled work, and
+        `/sign` will sign as nobody but that token's subject. Convex builds the
+        unsigned event (it has the rows) and records the id afterwards (a fact,
+        not a secret); the token never crosses the boundary.
+
+        Kept fire-and-forget so a throw in here cannot be mistaken for a failed
+        send: the message is already in Convex and already on every Peek
+        reader's screen, so returning false would put the text back in the
+        composer beside the message it just posted.
+      */
+      void (async () => {
+        const token = tokenForPublish('message')
+        if (!token) return
+        const built = await convex.query(api.nostr.outbox.unsignedMessage, { messageId })
+        if (!built.ok) {
+          // Includes the ordinary cases — already published, a DM, outside the
+          // relay's window — so this is a debug line, not a failure.
+          console.warn('[nostr] message not published:', built.reason)
+          return
+        }
+        const eventId = await signAndPublish(built.unsigned, token)
+        if (eventId) await recordMessagePublished({ messageId, nostrEventId: eventId })
+      })().catch((error) => console.warn('[nostr] message publish failed:', error))
+
+      return true
+    })()
   }
 
   /**
@@ -309,27 +344,32 @@ export function usePeekActions() {
 
   return {
     // ── Messages ──
-    sendTopicMessage(topicId: string, payload: SendMessagePayload) {
+    /** Resolves false only when nothing was written anywhere — CON-10. */
+    sendTopicMessage(topicId: string, payload: SendMessagePayload): Promise<boolean> {
       if (payload.text || payload.attachments?.length || payload.files?.length) {
         const newMsg = buildMessage(payload)
         m.setSentMessages((prev) => ({ ...prev, [topicId]: [...(prev[topicId] ?? []), newMsg] }))
-        persistMessage('topic', topicId, newMsg, payload.files)
-      } else if (payload.resolution) {
+        return persistMessage('topic', topicId, newMsg, payload.files)
+      }
+      if (payload.resolution) {
         const message = payload.resolution.message
         m.setSentMessages((prev) => ({ ...prev, [topicId]: resolveLastSent(prev[topicId] ?? [], message) }))
       }
+      return Promise.resolve(true)
     },
 
     /** `dmId` is the partner's person key — the server resolves the pair (§2.4). */
-    sendDmMessage(dmId: string, payload: SendMessagePayload) {
+    sendDmMessage(dmId: string, payload: SendMessagePayload): Promise<boolean> {
       if (payload.text || payload.attachments?.length || payload.files?.length) {
         const newMsg = buildMessage(payload)
         setSentDmMessages((prev) => ({ ...prev, [dmId]: [...(prev[dmId] ?? []), newMsg] }))
-        persistMessage('dm', dmId, newMsg, payload.files)
-      } else if (payload.resolution) {
+        return persistMessage('dm', dmId, newMsg, payload.files)
+      }
+      if (payload.resolution) {
         const message = payload.resolution.message
         setSentDmMessages((prev) => ({ ...prev, [dmId]: resolveLastSent(prev[dmId] ?? [], message) }))
       }
+      return Promise.resolve(true)
     },
 
     /** Top-level message posted inside a huddle (V2 huddle main view). */
@@ -481,9 +521,10 @@ export function usePeekActions() {
     // ── Replies ──
     /** Send a reply; a `→ msg` resolution stamps resolvedByReplyId so the
      *  reply card can surface the resolution inline later. */
-    sendReply(messageId: string, payload: SendMessagePayload) {
+    sendReply(messageId: string, payload: SendMessagePayload): Promise<boolean> {
       const { text, resolution, highlightType, attachments, files } = payload
       let newReplyId: string | undefined
+      let saved: Promise<boolean> = Promise.resolve(true)
       if (text || attachments?.length || files?.length) {
         const now = Date.now()
         newReplyId = `reply_${now}`
@@ -499,29 +540,46 @@ export function usePeekActions() {
         }
         m.setSentReplies((prev) => ({ ...prev, [messageId]: [...(prev[messageId] ?? []), newReply] }))
         if (hasConvex) {
-          void (async () => {
-            const replyId = await sendReplyRemote({
-              messageKey: messageId,
-              seedKey: newReply.id,
-              body: text,
-              highlightType,
-              attachments,
-              fileAttachments: toRemoteFiles(files),
-            })
-
-            // As with messages: only the browser holds the Estiva ID token, so
-            // only the browser can publish for those identities. Custodial
-            // accounts are already handled by the mutation's scheduled job.
-            const token = tokenForPublish('reply')
-            if (!token) return
-            const built = await convex.query(api.nostr.outbox.unsignedReply, { replyId })
-            if (!built.ok) {
-              console.warn('[nostr] reply not published:', built.reason)
-              return
+          saved = (async () => {
+            let replyId: Id<'replies'>
+            try {
+              replyId = await sendReplyRemote({
+                messageKey: messageId,
+                seedKey: newReply.id,
+                body: text,
+                highlightType,
+                attachments,
+                fileAttachments: toRemoteFiles(files),
+              })
+            } catch (error) {
+              // Nothing written. The only failure the composer holds a draft for.
+              console.warn('[convex] reply not saved:', error)
+              return false
             }
-            const eventId = await signAndPublish(built.unsigned, token)
-            if (eventId) await recordReplyPublished({ replyId, nostrEventId: eventId })
-          })().catch((error) => console.warn('[nostr] reply publish failed:', error))
+
+            /*
+              The mirror, fire-and-forget for the same reason as a message's:
+              the reply is already in Convex and on screen, so a relay failure
+              is not an unsent reply and must not put the text back.
+
+              As with messages: only the browser holds the Estiva ID token, so
+              only the browser can publish for those identities. Custodial
+              accounts are already handled by the mutation's scheduled job.
+            */
+            void (async () => {
+              const token = tokenForPublish('reply')
+              if (!token) return
+              const built = await convex.query(api.nostr.outbox.unsignedReply, { replyId })
+              if (!built.ok) {
+                console.warn('[nostr] reply not published:', built.reason)
+                return
+              }
+              const eventId = await signAndPublish(built.unsigned, token)
+              if (eventId) await recordReplyPublished({ replyId, nostrEventId: eventId })
+            })().catch((error) => console.warn('[nostr] reply publish failed:', error))
+
+            return true
+          })()
         }
       }
       if (resolution) {
@@ -548,6 +606,7 @@ export function usePeekActions() {
           )
         }
       }
+      return saved
     },
 
     deleteReply(messageId: string, replyId: string) {
