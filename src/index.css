@@ -141,6 +141,18 @@
 .tiptap :is(ul, ol, blockquote) + p {
   margin-top: 4px !important;
 }
+/* Links — PEE-19. Values mirror the classes MessageBody puts on a link
+   (text-info-default underline underline-offset-2 break-all), so a link
+   reads the same while you type and once sent. Not paired as
+   `[data-message-body] a` like the rules above: the widgets drawn under a
+   message carry links of their own, and an unlayered rule here would win
+   over their classes. */
+.tiptap a {
+  color: var(--info-default);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
 /* Matches the `underline-offset-2` MessageBody puts on underlined spans. */
 .tiptap u {
   text-underline-offset: 2px;
