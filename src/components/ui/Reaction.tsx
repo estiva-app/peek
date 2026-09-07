@@ -1,5 +1,27 @@
-import { cn } from '@/lib/utils'
+import { Reaction as SharedReaction } from '@estiva-app/ui'
 import { WithTooltip } from './WithTooltip'
+
+/**
+ * Peek's reaction: the shared pill, plus the vocabulary and the hover label
+ * that are Peek's.
+ *
+ * **This file used to be the fork `UI-RULES` §1 names by example** — a
+ * hand-rolled `<button>` re-typing Chip's class list with a border added,
+ * written because nothing in the package could be a pill with a count that
+ * toggles. `@estiva-app/ui@0.7.0` added `Reaction`, so the drawing is the
+ * package's now and what stays here is what only Peek knows: which emoji it
+ * offers, what each one means, and how it says who reacted.
+ *
+ * That split is §6's rule working — the app file shrinks rather than
+ * disappearing. It is not a one-line re-export because the call sites speak
+ * Peek's language (`owner`, `names`), and translating those is exactly what a
+ * wrapper is for.
+ *
+ * The `aria-label` is built here for the same reason the package demands one:
+ * the emoji is decorative and the count is the only visible text, so an
+ * unnamed control is announced as a bare number. Peek has the names, so Peek
+ * supplies it.
+ */
 
 /** Canonical meaning of each pickable reaction emoji (picker tooltips +
  *  "reacted with …" pill tooltips). */
@@ -44,19 +66,16 @@ export function Reaction({
 }: ReactionProps) {
   return (
     <WithTooltip label={reactionTooltipLabel(emoji, names)}>
-      <button
+      <SharedReaction
+        emoji={emoji}
+        count={count}
+        /* `owner` is Peek's word for it; `pressed` is the package's, and it is
+           what reaches assistive tech as a toggle rather than as a colour. */
+        pressed={owner === 'yours'}
         onClick={onClick}
-        className={cn(
-          'inline-flex items-center justify-center gap-1.5 rounded-full min-w-[16px] px-2 py-1 border cursor-pointer transition-colors',
-          owner === 'yours'
-            ? 'bg-accent-muted border-accent-primary hover:border-accent-hover'
-            : 'bg-bg-inset border-border-default hover:bg-bg-active hover:border-border-strong',
-          className
-        )}
-      >
-        <span className="text-[16px] leading-none shrink-0">{emoji}</span>
-        <span className="text-chip text-text-primary signal:font-mono signal:text-[10px] signal:font-semibold signal:tabular-nums">{count}</span>
-      </button>
+        className={className}
+        aria-label={`${REACTION_NAMES[emoji] ?? emoji}, ${count}`}
+      />
     </WithTooltip>
   )
 }
