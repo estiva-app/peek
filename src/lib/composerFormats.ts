@@ -129,6 +129,56 @@ export function toggleMark(editor: Editor, id: MarkId): boolean {
 }
 
 /**
+ * Links — PEE-19.
+ *
+ * The selection toolbar's fourth button, and the field it opens. Two ways in
+ * (Katerina, 2026-09-07, after Linear): press Link with words selected and
+ * type the address; or paste an address over selected words, which Tiptap's
+ * Link extension already turns into a link. Select linked words again and the
+ * field opens with their address in it. Cmd/Ctrl+K is out of scope: it is the
+ * launcher everywhere in Peek.
+ *
+ * Removal is the empty field — clear the address and press Enter. There is no
+ * delete button, by her call; the field is the whole control.
+ */
+
+/** The address the selection sits in, or '' — what the field opens with. */
+export function currentLink(editor: Editor): string {
+  const href: unknown = editor.getAttributes('link').href
+  return typeof href === 'string' ? href : ''
+}
+
+/**
+ * What somebody typed into the field → an `href`, or null when it cannot be one.
+ *
+ * A bare host (`google.com`) gets `https://`, as Linear and the typed-URL
+ * rule do. A scheme is kept only when SPEC §13.1 lets a reader follow it
+ * (http, https, mailto); anything else — `javascript:`, `ftp:` — is refused
+ * here rather than sent for a reader to render as text. `localhost:5173` is a
+ * host and a port, not a scheme: a scheme is never followed by a digit.
+ */
+export function normalizeHref(raw: string): string | null {
+  const s = raw.trim()
+  if (!s || /\s/.test(s)) return null
+  if (/^(https?:|mailto:)/i.test(s)) return s
+  if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(s)) return null
+  return `https://${s}`
+}
+
+/**
+ * Apply the field to the selection. Empty removes the link; an address sets
+ * it, over the whole link when the caret sits inside one. `false` means the
+ * text could not be an address, and the field should stay open.
+ */
+export function applyLink(editor: Editor, raw: string): boolean {
+  const chain = editor.chain().focus().extendMarkRange('link')
+  if (!raw.trim()) return chain.unsetLink().run()
+  const href = normalizeHref(raw)
+  if (!href) return false
+  return chain.setLink({ href }).run()
+}
+
+/**
  * Re-exported so the composer keeps one import. The definition moved to
  * `@/lib/shortcuts` (2026-09-05) when the top bar and the launcher needed it
  * too — three surfaces naming a key three ways is how `⌘` ended up hardcoded

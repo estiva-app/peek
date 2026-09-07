@@ -107,3 +107,15 @@ export const Quote: Story = {
       "Replying to Honza's point:\n> I'm missing quotes\n> quotes goes here\nAgreed — and note that 5 > 3 stays literal.",
   },
 }
+
+/**
+ * Links — PEE-19. A bare URL links to itself; `[label](url)` links its own
+ * words; a bold link is bold. The form is SPEC §13.1's, written by Peek's
+ * composer until the protocol package speaks it (PEE-25).
+ */
+export const Links: Story = {
+  args: {
+    body:
+      'Read [the widgets topic](https://peek.estiva.app/topic/widgets) first, then **[the plan](https://example.com/plan)** — the raw form is at https://example.com/raw.',
+  },
+}

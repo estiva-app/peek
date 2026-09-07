@@ -22,6 +22,7 @@
     "@noble/curves": "^1.9.2",
     "@noble/hashes": "^1.8.0",
     "@tabler/icons-react": "^3.41.1",
+    "@tiptap/extension-link": "^3.22.1",
     "@tiptap/extension-mention": "^3.22.1",
     "@tiptap/pm": "^3.22.1",
     "@tiptap/react": "^3.22.1",

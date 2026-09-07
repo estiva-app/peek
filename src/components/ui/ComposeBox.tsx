@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { encodeNpub } from '@estiva-app/protocol'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import { HIGHLIGHT_META, hasConvex, useUploadActions, type HighlightType, type UploadedFile } from '@/api'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { FILE_ACCEPT_ATTR, validateFile, isImageAttachment, formatBytes, fileTypeLabel } from '@/lib/fileAttachments'
-import { wrapInlineMarks } from '@estiva-app/protocol'
+import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
 import { SlashCommands } from '@/extensions/slashCommands'
 
@@ -52,7 +52,7 @@ interface ComposeBoxProps {
   className?: string
 }
 
-function serializeInline(node: { forEach: (cb: (child: { type: { name: string }; attrs: Record<string, string>; text?: string; marks?: ReadonlyArray<{ type: { name: string } }> }) => void) => void }): string {
+function serializeInline(node: { forEach: (cb: (child: { type: { name: string }; attrs: Record<string, string>; text?: string; marks?: ReadonlyArray<{ type: { name: string }; attrs?: Record<string, unknown> }> }) => void) => void }): string {
   let text = ''
   node.forEach((child) => {
     if (child.type.name === 'hardBreak') {
@@ -75,8 +75,9 @@ function serializeInline(node: { forEach: (cb: (child: { type: { name: string };
     } else if (child.type.name === 'highlightTag') {
       // Skip - extracted as metadata, not serialized into text
     } else {
-      const markNames = new Set((child.marks ?? []).map((m) => m.type.name))
-      text += wrapInlineMarks(child.text ?? '', markNames)
+      // Marks, and a link as `[label](url)` — one writer with the edit path
+      // (textParsing), so the two cannot disagree about a link. PEE-19.
+      text += serializeTextChild(child)
     }
   })
   return text
@@ -410,7 +411,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
           !hasUrgent && hasHighlight && 'border-l-[4px] border-border-strong pl-2'
         )}>
           <EditorContent editor={editor} />
-          {/* Bold / italic / underline over a selection. Rendered here rather
+          {/* Bold / italic / underline / link over a selection. Rendered here rather
               than in the menu because those marks need something selected, and
               the `/` menu only opens on an empty composer. */}
           <SelectionToolbar editor={editor} />

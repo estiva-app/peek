@@ -3,7 +3,7 @@ import { decodeNpub, encodeNpub } from '@estiva-app/protocol'
 import { personByPubkey } from '@/api/mentions'
 import { TOPICS } from '@/data/topicData'
 import { APP_FILES, DOCUMENT_FILES } from '@/data/filesData'
-import { parseInlineMarks, wrapInlineMarks } from '@estiva-app/protocol'
+import { parseInlineMarks, stripInlineFormatting, wrapInlineMarks } from '@estiva-app/protocol'
 
 // ── Mention regex ──
 //
@@ -63,7 +63,7 @@ function _buildMentionRe(): RegExp {
     // name-shaped alternatives can match part of it. It is listed here rather
     // than parsed separately because this regex is what decides where a run of
     // plain text ends, and a key is not plain text.
-    `(nostr:npub1[023456789acdefghjklmnpqrstuvwxyz]+|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\])`,
+    `(nostr:npub1[023456789acdefghjklmnpqrstuvwxyz]+|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\](?!\\())`,
     'g'
   )
 }
@@ -85,12 +85,76 @@ export function setMentionNames(names: string[]) {
  *  be mistaken for a mention. */
 const _urlPattern = 'https?:\\/\\/[^\\s]+'
 
+/**
+ * `[label](url)` — SPEC §13.1's link mark, in marker text. PEE-19.
+ *
+ * Written and read here, in Peek, until `@estiva-app/protocol` speaks it
+ * (PEE-25). The syntax is the spec's, not an invention, so this is an early
+ * implementation of a specified construct rather than a private extension;
+ * Ship shows the characters as they are until the package learns them, and
+ * this code goes when it does. Only the schemes §13.1 lets a reader follow
+ * (http, https, mailto — `nostr:` is a reference, not a link, in this app).
+ * A label carries no bracket and no line break; a URL no whitespace and no
+ * `)`.
+ *
+ * A bracket followed by `(` is a link and never a `[Topic]` chip — the chip
+ * regexes above and below carry that lookahead, so a label that happens to
+ * be a topic's title still links.
+ */
+const _linkPattern = '\\[[^\\[\\]\\n]+\\]\\((?:https?:\\/\\/|mailto:)[^\\s)]+\\)'
+/** Splits a run around its links and keeps them — one capture group. */
+const LINK_SPLIT_RE = new RegExp(`(${_linkPattern})`, 'g')
+const LINK_WHOLE_RE = /^\[([^[\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)$/
+
+/** A whole `[label](url)` token → its parts, or null. */
+export function matchLink(part: string): { label: string; href: string } | null {
+  const m = part.match(LINK_WHOLE_RE)
+  return m ? { label: m[1], href: m[2] } : null
+}
+
+/**
+ * Wrap a run of text as a link. Edge whitespace is hoisted outside the
+ * brackets, as `wrapInlineMarks` does for the other markers, so linking
+ * "word " round-trips as `[word](url) `. Nothing to wrap → the text as is.
+ */
+export function wrapLink(text: string, href: string): string {
+  const m = text.match(/^(\s*)([\s\S]*?)(\s*)$/)
+  if (!m) return text
+  const [, lead, core, trail] = m
+  if (!core) return text
+  return `${lead}[${core}](${href})${trail}`
+}
+
+/**
+ * One text child of the editor → marker text. The link goes *inside* the
+ * other markers — `**[label](url)**`, never `[**label**](url)` — because a
+ * reader parses the marks first (the package does) and would cut a label
+ * that carried them in two.
+ */
+export function serializeTextChild(child: TiptapInlineChild): string {
+  const marks = child.marks ?? []
+  const link = marks.find((m) => m.type.name === 'link')
+  const href = typeof link?.attrs?.href === 'string' ? link.attrs.href : undefined
+  const text = child.text ?? ''
+  const markNames = new Set(marks.filter((m) => m.type.name !== 'link').map((m) => m.type.name))
+  return wrapInlineMarks(href ? wrapLink(text, href) : text, markNames)
+}
+
+/**
+ * A body as plain words for a preview line: marks stripped, a link reduced
+ * to its label. The package strips what it knows; the link is Peek's until
+ * PEE-25.
+ */
+export function previewText(body: string): string {
+  return stripInlineFormatting(body).replace(LINK_SPLIT_RE, (token) => matchLink(token)?.label ?? token)
+}
+
 /** Tokenizer for read-only rendering: URLs, mentions and [refs].
  *  Single capture group so String.split() interleaves cleanly.
  *  Rebuilt alongside MENTION_RE when the workspace directory changes. */
 function _buildInlineTokenRe(): RegExp {
   return new RegExp(
-    `(${_urlPattern}|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\])`,
+    `(${_linkPattern}|${_urlPattern}|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\](?!\\())`,
     'g'
   )
 }
@@ -119,9 +183,19 @@ export function matchUrl(part: string): { href: string; trailing: string } | nul
  */
 export function findUrls(body: string): string[] {
   const out: string[] = []
-  for (const part of body.split(/\s+/)) {
+  const add = (href: string) => {
+    if (!out.includes(href)) out.push(href)
+  }
+  // A labelled link's target counts too, so the widget under a message does
+  // not depend on how the link was written. Only http(s): a mailto: target
+  // is nothing a manifest could claim.
+  for (const token of body.match(LINK_SPLIT_RE) ?? []) {
+    const link = matchLink(token)
+    if (link && /^https?:/i.test(link.href)) add(link.href)
+  }
+  for (const part of body.replace(LINK_SPLIT_RE, ' ').split(/\s+/)) {
     const url = matchUrl(part)
-    if (url && !out.includes(url.href)) out.push(url.href)
+    if (url) add(url.href)
   }
   return out
 }
@@ -198,13 +272,21 @@ export function parseInlineContent(line: string): Record<string, unknown>[] {
       }
     } else {
       for (const span of parseInlineMarks(part)) {
-        const marks: Array<{ type: string }> = []
+        const marks: Array<{ type: string; attrs?: Record<string, unknown> }> = []
         if (span.bold) marks.push({ type: 'bold' })
         if (span.italic) marks.push({ type: 'italic' })
         if (span.underline) marks.push({ type: 'underline' })
-        content.push(
-          marks.length ? { type: 'text', text: span.text, marks } : { type: 'text', text: span.text }
-        )
+        // A link inside the span loads back as its label wearing the span's
+        // own marks plus `link` — `**[label](url)**` is bold and linked. A
+        // code span is literal (§13.1) and is not looked at.
+        const pieces = span.code ? [span.text] : span.text.split(LINK_SPLIT_RE)
+        for (const piece of pieces) {
+          if (!piece) continue
+          const link = matchLink(piece)
+          const pieceMarks = link ? [...marks, { type: 'link', attrs: { href: link.href } }] : marks
+          const text = link ? link.label : piece
+          content.push(pieceMarks.length ? { type: 'text', text, marks: pieceMarks } : { type: 'text', text })
+        }
       }
     }
   }
@@ -220,7 +302,7 @@ interface TiptapInlineChild {
   type: { name: string }
   attrs: Record<string, string>
   text?: string
-  marks?: ReadonlyArray<{ type: { name: string } }>
+  marks?: ReadonlyArray<{ type: { name: string }; attrs?: Record<string, unknown> }>
 }
 
 interface TiptapNode {
@@ -250,8 +332,7 @@ export function serializeInline(node: TiptapNode): string {
     } else if (child.type.name === 'fileMention') {
       text += `[${child.attrs.label}] `
     } else {
-      const markNames = new Set((child.marks ?? []).map((m) => m.type.name))
-      text += wrapInlineMarks(child.text ?? '', markNames)
+      text += serializeTextChild(child)
     }
   })
   return text

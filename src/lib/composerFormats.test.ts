@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { peekStarterKit } from '@/extensions/editorKit'
-import { FORMATS, MARKS, applyFormat, toggleMark, shortcutLabel, type FormatId } from './composerFormats'
+import { FORMATS, MARKS, applyFormat, toggleMark, shortcutLabel, currentLink, applyLink, normalizeHref, type FormatId } from './composerFormats'
 
 /**
  * The `/` menu's Format section and the selection toolbar — PEE-18.
@@ -175,5 +175,89 @@ describe('shortcutLabel', () => {
 
   it('upper-cases a single-character key so Ctrl+b never reaches a tooltip', () => {
     expect(shortcutLabel('Mod-b', false)).toBe('Ctrl+B')
+  })
+})
+
+describe('links — the toolbar field (PEE-19)', () => {
+  it('the schema has the link mark, so there is something to set', () => {
+    expect(editor.schema.marks.link).toBeDefined()
+  })
+
+  describe('normalizeHref — what typing in the field becomes', () => {
+    const cases: Array<[string, string | null]> = [
+      ['https://peek.estiva.app/topic/widgets', 'https://peek.estiva.app/topic/widgets'],
+      ['http://example.com', 'http://example.com'],
+      ['mailto:jan@estiva.app', 'mailto:jan@estiva.app'],
+      ['google.com', 'https://google.com'],
+      ['  www.google.com/a?b=c  ', 'https://www.google.com/a?b=c'],
+      ['localhost:5173/topic', 'https://localhost:5173/topic'],
+      ['javascript:alert(1)', null],
+      ['ftp://files.example.com', null],
+      ['two words', null],
+      ['', null],
+      ['   ', null],
+    ]
+    it.each(cases)('%j → %j', (raw, href) => {
+      expect(normalizeHref(raw)).toBe(href)
+    })
+  })
+
+  describe('applyLink — over "widgets topic" in "read the widgets topic first"', () => {
+    /** The one linked run in the document, or null. */
+    const linkOf = (): { text: string; href: string } | null => {
+      let found: { text: string; href: string } | null = null
+      editor.state.doc.descendants((node) => {
+        const link = node.marks.find((m) => m.type.name === 'link')
+        if (node.isText && link) found = { text: node.text ?? '', href: link.attrs.href as string }
+      })
+      return found
+    }
+
+    beforeEach(() => {
+      editor.commands.setContent('<p>read the widgets topic first</p>')
+      editor.commands.setTextSelection({ from: 10, to: 23 })
+    })
+
+    it('an address links the selected words, completing a bare host', () => {
+      expect(applyLink(editor, 'google.com')).toBe(true)
+      expect(linkOf()).toEqual({ text: 'widgets topic', href: 'https://google.com' })
+      expect(currentLink(editor)).toBe('https://google.com')
+    })
+
+    it('an empty field removes the link', () => {
+      applyLink(editor, 'https://google.com')
+      expect(applyLink(editor, '')).toBe(true)
+      expect(linkOf()).toBeNull()
+      expect(currentLink(editor)).toBe('')
+    })
+
+    it('a scheme a reader may not follow is refused, and nothing changes', () => {
+      expect(applyLink(editor, 'javascript:alert(1)')).toBe(false)
+      expect(linkOf()).toBeNull()
+    })
+
+    it('the caret inside a link re-addresses the whole link', () => {
+      applyLink(editor, 'https://google.com')
+      editor.commands.setTextSelection(15)
+      expect(currentLink(editor)).toBe('https://google.com')
+      expect(applyLink(editor, 'https://example.com')).toBe(true)
+      expect(linkOf()).toEqual({ text: 'widgets topic', href: 'https://example.com' })
+    })
+  })
+})
+
+describe('a link ends where its words end (Katerina, 2026-09-07)', () => {
+  it('typing at the end of a link is plain text, not more link', () => {
+    editor.commands.setContent('<p>read the widgets topic first</p>')
+    editor.commands.setTextSelection({ from: 10, to: 23 })
+    applyLink(editor, 'https://google.com')
+    editor.commands.setTextSelection(23)
+    type(editor, 'X')
+    const linked: string[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.isText && node.marks.some((m) => m.type.name === 'link')) linked.push(node.text ?? '')
+    })
+    expect(linked).toEqual(['widgets topic'])
+    expect(editor.state.doc.textContent).toBe('read the widgets topicX first')
   })
 })
