@@ -54,7 +54,7 @@ Colours and sizes come from the token names in `@estiva-app/ui/tailwind-preset`,
 | `text-sm` `text-xs` `text-lg` `text-base` | `text-body-2` `text-caption` `text-h3` `text-body-1` |
 | `bg-gray-100` `text-white` `bg-emerald-500` | `bg-bg-inset` `text-text-inverse` `bg-success-default` |
 | `border-[rgba(63,222,140,0.3)]`, `#8B5CF6` | a token; if none fits, a token added to the package in every theme |
-| `border-warning-default/40` | `border-warning-default`, or the `-muted` token: opacity modifiers on token colours compile to nothing |
+| `border-warning-default/40` | `border-warning-default`, or a transparent token from the package (D16; the first ones, `border-warning-outline` among them, arrive with the migration): opacity modifiers on token colours compile to nothing, and the package lint rejects them |
 
 **The doubled prefix.** The colour tokens are named `bg-surface`, `text-primary`, `border-default`, so the classes are **`bg-bg-surface`**, **`text-text-primary`**, **`border-border-default`**. The doubled form looks wrong and is correct. `bg-surface` and `text-content` look natural, compile to nothing, and are dropped in silence.
 
