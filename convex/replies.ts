@@ -12,7 +12,7 @@ import { highlightType, fileAttachment } from './schema'
 import { viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
 import { isUrgentBody, screenReply } from './screener'
-import { foldReactionRows, resolveFileAttachments, deleteAttachmentBlobs, userFaces } from './messages'
+import { foldReactionRows, resolveFileAttachments, deleteAttachmentBlobs, userFaces, type RemoveOutcome } from './messages'
 import { ensureTopicMember } from './topics'
 import type { Doc } from './_generated/dataModel'
 
@@ -129,18 +129,38 @@ export const send = mutation({
  * (see `messages.remove` for why the id comes back from the mutation and why
  * only the viewer's own event qualifies).
  */
+/**
+ * Delete a reply — or ask the relay whether you may.
+ *
+ * **The same hole `messages.remove` had**, and PEE-18 named only that one. It
+ * read the viewer to decide what to tombstone and never to decide whether the
+ * delete could happen, so any authenticated caller could remove anybody's reply
+ * from Peek while the relay's copy survived. Fixing one and leaving this would
+ * have read as a complete fix and been half of one.
+ *
+ * Same two paths and the same reasoning as `messages.remove` — see its comment
+ * for why author-only would reproduce SHI-14 inside Peek's backend.
+ */
 export const remove = mutation({
   args: { key: v.string() },
-  handler: async (ctx, { key }): Promise<{ nostrEventIds: string[] }> => {
+  handler: async (ctx, { key }): Promise<RemoveOutcome> => {
     const bySeed = await ctx.db
       .query('replies')
       .withIndex('by_seedKey', (q) => q.eq('seedKey', key))
       .unique()
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
-    if (!r) return { nostrEventIds: [] }
-    const me = await viewerId(ctx)
-    const mine = r.nostrEventId && me && r.authorId === me ? [r.nostrEventId] : []
+    if (!r) return { removed: true, nostrEventIds: [] }
+    const you = await viewerOrThrow(ctx)
+
+    if (r.authorId !== you._id) {
+      if (!r.nostrEventId) {
+        throw new Error('only the author may delete a reply that is not on the relay')
+      }
+      return { removed: false, nostrEventIds: [r.nostrEventId] }
+    }
+
+    const mine = r.nostrEventId ? [r.nostrEventId] : []
     // Its reactions go with it (PEE-12). Only the viewer's own published ones
     // can be tombstoned — the relay refuses a kind:5 for anyone else's event.
     const reactionRows = await ctx.db
@@ -149,11 +169,11 @@ export const remove = mutation({
       .collect()
     for (const reaction of reactionRows) {
       if (reaction.replyId !== r._id) continue
-      if (reaction.nostrEventId && me && reaction.userId === me) mine.push(reaction.nostrEventId)
+      if (reaction.nostrEventId && reaction.userId === you._id) mine.push(reaction.nostrEventId)
       await ctx.db.delete(reaction._id)
     }
     await deleteAttachmentBlobs(ctx, r.fileAttachments)
     await ctx.db.delete(r._id)
-    return { nostrEventIds: mine }
+    return { removed: true, nostrEventIds: mine }
   },
 })
