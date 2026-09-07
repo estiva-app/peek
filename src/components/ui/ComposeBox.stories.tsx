@@ -130,6 +130,7 @@ export const LinkTyped: Story = {
 /**
  * Select words and press Link: the toolbar becomes one field for the address.
  * Enter applies it, and so does clicking away; Escape drops what was typed.
+ * The selected words stay highlighted while the field has the focus.
  */
 export const LinkField: Story = {
   play: async ({ canvasElement }) => {
@@ -138,6 +139,8 @@ export const LinkField: Story = {
     const canvas = within(canvasElement.ownerDocument.body)
     await userEvent.click(await canvas.findByRole('button', { name: 'Link' }))
     await expect(await canvas.findByRole('textbox', { name: 'Link URL' })).toBeInTheDocument()
+    // The words stay highlighted while the field has the focus (Linear's way).
+    await expect(canvasElement.querySelector('.ProseMirror .kept-selection')).toHaveTextContent('read the widgets topic first')
   },
 }
 

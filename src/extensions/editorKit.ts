@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core'
 import { Link } from '@tiptap/extension-link'
 import StarterKit from '@tiptap/starter-kit'
+import { KeptSelection } from './keptSelection'
 
 /**
  * The one editor kit every Peek editor uses (main composer + the
@@ -71,6 +72,9 @@ export const peekStarterKit = Extension.create({
         link: false,
       }),
       PeekLink,
+      // Draws the selection while the toolbar's address field has the focus
+      // (PEE-19). Inert until asked, so every editor can carry it.
+      KeptSelection,
     ]
   },
 })

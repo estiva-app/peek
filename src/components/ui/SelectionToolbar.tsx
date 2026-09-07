@@ -6,6 +6,7 @@ import { IconBold, IconItalic, IconLink, IconUnderline } from '@tabler/icons-rea
 // working — a new file should name where the component actually lives.
 import { cn, IconButton, Menu, TextInput } from '@estiva-app/ui'
 import { MARKS, toggleMark, shortcutLabel, currentLink, applyLink, type MarkId } from '@/lib/composerFormats'
+import { keepSelection, releaseSelection } from '@/extensions/keptSelection'
 
 /**
  * Bold / italic / underline / link over selected text — PEE-18, PEE-19.
@@ -91,9 +92,10 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
   const hide = useCallback(() => {
     clearTimeout(timer.current)
     draft.current = null
+    if (editor) releaseSelection(editor)
     setAnchor(null)
     setMode('marks')
-  }, [])
+  }, [editor])
 
   /**
    * Leaving the field applies it (Enter or a click away). An address links the
@@ -114,6 +116,10 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
   /** Read the selection as it is *now* and place the toolbar, or hide it. */
   const settle = useCallback(() => {
     if (!editor || editor.isDestroyed) return
+    // Keeping the selection drawn is itself a transaction, which schedules
+    // this; by then the field has the focus, and reading `hasFocus()` here
+    // would close it.
+    if (modeRef.current === 'link') return
     const { state, view } = editor
     const { empty, from, to } = state.selection
     if (empty || from === to || !view.hasFocus() || pointerDown.current) {
@@ -128,6 +134,8 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
     const inLink = editor.isActive('link')
     const address = inLink ? currentLink(editor) : ''
     draft.current = inLink ? address : null
+    // The field is about to take the focus; the words stay highlighted.
+    if (inLink) keepSelection(editor)
     setMode(inLink ? 'link' : 'marks')
     setUrl(address)
     setAnchor({ top: start.top, centre })
@@ -211,6 +219,7 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
   const openField = () => {
     const address = currentLink(editor)
     draft.current = address
+    keepSelection(editor)
     setUrl(address)
     setMode('link')
   }
