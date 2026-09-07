@@ -72,3 +72,83 @@ export function validateFile(file: File): string | null {
 
 /** `accept` attribute for the <input type=file> (dot-prefixed extensions). */
 export const FILE_ACCEPT_ATTR = ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(',')
+
+/* ── Pasting an image (PEE-20) ─────────────────────────────────────────────
+   A screenshot on the clipboard is a file with no name of its own, so the
+   name has to be made here before `validateFile` — which judges by
+   EXTENSION — can say anything about it. */
+
+/** MIME → extension for the images the allowlist already accepts. */
+const PASTED_IMAGE_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+  'image/svg+xml': 'svg',
+}
+
+/** Names the browser invents for a clipboard image. Ours are better. */
+const GENERIC_IMAGE_STEMS = new Set(['image', 'blob', 'unknown', 'untitled', 'screenshot'])
+
+/**
+ * An unlisted type falls back to its MIME subtype rather than to `png`, so an
+ * image we do not accept refuses itself through the ordinary message instead
+ * of arriving disguised as something we do.
+ */
+function extensionForImageType(contentType: string): string {
+  const type = contentType.toLowerCase()
+  return PASTED_IMAGE_EXTENSIONS[type] ?? type.split('/')[1]?.split('+')[0] ?? 'png'
+}
+
+/** `'Screenshot 2026-09-07 14-32-05.png'` — sortable, and legible in a chip. */
+export function pastedImageName(contentType: string, at: Date = new Date(), index = 0): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp =
+    `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ` +
+    `${pad(at.getHours())}-${pad(at.getMinutes())}-${pad(at.getSeconds())}`
+  const nth = index > 0 ? ` (${index + 1})` : ''
+  return `Screenshot ${stamp}${nth}.${extensionForImageType(contentType)}`
+}
+
+/** A real filename is kept; `image.png`, `blob` and '' are not names. */
+function hasUsableName(name: string): boolean {
+  const ext = fileExtension(name)
+  if (!ext) return false
+  const stem = name.slice(0, name.length - ext.length - 1).toLowerCase()
+  return stem !== '' && !GENERIC_IMAGE_STEMS.has(stem)
+}
+
+/** As much of a `DataTransfer` as the paste path reads. */
+export interface ClipboardSource {
+  files?: ArrayLike<File> | null
+  getData(format: string): string
+}
+
+/**
+ * The images on the clipboard, named — `[]` when there is nothing to attach.
+ *
+ * **Text wins.** Copying a range from Excel, or anything from Word, puts a
+ * rendered picture of it on the clipboard *beside* the text; attaching that
+ * picture instead of pasting the text is the wrong answer every time. So
+ * anything carrying text is left to the editor. A screenshot carries none and
+ * lands here.
+ *
+ * Images only, per the ticket. A pasted PDF is not attached — the paperclip
+ * takes those.
+ */
+export function pastedImages(source: ClipboardSource | null | undefined, at: Date = new Date()): File[] {
+  if (!source) return []
+  if (source.getData('text/plain').trim() !== '') return []
+  const images = Array.from(source.files ?? []).filter((f) => f.type.toLowerCase().startsWith('image/'))
+  let generated = 0
+  return images.map((file) =>
+    hasUsableName(file.name)
+      ? file
+      : new File([file], pastedImageName(file.type, at, generated++), {
+          type: file.type,
+          lastModified: file.lastModified,
+        }),
+  )
+}
