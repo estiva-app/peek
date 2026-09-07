@@ -179,7 +179,14 @@ interface ThreadPanelProps {
   /** When set, renders a header button that jumps to the matching DM thread. Used from the huddle side only. */
   onOpenInDm?: () => void
   onClose: () => void
-  onSendReply: (payload: SendPayload) => void
+  /**
+   * Send the reply. Resolve `false` when nothing was written — CON-10.
+   *
+   * Typed rather than left as `void`: a promise still flows at runtime through
+   * a `void` signature, so `ComposeBox` would keep working and the type would
+   * be quietly lying about the one thing this contract is for.
+   */
+  onSendReply: (payload: SendPayload) => void | boolean | Promise<void | boolean>
   onDeleteReply?: (id: string) => void
   onInitialBodyChange?: (newBody: string) => void
   onReplyBodyChange?: (replyId: string, body: string) => void

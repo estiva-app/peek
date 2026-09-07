@@ -110,7 +110,8 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   const handleSendReply = ({ text, resolution, attachments, files }: SendPayload) => {
     if (!threadConvId) return
     // DM replies never carry a highlight (matches pre-seam behavior).
-    actions.sendReply(threadConvId, { text, resolution, attachments, files })
+    // Returned so `ComposeBox` can put the text back if nothing was written.
+    return actions.sendReply(threadConvId, { text, resolution, attachments, files })
   }
 
   const handleDeleteReply = (replyId: string) => {
@@ -123,7 +124,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
     // DM messages never carry a highlight (matches pre-seam behavior).
     // dmId is the partner's person key — the server resolves the pair and
     // creates the conversation on the first message (§2.4).
-    actions.sendDmMessage(dmId, { text, resolution, attachments, files })
+    return actions.sendDmMessage(dmId, { text, resolution, attachments, files })
   }
 
   const handleDelete = (id: string) => {

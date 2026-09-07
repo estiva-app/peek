@@ -8,7 +8,7 @@
  * make older drafts unloadable.
  */
 import { beforeAll, describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
@@ -117,5 +117,75 @@ describe('ComposeBox drafts', () => {
     const { container } = show({ drafts: createDraftStore(storage) })
     await waitFor(() => expect(container.querySelector('.ProseMirror')).not.toBeNull())
     expect(storage.length).toBe(0)
+  })
+})
+
+/**
+ * A refused send does not lose what was typed — CON-10's last clause.
+ *
+ * This was the one part of the ticket Peek did not honour: `onSend` returned
+ * nothing and the editor emptied on Enter regardless, so a send that never
+ * reached Convex took the text with it. Ship kept its draft because `act`
+ * reports the outcome; Peek had no outcome to report.
+ *
+ * Peek clears and restores rather than waiting, because the message appears in
+ * the list optimistically the instant Enter is pressed — holding the text in the
+ * composer as well would show it twice.
+ */
+describe('ComposeBox — a send that did not land', () => {
+  const press = async (container: HTMLElement) => {
+    const editor = await waitFor(() => {
+      const el = container.querySelector('.ProseMirror')
+      if (!el) throw new Error('no editor')
+      return el
+    })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+  }
+
+  it('puts the text back in the draft store when onSend resolves false', async () => {
+    const storage = memoryStorage()
+    const drafts = createDraftStore(storage)
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'the message that did not send')
+    const { container } = show({ draftKey: key, drafts, onSend: async () => false })
+    await screen.findByText('the message that did not send')
+
+    await press(container)
+    await waitFor(() => expect(drafts.read(key)).toBe('the message that did not send'))
+  })
+
+  it('  …and back into the editor, since it was left empty', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'the message that did not send')
+    const { container } = show({ draftKey: key, drafts, onSend: async () => false })
+    await screen.findByText('the message that did not send')
+
+    await press(container)
+    expect(await screen.findByText('the message that did not send')).toBeTruthy()
+  })
+
+  /* The ordinary path, and the one a caller that knows nothing about this
+     contract still gets: `void` means sent. */
+  it('forgets the draft when onSend says nothing at all', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'this one goes')
+    const { container } = show({ draftKey: key, drafts, onSend: () => {} })
+    await screen.findByText('this one goes')
+
+    await press(container)
+    await waitFor(() => expect(drafts.read(key)).toBeUndefined())
+  })
+
+  it('forgets it on an explicit true, too', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'this one goes')
+    const { container } = show({ draftKey: key, drafts, onSend: async () => true })
+    await screen.findByText('this one goes')
+
+    await press(container)
+    await waitFor(() => expect(drafts.read(key)).toBeUndefined())
   })
 })

@@ -47,7 +47,18 @@ interface PendingUpload {
 let uploadSeq = 0
 
 interface ComposeBoxProps {
-  onSend?: (payload: SendPayload) => void
+  /**
+   * Send it. **Resolve `false` when nothing was written anywhere** — CON-10.
+   *
+   * `void` and `true` both mean sent, so a caller that does not know keeps the
+   * old behaviour. Only an explicit `false` puts the text back.
+   *
+   * The outcome that matters is whether the message was *stored*, not whether
+   * it reached the relay: a message Peek holds is on every Peek reader's screen,
+   * and returning `false` for a failed relay mirror would re-offer text that has
+   * already been posted.
+   */
+  onSend?: (payload: SendPayload) => void | boolean | Promise<void | boolean>
   /**
    * Where an unsent message belongs — CON-10. Built with `draftKeys`.
    *
@@ -255,29 +266,47 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           // Hold Enter until in-flight uploads settle, so files aren't dropped.
           if (pendingFilesRef.current.some((f) => f.status === 'uploading')) return true
           if (text || resolution.hasResolution || attachments.length > 0 || files.length > 0) {
-            sendFnRef.current?.({
+            const sent = sendFnRef.current?.({
               text,
               resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
               highlightType: hl,
               attachments: attachments.length > 0 ? [...attachments] : undefined,
               files: files.length > 0 ? files : undefined,
             })
-            ed.commands.clearContent(true)
             /*
-              Cleared with the composer, and that is weaker than Ship's rule.
+              Cleared now, put back if it did not land — CON-10.
 
-              Ship keeps a draft when the relay refuses, because `act` reports
-              the outcome. Peek's `onSend` returns nothing and the editor is
-              emptied on Enter regardless — so a failed send already loses the
-              text here, with or without drafts. Holding the draft back would
-              mean re-offering a message that may well have been delivered,
-              which is the worse of the two. Making `onSend` report its outcome
-              is the fix, and it is a change to the send contract across five
-              call sites rather than part of this.
+              Ship waits for the write and clears only on success. Peek cannot:
+              the message appears in the list optimistically the instant Enter
+              is pressed, so holding the text in the composer would show it
+              twice. Clearing and restoring keeps the optimistic feel and still
+              honours the rule that a refused send does not lose what was typed.
+
+              This used to clear unconditionally, and said so: "a failed send
+              already loses the text here, with or without drafts. Making
+              `onSend` report its outcome is the fix." That is this.
             */
-            if (draftKeyRef.current) draftsRef.current.clear(draftKeyRef.current)
+            ed.commands.clearContent(true)
+            const key = draftKeyRef.current
+            if (key) draftsRef.current.clear(key)
             setAttachedFrameIds([])
             setPendingFiles([])
+            void Promise.resolve(sent).then((ok) => {
+              if (ok !== false) return
+              // The draft store first, always: it survives the tab, and it is
+              // the half that cannot be undone by what the person does next.
+              if (key) draftsRef.current.write(key, text)
+              /*
+                The editor only if it is still empty. Somebody who started
+                typing again in the round trip would otherwise have their new
+                sentence replaced by the old one — worse than the loss this is
+                fixing, and the draft above already holds it either way.
+              */
+              const current = editorRef.current
+              if (current && !serializeToText(current).trim()) {
+                current.commands.setContent(textToTiptapContent(text))
+              }
+            })
           }
           return true
         }

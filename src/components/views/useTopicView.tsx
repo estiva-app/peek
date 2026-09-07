@@ -477,7 +477,9 @@ export function useTopicView({
 
   const handleSendReply = (payload: SendPayload) => {
     if (!threadConvId) return
-    actions.sendReply(threadConvId, payload)
+    // Returned, not fired and forgotten: `ComposeBox` puts the text back on
+    // `false`, and swallowing it here would silently restore the old behaviour.
+    return actions.sendReply(threadConvId, payload)
   }
 
   const handleDeleteReply = (replyId: string) => {
@@ -487,7 +489,7 @@ export function useTopicView({
 
   const handleSend = (payload: SendPayload) => {
     if (topicId == null) return
-    actions.sendTopicMessage(topicId, payload)
+    return actions.sendTopicMessage(topicId, payload)
   }
 
   const handleDelete = (id: string) => {
