@@ -13,7 +13,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
 import { useFolderProject } from '@/api/useFolderProject'
-import { CURRENT_USER_NAME, hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useHuddleLookup, useOpenWorkTopicIds, usePeekActions } from '@/api'
+import { hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useOpenWorkTopicIds, usePeekActions } from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -40,13 +40,11 @@ export function TopicsPage() {
   const { showToast } = useToast()
   const [yourExpanded, setYourExpanded] = useState(true)
   const [otherExpanded, setOtherExpanded] = useState(true)
-  const huddleLookup = useHuddleLookup()
   /** The Folder panel is dismissible, not part of the layout (PEEK-24). Open to
    *  begin with, since a topic paired with a project is the case it exists for;
    *  the header button closes it and the choice holds while you browse. */
   const [folderPanelOpen, setFolderPanelOpen] = useState(true)
   const showUnreads = debug.unreads.topics
-  const huddleVariant = debug.huddles.variant
   const [createOpen, setCreateOpen] = useState(false)
 
   const handleCreateTopic = (data: StartTopicResult) => {
@@ -141,10 +139,6 @@ export function TopicsPage() {
     navigate(pathForTopic(id))
   }
 
-  const handleSelectHuddle = (topicId: string, huddleId: string) => {
-    navigate(pathForTopic(topicId, { huddleId }))
-  }
-
   /** Which topic's details are open, if any. */
   const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
 
@@ -170,10 +164,6 @@ export function TopicsPage() {
     }
   }
 
-  /** Huddles you're a member of, for a given topic. Used to render the V2 sidebar tree. */
-  const huddlesForSidebar = (topicId: string) =>
-    huddleLookup(topicId).filter((h) => h.members.includes(CURRENT_USER_NAME))
-
   // Always alphabetical by title; unread-first overlay when the toggle is on.
   const alphaSorted = [...(TOPICS ?? [])].sort((a, b) =>
     a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
@@ -186,7 +176,6 @@ export function TopicsPage() {
     folderProject: folderProject.state,
     topicId: selectedTopic?.id ?? null,
     topicTitle: selectedTopic?.title,
-    selectedHuddleId,
     showUnreads,
     onToggleFolderPanel: hasConvex ? () => setFolderPanelOpen((v) => !v) : undefined,
     folderPanelOpen,
@@ -319,7 +308,6 @@ export function TopicsPage() {
   }
 
   function renderTopicRow(topic: NonNullable<typeof TOPICS>[number]): ReactNode {
-              const topicHuddles = huddleVariant === 2 ? huddlesForSidebar(topic.id) : []
               const topicSelected = selectedId === topic.id && !selectedHuddleId
               return (
                 <div key={topic.id} className="flex flex-col gap-0.5">
@@ -343,77 +331,6 @@ export function TopicsPage() {
                       }
                     }}
                   />
-                  {topicHuddles.length > 0 && (() => {
-                    // Linear-style branch tree, drawn as a single SVG path:
-                    //   - one vertical line from the top of the first child down to just
-                    //     above the last child's center
-                    //   - a quadratic curve forming the rounded ⌐ corner at the last child
-                    //   - a horizontal segment from the curve to the row content
-                    //   - per non-last child, a horizontal stub at its center (the vertical
-                    //     already runs through this y, so they connect with no overlap)
-                    //
-                    // Drawing it all as one path guarantees: continuous (no pixel gaps at
-                    // segment joins), uniform stroke (no double-paint brightness), exact
-                    // rounded corner. PersonRow is h-[32px]; radius matches rounded-md.
-                    const ROW_H = 32
-                    const RADIUS = 6
-                    const STUB_X = 12
-                    const lastCenter = (topicHuddles.length - 1) * ROW_H + ROW_H / 2
-                    // Each non-last row's branch is a rounded ⌐ curve (same radius as the
-                    // bottom └), starting from the vertical at y-RADIUS and curving out to
-                    // the horizontal stub. The main vertical line continues straight through
-                    // y-RADIUS and y, so visually the branch tangents off the vertical.
-                    const stubs = topicHuddles
-                      .slice(0, -1)
-                      .map((_, i) => {
-                        const y = i * ROW_H + ROW_H / 2
-                        return `M 0.5 ${y - RADIUS} Q 0.5 ${y}, ${RADIUS + 0.5} ${y} L ${STUB_X} ${y}`
-                      })
-                      .join(' ')
-                    const d = [
-                      `M 0.5 0`,
-                      `L 0.5 ${lastCenter - RADIUS}`,
-                      `Q 0.5 ${lastCenter}, ${RADIUS + 0.5} ${lastCenter}`,
-                      `L ${STUB_X} ${lastCenter}`,
-                      stubs,
-                    ]
-                      .filter(Boolean)
-                      .join(' ')
-
-                    return (
-                      <div className="ml-4 flex flex-col relative">
-                        <svg
-                          className="pointer-events-none absolute left-0 top-0"
-                          width={STUB_X}
-                          height={topicHuddles.length * ROW_H}
-                          viewBox={`0 0 ${STUB_X} ${topicHuddles.length * ROW_H}`}
-                        >
-                          <path
-                            d={d}
-                            style={{ stroke: 'var(--border-strong)' }}
-                            strokeWidth="1"
-                            strokeLinecap="round"
-                            fill="none"
-                          />
-                        </svg>
-                        {topicHuddles.map((h) => {
-                          // Show comma-joined member names, excluding "You" (matches group-DM convention)
-                          const others = h.members.filter((n) => n !== CURRENT_USER_NAME)
-                          const label = others.length > 0 ? others.join(', ') : h.members.join(', ')
-                          return (
-                            <div key={h.id} className="relative pl-3">
-                              <PersonRow
-                                name={label}
-                                type="huddle"
-                                isSelected={selectedId === topic.id && selectedHuddleId === h.id}
-                                onClick={() => handleSelectHuddle(topic.id, h.id)}
-                              />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })()}
                 </div>
               )
   }

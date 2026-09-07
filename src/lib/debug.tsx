@@ -15,12 +15,6 @@ interface UnreadsDebug {
   people: boolean
 }
 
-export type HuddleVariant = 1 | 2 | 3
-
-interface HuddlesDebug {
-  variant: HuddleVariant
-}
-
 /** CRO-7 step 1: compute merged NIP-RS read state alongside Convex, render the
  *  existing one, and record where they disagree. */
 interface ReadStateDebug {
@@ -32,7 +26,6 @@ interface ReadStateDebug {
 export interface DebugState {
   desk: DeskDebug
   unreads: UnreadsDebug
-  huddles: HuddlesDebug
   readState: ReadStateDebug
 }
 
@@ -51,9 +44,6 @@ const DEFAULT_DEBUG: DebugState = {
     topics: true,
     people: true,
   },
-  huddles: {
-    variant: 3,
-  },
   readState: {
     dualRun: true,
   },
@@ -63,7 +53,6 @@ interface DebugContextValue {
   state: DebugState
   setDesk: <K extends keyof DeskDebug>(key: K, value: DeskDebug[K]) => void
   setUnreads: <K extends keyof UnreadsDebug>(key: K, value: UnreadsDebug[K]) => void
-  setHuddles: <K extends keyof HuddlesDebug>(key: K, value: HuddlesDebug[K]) => void
   setReadState: <K extends keyof ReadStateDebug>(key: K, value: ReadStateDebug[K]) => void
   /**
    * The most recent dual-run comparison, or null before the first fetch.
@@ -90,17 +79,13 @@ export function DebugProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, unreads: { ...prev.unreads, [key]: value } }))
   }
 
-  const setHuddles = <K extends keyof HuddlesDebug>(key: K, value: HuddlesDebug[K]) => {
-    setState((prev) => ({ ...prev, huddles: { ...prev.huddles, [key]: value } }))
-  }
-
   const setReadState = <K extends keyof ReadStateDebug>(key: K, value: ReadStateDebug[K]) => {
     setState((prev) => ({ ...prev, readState: { ...prev.readState, [key]: value } }))
   }
 
   return (
     <DebugContext.Provider
-      value={{ state, setDesk, setUnreads, setHuddles, setReadState, readStateDiff, setReadStateDiff }}
+      value={{ state, setDesk, setUnreads, setReadState, readStateDiff, setReadStateDiff }}
     >
       {children}
     </DebugContext.Provider>
