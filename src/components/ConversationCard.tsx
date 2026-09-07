@@ -694,7 +694,7 @@ export function ConversationCard({
           {/* Replies */}
           {!isEditing && replyCount != null && replyCount > 0 && (
             <div className="flex items-center gap-2 pl-8 pr-2 pb-1.5 w-full">
-              <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-[color:var(--accent-wash-2)] signal:hover:bg-[color:var(--accent-wash)] signal:transition-colors">
+              <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-accent-outline signal:hover:bg-accent-wash signal:transition-colors">
                 {replyAuthors && replyAuthors.length > 0 && (
                   /* The shared stack at 18px (2026-09-03). This row hand-rolled
                      its own for want of a size prop, and drifted while it did:
@@ -751,7 +751,7 @@ export function ConversationCard({
             signal:ml-10 = card px-2 (8) + reply-row pl-8 (32): the banner's box
             edge lines up with the reply pill's hover background above it. */}
         {!isTopic && resolved && !isEditing && (
-          <div className="flex items-center gap-2 pl-10 pr-3 pb-2 signal:ml-10 signal:mr-3 signal:mb-2 signal:pl-3 signal:pr-3 signal:py-2.5 signal:rounded-[10px] signal:border signal:border-[rgba(63,222,140,0.22)] signal:bg-[color:var(--success-wash)]">
+          <div className="flex items-center gap-2 pl-10 pr-3 pb-2 signal:ml-10 signal:mr-3 signal:mb-2 signal:pl-3 signal:pr-3 signal:py-2.5 signal:rounded-[10px] signal:border signal:border-success-outline signal:bg-success-wash">
             <IconChecks size={16} stroke={1.5} className="text-success-default shrink-0 signal:drop-shadow-[0_0_5px_rgba(63,222,140,0.6)]" />
             <span className="text-[12px] leading-[1.1] font-medium text-success-default whitespace-nowrap">
               {resolvedBy || 'Someone'} resolved

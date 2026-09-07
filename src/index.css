@@ -234,19 +234,20 @@
 
   --logo: #ffffff;
 
-  /* translucent washes (vs the opaque *-muted) */
-  --accent-wash:   rgba(86, 200, 255, 0.11);
-  --accent-wash-2: rgba(86, 200, 255, 0.22);
-  --warning-wash:  rgba(255, 176, 32, 0.12);
-  --success-wash:  rgba(63, 222, 140, 0.11);
+  /* The washes, the glows and --text-interactive used to be redefined here.
+     They belong to @estiva-app/ui now — D17 for the glows, her wash ruling of
+     2026-09-07 for the rest. A token an app also spells is a token that can
+     drift, and these had: Peek's stronger glows were quietly overriding the
+     package's in every shared component that reads them.
 
-  /* interactive text on dark (links, mentions, reply rows) */
-  --text-interactive: #8ad6ff;
+     Two do not come back as themselves. --accent-wash-2 becomes the package's
+     accent-outline, a border at 30% where Peek drew 22% (her ruling); and
+     --warning-wash is deleted, read by nothing but a swatch in Peek's own
+     SignalTheme story. --text-interactive was Peek's copy of the package's
+     value, character for character.
 
-  /* semantic glow shadows */
-  --glow-accent:  0 0 14px -3px rgba(86, 200, 255, 0.6);
-  --glow-warning: 0 0 8px rgba(255, 176, 32, 0.8);
-  --glow-success: 0 0 6px rgba(63, 222, 140, 0.8);
+     What the package has no name for stays: the private register and the
+     summary highlight above, the wordmark, and the mono face below. */
 
   /* mono for metadata (timestamps, kbd, hints) — additive, sans stays default */
   --font-mono: 'Geist Mono', ui-monospace, 'Cascadia Mono', monospace;
@@ -340,6 +341,12 @@ body {
 
 #root {
   min-height: 100vh;
+  /* Base UI's one layout requirement (ADOPTION B2): its popups measure and
+     position against the nearest stacking context, so the app's root has to be
+     one. Safe here, and checked rather than asserted: all six of Peek's own
+     createPortal calls target document.body, so everything that must float
+     above the app already lives outside #root. */
+  isolation: isolate;
 }
 
 /* A cited message, just after a citation was clicked (INT-3).

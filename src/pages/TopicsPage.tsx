@@ -230,7 +230,7 @@ export function TopicsPage() {
     {deleteNotice && (
       <div
         role="status"
-        className="fixed top-3 left-1/2 -translate-x-1/2 z-50 max-w-[640px] rounded-md border border-warning-default/40 bg-surface-raised px-3 py-2 text-[12px] leading-[1.4] text-warning-default flex items-start gap-3"
+        className="fixed top-3 left-1/2 -translate-x-1/2 z-50 max-w-[640px] rounded-md border border-warning-outline bg-bg-elevated px-3 py-2 text-[12px] leading-[1.4] text-warning-default flex items-start gap-3"
       >
         <span>{deleteNotice}</span>
         <button type="button" className="shrink-0 underline" onClick={() => setDeleteNotice(null)}>

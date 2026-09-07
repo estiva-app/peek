@@ -113,7 +113,7 @@ export const Specimens: Story = {
           font-size: 12px; font-weight: 600; color: var(--text-interactive); cursor: pointer;
           transition: border-color .12s, background .12s;
         }
-        .sig-reply-row:hover { border-color: var(--accent-wash-2); background: var(--accent-wash); }
+        .sig-reply-row:hover { border-color: var(--accent-outline); background: var(--accent-wash); }
         .sig-reply-row .last { color: var(--text-muted); font-weight: 400; font-family: ${mono}; font-size: 9.5px; }
         .sig-reply-row .go { color: var(--text-disabled); display: inline-flex; transition: translate .12s, color .12s; }
         .sig-reply-row:hover .go { translate: 2px 0; color: var(--text-interactive); }
@@ -150,9 +150,10 @@ export const Specimens: Story = {
         Tokens &amp; approved specimens
       </h1>
       <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', maxWidth: '60ch', marginBottom: 36 }}>
-        Flip the toolbar between dark and signal to compare any component. New tokens introduced here: accent washes,
-        glow shadows, <code style={{ fontFamily: mono, fontSize: 12 }}>--text-interactive</code> and{' '}
-        <code style={{ fontFamily: mono, fontSize: 12 }}>--font-mono</code> for metadata.
+        Flip the toolbar between dark and signal to compare any component. The washes, the glows and{' '}
+        <code style={{ fontFamily: mono, fontSize: 12 }}>--text-interactive</code> started here and are{' '}
+        <code style={{ fontFamily: mono, fontSize: 12 }}>@estiva-app/ui</code>'s now; of the tokens this page
+        introduced, only <code style={{ fontFamily: mono, fontSize: 12 }}>--font-mono</code> is still Peek's.
       </p>
 
       <Section title="Surfaces">
@@ -170,9 +171,9 @@ export const Specimens: Story = {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <Swatch label="accent-primary" value="#56c8ff · interactive" bg="var(--accent-primary)" />
           <Swatch label="text-interactive" value="#8ad6ff · links" bg="var(--text-interactive)" />
-          <Swatch label="accent-wash / 2" value="cyan @ 11% / 22%" bg="var(--accent-wash-2)" />
+          <Swatch label="accent-wash" value="cyan @ 11% · fill" bg="var(--accent-wash)" />
+          <Swatch label="accent-outline" value="cyan @ 30% · edge" bg="var(--accent-outline)" />
           <Swatch label="warning-default" value="#ffb020 · needs you" bg="var(--warning-default)" />
-          <Swatch label="warning-wash" value="amber @ 12%" bg="var(--warning-wash)" />
           <Swatch label="success-default" value="#3fde8c · resolved" bg="var(--success-default)" />
           <Swatch label="success-wash" value="green @ 11%" bg="var(--success-wash)" />
         </div>
@@ -235,8 +236,8 @@ export const Specimens: Story = {
               letterSpacing: '.1em',
               textTransform: 'uppercase',
               color: 'var(--warning-default)',
-              background: 'var(--warning-wash)',
-              border: '1px solid rgba(255,176,32,.3)',
+              background: 'var(--warning-muted)',
+              border: '1px solid var(--warning-outline)',
               borderRadius: 999,
               padding: '2px 7px',
             }}

@@ -151,7 +151,7 @@ const justCreated: ForeignObject = {
 
 export const AfterCreateInReply: Story = {
   render: () => (
-    <div className="w-[520px] p-4 bg-bg-default">
+    <div className="w-[520px] p-4">
       <ThreadReplyCard
         authorName="Alice Johnson"
         timestamp="2:14 PM"
