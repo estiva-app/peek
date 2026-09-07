@@ -125,13 +125,6 @@ export const listChannels = internalQuery({
   },
 })
 
-export const listLocalPubkeys = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query('users').collect()
-    return rows.filter((u) => u.nostrPubkey && !u.isExternal).map((u) => u.nostrPubkey!)
-  },
-})
 
 /**
  * Resolve a relay pubkey to a Peek user, creating an external placeholder if
@@ -536,6 +529,38 @@ export const importReaction = internalMutation({
       .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', args.nostrEventId))
       .unique()
     if (existing) return { inserted: false }
+
+    /*
+      The same reaction, made HERE, before it was published.
+
+      `toggleReaction` inserts the row and the browser publishes afterwards,
+      patching `nostrEventId` in on acceptance — so between those two moments,
+      and permanently whenever the publish never records, Peek holds a row for
+      this reaction with no event id. Inserting again would show the person
+      reacting to their own message twice.
+
+      This is what the old `!isLocal.has(pubkey)` filter in `syncReactions` was
+      really guarding, and it guarded it far too widely: it skipped every
+      reaction by anybody with a Peek account, so a reaction made in Ship could
+      never come back. Reconciling on the row instead is narrow and does the
+      job the filter was standing in for.
+    */
+    const unpublished = (
+      await ctx.db
+        .query('reactions')
+        .withIndex('by_message_user', (q) => q.eq('messageId', args.messageId).eq('userId', args.userId))
+        .collect()
+    ).find(
+      (r) =>
+        r.emoji === args.emoji &&
+        (r.replyId ?? null) === (args.replyId ?? null) &&
+        !r.nostrEventId,
+    )
+    if (unpublished) {
+      await ctx.db.patch(unpublished._id, { nostrEventId: args.nostrEventId })
+      return { inserted: false, adopted: true }
+    }
+
     await ctx.db.insert('reactions', args)
     return { inserted: true }
   },

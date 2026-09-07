@@ -87,15 +87,28 @@ export function replyTargetOf(e: SignedEvent): string | null {
  * Two queries because kind:7 and kind:5 are addressed differently from kind:9:
  * neither carries an `h` tag, so both are filtered by the events they target.
  */
-async function syncReactions(
+export async function syncReactions(
   ctx: { runQuery: any; runMutation: any },
   reactions: SignedEvent[],
   deletions: SignedEvent[],
-  isLocal: Set<string>,
   known: string[],
   deletable: string[],
 ): Promise<void> {
-  for (const e of reactions.filter((r) => !isLocal.has(r.pubkey))) {
+  /*
+    Every reaction, including ones by people who have a Peek account.
+
+    This used to be `reactions.filter((r) => !isLocal.has(r.pubkey))`, where
+    `isLocal` was **every** Peek user's pubkey. The intent was "Peek already
+    holds its own users' reactions, do not import them twice", and it is true
+    of a reaction made in Peek. It is false of the same person reacting in
+    Ship — so no reaction made in Ship could ever appear here, for anybody with
+    an account. The relay had the event and Peek refused it, silently.
+
+    Double-importing is handled where it can actually be judged:
+    `importReaction` no-ops on a known event id and adopts a matching row that
+    has not been published yet.
+  */
+  for (const e of reactions) {
     const targetId = e.tags.find((t) => t[0] === 'e')?.[1]
     if (!targetId) continue
     // A kind:7 may target a message or a reply (PEE-12) — same tag, two
@@ -519,9 +532,8 @@ export const importReactions = action({
     const topic = await ctx.runQuery(internal.nostr.data.syncableTopicByKey, { topicKey })
     if (!topic) return { ok: false, reason: 'topic has no channel on the relay yet' }
 
-    const localPubkeys: string[] = await ctx.runQuery(internal.nostr.data.listLocalPubkeys, {})
     try {
-      await syncReactions(ctx, reactions, deletions, new Set(localPubkeys), known, deletable)
+      await syncReactions(ctx, reactions, deletions, known, deletable)
       return { ok: true }
     } catch (e) {
       console.warn(`[nostr] importReactions(${topicKey}) failed:`, e)
