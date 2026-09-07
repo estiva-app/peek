@@ -4,7 +4,10 @@ import { IconBold, IconItalic, IconLink, IconUnderline } from '@tabler/icons-rea
 // Straight from the shared package rather than through Peek's re-export files
 // (`./IconButton`, `@/lib/utils`), which exist only to keep older import paths
 // working — a new file should name where the component actually lives.
-import { cn, IconButton, Menu, TextInput } from '@estiva-app/ui'
+import { Menu } from '@estiva-app/ui'
+import { cn } from '@/lib/utils'
+import { IconButton } from './IconButton'
+import { TextInput } from './TextInput'
 import { MARKS, toggleMark, shortcutLabel, currentLink, applyLink, type MarkId } from '@/lib/composerFormats'
 import { keepSelection, releaseSelection } from '@/extensions/keptSelection'
 

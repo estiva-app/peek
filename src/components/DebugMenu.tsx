@@ -11,7 +11,7 @@ interface DebugMenuProps {
 }
 
 export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
-  const { state, setDesk, setUnreads, setHuddles, setReadState } = useDebug()
+  const { state, setDesk, setUnreads, setReadState } = useDebug()
 
   /*
    * The shared shell owns the exits now, and it arms its outside-mousedown
@@ -41,7 +41,7 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
       position={{ top: rect.bottom + 6, right: window.innerWidth - rect.right }}
       className="w-[300px] gap-1"
     >
-      {/* Desk, Unreads and Huddles drive the MOCK dataset — on the real app they
+      {/* Desk and Unreads drive the MOCK dataset — on the real app they
           toggle nothing, and showing them would suggest otherwise (issue #6). */}
       {!hasConvex && <DebugSection title="Desk">
         <DebugRow
@@ -133,19 +133,6 @@ export function DebugMenu({ anchorEl, onClose }: DebugMenuProps) {
         />
         <ReadStateDiffRow />
       </DebugSection>
-
-      {!hasConvex && <DebugSection title="Huddles">
-        <DebugRow
-          label="Variant"
-          options={[
-            { label: 'Tabs', value: 1 as const },
-            { label: 'Tree', value: 2 as const },
-            { label: 'Inline', value: 3 as const },
-          ]}
-          value={state.huddles.variant}
-          onChange={(v) => setHuddles('variant', v)}
-        />
-      </DebugSection>}
     </Menu>
   )
 }

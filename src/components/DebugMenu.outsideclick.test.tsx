@@ -19,8 +19,8 @@ import { DebugMenu } from './DebugMenu'
 vi.mock('@/api', () => ({ hasConvex: true }))
 vi.mock('@/lib/debug', () => ({
   useDebug: () => ({
-    state: { readState: { dualRun: true }, desk: {}, unreads: {}, huddles: {} },
-    setDesk: vi.fn(), setUnreads: vi.fn(), setHuddles: vi.fn(), setReadState: vi.fn(),
+    state: { readState: { dualRun: true }, desk: {}, unreads: {} },
+    setDesk: vi.fn(), setUnreads: vi.fn(), setReadState: vi.fn(),
     readStateDiff: null,
   }),
 }))

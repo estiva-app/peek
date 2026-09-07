@@ -23,7 +23,7 @@ const meta = {
     (Story) => (
       <MemoryRouter initialEntries={['/desk']}>
         <PeekDataProvider>
-          <div className="h-[560px] bg-bg-default">
+          <div className="h-[560px]">
             <Story />
           </div>
         </PeekDataProvider>

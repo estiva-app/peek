@@ -76,10 +76,15 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
               onClick={() => toggle(t.id)}
             >
               <TopicState type="topic" status={isTopicResolved(t.id) ? 'resolved' : 'unresolved'} />
-              <span className="flex-1 min-w-0 text-[14px] font-normal leading-[1.4] text-text-primary truncate">
+              <span className="flex-1 min-w-0 text-body-2 text-text-primary truncate">
                 {t.title}
               </span>
-              <Checkbox checked={checked} aria-label={`Select ${t.title}`} />
+              {/* No aria-label. Without onChange the Checkbox is a picture of
+                  the row's state — aria-hidden, no role, no tab stop — and the
+                  row is the one control, saying the state itself through
+                  role="option" and aria-selected. The label had been ignored
+                  since the package's stage 1. */}
+              <Checkbox checked={checked} />
             </div>
           )
         })

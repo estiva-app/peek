@@ -276,7 +276,7 @@ export function HuddleCard({
         )}
         {inStream && replyCount > 0 && (
           <div className="flex items-center gap-2 pl-8 pr-2 pb-1.5 w-full">
-            <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-[color:var(--accent-wash-2)] signal:hover:bg-[color:var(--accent-wash)] signal:transition-colors">
+            <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-accent-outline signal:hover:bg-accent-wash signal:transition-colors">
               {replyAuthors && replyAuthors.length > 0 && (
                 <div className="hidden signal:flex items-center shrink-0">
                   {replyAuthors.slice(0, 4).map((a, i) => (

@@ -364,7 +364,7 @@ export function ThreadPanel({
         </div>
         <div className="flex items-center gap-2">
           {isResolved && (
-            <span className="text-caption text-success-default signal:font-mono signal:text-[9.5px] signal:font-semibold signal:uppercase signal:tracking-[0.1em] signal:bg-[color:var(--success-wash)] signal:border signal:border-[rgba(63,222,140,0.3)] signal:rounded-full signal:px-2 signal:py-[3px]">Resolved</span>
+            <span className="text-caption text-success-default signal:font-mono signal:text-[9.5px] signal:font-semibold signal:uppercase signal:tracking-[0.1em] signal:bg-success-wash signal:border signal:border-success-outline signal:rounded-full signal:px-2 signal:py-[3px]">Resolved</span>
           )}
           {(() => {
             // Show member pill for huddle threads OR DM threads. Both display
