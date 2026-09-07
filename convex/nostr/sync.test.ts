@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { referencedAddresses, replyTargetOf } from './sync'
+import { referencedAddresses, replyTargetOf, syncReactions } from './sync'
 
 
 describe('folder UUID learning from imported messages', () => {
@@ -149,5 +149,68 @@ describe('NIP-22 comments in a topic', () => {
 
   it('still reads a plain NIP-27 reference on an ordinary kind:9', () => {
     expect(referencedAddresses(ev([['a', ISSUE]]))).toEqual([ISSUE])
+  })
+})
+
+describe('a reaction made in another app', () => {
+  const TARGET = 'e'.repeat(64)
+  const PEEK_USER = 'a'.repeat(64)
+  const reaction = (pubkey: string) =>
+    ({ id: 'r'.repeat(64), pubkey, kind: 7, created_at: 1_700_000_000, tags: [['e', TARGET]], content: '🎉' }) as never
+
+  /*
+    A ctx that resolves the target and records every importReaction call.
+
+    Calls are told apart by the SHAPE of their arguments, not by the function
+    reference: a Convex reference is an object and stringifying one throws,
+    which is how the first draft of this test failed.
+  */
+  const ctxFor = (imported: unknown[]) => ({
+    // The first lookup is `messageByNostrEventId`; answering it means the
+    // reply lookup is short-circuited by `??`.
+    runQuery: vi.fn(async () => ({ messageId: 'm1' })),
+    runMutation: vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args && 'nostrPubkey' in args) return 'u1' // resolveExternalUser
+      if (args && 'emoji' in args) imported.push(args) // importReaction
+      return {}
+    }),
+  })
+
+  /*
+    The bug this pins. `syncReactions` filtered out every reaction whose author
+    had a Peek account — `isLocal` was *all* local pubkeys, not the viewer's —
+    on the reasoning that Peek already holds its own users' reactions. True of a
+    reaction made in Peek; false of the same person reacting in Ship. So no
+    reaction made in Ship ever reached Peek, for anybody with an account, and
+    the relay had the event the whole time.
+  */
+  it('is imported even when its author has a Peek account', async () => {
+    const imported: unknown[] = []
+    await syncReactions(ctxFor(imported) as never, [reaction(PEEK_USER)], [], [], [])
+    expect(imported).toHaveLength(1)
+    expect(imported[0]).toMatchObject({ emoji: '🎉', nostrEventId: 'r'.repeat(64) })
+  })
+
+  it('still imports a reaction from somebody with no Peek account', async () => {
+    const imported: unknown[] = []
+    await syncReactions(ctxFor(imported) as never, [reaction('f'.repeat(64))], [], [], [])
+    expect(imported).toHaveLength(1)
+  })
+
+  /* A reaction naming no target has nothing to attach to. */
+  it('skips a reaction with no e tag', async () => {
+    const imported: unknown[] = []
+    const noTarget = { ...(reaction(PEEK_USER) as object), tags: [] }
+    await syncReactions(ctxFor(imported) as never, [noTarget as never], [], [], [])
+    expect(imported).toHaveLength(0)
+  })
+
+  /* A target Peek does not hold — a message from a channel it never imported. */
+  it('skips a reaction whose target it cannot find', async () => {
+    const imported: unknown[] = []
+    // Neither lookup finds it — not a message, not a reply.
+    const ctx = { runQuery: vi.fn(async () => null), runMutation: vi.fn(async () => ({})) }
+    await syncReactions(ctx as never, [reaction(PEEK_USER)], [], [], [])
+    expect(imported).toHaveLength(0)
   })
 })
