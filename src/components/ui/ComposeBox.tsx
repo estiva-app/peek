@@ -410,7 +410,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
           !hasUrgent && hasHighlight && 'border-l-[4px] border-border-strong pl-2'
         )}>
           <EditorContent editor={editor} />
-          {/* Bold / italic / underline over a selection. Rendered here rather
+          {/* Bold / italic / underline / link over a selection. Rendered here rather
               than in the menu because those marks need something selected, and
               the `/` menu only opens on an empty composer. */}
           <SelectionToolbar editor={editor} />

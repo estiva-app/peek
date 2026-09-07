@@ -111,5 +111,52 @@ export const SelectionToolbar: Story = {
     await expect(await canvas.findByRole('button', { name: 'Bold' })).toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Italic' })).toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'Underline' })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Link' })).toBeInTheDocument()
   },
 }
+
+/**
+ * A typed address becomes a link once a space follows it — blue and
+ * underlined, the look the sent card gives it (PEE-19). A click on it while
+ * writing places the caret; it opens nothing.
+ */
+export const LinkTyped: Story = {
+  play: async ({ canvasElement }) => {
+    const editor = await typeInComposer(canvasElement, 'read https://peek.estiva.app/topic/widgets first')
+    await expect(editor.querySelector('a[href="https://peek.estiva.app/topic/widgets"]')).toBeInTheDocument()
+  },
+}
+
+/**
+ * Select words and press Link: the toolbar becomes one field for the address.
+ * Enter applies it, and so does clicking away; Escape drops what was typed.
+ */
+export const LinkField: Story = {
+  play: async ({ canvasElement }) => {
+    await typeInComposer(canvasElement, 'read the widgets topic first')
+    await userEvent.keyboard('{Control>}a{/Control}')
+    const canvas = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Link' }))
+    await expect(await canvas.findByRole('textbox', { name: 'Link URL' })).toBeInTheDocument()
+  },
+}
+
+/**
+ * Linked words, selected again: the field opens by itself with their address
+ * in it (Katerina, 2026-09-07, after Linear). Enter with a new address
+ * re-addresses the link; Enter on an empty field removes it. After Enter the
+ * caret sits after the link, and typing on is plain text.
+ */
+export const LinkEditing: Story = {
+  play: async ({ canvasElement }) => {
+    const editor = await typeInComposer(canvasElement, 'read the widgets topic first')
+    await userEvent.keyboard('{Control>}a{/Control}')
+    const canvas = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Link' }))
+    await userEvent.type(await canvas.findByRole('textbox', { name: 'Link URL' }), 'google.com{Enter}')
+    await expect(editor.querySelector('a[href="https://google.com"]')).toBeInTheDocument()
+    await userEvent.keyboard('{Control>}a{/Control}')
+    await expect(await canvas.findByRole('textbox', { name: 'Link URL' })).toHaveValue('https://google.com')
+  },
+}
+
