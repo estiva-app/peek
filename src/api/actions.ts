@@ -64,6 +64,7 @@ export function usePeekActions() {
   // bundle and the backend cannot disagree about it — see convex/nostr/config.ts.
   const relayConfig = useQuery(api.nostr.config.relayConfig)
   const editBodyRemote = useMutation(api.messages.editBody)
+  const editFilesRemote = useMutation(api.messages.editFiles)
   const removeRemote = useMutation(api.messages.remove)
   const sendReplyRemote = useMutation(api.replies.send)
   const removeReplyRemote = useMutation(api.replies.remove)
@@ -434,6 +435,25 @@ export function usePeekActions() {
         }
         await signAndPublish(built.unsigned, token)
       })().catch((error) => console.warn('[nostr] edit publish failed:', error))
+    },
+
+    /**
+     * File-attachment edit — PEE-16. Id-keyed across messages and replies too.
+     *
+     * The whole list, never a delta: it is what the edit box holds, and the
+     * mutation deletes the blobs behind whatever is no longer in it.
+     */
+    editFiles(id: string, files: FileAttachment[]) {
+      m.setFileOverrides((prev) => ({ ...prev, [id]: files }))
+      if (hasConvex)
+        void editFilesRemote({
+          key: id,
+          // A fixture's file has no storage behind it, so there is nothing to
+          // name to the server; only real uploads travel.
+          files: files
+            .filter((f) => f.storageId)
+            .map((f) => ({ storageId: f.storageId as never, name: f.name, contentType: f.contentType, size: f.size })),
+        })
     },
 
     /** Body edit for a huddle's SEED conversation (drives the card preview). */

@@ -641,6 +641,46 @@ export const editBody = mutation({
   },
 })
 
+/**
+ * Replace a message's or reply's uploaded files — PEE-16.
+ *
+ * Editing was body-only until this: `editBody` patched `body` and nothing
+ * could ever touch `fileAttachments` again after the row was created, which
+ * is why the paperclip in the edit box had nowhere to put a file even once it
+ * was wired up.
+ *
+ * The whole list is sent, not a delta, because that is what the edit box
+ * holds — the message's files minus the ones removed plus the ones added. A
+ * delta would need the two sides to agree about order and identity across a
+ * reactive read that can arrive mid-edit.
+ *
+ * Blobs dropped from the list are deleted here, for the same reason `remove`
+ * deletes them: nothing will ever own them again. Storage ids that survive
+ * the edit are left alone.
+ */
+export const editFiles = mutation({
+  args: { key: v.string(), files: v.array(fileAttachment) },
+  handler: async (ctx, { key, files }) => {
+    const kept = new Set(files.map((f) => f.storageId))
+    const m = await findMessageByKey(ctx, key)
+    if (m) {
+      await deleteAttachmentBlobs(ctx, (m.fileAttachments ?? []).filter((f) => !kept.has(f.storageId)))
+      await ctx.db.patch(m._id, { fileAttachments: files })
+      return
+    }
+    // Id-keyed across messages AND replies, exactly like editBody.
+    const bySeed = await ctx.db
+      .query('replies')
+      .withIndex('by_seedKey', (q) => q.eq('seedKey', key))
+      .unique()
+    const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
+    const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
+    if (!r) return
+    await deleteAttachmentBlobs(ctx, (r.fileAttachments ?? []).filter((f) => !kept.has(f.storageId)))
+    await ctx.db.patch(r._id, { fileAttachments: files })
+  },
+})
+
 export const setResolution = mutation({
   args: {
     key: v.string(),
