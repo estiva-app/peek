@@ -184,7 +184,21 @@ interface ThreadPanelProps {
   onInitialBodyChange?: (newBody: string) => void
   onReplyBodyChange?: (replyId: string, body: string) => void
   onReplyHighlightChange?: (replyId: string, type: HighlightType | undefined) => void
-  onReplyReactionsChange?: (replyId: string, reactions: ReactionData[]) => void
+  /**
+   * A reaction on a reply — the emoji and the aggregate it replaces, both.
+   *
+   * This used to be `(replyId, reactions)`, and the two dropped arguments were
+   * the whole of PEE-12's remaining bug: `setReactions` reads a missing `prev`
+   * as "session-local, do not persist", so every reply reaction stopped at the
+   * browser — never written to Convex, never published, gone on reload. The
+   * card has always supplied the emoji; this signature threw it away.
+   */
+  onReplyReactionsChange?: (
+    replyId: string,
+    reactions: ReactionData[],
+    prev: ReactionData[],
+    emoji: string,
+  ) => void
 }
 
 /**
@@ -453,7 +467,7 @@ export function ThreadPanel({
                     onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
                     onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
                     onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
-                    onReactionsChange={onReplyReactionsChange ? (r) => onReplyReactionsChange(reply.id, r) : undefined}
+                    onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
                   />
                 </div>
               )
