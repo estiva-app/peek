@@ -74,3 +74,26 @@ describe('MessageBody renders the code mark', () => {
     expect(screen.getByText('underlined').className).toContain('underline')
   })
 })
+
+describe('MessageBody renders a labelled link (PEE-19)', () => {
+  it('draws [label](url) as a link with the label as its words', () => {
+    const c = show('see [the widgets topic](https://peek.estiva.app/t/1) now')
+    const a = c.querySelector('a')
+    expect(a?.getAttribute('href')).toBe('https://peek.estiva.app/t/1')
+    expect(a?.textContent).toBe('the widgets topic')
+    expect(c.textContent).toBe('see the widgets topic now')
+  })
+
+  it('a bold link is bold and a link', () => {
+    const c = show('**[the topic](https://x/y)** now')
+    const a = c.querySelector('a')
+    expect(a?.textContent).toBe('the topic')
+    expect(a?.closest('.font-semibold')).not.toBeNull()
+  })
+
+  it('a scheme a reader may not follow stays text', () => {
+    const c = show('[x](javascript:alert(1))')
+    expect(c.querySelector('a')).toBeNull()
+    expect(c.textContent).toBe('[x](javascript:alert(1))')
+  })
+})

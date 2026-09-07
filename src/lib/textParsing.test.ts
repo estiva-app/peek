@@ -5,6 +5,11 @@ import {
   matchUrl,
   parseInlineContent,
   serializeInline,
+  serializeTextChild,
+  matchLink,
+  wrapLink,
+  previewText,
+  findUrls,
   textToTiptapContent,
 } from './textParsing'
 // The marker dialect lives in the package now (RIC-4). What is left here is
@@ -309,5 +314,117 @@ describe('quote lines', () => {
 
   it('stripInlineFormatting drops the quote prefix in previews', () => {
     expect(stripInlineFormatting('> quoted **bit**')).toBe('quoted bit')
+  })
+})
+
+// ── Links: [label](url), SPEC §13.1, written and read by Peek until PEE-25 ──
+
+describe('links — [label](url) (PEE-19)', () => {
+  const child = (text: string, marks: Array<{ name: string; href?: string }> = []) => ({
+    type: { name: 'text' },
+    attrs: {},
+    text,
+    marks: marks.map((m) => ({ type: { name: m.name }, attrs: m.href ? { href: m.href } : {} })),
+  })
+
+  describe('matchLink and wrapLink', () => {
+    it('reads a whole token, and refuses a scheme a reader may not follow', () => {
+      expect(matchLink('[the topic](https://peek.estiva.app/t/1)')).toEqual({ label: 'the topic', href: 'https://peek.estiva.app/t/1' })
+      expect(matchLink('[write](mailto:jan@estiva.app)')).toEqual({ label: 'write', href: 'mailto:jan@estiva.app' })
+      expect(matchLink('[x](javascript:alert(1))')).toBeNull()
+      expect(matchLink('[x](ftp://files)')).toBeNull()
+      expect(matchLink('[Topic]')).toBeNull()
+      expect(matchLink('plain')).toBeNull()
+    })
+
+    it('hoists edge whitespace outside the brackets', () => {
+      expect(wrapLink('word ', 'https://x')).toBe('[word](https://x) ')
+      expect(wrapLink(' two words ', 'https://x')).toBe(' [two words](https://x) ')
+      expect(wrapLink('   ', 'https://x')).toBe('   ')
+    })
+  })
+
+  describe('serializeTextChild — what the composer writes', () => {
+    it('a linked run becomes [label](url)', () => {
+      expect(serializeTextChild(child('widgets topic', [{ name: 'link', href: 'https://google.com' }]))).toBe('[widgets topic](https://google.com)')
+    })
+
+    it('the link sits inside the other markers, never the other way round', () => {
+      expect(serializeTextChild(child('widgets topic', [{ name: 'bold' }, { name: 'link', href: 'https://google.com' }]))).toBe('**[widgets topic](https://google.com)**')
+    })
+
+    it('a run without a link is the marks alone', () => {
+      expect(serializeTextChild(child('plain'))).toBe('plain')
+      expect(serializeTextChild(child('bold', [{ name: 'bold' }]))).toBe('**bold**')
+    })
+
+    it('serializeInline writes it in place', () => {
+      const node = {
+        forEach(cb: (c: ReturnType<typeof child> | { type: { name: string }; attrs: Record<string, string>; text?: string }) => void) {
+          cb(child('read the '))
+          cb(child('widgets topic', [{ name: 'link', href: 'https://google.com' }]))
+          cb(child(' first'))
+        },
+      }
+      expect(serializeInline(node)).toBe('read the [widgets topic](https://google.com) first')
+    })
+  })
+
+  describe('parseInlineContent — what the edit editor loads back', () => {
+    it('a link becomes its label with a link mark', () => {
+      expect(parseInlineContent('see [the topic](https://peek.estiva.app/t/1) now')).toEqual([
+        { type: 'text', text: 'see ' },
+        { type: 'text', text: 'the topic', marks: [{ type: 'link', attrs: { href: 'https://peek.estiva.app/t/1' } }] },
+        { type: 'text', text: ' now' },
+      ])
+    })
+
+    it('a bold link loads back bold and linked', () => {
+      expect(parseInlineContent('**[t](https://u)**')).toEqual([
+        { type: 'text', text: 't', marks: [{ type: 'bold' }, { type: 'link', attrs: { href: 'https://u' } }] },
+      ])
+    })
+
+    it('a label that is also a topic title is a link, not a chip', () => {
+      const out = parseInlineContent('[CI/CD pipeline stuck during build stage](https://x/y)')
+      expect(out).toEqual([
+        { type: 'text', text: 'CI/CD pipeline stuck during build stage', marks: [{ type: 'link', attrs: { href: 'https://x/y' } }] },
+      ])
+    })
+
+    it('round-trips through serializeInline', () => {
+      const body = 'read the [widgets topic](https://google.com) first'
+      const nodes = parseInlineContent(body)
+      const node = {
+        forEach(cb: (c: { type: { name: string }; attrs: Record<string, string>; text?: string; marks?: ReadonlyArray<{ type: { name: string }; attrs?: Record<string, unknown> }> }) => void) {
+          for (const n of nodes) {
+            cb({
+              type: { name: n.type as string },
+              attrs: (n.attrs as Record<string, string>) ?? {},
+              text: n.text as string | undefined,
+              marks: (n.marks as Array<{ type: string; attrs?: Record<string, unknown> }> | undefined)?.map((m) => ({ type: { name: m.type }, attrs: m.attrs })),
+            })
+          }
+        },
+      }
+      expect(serializeInline(node)).toBe(body)
+    })
+  })
+
+  describe('the tokenizer, the widgets and the previews', () => {
+    it('INLINE_TOKEN_RE takes a link whole, before the chip and the URL', () => {
+      expect(tokenMatches('see [the topic](https://x/y) now')).toEqual(['[the topic](https://x/y)'])
+      expect(tokenMatches('[CI/CD pipeline stuck during build stage](https://x/y)')).toEqual(['[CI/CD pipeline stuck during build stage](https://x/y)'])
+      expect(tokenMatches('[CI/CD pipeline stuck during build stage] above')).toEqual(['[CI/CD pipeline stuck during build stage]'])
+    })
+
+    it('findUrls sees the target of a labelled link, and never a mailto', () => {
+      expect(findUrls('see [the issue](https://ship.estiva.app/issue/x) and https://example.com')).toEqual(['https://ship.estiva.app/issue/x', 'https://example.com'])
+      expect(findUrls('[write](mailto:jan@estiva.app)')).toEqual([])
+    })
+
+    it('previewText reduces a link to its label', () => {
+      expect(previewText('**read** the [widgets topic](https://google.com) first')).toBe('read the widgets topic first')
+    })
   })
 })

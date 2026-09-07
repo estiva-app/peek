@@ -13,7 +13,7 @@ import {
 import figmaIcon from '@/assets/figma icon.svg'
 import { TOPICS } from '@/api'
 import { APP_FILES, DOCUMENT_FILES } from '@/api'
-import { INLINE_TOKEN_RE, findUrls, matchUrl } from '@/lib/textParsing'
+import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
@@ -40,6 +40,26 @@ import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protoc
  * parsed for further marks), and under the old order `` `@Alice` `` would have
  * rendered a mention chip inside a code span.
  */
+/**
+ * A link in a body — a bare URL, or `[label](url)`. One element for both, so
+ * the two cannot drift apart in look. `breakAll` is for the bare form, whose
+ * text has no spaces to wrap at; a label wraps at its words.
+ */
+function BodyLink({ href, breakAll, children }: { href: string; breakAll?: boolean; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-interactive
+      className={cn('text-info-default underline underline-offset-2 hover:opacity-80', breakAll ? 'break-all' : 'break-words')}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </a>
+  )
+}
+
 function renderTokens(text: string, isTopicResolved: (id: string) => boolean): ReactNode {
   const parts = text.split(INLINE_TOKEN_RE)
   if (parts.length === 1) return text
@@ -52,18 +72,20 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
         if (url) {
           return (
             <span key={i}>
-              <a
-                href={url.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-interactive
-                className="text-info-default underline underline-offset-2 break-all hover:opacity-80"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <BodyLink href={url.href} breakAll>
                 {url.href}
-              </a>
+              </BodyLink>
               {url.trailing}
             </span>
+          )
+        }
+        // `[label](url)` — a link with its own words (PEE-19, SPEC §13.1).
+        const link = matchLink(part)
+        if (link) {
+          return (
+            <BodyLink key={i} href={link.href}>
+              {link.label}
+            </BodyLink>
           )
         }
         if (part.startsWith('[') && part.endsWith(']') && part.length > 2) {

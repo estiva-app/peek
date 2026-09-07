@@ -1,6 +1,6 @@
 import { Avatar } from './Avatar'
 import { HighlightPill } from './HighlightPill'
-import { stripInlineFormatting } from '@estiva-app/protocol'
+import { previewText } from '@/lib/textParsing'
 import type { HighlightType } from '@/api'
 
 // ── Pinned Initial Message (compact) ──
@@ -18,7 +18,7 @@ export interface PinnedMessageProps {
 
 export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, highlightType }: PinnedMessageProps) {
   // Strip newlines AND formatting markers — previews are plain snippets.
-  const flatBody = stripInlineFormatting(body).replace(/\n/g, ' ')
+  const flatBody = previewText(body).replace(/\n/g, ' ')
 
   return (
     <div className="bg-bg-elevated border border-border-default rounded-lg overflow-hidden">

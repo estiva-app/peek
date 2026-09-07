@@ -7,7 +7,7 @@ import { Avatar } from './ui/Avatar'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { useIsTopicResolved } from '@/api'
-import { stripInlineFormatting } from '@estiva-app/protocol'
+import { previewText } from '@/lib/textParsing'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
 
 interface ScreenerItemProps {
@@ -64,7 +64,7 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemP
 
       {/* Preview */}
       <div className="pl-6 pr-2 py-1">
-        <p className="text-caption text-text-secondary line-clamp-2">{stripInlineFormatting(item.preview)}</p>
+        <p className="text-caption text-text-secondary line-clamp-2">{previewText(item.preview)}</p>
       </div>
 
       {/* Actions */}
