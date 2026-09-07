@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { encodeNpub } from '@estiva-app/protocol'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
 import { useEditor, EditorContent } from '@tiptap/react'
