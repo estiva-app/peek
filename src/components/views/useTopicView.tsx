@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/Button'
 import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TopicTabs, type TopicTab } from '@/components/ui/TopicTabs'
+import { draftKeys } from '@/lib/drafts'
 import { partitionByRelation, subFileAddresses, subFileLabels, type FolderProjectState } from '@/api/useFolderProject'
 import type { TopicActivityItem } from '@/components/TopicActivity'
 import { IconButton } from '@/components/ui/IconButton'
@@ -1088,7 +1089,7 @@ export function useTopicView({
             <HuddleCreator topicTitle={topicTitle} onCancel={cancelHuddleCreation} onCreate={handleCreateHuddle} />
           ) : (
             <div className="p-3">
-              <ComposeBox onSend={handleSend} contextLabel={topicTitle ? `#${topicTitle}` : undefined} />
+              <ComposeBox onSend={handleSend} contextLabel={topicTitle ? `#${topicTitle}` : undefined} draftKey={topicId ? draftKeys.container(topicId) : undefined} />
             </div>
           )}
         </>

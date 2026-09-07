@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { encodeNpub } from '@estiva-app/protocol'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
+import { browserDrafts, type DraftStore } from '@/lib/drafts'
+import { textToTiptapContent } from '@/lib/textParsing'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
@@ -45,6 +47,17 @@ let uploadSeq = 0
 
 interface ComposeBoxProps {
   onSend?: (payload: SendPayload) => void
+  /**
+   * Where an unsent message belongs — CON-10. Built with `draftKeys`.
+   *
+   * Omitted means nothing is kept, which is right for a composer with no
+   * stable destination — the huddle creator has no huddle yet, and a draft that
+   * cannot be keyed correctly is worse than none, because it comes back
+   * somewhere it was not written.
+   */
+  draftKey?: string
+  /** The store. Injected so a test needs no browser; defaults to `localStorage`. */
+  drafts?: DraftStore
   placeholder?: 'default' | 'reply'
   /** Names this composer as a launcher target ("Reply to Alice", "#Topic").
    *  Shown in the command launcher's context chip and the Figma attach footer. */
@@ -124,7 +137,9 @@ function serializeToText(editor: ReturnType<typeof useEditor>): string {
 }
 
 
-export function ComposeBox({ onSend, placeholder = 'default', contextLabel, className }: ComposeBoxProps) {
+const DEFAULT_DRAFTS = browserDrafts()
+
+export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draftKey, drafts = DEFAULT_DRAFTS, className }: ComposeBoxProps) {
   const [isEmpty, setIsEmpty] = useState(true)
   const [hasUrgent, setHasUrgent] = useState(false)
   const [hasHighlight, setHasHighlight] = useState(false)
@@ -137,6 +152,13 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
 
   const sendFnRef = useRef(onSend)
   sendFnRef.current = onSend
+
+  /* Read inside the editor's stable handlers, which close over their first
+     render — the same reason `sendFnRef` exists. */
+  const draftKeyRef = useRef(draftKey)
+  draftKeyRef.current = draftKey
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
 
   // Mirror attachments into refs so the editorProps Enter handler (a stable
   // closure) always sees the current lists.
@@ -218,6 +240,19 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
               files: files.length > 0 ? files : undefined,
             })
             ed.commands.clearContent(true)
+            /*
+              Cleared with the composer, and that is weaker than Ship's rule.
+
+              Ship keeps a draft when the relay refuses, because `act` reports
+              the outcome. Peek's `onSend` returns nothing and the editor is
+              emptied on Enter regardless — so a failed send already loses the
+              text here, with or without drafts. Holding the draft back would
+              mean re-offering a message that may well have been delivered,
+              which is the worse of the two. Making `onSend` report its outcome
+              is the fix, and it is a change to the send contract across five
+              call sites rather than part of this.
+            */
+            if (draftKeyRef.current) draftsRef.current.clear(draftKeyRef.current)
             setAttachedFrameIds([])
             setPendingFiles([])
           }
@@ -261,6 +296,15 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
     content: '',
     autofocus: true,
     onUpdate({ editor }) {
+      /*
+        Keep the draft as the MARKER TEXT, not the editor's document — CON-10.
+
+        A Tiptap doc is shaped by this app's schema at this version, so a draft
+        stored as JSON could fail to load after a release that changes a node.
+        Marker text is what would be sent (SPEC §13.2) and what the other app
+        reads, so it survives both.
+      */
+      if (draftKeyRef.current) draftsRef.current.write(draftKeyRef.current, serializeToText(editor))
       const doc = editor.state.doc
       let hasNonParagraph = false
       let hasAtomNode = false
@@ -297,6 +341,30 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, clas
 
     },
   })
+
+  /*
+    Seed from the draft, and re-seed when the destination changes — CON-10.
+
+    Keyed on `draftKey` rather than run once: this composer is reused as the
+    route changes, so mounting is not the moment the destination changes.
+    Seeding only on mount is exactly PEE-7's first symptom — "you switch to a
+    different topic, the text is kept there, which is weird".
+
+    Restored through `textToTiptapContent`, the same parser a pasted message
+    goes through, so a draft with a heading or a list comes back as one rather
+    than as its marker characters.
+  */
+  useEffect(() => {
+    if (!editor) return
+    const text = draftKey ? (drafts.read(draftKey) ?? '') : ''
+    editor.commands.setContent(
+      text ? textToTiptapContent(text) : { type: 'doc', content: [{ type: 'paragraph' }] },
+    )
+    setIsEmpty(!text)
+    // `drafts` is deliberately not a dependency: a caller passing a fresh store
+    // object each render would otherwise re-seed and wipe what is being typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey, editor])
 
   editorRef.current = editor
 
