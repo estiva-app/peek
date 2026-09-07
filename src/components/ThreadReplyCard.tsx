@@ -37,7 +37,7 @@ import { MessageBody } from './ui/MessageBody'
 
 // ── Reply More Menu ──
 
-function ReplyMoreMenu({ anchor, onClose, onEdit, onDelete, currentHighlight, onHighlight, isOwnMessage = false, className }: {
+function ReplyMoreMenu({ anchor, onClose, onEdit, onDelete, currentHighlight, onHighlight, className }: {
   /** The ⋯ trigger's rect — the shared shell portals, fits and owns the exits. */
   anchor: DOMRect | HTMLElement
   onClose: () => void
@@ -45,14 +45,25 @@ function ReplyMoreMenu({ anchor, onClose, onEdit, onDelete, currentHighlight, on
   onDelete?: () => void
   currentHighlight?: HighlightType
   onHighlight?: (type: HighlightType | undefined) => void
-  /** True when the reply was authored by "You" - gates Edit/Delete entries. */
-  isOwnMessage?: boolean
   className?: string
 }) {
   return (
     <Menu anchor={anchor} align="right" closeOnLeave onClose={onClose} className={cn('w-[180px] gap-2', className)}>
       <div className="flex flex-col">
-        {isOwnMessage && <MenuItem label="Edit message" onClick={onEdit} />}
+        {/*
+          Offered on every reply, not just your own — CON-3 for Delete below and
+          CON-8 for this. The relay accepts an edit or a deletion from the
+          target's effective author OR the NIP-OA owner of an authoring agent,
+          and no client can evaluate the second half, so a local author check is
+          narrower than the relay's and hides the control from the one other
+          party it would accept.
+
+          **This menu was missed when CON-3 removed the gate from
+          `ConversationMoreMenu`.** Two menus, one rule, and only one of them was
+          changed — so a reply kept the withdrawn behaviour while a message got
+          the corrected one, which is worse than either alone.
+        */}
+        <MenuItem label="Edit message" onClick={onEdit} />
         {onHighlight && (
           /* The shared submenu (2026-09-03). This menu's hand-rolled copy is
              the one that dropped the ref its edge-flip measured — it measured
@@ -81,12 +92,8 @@ function ReplyMoreMenu({ anchor, onClose, onEdit, onDelete, currentHighlight, on
           </MenuSub>
         )}
       </div>
-      {isOwnMessage && (
-        <>
-          <Divider className="mx-0" />
-          <MenuItem label="Delete" destructive onClick={onDelete} />
-        </>
-      )}
+      <Divider className="mx-0" />
+      <MenuItem label="Delete" destructive onClick={onDelete} />
     </Menu>
   )
 }
@@ -578,7 +585,6 @@ export function ThreadReplyCard({
           <ReplyMoreMenu
             anchor={moreMenuAnchor}
             onClose={() => { setMoreMenuAnchor(null); setIsHovered(false) }}
-            isOwnMessage={authorName === 'You'}
             onEdit={handleEditStart}
             onDelete={handleDelete}
             currentHighlight={highlightState}

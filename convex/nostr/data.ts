@@ -513,6 +513,53 @@ export const markReactionPublished = internalMutation({
   },
 })
 
+/**
+ * Apply an edit that arrived from the relay — CON-8.
+ *
+ * Addressed by the TARGET's event id, which is stable: an edit is a new event
+ * and never mutates what it edits, so the original keeps its id and the replies
+ * pointing at it survive.
+ *
+ * **Older edits are ignored rather than applied.** A sync run may re-read an
+ * edit it has already applied (`since` is inclusive), and a run that reaches
+ * further back may see an *older* one for the same message. Comparing
+ * `editedAt` makes both cases no-ops instead of a body that flickers between
+ * two versions depending on which window the poll happened to fetch.
+ *
+ * Silent when the target is unknown: the message may simply not be Peek's, or
+ * may arrive in a later run. `importMessage` is idempotent, so nothing is lost
+ * — the next run that carries both applies the edit.
+ */
+export const applyEdit = internalMutation({
+  args: {
+    /** The event being edited, not the edit. */
+    nostrEventId: v.string(),
+    body: v.string(),
+    /** Milliseconds — `ts` where the relay's own `created_at` agrees with it. */
+    editedAt: v.number(),
+  },
+  handler: async (ctx, { nostrEventId, body, editedAt }) => {
+    const message = await ctx.db
+      .query('messages')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    if (message) {
+      if ((message.editedAt ?? 0) >= editedAt) return { applied: false }
+      await ctx.db.patch(message._id, { body, editedAt })
+      return { applied: true }
+    }
+
+    const reply = await ctx.db
+      .query('replies')
+      .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
+      .unique()
+    if (!reply) return { applied: false }
+    if ((reply.editedAt ?? 0) >= editedAt) return { applied: false }
+    await ctx.db.patch(reply._id, { body, editedAt })
+    return { applied: true }
+  },
+})
+
 /** Import a reaction from the relay. Idempotent on the kind:7 event id. */
 export const importReaction = internalMutation({
   args: {
