@@ -8,7 +8,7 @@ import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
 import { ResolutionBlock, extractResolution } from '@/extensions/resolution'
 import { HighlightTag, extractHighlightType, insertHighlightTag } from '@/extensions/highlight'
-import { IconPaperclip, IconSquareForbid2, IconArrowUp, IconHighlight, IconX, IconLoader2, IconAlertCircle } from '@tabler/icons-react'
+import { IconPaperclip, IconSquareForbid2, IconArrowUp, IconHighlight } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
 import { Kbd, MenuItem, MenuPanel } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
@@ -17,7 +17,8 @@ import { FrameLightbox } from '../FrameLightbox'
 import { cn } from '@/lib/utils'
 import { HIGHLIGHT_META, hasConvex, useUploadActions, type HighlightType, type UploadedFile } from '@/api'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
-import { FILE_ACCEPT_ATTR, validateFile, isImageAttachment, formatBytes, fileTypeLabel } from '@/lib/fileAttachments'
+import { FILE_ACCEPT_ATTR, validateFile } from '@/lib/fileAttachments'
+import { AttachmentRemoveButton, PendingAttachmentChip } from './PendingAttachmentChip'
 import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
 import { SlashCommands } from '@/extensions/slashCommands'
@@ -517,17 +518,10 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                     <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{frame.name}</span>
                     <span className="text-[10px] leading-[1.2] text-text-secondary truncate">{frameBreadcrumb(frame)}</span>
                   </div>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${frame.name}`}
-                    className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-bg-elevated border border-border-strong flex items-center justify-center text-text-secondary hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setAttachedFrameIds((prev) => prev.filter((fid) => fid !== id))
-                    }}
-                  >
-                    <IconX size={11} stroke={1.75} />
-                  </button>
+                  <AttachmentRemoveButton
+                    label={`Remove ${frame.name}`}
+                    onRemove={() => setAttachedFrameIds((prev) => prev.filter((fid) => fid !== id))}
+                  />
                 </div>
               )
             })}
@@ -537,48 +531,18 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         {/* Pending / uploaded files — removable chips below the text. */}
         {pendingFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {pendingFiles.map((f) => {
-              const thumb = f.uploaded?.previewUrl
-              const isImage = isImageAttachment(f.name, f.contentType)
-              return (
-                <div
-                  key={f.localId}
-                  className={cn(
-                    'group relative flex items-center gap-2 w-[200px] rounded-lg border bg-bg-elevated p-1.5 pr-3',
-                    f.status === 'error' ? 'border-error-default' : 'border-border-default',
-                  )}
-                >
-                  <div className="size-9 rounded-md bg-bg-active flex items-center justify-center shrink-0 overflow-hidden text-text-secondary">
-                    {f.status === 'uploading' ? (
-                      <IconLoader2 size={16} stroke={1.5} className="animate-spin" />
-                    ) : f.status === 'error' ? (
-                      <IconAlertCircle size={16} stroke={1.5} className="text-error-default" />
-                    ) : isImage && thumb ? (
-                      <img src={thumb} alt={f.name} className="size-full object-cover" />
-                    ) : (
-                      <span className="text-[9px] font-semibold">{fileTypeLabel(f.name)}</span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-[1px] min-w-0">
-                    <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{f.name}</span>
-                    <span className={cn('text-[10px] leading-[1.2] truncate', f.status === 'error' ? 'text-error-default' : 'text-text-secondary')}>
-                      {f.status === 'error' ? f.error : f.status === 'uploading' ? 'Uploading…' : formatBytes(f.size)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${f.name}`}
-                    className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-bg-elevated border border-border-strong flex items-center justify-center text-text-secondary hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removePendingFile(f.localId)
-                    }}
-                  >
-                    <IconX size={11} stroke={1.75} />
-                  </button>
-                </div>
-              )
-            })}
+            {pendingFiles.map((f) => (
+              <PendingAttachmentChip
+                key={f.localId}
+                name={f.name}
+                size={f.size}
+                contentType={f.contentType}
+                status={f.status}
+                error={f.error}
+                previewUrl={f.uploaded?.previewUrl}
+                onRemove={() => removePendingFile(f.localId)}
+              />
+            ))}
           </div>
         )}
 
