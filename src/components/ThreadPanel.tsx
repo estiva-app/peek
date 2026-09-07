@@ -8,7 +8,7 @@ import { draftKeys } from '@/lib/drafts'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { DateDivider } from './ui/DateDivider'
 import { formatReplyTimestamp } from '@/api'
-import type { ConversationData, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
+import type { ConversationData, FileAttachment, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
 import { PinnedMessage } from './ui/PinnedMessage'
 import { SkeletonConversationList } from './ui/Skeleton'
 import { partitionRepliesAroundPromotion } from '@/lib/threadPartition'
@@ -189,7 +189,11 @@ interface ThreadPanelProps {
   onSendReply: (payload: SendPayload) => void | boolean | Promise<void | boolean>
   onDeleteReply?: (id: string) => void
   onInitialBodyChange?: (newBody: string) => void
+  /** The root message's files after an edit — PEE-16. */
+  onInitialFilesChange?: (files: FileAttachment[]) => void
   onReplyBodyChange?: (replyId: string, body: string) => void
+  /** A reply's files after an edit — PEE-16. */
+  onReplyFilesChange?: (replyId: string, files: FileAttachment[]) => void
   onReplyHighlightChange?: (replyId: string, type: HighlightType | undefined) => void
   /**
    * A reaction on a reply — the emoji and the aggregate it replaces, both.
@@ -261,7 +265,9 @@ export function ThreadPanel({
   onSendReply,
   onDeleteReply,
   onInitialBodyChange,
+  onInitialFilesChange,
   onReplyBodyChange,
+  onReplyFilesChange,
   onReplyHighlightChange,
   onReplyReactionsChange,
 }: ThreadPanelProps) {
@@ -425,6 +431,7 @@ export function ThreadPanel({
               highlightType={initialHighlightType}
               nostrReferences={conversation.nostrReferences}
               onBodyChange={onInitialBodyChange}
+              onFilesChange={onInitialFilesChange}
               onReactionsChange={onInitialReactionsChange}
               onHighlightChange={onInitialHighlightChange}
             />
@@ -473,6 +480,7 @@ export function ThreadPanel({
                     onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
                     onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}
                     onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
+                    onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
                     onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
                     onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
                   />

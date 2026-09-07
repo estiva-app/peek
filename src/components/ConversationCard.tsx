@@ -14,7 +14,6 @@ import {
   IconArrowNarrowRight,
   IconCircleDashed,
   IconCircleCheck,
-  IconPaperclip,
   IconSquareForbid2,
 } from '@tabler/icons-react'
 import figmaIcon from '@/assets/figma icon.svg'
@@ -35,12 +34,15 @@ import { ResolveDialog } from './ResolveDialog'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useIsTopicResolved, useAvatarSrc } from '@/api'
+import { useIsTopicResolved, useAvatarSrc, hasConvex } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
+import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { HighlightPill } from './ui/HighlightPill'
 import { MessageBody } from './ui/MessageBody'
 import { cn } from '@/lib/utils'
 import { useTopicPath } from '@/lib/useTopicPath'
+import { useEditAttachments } from '@/lib/useEditAttachments'
+import { pastedImages } from '@/lib/fileAttachments'
 
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
 
@@ -73,6 +75,9 @@ interface ConversationCardProps {
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
   onBodyChange?: (body: string) => void
+  /** The message's files after an edit added or removed some — PEE-16. The
+   *  whole list, and only when this edit changed it. */
+  onFilesChange?: (files: FileAttachment[]) => void
   showCreateTopic?: boolean
   /** When set, the Start-topic dialog renders the DM-to-huddle privacy banner and pre-fills invite chips with these participants. */
   dmContext?: { participants: Person[] }
@@ -115,6 +120,7 @@ export function ConversationCard({
   highlightType,
   onHighlightChange,
   onBodyChange,
+  onFilesChange,
   showCreateTopic = true,
   dmContext,
   huddleContext,
@@ -160,6 +166,17 @@ export function ConversationCard({
   const [editHasUrgent, setEditHasUrgent] = useState(false)
   const [editHasHighlight, setEditHasHighlight] = useState(false)
 
+  // The files of the message being edited — PEE-16. Held here because the
+  // paperclip, the paste and Save all need the same list.
+  const editAttachments = useEditAttachments(files)
+  // The paste handler is a closure from the editor's first render, so it
+  // reads the current one through a ref. Assigned in an effect rather than
+  // during render: a paste can only happen after the box is on screen.
+  const editAttachmentsRef = useRef(editAttachments)
+  useEffect(() => {
+    editAttachmentsRef.current = editAttachments
+  })
+
   const editSaveFnRef = useRef<() => void>(() => {})
   const editCancelFnRef = useRef<() => void>(() => {})
   const editEmptyRef = useRef(true)
@@ -179,6 +196,18 @@ export function ConversationCard({
       attributes: {
         class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
         style: 'caret-color: var(--text-primary)',
+      },
+      /* A screenshot pasted while editing becomes an attachment, exactly as it
+         does in the composer — PEE-16. `pastedImages` is what decides an image
+         from a copy that merely carries one (text wins), so a pasted table
+         stays a table. Returning true keeps the picture out of the document:
+         it belongs in a chip. See ComposeBox for the longer note. */
+      handlePaste: (_view, event) => {
+        if (!hasConvex) return false
+        const images = pastedImages(event.clipboardData)
+        if (images.length === 0) return false
+        editAttachmentsRef.current.add(images)
+        return true
       },
       handleKeyDown: (view, event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
@@ -374,6 +403,7 @@ export function ConversationCard({
   }
 
   const handleEditStart = () => {
+    editAttachments.begin()
     setIsEditing(true)
     setMoreMenuAnchor(null)
   }
@@ -419,10 +449,21 @@ export function ConversationCard({
     const hl = extractHighlightType(editEditor)
     setHighlightState(hl)
     onHighlightChange?.(hl)
+    // Files last, and only when this edit changed them — PEE-16. `commit`
+    // leaves storage alone: the message owns these blobs now.
+    const nextFiles = editAttachments.result()
+    if (nextFiles) onFilesChange?.(nextFiles)
+    editAttachments.commit()
     setIsEditing(false)
   }
 
-  const handleEditCancel = () => setIsEditing(false)
+  /* Cancel undoes the whole edit, files included: the removed come back and
+     anything attached during it is deleted from storage, because nothing will
+     ever own it. */
+  const handleEditCancel = () => {
+    editAttachments.cancel()
+    setIsEditing(false)
+  }
 
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
@@ -588,11 +629,12 @@ export function ConversationCard({
                     </div>
                   )}
                 </div>
+                {/* The message's files and the ones just attached, one row,
+                    each removable — PEE-16. */}
+                <AttachmentChips chips={editAttachments.chips} />
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
-                    <IconButton tooltip="Attach file" aria-label="Attach file">
-                      <IconPaperclip size={16} stroke={1.5} />
-                    </IconButton>
+                    <AttachFileButton onPick={editAttachments.add} />
                     <IconButton tooltip="Snooze" aria-label="Snooze">
                       <IconSquareForbid2 size={16} stroke={1.5} />
                     </IconButton>
@@ -601,7 +643,16 @@ export function ConversationCard({
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
                       Cancel
                     </Button>
-                    <Button variant="primary" size="small" className="w-14" disabled={editEmpty} onClick={handleEditSave}>
+                    {/* A message with a file and no text is a message, so an
+                        empty editor alone no longer blocks Save. Uploads in
+                        flight do, so a file is never dropped by a fast Save. */}
+                    <Button
+                      variant="primary"
+                      size="small"
+                      className="w-14"
+                      disabled={(editEmpty && editAttachments.count === 0) || editAttachments.isUploading}
+                      onClick={handleEditSave}
+                    >
                       Save
                     </Button>
                   </div>

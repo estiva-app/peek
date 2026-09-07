@@ -10,7 +10,6 @@ import { HighlightTag, extractHighlightType } from '@/extensions/highlight'
 import {
   IconMoodPlus,
   IconDotsVertical,
-  IconPaperclip,
   IconSquareForbid2,
   IconX,
   IconAlertSquareRounded,
@@ -26,9 +25,12 @@ import ReactionPicker from './ReactionPicker'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { Divider } from './ui/Divider'
 import { type ReactionData, type FileAttachment } from '@/api'
-import { useIsTopicResolved } from '@/api'
+import { useIsTopicResolved, hasConvex } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
+import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { cn } from '@/lib/utils'
+import { useEditAttachments } from '@/lib/useEditAttachments'
+import { pastedImages } from '@/lib/fileAttachments'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
@@ -116,6 +118,9 @@ interface ThreadReplyCardProps {
   onHighlightChange?: (type: HighlightType | undefined) => void
   onDelete?: () => void
   onBodyChange?: (newBody: string) => void
+  /** The reply's files after an edit added or removed some — PEE-16. The whole
+   *  list, and only when this edit changed it. */
+  onFilesChange?: (files: FileAttachment[]) => void
   onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   /** True when this reply triggered the parent conv's resolution (compose `→ msg` in the
    *  thread panel). When set, edit mode surfaces the resolution as a resolutionBlock so
@@ -152,6 +157,7 @@ export function ThreadReplyCard({
   onHighlightChange,
   onDelete,
   onBodyChange,
+  onFilesChange,
   onReactionsChange,
   ownsResolution = false,
   resolutionMsg,
@@ -190,6 +196,15 @@ export function ThreadReplyCard({
   const [editHasUrgent, setEditHasUrgent] = useState(false)
   const [editHasHighlight, setEditHasHighlight] = useState(false)
 
+  // The files of the reply being edited — PEE-16, the same hook the message
+  // card uses. The paste handler is a closure from the editor's first render,
+  // so it reads the current one through a ref, assigned in an effect.
+  const editAttachments = useEditAttachments(files)
+  const editAttachmentsRef = useRef(editAttachments)
+  useEffect(() => {
+    editAttachmentsRef.current = editAttachments
+  })
+
   const editSaveFnRef = useRef<() => void>(() => {})
   const editCancelFnRef = useRef<() => void>(() => {})
   const editEmptyRef = useRef(true)
@@ -204,6 +219,15 @@ export function ThreadReplyCard({
       attributes: {
         class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
         style: 'caret-color: var(--text-primary)',
+      },
+      /* A pasted screenshot becomes an attachment here too — PEE-16. See
+         ComposeBox for why text on the clipboard wins over a picture. */
+      handlePaste: (_view, event) => {
+        if (!hasConvex) return false
+        const images = pastedImages(event.clipboardData)
+        if (images.length === 0) return false
+        editAttachmentsRef.current.add(images)
+        return true
       },
       handleKeyDown: (view, event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
@@ -306,7 +330,7 @@ export function ThreadReplyCard({
     if (rect) setMoreMenuAnchor(rect)
   }
 
-  const handleEditStart = () => { setIsEditing(true); setMoreMenuAnchor(null) }
+  const handleEditStart = () => { editAttachments.begin(); setIsEditing(true); setMoreMenuAnchor(null) }
 
   const handleEditSave = () => {
     if (!editEditor) return
@@ -341,10 +365,20 @@ export function ThreadReplyCard({
     const hl = extractHighlightType(editEditor)
     setHighlightState(hl)
     onHighlightChange?.(hl)
+    // Files last, and only when this edit changed them (PEE-16). `commit`
+    // leaves storage alone: the reply owns these blobs now.
+    const nextFiles = editAttachments.result()
+    if (nextFiles) onFilesChange?.(nextFiles)
+    editAttachments.commit()
     setIsEditing(false)
   }
 
-  const handleEditCancel = () => setIsEditing(false)
+  /* Cancel undoes the whole edit, files included: the removed come back and
+     anything attached during it is deleted from storage. */
+  const handleEditCancel = () => {
+    editAttachments.cancel()
+    setIsEditing(false)
+  }
 
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
@@ -446,16 +480,25 @@ export function ThreadReplyCard({
                     </div>
                   )}
                 </div>
+                <AttachmentChips chips={editAttachments.chips} />
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
-                    <IconButton tooltip="Attach file" aria-label="Attach file"><IconPaperclip size={16} stroke={1.5} /></IconButton>
+                    <AttachFileButton onPick={editAttachments.add} />
                     <IconButton tooltip="Snooze" aria-label="Snooze"><IconSquareForbid2 size={16} stroke={1.5} /></IconButton>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
                       Cancel
                     </Button>
-                    <Button variant="primary" size="small" className="w-14" disabled={editEmpty} onClick={handleEditSave}>
+                    {/* A file with no text is still a reply; an upload in
+                        flight holds Save so nothing is dropped. */}
+                    <Button
+                      variant="primary"
+                      size="small"
+                      className="w-14"
+                      disabled={(editEmpty && editAttachments.count === 0) || editAttachments.isUploading}
+                      onClick={handleEditSave}
+                    >
                       Save
                     </Button>
                   </div>

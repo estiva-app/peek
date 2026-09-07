@@ -851,6 +851,7 @@ export function useTopicView({
                           onReactionsChange={(next, emoji) => actions.setReactions(c.id, next, c.reactions ?? [], emoji)}
                           onHighlightChange={(hl) => actions.setHighlight(c.id, hl)}
                           onBodyChange={(b) => actions.editBody(c.id, b)}
+                          onFilesChange={(f) => actions.editFiles(c.id, f)}
                           onClick={() => openThread(c.id)}
                           onReply={() => openThread(c.id)}
                           onDelete={() => handleDelete(c.id)}
@@ -976,6 +977,8 @@ export function useTopicView({
           : undefined
       }
       onReplyBodyChange={(replyId, body) => actions.editBody(replyId, body)}
+      onReplyFilesChange={(replyId, files) => actions.editFiles(replyId, files)}
+      onInitialFilesChange={threadConvId ? (files) => actions.editFiles(threadConvId, files) : undefined}
       onReplyHighlightChange={(replyId, hl) => actions.setHighlight(replyId, hl)}
       onReplyReactionsChange={(replyId, next, prev, emoji) => actions.setReactions(replyId, next, prev, emoji)}
     />

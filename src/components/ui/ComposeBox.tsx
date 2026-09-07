@@ -8,7 +8,7 @@ import { peekStarterKit } from '@/extensions/editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
 import { ResolutionBlock, extractResolution } from '@/extensions/resolution'
 import { HighlightTag, extractHighlightType, insertHighlightTag } from '@/extensions/highlight'
-import { IconPaperclip, IconSquareForbid2, IconArrowUp, IconHighlight } from '@tabler/icons-react'
+import { IconSquareForbid2, IconArrowUp, IconHighlight } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
 import { Kbd, MenuItem, MenuPanel } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
@@ -17,9 +17,10 @@ import { FrameLightbox } from '../FrameLightbox'
 import { cn } from '@/lib/utils'
 import { HIGHLIGHT_META, hasConvex, type HighlightType, type UploadedFile } from '@/api'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
-import { FILE_ACCEPT_ATTR, pastedImages } from '@/lib/fileAttachments'
+import { pastedImages } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { AttachmentRemoveButton, PendingAttachmentChip } from './PendingAttachmentChip'
+import { AttachFileButton } from './AttachFiles'
 import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
 import { SlashCommands } from '@/extensions/slashCommands'
@@ -146,7 +147,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const [attachedFrameIds, setAttachedFrameIds] = useState<string[]>([])
   const [previewFrame, setPreviewFrame] = useState<FigmaFrame | null>(null)
   const uploads = usePendingAttachments()
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const composeRef = useRef<HTMLDivElement>(null)
 
   const sendFnRef = useRef(onSend)
@@ -552,26 +552,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         {/* Toolbar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            {/* File upload needs storage — shown only against a live backend
-                (the demo build hides it; the action only appears where it works). */}
-            {hasConvex && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept={FILE_ACCEPT_ATTR}
-                  className="hidden"
-                  onChange={(e) => {
-                    uploads.add(Array.from(e.target.files ?? []))
-                    e.target.value = '' // let the same file be re-picked
-                  }}
-                />
-                <IconButton tooltip="Attach file" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
-                  <IconPaperclip size={16} stroke={1.5} />
-                </IconButton>
-              </>
-            )}
+            <AttachFileButton onPick={uploads.add} />
             <IconButton tooltip="Snooze" aria-label="Snooze">
               <IconSquareForbid2 size={16} stroke={1.5} />
             </IconButton>
