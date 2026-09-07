@@ -42,6 +42,33 @@ const PAGE_LIMIT = 200
 const REACTION_TARGET_LIMIT = 100
 
 /**
+ * Split the reaction-target budget between messages and replies.
+ *
+ * This was `[...messages, ...replies].slice(0, LIMIT)`, which is
+ * messages-first: a topic holding LIMIT or more messages spends the entire
+ * budget before a single reply is asked about, and every reaction on every
+ * reply then reads as "nobody reacted". The busiest Folder in this workspace
+ * held 77 messages on 2026-09-06 — under the cap, and close enough that the
+ * failure was a few conversations away rather than hypothetical.
+ *
+ * Each side gets half when both want more than half; whatever one side leaves
+ * unused goes to the other, so nothing is wasted on a topic with no replies.
+ * Both lists arrive newest-first, so a truncated side keeps its recent end,
+ * which is where reactions are.
+ *
+ * The cap is still invisible when it bites — CON-1's finding, and the reason
+ * this is a share rather than a bigger number.
+ */
+export function shareTargetBudget(messages: string[], replies: string[], limit: number): string[] {
+  if (messages.length + replies.length <= limit) return [...messages, ...replies]
+  const half = Math.floor(limit / 2)
+  // Whoever wants less than its half releases the remainder to the other.
+  const forMessages = Math.min(messages.length, Math.max(half, limit - replies.length))
+  const forReplies = limit - forMessages
+  return [...messages.slice(0, forMessages), ...replies.slice(0, forReplies)]
+}
+
+/**
  * The addresses an event references — its `a` tags, plus NIP-22's `A`.
  *
  * Case is not cosmetic here. A NIP-22 comment names its thread *root* in
@@ -492,7 +519,7 @@ export const importChannel = action({
       internal.nostr.data.listReplyEventIdsForTopic,
       { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
     )
-    const targets = [...messageTargets, ...replyTargets].slice(0, REACTION_TARGET_LIMIT)
+    const targets = shareTargetBudget(messageTargets, replyTargets, REACTION_TARGET_LIMIT)
     const known: string[] = await ctx.runQuery(
       internal.nostr.data.listReactionEventIdsForTopic,
       { topicId: topic.topicId, limit: PAGE_LIMIT },

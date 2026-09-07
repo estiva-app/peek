@@ -335,17 +335,24 @@ export function usePeekActions() {
 
     /**
      * Cards keep computing the next aggregate array (instant, pixel-exact)
-     * and pass the emoji the user toggled. `prev` is ALWAYS an array for
-     * messages (even `[]` — the first-reaction case must still persist);
-     * `prev === undefined` marks a reply reaction, which stays session-local
-     * (§2.7 is message-keyed).
+     * and pass the emoji the user toggled.
      *
-     * Mock mode + replies: the full array is the override (source of truth).
-     * Convex mode messages: the server aggregate stays the source of truth —
-     * we record a per-emoji pending toggle (the optimistic window) and clear
-     * it when the mutation settles, by which point the reactive query
-     * reflects it. Never masking the whole array keeps OTHER users' reactions
-     * flowing through (the old full-array override hid them forever).
+     * **`prev === undefined` means mock mode, and nothing else.** It used to
+     * also mark a reply reaction — "session-local, §2.7 is message-keyed" —
+     * and PEE-12 removed the thing that was true of: `toggleReaction` resolves
+     * a reply key, `replies.list` folds the rows back, and `mergeReply` layers
+     * them exactly as a message's. Every piece of the persistence path was
+     * built; the click never reached it, because `ThreadPanel` dropped the two
+     * arguments that decide this branch. So a reply reaction rendered, never
+     * left the browser, and was gone on reload — and no reader in Ship ever
+     * saw one. Both reply call sites pass `prev` and `emoji` now.
+     *
+     * Mock mode: the full array is the override (source of truth).
+     * Convex mode: the server aggregate stays the source of truth — we record
+     * a per-emoji pending toggle (the optimistic window) and clear it when the
+     * mutation settles, by which point the reactive query reflects it. Never
+     * masking the whole array keeps OTHER users' reactions flowing through
+     * (the old full-array override hid them forever).
      */
     setReactions(id: string, reactions: ReactionData[], prev?: ReactionData[], emoji?: string) {
       if (!hasConvex || prev === undefined) {

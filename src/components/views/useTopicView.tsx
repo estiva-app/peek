@@ -1276,7 +1276,7 @@ export function useTopicView({
       }
       onReplyBodyChange={(replyId, body) => actions.editBody(replyId, body)}
       onReplyHighlightChange={(replyId, hl) => actions.setHighlight(replyId, hl)}
-      onReplyReactionsChange={(replyId, next) => actions.setReactions(replyId, next)}
+      onReplyReactionsChange={(replyId, next, prev, emoji) => actions.setReactions(replyId, next, prev, emoji)}
     />
   ) : undefined
 
