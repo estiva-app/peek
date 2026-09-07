@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { userEvent, within } from 'storybook/test'
 import { PendingAttachmentChip } from './PendingAttachmentChip'
 
 /**
@@ -44,7 +43,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A pasted screenshot, uploaded: its own thumbnail, its size, its made-up name. */
+/**
+ * A pasted screenshot, uploaded: its own thumbnail, its size, its made-up name.
+ *
+ * Hover it to see the remove control — a real pointer is the only thing that
+ * shows it, which is why no story holds that state open.
+ */
 export const Ready: Story = {}
 
 /** Nothing to preview, so the tile says what the file is instead. */
@@ -69,13 +73,5 @@ export const Failed: Story = {
     name: 'Screenshot 2026-09-07 14-32-05.tiff',
     error: "TIFF files aren't supported.",
     previewUrl: undefined,
-  },
-}
-
-/** The remove control only exists on hover — this story holds it open. */
-export const Hovered: Story = {
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await userEvent.hover(canvas.getByText('Screenshot 2026-09-07 14-32-05.png'))
   },
 }
