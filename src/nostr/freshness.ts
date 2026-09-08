@@ -37,6 +37,7 @@
  * cause is not clearly an expiry — the honest failure is the one that does not
  * send somebody to a login screen that cannot help them.
  */
+import { SignRefused, SignerTokenExpired } from '@estiva-app/identity'
 import { SHELL_COPY, type ShellReason } from '@estiva-app/identity'
 import type { RelayState } from '@estiva-app/protocol'
 import type { RelayFailureKind } from './relayRead'
@@ -240,16 +241,44 @@ export function deriveFreshness(o: FreshnessObservation): Freshness {
 /**
  * Classify a `/sign` failure into the shell's own vocabulary.
  *
- * `signViaEstivaId` throws `POST /sign failed: <status> <body>`. The status is
- * the honest signal; the body is not something to pattern-match on.
+ * **Takes the error, not its message.** It used to take a string and regex
+ * `POST /sign failed: (\d{3})` out of it, which worked only because Peek threw
+ * that exact sentence itself. SHA-4 moved the round trip into
+ * `@estiva-app/identity`, whose message is worded differently — so the regex
+ * would have matched nothing and every refusal would have become `network`.
+ *
+ * Nothing would have failed, which is the reason this is now typed. Every test
+ * here passed a literal string, so the pattern kept matching in the suite while
+ * matching nothing in the app: the test and the code agreed with each other and
+ * both stopped describing production. `identity` 0.2.1 puts the status on the
+ * error for exactly this, because consumers classify on it and a message is not
+ * an API.
  *
  * Anything that is not clearly an expiry becomes `token_rejected`, which says
  * "this is a configuration problem, signing in again will not fix it". That is
  * the safe direction: a real expiry mislabelled as a config fault is a confusing
  * message, while a config fault mislabelled as an expiry sends somebody to
- * re-authenticate against a wall — the failure `contract.ts` exists to prevent.
+ * re-authenticate against a wall — the failure the reason vocabulary exists to
+ * prevent.
  */
-export function reasonForSignFailure(message: string): ShellReason {
+export function reasonForSignFailure(error: unknown): ShellReason {
+  // The one refusal a new token fixes, and it has its own type so it cannot be
+  // confused with a policy refusal that happens to mention a token.
+  if (error instanceof SignerTokenExpired) return 'session_expired'
+  if (error instanceof SignRefused) {
+    // An administrator has to restore the identity; nothing the person does helps.
+    if (error.status === 403) return 'identity_inactive'
+    return 'token_rejected'
+  }
+
+  /*
+    Anything else reached us without a status: an unreachable network, an
+    aborted fetch, a throw from somewhere that is not the round trip. The string
+    branch is kept for those and for any caller still handing over a message,
+    rather than deleted on the assumption that the two typed cases are all there
+    is.
+  */
+  const message = error instanceof Error ? error.message : String(error)
   const status = /POST \/sign failed: (\d{3})/.exec(message)?.[1]
   if (status === '401') return 'session_expired'
   if (status === '403') return 'identity_inactive'

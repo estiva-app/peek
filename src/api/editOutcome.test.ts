@@ -19,6 +19,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { signViaEstivaId, publishSigned } from '@/nostr/bridge'
 import type { UnsignedEvent } from '@estiva-app/protocol'
+import { SignRefused, SignerTokenExpired } from '@estiva-app/identity'
 
 const unsigned: UnsignedEvent = {
   pubkey: 'a'.repeat(64),
@@ -48,9 +49,28 @@ describe('the two halves fail differently, and the caller can tell', () => {
     A revoked or expired credential. `/sign` answers 401 and the helper THROWS —
     which is why a caller that only checks a null return misses it entirely.
   */
-  it('a refused signature throws, carrying the status and body', async () => {
+  it('a refused signature throws, and the caller can tell which refusal', async () => {
+    /*
+      This asserted the message matched /401/ until SHA-4 moved the round trip
+      into `@estiva-app/identity`, which answers with a TYPE instead: an expiry
+      is `SignerTokenExpired`, and every other refusal is `SignRefused` carrying
+      the status. That is what this test wanted — the caller can tell — and a
+      substring of a sentence was only ever a proxy for it.
+    */
     vi.stubGlobal('fetch', vi.fn(async () => new Response('token revoked', { status: 401 })))
-    await expect(signViaEstivaId(unsigned, 'stale-token', 'a'.repeat(64))).rejects.toThrow(/401/)
+    await expect(signViaEstivaId(unsigned, 'stale-token', 'a'.repeat(64))).rejects.toThrow(SignerTokenExpired)
+  })
+
+  it('and a refusal that is not an expiry carries its status', async () => {
+    // A 403 sends somebody to an administrator; a 422 policy refusal does not.
+    // `freshness.ts` classifies on exactly this, so it has to survive the seam.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('policy_violation', { status: 422 })))
+    const refusal = await signViaEstivaId(unsigned, 'a-token', 'a'.repeat(64)).then(
+      () => null,
+      (error: unknown) => error,
+    )
+    expect(refusal).toBeInstanceOf(SignRefused)
+    expect((refusal as SignRefused).status).toBe(422)
   })
 
   /*
