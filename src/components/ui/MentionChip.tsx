@@ -1,5 +1,6 @@
+import { useSyncExternalStore } from 'react'
 import { decodeNpub } from '@estiva-app/protocol'
-import { personByPubkey } from '@/api/mentions'
+import { mentionsVersion, personByPubkey, subscribeMentions } from '@/api/mentions'
 import { cn } from '@/lib/utils'
 
 /**
@@ -18,6 +19,20 @@ import { cn } from '@/lib/utils'
  * is the correct outcome, not a degraded one.
  */
 export function MentionChip({ uri, className }: { uri: string; className?: string }) {
+  /*
+    Re-read when the directory is replaced.
+
+    `personByPubkey` answers from a module-level snapshot, which is right — the
+    suggestion plugins are not components and cannot hold a hook. But a module
+    variable cannot tell React it changed, so a chip drawn before the people
+    query landed stayed unresolved until something else re-rendered it. On a
+    cold load that is every mention in view, because the snapshot starts as the
+    mock cast whose keys match nobody real.
+
+    This chip *is* a component, so it can subscribe. Nothing else has to.
+  */
+  useSyncExternalStore(subscribeMentions, mentionsVersion, mentionsVersion)
+
   let pubkey: string
   try {
     pubkey = decodeNpub(uri)
