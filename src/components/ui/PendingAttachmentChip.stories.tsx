@@ -75,3 +75,19 @@ export const Failed: Story = {
     previewUrl: undefined,
   },
 }
+
+/**
+ * Uploaded here, but not to the relay — CON-12.
+ *
+ * **Warning, not error.** Nothing failed for the person holding this screen:
+ * the file attaches, the message sends, and Peek draws it. What is gone is
+ * every other app, which is invisible from here — the reason this state had to
+ * be drawn at all. An image posted on 2026-09-08 reached the relay with no
+ * `imeta` and showed as an empty message in Ship, and neither app said a word.
+ *
+ * The line names the consequence; the relay's own words are on hover, where a
+ * maintainer can read them and nobody else has to.
+ */
+export const NotShared: Story = {
+  args: { shareError: 'upload failed: 403 kind_not_allowed' },
+}

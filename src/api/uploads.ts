@@ -35,6 +35,17 @@ export interface UploadedFile {
   mediaUrl?: string
   thumbUrl?: string
   dim?: string
+  /**
+   * Why the relay has no copy, when it has none — CON-12.
+   *
+   * The file still attaches and the message still sends; what is lost is every
+   * *other* reader. That consequence has to reach the person **before** they
+   * press send, which is what this carries: the first version of this path
+   * swallowed the failure to a `console.warn`, and the result was a message
+   * that looked complete in Peek and arrived in Ship with nothing on it.
+   * Nobody was told, on either side.
+   */
+  shareError?: string
 }
 
 export function useUploadActions() {
@@ -81,23 +92,33 @@ export function useUploadActions() {
         first — and a person waiting is waiting while they type rather than
         after they press Enter.
 
-        A failure is swallowed to a warning on purpose. The alternative is
-        refusing to attach a file because a mirror is down, which is worse than
-        an attachment that only Peek can see. What must not happen is silence
-        *about the consequence*, and that belongs where the message is sent —
-        see `unsignedMessage`, which simply omits an `imeta` it has no blob for.
+        A failure does not refuse the attachment. Declining to attach a file
+        because a mirror is down is worse than an attachment only Peek can see.
+
+        **It is not silent, though, and the first version of this was.** It
+        swallowed the failure to a `console.warn` on the reasoning that the
+        omission would be evident where the message is sent. It is not evident
+        anywhere: `unsignedMessage` omits an `imeta` it has no blob for without
+        complaint, Peek renders the file from its own copy, and the sender sees
+        a complete message. Miky posted an image on 2026-09-08 and Ship showed
+        nothing; the event was on the relay with no `imeta`, and neither app
+        said a word. So the reason comes back with the file and the chip says
+        it — before send, while the person can still act on it.
       */
       const relayUrl = (await convex.query(api.nostr.config.relayConfig, {}))?.relayUrl
       const token = validToken()
       let blob: Awaited<ReturnType<typeof uploadBlob>> | undefined
+      let shareError: string | undefined
       if (relayUrl && token) {
         try {
           blob = await uploadBlob(relayUrl, file, token)
         } catch (error) {
+          shareError = error instanceof Error ? error.message : String(error)
           console.warn('[nostr] attachment not uploaded to the relay:', error)
         }
       } else {
-        console.warn('[nostr] attachment not uploaded to the relay: no relay origin or no token')
+        shareError = token ? 'this deployment publishes nothing' : 'not signed in'
+        console.warn('[nostr] attachment not uploaded to the relay:', shareError)
       }
 
       return {
@@ -110,6 +131,7 @@ export function useUploadActions() {
         mediaUrl: blob?.url,
         thumbUrl: blob?.thumb,
         dim: blob?.dim,
+        shareError,
       }
     },
   }

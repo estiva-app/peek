@@ -58,6 +58,7 @@ export function AttachmentChips({ chips }: { chips: EditAttachmentChip[] }) {
           contentType={c.contentType}
           status={c.status}
           error={c.error}
+          shareError={c.shareError}
           previewUrl={c.previewUrl}
           onRemove={c.onRemove}
         />
