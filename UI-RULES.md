@@ -43,6 +43,8 @@ The package rents every behaviour from Base UI, and so does this app, through th
 
 Peek still carries such code in files written before this rule (the launcher, the card popovers, the lightbox, the editor's type-ahead menus). They are being replaced by package components as the migration reaches them; **do not add to them, and do not copy from them.** The one legitimate Escape handler is inside a text editor's suggestion plugin, because the editor owns its keyboard. Everything else comes from a package component. If no package component does what you need, that is a ticket, not a `useEffect`.
 
+**The one behaviour the package cannot give you: navigation.** A package component that takes an `href` — `RailItem`, `NavItem`, `Breadcrumb` — renders a plain `<a>` and nothing more. It cannot navigate for you, because it does not know this app's router. **An anchor left unwired reloads the whole page**: the app restarts, every read begins again, and the navigation itself goes blank until it finishes. Peek already does this correctly — `components/NavItem.tsx` wraps the package's `RailItem`, computes `active` from the location and intercepts a plain left click. **Copy it rather than writing a second one**, and keep both of the things it is careful about: modified clicks (Ctrl, Cmd, Shift, Alt, any button but the first) fall through so open-in-new-tab keeps working, and the `href` stays real so the link can still be copied and pasted. Written down because Ship did not have this rule and built its whole navigation without a wrapper — every click reloaded the app and emptied the sidebar (**SHI-20**).
+
 ---
 
 ## 4. Tokens, and the class-name trap
@@ -111,5 +113,6 @@ If a rule here blocks the work, say so and stop; do not route around it. The per
 2. Extend the package, never fork here.
 3. Tokens only, doubled prefix, no opacity modifiers, package `cn()`. Prove a class exists.
 4. No portals, no key handling, no roles by hand. Behaviour comes from the package.
+   Except navigation: a package link is a bare anchor, so wire it to the router or the page reloads.
 5. A story for every file; measure, do not eyeball.
 6. Same class string twice: you wrote a component.
