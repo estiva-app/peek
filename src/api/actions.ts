@@ -46,6 +46,22 @@ function toRemoteFiles(files: UploadedFile[] | undefined) {
 const nowTimestamp = (now = Date.now()) =>
   new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+/**
+ * Whether an edit reached the relay — PEE-23.
+ *
+ * The edit is the write where silence costs the most. Peek patches its own row
+ * first, so a failed publish leaves the app looking correct and **every other
+ * reader showing the old text**, with nothing anywhere saying so. That is the
+ * shape SILENT-FAILURES.md exists for, and the edit walked straight into it:
+ * three branches that could decline, all three `console.warn`, nothing on
+ * screen.
+ *
+ * `published: true` also covers "there was nothing to publish" — a DM, a
+ * message that never reached the relay. Those are not failures and must not be
+ * reported as any: a warning people learn to dismiss is worse than none.
+ */
+export type EditOutcome = { published: true } | { published: false; reason: string }
+
 export function usePeekActions() {
   const m = useTopicMutations()
   const openWork = useOpenWorkOverrides()
@@ -419,22 +435,33 @@ export function usePeekActions() {
      * whether it may — the text then arrives through the sync if it was
      * accepted.
      */
-    editBody(id: string, body: string) {
+    editBody(id: string, body: string): Promise<EditOutcome> {
       m.setBodyOverrides((prev) => ({ ...prev, [id]: body }))
-      if (!hasConvex) return
-      void (async () => {
+      if (!hasConvex) return Promise.resolve({ published: true })
+      return (async (): Promise<EditOutcome> => {
         await editBodyRemote({ key: id, body })
         const token = tokenForPublish('edit')
-        if (!token) return
+        // `tokenForPublish` has already said which credential is missing, and
+        // its absence is the loudest case of all: the row changed and the relay
+        // will never hear about it.
+        if (!token) return { published: false, reason: 'you are not signed in to the relay' }
+
         const built = await convex.query(api.nostr.outbox.unsignedEdit, { key: id, body })
         if (!built.ok) {
-          // Ordinary cases live here too — a DM, a message that never reached
-          // the relay — so this is a debug line rather than a failure.
           console.warn('[nostr] edit not published:', built.reason)
-          return
+          // A DM or an unpublished row was never going to travel — saying so
+          // would train people to ignore the message that matters.
+          return built.expected ? { published: true } : { published: false, reason: built.reason }
         }
-        await signAndPublish(built.unsigned, token)
-      })().catch((error) => console.warn('[nostr] edit publish failed:', error))
+
+        const eventId = await signAndPublish(built.unsigned, token)
+        // `signAndPublish` logs the relay's own words and returns null; the
+        // caller only needs to know that the edit did not leave.
+        return eventId ? { published: true } : { published: false, reason: 'the relay did not accept the edit' }
+      })().catch((error) => {
+        console.warn('[nostr] edit publish failed:', error)
+        return { published: false, reason: error instanceof Error ? error.message : String(error) }
+      })
     },
 
     /**

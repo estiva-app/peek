@@ -1,5 +1,6 @@
 import { useMarkRead } from '@/lib/useMarkRead'
 import { draftKeys } from '@/lib/drafts'
+import { useToast } from '@/lib/toast'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { isNearBottom } from './scrollPolicy'
 import { ConversationHeader } from '@/components/ConversationHeader'
@@ -54,6 +55,29 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   const promotedHuddleLookup = usePromotedHuddleLookup()
   const { pendingDmThreadId, setPendingDmThreadId } = useLastSelection()
   const actions = usePeekActions()
+  const { showToast } = useToast()
+
+  /**
+   * Edit, and say so when it did not travel — PEE-23.
+   *
+   * The same wrapper the topic view has, and for the same reason: Peek patches
+   * its own row before publishing, so a failed publish leaves this app looking
+   * right while every other reader shows the old text. Both views need it
+   * because both let somebody edit; a DM's edit is the one case that
+   * legitimately never publishes, and `EditOutcome` already reports that as
+   * success so this stays quiet for it.
+   */
+  const editBody = (id: string, body: string) => {
+    void actions.editBody(id, body).then((outcome) => {
+      if (outcome.published) return
+      showToast({
+        label: `Edited here, but not published — ${outcome.reason}. Other apps still show the old text.`,
+        type: 'neutral',
+        leadingIcon: false,
+        durationMs: 0,
+      })
+    })
+  }
 
   // Merged data from the seam — overrides applied, deletions filtered,
   // replyCount final. DM sends live in the seam store, so they survive
@@ -272,7 +296,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   onStartTopicFromDm={makeStartTopicHandler(c.id)}
                   onResolvedChange={(resolved, resolvedBy, message) => actions.setResolution(c.id, resolved, resolved ? (resolvedBy ?? CURRENT_USER_NAME) : undefined, message)}
                   onReactionsChange={(next, emoji) => actions.setReactions(c.id, next, c.reactions ?? [], emoji)}
-                  onBodyChange={(b) => actions.editBody(c.id, b)}
+                  onBodyChange={(b) => editBody(c.id, b)}
                   onFilesChange={(f) => actions.editFiles(c.id, f)}
                   onHighlightChange={(hl) => actions.setHighlight(c.id, hl)}
                   onClick={() => openThread(c.id)}
@@ -311,7 +335,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   onStartTopicFromDm={makeStartTopicHandler(m.id)}
                   onResolvedChange={(resolved, resolvedBy, message) => actions.setResolution(m.id, resolved, resolved ? (resolvedBy ?? CURRENT_USER_NAME) : undefined, message)}
                   onReactionsChange={(next, emoji) => actions.setReactions(m.id, next, m.reactions ?? [], emoji)}
-                  onBodyChange={(b) => actions.editBody(m.id, b)}
+                  onBodyChange={(b) => editBody(m.id, b)}
                   onFilesChange={(f) => actions.editFiles(m.id, f)}
                   onHighlightChange={(hl) => actions.setHighlight(m.id, hl)}
                   onClick={() => openThread(m.id)}
@@ -382,7 +406,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
       onClose={closeThread}
       onSendReply={handleSendReply}
       onDeleteReply={handleDeleteReply}
-      onReplyBodyChange={(replyId, body) => actions.editBody(replyId, body)}
+      onReplyBodyChange={(replyId, body) => editBody(replyId, body)}
       onReplyFilesChange={(replyId, files) => actions.editFiles(replyId, files)}
       onInitialFilesChange={threadConvId ? (files) => actions.editFiles(threadConvId, files) : undefined}
       onReplyHighlightChange={(replyId, hl) => actions.setHighlight(replyId, hl)}
