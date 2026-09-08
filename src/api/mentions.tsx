@@ -13,7 +13,7 @@ import { PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { TOPICS as MOCK_TOPICS } from '@/data/topicData'
 import { setMentionNames } from '@/lib/textParsing'
 import { useCurrentUser } from './currentUser'
-import { usePeople } from './people'
+import { useMentionNames, usePeople } from './people'
 import { useTopics } from './topics'
 import type { Person, Topic } from './types'
 
@@ -37,6 +37,19 @@ let directory: Person[] = MOCK_PEOPLE
 let version = 0
 const listeners = new Set<() => void>()
 
+/**
+ * Pubkey to name, for **everyone Peek can name** — which is not the directory.
+ *
+ * `directory` is the suggestion list and excludes the viewer and relay-only
+ * identities, both correctly. Resolving a mention excludes neither: a mention of
+ * you is still a mention, and a key Peek has only seen on the relay still
+ * belongs to somebody it can name. Reusing one list for both questions is what
+ * made a mention of Katerina draw as `npub14znawww…`.
+ */
+let resolvable = new Map<string, string>(
+  MOCK_PEOPLE.flatMap((p) => (p.pubkey ? [[p.pubkey, p.name] as [string, string]] : [])),
+)
+
 /** For `useSyncExternalStore`. */
 export function subscribeMentions(onChange: () => void): () => void {
   listeners.add(onChange)
@@ -50,8 +63,9 @@ export function mentionsVersion(): number {
   return version
 }
 
-function publish(next: Person[]): void {
+function publish(next: Person[], names?: Map<string, string>): void {
   directory = next
+  if (names) resolvable = names
   version += 1
   for (const listener of listeners) listener()
 }
@@ -76,6 +90,12 @@ export function mentionPeople(): Person[] {
  * what they are called.
  */
 export function personByPubkey(pubkey: string): Person | undefined {
+  // The resolution map first: it is the one that covers everybody, including
+  // the viewer and identities Peek has only seen on the relay. The suggestion
+  // list is still consulted, so a mention resolves as soon as either source
+  // knows the key rather than waiting for the wider query.
+  const name = resolvable.get(pubkey)
+  if (name) return { id: pubkey, name, role: '' }
   return directory.find((p) => p.pubkey === pubkey)
 }
 
@@ -100,9 +120,13 @@ export function TopicDirectorySync() {
 /** Seam-internal: mounted by PeekDataProvider. Renders nothing. */
 export function MentionDirectorySync() {
   const people = usePeople()
+  const knownNames = useMentionNames()
   const me = useCurrentUser()
   useEffect(() => {
-    publish(people ?? MOCK_PEOPLE)
+    publish(
+      people ?? MOCK_PEOPLE,
+      knownNames ? new Map(knownNames.map((n) => [n.pubkey, n.name])) : undefined,
+    )
     // The body renderer matches mentions by name, so it needs the FULL cast —
     // including the viewer's own name, or a mention OF you renders as plain
     // text in your view while everyone else sees a chip (issue #10). The
@@ -111,6 +135,6 @@ export function MentionDirectorySync() {
     const names = directory.map((p) => p.name)
     if (me?.name) names.push(me.name)
     setMentionNames(names)
-  }, [people, me])
+  }, [people, knownNames, me])
   return null
 }
