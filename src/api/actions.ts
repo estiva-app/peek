@@ -128,27 +128,66 @@ export function usePeekActions() {
    * Sign an unsigned event and put it on the relay, returning the id the relay
    * assigned — or null, with the reason logged.
    *
-   * Never throws to the caller and never surfaces as a failed user action: the
-   * Convex row is written either way, and the relay is a mirror rather than the
-   * source of truth. That was true when this lived in an action and has to stay
-   * true now that it does not.
+   * Never throws to the caller and never surfaces as a failed user action *by
+   * itself*: the Convex row is written either way, and the relay is a mirror
+   * rather than the source of truth. That was true when this lived in an action
+   * and has to stay true now that it does not.
+   *
+   * ## `onFailure` — "A failed publish says nothing about which half refused"
+   *
+   * Named rather than numbered: that issue is **also** `PEE-25`, and so is the
+   * link-marker ticket this file's neighbours already cite. Refs collide across
+   * projects (SHI-4), so a bare number here would read as the wrong one.
+   *
+   * The reason used to go to `console.warn` and nowhere else. For most kinds
+   * that is right; for an **edit** it is not, because a failed publish leaves
+   * every other reader showing the old text (PEE-24). So a caller that intends
+   * to tell somebody can ask for the words.
+   *
+   * **It says which half refused**, and that is the whole point. Signing and
+   * publishing fail for unrelated reasons — a credential that Estiva ID will
+   * not sign with, versus a relay that will not take the event — and a message
+   * that says only "not published" sends people to look at the wrong one. That
+   * cost two days on PEE-22: the toast said the relay declined, which was true
+   * and told nobody anything they could act on.
+   *
+   * A throw from `signViaEstivaId` is caught here rather than left to the
+   * caller, so that "could not sign" is reported in the same shape as "the
+   * relay refused" instead of arriving as an unrelated exception.
    */
   const signAndPublish = async (
     unsigned: UnsignedEvent,
     token: { accessToken: string; pubkey: string },
+    onFailure?: (reason: string) => void,
   ): Promise<string | null> => {
     const relay = relayConfig?.relayUrl
     if (!relay) {
+      const reason = 'publishing is off in this deployment'
       console.warn(
         `[nostr] kind:${unsigned.kind} not published: no relay origin ` +
           `(publishing is off, or the config query has not resolved yet)`,
       )
+      onFailure?.(reason)
       return null
     }
-    const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+
+    let signed: Awaited<ReturnType<typeof signViaEstivaId>>
+    try {
+      signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      console.warn(`[nostr] kind:${unsigned.kind} could not be signed:`, detail)
+      // Named as the credential rather than the relay: /sign refusing is a
+      // signed-in problem, and telling somebody the relay declined sends them
+      // to check a service that never saw the event.
+      onFailure?.(`Estiva ID would not sign it — ${detail}`)
+      return null
+    }
+
     const result = await publishSigned(relay, signed, token.accessToken, token.pubkey)
     if (!result.ok) {
       console.warn(`[nostr] kind:${unsigned.kind} publish failed:`, result.reason)
+      onFailure?.(`the relay refused it — ${result.reason}`)
       return null
     }
     return result.eventId ?? null
@@ -454,10 +493,11 @@ export function usePeekActions() {
           return built.expected ? { published: true } : { published: false, reason: built.reason }
         }
 
-        const eventId = await signAndPublish(built.unsigned, token)
-        // `signAndPublish` logs the relay's own words and returns null; the
-        // caller only needs to know that the edit did not leave.
-        return eventId ? { published: true } : { published: false, reason: 'the relay did not accept the edit' }
+        let refusal = 'it did not reach the relay'
+        const eventId = await signAndPublish(built.unsigned, token, (reason) => {
+          refusal = reason
+        })
+        return eventId ? { published: true } : { published: false, reason: refusal }
       })().catch((error) => {
         console.warn('[nostr] edit publish failed:', error)
         return { published: false, reason: error instanceof Error ? error.message : String(error) }
