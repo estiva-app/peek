@@ -133,6 +133,35 @@ export function useTopicView({
   const openWorkTopicIds = useOpenWorkTopicIds()
   const actions = usePeekActions()
   const { showToast } = useToast()
+
+  /**
+   * Edit, and say so when it did not travel — PEE-24.
+   *
+   * Peek patches its own row before publishing, so a failed publish leaves this
+   * app looking right and every other reader — Ship's conversation view, the
+   * agent — showing the old text. Nothing said so until now: all three ways the
+   * publish can decline wrote to the console and nothing else.
+   *
+   * The toast is deliberately not auto-dismissed. This is the one outcome where
+   * the app and the world disagree, and a five-second pill that somebody misses
+   * puts them back exactly where they were.
+   */
+  const editBody = (id: string, body: string) => {
+    void actions.editBody(id, body).then((outcome) => {
+      if (outcome.published) return
+      showToast({
+        label: `Edited here, but not published — ${outcome.reason}. Other apps still show the old text.`,
+        // `neutral` because the shared ToastType is success | brand | neutral
+        // and has no failure variant. `leadingIcon: false` matters more than
+        // the colour: the default is a circle-CHECK, and a tick beside "not
+        // published" is worse than no icon at all.
+        type: 'neutral',
+        leadingIcon: false,
+        durationMs: 0,
+      })
+    })
+  }
+
   const topic = topicId != null ? findTopic(topicId) : undefined
   // The topic's Folder id, so it can be copied and pasted into another app.
   // `'skip'` without a deployment or a topic — Peek runs on static mocks in
@@ -850,7 +879,7 @@ export function useTopicView({
                           onResolvedChange={(resolved, resolvedBy, message) => actions.setResolution(c.id, resolved, resolved ? (resolvedBy ?? CURRENT_USER_NAME) : undefined, message)}
                           onReactionsChange={(next, emoji) => actions.setReactions(c.id, next, c.reactions ?? [], emoji)}
                           onHighlightChange={(hl) => actions.setHighlight(c.id, hl)}
-                          onBodyChange={(b) => actions.editBody(c.id, b)}
+                          onBodyChange={(b) => editBody(c.id, b)}
                           onFilesChange={(f) => actions.editFiles(c.id, f)}
                           onClick={() => openThread(c.id)}
                           onReply={() => openThread(c.id)}
@@ -976,7 +1005,7 @@ export function useTopicView({
           ? (newBody: string) => actions.editHuddleSeedBody(threadConvId, newBody)
           : undefined
       }
-      onReplyBodyChange={(replyId, body) => actions.editBody(replyId, body)}
+      onReplyBodyChange={(replyId, body) => editBody(replyId, body)}
       onReplyFilesChange={(replyId, files) => actions.editFiles(replyId, files)}
       onInitialFilesChange={threadConvId ? (files) => actions.editFiles(threadConvId, files) : undefined}
       onReplyHighlightChange={(replyId, hl) => actions.setHighlight(replyId, hl)}

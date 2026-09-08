@@ -123,13 +123,44 @@ describe('unsignedEdit', () => {
     if (built.ok) expect(built.unsigned.pubkey).toBe(ADA)
   })
 
-  it('declines when there is nothing on the relay to edit', async () => {
+  /*
+    PEE-24 — the discriminator the whole reporting design rests on.
+
+    Peek patches its row before publishing, so a failed publish leaves the app
+    looking right and every other reader showing the old text. That has to be
+    said out loud — but only when it is actually wrong. A DM or a row that never
+    reached the relay was never going to travel, and reporting those would train
+    people to dismiss the message that matters.
+
+    The flag lives here because only this file knows which reasons are ordinary.
+    A caller matching on the strings would rot the first time one is reworded.
+  */
+  it('declines when there is nothing on the relay to edit, and calls it expected', async () => {
     const t = convexTest(schema, modules)
     await seed(t, { published: false })
     const built = await t
       .withIdentity(asUser(AGENT))
       .query(api.nostr.outbox.unsignedEdit, { key: 'msg-1', body: 'x' })
     expect(built.ok).toBe(false)
+    if (!built.ok) expect(built.expected).toBe(true)
+  })
+
+  it('does NOT call a signed-out caller expected — that one is worth saying', async () => {
+    const t = convexTest(schema, modules)
+    await seed(t)
+    const built = await t.query(api.nostr.outbox.unsignedEdit, { key: 'msg-1', body: 'x' })
+    expect(built.ok).toBe(false)
+    if (!built.ok) expect(built.expected).toBeFalsy()
+  })
+
+  it('does NOT call an unknown message expected either', async () => {
+    const t = convexTest(schema, modules)
+    await seed(t)
+    const built = await t
+      .withIdentity(asUser(AGENT))
+      .query(api.nostr.outbox.unsignedEdit, { key: 'no-such-message', body: 'x' })
+    expect(built.ok).toBe(false)
+    if (!built.ok) expect(built.expected).toBeFalsy()
   })
 })
 

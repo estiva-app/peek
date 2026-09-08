@@ -38,7 +38,17 @@ import type { UnsignedEvent } from '@estiva-app/protocol'
  */
 export type UnsignedMessage =
   | { ok: true; unsigned: UnsignedEvent; alreadyPublished?: undefined }
-  | { ok: false; reason: string }
+  /**
+   * `expected: true` means **this was never going to travel, and that is
+   * fine** — a DM, a huddle, a row that never reached the relay. A caller
+   * telling somebody about one of those would be crying wolf.
+   *
+   * Everything else is a refusal worth saying out loud. The flag is here
+   * rather than at the caller because only this file knows which reasons are
+   * ordinary, and string-matching them from outside would rot the first time
+   * one is reworded (PEE-24).
+   */
+  | { ok: false; reason: string; expected?: boolean }
 
 export const unsignedMessage = query({
   args: { messageId: v.id('messages') },
@@ -169,12 +179,14 @@ export const unsignedEdit = query({
     const target = await editTarget(ctx, key)
     if (!target) return { ok: false, reason: 'unknown message' }
     if (!target.nostrEventId) {
-      // Nothing on the relay to edit. Not a failure: the message is Peek-only
-      // (a DM, or one that never published), and the Convex patch is the whole
-      // of its record.
-      return { ok: false, reason: 'the message being edited is not on the relay' }
+      // Nothing on the relay to edit, and nothing wrong: the message is
+      // Peek-only (a DM, or one that never published), so the Convex patch is
+      // the whole of its record and no reader is left with stale text.
+      return { ok: false, reason: 'the message being edited is not on the relay', expected: true }
     }
-    if (!target.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+    if (!target.channelUuid) {
+      return { ok: false, reason: 'the topic has no channel on the relay yet', expected: true }
+    }
 
     return {
       ok: true,
