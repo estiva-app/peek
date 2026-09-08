@@ -8,10 +8,12 @@
  * composer hides the attach button when `!hasConvex`, per the rule that an
  * action only appears where it can succeed).
  */
-import { useMutation } from 'convex/react'
+import { useConvex, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { hasConvex } from './store'
 import { validateFile, isImageAttachment } from '@/lib/fileAttachments'
+import { validToken } from '@/auth/estivaId'
+import { uploadBlob } from '@/nostr/blob'
 
 /** An uploaded file, ready to attach to a message/reply. `previewUrl` is a
  *  local object URL for the optimistic window (images render before the
@@ -22,11 +24,28 @@ export interface UploadedFile {
   contentType: string
   size: number
   previewUrl?: string
+  /**
+   * The relay's copy — CON-12.
+   *
+   * Absent when the blob upload failed or there was no token. The message still
+   * sends and Peek still renders it from Convex; what is missing is every
+   * *other* reader, which is the whole point of carrying these.
+   */
+  sha256?: string
+  mediaUrl?: string
+  thumbUrl?: string
+  dim?: string
 }
 
 export function useUploadActions() {
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
   const deleteUploadRemote = useMutation(api.messages.deleteUpload)
+  // The client rather than a `useQuery`: the relay origin is wanted once, when
+  // a file is actually uploaded, and a live subscription here would open one in
+  // every component that can attach. A first version used `useQuery` and left
+  // an unhandled cross-realm Event error behind in the full suite — visible
+  // only there, because the file's own tests pass either way.
+  const convex = useConvex()
 
   return {
     /** Clean up a blob that was uploaded but removed before sending. */
@@ -48,12 +67,49 @@ export function useUploadActions() {
       })
       if (!res.ok) throw new Error('Upload failed — please try again.')
       const { storageId } = (await res.json()) as { storageId: string }
+
+      /*
+        And to the relay — CON-12.
+
+        Deliberately **as well as** Convex, not instead of it. Peek renders from
+        its own copy and this change does not touch that; what the relay's copy
+        buys is every other reader. Doing both means a relay that refuses costs
+        nobody their message.
+
+        Attempted here, at attach time, rather than at send: ingest refuses a
+        message whose blob it does not already hold, so the bytes must land
+        first — and a person waiting is waiting while they type rather than
+        after they press Enter.
+
+        A failure is swallowed to a warning on purpose. The alternative is
+        refusing to attach a file because a mirror is down, which is worse than
+        an attachment that only Peek can see. What must not happen is silence
+        *about the consequence*, and that belongs where the message is sent —
+        see `unsignedMessage`, which simply omits an `imeta` it has no blob for.
+      */
+      const relayUrl = (await convex.query(api.nostr.config.relayConfig, {}))?.relayUrl
+      const token = validToken()
+      let blob: Awaited<ReturnType<typeof uploadBlob>> | undefined
+      if (relayUrl && token) {
+        try {
+          blob = await uploadBlob(relayUrl, file, token)
+        } catch (error) {
+          console.warn('[nostr] attachment not uploaded to the relay:', error)
+        }
+      } else {
+        console.warn('[nostr] attachment not uploaded to the relay: no relay origin or no token')
+      }
+
       return {
         storageId,
         name: file.name,
         contentType: file.type || '',
         size: file.size,
         previewUrl: isImageAttachment(file.name, file.type) ? URL.createObjectURL(file) : undefined,
+        sha256: blob?.sha256,
+        mediaUrl: blob?.url,
+        thumbUrl: blob?.thumb,
+        dim: blob?.dim,
       }
     },
   }
