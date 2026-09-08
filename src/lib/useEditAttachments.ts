@@ -28,6 +28,8 @@ export interface EditAttachmentChip {
   contentType?: string
   status: 'uploading' | 'done' | 'error'
   error?: string
+  /** Why the relay has no copy of this one — CON-12. */
+  shareError?: string
   previewUrl?: string
   onRemove: () => void
 }
@@ -93,6 +95,7 @@ export function useEditAttachments(files: FileAttachment[] | undefined): EditAtt
       contentType: f.contentType,
       status: f.status,
       error: f.error,
+      shareError: f.uploaded?.shareError,
       previewUrl: f.uploaded?.previewUrl,
       onRemove: () => uploads.remove(f.localId),
     })),

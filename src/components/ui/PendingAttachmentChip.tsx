@@ -1,16 +1,29 @@
 /**
  * A file in the composer, on its way to a message.
  *
- * Three states and nothing else: **uploading** (spinner), **ready** (an image
- * shows itself, anything else shows its type), and **failed** (why, in place
- * of the size). Removing one is the corner X, which appears on hover.
+ * Three states: **uploading** (spinner), **ready** (an image shows itself,
+ * anything else shows its type), and **failed** (why, in place of the size).
+ * Removing one is the corner X, which appears on hover.
+ *
+ * ## And one qualifier on "ready" — CON-12
+ *
+ * A file can upload to Peek and fail to reach the relay. It still sends and
+ * Peek still draws it; what is lost is every **other** reader, which is
+ * invisible from here — the sender's screen looks finished either way. Miky
+ * posted an image on 2026-09-08 and Ship showed nothing, because the event
+ * reached the relay with no `imeta` and neither app said so.
+ *
+ * So that case is drawn, in **warning** rather than error: nothing failed for
+ * the person holding this screen, and colouring it red would say the send is
+ * broken when it is not. The words name the consequence — other apps — rather
+ * than the mechanism, which nobody outside this repo can act on.
  *
  * Lifted out of `ComposeBox` with its markup unchanged — COMPONENTS-PEEK F15,
  * where this chip is one of four hand-drawn copies of the same card. It was
  * inline, so the only way to see any of its states was a live app with a
  * backend behind it. It has stories now, which is how it gets reviewed.
  */
-import { IconAlertCircle, IconLoader2, IconX } from '@tabler/icons-react'
+import { IconAlertCircle, IconAlertTriangle, IconLoader2, IconX } from '@tabler/icons-react'
 import { WithTooltip } from './WithTooltip'
 import { cn } from '@/lib/utils'
 import { formatBytes, fileTypeLabel, isImageAttachment } from '@/lib/fileAttachments'
@@ -22,6 +35,12 @@ export interface PendingAttachmentChipProps {
   status: 'uploading' | 'done' | 'error'
   /** Shown in place of the size when the upload failed. */
   error?: string
+  /**
+   * Why the relay has no copy — CON-12. The file is fine; other apps cannot
+   * see it. Ignored unless `status` is `done`, since a failed upload has a
+   * larger problem to report.
+   */
+  shareError?: string
   /** A local object URL: the image is there before the server resolves one. */
   previewUrl?: string
   onRemove: () => void
@@ -56,15 +75,17 @@ export function PendingAttachmentChip({
   contentType,
   status,
   error,
+  shareError,
   previewUrl,
   onRemove,
 }: PendingAttachmentChipProps) {
   const isImage = isImageAttachment(name, contentType)
+  const unshared = status === 'done' && !!shareError
   return (
     <div
       className={cn(
         'group relative flex items-center gap-2 w-[200px] rounded-lg border bg-bg-elevated p-1.5 pr-3',
-        status === 'error' ? 'border-error-default' : 'border-border-default',
+        status === 'error' ? 'border-error-default' : unshared ? 'border-warning-default' : 'border-border-default',
       )}
     >
       <div className="size-9 rounded-md bg-bg-active flex items-center justify-center shrink-0 overflow-hidden text-text-secondary">
@@ -72,6 +93,8 @@ export function PendingAttachmentChip({
           <IconLoader2 size={16} stroke={1.5} className="animate-spin" />
         ) : status === 'error' ? (
           <IconAlertCircle size={16} stroke={1.5} className="text-error-default" />
+        ) : unshared ? (
+          <IconAlertTriangle size={16} stroke={1.5} className="text-warning-default" />
         ) : isImage && previewUrl ? (
           <img src={previewUrl} alt={name} className="size-full object-cover" />
         ) : (
@@ -87,14 +110,26 @@ export function PendingAttachmentChip({
         <WithTooltip label={name} wrapperClassName="min-w-0">
           <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{name}</span>
         </WithTooltip>
-        <span
-          className={cn(
-            'text-[10px] leading-[1.2] truncate',
-            status === 'error' ? 'text-error-default' : 'text-text-secondary',
-          )}
-        >
-          {status === 'error' ? error : status === 'uploading' ? 'Uploading…' : formatBytes(size)}
-        </span>
+        {/* The relay's own words go in the tooltip, not the line: "403
+            kind_not_allowed" is what a maintainer needs and is noise to
+            everyone else, while "Other apps won't see this" is the fact the
+            sender can act on. */}
+        <WithTooltip label={unshared ? `Not shared with other apps — ${shareError}` : formatBytes(size)} wrapperClassName="min-w-0">
+          <span
+            className={cn(
+              'text-[10px] leading-[1.2] truncate',
+              status === 'error' ? 'text-error-default' : unshared ? 'text-warning-default' : 'text-text-secondary',
+            )}
+          >
+            {status === 'error'
+              ? error
+              : status === 'uploading'
+                ? 'Uploading…'
+                : unshared
+                  ? "Other apps won't see this"
+                  : formatBytes(size)}
+          </span>
+        </WithTooltip>
       </div>
       <AttachmentRemoveButton label={`Remove ${name}`} onRemove={onRemove} />
     </div>
