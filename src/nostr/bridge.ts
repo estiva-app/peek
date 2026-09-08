@@ -35,8 +35,10 @@
  * already drifted on `buildMessage`. The package is that sentence applied across
  * repositories instead of only within one.
  *
- * What stays here is the part that is Peek's: the `/sign` round trip. That is
- * identity, and it becomes `@estiva-app/identity` in SHA-4.
+ * The `/sign` round trip moved into `@estiva-app/identity` with SHA-4, which is
+ * what this file said would happen. What is left of it here is Peek's *binding*
+ * of it — the identity origin, and the positional signature thirteen files
+ * already call.
  */
 import {
   authorizationHeaderFor,
@@ -45,18 +47,30 @@ import {
   parseQueryResponse,
 } from '@estiva-app/protocol'
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
 
 /**
- * Sign as the token's subject.
+ * Sign as the token's subject, over the package's round trip.
  *
  * `expectedPubkey` is not a request — `/sign` ignores any pubkey it is handed
  * and signs as the token's subject, always. It is a **check**, and the reason
  * one is needed at all: a mismatch comes back as HTTP 200 with a perfectly
- * valid event authored by somebody else. Without this the failure is invisible
- * at the call site and only shows up later as a message attributed to the wrong
+ * valid event authored by somebody else. Without it the failure is invisible at
+ * the call site and only shows up later as a message attributed to the wrong
  * person. `signWithIdentityService` keeps the same guard server-side; do not
  * drop either.
+ *
+ * **Peek's copy of this check was the only one of three that had it.** The other
+ * two were `ship/lib/nostr/signer.ts` and its byte-identical twin in
+ * `estiva-agent`, and neither compared the pubkey at all. That is what three
+ * implementations of one call produce, and it is why SHA-4 collapsed them.
+ *
+ * Kept as a positional three-argument function rather than re-pointed at the
+ * package's options object, because thirteen files call it and a rename across
+ * thirteen files in the same commit as an auth change is how a real regression
+ * hides in a diff nobody can read. The same reasoning `auth/estivaId.ts` gives
+ * for its own re-exports.
  */
 export type { PublishResult }
 
@@ -65,23 +79,11 @@ export async function signViaEstivaId(
   token: string,
   expectedPubkey?: string,
 ): Promise<SignedEvent> {
-  const response = await fetch(`${ESTIVA_ID_ORIGIN}/sign`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ event: unsigned }),
+  return signViaPackage(unsigned, {
+    base: ESTIVA_ID_ORIGIN,
+    token,
+    ...(expectedPubkey ? { expectedPubkey } : {}),
   })
-  if (!response.ok) {
-    throw new Error(`POST /sign failed: ${response.status} ${await response.text()}`)
-  }
-  const body = (await response.json()) as { event?: SignedEvent }
-  if (!body.event) throw new Error('POST /sign returned no event')
-  if (expectedPubkey && body.event.pubkey !== expectedPubkey) {
-    throw new Error(
-      `POST /sign returned an event authored by ${body.event.pubkey}, expected ${expectedPubkey}. ` +
-        'That token belongs to a different identity — refusing to publish under the wrong author.',
-    )
-  }
-  return body.event
 }
 
 /**

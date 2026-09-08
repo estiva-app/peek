@@ -105,7 +105,7 @@ function build(relayUrl: string, api: LiveProjectionApi): Instance {
         // The status is the honest signal — and the difference between
         // "expired" and "this app cannot verify the token" decides whether
         // sending somebody to sign in again helps or wastes their time.
-        recordCredentialFailure(reasonForSignFailure((error as Error).message))
+        recordCredentialFailure(reasonForSignFailure(error))
         throw error
       }
     },

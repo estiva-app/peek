@@ -12,6 +12,7 @@
  * wall. It is asserted again here because this is a second surface that could
  * reintroduce it.
  */
+import { SignRefused, SignerTokenExpired } from '@estiva-app/identity'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   CATCHING_UP_AFTER_MS,
@@ -258,6 +259,43 @@ describe('classifying a /sign failure', () => {
 
   it('calls an unrecognisable failure a network problem', () => {
     expect(reasonForSignFailure('Failed to fetch')).toBe('network')
+  })
+
+  /*
+    The cases above pass STRINGS, and that is why they could not catch what SHA-4
+    nearly broke. Peek's own copy of the round trip threw the exact sentence they
+    match; `@estiva-app/identity`'s is worded differently, so the pattern would
+    have matched nothing and every refusal would have become `network` — with
+    every assertion above still green, because a literal string cannot go stale.
+
+    So the real errors get asserted too. `liveTopics.ts` is the only caller and
+    it hands over what the round trip actually threw.
+  */
+  it('classifies the errors the round trip really throws', () => {
+    expect(reasonForSignFailure(new SignerTokenExpired())).toBe('session_expired')
+    expect(reasonForSignFailure(new SignRefused(403, 'Estiva ID refused to sign kind:1111 — inactive'))).toBe(
+      'identity_inactive',
+    )
+    expect(reasonForSignFailure(new SignRefused(422, 'Estiva ID refused to sign kind:1111 — policy_violation'))).toBe(
+      'token_rejected',
+    )
+    expect(reasonForSignFailure(new SignRefused(500, 'Estiva ID refused to sign kind:1111 — internal'))).toBe(
+      'token_rejected',
+    )
+  })
+
+  it('never calls a real policy refusal an expiry either', () => {
+    // The same rule as above, on the surface that now carries it.
+    for (const status of [422, 500, 502]) {
+      const refusal = new SignRefused(status, 'Estiva ID refused to sign kind:1111 — nope')
+      expect(reasonForSignFailure(refusal), `status ${status}`).not.toBe('session_expired')
+    }
+  })
+
+  it('still answers for a throw with no status at all', () => {
+    // An aborted fetch, or a throw from somewhere that is not the round trip.
+    expect(reasonForSignFailure(new Error('Failed to fetch'))).toBe('network')
+    expect(reasonForSignFailure('nonsense that is not even an Error')).toBe('network')
   })
 })
 
