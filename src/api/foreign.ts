@@ -22,6 +22,7 @@ import {
   creatableUnderAsViewer,
   folderForReferenceAsViewer,
   directoryAsViewer,
+  createFolderAsViewer,
   resolveFolderContentsAsViewer,
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
@@ -88,11 +89,28 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  /** Every Folder this viewer can see, for the navigation. Empty when signed out. */
-  const listFolders = useCallback(async (): Promise<FolderSummary[]> => {
+  /**
+   * Every Folder this viewer can see, for the navigation.
+   *
+   * `null` when signed out, **not** an empty array. The two are different
+   * sentences — "there are no folders" and "you are not signed in" — and
+   * collapsing them is what made the folder list say "No folders yet" to a
+   * signed-out viewer looking at a workspace with eighty-one of them.
+   */
+  const listFolders = useCallback(async (): Promise<FolderSummary[] | null> => {
     const v = viewer()
-    return v ? listFoldersAsViewer(v.relayUrl, v.token) : []
+    return v ? listFoldersAsViewer(v.relayUrl, v.token) : null
   }, [viewer])
+
+  /** Create a Folder. Refuses rather than pretending when signed out. */
+  const createFolder = useCallback(
+    async (name: string) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to create a folder.' }
+      return createFolderAsViewer(name, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
 
   const applyAction = useCallback(
     async (args: {
@@ -131,6 +149,7 @@ export function useForeignObjects() {
     resolveFolderProject,
     resolveFolderContents,
     listFolders,
+    createFolder,
     applyAction,
     creatableUnder,
     folderForReference,

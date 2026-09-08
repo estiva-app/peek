@@ -121,17 +121,30 @@ export function useFolderContents(folder: string | null | undefined): {
  * is unaffected, and "no folders" is what a signed-out viewer legitimately
  * sees, so the two need not be told apart here.
  */
-export function useFolders(): FolderSummary[] {
+export function useFolders(): {
+  /** `null` while the first read is in flight, or when signed out. */
+  folders: FolderSummary[] | null
+  signedOut: boolean
+  reload: () => Promise<void>
+} {
   const { listFolders } = useForeignObjects()
-  const [folders, setFolders] = useState<FolderSummary[]>([])
-  useEffect(() => {
-    let cancelled = false
-    listFolders()
-      .then((next) => !cancelled && setFolders(next))
-      .catch(() => !cancelled && setFolders([]))
-    return () => {
-      cancelled = true
+  const [folders, setFolders] = useState<FolderSummary[] | null>(null)
+  const [signedOut, setSignedOut] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      const next = await listFolders()
+      // `null` is the seam saying "no viewer", which is not an empty workspace.
+      setSignedOut(next === null)
+      setFolders(next)
+    } catch {
+      setFolders([])
     }
   }, [listFolders])
-  return folders
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  return { folders, signedOut, reload: load }
 }

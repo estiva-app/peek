@@ -28,7 +28,7 @@ const KIND_TOPIC = 39000
 const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
-import { decodeNevent, pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
+import { buildCreateChannel, decodeNevent, pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
 import {
   matchObjectUrl,
   urlPatternsOf,
@@ -216,6 +216,38 @@ export async function resolveFolderProjectAsViewer(
 ): Promise<FolderProject | null> {
   const query = viewerQuery(relayUrl, token)
   return resolveFolderProject(folder, query, cachedPeople(query))
+}
+
+/**
+ * Create a Folder — a `kind:9007`, the same event that creates a channel.
+ *
+ * **A Folder *is* a Buzz channel** (RFC 0.4 §4.1), so there is no new kind to
+ * publish and nothing to migrate: the container that has always carried access
+ * and conversation is the container files now live in. The relay emits the
+ * `kind:39000` whose `name` this list reads.
+ *
+ * No `kind:1852` is sent. A folder with no contents yet has nothing to put in a
+ * contents list, and the name is already on the channel — a state event here
+ * would say exactly what the discovery event says, and be a second thing to
+ * keep in step.
+ *
+ * Note what this is *not*: creating a Peek **topic**, which additionally
+ * records a Convex row and publishes memberships (`publishTopicChannel`). Today
+ * those two acts produce the same wire object, which is the conflation RFC 0.4
+ * §11.1 exists to end.
+ */
+export async function createFolderAsViewer(
+  name: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+  const id = crypto.randomUUID()
+  const unsigned = buildCreateChannel(token.pubkey, Date.now(), { channelUuid: id, name })
+  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+  // Never the status code: the relay refuses in a shape that reads as success.
+  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the folder.' }
+  return { ok: true, id }
 }
 
 /**
