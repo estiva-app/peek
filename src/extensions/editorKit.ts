@@ -4,10 +4,17 @@ import StarterKit from '@tiptap/starter-kit'
 import { KeptSelection } from './keptSelection'
 
 /**
- * The one editor kit every Peek editor uses (main composer + the
+ * The marks and nodes every Peek editor uses (main composer + the
  * edit-in-place editors in ConversationCard/ThreadReplyCard). Keeping it in
  * one place means the three editors can't drift apart on what formatting the
  * app supports.
+ *
+ * It is only half the answer, and the half that never went wrong. The
+ * suggestion extensions — `@`, `!@`, `[`, `->` and `/` — sat outside it and
+ * were spelled out per editor until `/` went missing from two of the three.
+ * **`peekEditor.ts` is the whole list**, and that is what an editor takes;
+ * this stays exported for the two unit tests that want the grammar without
+ * React node views behind it.
  *
  * Rich-text scope: bold / italic / underline via keyboard shortcuts
  * (Ctrl+B / I / U), inline code (Ctrl+E), headline (`# ` or Ctrl+Alt+1),

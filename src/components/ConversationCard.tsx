@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { peekStarterKit } from '@/extensions/editorKit'
-import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
-import { ResolutionBlock, extractResolution, extractResolutionFromText } from '@/extensions/resolution'
-import { HighlightTag, extractHighlightType } from '@/extensions/highlight'
+import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
+import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
+import { extractHighlightType } from '@/extensions/highlight'
 import {
   IconMessage2,
   IconChevronRight,
@@ -37,6 +37,8 @@ import { type ReactionData, type HighlightType, type FileAttachment } from '@/ap
 import { useIsTopicResolved, useAvatarSrc, hasConvex } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
+import { SelectionToolbar } from './ui/SelectionToolbar'
+import { HighlightButton } from './ui/HighlightButton'
 import { HighlightPill } from './ui/HighlightPill'
 import { MessageBody } from './ui/MessageBody'
 import { cn } from '@/lib/utils'
@@ -181,17 +183,11 @@ export function ConversationCard({
   const editCancelFnRef = useRef<() => void>(() => {})
   const editEmptyRef = useRef(true)
   const editEditorRef = useRef<ReturnType<typeof useEditor>>(null)
+  /** The edit box itself — what the highlight picker hangs from. */
+  const editBoxRef = useRef<HTMLDivElement>(null)
 
   const editEditor = useEditor({
-    extensions: [
-      peekStarterKit,
-      PeekMention,
-      UrgentMention,
-      TopicMention,
-      FileMention,
-      ResolutionBlock,
-      HighlightTag,
-    ],
+    extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
         class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
@@ -244,7 +240,12 @@ export function ConversationCard({
           ed.commands.splitBlock()
           return true
         }
+        /* An open `@`, `[` or `/` menu owns Escape: the first press closes
+           the menu, a second cancels the edit. Without this the plugin never
+           saw the key — ProseMirror asks `editorProps` before any plugin — so
+           reaching for the menu's Escape threw the whole edit away. */
         if (event.key === 'Escape') {
+          if (isSuggestionOpen()) return false
           editCancelFnRef.current()
           return true
         }
@@ -617,12 +618,17 @@ export function ConversationCard({
           <div className="p-2 border border-accent-primary rounded-lg">
             <div className="flex items-start gap-2">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} className="shrink-0 mt-1" />
-              <div className="flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
+              {/* `relative` so the highlight picker hangs off this box, the
+                  way it hangs off the composer's — the edit box is a compose
+                  box, and everything the composer can do belongs here. */}
+              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
                 <div className={cn(
                   'relative min-h-[20px] transition-all',
                   (editHasUrgent || editHasHighlight) && 'border-l-[4px] border-border-strong pl-2'
                 )}>
                   <EditorContent editor={editEditor} />
+                  {/* Bold / italic / underline / link over a selection. */}
+                  <SelectionToolbar editor={editEditor} />
                   {editEmpty && (
                     <div className="absolute inset-0 pointer-events-none flex items-center text-sm text-text-muted leading-[1.4]">
                       Edit message
@@ -638,6 +644,7 @@ export function ConversationCard({
                     <IconButton tooltip="Snooze" aria-label="Snooze">
                       <IconSquareForbid2 size={16} stroke={1.5} />
                     </IconButton>
+                    <HighlightButton editor={editEditor} container={editBoxRef} />
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>

@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom'
 import { Menu, MenuItem, MenuSub } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
-import { peekStarterKit } from '@/extensions/editorKit'
-import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
-import { ResolutionBlock, extractResolution, extractResolutionFromText } from '@/extensions/resolution'
-import { HighlightTag, extractHighlightType } from '@/extensions/highlight'
+import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
+import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
+import { extractHighlightType } from '@/extensions/highlight'
 import {
   IconMoodPlus,
   IconDotsVertical,
@@ -28,6 +28,8 @@ import { type ReactionData, type FileAttachment } from '@/api'
 import { useIsTopicResolved, hasConvex } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
+import { SelectionToolbar } from './ui/SelectionToolbar'
+import { HighlightButton } from './ui/HighlightButton'
 import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
 import { pastedImages } from '@/lib/fileAttachments'
@@ -209,12 +211,11 @@ export function ThreadReplyCard({
   const editCancelFnRef = useRef<() => void>(() => {})
   const editEmptyRef = useRef(true)
   const editEditorRef = useRef<ReturnType<typeof useEditor>>(null)
+  /** The edit box itself — what the highlight picker hangs from. */
+  const editBoxRef = useRef<HTMLDivElement>(null)
 
   const editEditor = useEditor({
-    extensions: [
-      peekStarterKit,
-      PeekMention, UrgentMention, TopicMention, FileMention, ResolutionBlock, HighlightTag,
-    ],
+    extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
         class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
@@ -259,7 +260,12 @@ export function ThreadReplyCard({
           ed.commands.splitBlock()
           return true
         }
-        if (event.key === 'Escape') { editCancelFnRef.current(); return true }
+        /* An open `@`, `[` or `/` menu owns Escape — see ConversationCard. */
+        if (event.key === 'Escape') {
+          if (isSuggestionOpen()) return false
+          editCancelFnRef.current()
+          return true
+        }
         return false
       },
     },
@@ -471,9 +477,13 @@ export function ThreadReplyCard({
           <div className="p-2">
             <div className="flex items-start gap-2">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} className="shrink-0 mt-1" />
-              <div className="flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4">
+              {/* `relative` so the highlight picker hangs off this box, the
+                  way it hangs off the composer's. */}
+              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4">
                 <div className={cn('relative min-h-[20px] transition-all', (editHasUrgent || editHasHighlight) && 'border-l-[4px] border-border-strong pl-2')}>
                   <EditorContent editor={editEditor} />
+                  {/* Bold / italic / underline / link over a selection. */}
+                  <SelectionToolbar editor={editEditor} />
                   {editEmpty && (
                     <div className="absolute inset-0 pointer-events-none flex items-center text-sm text-text-muted leading-[1.4]">
                       Edit message
@@ -485,6 +495,7 @@ export function ThreadReplyCard({
                   <div className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
                     <IconButton tooltip="Snooze" aria-label="Snooze"><IconSquareForbid2 size={16} stroke={1.5} /></IconButton>
+                    <HighlightButton editor={editEditor} container={editBoxRef} />
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>

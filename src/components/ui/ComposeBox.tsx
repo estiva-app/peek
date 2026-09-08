@@ -4,18 +4,17 @@ import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegist
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { textToTiptapContent } from '@/lib/textParsing'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { peekStarterKit } from '@/extensions/editorKit'
-import { PeekMention, UrgentMention, TopicMention, FileMention, isSuggestionActive } from '@/extensions/mention'
-import { ResolutionBlock, extractResolution } from '@/extensions/resolution'
-import { HighlightTag, extractHighlightType, insertHighlightTag } from '@/extensions/highlight'
-import { IconSquareForbid2, IconArrowUp, IconHighlight } from '@tabler/icons-react'
+import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { isSuggestionActive } from '@/extensions/mention'
+import { extractResolution } from '@/extensions/resolution'
+import { extractHighlightType } from '@/extensions/highlight'
+import { IconSquareForbid2, IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
-import { Kbd, MenuItem, MenuPanel } from '@estiva-app/ui'
-import { HighlightSwatch } from './HighlightPill'
+import { Kbd } from '@estiva-app/ui'
 import { FrameArt } from './FrameArt'
 import { FrameLightbox } from '../FrameLightbox'
 import { cn } from '@/lib/utils'
-import { HIGHLIGHT_META, hasConvex, type HighlightType, type UploadedFile } from '@/api'
+import { hasConvex, type HighlightType, type UploadedFile } from '@/api'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { pastedImages } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
@@ -23,7 +22,7 @@ import { AttachmentRemoveButton, PendingAttachmentChip } from './PendingAttachme
 import { AttachFileButton } from './AttachFiles'
 import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
-import { SlashCommands } from '@/extensions/slashCommands'
+import { HighlightButton } from './HighlightButton'
 
 export interface SendPayload {
   text: string
@@ -173,16 +172,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
   const editor = useEditor({
-    extensions: [
-      peekStarterKit,
-      PeekMention,
-      UrgentMention,
-      TopicMention,
-      FileMention,
-      ResolutionBlock,
-      HighlightTag,
-      SlashCommands,
-    ],
+    extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
         class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
@@ -393,35 +383,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   }, [editor, contextLabel])
 
 
-  // Listen for tag clicks to reopen picker
-  const [showHighlightPicker, setShowHighlightPicker] = useState(false)
-  const highlightPickerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const target = (e as CustomEvent).detail as HTMLElement | undefined
-      // Only respond if the click came from within this ComposeBox
-      if (target && composeRef.current?.contains(target)) {
-        setShowHighlightPicker(true)
-      }
-    }
-    window.addEventListener('highlight-tag-click', handler)
-    return () => window.removeEventListener('highlight-tag-click', handler)
-  }, [])
-
-  // Close highlight picker on outside click
-  useEffect(() => {
-    if (!showHighlightPicker) return
-    const close = (e: MouseEvent) => {
-      if (highlightPickerRef.current?.contains(e.target as Node)) return
-      setShowHighlightPicker(false)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [showHighlightPicker])
-
-
-
 
   const handleSend = () => {
     if (!editor) return
@@ -451,30 +412,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   return (
     <div ref={composeRef} className={cn('relative', className)}>
 
-      {/* Highlight picker (from toolbar button or tag click) */}
-      {showHighlightPicker && (
-        <div ref={highlightPickerRef} className="absolute left-0 bottom-full mb-1 z-50">
-          {/* The shared box (2026-09-05) — a fourth hand-drawn copy of it
-              lived here. Not `Menu`: this picker is placed against the
-              composer and closes through the outside-click effect above, so
-              a second Escape-and-outside-click owner would fight it. */}
-          <MenuPanel className="w-[180px]">
-            {(['insight', 'concern', 'conclusion', 'question', 'summary'] as HighlightType[]).map((type) => (
-              <MenuItem
-                key={type}
-                leading={<HighlightSwatch type={type} />}
-                label={HIGHLIGHT_META[type].label}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  if (editorRef.current) insertHighlightTag(editorRef.current, type)
-                  setShowHighlightPicker(false)
-                }}
-              />
-            ))}
-          </MenuPanel>
-        </div>
-      )}
-
       <div className="relative bg-bg-inset border border-border-default focus-within:border-border-strong rounded-lg p-3 flex flex-col gap-4 transition-colors signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
         {/* Editable area - left border when urgent or highlight */}
         <div data-composer-editor className={cn(
@@ -483,9 +420,11 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           !hasUrgent && hasHighlight && 'border-l-[4px] border-border-strong pl-2'
         )}>
           <EditorContent editor={editor} />
-          {/* Bold / italic / underline / link over a selection. Rendered here rather
-              than in the menu because those marks need something selected, and
-              the `/` menu only opens on an empty composer. */}
+          {/* Bold / italic / underline / link over a selection. Rendered here
+              rather than in the `/` menu because those marks need something
+              selected, and typing `/` replaces a selection. (It is not that the
+              menu needs an empty composer — it stopped needing that at PEE-18,
+              and the note here still said so.) */}
           <SelectionToolbar editor={editor} />
           {isEmpty && !hasHighlight && (
             <div className="absolute inset-0 pointer-events-none flex items-center gap-1 text-sm text-text-muted leading-[1.4] flex-wrap">
@@ -556,13 +495,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
             <IconButton tooltip="Snooze" aria-label="Snooze">
               <IconSquareForbid2 size={16} stroke={1.5} />
             </IconButton>
-            <IconButton
-              aria-label="Highlight"
-              tooltip="Mark as Highlight"
-              onClick={() => setShowHighlightPicker((v) => !v)}
-            >
-              <IconHighlight size={16} stroke={1.5} />
-            </IconButton>
+            <HighlightButton editor={editor} container={composeRef} />
           </div>
 
           {(() => {
