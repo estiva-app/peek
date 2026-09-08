@@ -1,45 +1,56 @@
 /**
  * The one live relay client a tab has, and the topics it is watching (PEE-8).
  *
- * PEE-5 built the socket, PEE-6 the per-channel subscriptions, PEE-7 the
- * routing into Convex. All three were unconsumed until this file, which owns
- * the single instance of each and hands `useTopicView` a `watch()` call.
+ * ## What is left here after SHA-7
  *
- * ## Why a module singleton rather than a hook or a context
+ * Almost nothing, on purpose. The socket, the credential-per-connect rule, the
+ * per-tab single instance and the `online`/`offline` reconnect all moved to
+ * `@estiva-app/platform`, because a second app needed them and would otherwise
+ * have written all four again. ADR 0002 §10 scored this file ❌ on constraint 1
+ * (it imported the app's credential provider) and ❌ on constraint 2 (a
+ * module-level singleton and a `window` touch) and called it "the bill SHA-7 is
+ * paying" — so the extraction had to *change* the code, not relocate it.
  *
- * **One connection per tab** is a property of the design, not an optimisation:
- * `max_subscriptions` is per connection, the relay authenticates a connection
- * once, and a second socket would double the AUTH round trips for nothing. A
- * connection created inside a component would be one per mount.
+ * What stays is the wiring only Peek can do:
  *
- * React StrictMode makes that concrete in development — it mounts, unmounts and
- * remounts every component, so anything owned by an effect is built twice. A
- * module-level instance is built once and simply watched twice, which is
- * exactly what PEE-6's refcounting already handles: two `watch()` calls on one
- * channel share one REQ, and the channel closes when the second releases.
+ * - **`liveProjection`**, which is Convex-shaped. `LiveProjectionApi` is
+ *   `importChannel` / `importReactions` / `importResolutions`, and putting that
+ *   in a shared package would have baked Peek's backend into something Ship
+ *   depends on.
+ * - **`freshness.ts`**, whose four states and their copy are product voice. The
+ *   package is *told* what happened through `observe` and holds none of it.
+ * - **The single module binding.** `createLiveClientHolder()` is the mechanism;
+ *   keeping the one instance is the app's job, because a module-level global in
+ *   the package is the exact constraint-2 failure it exists to stop repeating.
  *
- * ## The credential is read per connect, never captured
+ * The public shape of this file is unchanged, deliberately: `useTopicView`,
+ * `LiveWorkingSet`, `useFolderContents` and `useFolderProject` are untouched by
+ * this migration, so a regression shows up as those features breaking rather
+ * than as a large diff to read.
  *
- * `getCredential` calls `validToken()` on every connect attempt. Capturing a
- * token at module load is the trap `useTopicView` already documents for the
- * HTTP path: a page opened while the stored token had expired would keep a dead
- * credential for the whole session, and here it would also mean a reconnect
- * after a renewal signing with the expired one.
+ * ## Token rotation still needs nothing
  *
- * The socket itself needs no attention when the token rotates — the relay
- * authenticated a **pubkey** by checking a signature and never saw the token.
- * See `createLiveRelay` in `@estiva-app/protocol`.
+ * The relay authenticated a **pubkey**, by verifying a Schnorr signature. It
+ * never saw the Estiva ID access token and has no idea one exists. Renewal
+ * issues a new token for the same keypair, so nothing the relay checked has
+ * changed. The token is needed only to *sign* a fresh 22242, which happens on
+ * the next connect — and `getCredential` below is read then, never captured.
  */
 import { validToken } from '@/auth/estivaId'
-import { createChannelSubscriptions, type ChannelSubscriptions } from '@estiva-app/protocol'
-import { createForeignActivity } from './foreignActivity'
+import {
+  browserOnlineSource,
+  createFolderActivity,
+  createLiveClientHolder,
+  type FolderActivity,
+  type LiveClient,
+} from '@estiva-app/platform'
+import type { RelayState } from '@estiva-app/protocol'
 import {
   createLiveProjection,
   type LiveProjection,
   type LiveProjectionApi,
   type WatchHandle,
 } from './liveProjection'
-import { createLiveRelay, type LiveRelay, type RelayState } from '@estiva-app/protocol'
 import { signViaEstivaId } from './bridge'
 import {
   reasonForSignFailure,
@@ -63,109 +74,78 @@ export interface LiveTopics {
    * they were dropped for want of anywhere to put them. This is that place, and
    * it carries no event: Peek does not store other apps' records, so the useful
    * signal is "re-read now".
+   *
+   * Fed by `liveProjection` rather than by the client's own `watchFolders`,
+   * because the projection is what knows which events it did *not* project. A
+   * workspace reader with no projection — Ship — uses the other path.
    */
   onForeignActivity(folder: string, listener: () => void): () => void
 }
 
-interface Instance extends LiveTopics {
+/**
+ * The app's one binding. `@estiva-app/platform` hands out a holder rather than
+ * keeping an instance, so this line is where "one per tab" actually lives.
+ */
+const holder = createLiveClientHolder()
+
+interface Wiring {
   relayUrl: string
-  relay: LiveRelay
-  subscriptions: ChannelSubscriptions
+  client: LiveClient
   projection: LiveProjection
+  activity: FolderActivity
+  topics: LiveTopics
 }
 
-let instance: Instance | null = null
+let wiring: Wiring | null = null
 
-function build(relayUrl: string, api: LiveProjectionApi): Instance {
-  const listeners = new Set<(state: RelayState) => void>()
-  let state: RelayState = 'connecting'
-
-  const relay = createLiveRelay({
-    url: relayUrl,
+function build(relayUrl: string, api: LiveProjectionApi): Wiring {
+  const client = holder.get({
+    relayUrl,
     // Fresh on every connect attempt — see the header.
     getCredential: () => {
       const token = validToken()
-      if (!token) {
-        // No credential at all. Reported rather than merely logged, because
-        // this is the state PEE-9 has to be able to tell apart from a quiet
-        // channel — but it is *not* yet "signed out": every silent renewal
-        // passes through here, so `freshness.ts` holds it for a grace period
-        // before saying anything.
-        recordCredentialFailure('session_expired')
-        return null
-      }
+      if (!token) return null
       return { accessToken: token.accessToken, pubkey: token.pubkey }
     },
-    sign: async (unsigned, token, expectedPubkey) => {
-      try {
-        const signed = await signViaEstivaId(unsigned, token, expectedPubkey)
-        recordCredentialOk()
-        return signed
-      } catch (error) {
-        // The status is the honest signal — and the difference between
-        // "expired" and "this app cannot verify the token" decides whether
-        // sending somebody to sign in again helps or wastes their time.
-        recordCredentialFailure(reasonForSignFailure(error))
-        throw error
-      }
-    },
-    onState: (next) => {
-      state = next
-      recordRelayState(next)
-      for (const listener of [...listeners]) listener(next)
+    sign: signViaEstivaId,
+    online: typeof window === 'undefined' ? undefined : browserOnlineSource(window),
+    subscriptionPrefix: 'peek-',
+    observe: {
+      onState: recordRelayState,
+      onOnline: recordOnline,
+      // Not yet "signed out": every silent renewal passes through here, so
+      // `freshness.ts` holds it for a grace period before saying anything.
+      onCredentialMissing: () => recordCredentialFailure('session_expired'),
+      onSignOk: recordCredentialOk,
+      // The difference between "expired" and "this app cannot verify the
+      // token" decides whether sending somebody to sign in again helps or
+      // wastes their time.
+      onSignFailure: (error) => recordCredentialFailure(reasonForSignFailure(error)),
     },
     log: (message, detail) => console.debug('[relay]', message, detail ?? ''),
   })
 
-  const subscriptions = createChannelSubscriptions(relay, {
-    onListenerError: (error) => console.warn('[relay] a channel listener threw:', error),
-  })
-
-  const foreignActivity = createForeignActivity()
+  const activity = createFolderActivity()
 
   const projection = createLiveProjection({
-    subscriptions,
+    subscriptions: client.subscriptions,
     api,
     log: (message, detail) => console.warn('[relay]', message, detail ?? ''),
     // A channel uuid *is* the Folder id (RFC 0.4 §5.2, measured across all 50
     // production channels), so no translation is needed here.
-    onForeignActivity: (channelUuid) => foreignActivity.notify(channelUuid),
+    onForeignActivity: (channelUuid) => activity.notify(channelUuid),
   })
-
-  /*
-    The network coming back is not something a socket can notice on its own.
-    Reconnection is driven by `onclose`, and a connection whose peer became
-    unreachable stays OPEN until TCP gives up — so without this the socket sits
-    reporting `live`, delivering nothing, forever.
-
-    Registered once per instance, and the instance is per tab. `offline` drops
-    the socket so the reported state becomes honest immediately; `online`
-    retries at once rather than waiting out a backoff that may have grown to
-    half a minute while there was no network to reach.
-  */
-  if (typeof window !== 'undefined') {
-    recordOnline(window.navigator.onLine)
-    window.addEventListener('offline', () => {
-      recordOnline(false)
-      relay.reconnect()
-    })
-    window.addEventListener('online', () => {
-      recordOnline(true)
-      relay.reconnect()
-    })
-  }
 
   return {
     relayUrl,
-    relay,
-    subscriptions,
+    client,
     projection,
-    watch: (args) => projection.watch(args),
-    state: () => state,
-    onForeignActivity: (folder, listener) => foreignActivity.watch(folder, listener),
-    onState(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
+    activity,
+    topics: {
+      watch: (args) => projection.watch(args),
+      state: () => client.state(),
+      onState: (listener) => client.onState(listener),
+      onForeignActivity: (folder, listener) => activity.watch(folder, listener),
     },
   }
 }
@@ -173,25 +153,22 @@ function build(relayUrl: string, api: LiveProjectionApi): Instance {
 /**
  * The tab's live client, built on first use.
  *
- * `api` is only read when the instance is built; the Convex client it closes
- * over is stable for the life of the page, so a later caller passing a fresh
- * object does not rebuild anything.
+ * `api` is only read when the wiring is built; the Convex client it closes over
+ * is stable for the life of the page, so a later caller passing a fresh object
+ * does not rebuild anything.
  */
 export function getLiveTopics(relayUrl: string, api: LiveProjectionApi): LiveTopics {
-  if (instance && instance.relayUrl === relayUrl) return instance
+  if (wiring && wiring.relayUrl === relayUrl) return wiring.topics
   // A changed relay origin means a different deployment — tear down rather than
   // leaving a socket pointed at the old one. Not expected in a page's lifetime.
-  if (instance) {
-    instance.projection.stopAll()
-    instance.relay.close()
-  }
-  instance = build(relayUrl, api)
-  return instance
+  // The holder closes the old client; the projection is ours to stop.
+  wiring?.projection.stopAll()
+  wiring = build(relayUrl, api)
+  return wiring.topics
 }
 
-/** Test seam. Drops the instance so the next `getLiveTopics` builds a new one. */
 /**
- * The live instance if one exists, without building it.
+ * The live client if one exists, without building it.
  *
  * `getLiveTopics` needs the Convex actions because it may have to *construct*
  * the projection. A consumer that only wants to listen — the project panel
@@ -204,13 +181,12 @@ export function getLiveTopics(relayUrl: string, api: LiveProjectionApi): LiveTop
  * for everything until now.
  */
 export function peekLiveTopics(): LiveTopics | null {
-  return instance
+  return wiring?.topics ?? null
 }
 
+/** Test seam. Drops the instance so the next `getLiveTopics` builds a new one. */
 export function resetLiveTopicsForTests(): void {
-  if (instance) {
-    instance.projection.stopAll()
-    instance.relay.close()
-  }
-  instance = null
+  wiring?.projection.stopAll()
+  wiring = null
+  holder.reset()
 }
