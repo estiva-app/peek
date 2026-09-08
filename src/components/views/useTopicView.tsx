@@ -135,7 +135,7 @@ export function useTopicView({
   const { showToast } = useToast()
 
   /**
-   * Edit, and say so when it did not travel — PEE-23.
+   * Edit, and say so when it did not travel — PEE-24.
    *
    * Peek patches its own row before publishing, so a failed publish leaves this
    * app looking right and every other reader — Ship's conversation view, the

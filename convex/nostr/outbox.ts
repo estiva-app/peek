@@ -46,7 +46,7 @@ export type UnsignedMessage =
    * Everything else is a refusal worth saying out loud. The flag is here
    * rather than at the caller because only this file knows which reasons are
    * ordinary, and string-matching them from outside would rot the first time
-   * one is reworded (PEE-23).
+   * one is reworded (PEE-24).
    */
   | { ok: false; reason: string; expected?: boolean }
 

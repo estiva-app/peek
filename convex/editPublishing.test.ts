@@ -124,7 +124,7 @@ describe('unsignedEdit', () => {
   })
 
   /*
-    PEE-23 — the discriminator the whole reporting design rests on.
+    PEE-24 — the discriminator the whole reporting design rests on.
 
     Peek patches its row before publishing, so a failed publish leaves the app
     looking right and every other reader showing the old text. That has to be

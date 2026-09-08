@@ -58,7 +58,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   const { showToast } = useToast()
 
   /**
-   * Edit, and say so when it did not travel — PEE-23.
+   * Edit, and say so when it did not travel — PEE-24.
    *
    * The same wrapper the topic view has, and for the same reason: Peek patches
    * its own row before publishing, so a failed publish leaves this app looking

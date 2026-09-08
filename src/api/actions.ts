@@ -47,7 +47,7 @@ const nowTimestamp = (now = Date.now()) =>
   new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 /**
- * Whether an edit reached the relay — PEE-23.
+ * Whether an edit reached the relay — PEE-24.
  *
  * The edit is the write where silence costs the most. Peek patches its own row
  * first, so a failed publish leaves the app looking correct and **every other
