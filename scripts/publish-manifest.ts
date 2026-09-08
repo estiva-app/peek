@@ -33,7 +33,7 @@ import { Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-a
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { HANDLED_KINDS, MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
-import { widgetChainProblem, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
+import { widgetChainProblem, actionProblems, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
 
 const RELAY_URL = process.env.RELAY_URL ?? 'http://localhost:3000'
 const KEY_FILE = new URL('../.manifest-key', import.meta.url).pathname
@@ -167,6 +167,39 @@ async function main() {
     }
   }
   check('every widget chain terminates in a closed type', true, CLOSED_LIST)
+
+  /*
+    Every action is one a caller could actually pick — checked before signing,
+    PRO-16, and INT-9's own watch list said nothing did this yet.
+
+    Peek became a producer of actions in INT-9, and a producer's mistakes here
+    are the ones no consumer can report at the moment they matter: a
+    description that restates its label is accepted by `resolveManifest`,
+    rendered by every consumer, and quietly never chosen by a caller matching
+    on prose (INT-5). An absent `effect` reads as *unknown* in both directions,
+    so a consumer offering only safe actions will not offer it and one avoiding
+    destructive actions may.
+
+    Refused rather than warned, for the same reason the widget check above is:
+    `kind:31990` is replaceable, but every consumer that fetched the bad one
+    holds it until it refetches. This is the one moment the mistake is cheap.
+  */
+  {
+    const declared = manifestContent().actions ?? []
+    const problems = declared.flatMap((action) =>
+      actionProblems(action).map((problem) => `  ${problem}`),
+    )
+    if (problems.length > 0) {
+      console.error(`\n✋ Refusing to publish. ${problems.length} problem(s) with the actions:\n`)
+      console.error(problems.join('\n') + '\n')
+      process.exit(1)
+    }
+    check(
+      'every declared action is one a caller could pick',
+      true,
+      declared.length === 0 ? 'none declared' : declared.map((a) => a.id).join(', '),
+    )
+  }
 
   const event = buildManifest(identity.pubkey, Date.now(), APP_URL)
   const published = await relay.publish(signEvent(event, identity.secretKeyHex))

@@ -12,12 +12,64 @@
  * second direction, and it is why §13.5 insists the layer must not be published
  * as a package until one exists.
  */
+import type { ManifestAction } from '@estiva-app/interop'
+
 /** The relay's own kind for a channel's discovery record. */
 export const TOPIC_KIND = 39000
 /** A message in a channel. NIP-29's, and not addressable — see below. */
 export const MESSAGE_KIND = 9
 
 export const MANIFEST_D_TAG = 'estiva-peek'
+
+/**
+ * The actions this manifest declares, typed as the vocabulary they are
+ * published in (INT-9).
+ *
+ * Ship narrows its own `Projection['widget']` to a closed union for the stated
+ * reason that *"the compiler makes an unpublishable declaration unwritable
+ * here, which is a stronger guarantee than the runtime check"*. Peek's actions
+ * had no such type: `effect: 'writes'` widened to `string` and
+ * `target: 'content'` widened to `string`, so a typo in either was a runtime
+ * discovery. `ManifestAction` is interop's own shape, which is the one a
+ * consumer reads this back as.
+ *
+ * `actionProblems` still runs in `publish-manifest.ts` and is not made
+ * redundant by this: the compiler checks the shape, and that check is the prose
+ * rule — a description a caller could actually match on — which no type can
+ * express.
+ */
+const ACTIONS: ManifestAction[] = [
+  {
+    id: 'start-a-conversation',
+    label: 'Start a conversation',
+    /*
+      Prose for a machine, not a caption — RFC 0.4 §13.4, and the rule
+      interop's `actionProblems` enforces before this is signed (PRO-16).
+      What it has to carry that the label cannot: that this starts a new
+      thread rather than answering one, since a caller reading only
+      "Start a conversation" would reasonably pick it to reply.
+    */
+    description:
+      'Start a new conversation in a topic, as a root message that people can then reply to. ' +
+      'Use when something is worth its own thread rather than an answer inside an existing one — ' +
+      'this cannot reply to a message, and there is deliberately no action that can.',
+    effect: 'writes',
+    appliesTo: String(TOPIC_KIND),
+    emits: { kind: MESSAGE_KIND, toAddressOf: 'self' },
+    input: {
+      type: 'object',
+      /*
+        One property, and it is the body. `target: 'content'` is what makes
+        a message declarable at all — see above. A title would be a second
+        field with nowhere to go: a `kind:9` has a body and an author and
+        that is the whole object.
+      */
+      properties: { message: { type: 'string', target: 'content' } },
+      required: ['message'],
+    },
+  },
+]
+
 
 export function manifestContent() {
   return {
@@ -156,37 +208,7 @@ export function manifestContent() {
      * inferring one from an action. Worth stating because the inference would
      * get it wrong — it assumes an `a` tag, and a message uses `h`.
      */
-    actions: [
-      {
-        id: 'start-a-conversation',
-        label: 'Start a conversation',
-        /*
-          Prose for a machine, not a caption — RFC 0.4 §13.4, and the rule
-          interop's `actionProblems` enforces before this is signed (PRO-16).
-          What it has to carry that the label cannot: that this starts a new
-          thread rather than answering one, since a caller reading only
-          "Start a conversation" would reasonably pick it to reply.
-        */
-        description:
-          'Start a new conversation in a topic, as a root message that people can then reply to. ' +
-          'Use when something is worth its own thread rather than an answer inside an existing one — ' +
-          'this cannot reply to a message, and there is deliberately no action that can.',
-        effect: 'writes',
-        appliesTo: String(TOPIC_KIND),
-        emits: { kind: MESSAGE_KIND, toAddressOf: 'self' },
-        input: {
-          type: 'object',
-          /*
-            One property, and it is the body. `target: 'content'` is what makes
-            a message declarable at all — see above. A title would be a second
-            field with nowhere to go: a `kind:9` has a body and an author and
-            that is the whole object.
-          */
-          properties: { message: { type: 'string', target: 'content' } },
-          required: ['message'],
-        },
-      },
-    ],
+    actions: ACTIONS,
 
     /** Nothing of Peek's is an enumerated field. */
     vocabularies: {},
