@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { ConversationCard } from './ConversationCard'
@@ -139,5 +140,98 @@ export const InlineTokens: Story = {
     body:
       'Pinging @Alice Johnson and !@Greg Bothman — ties into [Ongoing onboarding issues] and [Onboarding flow screens]. Fix is in PR #1234, tracked as PEEK-142; verify build #5102.',
     replyCount: 2,
+  },
+}
+
+/**
+ * Editing a sent message, and everything the composer can do.
+ *
+ * The edit box is a compose box, and for a long time it was not: `/` opened
+ * nothing, there was no selection toolbar over a chosen word, and no
+ * highlighter. All three were written into `ComposeBox` and only there. These
+ * run in a browser because that is the only place typing reaches ProseMirror —
+ * jsdom never mutates a contenteditable, so the unit tests beside this file
+ * prove the parts that are not typing.
+ */
+async function startEditing(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement)
+  const doc = within(canvasElement.ownerDocument.body)
+  // The quick-action toolbar appears on hovering the card, which is inside the
+  // decorator, not the canvas root.
+  const card = canvasElement.querySelector('div.relative.rounded-lg') as HTMLElement
+  await userEvent.hover(card)
+  await userEvent.click(await doc.findByRole('button', { name: 'More actions' }))
+  await userEvent.click(await doc.findByText('Edit message'))
+  const surface = (await canvas.findByText(/Found the root cause/)).closest('.ProseMirror') as HTMLElement
+  await userEvent.click(surface)
+  return { canvas, doc, surface }
+}
+
+/**
+ * The box itself. Paperclip, snooze and highlighter on the left, Cancel and
+ * Save on the right — the composer's toolbar, minus the send button it does
+ * not need.
+ */
+export const Editing: Story = {
+  args: { authorName: 'You' },
+  play: async ({ canvasElement }) => {
+    const { canvas } = await startEditing(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'Highlight' })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+  },
+}
+
+/**
+ * `/` while editing — the thing that did nothing until 2026-09-08.
+ *
+ * Same three sections the composer shows, at the caret rather than at the
+ * start of the box: it is a suggestion plugin, so it opens mid-sentence, which
+ * is the normal case here because the message is already in the box.
+ */
+export const EditingSlashMenu: Story = {
+  args: { authorName: 'You' },
+  play: async ({ canvasElement }) => {
+    const { doc } = await startEditing(canvasElement)
+    await userEvent.keyboard(' /')
+    await expect(await doc.findByText('Format')).toBeInTheDocument()
+    await expect(doc.getByText('Shortcuts')).toBeInTheDocument()
+    await expect(doc.getByText('Highlights')).toBeInTheDocument()
+  },
+}
+
+/**
+ * The same menu, with the message low on the screen.
+ *
+ * Above the caret is where these menus have always gone, and it is still the
+ * preference — the story above only opens downward because the card sits at
+ * the top of the canvas with nothing above it. That was the bug: every
+ * type-ahead popup hung above the caret and *only* above it, which is right
+ * for a composer at the foot of a topic and wrong for a message near the top
+ * of the stream, where the menu was drawn off the top of the window. That
+ * looks exactly like `/` doing nothing.
+ */
+export const EditingSlashMenuLowOnTheScreen: Story = {
+  args: { authorName: 'You' },
+  decorators: [Story => <div className="flex min-h-[620px] items-end"><div className="w-full"><Story /></div></div>],
+  play: async ({ canvasElement }) => {
+    const { doc } = await startEditing(canvasElement)
+    await userEvent.keyboard(' /')
+    const panel = (await doc.findByText('Format')).closest('div[class*="w-[300px]"]') as HTMLElement
+    const box = canvasElement.querySelector('.ProseMirror')!.getBoundingClientRect()
+    const menu = panel.getBoundingClientRect()
+    // Above the caret it opened from, and wholly on screen.
+    await expect(menu.bottom).toBeLessThan(box.bottom)
+    await expect(menu.top).toBeGreaterThanOrEqual(0)
+  },
+}
+
+/** Bold, italic, underline and link over a chosen word, while editing. */
+export const EditingSelectionToolbar: Story = {
+  args: { authorName: 'You' },
+  play: async ({ canvasElement }) => {
+    const { doc } = await startEditing(canvasElement)
+    await userEvent.keyboard('{Control>}a{/Control}')
+    await expect(await doc.findByRole('button', { name: 'Bold' })).toBeInTheDocument()
+    await expect(doc.getByRole('button', { name: 'Link' })).toBeInTheDocument()
   },
 }
