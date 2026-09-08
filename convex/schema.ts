@@ -23,11 +23,32 @@ export const parentKind = v.union(v.literal('topic'), v.literal('dm'), v.literal
 /** A real uploaded file (Phase 5). The blob lives in Convex `_storage`; the
  *  record carries the metadata a card needs to render its chip. Kept separate
  *  from `attachments` (Figma frame ids), which stay a plain string[]. */
+/**
+ * A file on a message.
+ *
+ * `storageId` is Convex's copy and stays the source for Peek's own rendering.
+ * The blob fields below are the relay's copy — the one **another app can
+ * read** (CON-12). Both, deliberately: Peek's UI is untouched by this change,
+ * and a failed relay upload costs other readers rather than the sender.
+ *
+ * Optional because they arrive with this change and every existing row
+ * predates them — a required field would fail the push for rows already
+ * stored. Absent means "posted before attachments travelled", which is exactly
+ * what such a message is.
+ */
 export const fileAttachment = v.object({
   storageId: v.id('_storage'),
   name: v.string(),
   contentType: v.string(),
   size: v.number(),
+  /** The blob's identity on the relay, lowercase hex. */
+  sha256: v.optional(v.string()),
+  /** Relay-local path — what `imeta`'s `url` carries. */
+  mediaUrl: v.optional(v.string()),
+  /** The relay's generated thumbnail, when it made one. */
+  thumbUrl: v.optional(v.string()),
+  /** `<width>x<height>`, computed by the relay. */
+  dim: v.optional(v.string()),
 })
 
 /** Star / screener / desk targets. */

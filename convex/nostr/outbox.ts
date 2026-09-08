@@ -23,7 +23,9 @@
  */
 import { v } from 'convex/values'
 import { mutation, query, type QueryCtx } from '../_generated/server'
-import { buildEdit, buildMessage, buildReaction, buildResolution } from '@estiva-app/protocol'
+import type { Doc } from '../_generated/dataModel'
+import { buildEdit, buildMessage, buildReaction, buildResolution, imetaTag } from '@estiva-app/protocol'
+import type { NostrTag } from '@estiva-app/protocol'
 import { referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
 import type { UnsignedEvent } from '@estiva-app/protocol'
@@ -49,6 +51,37 @@ export type UnsignedMessage =
    * one is reworded (PEE-24).
    */
   | { ok: false; reason: string; expected?: boolean }
+
+/**
+ * The `imeta` tags for a row's attachments — CON-12.
+ *
+ * **Only files that reached the relay.** A row whose blob upload failed carries
+ * no `sha256`, and naming it here would produce an `imeta` pointing at nothing
+ * — which `verify_imeta_blobs` refuses, taking the whole message down with it.
+ * So a file that did not travel costs its own visibility elsewhere and nothing
+ * more; the message still publishes.
+ *
+ * `m` must equal the MIME the relay stored, not the one the browser guessed, so
+ * this uses what the upload descriptor returned rather than `contentType`.
+ */
+function imetaTagsFor(files: Doc<'messages'>['fileAttachments']): NostrTag[] {
+  const out: NostrTag[] = []
+  for (const f of files ?? []) {
+    if (!f.sha256 || !f.mediaUrl) continue
+    out.push(
+      imetaTag({
+        url: f.mediaUrl,
+        m: f.contentType,
+        x: f.sha256,
+        size: f.size,
+        dim: f.dim,
+        thumb: f.thumbUrl,
+        filename: f.name,
+      }),
+    )
+  }
+  return out
+}
 
 export const unsignedMessage = query({
   args: { messageId: v.id('messages') },
@@ -88,6 +121,7 @@ export const unsignedMessage = query({
         channelUuid: topic.channelUuid,
         content: m.body,
         about: referencedAddresses(m.body),
+        mediaTags: imetaTagsFor(m.fileAttachments),
       }),
     }
   },
@@ -132,6 +166,10 @@ export const unsignedReply = query({
         channelUuid: topic.channelUuid,
         content: r.body,
         threadRef: { rootId: parent.nostrEventId, parentId: parent.nostrEventId },
+        // A reply carries files too, and CON-12 named `unsignedReply` as having
+        // the identical gap. Fixing one and not the other would leave the same
+        // defect on half the surface.
+        mediaTags: imetaTagsFor(r.fileAttachments),
       }),
     }
   },
