@@ -6,6 +6,10 @@ import { SlashMenu, filterSlashItems, type SlashItem, type SlashMenuRef } from '
 import { applyFormat } from '@/lib/composerFormats'
 import { insertHighlightTag } from './highlight'
 import { openSuggestion, closeSuggestion } from './mention'
+import { hangSuggestion } from './suggestionPlacement'
+
+/** `SlashMenu`'s own `w-[300px]`. */
+const MENU_WIDTH = 300
 
 /**
  * `/` as a suggestion — PEE-18.
@@ -22,9 +26,14 @@ import { openSuggestion, closeSuggestion } from './mention'
  * `and/or`, a path, a URL — does not open anything. `startOfLine` is false,
  * which is the whole point.
  *
- * The popup mirrors `mention.tsx`'s: a fixed container on the body, hung above
- * the caret, holding a `ReactRenderer`. It reports into the same open-counter,
- * so `ComposeBox`'s Enter handler already knows not to send while it is open.
+ * The popup mirrors `mention.tsx`'s: a fixed container on the body holding a
+ * `ReactRenderer`, placed by the shared `hangSuggestion`. It reports into the
+ * same open-counter, so the Enter handler in each of the three editors already
+ * knows not to send or save while it is open.
+ *
+ * Three editors, not one: this shipped registered only in `ComposeBox`, so `/`
+ * did nothing when you edited a sent message. It is in `peekEditor.ts` now,
+ * with the six extensions it always belonged beside.
  */
 
 const SlashListWrapper = forwardRef<SlashMenuRef, SuggestionProps<SlashItem>>((props, ref) => {
@@ -72,16 +81,11 @@ class SlashSuggestionPopup {
     this.container = null
   }
 
-  /** Above the caret, and never off the left or right edge. */
   private updatePosition(props: SuggestionProps<SlashItem>) {
     if (!this.container || !props.clientRect) return
     const rect = (props.clientRect as () => DOMRect | null)()
     if (!rect) return
-    const menuWidth = 300
-    const left = Math.min(rect.left, window.innerWidth - menuWidth - 8)
-    this.container.style.left = `${Math.max(8, left)}px`
-    this.container.style.bottom = `${window.innerHeight - rect.top + 8}px`
-    this.container.style.top = ''
+    hangSuggestion(this.container, rect, MENU_WIDTH)
   }
 }
 
