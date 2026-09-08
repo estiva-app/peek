@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { DeskPage } from './pages/DeskPage'
 import { TopicsPage } from './pages/TopicsPage'
 import { PeoplePage } from './pages/PeoplePage'
+import { FoldersPage } from '@/pages/FoldersPage'
 import { ObjectPage } from './pages/ObjectPage'
 
 function App() {
@@ -26,6 +27,10 @@ function App() {
           its event id is the whole of it. Resolved the same way `/o/` is: find
           the event, open the topic that holds it (PEE-17). */}
       <Route path="/message/:ref" element={<ObjectPage />} />
+      {/* Navigation by Folder (RFC 0.4 §4) — added beside the topic routes,
+          not over them. §11.1's topic→file migration is a separate change. */}
+      <Route path="/folders" element={<FoldersPage />} />
+      <Route path="/folders/:id" element={<FoldersPage />} />
       <Route path="/people" element={<PeoplePage />} />
       <Route path="/people/:id" element={<PeoplePage />} />
     </Routes>

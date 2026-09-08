@@ -22,6 +22,9 @@ import {
   creatableUnderAsViewer,
   folderForReferenceAsViewer,
   directoryAsViewer,
+  createFolderAsViewer,
+  resolveFolderContentsAsViewer,
+  listFoldersAsViewer,
   resolveFolderProjectAsViewer,
   resolveObjectAsViewer,
   searchMessagesAsViewer,
@@ -30,7 +33,7 @@ import {
 import { RelayReadError } from '@/nostr/relayRead'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import type { SignedEvent } from '@estiva-app/protocol'
-import type { FolderProject, ForeignObject, People } from '@estiva-app/interop'
+import type { FolderContents, FolderProject, FolderSummary, ForeignObject, People } from '@estiva-app/interop'
 
 /**
  * The relay origin and the viewer's token, or null when either is missing.
@@ -68,6 +71,47 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * Everything in a Folder — the navigation read, beside the sidebar's.
+   *
+   * Signed out this is an empty Folder rather than `null`: navigation renders
+   * either way, and a signed-out viewer genuinely holds no files, which is the
+   * same sentence as a Folder whose contents they may not read (RFC 0.4 §4.2 —
+   * the count is the disclosure, so the two must not be distinguishable).
+   */
+  const resolveFolderContents = useCallback(
+    async (folder: string): Promise<FolderContents> => {
+      const v = viewer()
+      return v
+        ? resolveFolderContentsAsViewer(folder, v.relayUrl, v.token)
+        : { id: folder, hasState: false, source: 'channel', files: [] }
+    },
+    [viewer],
+  )
+
+  /**
+   * Every Folder this viewer can see, for the navigation.
+   *
+   * `null` when signed out, **not** an empty array. The two are different
+   * sentences — "there are no folders" and "you are not signed in" — and
+   * collapsing them is what made the folder list say "No folders yet" to a
+   * signed-out viewer looking at a workspace with eighty-one of them.
+   */
+  const listFolders = useCallback(async (): Promise<FolderSummary[] | null> => {
+    const v = viewer()
+    return v ? listFoldersAsViewer(v.relayUrl, v.token) : null
+  }, [viewer])
+
+  /** Create a Folder. Refuses rather than pretending when signed out. */
+  const createFolder = useCallback(
+    async (name: string) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to create a folder.' }
+      return createFolderAsViewer(name, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
   const applyAction = useCallback(
     async (args: {
       naddr: string
@@ -100,7 +144,16 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  return { resolveObject, resolveFolderProject, applyAction, creatableUnder, folderForReference }
+  return {
+    resolveObject,
+    resolveFolderProject,
+    resolveFolderContents,
+    listFolders,
+    createFolder,
+    applyAction,
+    creatableUnder,
+    folderForReference,
+  }
 }
 
 /**
