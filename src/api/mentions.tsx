@@ -20,6 +20,42 @@ import type { Person, Topic } from './types'
 /** Suggestion list — the other workspace people (you don't @mention yourself). */
 let directory: Person[] = MOCK_PEOPLE
 
+/**
+ * Bumped whenever {@link directory} is replaced, so a React renderer can notice.
+ *
+ * **The snapshot being module-level is deliberate; being unobservable was not.**
+ * `personByPubkey` is read while drawing a run, and a plain module variable
+ * cannot tell React it changed — so a body drawn before the people query
+ * resolved kept its raw `npub…` chips for as long as nothing else happened to
+ * re-render it. `directory` starts as the mock cast, whose keys match nobody
+ * real, so on a cold load *every* mention drew unresolved and stayed that way.
+ *
+ * That is why it looked intermittent rather than broken: whether a mention
+ * showed a name depended on whether its message was drawn before or after one
+ * Convex query landed.
+ */
+let version = 0
+const listeners = new Set<() => void>()
+
+/** For `useSyncExternalStore`. */
+export function subscribeMentions(onChange: () => void): () => void {
+  listeners.add(onChange)
+  return () => {
+    listeners.delete(onChange)
+  }
+}
+
+/** The snapshot, as a primitive — the lists themselves are replaced wholesale. */
+export function mentionsVersion(): number {
+  return version
+}
+
+function publish(next: Person[]): void {
+  directory = next
+  version += 1
+  for (const listener of listeners) listener()
+}
+
 /** Read by the Tiptap suggestion plugins when a popup opens. */
 export function mentionPeople(): Person[] {
   return directory
@@ -66,7 +102,7 @@ export function MentionDirectorySync() {
   const people = usePeople()
   const me = useCurrentUser()
   useEffect(() => {
-    directory = people ?? MOCK_PEOPLE
+    publish(people ?? MOCK_PEOPLE)
     // The body renderer matches mentions by name, so it needs the FULL cast —
     // including the viewer's own name, or a mention OF you renders as plain
     // text in your view while everyone else sees a chip (issue #10). The
