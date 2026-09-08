@@ -9,7 +9,7 @@
  * publishes fine, and fails days later in somebody else's app as an empty
  * widget.
  *
- * ## The identity, and why this cannot run yet
+ * ## The identity, and where it lives
  *
  * Publishing a `kind:31990` needs an identity the relay knows. Measured
  * 2026-08-31, both against production:
@@ -20,11 +20,22 @@
  *     `App claude-agent may not sign kind 31990`
  *
  * Those are gates 1 and 2 of SPEC §8's three, each refusing in a way that looks
- * like something else from the layer above. Ship publishes from a dedicated
- * `.manifest-key` that is a registered relay member; Peek has no equivalent.
- * Granting one is a seed change in Estiva ID plus a hand re-seed on the box
- * (operations/PRODUCTION.md), which is why this script exists complete and
- * unrun.
+ * like something else from the layer above.
+ *
+ * **This has since been granted and run.** The header used to end "which is why
+ * this script exists complete and unrun", and that stopped being true once
+ * Peek's manifest reached production — `31990:<pubkey>:estiva-peek` is live and
+ * a `#k` query for 39000 or 9 finds it. Corrected because the note reads as
+ * "do not bother running this", which is the opposite of what somebody
+ * republishing a changed declaration needs to know.
+ *
+ * The key is a gitignored `.manifest-key` beside this script, generated on
+ * first run and then registered as a relay member. **It is not in the
+ * repository and not in any worktree but the one it was made in**, so a run
+ * from a fresh clone or a `git worktree` will generate a *new* key, publish a
+ * second manifest under a different pubkey, and leave two claiming Peek's
+ * kinds — which SPEC §7.3 has no way to rank. Copy the existing key in, or run
+ * from the checkout that holds it.
  *
  * It takes a signer rather than reading a key file so that whichever identity
  * is granted can be handed in without editing this.
