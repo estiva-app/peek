@@ -8,6 +8,7 @@ import { mentionPeople, mentionTopics, type Person } from '@/api'
 import { useIsTopicResolved } from '@/api'
 import { MentionMenu } from '@/components/ui/MentionMenu'
 import { FilesMenu, type FilesMenuItem, type FilesMenuRef } from '@/components/ui/FilesMenu'
+import { hangSuggestion } from './suggestionPlacement'
 
 // ─── Types ───
 
@@ -66,6 +67,9 @@ const MentionListWrapper = forwardRef<MentionListRef, MentionListProps>(
 )
 MentionListWrapper.displayName = 'MentionListWrapper'
 
+/** The people and the files menus are the same width. */
+const MENU_WIDTH = 658
+
 // ─── Global flag: is a suggestion popup currently open? ───
 // Counter instead of boolean - multiple suggestion plugins (mention, urgent, topic)
 // can overlap during transitions, so we track how many are open.
@@ -74,6 +78,19 @@ let _lastCloseTime = 0
 
 export function isSuggestionActive(): boolean {
   return _openCount > 0 || (Date.now() - _lastCloseTime < 100)
+}
+
+/**
+ * Open *now*, with no grace period — what Escape needs.
+ *
+ * `isSuggestionActive` counts the 100ms after a menu closes as still busy,
+ * because picking a row with Enter closes the menu and that same Enter must
+ * not also send the message. Escape wants the opposite: it closes the menu on
+ * the first press and must cancel the edit on the second, so a grace period
+ * would eat a press somebody made deliberately.
+ */
+export function isSuggestionOpen(): boolean {
+  return _openCount > 0
 }
 
 /** Report a suggestion opening / closing from outside this file — the `/`
@@ -135,11 +152,7 @@ class SuggestionPopup {
     if (!this.container || !props.clientRect) return
     const rect = (props.clientRect as () => DOMRect)()
     if (!rect) return
-    const menuWidth = 658
-    const left = Math.min(rect.left, window.innerWidth - menuWidth - 8)
-    this.container.style.left = `${Math.max(8, left)}px`
-    this.container.style.bottom = `${window.innerHeight - rect.top + 8}px`
-    this.container.style.top = ''
+    hangSuggestion(this.container, rect, MENU_WIDTH)
   }
 }
 
@@ -325,11 +338,7 @@ class FilesSuggestionPopup {
     if (!this.container || !props.clientRect) return
     const rect = (props.clientRect as () => DOMRect)()
     if (!rect) return
-    const menuWidth = 658
-    const left = Math.min(rect.left, window.innerWidth - menuWidth - 8)
-    this.container.style.left = `${Math.max(8, left)}px`
-    this.container.style.bottom = `${window.innerHeight - rect.top + 8}px`
-    this.container.style.top = ''
+    hangSuggestion(this.container, rect, MENU_WIDTH)
   }
 }
 

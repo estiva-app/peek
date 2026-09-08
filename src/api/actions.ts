@@ -39,7 +39,20 @@ function toFileAttachment(f: UploadedFile): FileAttachment {
 /** Descriptor → the mutation's `fileAttachments` arg shape. */
 function toRemoteFiles(files: UploadedFile[] | undefined) {
   return files && files.length > 0
-    ? files.map((f) => ({ storageId: f.storageId as never, name: f.name, contentType: f.contentType, size: f.size }))
+    ? files.map((f) => ({
+        storageId: f.storageId as never,
+        name: f.name,
+        contentType: f.contentType,
+        size: f.size,
+        // The relay's copy, carried so `unsignedMessage` can name it in an
+        // `imeta` (CON-12). Undefined where the blob upload did not happen,
+        // which the outbox reads as "this file does not travel" rather than
+        // guessing a URL the relay would refuse.
+        sha256: f.sha256,
+        mediaUrl: f.mediaUrl,
+        thumbUrl: f.thumbUrl,
+        dim: f.dim,
+      }))
     : undefined
 }
 

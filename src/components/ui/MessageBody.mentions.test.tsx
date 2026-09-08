@@ -18,6 +18,11 @@ vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 vi.mock('@/api/mentions', () => ({
   personByPubkey: (pubkey: string) =>
     pubkey === ADA ? { id: 'ada', name: 'Ada Lovelace', role: 'Engineer' } : undefined,
+  // The chip subscribes so it can redraw when the real directory replaces the
+  // mock cast. Nothing here exercises that, so this snapshot never changes —
+  // see MentionChip.test.tsx for the case that does.
+  subscribeMentions: () => () => {},
+  mentionsVersion: () => 0,
 }))
 
 import { MessageBody } from './MessageBody'

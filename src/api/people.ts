@@ -29,3 +29,18 @@ export function usePeople(): Person[] | undefined {
     pubkey: p.pubkey,
   }))
 }
+
+/**
+ * Pubkey to name for everyone Peek can name, for resolving mentions.
+ *
+ * Deliberately not {@link usePeople}: that one is the suggestion list and
+ * excludes both the viewer and relay-only identities, which is right for
+ * "who can I @" and wrong for "who is this key".
+ */
+export function useMentionNames(): Array<{ pubkey: string; name: string }> | undefined {
+  const remote = useQuery(api.people.mentionNames, hasConvex ? {} : 'skip')
+  if (!hasConvex) {
+    return MOCK_PEOPLE.flatMap((p) => (p.pubkey ? [{ pubkey: p.pubkey, name: p.name }] : []))
+  }
+  return remote
+}
