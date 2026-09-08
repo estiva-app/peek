@@ -26,7 +26,7 @@ const peek = LAUNCHER_APPS.find((a) => a.id === 'peek')!
 
 const addIssue = ship.actions.find((a) => a.id === 'add-issue')!
 const addProject = ship.actions.find((a) => a.id === 'add-project')!
-const say = peek.actions.find((a) => a.id === 'say')!
+const startConversation = peek.actions.find((a) => a.id === 'start-a-conversation')!
 const createTopic = peek.actions.find((a) => a.id === 'create-topic')!
 
 /** The demo topics, exactly as the launcher passes them in the app. */
@@ -89,7 +89,7 @@ export const ShipCreateProject: Story = {
 export const PeekStartConversation: Story = {
   args: {
     app: peek,
-    action: say,
+    action: startConversation,
     parentOptions: { topic: topicOptions },
   },
 }

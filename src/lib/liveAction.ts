@@ -38,13 +38,27 @@ function labelFor(name: string): string {
  *
  * `enum` when the manifest gave the property a vocabulary — the runtime has
  * already looked it up — `pubkey` for a person, and otherwise a single-line
- * string. Prose (`text`) is deliberately not inferred: nothing in the manifest
+ * string.
+ *
+ * **`text` is now declared rather than inferred** (INT-9). This comment used to
+ * say prose was "deliberately not inferred: nothing in the manifest
  * distinguishes a long string from a short one, and guessing would give an app
- * a textarea it never asked for.
+ * a textarea it never asked for." Both halves still hold — nothing is being
+ * guessed here. What changed is that something in the manifest *does* now
+ * distinguish them: a property may declare `target: 'content'`, meaning its
+ * value is the event's body rather than a tag (interop 0.13.0). An app whose
+ * property is a whole message body has asked for a textarea in the only
+ * vocabulary that can ask.
+ *
+ * Still a consumer's choice, and interop says so: *"A consumer may use it to
+ * draw prose instead of a single line; it does not have to, and one that
+ * ignores it still publishes the right event."* Peek uses it, because a
+ * one-line box for a conversation opener is the wrong shape for the thing.
  */
 function controlFor(field: NonNullable<ResolvedAction['fields']>[number]): FormField['control'] {
   if (field.options?.length) return 'enum'
   if (field.type === 'pubkey') return 'pubkey'
+  if (field.target === 'content') return 'text'
   return 'string'
 }
 

@@ -12,9 +12,17 @@
  * design's *proposal* for manifests that do not declare them yet. Ship
  * declares no `add-project`; Peek declares no actions at all.
  *
- * Nothing here asserts that the three eventually work — that needs PRO-18, and
- * a project is a Folder plus a record. What it asserts is that the launcher
- * stops claiming they do.
+ * The first half of this file asserts the launcher stops claiming they do.
+ *
+ * **One of the three works now.** Peek declares `start-a-conversation`, so the
+ * row is back and it publishes — interop 0.16.0 resolves a channel record to
+ * its own `d`, which is what gives an action on a topic somewhere to write
+ * (0 of 40 `kind:39000` events on production carry `h` or `buzz-channel`).
+ *
+ * The other two stay absent and are asserted absent. Ship's `add-project` and
+ * Peek's `create-topic` each create a container that does not exist yet, which
+ * is FOL-2 — so a row for either would be exactly the promise this file exists
+ * to stop the launcher making.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -40,11 +48,63 @@ const liveAddIssue: ResolvedAction = {
   createsUnder: 'self',
 }
 
-const applyAction = vi.fn(async () => ({ ok: true as const, created: `30851:${SHIP_AUTHOR}:x` }))
-const creatableUnder = vi.fn(async () => ({
-  actions: [liveAddIssue],
-  parents: [{ address: `30850:${SHIP_AUTHOR}:p1`, title: 'Projection layer' }],
-}))
+/**
+ * Peek's live manifest declares this one, and only this one (INT-9).
+ *
+ * `createsUnder: 'self'` with no link tag — a message names its channel with
+ * `h`, which every created event carries anyway, so there is no `setTag` and
+ * the containment is the Folder. `target: 'content'` is the body, which is
+ * what made a message declarable and what the form draws as prose.
+ */
+const liveStartConversation: ResolvedAction = {
+  id: 'start-a-conversation',
+  label: 'Start a conversation',
+  description:
+    'Start a new conversation in a topic, as a root message that people can then reply to.',
+  effect: 'writes',
+  control: 'form',
+  fields: [{ name: 'message', type: 'string', required: true, target: 'content' }],
+  createsUnder: 'self',
+}
+
+const TOPIC_AUTHOR = '8b75a34d06c8e4ee' + 'f'.repeat(48)
+const TOPIC_ID = '53e358c2-0ad7-482c-a951-6f9d48dc71eb'
+
+/*
+  Typed by its signature rather than by a named parameter, so the assertions
+  below can read the call without the lint rule flagging an unused `_args`.
+*/
+const applyAction = vi.fn<
+  (args: { naddr: string; actionId: string; value: string | Record<string, string> }) => Promise<{
+    ok: true
+    created: string
+  }>
+>(async () => ({ ok: true as const, created: `30851:${SHIP_AUTHOR}:x` }))
+/*
+  Answers per kind, which it has to now that two apps are probed.
+
+  It used to answer every kind with Ship's `add-issue`, and that was fine while
+  Ship was the only app carrying a `parentKind`. Peek carries one since INT-9,
+  so a kind-blind mock would show Ship's action inside Peek's section and the
+  test asserting Peek's own would pass for the wrong reason.
+*/
+const creatableUnder = vi.fn(async (parentKind: number) => {
+  if (parentKind === 30850) {
+    return {
+      actions: [liveAddIssue],
+      parents: [{ address: `30850:${SHIP_AUTHOR}:p1`, title: 'Projection layer' }],
+    }
+  }
+  if (parentKind === 39000) {
+    return {
+      actions: [liveStartConversation],
+      parents: [{ address: `39000:${TOPIC_AUTHOR}:${TOPIC_ID}`, title: 'Intelligence in Peek' }],
+    }
+  }
+  // An app that declares nothing creatable. Null is what the runtime returns,
+  // and the launcher's empty state is what reads it.
+  return null
+})
 
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
@@ -97,21 +157,98 @@ describe('an app is offered what it declares, and nothing else', () => {
     expect(screen.queryByText('Create project')).not.toBeInTheDocument()
   })
 
-  it('offers nothing for an app that declares nothing, and says which app', async () => {
+  it('offers Peek’s declared Start a conversation, and still not Create a topic', async () => {
     /*
-      Peek's manifest is `actions: []` on purpose — a reply names an event id
-      and the action vocabulary can only name a parent address — so the honest
-      list is empty. An unexplained blank reads as "this app does nothing",
-      which is a different and wrong statement, so the note carries the app's
-      name rather than being generic.
+      Two of the three rows Miky found dead, and they are dead for different
+      reasons — which is why one is back and one is not.
+
+      `start-a-conversation` creates no container: a `kind:9` root lands in the
+      topic's own Folder, which interop 0.16.0 can now find. `create-topic`
+      creates the Folder, and nothing can express that until FOL-2. So the
+      honest launcher shows exactly one of them.
     */
     open('peek')
 
-    expect(await screen.findByText(/peek has not published anything to create here yet/i)).toBeInTheDocument()
+    expect(await screen.findByText('Start a conversation')).toBeInTheDocument()
     expect(screen.queryByText('Create a topic')).not.toBeInTheDocument()
-    expect(screen.queryByText('Start a conversation')).not.toBeInTheDocument()
-    // Never probed: Peek declares no parent kind, so there is nothing to read.
-    expect(creatableUnder).not.toHaveBeenCalled()
+    // Probed at all, which it was not before: an app with no `parentKind`
+    // returns early and offers nothing however much it declares.
+    expect(creatableUnder).toHaveBeenCalledWith(39000)
+  })
+
+  /*
+    Reached by selecting the row rather than by `initialActionId`, deliberately.
+
+    `initialActionId` resolves against the **registry**, so a form opened that
+    way draws the design's proposal and would pass these two whatever the live
+    conversion did. What is being asserted here is `launcherActionFrom`'s
+    reading of a live declaration, so the live row is the only way in.
+  */
+  async function openLiveConversationForm() {
+    open('peek')
+    await userEvent.click(await screen.findByText('Start a conversation'))
+  }
+
+  it('draws the message body as prose, because the manifest said where it goes', async () => {
+    /*
+      `target: 'content'` is the only thing in a manifest that distinguishes a
+      long string from a short one, so it is the only honest reason to draw a
+      textarea — nothing is inferred from the property being called "message".
+      A one-line box for a conversation opener is the wrong shape for the thing.
+    */
+    await openLiveConversationForm()
+
+    const box = await screen.findByLabelText(/message/i)
+    expect(box.tagName).toBe('TEXTAREA')
+  })
+
+  it('names the parent by the app’s own noun, not every app’s Project', async () => {
+    // A person starting a conversation was asked to choose a *Project*: the
+    // launcher passed the literal `'project'` for every app it probed.
+    await openLiveConversationForm()
+
+    expect(await screen.findByLabelText(/topic/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/project/i)).not.toBeInTheDocument()
+  })
+
+  it('publishes a conversation into the topic that was picked', async () => {
+    /*
+      The positive assertion, which is the one this file went without for the
+      three dead rows: a suite of "must not publish" passes identically against
+      a form that cannot.
+
+      `value` carries the declared property and nothing else — the parent is not
+      a property, it travels as the address the runtime resolves the manifest
+      and the Folder from.
+    */
+    await openLiveConversationForm()
+
+    await userEvent.type(await screen.findByLabelText(/message/i), 'Shall we split PRO-18?')
+    await userEvent.click(screen.getByLabelText(/topic/i))
+    await userEvent.click(await screen.findByText('Intelligence in Peek'))
+    // Exact, not a pattern: the form's chip carries a "Leave Start a
+    // conversation" button that a loose match also finds.
+    await userEvent.click(screen.getByRole('button', { name: 'Start a conversation' }))
+
+    expect(applyAction).toHaveBeenCalledTimes(1)
+    const call = applyAction.mock.calls[0]?.[0]
+    expect(call?.actionId).toBe('start-a-conversation')
+    expect(call?.value).toEqual({ message: 'Shall we split PRO-18?' })
+    expect(call?.naddr.startsWith('naddr')).toBe(true)
+  })
+
+  it('offers nothing for an app that declares nothing, and says which app', async () => {
+    /*
+      The empty state is still reachable and still has to name the app — an
+      unexplained blank reads as "this app does nothing", which is a different
+      and wrong statement. Peek used to be this case; it is now an app whose
+      manifest declares nothing creatable under its parent kind.
+    */
+    creatableUnder.mockResolvedValueOnce(null)
+    open('ship')
+
+    expect(await screen.findByText(/ship has not published anything to create here yet/i)).toBeInTheDocument()
+    expect(screen.queryByText('Add issue')).not.toBeInTheDocument()
   })
 })
 
