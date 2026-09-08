@@ -16,7 +16,7 @@
   "dependencies": {
     "@auth/core": "^0.41.2",
     "@estiva-app/identity": "^0.2.1",
-    "@estiva-app/interop": "^0.11.0",
+    "@estiva-app/interop": "^0.15.0",
     "@estiva-app/protocol": "^0.14.0",
     "@estiva-app/ui": "^0.9.0",
     "@noble/curves": "^1.9.2",

@@ -2,6 +2,7 @@ import {
   IconNote,
   IconMessage2,
   IconUsers,
+  IconFolder,
   // IconBrackets,
   // IconFiles,
 } from '@tabler/icons-react'
@@ -24,6 +25,16 @@ export function NavRail() {
       // Both routes belong to this section: `/topics` is the directory and a
       // single topic lives at `/topic/<slug>-<uuid>` (PEE-14).
       match: ['/topics', '/topic'],
+    },
+    {
+      to: '/folders',
+      icon: <IconFolder size={16} stroke={1.5} />,
+      label: 'Folders',
+      // Both routes: `/folders` is the list and `/folders/<uuid>` is one of
+      // them. No last-selection memory, unlike Topics and People — a Folder
+      // list is short and a remembered one would be a guess about which of
+      // several containers somebody meant.
+      match: '/folders',
     },
     {
       to: dmId != null ? `/people/${dmId}` : '/people',

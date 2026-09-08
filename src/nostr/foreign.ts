@@ -35,8 +35,12 @@ import {
   buildActionEvent,
   createPeopleCache,
   resolveFolderProject,
+  resolveFolderContents,
+  listFolders,
   resolveForeignObject,
   resolveManifest,
+  type FolderContents,
+  type FolderSummary,
   type FolderProject,
   type ForeignObject,
   type People,
@@ -212,6 +216,43 @@ export async function resolveFolderProjectAsViewer(
 ): Promise<FolderProject | null> {
   const query = viewerQuery(relayUrl, token)
   return resolveFolderProject(folder, query, cachedPeople(query))
+}
+
+/**
+ * Everything in a Folder, whichever app owns it — RFC 0.4 §4 and §5.
+ *
+ * The sibling of {@link resolveFolderProjectAsViewer} and deliberately not a
+ * replacement for it. That one answers *"which project is this topic paired
+ * with, and what work is in motion"*, which is a Ship-shaped question the topic
+ * sidebar asks. This one answers *"what files does this Folder hold"* and has
+ * no opinion about which of them matters — a project, another topic and a
+ * record from an app nobody wrote come back as peers in the order the Folder
+ * lists them.
+ *
+ * **Throws {@link RelayReadError} when the read failed**, like its sibling, so
+ * an empty Folder and an unreachable one stay different sentences.
+ */
+export async function resolveFolderContentsAsViewer(
+  folder: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<FolderContents> {
+  const query = viewerQuery(relayUrl, token)
+  return resolveFolderContents(folder, query, cachedPeople(query))
+}
+
+/**
+ * Every Folder this viewer can see, for the navigation.
+ *
+ * Names only — no contents. A Folder's contents cost a resolve per Folder, and
+ * a sidebar that paid that on every render would spend the relay's whole read
+ * budget describing navigation nobody had clicked.
+ */
+export async function listFoldersAsViewer(
+  relayUrl: string,
+  token: StoredToken,
+): Promise<FolderSummary[]> {
+  return listFolders(viewerQuery(relayUrl, token))
 }
 
 /**
