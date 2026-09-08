@@ -34,3 +34,34 @@ export const list = query({
     return out.sort((a, b) => a.name.localeCompare(b.name))
   },
 })
+
+/**
+ * Who a `nostr:npub…` in a body names — pubkey to name, for **everyone**.
+ *
+ * Separate from {@link list} because they answer different questions, and
+ * reusing one for both is what broke mentions. "Who can I `@`?" excludes you
+ * (you do not mention yourself) and excludes identities that arrived from the
+ * relay (they are not members here). **"Who does this key name?" excludes
+ * neither** — a mention of you is still a mention, and a key Peek has only ever
+ * seen on the relay still belongs to somebody Peek can name.
+ *
+ * `adoptIdentity` explains why the second case exists at all: a row created by
+ * `resolveExternalUser` carries a name and a `nostrPubkey`, and Peek already
+ * renders that name as the message author. So the name was always there — the
+ * resolver just could not see it.
+ *
+ * Discloses nothing new. Every name here is already visible as a message
+ * author, which is where these rows came from.
+ */
+export const mentionNames = query({
+  args: {},
+  handler: async (ctx) => {
+    const users = await ctx.db.query('users').collect()
+    const out: Array<{ pubkey: string; name: string }> = []
+    for (const u of users) {
+      if (!u.nostrPubkey) continue
+      out.push({ pubkey: u.nostrPubkey, name: u.name })
+    }
+    return out
+  },
+})
