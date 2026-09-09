@@ -9,7 +9,7 @@
  * publishes fine, and fails days later in somebody else's app as an empty
  * widget.
  *
- * ## The identity, and why this cannot run yet
+ * ## The identity, and where it lives
  *
  * Publishing a `kind:31990` needs an identity the relay knows. Measured
  * 2026-08-31, both against production:
@@ -20,11 +20,22 @@
  *     `App claude-agent may not sign kind 31990`
  *
  * Those are gates 1 and 2 of SPEC §8's three, each refusing in a way that looks
- * like something else from the layer above. Ship publishes from a dedicated
- * `.manifest-key` that is a registered relay member; Peek has no equivalent.
- * Granting one is a seed change in Estiva ID plus a hand re-seed on the box
- * (operations/PRODUCTION.md), which is why this script exists complete and
- * unrun.
+ * like something else from the layer above.
+ *
+ * **This has since been granted and run.** The header used to end "which is why
+ * this script exists complete and unrun", and that stopped being true once
+ * Peek's manifest reached production — `31990:<pubkey>:estiva-peek` is live and
+ * a `#k` query for 39000 or 9 finds it. Corrected because the note reads as
+ * "do not bother running this", which is the opposite of what somebody
+ * republishing a changed declaration needs to know.
+ *
+ * The key is a gitignored `.manifest-key` beside this script, generated on
+ * first run and then registered as a relay member. **It is not in the
+ * repository and not in any worktree but the one it was made in**, so a run
+ * from a fresh clone or a `git worktree` will generate a *new* key, publish a
+ * second manifest under a different pubkey, and leave two claiming Peek's
+ * kinds — which SPEC §7.3 has no way to rank. Copy the existing key in, or run
+ * from the checkout that holds it.
  *
  * It takes a signer rather than reading a key file so that whichever identity
  * is granted can be handed in without editing this.
@@ -33,7 +44,7 @@ import { Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-a
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { HANDLED_KINDS, MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
-import { widgetChainProblem, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
+import { widgetChainProblem, actionProblems, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
 
 const RELAY_URL = process.env.RELAY_URL ?? 'http://localhost:3000'
 const KEY_FILE = new URL('../.manifest-key', import.meta.url).pathname
@@ -167,6 +178,39 @@ async function main() {
     }
   }
   check('every widget chain terminates in a closed type', true, CLOSED_LIST)
+
+  /*
+    Every action is one a caller could actually pick — checked before signing,
+    PRO-16, and INT-9's own watch list said nothing did this yet.
+
+    Peek became a producer of actions in INT-9, and a producer's mistakes here
+    are the ones no consumer can report at the moment they matter: a
+    description that restates its label is accepted by `resolveManifest`,
+    rendered by every consumer, and quietly never chosen by a caller matching
+    on prose (INT-5). An absent `effect` reads as *unknown* in both directions,
+    so a consumer offering only safe actions will not offer it and one avoiding
+    destructive actions may.
+
+    Refused rather than warned, for the same reason the widget check above is:
+    `kind:31990` is replaceable, but every consumer that fetched the bad one
+    holds it until it refetches. This is the one moment the mistake is cheap.
+  */
+  {
+    const declared = manifestContent().actions ?? []
+    const problems = declared.flatMap((action) =>
+      actionProblems(action).map((problem) => `  ${problem}`),
+    )
+    if (problems.length > 0) {
+      console.error(`\n✋ Refusing to publish. ${problems.length} problem(s) with the actions:\n`)
+      console.error(problems.join('\n') + '\n')
+      process.exit(1)
+    }
+    check(
+      'every declared action is one a caller could pick',
+      true,
+      declared.length === 0 ? 'none declared' : declared.map((a) => a.id).join(', '),
+    )
+  }
 
   const event = buildManifest(identity.pubkey, Date.now(), APP_URL)
   const published = await relay.publish(signEvent(event, identity.secretKeyHex))

@@ -33,6 +33,7 @@ import {
   matchObjectUrl,
   urlPatternsOf,
   buildActionEvent,
+  folderOf,
   createPeopleCache,
   resolveFolderProject,
   resolveFolderContents,
@@ -443,25 +444,23 @@ export async function applyActionAsViewer(
     return fail('That object is not readable from here — you may not have access to its Folder.')
   }
   /*
-    Two spellings, and reading only one made five of Ship's fifteen projects
-    unactionable from here.
+    The runtime's answer, not a local copy of it.
 
-    A Folder is named by NIP-29's `h` on most events. But a record published
-    *globally* — belonging to no Folder itself while still naming one — carries
-    `buzz-channel` instead, which is the relay's own tag rather than any app's
-    invention. Ship's projects moved to that shape in REW-11, and its fold has
-    read both ever since (`projectFolder` in `ship/src/fold.ts`); this did not,
-    so acting on a project created after that change failed with "That object
-    has no Folder, so there is nowhere to write." — on the five newest, which
-    are exactly the ones somebody would reach for.
+    This was three tag reads in a row here, with a comment saying they belonged
+    "one layer down in the runtime, where every consumer would get it rather
+    than each discovering it; filed rather than done here, because a person is
+    blocked on this now." PRO-18 did that — `folderOf` has been in interop
+    since 0.13.0 — and this call site kept its copy, so the two could drift and
+    then did.
 
-    Both tags are protocol-level, so knowing them is not knowing what Ship is.
-    It does belong one layer down in the runtime, where every consumer would
-    get it rather than each discovering it; filed rather than done here, because
-    a person is blocked on this now.
+    The drift is exactly the case INT-9 is about. interop 0.16.0 resolves a
+    channel record to its own `d`, because 0 of 40 `kind:39000` events on
+    production carry either tag and a topic therefore had no Folder to write
+    into. The local copy would still refuse every action on a topic while the
+    runtime accepted it — a difference nothing in Peek's suite could see, since
+    the suite exercises this function and not the one it should have called.
   */
-  const folderTag = (name: string) => root.tags.find((t) => t[0] === name)?.[1]
-  const folder = folderTag('h') ?? folderTag('buzz-channel')
+  const folder = folderOf(root)
   if (!folder) return fail('That object has no Folder, so there is nowhere to write.')
 
   // `@me` lets the UI offer "assign to me" without the caller composing a
@@ -479,6 +478,11 @@ export async function applyActionAsViewer(
     one (ADR 0002 §10 constraint 2 — it reaches for nothing). Generated here
     because *this* is the environment: a `d` is a uuid by RFC 0.4 §4.3, and it
     is what gives the new object an address at all.
+
+    Supplied for every creation, including one whose kind cannot hold a `d`.
+    The runtime decides: `buildCreationEvent` writes the tag only for an
+    addressable kind and ignores this otherwise. Which is why `created` below
+    reads the built event rather than this variable.
   */
   const newId = typeof args.value === 'string' ? undefined : crypto.randomUUID()
 
@@ -507,8 +511,39 @@ export async function applyActionAsViewer(
     Only for a creation: a change is a statement about an object that already
     had an address, and returning that one would read as "here is the new
     thing" when nothing new exists.
+
+    **And only where an address exists** (INT-9). This was keyed on `newId`,
+    which was set for every creation — so the first non-addressable one to be
+    declared would have returned `9:<pubkey>:<uuid>` for an event carrying no
+    `d` at all. That is not a reference that fails: `addrToNaddr` encodes it
+    happily, the launcher puts it in the composer, and the thread renders a
+    widget that resolves to nothing, for ever. A silent wrong answer, which is
+    the failure INT-9 is named for arriving one layer along.
+
+    So a message gets no reference, and that is a real gap rather than a fix:
+    it *has* an identity — its event id, which is why the manifest declares an
+    `nevent` web template — but `findNaddrs` scans for `nostr:naddr1…` only,
+    so an `nevent` in a body is prose rather than a widget. Widening that is a
+    change to the reference grammar RFC 0.5 §7 settles, and §7.3's argument
+    against bech32 in URLs is live there; it is not this ticket's to make in
+    passing. Filed as its own issue.
+
+    Meanwhile the honest outcome: the conversation is created and the launcher
+    says so, with nothing dropped into the composer. For the ordinary case —
+    starting a conversation in the topic you are reading — it appears in the
+    thread on its own, which a self-referencing widget would only duplicate.
   */
-  const created = newId ? `${built.kind}:${token.pubkey}:${newId}` : undefined
+  /*
+    Read off the event that was actually built, not off `newId`.
+
+    The `d` tag is what makes a kind addressable, and the runtime is the one
+    that decides whether to write it — so asking the bytes is both correct and
+    free of a second copy of the kind-range rule. A copy here is the same
+    mistake as the local `folderOf` above, which drifted from the runtime's the
+    moment the runtime learned something.
+  */
+  const identifier = built.tags.find((t) => t[0] === 'd')?.[1]
+  const created = identifier ? `${built.kind}:${token.pubkey}:${identifier}` : undefined
   return { ok: true, ...(created ? { created } : {}) }
 }
 

@@ -285,7 +285,9 @@ export function CommandLauncher({
           return
         }
         const actions = found.actions
-          .map((a) => launcherActionFrom(a, { parentNoun: 'project', submitLabel: a.label }))
+          // The app's own noun, not a literal `'project'` — a person starting a
+          // conversation was being asked to choose a Project (INT-9).
+          .map((a) => launcherActionFrom(a, { parentNoun: scope.parentNoun, submitLabel: a.label }))
           .filter((a): a is LauncherAction => a !== null)
         setLiveShip({
           actions,

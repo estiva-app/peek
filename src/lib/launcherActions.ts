@@ -132,6 +132,19 @@ export interface LauncherApp {
    * is simply not probed.
    */
   parentKind?: number
+  /**
+   * What the parent picker calls the thing being picked — "project", "topic".
+   *
+   * The launcher passed a literal `'project'` for every app, which was true
+   * while Ship was the only one probed and became wrong the moment Peek
+   * declared an action (INT-9): a person starting a conversation was asked to
+   * choose a *Project*. It belongs on the app rather than on the action because
+   * it names the app's `parentKind`, which is also here.
+   *
+   * `launcherActionFrom` falls back to "Parent", which is honest and reads
+   * badly; an app that declares a `parentKind` should name its noun.
+   */
+  parentNoun?: string
 }
 
 /** Verbatim `ship/src/kinds.ts` `ISSUE_STATUSES` (values and labels). */
@@ -167,6 +180,7 @@ const SHIP: LauncherApp = {
   placeholder: "Try 'create issue' or 'create project'...",
   // Its projects. Nothing outside this literal knows that number.
   parentKind: 30850,
+  parentNoun: 'project',
   vocabularies: {
     issueStatuses: SHIP_ISSUE_STATUSES,
     statuses: SHIP_PROJECT_STATUSES,
@@ -255,15 +269,44 @@ const PEEK: LauncherApp = {
   label: 'Peek',
   description: 'Topics & conversations',
   placeholder: "Try 'start a conversation' or 'create topic'...",
+  /**
+   * Peek's topics — the relay's `kind:39000`, whose `d` is the channel uuid.
+   *
+   * **Absent until INT-9, and its absence was the whole reason Peek's section
+   * was empty.** An app with no `parentKind` is never probed
+   * (`CommandLauncher`'s effect returns early), so Peek offered nothing even
+   * after it had something to offer. Declaring the number is what makes Peek
+   * an app the launcher reads a manifest for rather than a heading.
+   *
+   * Peek reading Peek's own manifest over the relay looks like a detour and is
+   * the point: the launcher has one path, and an app that got a private one
+   * would stop proving that a third app works the day it publishes (RFC 0.4
+   * §15).
+   */
+  parentKind: 39000,
+  parentNoun: 'topic',
   vocabularies: {},
   actions: [
     {
-      // Proposed: Peek's manifest declares no actions yet — a reply names an
-      // event id and the action vocabulary can only name a parent address
-      // (`src/nostr/manifest.ts`). STARTING a conversation is the case that
-      // fits the existing vocabulary: a kind:9 root under a topic's Folder.
-      id: 'say',
+      /*
+        **Declared for real since INT-9**, and the id here is the manifest's id
+        rather than a near-miss.
+
+        This was `say`, on the note that "Peek's manifest declares no actions
+        yet — a reply names an event id and the action vocabulary can only name
+        a parent address". The reply half of that is still true and is why the
+        manifest declares no reply. Starting a conversation was the case that
+        fitted the vocabulary, and it now fits it in practice too: interop
+        0.16.0 finds the Folder to write into off a channel record.
+
+        An id that differs from the live declaration's is the registry trap
+        INT-9's own watch list names — a row keyed `say` can never match an
+        action called `start-a-conversation`, so the `declared` check refuses it
+        and the refusal reads as the manifest being absent.
+      */
+      id: 'start-a-conversation',
       label: 'Start a conversation',
+      declaredToday: true,
       emits: { kind: 9, toAddressOf: 'self' },
       submitLabel: 'Start conversation',
       fields: [
