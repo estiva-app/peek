@@ -1,4 +1,3 @@
-import { useRef, useState } from 'react'
 import { Menu, MenuItem, MenuSection } from '@estiva-app/ui'
 import { Button } from './ui/Button'
 
@@ -12,43 +11,35 @@ const OPTIONS: { label: string; ms: number }[] = [
 ]
 
 /**
- * The "Later" button + its reminder-duration menu, on the shared shell
- * (2026-09-01): the portal, the container, the heading row and both exits
- * come from @estiva-app/ui's Menu — left-anchored to the trigger, which is
- * why the shell's `position` learnt a left edge. The button swallows its own
- * mousedown so the shell's outside-close and the click's toggle don't fight.
+ * The "Later" button + its reminder-duration menu.
+ *
+ * The menu owns its trigger (`@estiva-app/ui` 0.10.0), so everything this
+ * file used to do to open one is gone: the wrapper div that existed only to
+ * be measured, the `rect` state, the `getBoundingClientRect()`, the
+ * `onMouseDown` guard that stopped the outside-press and the click's toggle
+ * fighting, and the `setRect(null)` in every row. Base UI does the toggle,
+ * the placement, the focus return and the first-row highlight, and a
+ * `MenuItem` closes the menu by itself.
  */
 export function ScreenerLaterMenu({ onPick }: { onPick: (untilMs: number) => void }) {
-  const btnRef = useRef<HTMLDivElement>(null)
-  const [rect, setRect] = useState<DOMRect | null>(null)
-
   return (
-    <div ref={btnRef}>
-      <Button
-        variant="outlined"
-        size="small"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={() => setRect(rect ? null : (btnRef.current?.getBoundingClientRect() ?? null))}
-      >
-        Later
-      </Button>
-      {rect && (
-        <Menu onClose={() => setRect(null)} position={{ top: rect.bottom + 4, left: rect.left }} className="min-w-[160px] p-1">
-          <MenuSection label="Remind me" className="h-7 px-3">
-            {OPTIONS.map((o) => (
-              <MenuItem
-                key={o.label}
-                className="h-9 px-3"
-                label={o.label}
-                onClick={() => {
-                  setRect(null)
-                  onPick(Date.now() + o.ms)
-                }}
-              />
-            ))}
-          </MenuSection>
-        </Menu>
-      )}
-    </div>
+    <Menu
+      trigger={<Button variant="outlined" size="small">Later</Button>}
+      className="min-w-[160px] p-1"
+    >
+      {/* The heights here override the shared rows and are older than this
+          change; they are a question of their own (PEEK-ADOPTION §13.4), and
+          this commit must not move a pixel. */}
+      <MenuSection label="Remind me" className="h-7 px-3">
+        {OPTIONS.map((o) => (
+          <MenuItem
+            key={o.label}
+            className="h-9 px-3"
+            label={o.label}
+            onClick={() => onPick(Date.now() + o.ms)}
+          />
+        ))}
+      </MenuSection>
+    </Menu>
   )
 }
