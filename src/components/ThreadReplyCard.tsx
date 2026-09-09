@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { Menu, MenuItem, MenuSub } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -41,10 +41,10 @@ import { MessageBody } from './ui/MessageBody'
 
 // ── Reply More Menu ──
 
-function ReplyMoreMenu({ anchor, onClose, onEdit, onDelete, currentHighlight, onHighlight, className }: {
-  /** The ⋯ trigger's rect — the shared shell portals, fits and owns the exits. */
-  anchor: DOMRect | HTMLElement
-  onClose: () => void
+function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, currentHighlight, onHighlight, className }: {
+  /** The ⋯ button — the menu owns it, and portals, fits and exits itself. */
+  trigger: ReactElement
+  onOpenChange?: (open: boolean) => void
   onEdit?: () => void
   onDelete?: () => void
   currentHighlight?: HighlightType
@@ -52,7 +52,7 @@ function ReplyMoreMenu({ anchor, onClose, onEdit, onDelete, currentHighlight, on
   className?: string
 }) {
   return (
-    <Menu anchor={anchor} align="right" closeOnLeave onClose={onClose} className={cn('w-[180px] gap-2', className)}>
+    <Menu trigger={trigger} align="right" onOpenChange={onOpenChange} className={cn('w-[180px] gap-2', className)}>
       <div className="flex flex-col">
         {/*
           Offered on every reply, not just your own — CON-3 for Delete below and
@@ -172,10 +172,10 @@ export function ThreadReplyCard({
 }: ThreadReplyCardProps) {
   const messageLink = shareableMessageUrl(nostrEventId, window.location.origin)
   const [isHovered, setIsHovered] = useState(false)
-  // The ⋯ menu: the trigger's rect, or closed. The shared Menu shell owns
-  // placement and every exit (2026-09-03).
-  const [moreMenuAnchor, setMoreMenuAnchor] = useState<DOMRect | null>(null)
-  const moreButtonRef = useRef<HTMLDivElement>(null)
+  /* Not a rect since `@estiva-app/ui` 0.10.0 — the menu owns its button. Only
+     whether it is open, which the card needs so the hover strip does not
+     unmount from under an open menu. */
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
   const isTopicResolved = useIsTopicResolved()
 
@@ -329,14 +329,7 @@ export function ThreadReplyCard({
     }
   }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleMore = () => {
-    // Toggle; the shared shell decides above/below from the real room.
-    if (moreMenuAnchor) { setMoreMenuAnchor(null); return }
-    const rect = moreButtonRef.current?.getBoundingClientRect()
-    if (rect) setMoreMenuAnchor(rect)
-  }
-
-  const handleEditStart = () => { editAttachments.begin(); setIsEditing(true); setMoreMenuAnchor(null) }
+  const handleEditStart = () => { editAttachments.begin(); setIsEditing(true) }
 
   const handleEditSave = () => {
     if (!editEditor) return
@@ -389,12 +382,11 @@ export function ThreadReplyCard({
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
 
-  const handleDelete = () => { setMoreMenuAnchor(null); onDelete?.() }
+  const handleDelete = () => { onDelete?.() }
 
   const handleHighlightChange = (type: HighlightType | undefined) => {
     setHighlightState(type)
     onHighlightChange?.(type)
-    setMoreMenuAnchor(null)
     setIsHovered(false)
   }
 
@@ -469,7 +461,7 @@ export function ThreadReplyCard({
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
-          if (showReactionPicker || moreMenuAnchor) return
+          if (showReactionPicker || moreMenuOpen) return
           setIsHovered(false)
         }}
       >
@@ -625,25 +617,26 @@ export function ThreadReplyCard({
                   <IconMoodPlus size={16} stroke={1.5} />
                 </IconButton>
               </div>
-              <div ref={moreButtonRef} className="inline-flex">
-                <IconButton tooltip="More actions" aria-label="More actions" onClick={handleMore}>
-                  <IconDotsVertical size={16} stroke={1.5} />
-                </IconButton>
-              </div>
+              {/* The menu owns this button and sits where it is. The ref and
+                  the rect it was measured for are gone; so is closeOnLeave,
+                  which a menu with a submenu may not have anyway (D28). */}
+              <ReplyMoreMenu
+                trigger={
+                  <IconButton tooltip="More actions" aria-label="More actions">
+                    <IconDotsVertical size={16} stroke={1.5} />
+                  </IconButton>
+                }
+                onOpenChange={(next) => {
+                  setMoreMenuOpen(next)
+                  if (!next) setIsHovered(false)
+                }}
+                onEdit={handleEditStart}
+                onDelete={handleDelete}
+                currentHighlight={highlightState}
+                onHighlight={handleHighlightChange}
+              />
             </div>
           </div>
-        )}
-
-        {/* More menu — the shared shell portals, fits, and owns the exits */}
-        {moreMenuAnchor && (
-          <ReplyMoreMenu
-            anchor={moreMenuAnchor}
-            onClose={() => { setMoreMenuAnchor(null); setIsHovered(false) }}
-            onEdit={handleEditStart}
-            onDelete={handleDelete}
-            currentHighlight={highlightState}
-            onHighlight={handleHighlightChange}
-          />
         )}
       </div>
 
