@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 
 const meta = {
@@ -10,7 +11,9 @@ const meta = {
     onReply: () => {},
     onResolve: () => {},
     onReopen: () => {},
-    onMore: () => {},
+    /* The ⋯ menu owns its own button, so the strip takes the menu rather
+       than a callback and the button arrives with it. Press it. */
+    more: <ConversationMoreMenu onDelete={() => {}} />,
   },
 } satisfies Meta<typeof ConversationQuickMenu>
 

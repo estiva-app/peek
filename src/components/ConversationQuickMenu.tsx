@@ -1,10 +1,9 @@
-import { useRef } from 'react'
+import type { ReactNode } from 'react'
 import {
   IconMoodPlus,
   IconMessage2,
   IconCircleCheck,
   IconCircleDashed,
-  IconDotsVertical,
 } from '@tabler/icons-react'
 import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
@@ -15,7 +14,13 @@ interface ConversationQuickMenuProps {
   onReply?: () => void
   onResolve?: () => void
   onReopen?: () => void
-  onMore?: (rect: DOMRect) => void
+  /**
+   * The ⋯ menu itself, which owns its own button since `@estiva-app/ui`
+   * 0.10.0. This strip used to keep a ref, measure that button and hand the
+   * rect upward so the card could place a menu; all of it existed to tell a
+   * menu where a button it can hold itself was.
+   */
+  more?: ReactNode
   className?: string
 }
 
@@ -25,17 +30,9 @@ export function ConversationQuickMenu({
   onReply,
   onResolve,
   onReopen,
-  onMore,
+  more,
   className,
 }: ConversationQuickMenuProps) {
-  const moreRef = useRef<HTMLDivElement>(null)
-
-  const handleMore = () => {
-    if (moreRef.current) {
-      onMore?.(moreRef.current.getBoundingClientRect())
-    }
-  }
-
   return (
     <div
       className={cn(
@@ -69,11 +66,7 @@ export function ConversationQuickMenu({
 
       <div className="w-px self-stretch bg-border-subtle" />
 
-      <div ref={moreRef} className="inline-flex">
-        <IconButton tooltip="More actions" aria-label="More actions" onClick={handleMore}>
-          <IconDotsVertical size={16} stroke={1.5} />
-        </IconButton>
-      </div>
+      {more}
     </div>
   )
 }

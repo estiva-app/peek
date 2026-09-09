@@ -140,7 +140,10 @@ export function ConversationCard({
   const pathForTopic = useTopicPath()
   // The ⋯ menu: the quick-menu's measured rect, or closed. The shared Menu
   // shell owns placement and every exit (2026-09-03).
-  const [moreMenuAnchor, setMoreMenuAnchor] = useState<DOMRect | null>(null)
+  /* Not a rect any more, only whether the menu is open: the ⋯ menu owns its
+     own button since `@estiva-app/ui` 0.10.0. The card still needs to know,
+     because a card with an open menu does not react to a stray click. */
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
   // Reactions. The picker portals above the quick bar (ThreadReplyCard's
   // pattern) — in-flow it was clipped by the panel's scroll container on the
@@ -365,15 +368,6 @@ export function ConversationCard({
   /** Reply authors' faces, resolved as Peek's Avatar wrapper resolves any other. */
   const avatarSrcFor = useAvatarSrc()
 
-  const handleMore = (rect: DOMRect) => {
-    // Toggle; the shared shell decides above/below from the real room.
-    if (moreMenuAnchor) {
-      setMoreMenuAnchor(null)
-      return
-    }
-    setMoreMenuAnchor(rect)
-    onMore?.()
-  }
 
   const handleResolveConfirm = (message: string) => {
     setResolved(true)
@@ -387,26 +381,22 @@ export function ConversationCard({
     setResolved(false)
     setResolvedBy('')
     setResolutionMsg('')
-    setMoreMenuAnchor(null)
     onResolvedChange?.(false)
   }
 
   const handleDelete = () => {
-    setMoreMenuAnchor(null)
     onDelete?.()
   }
 
   const handleConvHighlight = (type: HighlightType | undefined) => {
     setHighlightState(type)
     onHighlightChange?.(type)
-    setMoreMenuAnchor(null)
     setIsHovered(false)
   }
 
   const handleEditStart = () => {
     editAttachments.begin()
     setIsEditing(true)
-    setMoreMenuAnchor(null)
   }
 
   const handleEditSave = () => {
@@ -470,7 +460,6 @@ export function ConversationCard({
   editCancelFnRef.current = handleEditCancel
 
   const openCreateTopic = () => {
-    setMoreMenuAnchor(null)
     setShowTopicDialog(true)
   }
 
@@ -487,7 +476,6 @@ export function ConversationCard({
   const handleRevertToConversation = () => {
     setIsTopic(false)
     setTopicTitle('')
-    setMoreMenuAnchor(null)
   }
 
   const handleReact = (emoji: string) => {
@@ -544,7 +532,7 @@ export function ConversationCard({
         onClick={(e) => {
           if (!onClick || isEditing) return
           // Don't open thread when any overlay is active
-          if (moreMenuAnchor || showResolveDialog || showTopicDialog || reactionPickerPos) return
+          if (moreMenuOpen || showResolveDialog || showTopicDialog || reactionPickerPos) return
           // Don't open thread when clicking interactive children
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
@@ -835,7 +823,25 @@ export function ConversationCard({
               onReply={onReply}
               onResolve={() => setShowResolveDialog(true)}
               onReopen={handleReopen}
-              onMore={handleMore}
+              more={
+                <ConversationMoreMenu
+                  onOpenChange={(next) => {
+                    setMoreMenuOpen(next)
+                    if (next) onMore?.()
+                  }}
+                  isTopic={isTopic}
+                  isResolved={resolved}
+                  showCreateTopic={showCreateTopic}
+                  currentHighlight={highlightState}
+                  onHighlight={handleConvHighlight}
+                  onCreateTopic={openCreateTopic}
+                  onRevertToConversation={handleRevertToConversation}
+                  onResolve={() => setShowResolveDialog(true)}
+                  onReopen={handleReopen}
+                  onEditMessage={!isTopic ? handleEditStart : undefined}
+                  onDelete={handleDelete}
+                />
+              }
             />
           </div>
         )}
@@ -860,25 +866,6 @@ export function ConversationCard({
             </div>,
             document.body
           )}
-
-        {/* ── More menu — the shared shell portals, fits, and owns the exits ── */}
-        {moreMenuAnchor && (
-          <ConversationMoreMenu
-            anchor={moreMenuAnchor}
-            onClose={() => setMoreMenuAnchor(null)}
-            isTopic={isTopic}
-            isResolved={resolved}
-            showCreateTopic={showCreateTopic}
-            currentHighlight={highlightState}
-            onHighlight={handleConvHighlight}
-            onCreateTopic={openCreateTopic}
-            onRevertToConversation={handleRevertToConversation}
-            onResolve={() => { setMoreMenuAnchor(null); setShowResolveDialog(true) }}
-            onReopen={handleReopen}
-            onEditMessage={!isTopic ? handleEditStart : undefined}
-            onDelete={handleDelete}
-          />
-        )}
       </div>
 
       {showResolveDialog && (
