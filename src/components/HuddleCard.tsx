@@ -79,8 +79,11 @@ export function HuddleCard({
   const inStream = variant === 'inStream'
   const isResolved = huddle.state === 'resolved'
   const [isHovered, setIsHovered] = useState(false)
-  // The ⋯ menu: the trigger's rect, or closed (shared Menu shell).
-  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null)
+  /* The ⋯ menu owns its button since `@estiva-app/ui` 0.10.0, so this is no
+     longer a rect — only whether it is open, which the card still needs: an
+     open menu must not let a click through to the card, and must not let the
+     hover strip unmount from under itself. */
+  const [menuOpen, setMenuOpen] = useState(false)
 
   // Grid keeps the legacy "first + N" truncation; inStream shows full comma-joined
   // names (the user-side label is "you and these other people").
@@ -109,16 +112,7 @@ export function HuddleCard({
   const replyAuthors = replyMeta.replyAuthors ?? huddle.conversation?.replyAuthors
   const lastReplyTime = replyMeta.lastReplyTime ?? huddle.conversation?.lastReplyTime
 
-  const handleMore = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    // Toggle; the shared shell decides above/below from the real room, and
-    // owns the outside-click and Escape exits (2026-09-03).
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setMenuAnchor((prev) => (prev ? null : rect))
-  }
-
   const handleDelete = () => {
-    setMenuAnchor(null)
     onDelete?.()
   }
 
@@ -157,14 +151,14 @@ export function HuddleCard({
           className
         )}
         onClick={(e) => {
-          if (menuAnchor) return
+          if (menuOpen) return
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
           onClick?.()
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
-          if (menuAnchor) return
+          if (menuOpen) return
           setIsHovered(false)
         }}
       >
@@ -351,29 +345,41 @@ export function HuddleCard({
                 <IconMessage2 size={16} stroke={1.5} />
               </IconButton>
               <div className="w-px self-stretch bg-border-subtle" />
-              <IconButton tooltip="More actions" aria-label="More actions" onClick={handleMore}>
-                <IconDotsVertical size={16} stroke={1.5} />
-              </IconButton>
+              {/* The menu owns this button, and sits where the button is
+                  rather than at the end of the card. `closeOnLeave` went with
+                  the same release; it opened on a press already. The card is
+                  clickable, so the button still swallows its own click —
+                  Base UI composes its toggle onto that rather than replacing
+                  it. */}
+              <Menu
+                trigger={
+                  <IconButton
+                    tooltip="More actions"
+                    aria-label="More actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <IconDotsVertical size={16} stroke={1.5} />
+                  </IconButton>
+                }
+                align="right"
+                onOpenChange={(next) => {
+                  setMenuOpen(next)
+                  if (!next) setIsHovered(false)
+                }}
+                className="w-[244px] gap-2"
+              >
+                {/* "View details" has no handler and never had one — an inert
+                    control, COMPONENTS-PEEK F3, not something to change while
+                    porting. */}
+                <MenuItem label="View details" />
+                <Divider className="mx-0" />
+                <MenuItem label="Delete" destructive onClick={handleDelete} />
+              </Menu>
             </div>
           </div>
         )}
         </div>
       </div>
-
-      {/* More menu — the shared shell portals, fits, and owns the exits */}
-      {menuAnchor && (
-        <Menu
-          anchor={menuAnchor}
-          align="right"
-          closeOnLeave
-          onClose={() => { setMenuAnchor(null); setIsHovered(false) }}
-          className="w-[244px] gap-2"
-        >
-          <MenuItem label="View details" />
-          <Divider className="mx-0" />
-          <MenuItem label="Delete" destructive onClick={handleDelete} />
-        </Menu>
-      )}
     </>
   )
 }
