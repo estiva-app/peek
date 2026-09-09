@@ -104,8 +104,6 @@ export function ConversationHeader({
     void navigator.clipboard?.writeText(link).catch(() => window.prompt('Copy this Folder link:', link))
   }
 
-  // "More actions" menu (portalled). Menu rules: outside click + Escape close.
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
   const copyTopicLink = topicLink
     ? () => {
         void navigator.clipboard
@@ -117,12 +115,16 @@ export function ConversationHeader({
   const hasMoreMenu =
     !!onOpenDetails || !!onDeleteTopic || !!copyTopicLink || !!(openWorkAction && onToggleOpenWork)
 
-
-  const openMoreMenu = (e: React.MouseEvent) => {
-    if (!hasMoreMenu) return
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setMenuPos((prev) => (prev ? null : { top: rect.bottom + 4, right: window.innerWidth - rect.right }))
-  }
+  /* The menu owns this button since `@estiva-app/ui` 0.10.0, so the open
+     state, the rect measurement and the toggle are all gone from this file.
+     When a topic has no menu actions the button is still drawn and still does
+     nothing, exactly as before — an inert control, COMPONENTS-PEEK F3, not
+     something to change while porting. */
+  const moreButton = (
+    <IconButton tooltip="More actions" aria-label="More actions">
+      <IconDotsVertical size={16} stroke={1.5} />
+    </IconButton>
+  )
 
   return (
     <div className={cn('shrink-0 border-b border-border-subtle', className)}>
@@ -228,24 +230,21 @@ export function ConversationHeader({
                 )}
               </IconButton>
             )}
-            <IconButton tooltip="More actions" aria-label="More actions" onClick={openMoreMenu}>
-              <IconDotsVertical size={16} stroke={1.5} />
-            </IconButton>
+            {hasMoreMenu ? (
+              <TopicMoreMenu
+                trigger={moreButton}
+                onOpenDetails={onOpenDetails}
+                onCopyLink={copyTopicLink}
+                openWorkAction={openWorkAction}
+                onToggleOpenWork={onToggleOpenWork}
+                onDeleteTopic={onDeleteTopic}
+              />
+            ) : (
+              moreButton
+            )}
           </div>
         </div>
       </div>
-
-      {menuPos && hasMoreMenu && (
-        <TopicMoreMenu
-          position={menuPos}
-          onClose={() => setMenuPos(null)}
-          onOpenDetails={onOpenDetails}
-          onCopyLink={copyTopicLink}
-          openWorkAction={openWorkAction}
-          onToggleOpenWork={onToggleOpenWork}
-          onDeleteTopic={onDeleteTopic}
-        />
-      )}
 
       {/* Row 2: tabs */}
       {tabs && (

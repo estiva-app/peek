@@ -53,26 +53,36 @@ export function PersonRow({
 }: PersonRowProps) {
   const hasMenu = !!onDeleteTopic || !!onOpenDetails || !!(openWorkAction && onToggleOpenWork)
   const [isHovered, setIsHovered] = useState(false)
-  // More-menu (portalled — the sidebar scroll container clips overflow).
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  /* The menu owns its button since `@estiva-app/ui` 0.10.0, so what this file
+     keeps is not a position any more — it is only whether the menu is open,
+     because the row stays hovered and keeps its actions visible while it is.
+     Portalled and right-aligned by the shared menu: the sidebar scroll
+     container clips overflow, and a content-sized menu grows leftward so long
+     labels never truncate. */
+  const [menuOpen, setMenuOpen] = useState(false)
   // Resolve DM avatars through the registry (uploaded > seeded portrait >
   // silhouette) — the static avatarFor never sees real users' uploads.
   const avatarSrcFor = useAvatarSrc()
 
-  const openMenu = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!hasMenu) return
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    // Right-anchored to the 3-dot: the content-sized menu grows leftward,
-    // so long labels never truncate or run off-screen.
-    setMenuPos({ top: rect.bottom + 4, right: Math.max(8, window.innerWidth - rect.right) })
-  }
+  /* The row itself is clickable, so the button still swallows the click that
+     opens the menu. Base UI composes its own toggle onto this handler rather
+     than replacing it, so both run. */
+  const moreButton = (
+    <IconButton
+      tooltip="More options"
+      aria-label="More options"
+      onClick={(e) => e.stopPropagation()}
+      className="-m-1"
+    >
+      <IconDotsVertical size={16} stroke={1.5} />
+    </IconButton>
+  )
 
   return (
     <div
       className={cn(
         'flex items-center gap-2 px-2 h-[32px] rounded-lg cursor-pointer transition-colors',
-        isSelected ? 'bg-bg-selected' : isHovered || menuPos ? 'bg-bg-hover' : '',
+        isSelected ? 'bg-bg-selected' : isHovered || menuOpen ? 'bg-bg-hover' : '',
         className
       )}
       onClick={onClick}
@@ -99,7 +109,7 @@ export function PersonRow({
 
       {/* Right slot - rendered only when there's something to show, so the title
           can use the full row width when idle. Slight layout shift on hover is intentional. */}
-      {isHovered || menuPos ? (
+      {isHovered || menuOpen ? (
         <div className="w-6 h-6 flex items-center justify-center shrink-0">
           {onRemove ? (
             <IconButton
@@ -110,15 +120,17 @@ export function PersonRow({
             >
               <IconX size={16} stroke={1.5} />
             </IconButton>
+          ) : hasMenu ? (
+            <TopicMoreMenu
+              trigger={moreButton}
+              onOpenChange={setMenuOpen}
+              onOpenDetails={onOpenDetails}
+              openWorkAction={openWorkAction}
+              onToggleOpenWork={onToggleOpenWork}
+              onDeleteTopic={onDeleteTopic}
+            />
           ) : (
-            <IconButton
-              tooltip="More options"
-              aria-label="More options"
-              onClick={openMenu}
-              className="-m-1"
-            >
-              <IconDotsVertical size={16} stroke={1.5} />
-            </IconButton>
+            moreButton
           )}
         </div>
       ) : isUrgent && isUnread ? (
@@ -133,16 +145,6 @@ export function PersonRow({
         </div>
       ) : null}
 
-      {menuPos && hasMenu && (
-        <TopicMoreMenu
-          position={menuPos}
-          onClose={() => setMenuPos(null)}
-          onOpenDetails={onOpenDetails}
-          openWorkAction={openWorkAction}
-          onToggleOpenWork={onToggleOpenWork}
-          onDeleteTopic={onDeleteTopic}
-        />
-      )}
     </div>
   )
 }
