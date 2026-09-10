@@ -30,6 +30,7 @@ import { TopicState } from './ui/TopicState'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ResolveDialog } from './ResolveDialog'
+import { ConfirmDelete } from './ConfirmDelete'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
@@ -367,9 +368,9 @@ export function ConversationCard({
     onResolvedChange?.(false)
   }
 
-  const handleDelete = () => {
-    onDelete?.()
-  }
+  // Delete asks first (D56): the menu row opens the question, the delete runs on Yes.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const handleDelete = () => setConfirmingDelete(true)
 
   const handleConvHighlight = (type: HighlightType | undefined) => {
     setHighlightState(type)
@@ -517,7 +518,7 @@ export function ConversationCard({
         onClick={(e) => {
           if (!onClick || isEditing) return
           // Don't open thread when any overlay is active
-          if (moreMenuOpen || showResolveDialog || showTopicDialog || pickerOpen) return
+          if (moreMenuOpen || showResolveDialog || showTopicDialog || pickerOpen || confirmingDelete) return
           // Don't open thread when clicking interactive children
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
@@ -838,6 +839,15 @@ export function ConversationCard({
         )}
 
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDelete
+          what="message"
+          replies={replyCount ?? 0}
+          onConfirm={() => onDelete?.()}
+          onClose={() => setConfirmingDelete(false)}
+        />
+      )}
 
       {showResolveDialog && (
         <ResolveDialog

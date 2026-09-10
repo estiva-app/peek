@@ -16,6 +16,7 @@
  * readable while the answer to the second one is "no".
  */
 import { useEffect, useState } from 'react'
+import { WithTooltip } from './ui/WithTooltip'
 import {
   currentObservation,
   deriveFreshness,
@@ -82,14 +83,17 @@ export function FreshnessIndicator() {
 
   const label = describeFreshness(state, now)
   return (
-    <div
-      className="mt-auto flex w-full justify-center py-2"
-      title={label}
-      role="status"
-      aria-label={label}
-      data-freshness={state.kind}
-    >
-      <span className={`h-2 w-2 rounded-full ${TONE[state.kind]}`} />
-    </div>
+    /* The package tooltip, not the browser's `title`: it shows on focus too
+       and follows the theme (§4.9, P31, 2026-09-10). */
+    <WithTooltip label={label} placement="top" wrapperClassName="mt-auto w-full">
+      <div
+        className="flex w-full justify-center py-2"
+        role="status"
+        aria-label={label}
+        data-freshness={state.kind}
+      >
+        <span className={`h-2 w-2 rounded-full ${TONE[state.kind]}`} />
+      </div>
+    </WithTooltip>
   )
 }

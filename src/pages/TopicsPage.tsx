@@ -5,6 +5,7 @@ import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTopicDialog'
+import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
 import { CollapsibleSection } from '@estiva-app/ui'
@@ -37,7 +38,7 @@ export function TopicsPage() {
   const openWorkTopicIds = useOpenWorkTopicIds()
   const actions = usePeekActions()
   const pathForTopic = useTopicPath()
-  const { showToast } = useToast()
+  const { showToast, dismissToast } = useToast()
   /** The Folder panel is dismissible, not part of the layout (PEEK-24). Open to
    *  begin with, since a topic paired with a project is the case it exists for;
    *  the header button closes it and the choice holds while you browse. */
@@ -141,19 +142,26 @@ export function TopicsPage() {
   const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
 
   /**
-   * What the last delete could not reach, if anything.
+   * Delete asks first (D56): the menu row opens the question, the delete runs
+   * on Yes.
    *
-   * Shown rather than swallowed: deleting a topic removes it here and asks the
-   * relay to drop the channel, and the second half can fail on its own — a
-   * non-owner cannot delete somebody else's channel at all. Silence would leave
-   * somebody believing a conversation is gone while every admitted member can
-   * still read it (PEEK-170).
+   * What the delete could not reach is shown rather than swallowed: deleting a
+   * topic removes it here and asks the relay to drop the channel, and the
+   * second half can fail on its own — a non-owner cannot delete somebody else's
+   * channel at all. Silence would leave somebody believing a conversation is
+   * gone while every admitted member can still read it (PEEK-170). Since
+   * 2026-09-10 that is the package toast, kept up until dismissed (D50, P24)
+   * — it was a hand-built pill at the top of the page.
    */
-  const [deleteNotice, setDeleteNotice] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const handleDeleteTopic = (topicId: string) => setConfirmDeleteId(topicId)
 
-  const handleDeleteTopic = (topicId: string) => {
-    setDeleteNotice(null)
-    void deleteTopic(topicId).then((outcome) => setDeleteNotice(outcome?.message ?? null))
+  const runDeleteTopic = (topicId: string) => {
+    void deleteTopic(topicId).then((outcome) => {
+      if (outcome?.message) {
+        showToast({ label: outcome.message, type: 'neutral', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss', onAction: dismissToast })
+      }
+    })
     // Deleting what you're looking at → back to the bare list, no stale URL
     // (also drop the remembered selection or the redirect brings it back).
     if (selectedId === topicId) {
@@ -219,22 +227,12 @@ export function TopicsPage() {
 
   return (
     <>
-    {/*
-      A topic that is gone from Peek and not from the relay. Dismissible rather
-      than transient: it is the only signal that a conversation somebody meant
-      to delete is still readable by other apps, and a toast that fades takes
-      that with it.
-    */}
-    {deleteNotice && (
-      <div
-        role="status"
-        className="fixed top-3 left-1/2 -translate-x-1/2 z-50 max-w-[640px] rounded-md border border-warning-outline bg-bg-elevated px-3 py-2 text-[12px] leading-[1.4] text-warning-default flex items-start gap-3"
-      >
-        <span>{deleteNotice}</span>
-        <button type="button" className="shrink-0 underline" onClick={() => setDeleteNotice(null)}>
-          Dismiss
-        </button>
-      </div>
+    {confirmDeleteId && (
+      <ConfirmDelete
+        what="topic"
+        onConfirm={() => runDeleteTopic(confirmDeleteId)}
+        onClose={() => setConfirmDeleteId(null)}
+      />
     )}
     {createOpen && (
       <CreateTopicDialog

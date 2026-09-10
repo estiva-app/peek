@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { WithTooltip } from './WithTooltip'
 import { EmptyState } from './EmptyState'
 
 /**
@@ -108,12 +109,9 @@ export function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
             <p className="text-[12px] leading-[1.4]">
               <Line entry={entry} />
             </p>
-            <span
-              title={exactly(entry.at)}
-              className="text-[12px] leading-[1.4] text-text-muted"
-            >
-              {whenLabel(entry.at)}
-            </span>
+            <WithTooltip label={exactly(entry.at)} wrapperClassName="self-start">
+              <span className="text-[12px] leading-[1.4] text-text-muted">{whenLabel(entry.at)}</span>
+            </WithTooltip>
           </div>
         </div>
       ))}

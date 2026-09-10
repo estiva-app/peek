@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { DialogShell } from './ui/DialogShell'
+import { Field } from './ui/Field'
 import { IconArrowLeft, IconUserPlus } from '@tabler/icons-react'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
@@ -92,11 +93,9 @@ export function MembersDialog({
           </>
         }
       >
-        <div className="flex flex-col gap-2">
-          <label className="text-input-label text-text-primary flex items-center">
-            Invite people
-            <span className="text-error-default ml-0.5">*</span>
-          </label>
+        {/* The package Field draws the label and its required mark; the
+            hand-typed copy went on 2026-09-10 (§4.3, P16, F14). */}
+        <Field label="Invite people" required>
           <PersonChipInput
             value={invitees}
             onChange={setInvitees}
@@ -104,7 +103,7 @@ export function MembersDialog({
             excludeIds={memberIds}
             autoFocus
           />
-        </div>
+        </Field>
       </DialogShell>
     )
   }

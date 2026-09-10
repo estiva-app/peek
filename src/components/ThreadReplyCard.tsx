@@ -20,8 +20,10 @@ import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Avatar } from './ui/Avatar'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
+import { ConfirmDelete } from './ConfirmDelete'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { Divider } from './ui/Divider'
+import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { useIsTopicResolved, hasConvex } from '@/api'
 import { FileAttachmentCard } from './ui/FileAttachmentCard'
@@ -378,7 +380,9 @@ export function ThreadReplyCard({
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
 
-  const handleDelete = () => { onDelete?.() }
+  // Delete asks first (D56).
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const handleDelete = () => setConfirmingDelete(true)
 
   const handleHighlightChange = (type: HighlightType | undefined) => {
     setHighlightState(type)
@@ -501,14 +505,15 @@ export function ThreadReplyCard({
                   back rather than rendering a dead link.
                 */}
                 {messageLink ? (
-                  <a
-                    href={messageLink}
-                    data-interactive
-                    title="Link to this message"
-                    className="text-caption text-text-muted shrink-0 whitespace-nowrap hover:underline signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums"
-                  >
-                    {timestamp}
-                  </a>
+                  <WithTooltip label="Link to this message" wrapperClassName="shrink-0">
+                    <a
+                      href={messageLink}
+                      data-interactive
+                      className="text-caption text-text-muted shrink-0 whitespace-nowrap hover:underline signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums"
+                    >
+                      {timestamp}
+                    </a>
+                  </WithTooltip>
                 ) : (
                   <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
                 )}
@@ -608,6 +613,10 @@ export function ThreadReplyCard({
           />
         )}
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDelete what="reply" onConfirm={() => onDelete?.()} onClose={() => setConfirmingDelete(false)} />
+      )}
 
       {previewFrame && (
         <FrameLightbox frame={previewFrame} onClose={() => setPreviewFrame(null)} />

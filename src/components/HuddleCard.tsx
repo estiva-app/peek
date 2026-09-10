@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons-react'
 import { Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
+import { ConfirmDelete } from './ConfirmDelete'
 import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
@@ -112,9 +113,9 @@ export function HuddleCard({
   const replyAuthors = replyMeta.replyAuthors ?? huddle.conversation?.replyAuthors
   const lastReplyTime = replyMeta.lastReplyTime ?? huddle.conversation?.lastReplyTime
 
-  const handleDelete = () => {
-    onDelete?.()
-  }
+  // Delete asks first (D56).
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const handleDelete = () => setConfirmingDelete(true)
 
   // Single-line preview body for the inStream variant — strip newlines so the
   // truncate happens cleanly at the card's right edge.
@@ -376,6 +377,9 @@ export function HuddleCard({
         )}
         </div>
       </div>
+      {confirmingDelete && (
+        <ConfirmDelete what="huddle" onConfirm={() => onDelete?.()} onClose={() => setConfirmingDelete(false)} />
+      )}
     </>
   )
 }
