@@ -52,6 +52,53 @@
 /** What `LanguageModel.availability()` answers. */
 export type ModelAvailability = 'unavailable' | 'downloadable' | 'downloading' | 'available'
 
+/**
+ * What `prefillAvailability` reports — the browser's four answers, plus the
+ * case where it gives none at all.
+ *
+ * `'unanswered'` is deliberately not folded into `'unavailable'`. The two call
+ * for opposite handling: `'unavailable'` is a browser that answered, and the
+ * gate attempts a session anyway because Chrome says it while working. A
+ * browser that never answers has demonstrated nothing except that awaiting it
+ * is unsafe, and attempting a session on that basis is how a launcher ends up
+ * showing a row that hangs.
+ */
+export type PrefillAvailability = ModelAvailability | 'unanswered'
+
+/**
+ * How long `availability()` may take before its answer is treated as absent.
+ *
+ * **Because it can never answer at all.** Measured in Edge 155 on 2026-09-10,
+ * on the Peek origin, one call per line with its own deadline:
+ *
+ * | call | outcome |
+ * | --- | --- |
+ * | `LanguageModel.availability()`, and all six option spellings | **never settled** |
+ * | `Summarizer` / `Writer` / `Rewriter` `.availability()` | **never settled** |
+ * | `LanguageDetector.availability()` | `available`, in 0 ms |
+ * | `Proofreader` | absent |
+ *
+ * So the on-device stack is alive and answering — the generative half simply
+ * never replies. `prefillAvailability` awaited it with no deadline, so the
+ * launcher's model state stayed unresolved for the life of the page: no Ask
+ * row, no download offer, and nothing anywhere saying why.
+ *
+ * This is a change from Edge 154, which *answered* `'unavailable'` and threw
+ * *"The feature flag gating model execution was disabled"* from `create()`. A
+ * browser that refuses is something an app can reason about; one that never
+ * replies is not, which is why the deadline is the fix rather than a guess at
+ * what the answer would have been.
+ *
+ * That is the same failure `promptContextDiagnostic` already carries a limit
+ * for, in a place nobody thought to look because this call is metadata rather
+ * than generation and is supposed to return in milliseconds.
+ *
+ * Generous rather than tight: an answer arriving late still lands the rows,
+ * since the launcher renders without it and updates when it resolves. This is
+ * a floor under a hang, not a latency budget.
+ */
+export const AVAILABILITY_LIMIT_MS = 5_000
+
 export interface LanguageModelSession {
   prompt: (input: string, options?: { responseConstraint?: object }) => Promise<string>
   /**
@@ -178,7 +225,7 @@ export const SESSION_OPTIONS: SamplingOptions[] = [
  * Note this answer is a hint rather than a verdict: see `canPrefill`, where
  * a browser reporting `'unavailable'` was measured creating working sessions.
  */
-export async function prefillAvailability(): Promise<ModelAvailability> {
+export async function prefillAvailability(): Promise<PrefillAvailability> {
   const model = globalThis.LanguageModel
   if (typeof model === 'undefined') return 'unavailable'
   /*
@@ -197,16 +244,66 @@ export async function prefillAvailability(): Promise<ModelAvailability> {
     A build that rejects options on `availability` falls back to the bare call,
     since an answer with a warning beats no answer.
   */
+  /*
+    Both spellings are raced against a deadline, not just awaited. A promise
+    that never settles is not caught by `catch`, and this one does not settle
+    in Edge 155 — see `AVAILABILITY_LIMIT_MS`. Without the race the fallback
+    below is unreachable too, since the first await never returns to try it.
+  */
+  const answer = await withDeadline(() => model.availability(SESSION_OPTIONS[0]))
+  if (answer.kind === 'value') return answer.value
+  /*
+    **A timeout does not fall back; a throw does.**
+
+    The fallback exists for a build that *rejects* options — an answer with a
+    warning beats no answer. A build that never answers is a different thing,
+    and measurement says the second call is no better: in Edge 155 on
+    2026-09-10 all six option spellings AND the bare call never settled, as did
+    Summarizer, Writer and Rewriter. So falling through on a timeout buys
+    nothing and costs another whole deadline in the one browser known to need
+    it — ten seconds of a launcher with no model rows and no explanation.
+  */
+  if (answer.kind === 'timeout') return 'unanswered'
+  const bare = await withDeadline(() => model.availability())
+  if (bare.kind === 'value') return bare.value
+  /*
+    A throw is the API refusing to answer — indistinguishable, for our
+    purposes, from not having it, which is what this has always reported. A
+    hang is not that: the browser has told us nothing, including nothing about
+    whether a session would work, and calling that `'unavailable'` would send
+    the caller down the attempt-anyway path on no evidence at all.
+  */
+  return bare.kind === 'timeout' ? 'unanswered' : 'unavailable'
+}
+
+/** How one bounded `availability()` attempt ended. */
+type Attempt = { kind: 'value'; value: ModelAvailability } | { kind: 'threw' } | { kind: 'timeout' }
+
+/**
+ * One `availability()` attempt, bounded.
+ *
+ * **Keeps 'threw' and 'timeout' apart rather than collapsing them**, because
+ * the caller treats them differently and folding them lost the distinction
+ * this whole change exists to draw. A throw is an answer of a kind; a promise
+ * that never settles is not.
+ *
+ * The timer is cleared on the winning path rather than left to fire, since the
+ * launcher opens one of these per open.
+ */
+async function withDeadline(attempt: () => Promise<ModelAvailability>): Promise<Attempt> {
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    return await model.availability(SESSION_OPTIONS[0])
-  } catch {
-    try {
-      return await model.availability()
-    } catch {
-      // A throw from both is the API refusing to answer — indistinguishable,
-      // for our purposes, from not having it.
-      return 'unavailable'
-    }
+    return await Promise.race([
+      Promise.resolve()
+        .then(attempt)
+        .then((value): Attempt => ({ kind: 'value', value }))
+        .catch((): Attempt => ({ kind: 'threw' })),
+      new Promise<Attempt>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: 'timeout' }), AVAILABILITY_LIMIT_MS)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -227,7 +324,14 @@ export async function prefillAvailability(): Promise<ModelAvailability> {
  */
 export async function canPrefill(): Promise<boolean> {
   const availability = await prefillAvailability()
-  return availability !== 'downloadable' && availability !== 'downloading'
+  /*
+    Named positively since INT-10. The old spelling refused two answers and
+    admitted everything else, so `'unanswered'` — added later — would have been
+    admitted by default, and a browser that will not answer would have been
+    treated as one that answered encouragingly. A list of what passes cannot
+    acquire a new member by accident.
+  */
+  return availability === 'available' || availability === 'unavailable'
 }
 
 /**
@@ -298,6 +402,12 @@ export async function promptForObject(
  *
  * Returns null rather than throwing when every one is refused — the caller
  * treats that as "no prefill", which is the same outcome as no model at all.
+ *
+ * **Deliberately unbounded, unlike `prefillAvailability`.** `downloadModel`
+ * goes through here, and a real fetch legitimately takes many minutes; a
+ * deadline that made the gate safe would abandon downloads. A `create()` that
+ * hangs on a browser with the model already present therefore still hangs the
+ * caller — see INT-11, where telling that browser apart is the whole question.
  */
 export async function createSession(
   model: LanguageModelStatic = globalThis.LanguageModel as LanguageModelStatic,

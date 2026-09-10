@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
+import { AVAILABILITY_LIMIT_MS, OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -598,5 +598,90 @@ describe('downloadModel — the only path that starts a fetch (INT-10)', () => {
     await promptForText('go')
     expect(create).toHaveBeenCalled()
     for (const call of create.mock.calls) expect(call[0]?.monitor).toBeUndefined()
+  })
+})
+
+/**
+ * Edge 155 — `availability()` that never settles, measured 2026-09-10.
+ *
+ * A probe awaiting it printed the browser's output-language warning and then
+ * nothing: no value, no throw, no rejection. `prefillAvailability` awaited it
+ * with no deadline, so the launcher's model state never resolved — no Ask row,
+ * no download offer, no error, for the life of the page. Indistinguishable
+ * from PEE-6 degrading correctly, which is what made it cost a week.
+ *
+ * A `catch` does not catch a promise that never settles, so these are the only
+ * assertions in this file that need fake timers.
+ */
+describe('availability that never answers (Edge 155)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /**
+   * Runs `work` with every deadline elapsed.
+   *
+   * Twice the limit, so it stays correct whether or not a hang falls through
+   * to a second call. It no longer does — see the bare-call test — but a
+   * helper that only just clears the deadline turns any future fallback into
+   * a mystery test timeout rather than a failed assertion.
+   */
+  async function pastTheDeadline<T>(work: Promise<T>): Promise<T> {
+    await vi.advanceTimersByTimeAsync(AVAILABILITY_LIMIT_MS * 2)
+    return await work
+  }
+
+  it('reports "unanswered" rather than hanging for ever', async () => {
+    vi.useFakeTimers()
+    stubModel({ availability: () => new Promise<string>(() => {}) as Promise<string> })
+
+    expect(await pastTheDeadline(prefillAvailability())).toBe('unanswered')
+  })
+
+  it('does not spend a second deadline on the bare call', async () => {
+    /*
+      Measured, not assumed: in Edge 155 the bare call never settles either,
+      along with every option spelling and Summarizer, Writer and Rewriter. So
+      the fallback — which exists for a build that *rejects* options — buys
+      nothing here and would double the wait in the one browser known to need
+      it. A throw still falls back; a hang does not.
+    */
+    vi.useFakeTimers()
+    const availability = vi.fn(() => new Promise<string>(() => {}))
+    stubModel({ availability: availability as unknown as Stub['availability'] })
+
+    expect(await pastTheDeadline(prefillAvailability())).toBe('unanswered')
+    expect(availability).toHaveBeenCalledTimes(1)
+  })
+
+  it('still falls back when the options call THROWS, which is a different thing', async () => {
+    // The original reason the fallback exists, unchanged.
+    const availability = vi.fn((options?: unknown) => {
+      if (options !== undefined) throw new Error('options rejected')
+      return Promise.resolve('available')
+    })
+    stubModel({ availability: availability as unknown as Stub['availability'] })
+
+    expect(await prefillAvailability()).toBe('available')
+    expect(availability).toHaveBeenCalledTimes(2)
+  })
+
+  it('answers immediately where the browser does, without waiting out the deadline', async () => {
+    // The deadline is a floor under a hang, not a delay on every launcher open.
+    stubModel({ availability: async () => 'available' })
+    expect(await prefillAvailability()).toBe('available')
+  })
+
+  it('does NOT let the gate through, which "not downloadable" once would have', async () => {
+    /*
+      The old `canPrefill` refused two answers and admitted everything else, so
+      'unanswered' would have been admitted the day it was added — and a
+      browser that will not say whether it has a model would have had a session
+      opened against it, and the Ask row would sit on "Reading the thread…".
+    */
+    vi.useFakeTimers()
+    stubModel({ availability: () => new Promise<string>(() => {}) as Promise<string> })
+
+    expect(await pastTheDeadline(canPrefill())).toBe(false)
   })
 })

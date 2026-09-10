@@ -31,7 +31,7 @@ import {
   createSession,
   prefillAvailability,
   type LanguageModelSession,
-  type ModelAvailability,
+  type PrefillAvailability,
   type SamplingOptions,
 } from '@/lib/promptApi'
 import { THREAD_CONTEXT_CHARS, threadContext } from '@/lib/prefill'
@@ -101,7 +101,8 @@ function step(message: string): void {
 }
 
 export interface PromptContextDiagnostic {
-  availability: ModelAvailability
+  /** Includes 'unanswered', which is what Edge 155 does — see promptApi. */
+  availability: PrefillAvailability
   /** Present when the browser can price an input without generating one. */
   hasMeasureInputUsage: boolean
   /**
