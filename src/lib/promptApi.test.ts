@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AVAILABILITY_LIMIT_MS, OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
+import { AVAILABILITY_LIMIT_MS, OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, downloadFraction, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -683,5 +683,105 @@ describe('availability that never answers (Edge 155)', () => {
     stubModel({ availability: () => new Promise<string>(() => {}) as Promise<string> })
 
     expect(await pastTheDeadline(canPrefill())).toBe(false)
+  })
+})
+
+/**
+ * `downloadprogress` means different things in the two browsers.
+ *
+ * Chrome sends `{loaded}` as a fraction 0…1. Edge documents `{loaded, total}`
+ * with `loaded` a byte count, and its own sample divides one by the other:
+ *
+ * > *The event is an object with the loaded and total properties.*
+ * > `const percentageComplete = (event.loaded / event.total) * 100;`
+ *
+ * Found by reading Edge's documentation, not by running it — no browser here
+ * fires the event at all, and the launcher row would have said "428000000%".
+ */
+describe('downloadFraction — one number out of two conventions', () => {
+  it('divides where Edge sends a total', () => {
+    expect(downloadFraction({ loaded: 2_000_000, total: 8_000_000 })).toBe(0.25)
+  })
+
+  it('passes Chrome\'s fraction through untouched', () => {
+    expect(downloadFraction({ loaded: 0.25 })).toBe(0.25)
+  })
+
+  it('does not divide by a zero total, which is a percentage nobody can read', () => {
+    // Infinity and NaN both render as garbage in the row. 0 bytes of 0 is 0.
+    expect(downloadFraction({ loaded: 0, total: 0 })).toBe(0)
+  })
+
+  it('clamps, because neither browser is trusted to stay in its own range', () => {
+    expect(downloadFraction({ loaded: 9, total: 8 })).toBe(1)
+    expect(downloadFraction({ loaded: -1 })).toBe(0)
+  })
+
+  it('is what downloadModel reports, so a byte count never reaches the row', async () => {
+    const seen: number[] = []
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async (options: { monitor?: (m: unknown) => void }) => {
+        options.monitor?.({
+          addEventListener: (_t: string, listener: (e: { loaded: number; total?: number }) => void) => {
+            listener({ loaded: 4_000_000, total: 8_000_000 })
+          },
+        })
+        return { prompt: async () => '', destroy: () => {} }
+      }) as unknown as Stub['create'],
+    })
+
+    await downloadModel((fraction) => seen.push(fraction))
+    expect(seen).toEqual([0.5])
+  })
+})
+
+/**
+ * Edge documents one shape and it is not in `SESSION_OPTIONS`.
+ *
+ * Every sample on Edge's Prompt API page calls `LanguageModel.create()` bare;
+ * `monitor`, `initialPrompts` and `signal` are the only options it names. So a
+ * ladder built entirely from Chrome's sampling vocabulary can be refused at
+ * every rung by a browser that would have accepted no options at all.
+ */
+describe('downloadModel falls back to the bare create Edge documents', () => {
+  it('tries it after every sampling shape is refused', async () => {
+    const create = vi.fn(async (options: { samplingMode?: string; topK?: number; temperature?: number }) => {
+      if (options.samplingMode || options.topK !== undefined || options.temperature !== undefined) {
+        throw new Error('unknown option')
+      }
+      return { prompt: async () => '', destroy: () => {} }
+    })
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await downloadModel()).toBe(true)
+    expect(create).toHaveBeenCalledTimes(SESSION_OPTIONS.length + 1)
+    // Still monitored, or a several-gigabyte fetch reports nothing at all.
+    expect(create.mock.calls.at(-1)?.[0]).toHaveProperty('monitor')
+  })
+
+  it('keeps SESSION_OPTIONS free of a bare shape, which is the point', () => {
+    /*
+      The bare create is confined to the download, where nothing is generated.
+      A session with default sampling would sample creatively over a
+      colleague's conversation and land it in a form somebody publishes from —
+      which is why every entry here pins determinism.
+    */
+    for (const options of SESSION_OPTIONS) {
+      expect(Object.keys(options).length).toBeGreaterThan(0)
+      expect(
+        options.samplingMode === 'most-predictable' || options.topK === 1 || options.temperature === 0,
+      ).toBe(true)
+    }
+  })
+
+  it('still answers false where even bare is refused, as on Edge 154', async () => {
+    const create = vi.fn<(o?: unknown) => Promise<never>>(async () => {
+      throw new Error('The feature flag gating model execution was disabled.')
+    })
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await downloadModel()).toBe(false)
+    expect(create).toHaveBeenCalledTimes(SESSION_OPTIONS.length + 1)
   })
 })

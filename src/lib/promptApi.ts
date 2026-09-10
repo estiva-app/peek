@@ -119,11 +119,38 @@ export interface LanguageModelSession {
 /**
  * The download reporter `create()` hands to its `monitor` callback.
  *
- * `loaded` is a fraction from 0 to 1, not bytes — measured in the console on
- * 2026-09-09, which is where `downloadModel` gets its progress from.
+ * **The two browsers disagree about what `loaded` means, so `total` decides.**
+ *
+ * Chrome sends a fraction from 0 to 1 and no `total` — measured in the console
+ * on 2026-09-09, which is why the first version of this simply passed `loaded`
+ * through. Edge documents the opposite: *"The event is an object with the
+ * loaded and total properties"*, and its own sample computes
+ * `(event.loaded / event.total) * 100`, so `loaded` there is a byte count.
+ *
+ * Passing Edge's byte count through as a fraction would have rendered
+ * "428000000%" in the launcher row. Found by reading Edge's documentation
+ * rather than by running it, since no browser here fires the event at all.
+ *
+ * @see https://learn.microsoft.com/en-us/microsoft-edge/web-platform/prompt-api
  */
 export interface CreateMonitor {
-  addEventListener: (type: 'downloadprogress', listener: (event: { loaded: number }) => void) => void
+  addEventListener: (
+    type: 'downloadprogress',
+    listener: (event: { loaded: number; total?: number }) => void,
+  ) => void
+}
+
+/**
+ * One `downloadprogress` event as a fraction from 0 to 1, whichever browser
+ * sent it.
+ *
+ * A `total` of 0 is treated as no denominator rather than divided by, which
+ * would be `Infinity` or `NaN` in a percentage somebody is reading.
+ */
+export function downloadFraction(event: { loaded: number; total?: number }): number {
+  const fraction = event.total ? event.loaded / event.total : event.loaded
+  // Neither browser is trusted to stay inside the range it documents.
+  return Math.min(1, Math.max(0, fraction))
 }
 
 /** Session options some builds require rather than default. See `SESSION_OPTIONS`. */
@@ -459,18 +486,50 @@ export async function createSession(
 export async function downloadModel(onProgress?: (fraction: number) => void): Promise<boolean> {
   const model = globalThis.LanguageModel
   if (typeof model === 'undefined') return false
-  const created = await createSession(model, (m) => {
+  const monitor = (m: CreateMonitor) => {
     try {
-      m.addEventListener('downloadprogress', (event) => onProgress?.(event.loaded))
+      m.addEventListener('downloadprogress', (event) => onProgress?.(downloadFraction(event)))
     } catch {
       // A build with no monitor support still downloads; it just does it
       // silently. Losing the progress readout is not a reason to lose the
       // model, so this is swallowed rather than failing the create.
     }
-  })
-  if (!created) return false
-  created.session.destroy()
-  return true
+  }
+  const created = await createSession(model, monitor)
+  if (created) {
+    created.session.destroy()
+    return true
+  }
+  /*
+    **Then bare, which is the only shape Edge documents.**
+
+    Every sample on Edge's Prompt API page calls `LanguageModel.create()` with
+    no options at all; `monitor`, `initialPrompts` and `signal` are the only
+    ones it names. `samplingMode`, `outputLanguage`, `expectedOutputs`, `topK`
+    and `temperature` — the whole of `SESSION_OPTIONS` — are Chrome's
+    vocabulary, and a build that rejects them refuses every rung of the ladder.
+
+    **This is allowed here and nowhere else**, and the reason is worth keeping
+    straight: `SESSION_OPTIONS` never contains a bare `{}` on purpose, because
+    a session created with default sampling would sample creatively over a
+    colleague's conversation and drop the result in a form somebody publishes
+    from. Nothing is generated here. This function opens a session so the
+    browser fetches the model, destroys it on the next line, and never prompts
+    it — so the sampling it would have used does not exist.
+
+    It cannot rescue a browser that *hangs* rather than refuses, since the
+    ladder above only advances on a throw. Edge 155 hangs, so this will not fix
+    it; it is right for a browser that says no.
+
+    @see https://learn.microsoft.com/en-us/microsoft-edge/web-platform/prompt-api
+  */
+  try {
+    const session = await model.create({ monitor })
+    session.destroy()
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
