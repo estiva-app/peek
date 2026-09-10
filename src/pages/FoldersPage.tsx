@@ -5,7 +5,7 @@ import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { FolderContentsView } from '@/components/views/FolderContentsView'
+import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import {
   useConversationCounts,
@@ -58,7 +58,9 @@ export function FoldersPage() {
     nobody has opened costs nothing.
   */
   const counts = useConversationCounts(
-    typeof state === 'object' && 'files' in state ? state.files : undefined,
+    // Peers only. A nested child gets its own count when its parent is
+    // expanded, so counting it here is a request for a badge nothing draws.
+    typeof state === 'object' && 'files' in state ? peersOf(state.files) : undefined,
   )
   const people = useWorkspaceDirectory()
 
