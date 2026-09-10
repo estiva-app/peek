@@ -127,7 +127,13 @@ describe('an imported file survives into what the browser reads', () => {
     const { rows } = await t
       .withIdentity(asUser(ADA))
       .query(api.messages.list, { parentKind: 'topic', parentKey: topicId as string })
-    const files = rows.at(-1)?.files
+    /*
+      Indexed, not `rows.at(-1)`. `convex/tsconfig.json` pins `lib: ES2021` and
+      `Array.prototype.at` is ES2022, so `at` typechecks under the app's config
+      and under the PR's `check` job, then fails the Convex typecheck that runs
+      inside `convex deploy` — green CI, broken deploy.
+    */
+    const files = rows[rows.length - 1]?.files
     expect(files).toHaveLength(1)
     /*
       `mediaUrl` and not `url`, and the distinction is the whole point: an
