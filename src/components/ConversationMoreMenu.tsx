@@ -7,6 +7,7 @@ import {
   IconX,
   IconDotsVertical,
 } from '@tabler/icons-react'
+import type { ReactElement } from 'react'
 import { Menu, MenuItem, MenuSection, MenuSub } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
 import { Divider } from './ui/Divider'
@@ -49,6 +50,9 @@ interface ConversationMoreMenuProps {
   onEditMessage?: () => void
   onViewDetails?: () => void
   onDelete?: () => void
+  /** The ⋯ button; the menu owns it. A `ToolbarButton` when the menu sits
+   *  in the hover toolbar, so the strip stays one Tab stop (D29). */
+  trigger?: ReactElement
   className?: string
 }
 
@@ -68,14 +72,17 @@ export function ConversationMoreMenu({
   onEditMessage,
   onViewDetails,
   onDelete,
+  trigger,
   className,
 }: ConversationMoreMenuProps) {
   return (
     <Menu
       trigger={
-        <IconButton tooltip="More actions" aria-label="More actions">
-          <IconDotsVertical size={16} stroke={1.5} />
-        </IconButton>
+        trigger ?? (
+          <IconButton tooltip="More actions" aria-label="More actions">
+            <IconDotsVertical size={16} stroke={1.5} />
+          </IconButton>
+        )
       }
       align="right"
       open={open}

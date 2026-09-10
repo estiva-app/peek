@@ -8,11 +8,11 @@ import {
   IconChecks,
   IconArrowNarrowRight,
 } from '@tabler/icons-react'
-import { Menu, MenuItem } from '@estiva-app/ui'
+import { Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
+import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
-import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
 import { useReplyCount, useReplyMeta, type Huddle } from '@/api'
@@ -337,29 +337,24 @@ export function HuddleCard({
           </div>
         )}
 
-        {/* Quick menu on hover — same pattern in both variants */}
+        {/* Quick menu on hover — the package Toolbar the message card uses,
+            the second copy of its chrome gone (§4.2, F7). The menu owns its
+            button; the card is clickable, so the button still swallows its
+            own click — Base UI composes its toggle onto that. */}
         {isHovered && (
           <div className="absolute right-[3px] top-[3px]" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-bg-elevated border border-border-subtle rounded-sm shadow-sm flex items-start gap-1 p-1">
-              <IconButton tooltip="Reply" aria-label="Reply" onClick={() => { onReply?.(); onClick?.() }}>
-                <IconMessage2 size={16} stroke={1.5} />
-              </IconButton>
-              <div className="w-px self-stretch bg-border-subtle" />
-              {/* The menu owns this button, and sits where the button is
-                  rather than at the end of the card. `closeOnLeave` went with
-                  the same release; it opened on a press already. The card is
-                  clickable, so the button still swallows its own click —
-                  Base UI composes its toggle onto that rather than replacing
-                  it. */}
+            <ConversationQuickMenu
+              onReply={() => { onReply?.(); onClick?.() }}
+              more={
               <Menu
                 trigger={
-                  <IconButton
+                  <ToolbarButton
                     tooltip="More actions"
                     aria-label="More actions"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <IconDotsVertical size={16} stroke={1.5} />
-                  </IconButton>
+                  </ToolbarButton>
                 }
                 align="right"
                 onOpenChange={(next) => {
@@ -375,7 +370,8 @@ export function HuddleCard({
                 <Divider className="mx-0" />
                 <MenuItem label="Delete" destructive onClick={handleDelete} />
               </Menu>
-            </div>
+              }
+            />
           </div>
         )}
         </div>

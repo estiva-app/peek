@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
@@ -15,6 +14,7 @@ import {
   IconCircleDashed,
   IconCircleCheck,
   IconSquareForbid2,
+  IconDotsVertical,
 } from '@tabler/icons-react'
 import figmaIcon from '@/assets/figma icon.svg'
 import { FrameArt } from './ui/FrameArt'
@@ -23,13 +23,12 @@ import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
-import { AvatarGroup } from '@estiva-app/ui'
+import { AvatarGroup, ToolbarButton } from '@estiva-app/ui'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
-import ReactionPicker from './ReactionPicker'
 import { ResolveDialog } from './ResolveDialog'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
@@ -145,13 +144,10 @@ export function ConversationCard({
      because a card with an open menu does not react to a stray click. */
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
-  // Reactions. The picker portals above the quick bar (ThreadReplyCard's
-  // pattern) — in-flow it was clipped by the panel's scroll container on the
-  // topmost card.
+  // Reactions. The picker is the quick menu's now — the package Popover above
+  // the strip (§4.1, D30, 2026-09-10); the card only needs to know it is open.
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
-  const [reactionPickerPos, setReactionPickerPos] = useState<{ top: number; right: number } | null>(null)
-  const reactButtonRef = useRef<HTMLDivElement>(null)
-  const reactionPickerRef = useRef<HTMLDivElement>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   // Sync local reaction state if the parent passes a different override (e.g. after navigation back).
   useEffect(() => {
@@ -326,19 +322,6 @@ export function ConversationCard({
     }
   }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close the reaction picker on click outside (the more menu's exits are the
-  // shared shell's own).
-  useEffect(() => {
-    if (!reactionPickerPos) return
-    const close = (e: MouseEvent) => {
-      if (reactionPickerRef.current?.contains(e.target as Node)) return
-      if (reactButtonRef.current?.contains(e.target as Node)) return
-      setReactionPickerPos(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [reactionPickerPos])
-
   // Resolved state - sync from parent when prop changes
   const [resolved, setResolved] = useState(initialResolved)
   const [resolvedBy, setResolvedBy] = useState(initialResolvedBy)
@@ -479,27 +462,29 @@ export function ConversationCard({
   }
 
   const handleReact = (emoji: string) => {
-    setReactionsState((prev) => {
-      let next: ReactionData[]
-      const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
-      if (existing) {
-        next = existing.count <= 1
-          ? prev.filter((r) => r !== existing)
-          : prev.map((r) => (r === existing
-              ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
-              : r))
-      } else {
-        const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
-        next = othersExisting
-          ? prev.map((r) => (r === othersExisting
-              ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
-              : r))
-          : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
-      }
-      onReactionsChange?.(next, emoji)
-      return next
-    })
-    setReactionPickerPos(null)
+    // Computed from the state in hand, not inside a state updater: React runs
+    // updaters during render, and telling the parent from there set state in
+    // another component mid-render — a warning on every reaction until
+    // 2026-09-10 (PEEK-ADOPTION.md §11.5).
+    const prev = reactionsState
+    let next: ReactionData[]
+    const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
+    if (existing) {
+      next = existing.count <= 1
+        ? prev.filter((r) => r !== existing)
+        : prev.map((r) => (r === existing
+            ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
+            : r))
+    } else {
+      const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
+      next = othersExisting
+        ? prev.map((r) => (r === othersExisting
+            ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
+            : r))
+        : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
+    }
+    setReactionsState(next)
+    onReactionsChange?.(next, emoji)
   }
 
   return (
@@ -532,14 +517,17 @@ export function ConversationCard({
         onClick={(e) => {
           if (!onClick || isEditing) return
           // Don't open thread when any overlay is active
-          if (moreMenuOpen || showResolveDialog || showTopicDialog || reactionPickerPos) return
+          if (moreMenuOpen || showResolveDialog || showTopicDialog || pickerOpen) return
           // Don't open thread when clicking interactive children
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
           onClick()
         }}
         onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => { setIsHovered(false); setReactionPickerPos(null) }}
+        onMouseLeave={() => {
+          if (pickerOpen || moreMenuOpen) return
+          setIsHovered(false)
+        }}
       >
 
         {/* ── Topic anchor header (existing isTopic) - hidden while editing ── */}
@@ -813,18 +801,21 @@ export function ConversationCard({
 
         {/* ── Quick menu on hover ── */}
         {isHovered && !isEditing && (
-          <div ref={reactButtonRef} className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
             <ConversationQuickMenu
               isResolved={resolved}
-              onReact={() => {
-                const rect = reactButtonRef.current?.getBoundingClientRect()
-                setReactionPickerPos((prev) => (prev || !rect ? null : { top: rect.top - 4, right: window.innerWidth - rect.right }))
-              }}
+              onReact={handleReact}
+              onPickerOpenChange={setPickerOpen}
               onReply={onReply}
               onResolve={() => setShowResolveDialog(true)}
               onReopen={handleReopen}
               more={
                 <ConversationMoreMenu
+                  trigger={
+                    <ToolbarButton tooltip="More actions" aria-label="More actions">
+                      <IconDotsVertical size={16} stroke={1.5} />
+                    </ToolbarButton>
+                  }
                   onOpenChange={(next) => {
                     setMoreMenuOpen(next)
                     if (next) onMore?.()
@@ -846,26 +837,6 @@ export function ConversationCard({
           </div>
         )}
 
-        {/* ── Reaction picker (portalled — in-flow it was clipped by the panel's
-            scroll container on the topmost card) ── */}
-        {reactionPickerPos &&
-          createPortal(
-            <div
-              ref={reactionPickerRef}
-              onMouseDown={(e) => e.stopPropagation()}
-              onMouseLeave={() => setReactionPickerPos(null)}
-              style={{
-                position: 'fixed',
-                top: reactionPickerPos.top,
-                right: reactionPickerPos.right,
-                transform: 'translateY(-100%)',
-                zIndex: 50,
-              }}
-            >
-              <ReactionPicker onSelect={handleReact} />
-            </div>,
-            document.body
-          )}
       </div>
 
       {showResolveDialog && (

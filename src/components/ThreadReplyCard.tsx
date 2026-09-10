@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
-import { createPortal } from 'react-dom'
-import { Menu, MenuItem, MenuSub } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSub, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
@@ -8,7 +7,6 @@ import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
 import {
-  IconMoodPlus,
   IconDotsVertical,
   IconSquareForbid2,
   IconX,
@@ -21,7 +19,7 @@ import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { Avatar } from './ui/Avatar'
-import ReactionPicker from './ReactionPicker'
+import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { Divider } from './ui/Divider'
 import { type ReactionData, type FileAttachment } from '@/api'
@@ -183,10 +181,8 @@ export function ThreadReplyCard({
   // Sync local reactions state when the parent passes a new override (e.g. after navigation back).
   useEffect(() => { setReactionsState(reactions ?? []) }, [reactions])
   const [highlightState, setHighlightState] = useState<HighlightType | undefined>(highlightType)
-  const [showReactionPicker, setShowReactionPicker] = useState(false)
-  const [reactionPickerPos, setReactionPickerPos] = useState<{ top: number; right: number } | null>(null)
-  const reactButtonRef = useRef<HTMLDivElement>(null)
-  const reactionPickerRef = useRef<HTMLDivElement>(null)
+  // The picker is the quick menu's (§4.1, D30); the card only knows it is open.
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const [bodyState, setBodyState] = useState(body)
   // Sync body from prop when it changes externally
@@ -390,54 +386,30 @@ export function ThreadReplyCard({
     setIsHovered(false)
   }
 
-  const openReactionPicker = () => {
-    if (showReactionPicker) {
-      setShowReactionPicker(false)
-      setReactionPickerPos(null)
-      return
-    }
-    const btn = reactButtonRef.current?.getBoundingClientRect()
-    if (btn) {
-      setReactionPickerPos({ top: btn.top - 4, right: window.innerWidth - btn.right })
-      setShowReactionPicker(true)
-    }
-  }
-
-  // Close reaction picker on outside click
-  useEffect(() => {
-    if (!showReactionPicker) return
-    const close = (e: MouseEvent) => {
-      if (reactionPickerRef.current?.contains(e.target as Node)) return
-      if (reactButtonRef.current?.contains(e.target as Node)) return
-      setShowReactionPicker(false)
-      setReactionPickerPos(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [showReactionPicker])
-
   const handleReact = (emoji: string) => {
-    setReactionsState((prev) => {
-      let next: ReactionData[]
-      const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
-      if (existing) {
-        next = existing.count <= 1
-          ? prev.filter((r) => r !== existing)
-          : prev.map((r) => (r === existing
-              ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
-              : r))
-      } else {
-        const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
-        next = othersExisting
-          ? prev.map((r) => (r === othersExisting
-              ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
-              : r))
-          : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
-      }
-      onReactionsChange?.(next, emoji)
-      return next
-    })
-    setShowReactionPicker(false)
+    // Computed from the state in hand, not inside a state updater: React runs
+    // updaters during render, and telling the parent from there set state in
+    // another component mid-render — a warning on every reaction until
+    // 2026-09-10 (PEEK-ADOPTION.md §11.5).
+    const prev = reactionsState
+    let next: ReactionData[]
+    const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
+    if (existing) {
+      next = existing.count <= 1
+        ? prev.filter((r) => r !== existing)
+        : prev.map((r) => (r === existing
+            ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
+            : r))
+    } else {
+      const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
+      next = othersExisting
+        ? prev.map((r) => (r === othersExisting
+            ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
+            : r))
+        : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
+    }
+    setReactionsState(next)
+    onReactionsChange?.(next, emoji)
   }
 
   return (
@@ -461,7 +433,7 @@ export function ThreadReplyCard({
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
-          if (showReactionPicker || moreMenuOpen) return
+          if (pickerOpen || moreMenuOpen) return
           setIsHovered(false)
         }}
       >
@@ -608,23 +580,20 @@ export function ThreadReplyCard({
           </div>
         )}
 
-        {/* Quick menu - only react + more */}
+        {/* Quick menu — React and ⋯ only: the package Toolbar the message
+            card uses, the third copy of its chrome gone (§4.2, F7). The menu
+            owns its button; the picker is the strip's. */}
         {isHovered && !isEditing && (
-          <div className="absolute right-1 top-1">
-            <div className="bg-bg-elevated border border-border-subtle rounded-sm shadow-sm flex items-start gap-1 p-1">
-              <div ref={reactButtonRef} className="inline-flex">
-                <IconButton tooltip="React" aria-label="React" onClick={openReactionPicker}>
-                  <IconMoodPlus size={16} stroke={1.5} />
-                </IconButton>
-              </div>
-              {/* The menu owns this button and sits where it is. The ref and
-                  the rect it was measured for are gone; so is closeOnLeave,
-                  which a menu with a submenu may not have anyway (D28). */}
+          <ConversationQuickMenu
+            className="absolute right-1 top-1"
+            onReact={handleReact}
+            onPickerOpenChange={setPickerOpen}
+            more={
               <ReplyMoreMenu
                 trigger={
-                  <IconButton tooltip="More actions" aria-label="More actions">
+                  <ToolbarButton tooltip="More actions" aria-label="More actions">
                     <IconDotsVertical size={16} stroke={1.5} />
-                  </IconButton>
+                  </ToolbarButton>
                 }
                 onOpenChange={(next) => {
                   setMoreMenuOpen(next)
@@ -635,30 +604,10 @@ export function ThreadReplyCard({
                 currentHighlight={highlightState}
                 onHighlight={handleHighlightChange}
               />
-            </div>
-          </div>
+            }
+          />
         )}
       </div>
-
-      {/* Reaction picker (portalled) */}
-      {showReactionPicker && reactionPickerPos &&
-        createPortal(
-          <div
-            ref={reactionPickerRef}
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseLeave={() => { setShowReactionPicker(false); setReactionPickerPos(null); setIsHovered(false) }}
-            style={{
-              position: 'fixed',
-              top: reactionPickerPos.top,
-              right: reactionPickerPos.right,
-              transform: 'translateY(-100%)',
-              zIndex: 50,
-            }}
-          >
-            <ReactionPicker onSelect={handleReact} />
-          </div>,
-          document.body
-        )}
 
       {previewFrame && (
         <FrameLightbox frame={previewFrame} onClose={() => setPreviewFrame(null)} />
