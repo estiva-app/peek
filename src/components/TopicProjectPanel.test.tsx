@@ -129,7 +129,7 @@ describe('TopicProjectPanelView', () => {
     // The assign control is the person picker now (PEE-1): the directory
     // feeds the list, Unassigned leads it, and picking someone sends their
     // pubkey rather than '@me'.
-    await userEvent.click(screen.getByRole('button', { name: 'Assign' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Assign' }))
     await userEvent.click(await screen.findByRole('option', { name: /Cath Estiva/ }))
     expect(onAct).toHaveBeenCalledWith(
       expect.objectContaining({ naddr: 'naddr1project' }),
@@ -157,7 +157,7 @@ describe('TopicProjectPanelView', () => {
     // The assign control both reports the lead and sets it, so this is the only
     // place the lead appears in the live panel — and it showed eight characters
     // of a key until FEE-1.
-    const assign = await screen.findByRole('button', { name: 'Assign' })
+    const assign = await screen.findByRole('combobox', { name: 'Assign' })
     expect(assign).toHaveTextContent('Jan Miky')
     expect(document.body.textContent).not.toContain('bbbbbbbb')
   })

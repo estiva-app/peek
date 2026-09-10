@@ -15,7 +15,8 @@
  * thing: a warning rather than an error, because nothing the sender did failed.
  */
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { PendingAttachmentChip } from './PendingAttachmentChip'
 
 const base = {
@@ -48,12 +49,14 @@ describe('PendingAttachmentChip', () => {
 
   /* The relay's words are what a maintainer needs and noise to everyone else,
      so they go on hover rather than in the line. */
-  it('keeps the relay’s own words available on hover', () => {
+  it('keeps the relay’s own words available on hover', async () => {
     render(<PendingAttachmentChip {...base} status="done" shareError="upload failed: 403 kind_not_allowed" />)
     const line = screen.getByText("Other apps won't see this")
+    /* The tooltip's words are not in the DOM until it opens — the package
+       mounts the popup on open, after its wait (PEEK-ADOPTION.md §5.5). */
     expect(screen.queryByText(/403 kind_not_allowed/)).toBeNull()
-    fireEvent.mouseEnter(line.parentElement!)
-    expect(screen.getByText(/403 kind_not_allowed/)).toBeTruthy()
+    await userEvent.hover(line)
+    expect(await screen.findByText(/403 kind_not_allowed/, {}, { timeout: 2000 })).toBeTruthy()
   })
 
   /* A real upload failure is a different thing and already had a state. A file
