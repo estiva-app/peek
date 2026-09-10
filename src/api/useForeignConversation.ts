@@ -65,7 +65,7 @@ export type ForeignConversationState =
   | 'unresolved'
   | { failed: RelayFailureKind }
 
-export function useForeignConversation(naddr: string | null | undefined): {
+function useResolvedForeign(naddr: string | null | undefined): {
   state: ForeignConversationState
   reload: () => Promise<void>
 } {
@@ -132,4 +132,55 @@ export function useForeignConversation(naddr: string | null | undefined): {
         : (resolved.object ?? 'unresolved')
 
   return { state, reload }
+}
+
+/**
+ * One file's conversation — the panel's read.
+ *
+ * Named for the aspect rather than the call because that is what the caller
+ * wants; the resolve underneath also carries the children, which is the other
+ * hook below.
+ */
+export function useForeignConversation(naddr: string | null | undefined) {
+  return useResolvedForeign(naddr)
+}
+
+/** A file's children, once something expands it. */
+export type ForeignChildrenState =
+  | ForeignObject[]
+  | 'loading'
+  | 'unresolved'
+  | { failed: RelayFailureKind }
+
+/**
+ * The files inside a file — RFC 0.4 §4, and the nesting FOL-4 names.
+ *
+ * **Lazy, and one request per expansion.** `resolveFolderContents` fetches no
+ * children (it is flat in the number of files and stays that way), so an
+ * expander pays for its own row when somebody opens it and never before. The
+ * projection cache makes the manifest free, so the cost is the roots.
+ *
+ * Shares the resolve with {@link useForeignConversation} because
+ * `resolveForeignObject` returns the root, its changes, its comments *and* its
+ * children in one round trip — asking twice for the two halves would double the
+ * cost of a row that is both expanded and open in the panel.
+ *
+ * An empty array is a real answer: a project with no issues. `unresolved` and
+ * `failed` are not, and a consumer must not render either as "no issues".
+ */
+export function useForeignChildren(naddr: string | null | undefined): {
+  state: ForeignChildrenState
+  reload: () => Promise<void>
+} {
+  const { state, reload } = useResolvedForeign(naddr)
+  if (state === 'loading' || state === 'unresolved' || 'failed' in state) {
+    return { state, reload }
+  }
+  /*
+    `children` is absent when the owning app declares no list, and `[]` when it
+    declares one that matched nothing — interop keeps those apart deliberately.
+    Both render as "nothing to show" here, because a row that offered an
+    expander at all had `listsChildren`, so the first case should not arise.
+  */
+  return { state: state.children ?? [], reload }
 }

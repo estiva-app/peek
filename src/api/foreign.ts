@@ -22,6 +22,7 @@ import {
   creatableUnderAsViewer,
   folderForReferenceAsViewer,
   directoryAsViewer,
+  conversationCountsAsViewer,
   createFolderAsViewer,
   resolveFolderContentsAsViewer,
   listFoldersAsViewer,
@@ -79,6 +80,21 @@ export function useForeignObjects() {
    * same sentence as a Folder whose contents they may not read (RFC 0.4 §4.2 —
    * the count is the disclosure, so the two must not be distinguishable).
    */
+  /**
+   * Message counts for a set of already-resolved files.
+   *
+   * `{}` signed out rather than null: a folder listing renders either way, and
+   * "no badge" is the honest rendering of "we did not ask". A caller must not
+   * read a missing entry as a zero — see `useConversationCounts`.
+   */
+  const conversationCounts = useCallback(
+    async (files: ForeignObject[]): Promise<Record<string, number>> => {
+      const v = viewer()
+      return v ? conversationCountsAsViewer(files, v.relayUrl, v.token) : {}
+    },
+    [viewer],
+  )
+
   const resolveFolderContents = useCallback(
     async (folder: string): Promise<FolderContents> => {
       const v = viewer()
@@ -148,6 +164,7 @@ export function useForeignObjects() {
     resolveObject,
     resolveFolderProject,
     resolveFolderContents,
+    conversationCounts,
     listFolders,
     createFolder,
     applyAction,
