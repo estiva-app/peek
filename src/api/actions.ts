@@ -75,6 +75,20 @@ const nowTimestamp = (now = Date.now()) =>
  */
 export type EditOutcome = { published: true } | { published: false; reason: string }
 
+/**
+ * What came of a delete (Katerina, 2026-09-10: a delete should confirm itself).
+ *
+ * `kept: true` is the one outcome worth interrupting for: Peek hid the thing,
+ * the relay refused the tombstone, and the row is back. Without a word for it
+ * a message would reappear a second after it vanished and nothing would say
+ * why — the same silence PEEK-170 removed for topics.
+ *
+ * `kept: false` covers "the relay accepted it" *and* "there was nothing to
+ * ask" — a DM, a message that never reached the relay, mock mode. Neither is a
+ * failure, and neither may be reported as one.
+ */
+export type DeleteOutcome = { kept: boolean }
+
 export function usePeekActions() {
   const m = useTopicMutations()
   const openWork = useOpenWorkOverrides()
@@ -352,20 +366,22 @@ export function usePeekActions() {
      * either. That case is a warning, not a rollback.
      */
     restore?: () => void,
-  ) => {
-    void (async () => {
+  ): Promise<DeleteOutcome> => {
+    /* Returns rather than only restoring, so a caller can say what happened —
+       the same shape `editBody` has. `kept: true` means the row came back. */
+    return (async (): Promise<DeleteOutcome> => {
       const outcome = await removed
       const { nostrEventIds } = outcome
       if (nostrEventIds.length === 0) {
         // Nothing to ask and nothing deleted: the viewer had no claim the relay
         // could adjudicate, so the prediction was wrong.
-        if (!outcome.removed) restore?.()
-        return
+        if (!outcome.removed) { restore?.(); return { kept: true } }
+        return { kept: false }
       }
       const token = tokenForPublish('deletion')
       if (!token) {
-        if (!outcome.removed) restore?.()
-        return
+        if (!outcome.removed) { restore?.(); return { kept: true } }
+        return { kept: false }
       }
       // One kind:5 per target rather than one event with many `e` tags — that
       // is the shape Buzz accepts, and a rejected batch would lose every
@@ -377,10 +393,12 @@ export function usePeekActions() {
       }
       // The relay adjudicated and said no. `signAndPublish` has already logged
       // its words.
-      if (!outcome.removed && accepted === 0) restore?.()
+      if (!outcome.removed && accepted === 0) { restore?.(); return { kept: true } }
+      return { kept: false }
     })().catch((error) => {
       console.warn('[nostr] deletion publish failed:', error)
       restore?.()
+      return { kept: true }
     })
   }
 
@@ -455,16 +473,18 @@ export function usePeekActions() {
       persistMessage('huddle', huddleId, newMsg)
     },
 
-    deleteTopicMessage(topicId: string, messageId: string) {
+    deleteTopicMessage(topicId: string, messageId: string): Promise<DeleteOutcome> {
       m.setSentMessages((prev) => ({ ...prev, [topicId]: (prev[topicId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
+      if (!hasConvex) return Promise.resolve({ kept: false })
+      return publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
     },
 
-    deleteDmMessage(dmId: string, messageId: string) {
+    deleteDmMessage(dmId: string, messageId: string): Promise<DeleteOutcome> {
       setSentDmMessages((prev) => ({ ...prev, [dmId]: (prev[dmId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
+      if (!hasConvex) return Promise.resolve({ kept: false })
+      return publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
     },
 
     /** Body edit — id-keyed, applies to messages and replies alike
@@ -740,13 +760,14 @@ export function usePeekActions() {
       return saved
     },
 
-    deleteReply(messageId: string, replyId: string) {
+    deleteReply(messageId: string, replyId: string): Promise<DeleteOutcome> {
       m.setSentReplies((prev) => ({ ...prev, [messageId]: (prev[messageId] ?? []).filter((r) => r.id !== replyId) }))
       // No `restore` here: a reply is hidden by dropping it from `sentReplies`,
       // which only ever held replies sent in this session. A persisted reply is
       // not hidden optimistically at all, so there is nothing to put back — it
       // simply stays until the sync removes it.
-      if (hasConvex) publishDeletions(removeReplyRemote({ key: replyId }))
+      if (!hasConvex) return Promise.resolve({ kept: false })
+      return publishDeletions(removeReplyRemote({ key: replyId }))
     },
 
     // ── Huddles ──

@@ -48,6 +48,7 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import type { RelayState } from '@estiva-app/protocol'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
+import { useReportDelete } from '@/lib/reportDelete'
 import { useNavigate } from 'react-router-dom'
 
 interface UseTopicViewArgs {
@@ -133,6 +134,7 @@ export function useTopicView({
   const openWorkTopicIds = useOpenWorkTopicIds()
   const actions = usePeekActions()
   const { showToast } = useToast()
+  const reportDelete = useReportDelete()
 
   /**
    * Edit, and say so when it did not travel — PEE-24.
@@ -476,7 +478,7 @@ export function useTopicView({
 
   const handleDeleteReply = (replyId: string) => {
     if (!threadConvId) return
-    actions.deleteReply(threadConvId, replyId)
+    void actions.deleteReply(threadConvId, replyId).then(({ kept }) => reportDelete('reply', kept))
   }
 
   const handleSend = (payload: SendPayload) => {
@@ -486,7 +488,7 @@ export function useTopicView({
 
   const handleDelete = (id: string) => {
     if (topicId == null) return
-    actions.deleteTopicMessage(topicId, id)
+    void actions.deleteTopicMessage(topicId, id).then(({ kept }) => reportDelete('message', kept))
   }
 
   // The huddle creator (HuddleCreator) owns its own recipient/query/focus state and

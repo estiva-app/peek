@@ -1,6 +1,7 @@
 import { useMarkRead } from '@/lib/useMarkRead'
 import { draftKeys } from '@/lib/drafts'
 import { useToast } from '@/lib/toast'
+import { useReportDelete } from '@/lib/reportDelete'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { isNearBottom } from './scrollPolicy'
 import { ConversationHeader } from '@/components/ConversationHeader'
@@ -56,6 +57,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   const { pendingDmThreadId, setPendingDmThreadId } = useLastSelection()
   const actions = usePeekActions()
   const { showToast } = useToast()
+  const reportDelete = useReportDelete()
 
   /**
    * Edit, and say so when it did not travel — PEE-24.
@@ -140,7 +142,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
 
   const handleDeleteReply = (replyId: string) => {
     if (!threadConvId) return
-    actions.deleteReply(threadConvId, replyId)
+    void actions.deleteReply(threadConvId, replyId).then(({ kept }) => reportDelete('reply', kept))
   }
 
   const handleSend = ({ text, resolution, attachments, files }: SendPayload) => {
@@ -153,7 +155,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
 
   const handleDelete = (id: string) => {
     if (dmId == null) return
-    actions.deleteDmMessage(dmId, id)
+    void actions.deleteDmMessage(dmId, id).then(({ kept }) => reportDelete('message', kept))
   }
 
   // Close thread when switching DMs — but skip the initial mount, since we may have
