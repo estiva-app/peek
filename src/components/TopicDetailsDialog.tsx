@@ -16,6 +16,7 @@ import { Person } from './ui/Person'
 import { ProjectTickets } from './ui/ProjectTickets'
 import { StatusPill } from './ui/ForeignObjectWidget'
 import { TextInput } from './ui/TextInput'
+import { FieldLine } from '@estiva-app/ui'
 
 /**
  * Everything a topic is, and the one place its name can be changed (PEE-2).
@@ -127,7 +128,8 @@ export function TopicDetailsDialogView({
       title="Topic details"
       onClose={onClose}
       width={560}
-      bodyClassName="flex flex-col gap-6 max-h-[70vh] overflow-y-auto [&>*]:shrink-0"
+      bodyMaxHeight="max-h-[70vh]"
+      bodyClassName="flex flex-col gap-6 [&>*]:shrink-0"
       footer={
         <div className="flex justify-end">
           <Button variant="outlined" onClick={onClose}>
@@ -384,14 +386,9 @@ function ReadOnlyPill({ children }: { children: React.ReactNode }) {
  */
 function Outcome({ outcome }: { outcome: RenameOutcome }) {
   if (!outcome) return null
-  return (
-    <p
-      className={cn(
-        'text-[12px] leading-[1.4]',
-        outcome.kind === 'error' ? 'text-error-default' : 'text-warning-default',
-      )}
-    >
-      {outcome.message}
-    </p>
-  )
+  // The package's line since 0.12.2 (§4.3, B24): the same two classes a Field
+  // draws under a control, for a line that sits under the rename *row* — a
+  // field and two buttons — which a Field cannot wrap without a second label.
+  // It is announced, which the hand-written paragraph was not.
+  return <FieldLine tone={outcome.kind}>{outcome.message}</FieldLine>
 }

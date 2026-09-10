@@ -7,6 +7,7 @@ import type { FolderProjectState } from '@/api/useFolderProject'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { FieldLine } from '@estiva-app/ui'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
 import { Person } from '@/components/ui/Person'
@@ -268,7 +269,9 @@ export function TopicProjectPanelView({
                 directory={directory}
               />
             </div>
-            {error && <p className="text-xs text-error-default">{error}</p>}
+            {/* The package's line since 0.12.2 (§4.3, B24) — under the action
+                controls as a group, and announced. */}
+            {error && <FieldLine tone="error">{error}</FieldLine>}
           </div>
 
           {/* Tickets live inside the widget: they are part of the project, not a

@@ -40,7 +40,7 @@ export function CreateTopicDialog({
     <DialogShell
       title="Start topic"
       onClose={onCancel}
-      bodyClassName="flex flex-col gap-6 overflow-y-auto"
+      bodyClassName="flex flex-col gap-6"
       footer={
         <>
           <Button variant="muted" onClick={onCancel}>Cancel</Button>

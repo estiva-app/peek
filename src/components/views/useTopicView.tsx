@@ -151,11 +151,11 @@ export function useTopicView({
       if (outcome.published) return
       showToast({
         label: `Edited here, but not published — ${outcome.reason}. Other apps still show the old text.`,
-        // `neutral` because the shared ToastType is success | brand | neutral
-        // and has no failure variant. `leadingIcon: false` matters more than
-        // the colour: the default is a circle-CHECK, and a tick beside "not
-        // published" is worse than no icon at all.
-        type: 'neutral',
+        // `warning` since the package gained the tone at 0.12.2; it was
+        // `neutral` for want of one. `leadingIcon: false` still matters more
+        // than the colour: the default is a circle-CHECK, and a tick beside
+        // "not published" is worse than no icon at all.
+        type: 'warning',
         leadingIcon: false,
         durationMs: 0,
       })

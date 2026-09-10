@@ -12,6 +12,7 @@ import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
+import { FieldLine } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -247,7 +248,9 @@ function Actions({
           />
         ))}
       </div>
-      {error && <p className="mt-1 text-xs text-error-default">{error}</p>}
+      {/* The package's line since 0.12.2 (§4.3, B24) — under the row of
+          action controls, and announced. */}
+      {error && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
     </div>
   )
 }

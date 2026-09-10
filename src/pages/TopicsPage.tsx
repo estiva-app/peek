@@ -159,7 +159,7 @@ export function TopicsPage() {
   const runDeleteTopic = (topicId: string) => {
     void deleteTopic(topicId).then((outcome) => {
       if (outcome?.message) {
-        showToast({ label: outcome.message, type: 'neutral', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss', onAction: dismissToast })
+        showToast({ label: outcome.message, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss', onAction: dismissToast })
       }
     })
     // Deleting what you're looking at → back to the bare list, no stale URL

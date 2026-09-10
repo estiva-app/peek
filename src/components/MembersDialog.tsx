@@ -83,7 +83,7 @@ export function MembersDialog({
             <span className="text-h4 text-text-primary truncate">Add members</span>
           </div>
         }
-        bodyClassName="flex flex-col gap-6 overflow-y-auto"
+        bodyClassName="flex flex-col gap-6"
         footer={
           <>
             <Button variant="muted" onClick={onClose}>Cancel</Button>
@@ -118,7 +118,8 @@ export function MembersDialog({
           <Chip label={String(memberNames.length)} />
         </div>
       }
-      bodyClassName="p-0 py-2 max-h-[400px] overflow-y-auto"
+      bodyMaxHeight="max-h-[400px]"
+      bodyClassName="p-0 py-2"
     >
       {canAdd && (
         <div

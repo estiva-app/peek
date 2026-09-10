@@ -26,7 +26,7 @@ import { keepSelection, releaseSelection } from '@/extensions/keptSelection'
  * through `className`, which `cn` merges last. The panel still portals out of
  * the composer, so no overflow clips it, and Floating UI clamps it on screen.
  *
- * **The anchor is a synthetic rect, and that is temporary.** This toolbar is
+ * **The anchor is the selection's own point** since 0.12.2. This toolbar is
  * *centred* over the selection (her design, PEE-19, after Linear), and the
  * package's `Popover` aligns left or right only — Base UI has `center`, the
  * package does not expose it (ADOPTION **B21**). So the placement arithmetic
@@ -76,13 +76,6 @@ const GAP = 8
 /** The gap the package's `Popover` adds of its own, subtracted above so the
  *  panel keeps this file's 8px. Read from `Popover.tsx`, not guessed. */
 const POPOVER_GAP = 4
-/** Each face's box, measured in Storybook (2026-09-07) — the toolbar is
- *  centred over the selection and hung this far above it. The field's height
- *  is the package TextInput's own: 14px × 1.4 line, 8px padding, 1px border. */
-const SIZE: Record<Mode, { width: number; height: number }> = {
-  marks: { width: 118, height: 34 },
-  link: { width: 274, height: 47.6 },
-}
 
 export function SelectionToolbar({ editor }: { editor: Editor | null }) {
   /** The selection's top edge and horizontal centre; the face decides the rest. */
@@ -255,18 +248,20 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
     editor.commands.focus()
   }
 
-  const size = SIZE[mode]
-  /* A zero-sized rect the panel hangs above: its left edge is where the
-     panel's goes, and its top is this file's GAP less the package's 4, so
-     `side="top"` lands the panel exactly where the old `position` put it.
-     Goes when B21 lands. */
-  const anchorRect = new DOMRect(anchor.centre - size.width / 2, anchor.top - (GAP - POPOVER_GAP), 0, 0)
+  /* A zero-sized rect at the selection's own top edge and centre. The panel's
+     width is no longer this file's business: `align="center"` puts the
+     panel's middle over this point (B21, package 0.12.2), so the measured
+     `SIZE` table and the placement arithmetic that stood in for it are gone.
+     The top is this file's GAP less the package's own 4, so the panel keeps
+     the 8px it has always had. */
+  const anchorRect = new DOMRect(anchor.centre, anchor.top - (GAP - POPOVER_GAP), 0, 0)
 
   return (
     <Popover
       anchor={anchorRect}
       open
       side="top"
+      align="center"
       onOpenChange={(next) => {
         if (!next) commit()
       }}
