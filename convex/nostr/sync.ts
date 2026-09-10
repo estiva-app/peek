@@ -20,7 +20,7 @@
  * socket and pushing into Convex; nothing here needs to change for that.
  */
 import { v } from 'convex/values'
-import { blockAnchorOf } from '@estiva-app/protocol'
+import { blockAnchorOf, imetaOf } from '@estiva-app/protocol'
 import { action, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
@@ -107,6 +107,40 @@ export function shareTargetBudget(messages: string[], replies: string[], limit: 
   const forMessages = Math.min(messages.length, Math.max(half, limit - replies.length))
   const forReplies = limit - forMessages
   return [...messages.slice(0, forMessages), ...replies.slice(0, forReplies)]
+}
+
+/**
+ * A sender's attachments, as rows this deployment can store — CON-12.
+ *
+ * The other half of peek#177. Peek learned to *publish* `imeta` there; until
+ * this, nothing read one back, so a file attached in Ship reached Peek as a
+ * message with nothing on it — the exact complaint SHI-1 made about Peek's
+ * attachments, pointing the other way.
+ *
+ * **No `storageId`.** The bytes are on the relay and this deployment has no
+ * copy, which is why `fileAttachment.storageId` is optional. `sha256` is the
+ * identity that survives: it is what a reader has to name in the `get`
+ * authorization, and what tells two rows apart when neither has a storage id.
+ *
+ * Parsing is `imetaOf` rather than a second tag reader here. It skips a
+ * malformed tag rather than half-reading it — a missing `size` would otherwise
+ * render as a zero-byte file — and Ship folds with the same function, so the
+ * two apps cannot disagree about what a message carries.
+ *
+ * `name` is what to call it: `filename` when the sender wrote one, `alt` if
+ * that is all there is. Neither is required by NIP-92, and a file called
+ * nothing is still a file, so there is a last resort rather than a dropped row.
+ */
+export function attachmentsOf(e: SignedEvent) {
+  return imetaOf(e).map((f) => ({
+    name: f.filename ?? f.alt ?? 'attachment',
+    contentType: f.m,
+    size: f.size,
+    sha256: f.x,
+    mediaUrl: f.url,
+    thumbUrl: f.thumb,
+    dim: f.dim,
+  }))
 }
 
 /**
@@ -324,6 +358,7 @@ async function syncTopic(
               continue
             }
             const addresses = referencedAddresses(e)
+            const replyFiles = attachmentsOf(e)
             await ctx.runMutation(internal.nostr.data.importReply, {
               messageId: parent.messageId,
               authorId,
@@ -331,6 +366,7 @@ async function syncTopic(
               createdAt: e.created_at * 1000,
               nostrEventId: e.id,
               nostrReferences: addresses.length > 0 ? addresses : undefined,
+              files: replyFiles.length > 0 ? replyFiles : undefined,
             })
             continue
           }
@@ -357,6 +393,8 @@ async function syncTopic(
           */
           const blockId = blockAnchorOf(e)
 
+          const files = attachmentsOf(e)
+
           await ctx.runMutation(internal.nostr.data.importMessage, {
             topicId: topic.topicId,
             authorId,
@@ -366,6 +404,7 @@ async function syncTopic(
             nostrEventId: e.id,
             nostrReferences: addresses.length > 0 ? addresses : undefined,
             nostrBlockId: blockId,
+            files: files.length > 0 ? files : undefined,
           })
         }
 

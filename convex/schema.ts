@@ -37,7 +37,20 @@ export const parentKind = v.union(v.literal('topic'), v.literal('dm'), v.literal
  * what such a message is.
  */
 export const fileAttachment = v.object({
-  storageId: v.id('_storage'),
+  /**
+   * The Convex blob — **absent for a file that arrived from the relay**, CON-12.
+   *
+   * Peek's own uploads have one; a message imported by `syncTopic` carries only
+   * what the sender's `imeta` said, and there is no blob in this deployment to
+   * point at. Making this optional is what lets another app's attachment be
+   * stored at all — the alternative was dropping it on import, which is the
+   * defect SHI-1 named from the other side.
+   *
+   * So `storageId` and `sha256` are two different identities and a row has at
+   * least one: the storage id is where *this* deployment kept the bytes, the
+   * sha256 is what the file *is* everywhere. `editFiles` keys on either.
+   */
+  storageId: v.optional(v.id('_storage')),
   name: v.string(),
   contentType: v.string(),
   size: v.number(),

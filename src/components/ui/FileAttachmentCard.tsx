@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   IconFile,
@@ -18,6 +18,7 @@ import { fileExtension, isImageAttachment, formatBytes, fileTypeLabel } from '@/
 import type { FileAttachment } from '@/api'
 import { IconButton } from './IconButton'
 import { cn } from '@/lib/utils'
+import { blobObjectUrl } from '@/nostr/media'
 
 /** Force a real save of a (possibly cross-origin) storage file: fetch the
  *  blob, hand it to a temporary <a download>, revoke. Falls back to opening
@@ -84,6 +85,49 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
   )
 }
 
+/**
+ * The bytes of a relay-hosted attachment, as an object URL — CON-12.
+ *
+ * Peek's own files need none of this: Convex hands back a URL an `<img>` can
+ * load. A file that arrived from another app has only a relay path, and media
+ * GET is authenticated — so it is a *request*, which is why something that
+ * looks like a plain image has a loading state and a way to fail.
+ *
+ * `undefined` for `mediaUrl` means "not this kind of file", so the hook is
+ * called unconditionally and simply does nothing.
+ */
+function useRelayBlob(mediaUrl: string | undefined) {
+  /*
+    One state, and it remembers which file it is *about*.
+
+    The obvious shape — a `url` and a `failed`, both cleared at the top of the
+    effect — sets state synchronously during an effect, which the lint rejects
+    for a good reason: it is a second render every time this card is handed a
+    different file. Recording the URL the result belongs to costs nothing and
+    lets a stale answer be ignored during render instead of erased afterwards.
+  */
+  const [result, setResult] = useState<{ for?: string; url?: string; failed?: boolean }>({})
+
+  useEffect(() => {
+    if (!mediaUrl) return
+    let live = true
+    blobObjectUrl(mediaUrl)
+      .then((url) => {
+        if (live) setResult({ for: mediaUrl, url })
+      })
+      .catch(() => {
+        if (live) setResult({ for: mediaUrl, failed: true })
+      })
+    return () => {
+      live = false
+    }
+  }, [mediaUrl])
+
+  // An answer about a file this card is no longer showing is not an answer.
+  const current = result.for === mediaUrl
+  return { url: current ? result.url : undefined, failed: current ? !!result.failed : false }
+}
+
 interface FileAttachmentCardProps {
   file: FileAttachment
   className?: string
@@ -97,13 +141,29 @@ interface FileAttachmentCardProps {
  */
 export function FileAttachmentCard({ file, className }: FileAttachmentCardProps) {
   const [lightbox, setLightbox] = useState(false)
-  const href = file.url ?? file.previewUrl
+  const local = file.url ?? file.previewUrl
+  /*
+    A file from another app — CON-12. It has a relay path and no blob here, so
+    its bytes are fetched with the viewer's own authorization.
+
+    The card draws the **thumbnail** the relay generated, and the full image is
+    fetched only when the lightbox opens: a thread of screenshots would
+    otherwise pull every original at full size to show them at 180px.
+  */
+  const fromRelay = !local && !!file.mediaUrl
+  const preview = useRelayBlob(fromRelay ? (file.thumbUrl ?? file.mediaUrl) : undefined)
+  const full = useRelayBlob(fromRelay && lightbox ? file.mediaUrl : undefined)
+
+  const href = local ?? preview.url
+  // While the original loads, the lightbox shows the thumbnail rather than
+  // nothing: a moment of a smaller image beats a moment of an empty screen.
+  const fullHref = local ?? full.url ?? preview.url
   const isImage = isImageAttachment(file.name, file.contentType)
 
   /** Download control (shared IconButton) — only when the file has a URL.
    *  Fades in on card hover (or keyboard focus); it keeps its layout slot so
    *  revealing it never shifts the row. */
-  const downloadButton = href ? (
+  const downloadButton = href || fromRelay ? (
     <IconButton
       variant="muted"
       tooltip="Download"
@@ -111,12 +171,68 @@ export function FileAttachmentCard({ file, className }: FileAttachmentCardProps)
       className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity"
       onClick={(e) => {
         e.stopPropagation()
-        void downloadFile(href, file.name)
+        /*
+          A relay file downloads the **original**, never the thumbnail that is
+          on screen — `href` may be the thumb. Fetching it here rather than
+          reusing `full` keeps the download off the lightbox's state: someone
+          can save a file they never opened.
+        */
+        if (fromRelay && file.mediaUrl) {
+          // The rejection handler is not decoration: without it a refused read
+          // is an unhandled rejection in the page rather than a download that
+          // did not happen.
+          void blobObjectUrl(file.mediaUrl).then(
+            (resolved) => downloadFile(resolved, file.name),
+            () => {},
+          )
+          return
+        }
+        if (href) void downloadFile(href, file.name)
       }}
     >
       <IconDownload size={16} stroke={1.5} />
     </IconButton>
   ) : null
+
+  /*
+    An image from the relay that is not on screen yet, and one that will not be.
+
+    Both are said rather than shown as a gap. The message *claims* an image is
+    attached, so a card that quietly rendered nothing would read as a sender who
+    forgot it — and the likeliest refusal here is `relay_membership_required`,
+    which is a real answer about a channel this viewer is not in rather than a
+    bug. Falling through to the compact file row would say "this is a document",
+    which it is not.
+  */
+  if (isImage && fromRelay && !href) {
+    if (preview.failed) {
+      return (
+        <div
+          data-attachment="unreadable"
+          className={cn(
+            'flex items-center gap-2 w-[240px] rounded-lg border border-border-subtle bg-bg-inset p-1.5 opacity-70',
+            className,
+          )}
+        >
+          <div className="size-9 rounded-md bg-bg-active flex items-center justify-center shrink-0 text-text-secondary">
+            <FileIcon name={file.name} />
+          </div>
+          <div className="flex flex-col gap-[1px] min-w-0 text-left">
+            <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{file.name}</span>
+            <span className="text-[10px] leading-[1.2] text-text-secondary truncate">Could not be loaded</span>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div
+        data-attachment="loading"
+        aria-busy="true"
+        aria-label={`Loading ${file.name}`}
+        className={cn('w-[180px] h-28 rounded-lg border border-border-subtle bg-bg-inset animate-pulse', className)}
+      />
+    )
+  }
 
   if (isImage && href) {
     return (
@@ -144,7 +260,7 @@ export function FileAttachmentCard({ file, className }: FileAttachmentCardProps)
             {downloadButton}
           </div>
         </div>
-        {lightbox && <ImageLightbox src={href} alt={file.name} onClose={() => setLightbox(false)} />}
+        {lightbox && fullHref && <ImageLightbox src={fullHref} alt={file.name} onClose={() => setLightbox(false)} />}
       </>
     )
   }

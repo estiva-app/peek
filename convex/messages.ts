@@ -168,8 +168,24 @@ export async function unreadFlags(
   }
 }
 
-/** Resolve stored file records to browser-renderable rows (blob → URL). A
- *  file whose blob has vanished is dropped rather than surfaced as broken. */
+/**
+ * Resolve stored file records to browser-renderable rows.
+ *
+ * Two kinds of row come back and the caller must be able to tell them apart,
+ * because they are fetched differently:
+ *
+ *  - **`url`** — a Convex storage URL, which an `<img src>` can load. Peek's
+ *    own uploads.
+ *  - **`mediaUrl`** — a relay path, from another app's `imeta` (CON-12). An
+ *    `<img src>` gets **401** here: media GET is unconditionally authenticated,
+ *    so the browser has to sign a `kind:24242` and fetch the bytes itself. See
+ *    `blobObjectUrl` in `src/nostr/media.ts`.
+ *
+ * A row always has one of the two. A Convex file whose blob has vanished is
+ * dropped rather than surfaced as broken — but a relay file is never dropped
+ * for being unreadable *here*, because whether it can be read is the viewer's
+ * membership of that channel and not a fact this deployment knows.
+ */
 export async function resolveFileAttachments(
   ctx: QueryCtx | MutationCtx,
   files: Doc<'messages'>['fileAttachments'],
@@ -177,8 +193,15 @@ export async function resolveFileAttachments(
   if (!files || files.length === 0) return undefined
   const out = []
   for (const f of files) {
+    const common = { name: f.name, contentType: f.contentType, size: f.size }
+    if (!f.storageId) {
+      // From the relay. Nothing to look up: the row already says where the
+      // bytes are, and only the viewer's own authorization can fetch them.
+      if (f.mediaUrl) out.push({ ...common, mediaUrl: f.mediaUrl, thumbUrl: f.thumbUrl, sha256: f.sha256 })
+      continue
+    }
     const url = await ctx.storage.getUrl(f.storageId)
-    if (url) out.push({ storageId: f.storageId as string, url, name: f.name, contentType: f.contentType, size: f.size })
+    if (url) out.push({ ...common, storageId: f.storageId as string, url })
   }
   return out.length > 0 ? out : undefined
 }
@@ -642,6 +665,16 @@ export const editBody = mutation({
 })
 
 /**
+ * What identifies one attachment among a message's own — CON-12.
+ *
+ * The storage id where there is one, the relay's sha256 otherwise. Both are
+ * stable and neither is always present, which is exactly why this is a function
+ * rather than a field read at four call sites.
+ */
+const fileKey = (f: { storageId?: string; sha256?: string; name: string }) =>
+  f.storageId ?? f.sha256 ?? f.name
+
+/**
  * Replace a message's or reply's uploaded files — PEE-16.
  *
  * Editing was body-only until this: `editBody` patched `body` and nothing
@@ -662,23 +695,36 @@ export const editBody = mutation({
  *
  * `editBody` lets a non-author through with `patched: false`, because the
  * browser publishes a `kind:40003`, the relay adjudicates, and an accepted
- * edit arrives back through the sync (CON-8). **Files have no wire form at
- * all**: `unsignedMessage` builds the event from the body and the addresses
- * in it, and there is no event for an attachment. So the same branch here
- * would not defer a decision to the relay, it would drop the edit in silence
- * and wait for a fold that can never come. Until an attachment is addressable
- * on the wire, the only honest answer to a non-author is no.
+ * edit arrives back through the sync (CON-8).
+ *
+ * This used to say "files have no wire form at all", and peek#177 made that
+ * untrue — a file is an `imeta` on the message, and CON-12 now reads them back.
+ * The conclusion survives the correction, for a narrower reason: **an edit has
+ * no wire form for files.** A `kind:40003` replaces the body and nothing else
+ * (RFC 0.4 §7.2.1), so there is no event that says "this message's attachments
+ * are now these" — Ship's `attachments.ts` declines to read an `imeta` off an
+ * edit for the same reason, and two apps guessing differently is worse than
+ * neither guessing. So the same branch here would not defer a decision to the
+ * relay, it would drop the edit in silence and wait for a fold that can never
+ * come. Until an *edit* can carry attachments, the only honest answer to a
+ * non-author is no.
  */
 export const editFiles = mutation({
   args: { key: v.string(), files: v.array(fileAttachment) },
   handler: async (ctx, { key, files }) => {
     const you = await viewerOrThrow(ctx)
-    const kept = new Set(files.map((f) => f.storageId))
+    /*
+      Keyed on the storage id **or** the sha256 — CON-12. A relay-imported file
+      has no storage id, so a set of storage ids alone would hold one `undefined`
+      for all of them and treat every relay file as kept the moment any one was.
+      `fileKey` is the same identity `useEditAttachments` uses in the browser.
+    */
+    const kept = new Set(files.map(fileKey))
 
     const m = await findMessageByKey(ctx, key)
     if (m) {
       if (m.authorId !== you._id) throw new Error("only the author may change a message's files")
-      await deleteAttachmentBlobs(ctx, (m.fileAttachments ?? []).filter((f) => !kept.has(f.storageId)))
+      await deleteAttachmentBlobs(ctx, (m.fileAttachments ?? []).filter((f) => !kept.has(fileKey(f))))
       await ctx.db.patch(m._id, { fileAttachments: files })
       return
     }
@@ -691,7 +737,7 @@ export const editFiles = mutation({
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
     if (!r) return
     if (r.authorId !== you._id) throw new Error("only the author may change a reply's files")
-    await deleteAttachmentBlobs(ctx, (r.fileAttachments ?? []).filter((f) => !kept.has(f.storageId)))
+    await deleteAttachmentBlobs(ctx, (r.fileAttachments ?? []).filter((f) => !kept.has(fileKey(f))))
     await ctx.db.patch(r._id, { fileAttachments: files })
   },
 })
@@ -780,6 +826,13 @@ export async function deleteAttachmentBlobs(
   files: Doc<'messages'>['fileAttachments'],
 ) {
   for (const f of files ?? []) {
+    /*
+      A relay-imported file has no blob here to delete — CON-12. Nor is its
+      relay copy ours to remove: the bytes are content-addressed and may be
+      named by any number of other messages, in other apps, by other authors.
+      Dropping the row is the whole of what deleting it means on this side.
+    */
+    if (!f.storageId) continue
     try {
       await ctx.storage.delete(f.storageId)
     } catch {
