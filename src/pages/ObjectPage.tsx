@@ -55,13 +55,15 @@ export function ObjectPage() {
     }
   }, [ref, folderForReference])
 
-  if (state === 'looking') return <EmptyState className="py-16" message="Opening…" />
+  // The page's own frame: a flex column the height of the window, so the
+  // page-scope empty state fills it as a flex child and centres (D46) — it
+  // used to sit near the top under a padding of its own.
+  if (state === 'looking') return <div className="flex min-h-screen flex-col"><EmptyState message="Opening…" /></div>
   if (state === 'unopenable') {
     return (
-      <EmptyState
-        className="py-16"
-        message="That link does not point at anything Peek can open."
-      />
+      <div className="flex min-h-screen flex-col">
+        <EmptyState message="That link does not point at anything Peek can open." />
+      </div>
     )
   }
   // `/topic/<uuid>` without a slug: TopicsPage canonicalises the URL once the

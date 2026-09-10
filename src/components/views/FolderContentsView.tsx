@@ -47,12 +47,12 @@ export function FolderContentsView({ state }: { state: FolderContentsState }) {
     ambiguity PEE-10 exists to remove. The same trap is here, one level up.
   */
   if ('failed' in state) {
-    return <EmptyState message="This folder could not be read." />
+    return <EmptyState scope="section" className="p-4" message="This folder could not be read." />
   }
 
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <EmptyState message="Nothing in this folder yet." />
+    return <EmptyState scope="section" className="p-4" message="Nothing in this folder yet." />
   }
 
   return (

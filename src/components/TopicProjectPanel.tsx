@@ -1,6 +1,6 @@
 import { describeRelayFailure, type RelayFailureKind } from '@/nostr/relayRead'
 import { useCallback, useState } from 'react'
-import { IconChevronRight, IconFolderOpen } from '@tabler/icons-react'
+import { IconChevronRight } from '@tabler/icons-react'
 import type { FolderProject, ForeignObject, ResolvedSlot } from '@estiva-app/interop'
 import { hasConvex, useForeignObjects } from '@/api'
 import type { FolderProjectState } from '@/api/useFolderProject'
@@ -205,12 +205,9 @@ export function TopicProjectPanelView({
   if (folderProject !== null && 'failed' in folderProject) {
     return (
       <PanelShell>
-        <div className="flex-1 flex items-center justify-center px-6">
-          <EmptyState
-            icon={<IconFolderOpen size={16} stroke={1.5} />}
-            message={describeRelayFailure(folderProject.failed)}
-          />
-        </div>
+        {/* A section of the page is empty, not the page: the line alone,
+            left, no icon (B18, D41), in the panel's own padding. */}
+        <EmptyState scope="section" className="p-3" message={describeRelayFailure(folderProject.failed)} />
       </PanelShell>
     )
   }
@@ -218,12 +215,7 @@ export function TopicProjectPanelView({
   if (folderProject === null) {
     return (
       <PanelShell>
-        <div className="flex-1 flex items-center justify-center px-6">
-          <EmptyState
-            icon={<IconFolderOpen size={16} stroke={1.5} />}
-            message="No project linked to this topic."
-          />
-        </div>
+        <EmptyState scope="section" className="p-3" message="No project linked to this topic." />
       </PanelShell>
     )
   }

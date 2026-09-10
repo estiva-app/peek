@@ -1,8 +1,6 @@
-﻿import { useState } from 'react'
-import { IconChevronRight } from '@tabler/icons-react'
+import { CollapsibleSection } from '@estiva-app/ui'
 import { PersonRow } from './PersonRow'
-import { cn } from '@/lib/utils'
-import { SectionLabel } from './SectionHeader'
+import { EmptyState } from './EmptyState'
 import type { TopicStateType, TopicStateStatus } from './TopicState'
 
 export interface StarredItem {
@@ -23,62 +21,50 @@ interface StarredSectionProps {
   className?: string
 }
 
+/**
+ * The Starred accordion of the People page, on the package's
+ * `CollapsibleSection` (PEEK-ADOPTION.md §4.8, D42): the header is the same
+ * 32px row with the chevron and the label, but the title is a real button
+ * now (Enter and Space fold it), the rows slide, find-in-page can open a
+ * closed section, and this browser remembers whether you left it open.
+ *
+ * A closed section stays closed whatever is selected inside it — her ruling
+ * (2026-09-09): the reader closed it.
+ */
 export function StarredSection({
   items = [],
   selectedId,
   onSelect,
   className,
 }: StarredSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(true)
   const isEmpty = items.length === 0
 
   return (
-    <div className={cn('flex flex-col', className)}>
-      {/* Header */}
-      <div
-        className="group flex h-[32px] items-center justify-between px-2 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover"
-        onClick={() => setIsExpanded((v) => !v)}
-      >
-        <div className="flex items-center gap-1">
-          <IconChevronRight
-            size={12}
-            stroke={1.5}
-            className={cn(
-              'text-text-secondary transition-transform duration-150',
-              isExpanded && 'rotate-90'
-            )}
+    <CollapsibleSection title="Starred" storageKey="peek.people.starred" className={className} contentClassName="gap-1 mt-1">
+      {isEmpty ? (
+        /* One section of the page is empty: the line alone, left, no icon
+           (B18, D41) — where a hand-made paragraph stood until 2026-09-10. */
+        <EmptyState
+          scope="section"
+          className="px-2 py-1"
+          message="Favorite the conversations of People or Topics you interact mostly with"
+        />
+      ) : (
+        items.map((item) => (
+          <PersonRow
+            key={item.id}
+            name={item.name}
+            type={item.type}
+            topicStatus={item.topicStatus}
+            isUnread={item.isUnread}
+            isUrgent={item.isUrgent}
+            isSelected={selectedId === item.id}
+            avatarSrc={item.avatarSrc}
+            memberCount={item.memberCount}
+            onClick={() => onSelect?.(item.id)}
           />
-          <SectionLabel>
-            Starred
-          </SectionLabel>
-        </div>
-      </div>
-
-      {/* Body */}
-      {isExpanded && (
-        isEmpty ? (
-          <p className="px-2 py-1 text-[12px] text-text-muted leading-[1.4]">
-            Favorite the conversations of People or Topics you interact mostly with
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1 mt-1">
-            {items.map((item) => (
-              <PersonRow
-                key={item.id}
-                name={item.name}
-                type={item.type}
-                topicStatus={item.topicStatus}
-                isUnread={item.isUnread}
-                isUrgent={item.isUrgent}
-                isSelected={selectedId === item.id}
-                avatarSrc={item.avatarSrc}
-                memberCount={item.memberCount}
-                onClick={() => onSelect?.(item.id)}
-              />
-            ))}
-          </div>
-        )
+        ))
       )}
-    </div>
+    </CollapsibleSection>
   )
 }

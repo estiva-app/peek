@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { EmptyState } from './EmptyState'
 
 /**
  * What has happened to a topic, as a timeline (PEE-2).
@@ -75,7 +76,8 @@ const exactly = (at: number) =>
 
 export function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
   if (entries.length === 0) {
-    return <p className="text-[12px] leading-[1.4] text-text-secondary">Nothing has happened yet.</p>
+    // A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1).
+    return <EmptyState scope="section" message="Nothing has happened yet." />
   }
 
   return (

@@ -4,6 +4,7 @@ import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { FolderContentsView } from '@/components/views/FolderContentsView'
 import { useFolderContents, useFolders, useForeignObjects } from '@/api'
 import { Button } from '@/components/ui/Button'
@@ -84,12 +85,15 @@ export function FoldersPage() {
             of this page told a signed-out viewer "No folders yet" about a
             workspace holding eighty-one of them.
           */}
+          {/* The list column of a two-column page, so its empties are sections
+              (D51): the line alone, left, no icon. Loading is a skeleton, not a
+              sentence (§4.7). */}
           {signedOut ? (
-            <EmptyState message="Sign in to see folders." />
+            <EmptyState scope="section" className="px-3 py-1" message="Sign in to see folders." />
           ) : folders === null ? (
-            <EmptyState message="Loading folders…" />
+            <SkeletonSidebarList />
           ) : folders.length === 0 ? (
-            <EmptyState message="No folders yet." />
+            <EmptyState scope="section" className="px-3 py-1" message="No folders yet." />
           ) : (
             <div className="flex flex-col gap-0.5">
               {folders.map((folder) => (

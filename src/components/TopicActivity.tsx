@@ -1,6 +1,5 @@
 import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { IconMessages } from '@tabler/icons-react'
 import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData } from '@/api'
 
@@ -63,14 +62,9 @@ export function TopicActivity({
   onOpenThread: (id: string) => void
 }) {
   if (items.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <EmptyState
-          icon={<IconMessages size={20} stroke={1.5} />}
-          message="Nothing related yet. Conversations on this folder's files appear here."
-        />
-      </div>
-    )
+    // One section of the panel is empty: the line alone, left, no icon (B18,
+    // D41), in the same padding as the list it stands for.
+    return <EmptyState scope="section" className="px-4 py-4" message="No related conversations yet." />
   }
 
   return (

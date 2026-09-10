@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { EmptyState } from './EmptyState'
 import { IconChevronRight } from '@tabler/icons-react'
 import type { ForeignObject, ResolvedSlot } from '@estiva-app/interop'
 import { StatusPill } from './ForeignObjectWidget'
@@ -113,9 +114,8 @@ export function ProjectTickets({
 
       {expanded &&
         (tickets.length === 0 ? (
-          <p className="border-t border-border-subtle px-3 py-2 text-xs text-text-secondary">
-            No tickets in this project yet.
-          </p>
+          /* A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1). */
+          <EmptyState scope="section" className="border-t border-border-subtle px-3 py-2" message="No tickets in this project yet." />
         ) : (
           <table className="w-full table-fixed border-t border-border-subtle text-xs">
             <tbody>

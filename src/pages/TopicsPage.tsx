@@ -7,7 +7,7 @@ import { ContainerHeader } from '@/components/ContainerHeader'
 import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTopicDialog'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
-import { SectionHeader } from '@/components/ui/SectionHeader'
+import { CollapsibleSection } from '@estiva-app/ui'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
@@ -38,8 +38,6 @@ export function TopicsPage() {
   const actions = usePeekActions()
   const pathForTopic = useTopicPath()
   const { showToast } = useToast()
-  const [yourExpanded, setYourExpanded] = useState(true)
-  const [otherExpanded, setOtherExpanded] = useState(true)
   /** The Folder panel is dismissible, not part of the layout (PEEK-24). Open to
    *  begin with, since a topic paired with a project is the case it exists for;
    *  the header button closes it and the choice holds while you browse. */
@@ -193,7 +191,7 @@ export function TopicsPage() {
       <div className="flex flex-col items-center gap-4">
         <EmptyState
           icon={<IconMessagePlus size={20} stroke={1.5} />}
-          message="No topics yet. Start one to gather a conversation around it."
+          message="No topics yet."
         />
         <Button variant="primary" onClick={() => setCreateOpen(true)}>New topic</Button>
       </div>
@@ -208,7 +206,7 @@ export function TopicsPage() {
       <div className="flex flex-col items-center gap-4">
         <EmptyState
           icon={<IconLinkOff size={20} stroke={1.5} />}
-          message="This link doesn't lead to a topic you can open. It may have been deleted, or you may not be a member of it."
+          message="This link doesn't lead to a topic you can open. It may have been deleted, or you may not be a member."
         />
         <Button variant="outlined" onClick={() => navigate('/topics', { replace: true })}>
           Back to topics
@@ -298,11 +296,16 @@ export function TopicsPage() {
     if (otherTopics.length === 0) return orderedTopics.map(renderTopicRow)
     return (
       <>
-        <SectionHeader title="Your topics" chevron isExpanded={yourExpanded} onToggle={() => setYourExpanded((v) => !v)} className="shrink-0" />
-        {yourExpanded && memberTopics.map(renderTopicRow)}
+        {/* The package's CollapsibleSection (§4.8, D42): the section owns its
+            rows, the slide and the memory of the fold — the page no longer
+            keeps an expanded flag per section. */}
+        <CollapsibleSection title="Your topics" storageKey="peek.topics.yours" className="shrink-0" contentClassName="gap-0.5">
+          {memberTopics.map(renderTopicRow)}
+        </CollapsibleSection>
         <Divider className="my-2" />
-        <SectionHeader title="Other topics" chevron isExpanded={otherExpanded} onToggle={() => setOtherExpanded((v) => !v)} className="shrink-0" />
-        {otherExpanded && otherTopics.map(renderTopicRow)}
+        <CollapsibleSection title="Other topics" storageKey="peek.topics.others" className="shrink-0" contentClassName="gap-0.5">
+          {otherTopics.map(renderTopicRow)}
+        </CollapsibleSection>
       </>
     )
   }
