@@ -42,6 +42,11 @@
  * who just wanted to type a title. `availability()` is consulted first and
  * `'downloadable'` is treated as *not available now* — true, and it keeps the
  * caller from starting a download nobody asked for.
+ *
+ * **It does offer one, since INT-10.** Treating `'downloadable'` as
+ * unavailable and never offering the fetch anywhere left a machine that could
+ * run the model waiting on a page that would not ask — see `downloadModel`,
+ * which is the one path here a person starts deliberately.
  */
 
 /** What `LanguageModel.availability()` answers. */
@@ -62,6 +67,16 @@ export interface LanguageModelSession {
   /** Tokens used so far. */
   readonly inputUsage?: number
   destroy: () => void
+}
+
+/**
+ * The download reporter `create()` hands to its `monitor` callback.
+ *
+ * `loaded` is a fraction from 0 to 1, not bytes — measured in the console on
+ * 2026-09-09, which is where `downloadModel` gets its progress from.
+ */
+export interface CreateMonitor {
+  addEventListener: (type: 'downloadprogress', listener: (event: { loaded: number }) => void) => void
 }
 
 /** Session options some builds require rather than default. See `SESSION_OPTIONS`. */
@@ -94,7 +109,17 @@ export const OUTPUT_LANGUAGE = 'en'
 
 interface LanguageModelStatic {
   availability: (options?: SamplingOptions) => Promise<ModelAvailability>
-  create: (options?: SamplingOptions & { initialPrompts?: { role: string; content: string }[] }) => Promise<LanguageModelSession>
+  create: (
+    options?: SamplingOptions & {
+      initialPrompts?: { role: string; content: string }[]
+      /**
+       * Called synchronously with the reporter, before the download starts.
+       * Attaching the listener later misses the events, which is why this is a
+       * callback rather than something on the returned session.
+       */
+      monitor?: (m: CreateMonitor) => void
+    },
+  ) => Promise<LanguageModelSession>
 }
 
 declare global {
@@ -276,17 +301,66 @@ export async function promptForObject(
  */
 export async function createSession(
   model: LanguageModelStatic = globalThis.LanguageModel as LanguageModelStatic,
+  monitor?: (m: CreateMonitor) => void,
 ): Promise<{ session: LanguageModelSession; options: SamplingOptions } | null> {
   if (!model) return null
   for (const options of SESSION_OPTIONS) {
     try {
-      return { session: await model.create(options), options }
+      return { session: await model.create(monitor ? { ...options, monitor } : options), options }
     } catch {
       // Refused for these options. Try the next spelling; a browser that
       // refuses all of them simply does not get prefill.
     }
   }
   return null
+}
+
+/**
+ * Fetch the model, because somebody asked for it (INT-10).
+ *
+ * ## The deadlock this breaks
+ *
+ * `canPrefill` refuses `'downloadable'`, so Peek never calls `create()` on a
+ * machine that has not fetched the model. The browser, for its part, downloads
+ * only when a page calls `create()`. Neither side moves, and the person sees a
+ * launcher with no Ask row and no reason given — for ever. Reported by Miky on
+ * 2026-09-09 after getting the model only by pasting `create()` into the
+ * console himself.
+ *
+ * **This does not weaken PEE-6.** That ticket forbids a multi-gigabyte fetch
+ * starting as a *side effect* — of opening a form, of opening the launcher, of
+ * anything a person did for another reason. It never forbade a person asking
+ * for the model on purpose. So this is exported and called from exactly one
+ * place: a row that says what it will do, which somebody has to select. It is
+ * deliberately not wired into `canPrefill`, `promptForObject` or
+ * `promptForText`, and a review that adds it there is reintroducing the fetch
+ * PEE-6 is about.
+ *
+ * Resolves true once a session was created — which is to say the model is on
+ * the machine and usable — and false where every sampling spelling was
+ * refused. Edge 154 answers false immediately without downloading anything,
+ * because its refusal is a policy gate rather than a missing file, so
+ * `create()` throws before any fetch begins.
+ *
+ * The session is destroyed on the way out. The download is the point and it
+ * outlives it, in the browser's own store, shared by every origin; holding a
+ * session open afterwards would just leak the model's context.
+ */
+export async function downloadModel(onProgress?: (fraction: number) => void): Promise<boolean> {
+  const model = globalThis.LanguageModel
+  if (typeof model === 'undefined') return false
+  const created = await createSession(model, (m) => {
+    try {
+      m.addEventListener('downloadprogress', (event) => onProgress?.(event.loaded))
+    } catch {
+      // A build with no monitor support still downloads; it just does it
+      // silently. Losing the progress readout is not a reason to lose the
+      // model, so this is swallowed rather than failing the create.
+    }
+  })
+  if (!created) return false
+  created.session.destroy()
+  return true
 }
 
 /**

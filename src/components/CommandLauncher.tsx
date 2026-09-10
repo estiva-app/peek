@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Kbd } from '@estiva-app/ui'
 import { shortcutLabel } from '@/lib/shortcuts'
 import { createPortal } from 'react-dom'
-import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting, IconSparkles } from '@tabler/icons-react'
+import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting, IconSparkles, IconDownload } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { EnterHint, MenuItem } from '@estiva-app/ui'
@@ -15,7 +15,7 @@ import { useForeignObjects, useMessageSearch, useTopics, usePeople, useWorkspace
 import type { ResolvedAction } from '@estiva-app/interop'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { topicPath } from '@/lib/objectUrl'
-import { canPrefill, promptForObject, promptForText } from '@/lib/promptApi'
+import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type ModelAvailability } from '@/lib/promptApi'
 import {
   PROPOSAL_SCHEMA,
   isProposable,
@@ -422,22 +422,64 @@ export function CommandLauncher({
   const [proposal, setProposal] = useState<Proposal | null | false>(null)
 
   /*
-    Whether a model could answer at all, resolved once per open.
+    What the browser says about the model, resolved once per open.
 
     The launcher's own rule is that an action appears only where it can succeed,
     so the row is absent rather than disabled where nothing can run — Edge 154
     gates generative execution outright, and a row that always fails there is
-    worse than no row. This is also why the check is not `availability()`
-    directly: `canPrefill` refuses only the answers that would start a download.
+    worse than no row.
+
+    The raw answer rather than `canPrefill`'s boolean, since INT-10: the two
+    answers `canPrefill` refuses are not one case. 'unavailable' means nothing
+    to offer, while 'downloadable' means the machine can run it and has not
+    been asked — which is a row, not a silence.
   */
-  const [modelReady, setModelReady] = useState(false)
+  const [availability, setAvailability] = useState<ModelAvailability | null>(null)
   useEffect(() => {
     let cancelled = false
-    void canPrefill().then((ready) => !cancelled && setModelReady(ready))
+    void prefillAvailability().then((answer) => !cancelled && setAvailability(answer))
     return () => {
       cancelled = true
     }
   }, [])
+  /*
+    Unresolved counts as not ready, which is why this is `null` until the
+    promise lands rather than a guess: the rows are assembled on the first
+    render and an optimistic default would flash a row that then vanishes.
+  */
+  const modelReady = availability !== null && availability !== 'downloadable' && availability !== 'downloading'
+
+  /*
+    INT-10 — the model can be fetched, and until this ticket nothing offered.
+
+    `canPrefill` refuses 'downloadable' so that opening a form never starts a
+    22 GB fetch (PEE-6), and the browser downloads only when a page calls
+    `create()`. Both are right and together they deadlock: Miky's machine could
+    run the model for a week and only got it by pasting `create()` into the
+    console. Every colleague would have reached the same dead end.
+
+    The offer resolves it without touching PEE-6, which forbids a download
+    starting as a *side effect* rather than forbidding one at all. It appears
+    exactly where the Ask rows would have appeared — same conditions, same
+    section — so it reads as the reason they are missing, and it is never a
+    nag: nothing is offered until somebody types a question at a conversation.
+  */
+  const modelDownloadable = availability === 'downloadable' || availability === 'downloading'
+  /** Percent while fetching, 'failed' once refused, null when neither. */
+  const [download, setDownload] = useState<number | 'failed' | null>(null)
+  const startDownload = useCallback(() => {
+    if (typeof download === 'number') return
+    setDownload(0)
+    void downloadModel((fraction) => setDownload(Math.round(fraction * 100))).then((ok) => {
+      /*
+        No cancellation guard, deliberately. The fetch belongs to the browser
+        and survives this launcher closing; if it is still mounted the row
+        should say what happened, and if it is not, React drops the update.
+      */
+      setDownload(ok ? null : 'failed')
+      if (ok) setAvailability('available')
+    })
+  }, [download])
 
   useEffect(() => {
     setDraft(null)
@@ -907,6 +949,45 @@ export function CommandLauncher({
 
     // ── Global level ──
     /*
+      INT-10 — where a model could answer but has not been fetched, offer it.
+
+      Above the INT-2 block and gated on the same three conditions, so it
+      occupies exactly the space the Ask rows would have and reads as the
+      reason they are absent. Selecting it is the only thing in Peek that
+      starts the download, and the label says what it costs beforehand.
+    */
+    if (q && context.conversation?.messages?.length && modelDownloadable) {
+      headers.set(rows.length, sectionHeader('Ask'))
+      const label =
+        download === 'failed'
+          ? 'This browser refused the model — asking is unavailable here'
+          : typeof download === 'number'
+            ? `Downloading the on-device model… ${download}%`
+            : availability === 'downloading'
+              ? 'The on-device model is downloading — show progress'
+              : 'Download the on-device model to ask about conversations'
+      const subtitle =
+        download === 'failed'
+          ? undefined
+          : typeof download === 'number'
+            ? 'Keep working — this continues if you close the launcher.'
+            : 'Several gigabytes, once per browser. It runs on this device; nothing is sent anywhere.'
+      rows.push({
+        ...simpleRow(
+          'model-download',
+          <IconDownload size={16} stroke={1.5} className="text-text-secondary" />,
+          label,
+          subtitle,
+          () => {
+            // Not `closeAll()`: the progress is on this row, and a person who
+            // asked for the download is owed sight of it.
+            if (download !== 'failed') startDownload()
+          },
+        ),
+      })
+    }
+
+    /*
       INT-2 — interpret what was typed as a question about this conversation.
 
       Above the results and above the actions, because it is what a person
@@ -1135,7 +1216,7 @@ export function CommandLauncher({
     }
     return { rows, headers }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate, changeRows, modelReady, context.conversation?.messages?.length])
+  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate, changeRows, modelReady, modelDownloadable, availability, download, startDownload, context.conversation?.messages?.length])
 
   // Reset the highlight on every level/query change.
   const didInitHighlight = useRef(false)

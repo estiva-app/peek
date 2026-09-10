@@ -24,6 +24,7 @@ import type { ResolvedAction } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
+import type { ModelAvailability } from '@/lib/promptApi'
 import { CommandLauncher } from './CommandLauncher'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -47,8 +48,10 @@ const cullFlock: ResolvedAction = {
   effect: 'destructive',
 }
 
-const { canPrefill, promptForObject, applyAction, creatableUnder } = vi.hoisted(() => ({
+const { canPrefill, prefillAvailability, promptForObject, applyAction, creatableUnder } = vi.hoisted(() => ({
   canPrefill: vi.fn(async () => true),
+  // Gates the row since INT-10; see promptApi's `downloadModel`.
+  prefillAvailability: vi.fn<() => Promise<ModelAvailability>>(async () => 'available'),
   promptForObject: vi.fn<(instruction: string, schema: object) => Promise<Record<string, unknown> | null>>(),
   /*
     Typed with its argument, not `async () => …`. A zero-parameter mock gives
@@ -69,7 +72,7 @@ const { canPrefill, promptForObject, applyAction, creatableUnder } = vi.hoisted(
 }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
-  return { ...actual, canPrefill, promptForObject }
+  return { ...actual, canPrefill, prefillAvailability, promptForObject }
 })
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
@@ -121,6 +124,7 @@ async function propose(typed = 'kingfisher') {
 
 beforeEach(() => {
   canPrefill.mockResolvedValue(true)
+  prefillAvailability.mockResolvedValue('available')
   promptForObject.mockResolvedValue({ action: 'log-sighting', preview: 'A kingfisher seen at the weir' })
   creatableUnder.mockResolvedValue({
     actions: [logSighting],
@@ -150,6 +154,7 @@ describe('the row', () => {
 
   it('is absent where no model could choose', async () => {
     canPrefill.mockResolvedValue(false)
+    prefillAvailability.mockResolvedValue('downloadable')
     open()
     await userEvent.type(input(), 'kingfisher')
 
