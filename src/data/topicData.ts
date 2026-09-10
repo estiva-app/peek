@@ -56,6 +56,19 @@ export interface FileAttachment {
   name: string
   contentType: string
   size: number
+  /**
+   * The relay's copy — CON-12. Present instead of `url` for a file that
+   * arrived from another app, where this deployment holds no blob.
+   *
+   * **Not interchangeable with `url`.** Media GET is authenticated, so an
+   * `<img src={mediaUrl}>` answers 401; the bytes come through
+   * `blobObjectUrl`, which signs a `kind:24242` first.
+   */
+  mediaUrl?: string
+  /** The relay's generated thumbnail, when it made one. Same fetch rules. */
+  thumbUrl?: string
+  /** The blob's identity. Tells two relay files apart where neither has a storage id. */
+  sha256?: string
 }
 
 export interface ConversationData {

@@ -11,6 +11,7 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, query } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
+import { fileAttachment } from '../schema'
 import { applyResolutionProjection, deleteAttachmentBlobs } from '../messages'
 
 /** Topic plus the creator's id — the publish action needs both. */
@@ -198,8 +199,10 @@ export const importMessage = internalMutation({
     nostrEventId: v.string(),
     nostrReferences: v.optional(v.array(v.string())),
     nostrBlockId: v.optional(v.string()),
+    /** The sender's `imeta`, as rows — CON-12. No Convex blob behind them. */
+    files: v.optional(v.array(fileAttachment)),
   },
-  handler: async (ctx, { topicId, authorId, body, createdAt, nostrEventId, nostrReferences, nostrBlockId }) => {
+  handler: async (ctx, { topicId, authorId, body, createdAt, nostrEventId, nostrReferences, nostrBlockId, files }) => {
     const existing = await ctx.db
       .query('messages')
       .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
@@ -218,6 +221,7 @@ export const importMessage = internalMutation({
       nostrPublishedAt: Date.now(),
       nostrReferences,
       nostrBlockId,
+      fileAttachments: files,
     })
     return { inserted: true }
   },
@@ -269,8 +273,10 @@ export const importReply = internalMutation({
     createdAt: v.number(),
     nostrEventId: v.string(),
     nostrReferences: v.optional(v.array(v.string())),
+    /** The sender's `imeta`, as rows — CON-12. No Convex blob behind them. */
+    files: v.optional(v.array(fileAttachment)),
   },
-  handler: async (ctx, { messageId, authorId, body, createdAt, nostrEventId, nostrReferences }) => {
+  handler: async (ctx, { messageId, authorId, body, createdAt, nostrEventId, nostrReferences, files }) => {
     const existing = await ctx.db
       .query('replies')
       .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
@@ -284,6 +290,7 @@ export const importReply = internalMutation({
       seedKey: nostrEventId,
       nostrEventId,
       nostrReferences,
+      fileAttachments: files,
     })
     return { inserted: true }
   },

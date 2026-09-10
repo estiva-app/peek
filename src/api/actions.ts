@@ -528,11 +528,26 @@ export function usePeekActions() {
       if (hasConvex)
         void editFilesRemote({
           key: id,
-          // A fixture's file has no storage behind it, so there is nothing to
-          // name to the server; only real uploads travel.
+          /*
+            A fixture's file has nothing behind it on either side, so it does
+            not travel. A **relay-imported** one does — CON-12: it has no
+            storage id and never will, but it has a sha256 and a media URL,
+            and dropping it here would silently strip somebody else's
+            attachment the moment its message was edited. Ship and Peek share
+            an Estiva ID pubkey, so an imported message can genuinely be the
+            viewer's own to edit; the author check would not have caught it.
+          */
           files: files
-            .filter((f) => f.storageId)
-            .map((f) => ({ storageId: f.storageId as never, name: f.name, contentType: f.contentType, size: f.size })),
+            .filter((f) => f.storageId || f.mediaUrl)
+            .map((f) => ({
+              storageId: f.storageId as never,
+              name: f.name,
+              contentType: f.contentType,
+              size: f.size,
+              sha256: f.sha256,
+              mediaUrl: f.mediaUrl,
+              thumbUrl: f.thumbUrl,
+            })),
         })
     },
 
