@@ -186,3 +186,46 @@ describe('how many messages a file holds', () => {
     ).toBeInTheDocument()
   })
 })
+
+
+/*
+  The duplication reported on production's "Feedback on Peek": that folder has
+  no state event, so it is read by containment, and Ship writes the folder's `h`
+  on an issue as well as on its project. Both arrive in one listing, and once a
+  project expands to its issues every issue is drawn twice.
+*/
+describe('a child is not also a peer', () => {
+  const PROJ = '30850:abc:p1'
+  const project = file({ ref: PROJ, address: PROJ, listsChildren: true, slots: { title: { value: 'Payments' } } })
+  const issueOf = (parent: string | undefined, title: string, ref = `30851:abc:${title}`) =>
+    file({ ref, address: ref, kind: 30851, widget: 'row', parentRef: parent, slots: { title: { value: title } } })
+
+  it('drops an issue whose project is in the same folder', () => {
+    render(<FolderContentsView state={folder([project, issueOf(PROJ, 'Refunds')])} />)
+
+    expect(screen.getByText('Payments')).toBeInTheDocument()
+    // Reachable by expanding Payments, and only there.
+    expect(screen.queryByText('Refunds')).not.toBeInTheDocument()
+  })
+
+  it('keeps an issue whose project is NOT in this folder', () => {
+    /*
+      The qualifier is the whole rule. Hiding this would make it unreachable —
+      a file the folder holds and does not show, which is the disclosure bug
+      §4.2 argues against, reached from the other side.
+    */
+    render(<FolderContentsView state={folder([issueOf('30850:abc:elsewhere', 'Refunds')])} />)
+    expect(screen.getByText('Refunds')).toBeInTheDocument()
+  })
+
+  it('keeps an issue that names no project at all', () => {
+    // `via: 'a'` is optional on Ship's writer; such an issue is in nobody's list.
+    render(<FolderContentsView state={folder([project, issueOf(undefined, 'Orphan')])} />)
+    expect(screen.getByText('Orphan')).toBeInTheDocument()
+  })
+
+  it('still draws the project itself, which is nobody\'s child', () => {
+    render(<FolderContentsView state={folder([project, issueOf(PROJ, 'Refunds')])} />)
+    expect(screen.getByRole('button', { name: /Show what is in Payments/ })).toBeInTheDocument()
+  })
+})

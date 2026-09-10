@@ -102,7 +102,7 @@ export function FolderContentsView({
         offering an action here that the row has no context to complete is the
         thing "only offer actions that can succeed" rules out.
       */}
-      {folder.files.map((file) => (
+      {peersOf(folder.files).map((file) => (
         <FileRow
           key={file.ref}
           file={file}
@@ -113,6 +113,35 @@ export function FolderContentsView({
       ))}
     </div>
   )
+}
+
+/**
+ * The files that belong at the top level — RFC 0.4 §4.
+ *
+ * **A child is not also a peer.** A folder with no state event is read by
+ * containment, and Ship writes the folder's `h` on an issue as well as on its
+ * project, so both arrive in the listing. Before this view drew nesting that
+ * was merely flat; once a project expands to its issues, every issue appears
+ * twice — once under its project and once beside it. Reported on production's
+ * "Feedback on Peek", which has no folder state.
+ *
+ * So a file whose `parentRef` names another file **in this same listing** is
+ * dropped from the top level and reached by expanding its parent instead.
+ *
+ * The qualifier is the whole rule. An issue whose project is *not* in this
+ * folder stays a peer: it is genuinely a top-level member here, and hiding it
+ * would make it unreachable — a file in a folder that the folder does not show.
+ * That is the disclosure bug §4.2 spends its whole argument avoiding, arrived
+ * at from the other direction.
+ *
+ * Nesting is still fetched rather than taken from the listing. A state folder
+ * may list a project and only some of its issues, and drawing that subset as
+ * "the project's issues" would be a different and quieter wrong answer than
+ * the one this fixes.
+ */
+export function peersOf(files: ForeignObject[]): ForeignObject[] {
+  const listed = new Set(files.map((file) => file.address).filter(Boolean) as string[])
+  return files.filter((file) => !(file.parentRef && listed.has(file.parentRef)))
 }
 
 /**
