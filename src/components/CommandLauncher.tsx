@@ -15,7 +15,7 @@ import { useForeignObjects, useMessageSearch, useTopics, usePeople, useWorkspace
 import type { ResolvedAction } from '@estiva-app/interop'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { topicPath } from '@/lib/objectUrl'
-import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type ModelAvailability } from '@/lib/promptApi'
+import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import {
   PROPOSAL_SCHEMA,
   isProposable,
@@ -434,7 +434,7 @@ export function CommandLauncher({
     to offer, while 'downloadable' means the machine can run it and has not
     been asked — which is a row, not a silence.
   */
-  const [availability, setAvailability] = useState<ModelAvailability | null>(null)
+  const [availability, setAvailability] = useState<PrefillAvailability | null>(null)
   useEffect(() => {
     let cancelled = false
     void prefillAvailability().then((answer) => !cancelled && setAvailability(answer))
@@ -446,8 +446,13 @@ export function CommandLauncher({
     Unresolved counts as not ready, which is why this is `null` until the
     promise lands rather than a guess: the rows are assembled on the first
     render and an optimistic default would flash a row that then vanishes.
+
+    'unanswered' counts as not ready too, and is why this names the answers
+    that pass rather than the ones that fail. A browser that will not say
+    whether it has a model is not a browser to open a session against — that is
+    how the Ask row ends up sitting on "Reading the thread…" for ever.
   */
-  const modelReady = availability !== null && availability !== 'downloadable' && availability !== 'downloading'
+  const modelReady = availability === 'available' || availability === 'unavailable'
 
   /*
     INT-10 — the model can be fetched, and until this ticket nothing offered.
