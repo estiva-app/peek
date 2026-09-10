@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
+import { OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -462,5 +462,141 @@ describe('promptForText — prose, deliberately unconstrained (INT-4)', () => {
       },
     })
     expect(await promptForText('write a reply')).toBeNull()
+  })
+})
+
+/**
+ * INT-10 — the download nothing ever offered.
+ *
+ * `canPrefill` refuses 'downloadable' so a form never starts a 22 GB fetch,
+ * and the browser starts one only when a page calls `create()`. Both correct;
+ * together a deadlock. Miky ran a week on a machine that could have run the
+ * model and got it only by pasting `create()` into the console on 2026-09-09.
+ *
+ * The assertions that matter are the ones separating this from the thing
+ * PEE-6 forbids: a fetch nobody asked for. So this suite checks both that
+ * `downloadModel` downloads **and** that no other export in this file reaches
+ * it.
+ */
+describe('downloadModel — the only path that starts a fetch (INT-10)', () => {
+  it('does nothing where the API is absent', async () => {
+    // Every phone, Safari, and jsdom. Nothing to download and nothing to say.
+    expect(await downloadModel()).toBe(false)
+  })
+
+  it('creates a session, which is what makes the browser fetch the model', async () => {
+    const create = vi.fn<(options?: unknown) => Promise<{ prompt: () => Promise<string>; destroy: () => void }>>(
+      async () => ({ prompt: async () => '', destroy: () => {} }),
+    )
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await downloadModel()).toBe(true)
+    // The sampling options still matter: a create the browser refuses over MTP
+    // downloads nothing, so the same list is tried here as everywhere else.
+    const passed = create.mock.calls[0]?.[0] as Record<string, unknown> | undefined
+    expect(passed).toMatchObject(SESSION_OPTIONS[0])
+  })
+
+  it('reports progress as a fraction, which is what the browser sends', async () => {
+    /*
+      Measured in the console on 2026-09-09 — the snippet on INT-10 renders it
+      as `Math.round(e.loaded * 100) + '%'`, so `loaded` is 0…1 and the percent
+      belongs to the caller. Getting this backwards would show "10000%".
+    */
+    const seen: number[] = []
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async (options: { monitor?: (m: unknown) => void }) => {
+        options.monitor?.({
+          addEventListener: (_type: string, listener: (event: { loaded: number }) => void) => {
+            listener({ loaded: 0 })
+            listener({ loaded: 0.5 })
+            listener({ loaded: 1 })
+          },
+        })
+        return { prompt: async () => '', destroy: () => {} }
+      }) as unknown as Stub['create'],
+    })
+
+    expect(await downloadModel((fraction) => seen.push(fraction))).toBe(true)
+    expect(seen).toEqual([0, 0.5, 1])
+  })
+
+  it('destroys the session, because the download outlives it', async () => {
+    // The model lands in the browser's own store, shared by every origin. A
+    // session held open past that just leaks the model's context.
+    const destroy = vi.fn()
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async () => ({ prompt: async () => '', destroy })) as unknown as Stub['create'],
+    })
+
+    await downloadModel()
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('downloads even where the build has no monitor to attach', async () => {
+    // Losing the progress readout is not a reason to lose the model.
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async (options: { monitor?: (m: unknown) => void }) => {
+        options.monitor?.({
+          addEventListener: () => {
+            throw new Error('no such event')
+          },
+        })
+        return { prompt: async () => '', destroy: () => {} }
+      }) as unknown as Stub['create'],
+    })
+
+    expect(await downloadModel(() => {})).toBe(true)
+  })
+
+  it('answers false on Edge, whose refusal is a policy gate and fetches nothing', async () => {
+    /*
+      Measured 2026-09-02: every `create()` shape throws *"The feature flag
+      gating model execution was disabled"*, and `edge://on-device-internals`
+      names the one failing criterion as `enabled by feature: false` — with the
+      hardware passing. So the honest answer here is false, and offering the
+      download again would be a row that can never succeed.
+    */
+    stubModel({
+      availability: async () => 'unavailable',
+      create: (async () => {
+        throw new Error('The feature flag gating model execution was disabled.')
+      }) as unknown as Stub['create'],
+    })
+
+    expect(await downloadModel()).toBe(false)
+  })
+
+  it('is NOT reached by the gate, so opening a form still downloads nothing', async () => {
+    /*
+      The PEE-6 guarantee, asserted rather than assumed. `canPrefill` is what
+      every automatic path consults, and it must answer without creating
+      anything — a create() here is a multi-gigabyte fetch on somebody who just
+      opened a launcher.
+    */
+    const create = vi.fn<(options?: unknown) => Promise<never>>(async () => {
+      throw new Error('should never be called')
+    })
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await canPrefill()).toBe(false)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('is NOT reached by the prompt paths either', async () => {
+    // `promptForObject` and `promptForText` create sessions, but never with a
+    // monitor: they run only where the caller already established a model.
+    const create = vi.fn<(options?: { monitor?: unknown }) => Promise<{ prompt: () => Promise<string>; destroy: () => void }>>(
+      async () => ({ prompt: async () => '{"title":"x"}', destroy: () => {} }),
+    )
+    stubModel({ availability: async () => 'available', create: create as unknown as Stub['create'] })
+
+    await promptForObject('go', { type: 'object', properties: { title: { type: 'string' } } })
+    await promptForText('go')
+    expect(create).toHaveBeenCalled()
+    for (const call of create.mock.calls) expect(call[0]?.monitor).toBeUndefined()
   })
 })

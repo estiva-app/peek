@@ -19,12 +19,19 @@ import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
+import type { ModelAvailability } from '@/lib/promptApi'
 import { CommandLauncher } from './CommandLauncher'
 
-const { canPrefill } = vi.hoisted(() => ({ canPrefill: vi.fn(async () => true) }))
+const { canPrefill, prefillAvailability, downloadModel } = vi.hoisted(() => ({
+  canPrefill: vi.fn(async () => true),
+  downloadModel: vi.fn(async () => true),
+  // What gates the row since INT-10 — the raw answer, because 'downloadable'
+  // now earns an offer where 'unavailable' earns silence.
+  prefillAvailability: vi.fn<() => Promise<ModelAvailability>>(async () => 'available'),
+}))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
-  return { ...actual, canPrefill }
+  return { ...actual, canPrefill, prefillAvailability, downloadModel }
 })
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api')
@@ -60,6 +67,9 @@ const askRow = () => screen.findByText(/Ask about this conversation/i)
 
 beforeEach(() => {
   canPrefill.mockResolvedValue(true)
+  prefillAvailability.mockResolvedValue('available')
+  downloadModel.mockReset()
+  downloadModel.mockResolvedValue(true)
 })
 
 describe('the Ask row is offered, not triggered (INT-2)', () => {
@@ -80,11 +90,15 @@ describe('the Ask row is offered, not triggered (INT-2)', () => {
 
   it('is absent where no model could answer', async () => {
     /*
-      The launcher's own rule: an action appears only where it can succeed.
-      Edge 154 gates generative execution outright, and a row that always fails
-      there is worse than no row.
+      The launcher's own rule: an action appears only where it can succeed, so
+      a row that would always fail is worse than no row.
+
+      'downloadable' is the case: the model is not on the machine, so asking
+      cannot work — and since INT-10 an offer to fetch it stands in the row's
+      place rather than nothing at all, asserted below.
     */
     canPrefill.mockResolvedValue(false)
+    prefillAvailability.mockResolvedValue('downloadable')
     open()
     // `userEvent.type` flushes between keystrokes, so the resolved probe has
     // settled by here. "Apps" is not a sync point: a typed sentence matches no
@@ -195,5 +209,112 @@ describe('nothing PEE-4 built has changed (INT-2)', () => {
 
     expect(screen.queryByRole('button', { name: /Leave Ask/i })).not.toBeInTheDocument()
     expect(await askRow()).toBeInTheDocument()
+  })
+})
+
+/**
+ * INT-10 — the download nothing offered, filed by Miky on 2026-09-09.
+ *
+ * He ran for a week on a machine that could run the model, saw no Ask row and
+ * no reason for its absence, and got the model in the end by pasting
+ * `LanguageModel.create()` into the browser console. Nothing in Peek was ever
+ * going to offer it: the gate refuses 'downloadable' (PEE-6, so a form never
+ * starts a 22 GB fetch) and the browser fetches only when a page calls
+ * `create()`. Neither side moved.
+ *
+ * The offer sits where the Ask rows would have been, so the rows are never
+ * both present, and it starts the fetch only when somebody selects it.
+ */
+describe('the download is offered rather than deadlocked (INT-10)', () => {
+  const offer = () => screen.findByText(/Download the on-device model/i)
+
+  it('offers the fetch where the model could run but is not here', async () => {
+    prefillAvailability.mockResolvedValue('downloadable')
+    open()
+    await userEvent.type(input(), 'what did we decide')
+
+    expect(await offer()).toBeInTheDocument()
+    // Says what it costs before it is taken, not after.
+    expect(screen.getByText(/Several gigabytes/i)).toBeInTheDocument()
+  })
+
+  it('downloads nothing until it is selected', async () => {
+    // The PEE-6 guarantee: opening a launcher is not consent to a 22 GB fetch.
+    prefillAvailability.mockResolvedValue('downloadable')
+    open()
+    await userEvent.type(input(), 'what did we decide')
+
+    expect(await offer()).toBeInTheDocument()
+    expect(downloadModel).not.toHaveBeenCalled()
+  })
+
+  it('starts the fetch when it is', async () => {
+    prefillAvailability.mockResolvedValue('downloadable')
+    open()
+    await userEvent.type(input(), 'what did we decide')
+    await userEvent.click(await offer())
+
+    expect(downloadModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows progress as a percentage, so a multi-gigabyte wait is legible', async () => {
+    prefillAvailability.mockResolvedValue('downloadable')
+    downloadModel.mockImplementation(async (onProgress?: (fraction: number) => void) => {
+      onProgress?.(0.42)
+      // Never resolves within the test: this is the in-flight state.
+      return await new Promise<boolean>(() => {})
+    })
+    open()
+    await userEvent.type(input(), 'what did we decide')
+    await userEvent.click(await offer())
+
+    expect(await screen.findByText(/Downloading the on-device model… 42%/)).toBeInTheDocument()
+  })
+
+  it('replaces itself with the Ask row once the model is here', async () => {
+    prefillAvailability.mockResolvedValue('downloadable')
+    open()
+    await userEvent.type(input(), 'what did we decide')
+    expect(screen.queryByText(/Ask about this conversation/i)).not.toBeInTheDocument()
+    await userEvent.click(await offer())
+
+    expect(await askRow()).toBeInTheDocument()
+    expect(screen.queryByText(/Download the on-device model/i)).not.toBeInTheDocument()
+  })
+
+  it('says so rather than retrying where the browser refuses the model', async () => {
+    /*
+      Edge 154. `create()` throws *"The feature flag gating model execution was
+      disabled"* whatever options it is given, and no download begins — the
+      gate is browser policy, not a missing file. A row that silently did
+      nothing on every click is the dead end this ticket is about.
+    */
+    prefillAvailability.mockResolvedValue('downloadable')
+    downloadModel.mockResolvedValue(false)
+    open()
+    await userEvent.type(input(), 'what did we decide')
+    await userEvent.click(await offer())
+
+    expect(await screen.findByText(/This browser refused the model/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByText(/This browser refused the model/i))
+    expect(downloadModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('is absent where nothing has been typed, so it is never a nag', async () => {
+    // It stands in for the Ask rows and appears on their conditions. A person
+    // who opened the launcher to jump to a topic is not asked about models.
+    prefillAvailability.mockResolvedValue('downloadable')
+    open()
+
+    expect(screen.queryByText(/Download the on-device model/i)).not.toBeInTheDocument()
+  })
+
+  it('is absent where the browser has no model to offer at all', async () => {
+    // 'unavailable' is not 'downloadable'. Nothing to fetch, so nothing to say.
+    prefillAvailability.mockResolvedValue('unavailable')
+    open()
+    await userEvent.type(input(), 'what did we decide')
+
+    expect(screen.queryByText(/Download the on-device model/i)).not.toBeInTheDocument()
   })
 })

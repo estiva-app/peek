@@ -23,10 +23,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
+import type { ModelAvailability } from '@/lib/promptApi'
 import { CommandLauncher } from './CommandLauncher'
 
-const { canPrefill, promptForText, insertTextIntoActiveComposer } = vi.hoisted(() => ({
+const { canPrefill, prefillAvailability, promptForText, insertTextIntoActiveComposer } = vi.hoisted(() => ({
   canPrefill: vi.fn(async () => true),
+  // Gates the row since INT-10; see promptApi's `downloadModel`.
+  prefillAvailability: vi.fn<() => Promise<ModelAvailability>>(async () => 'available'),
   // Typed rather than stubbed with an implementation, so `mock.calls[0][0]`
   // is a `string` and the argument assertions below actually type-check.
   promptForText: vi.fn<(instruction: string) => Promise<string | null>>(),
@@ -34,7 +37,7 @@ const { canPrefill, promptForText, insertTextIntoActiveComposer } = vi.hoisted((
 }))
 vi.mock('@/lib/promptApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/promptApi')>('@/lib/promptApi')
-  return { ...actual, canPrefill, promptForText }
+  return { ...actual, canPrefill, prefillAvailability, promptForText }
 })
 vi.mock('@/lib/composerRegistry', async () => {
   const actual = await vi.importActual<typeof import('@/lib/composerRegistry')>('@/lib/composerRegistry')
@@ -82,6 +85,7 @@ async function enterDraft(request = 'offer to take a look tomorrow') {
 
 beforeEach(() => {
   canPrefill.mockResolvedValue(true)
+  prefillAvailability.mockResolvedValue('available')
   promptForText.mockResolvedValue('Happy to take a look tomorrow.')
   insertTextIntoActiveComposer.mockReturnValue(true)
   onClose.mockClear()
@@ -123,6 +127,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
   it('is absent where no model could write one', async () => {
     // The launcher's own rule: an action appears only where it can succeed.
     canPrefill.mockResolvedValue(false)
+    prefillAvailability.mockResolvedValue('downloadable')
     open()
     await userEvent.type(input(), 'offer to take a look tomorrow')
 
