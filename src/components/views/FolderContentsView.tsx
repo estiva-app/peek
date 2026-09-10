@@ -1,9 +1,12 @@
-import { IconMessage } from '@tabler/icons-react'
+import { useState } from 'react'
+import { IconChevronDown, IconChevronRight, IconMessage } from '@tabler/icons-react'
+import { CONVERSATION_LIMIT } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
+import { useConversationCounts, useForeignChildren } from '@/api'
 import { ForeignObjectCard } from '@/components/ui/ForeignObjectWidget'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
+import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { IconButton } from '@/components/ui/IconButton'
 
 /**
@@ -36,12 +39,18 @@ export function FolderContentsView({
   state,
   selectedRef,
   onSelect,
+  counts,
 }: {
   state: FolderContentsState
   /** `ref` of the file whose conversation is open, if any. */
   selectedRef?: string
   /** Omit and the rows carry no conversation control at all. */
   onSelect?: (file: ForeignObject) => void
+  /**
+   * Message count per file `ref`. A **missing** entry draws no badge; it means
+   * nobody asked, which is not the same as none — see `useConversationCounts`.
+   */
+  counts?: Record<string, number>
 }) {
   if (state === 'loading') {
     return (
@@ -94,34 +103,181 @@ export function FolderContentsView({
         thing "only offer actions that can succeed" rules out.
       */}
       {folder.files.map((file) => (
-        <div key={file.ref} className="flex items-start gap-1" data-file={file.ref}>
-          <ForeignObjectCard object={file} className="min-w-0 flex-1" />
-          {/*
-            Peek's aspect of this file, on request — RFC 0.5 §10.2.
+        <FileRow
+          key={file.ref}
+          file={file}
+          counts={counts}
+          selectedRef={selectedRef}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  )
+}
 
-            **Beside the card, not inside it.** The card's one link opens the
-            owning app, which is that app's aspect of the same file and is
-            asserted to be the only link on it; a second one in there would both
-            break that and conflate "read it where it lives" with "read its
-            conversation here".
+/**
+ * How many messages, when we know — and nothing at all when we do not.
+ *
+ * Three cases and only one of them draws: a number we asked for and got, a zero,
+ * and an absence. The absence must stay silent. A file with no address was never
+ * askable and a "0" over it would be an assertion nobody made; a Peek topic
+ * genuinely counts zero because its messages carry `h` and no `a`, so drawing
+ * "0" there would deny a conversation that exists. Only a positive count says
+ * something a reader can act on, which is the whole point of the badge.
+ */
+function ConversationCount({ count }: { count: number | undefined }) {
+  if (!count) return null
+  // Saturated at the same constant the panel reads with, so "200" here and a
+  // panel showing exactly 200 agree rather than looking like a coincidence.
+  const label = count >= CONVERSATION_LIMIT ? `${CONVERSATION_LIMIT}+` : String(count)
+  return (
+    <span className="text-caption text-text-muted tabular-nums" data-count={count}>
+      {label}
+    </span>
+  )
+}
 
-            Only when the file has an `naddr`. A conversation is resolved by
-            address — `#a` on the owner's comment kinds — so a non-addressable
-            file has nothing to ask for, and offering the control anyway is the
-            button that cannot succeed.
-          */}
-          {onSelect && file.naddr && (
+/**
+ * One file, and the files inside it.
+ *
+ * **The expander is offered only where the owning app declared one.**
+ * `listsChildren` is interop answering both halves — a child list is declared
+ * *and* the app says how to draw its kind — so a Peek topic, which declares
+ * none, gets no control rather than a disclosure that opens onto nothing.
+ *
+ * Nesting rather than peers, because that is what the objects are: an issue is
+ * a child of its project, not a sibling of it in the Folder. Listing both flat
+ * put two apps' objects at different levels of one list, which is the thing
+ * this view's header warns against — the fix is to draw the level, not to
+ * flatten it away. `MAX_LIST_DEPTH` is 1, so a child never expands further and
+ * no row here offers it.
+ */
+function FileRow({
+  file,
+  counts,
+  selectedRef,
+  onSelect,
+  nested = false,
+}: {
+  file: ForeignObject
+  counts?: Record<string, number>
+  selectedRef?: string
+  onSelect?: (file: ForeignObject) => void
+  nested?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const title = file.slots.title?.value ?? 'this file'
+
+  return (
+    <div data-file={file.ref}>
+      <div className="flex items-start gap-1">
+        {/*
+          A fixed slot whether or not there is a control, so the cards line up
+          down the list. A row that shifted left when its neighbour became
+          expandable would read as two lists.
+        */}
+        <div className="w-6 shrink-0 pt-1">
+          {!nested && file.listsChildren && (
             <IconButton
-              aria-label={`Conversation about ${file.slots.title?.value ?? 'this file'}`}
-              tooltip="Conversation"
-              aria-current={file.ref === selectedRef ? true : undefined}
-              onClick={() => onSelect(file)}
+              aria-label={open ? `Hide what is in ${title}` : `Show what is in ${title}`}
+              aria-expanded={open}
+              tooltip={open ? 'Collapse' : 'Expand'}
+              onClick={() => setOpen((v) => !v)}
             >
-              <IconMessage size={16} stroke={1.5} />
+              {open ? (
+                <IconChevronDown size={16} stroke={1.5} />
+              ) : (
+                <IconChevronRight size={16} stroke={1.5} />
+              )}
             </IconButton>
           )}
         </div>
-      ))}
+        <ForeignObjectCard object={file} className="min-w-0 flex-1" />
+        <ConversationCount count={counts?.[file.ref]} />
+        {/*
+          Peek's aspect of this file, on request — RFC 0.5 §10.2.
+
+          **Beside the card, not inside it.** The card's one link opens the
+          owning app, which is that app's aspect of the same file and is
+          asserted to be the only link on it; a second one in there would both
+          break that and conflate "read it where it lives" with "read its
+          conversation here".
+
+          Only when the file has an `naddr`. A conversation is resolved by
+          address — `#a` on the owner's comment kinds — so a non-addressable
+          file has nothing to ask for, and offering the control anyway is the
+          button that cannot succeed.
+        */}
+        {onSelect && file.naddr && (
+          <IconButton
+            aria-label={
+              counts?.[file.ref]
+                ? `Conversation about ${title}, ${counts[file.ref]} messages`
+                : `Conversation about ${title}`
+            }
+            tooltip="Conversation"
+            aria-current={file.ref === selectedRef ? true : undefined}
+            onClick={() => onSelect(file)}
+          >
+            <IconMessage size={16} stroke={1.5} />
+          </IconButton>
+        )}
+      </div>
+      {open && file.naddr && (
+        <div className="mt-2 flex flex-col gap-2 pl-6" data-children-of={file.ref}>
+          <ChildRows naddr={file.naddr} selectedRef={selectedRef} onSelect={onSelect} />
+        </div>
+      )}
     </div>
+  )
+}
+
+/**
+ * The files inside one file, fetched when somebody asks for them.
+ *
+ * Its own counts request, for the same reason the top level has one: the
+ * children arrive from a resolve that fetched no comments for them, so their
+ * badges are a second question. It is one request for all of them, made once
+ * per expansion.
+ */
+function ChildRows({
+  naddr,
+  selectedRef,
+  onSelect,
+}: {
+  naddr: string
+  selectedRef?: string
+  onSelect?: (file: ForeignObject) => void
+}) {
+  const { state } = useForeignChildren(naddr)
+  const children = Array.isArray(state) ? state : []
+  const counts = useConversationCounts(Array.isArray(state) ? state : undefined)
+
+  if (state === 'loading') return <SkeletonRow />
+  /*
+    Unreadable is not empty, one level down.
+
+    `useForeignChildren` keeps `unresolved` and `failed` apart from `[]` so this
+    can say which happened. Rendering a refused read as "nothing inside" is the
+    same defect as the folder view's, and the reason that view has two branches.
+  */
+  if (state === 'unresolved' || (!Array.isArray(state) && 'failed' in state)) {
+    return <EmptyState message="What is in this could not be read." />
+  }
+  if (children.length === 0) return <EmptyState message="Nothing in this yet." />
+
+  return (
+    <>
+      {children.map((child) => (
+        <FileRow
+          key={child.ref}
+          file={child}
+          counts={counts}
+          selectedRef={selectedRef}
+          onSelect={onSelect}
+          nested
+        />
+      ))}
+    </>
   )
 }

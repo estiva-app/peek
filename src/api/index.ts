@@ -37,4 +37,10 @@ export { mentionPeople, mentionTopics } from './mentions'
 export { useStarred } from '@/api/internal/starred'
 export { PeekDataProvider, hasConvex } from './store'
 export { useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
-export { useForeignConversation, type ForeignConversationState } from './useForeignConversation'
+export {
+  useForeignConversation,
+  useForeignChildren,
+  type ForeignConversationState,
+  type ForeignChildrenState,
+} from './useForeignConversation'
+export { useConversationCounts } from './useConversationCounts'

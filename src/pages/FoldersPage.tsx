@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderContentsView } from '@/components/views/FolderContentsView'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import {
+  useConversationCounts,
   useFolderContents,
   useFolders,
   useForeignConversation,
@@ -51,6 +52,14 @@ export function FoldersPage() {
   */
   const [openFile, setOpenFile] = useState<ForeignObject | null>(null)
   const { state: conversation } = useForeignConversation(openFile?.naddr)
+  /*
+    One counts request for the whole listing, made here rather than inside the
+    view so the view stays a pure render of what it is handed — and so a folder
+    nobody has opened costs nothing.
+  */
+  const counts = useConversationCounts(
+    typeof state === 'object' && 'files' in state ? state.files : undefined,
+  )
   const people = useWorkspaceDirectory()
 
   const selected = folders?.find((folder) => folder.id === id)
@@ -149,6 +158,7 @@ export function FoldersPage() {
                 state={state}
                 selectedRef={openFile?.ref}
                 onSelect={setOpenFile}
+                counts={counts}
               />
             </div>
           </div>

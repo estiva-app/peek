@@ -40,6 +40,9 @@ const FILES: ForeignObject[] = [
     ref: `30850:${PERSON}:proj`,
     kind: 30850,
     appName: 'Estiva Ship',
+    // Ship declares `list: { children: { kind: 30851, via: 'a' } }` on a
+    // project, so this row gets a disclosure and the topic below does not.
+    listsChildren: true,
     slots: { title: { value: 'Payment integration' }, status: { value: 'In Progress' } },
   }),
   file({
@@ -127,3 +130,29 @@ export const NotAMember: Story = { args: { state: { failed: 'not_a_member' } } }
 
 /** Still resolving. The relay read is an action, not a reactive query. */
 export const Loading: Story = { args: { state: 'loading' } }
+
+/**
+ * Counts, and the two silences.
+ *
+ * The project has twelve messages and says so. The topic is **absent from the
+ * map** — a Peek topic's messages carry `h` and no `a`, so it counts zero
+ * however busy it is, and drawing "0" over a live conversation would be worse
+ * than drawing nothing. The tide reading was never askable at all. Both stay
+ * blank, for different reasons, and neither is a bug.
+ */
+export const WithMessageCounts: Story = {
+  args: {
+    state: { id: 'f1', name: 'Onboarding', hasState: true, source: 'state', files: FILES },
+    counts: { [FILES[0]!.ref]: 12 },
+    onSelect: () => {},
+  },
+}
+
+/** At the cap, where the badge stops claiming an exact total. */
+export const CountAtTheCap: Story = {
+  args: {
+    state: { id: 'f1', name: 'Onboarding', hasState: true, source: 'state', files: [FILES[0]!] },
+    counts: { [FILES[0]!.ref]: 200 },
+    onSelect: () => {},
+  },
+}
