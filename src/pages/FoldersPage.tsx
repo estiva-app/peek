@@ -118,8 +118,12 @@ export function FoldersPage() {
         <div className="flex h-full flex-col">
           <ContainerHeader title="Folders" />
           {!signedOut && (
-            <div className="flex items-center gap-2 px-3 pb-2">
+            <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+              {/* min-w-0 + shrink-0: the column is 290px and the field has no
+                  width of its own, so "Create" was pushed past the right edge
+                  and clipped (Katerina, 2026-09-11). */}
               <TextInput
+                className="min-w-0 flex-1"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 onKeyDown={(event) => {
@@ -130,7 +134,7 @@ export function FoldersPage() {
                 placeholder="New folder name"
                 aria-label="New folder name"
               />
-              <Button onClick={() => void create()} disabled={!name.trim() || creating}>
+              <Button className="shrink-0" onClick={() => void create()} disabled={!name.trim() || creating}>
                 {creating ? 'Creating…' : 'Create'}
               </Button>
             </div>
@@ -141,18 +145,32 @@ export function FoldersPage() {
             of this page told a signed-out viewer "No folders yet" about a
             workspace holding eighty-one of them.
           */}
-          {/* The list column of a two-column page, so its empties are sections
-              (D51): the line alone, left, no icon. Loading is a skeleton, not a
-              sentence (§4.7). */}
-          {signedOut ? (
-            <EmptyState scope="section" className="px-3 py-1" message="Sign in to see folders." />
-          ) : folders === null ? (
-            <SkeletonSidebarList />
-          ) : folders.length === 0 ? (
-            <EmptyState scope="section" className="px-3 py-1" message="No folders yet." />
-          ) : (
-            <div className="flex flex-col gap-0.5">
-              {folders.map((folder) => (
+          {/*
+            The list scrolls, and it is the package's bar (D40). It had none at
+            all: `AppShell`'s list panel is `overflow-hidden`, so a workspace of
+            eighty-one Folders simply had the ones past the fold clipped away,
+            with nothing to scroll (Katerina, 2026-09-11). Step 6 could not have
+            caught it — that sweep converted regions that already had a native
+            bar, and a column that should scroll and never did has none to find.
+
+            `contentClassName` is the same one every other list column in Peek
+            passes (`PeoplePage`, `TopicsPage`, `DeskPage`), which is also what
+            gives the rows their 12px inset: they were flush against the panel
+            edge while the header above them sat at 20px.
+
+            The list column of a two-column page, so its empties are sections
+            (D51): the line alone, left, no icon. Loading is a skeleton, not a
+            sentence (§4.7).
+          */}
+          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
+            {signedOut ? (
+              <EmptyState scope="section" message="Sign in to see folders." />
+            ) : folders === null ? (
+              <SkeletonSidebarList />
+            ) : folders.length === 0 ? (
+              <EmptyState scope="section" message="No folders yet." />
+            ) : (
+              folders.map((folder) => (
                 <PersonRow
                   key={folder.id}
                   /*
@@ -162,12 +180,16 @@ export function FoldersPage() {
                     case on today's data, not a defensive branch.
                   */
                   name={folder.name ?? folder.id}
+                  /* A Folder, so a folder's glyph. Without a type this fell
+                     through to `topic` and drew the dashed circle that means
+                     "an unresolved topic" on every row. */
+                  type="folder"
                   isSelected={folder.id === id}
                   onClick={() => navigate(`/folders/${folder.id}`)}
                 />
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </ScrollArea>
         </div>
       }
       rightPanel={
@@ -176,11 +198,27 @@ export function FoldersPage() {
             {/*
               The name is edited where it is shown — `EditableText`'s own
               "When", and the reason there is no rename dialog. `ContainerHeader`
-              draws a static title, so this pane heads itself.
+              takes a node for its title since 2026-09-11, so this pane is
+              headed by the same component as every other pane rather than by a
+              row of its own: 48px tall, inset 20px, with the hairline under it.
+              It had been `px-3 py-2` with no height and no rule, so its title
+              sat eight pixels left of "Folders" in the column beside it and
+              nothing separated it from the list (Katerina, 2026-09-11).
             */}
-            <div className="flex items-center gap-2 px-3 py-2">
-              <div className="min-w-0 flex-1">
+            <ContainerHeader
+              title={
+                <div className="-ml-2 min-w-0">
                 <EditableText
+                  /*
+                    A pane title is `text-body-2-strong` everywhere else in
+                    Peek, and `EditableText` takes its size from the caller —
+                    so with nothing passed the folder name rendered at the
+                    base font, larger than every other header (Katerina,
+                    2026-09-11). `-ml-2` cancels the component's own `px-2`
+                    so the text starts on the header's 20px inset, while the
+                    hover border keeps its padding.
+                  */
+                  className="text-body-2-strong"
                   value={selected?.name ?? ''}
                   placeholder={id}
                   label="Folder name"
@@ -204,15 +242,18 @@ export function FoldersPage() {
                     return true
                   }}
                 />
-              </div>
-              <IconButton
-                tooltip="Delete folder"
-                aria-label="Delete folder"
-                onClick={() => setConfirmingDelete(true)}
-              >
-                <IconTrash size={16} stroke={1.5} />
-              </IconButton>
-            </div>
+                </div>
+              }
+              actions={
+                <IconButton
+                  tooltip="Delete folder"
+                  aria-label="Delete folder"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <IconTrash size={16} stroke={1.5} />
+                </IconButton>
+              }
+            />
             {/* The package's bar, not the browser's (D40). */}
             <ScrollArea className="min-h-0 flex-1">
               <FolderContentsView
@@ -240,33 +281,40 @@ export function FoldersPage() {
         openFile ? (
           <div className="flex h-full flex-col">
             {/*
-              `ContainerHeader` takes no close, and Peek's thread pane does not
-              use it — `ThreadPanel` heads itself and puts the close on the
-              right. Same shape here so the two panes behave alike.
+              The same header as every other pane. This used to be a hand-made
+              row, on the reasoning that `ThreadPanel` heads itself so this pane
+              should too — but `ThreadPanel`'s own header is `h-12 pl-5 pr-4
+              border-b`, which is `ContainerHeader`'s geometry exactly. The row
+              here was `px-3 py-2`, so it matched neither (Katerina,
+              2026-09-11). `actions` carries the close.
             */}
-            <div className="flex items-center gap-2 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-body-2-strong text-text-primary">
-                  {openFile.slots.title?.value ?? 'Conversation'}
-                </p>
+            <ContainerHeader
+              title={
+                <div className="min-w-0">
+                  <p className="truncate text-body-2-strong text-text-primary">
+                    {openFile.slots.title?.value ?? 'Conversation'}
+                  </p>
                 {/*
                   Whose file this is, said plainly. The panel draws another app's
                   conversation in Peek's own language, which is the point and is
                   also exactly what could mislead: without this the discussion
                   reads as something in Peek.
                 */}
-                {openFile.appName && (
-                  <p className="truncate text-caption text-text-muted">In {openFile.appName}</p>
-                )}
-              </div>
-              <IconButton
-                tooltip="Close"
-                aria-label="Close conversation"
-                onClick={() => setOpenFile(null)}
-              >
-                <IconX size={16} stroke={1.5} />
-              </IconButton>
-            </div>
+                  {openFile.appName && (
+                    <p className="truncate text-caption text-text-muted">In {openFile.appName}</p>
+                  )}
+                </div>
+              }
+              actions={
+                <IconButton
+                  tooltip="Close"
+                  aria-label="Close conversation"
+                  onClick={() => setOpenFile(null)}
+                >
+                  <IconX size={16} stroke={1.5} />
+                </IconButton>
+              }
+            />
             {/* The package's bar, not the browser's (D40). This pane
                 arrived with #192, after the adoption had swept the rest. */}
             <ScrollArea className="min-h-0 flex-1">

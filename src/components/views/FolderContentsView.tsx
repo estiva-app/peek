@@ -169,7 +169,7 @@ function ConversationCount({ count }: { count: number | undefined }) {
   // panel showing exactly 200 agree rather than looking like a coincidence.
   const label = count >= CONVERSATION_LIMIT ? `${CONVERSATION_LIMIT}+` : String(count)
   return (
-    <span className="text-caption text-text-muted tabular-nums" data-count={count}>
+    <span className="shrink-0 text-caption text-text-muted tabular-nums" data-count={count}>
       {label}
     </span>
   )
@@ -233,6 +233,15 @@ function FileRow({
           )}
         </div>
         <ForeignObjectCard object={file} className="min-w-0 flex-1" />
+        {/*
+          One cluster, on the card's first line. These were three loose
+          children of an `items-start` row, so the count and the two controls
+          each found their own height against a card that is a different height
+          on every row — the count ended up floating at the card's top corner,
+          attached to nothing (Katerina, 2026-09-11). `pt-1` is the gutter's,
+          so the chevron, the title and these all start on one line.
+        */}
+        <div className="flex shrink-0 items-center gap-1 pt-1">
         <ConversationCount count={counts?.[file.ref]} />
         {/*
           Peek's aspect of this file, on request — RFC 0.5 §10.2.
@@ -284,6 +293,7 @@ function FileRow({
             <IconFolderShare size={16} stroke={1.5} />
           </IconButton>
         )}
+        </div>
       </div>
       {open && file.naddr && (
         <div className="mt-2 flex flex-col gap-2 pl-6" data-children-of={file.ref}>

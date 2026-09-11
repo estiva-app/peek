@@ -12,7 +12,7 @@ import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
-import { FieldLine } from '@estiva-app/ui'
+import { FieldLine, SectionLabel } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -436,9 +436,10 @@ export function ForeignObjectCard({
          * the manifest was found, and `projection.test.ts` pins it. It just has
          * no glyph in the message any more.
          */}
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-muted">
-          {object.appName}
-        </span>
+        {/* The package's small caps, not a hand-typed copy of them: this was
+            `text-[10px] uppercase tracking-wide text-text-muted`, which is
+            what `SectionLabel` already is (Katerina, 2026-09-11). */}
+        <SectionLabel className="shrink-0">{object.appName}</SectionLabel>
       </div>
 
       {onAct && (
