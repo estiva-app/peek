@@ -4,9 +4,8 @@ import { IconBold, IconItalic, IconLink, IconUnderline } from '@tabler/icons-rea
 // Straight from the shared package rather than through Peek's re-export files
 // (`./IconButton`, `@/lib/utils`), which exist only to keep older import paths
 // working — a new file should name where the component actually lives.
-import { Popover } from '@estiva-app/ui'
+import { Popover, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
-import { IconButton } from './IconButton'
 import { TextInput } from './TextInput'
 import { MARKS, toggleMark, shortcutLabel, currentLink, applyLink, type MarkId } from '@/lib/composerFormats'
 import { keepSelection, releaseSelection } from '@/extensions/keptSelection'
@@ -266,11 +265,15 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
         if (!next) commit()
       }}
       ariaLabel="Text formatting"
-      // A row rather than a column. `cn` merges these last, so they win over
-      // the panel's own `flex-col`, `min-w-[180px]` and `p-2`.
-      className="w-auto min-w-0 flex-row items-center gap-1 p-1"
+      // The panel gives up its column and its padding; the strip inside draws
+      // the row. This is the package's own `Popover/FromASelection` story,
+      // class for class.
+      className="w-auto min-w-0 p-1"
     >
       {mode === 'link' ? (
+        /* One field, so no strip: a toolbar of one control is a toolbar in
+           name only, and `ToolbarInput` cannot take the ref this field is
+           focused by (ADOPTION B25). */
         <TextInput
           ref={field}
           value={url}
@@ -293,12 +296,13 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
           className="w-[264px]"
         />
       ) : (
-        <>
+        /* Four marks and a link button: one Tab stop, ← → along them (D29). */
+        <Toolbar aria-label="Text formatting" surface={false}>
           {MARKS.map((mark) => {
             const Icon = ICONS[mark.id]
             const active = editor.isActive(mark.id)
             return (
-              <IconButton
+              <ToolbarButton
                 key={mark.id}
                 aria-label={mark.label}
                 aria-pressed={active}
@@ -310,18 +314,18 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
                 onClick={() => toggleMark(editor, mark.id)}
               >
                 <Icon size={16} stroke={1.5} />
-              </IconButton>
+              </ToolbarButton>
             )
           })}
-          <IconButton
+          <ToolbarButton
             aria-label="Link"
             tooltip="Link"
             onMouseDown={(e) => e.preventDefault()}
             onClick={openField}
           >
             <IconLink size={16} stroke={1.5} />
-          </IconButton>
-        </>
+          </ToolbarButton>
+        </Toolbar>
       )}
     </Popover>
   )

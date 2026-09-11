@@ -31,8 +31,7 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { IconHighlight } from '@tabler/icons-react'
 import type { Editor } from '@tiptap/react'
-import { Menu, MenuItem } from '@estiva-app/ui'
-import { IconButton } from './IconButton'
+import { Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
 import { insertHighlightTag } from '@/extensions/highlight'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
@@ -70,9 +69,9 @@ export function HighlightButton({
           "trigger trap" was a symptom of the caller owning the state). */}
       <Menu
         trigger={
-          <IconButton aria-label="Highlight" tooltip="Mark as Highlight">
+          <ToolbarButton aria-label="Highlight" tooltip="Mark as Highlight">
             <IconHighlight size={16} stroke={1.5} />
-          </IconButton>
+          </ToolbarButton>
         }
         open={open}
         onOpenChange={setOpen}

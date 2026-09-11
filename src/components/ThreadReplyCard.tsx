@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
-import { Menu, MenuItem, MenuSub, ToolbarButton } from '@estiva-app/ui'
-import { IconButton } from './ui/IconButton'
+import { Menu, MenuItem, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
@@ -460,11 +459,12 @@ export function ThreadReplyCard({
                 </div>
                 <AttachmentChips chips={editAttachments.chips} />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
+                  {/* The same strip as the message's edit box (§4.2, D29). */}
+                  <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
-                    <IconButton tooltip="Snooze" aria-label="Snooze"><IconSquareForbid2 size={16} stroke={1.5} /></IconButton>
+                    <ToolbarButton tooltip="Snooze" aria-label="Snooze"><IconSquareForbid2 size={16} stroke={1.5} /></ToolbarButton>
                     <HighlightButton editor={editEditor} container={editBoxRef} />
-                  </div>
+                  </Toolbar>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
                       Cancel

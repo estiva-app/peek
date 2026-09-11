@@ -10,7 +10,7 @@ import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
 import { IconSquareForbid2, IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
-import { Kbd } from '@estiva-app/ui'
+import { Kbd, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { FrameArt } from './FrameArt'
 import { FrameLightbox } from '../FrameLightbox'
 import { cn } from '@/lib/utils'
@@ -492,15 +492,18 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           </div>
         )}
 
-        {/* Toolbar */}
+        {/* The row under the editor. The three things you do to a draft are
+            one strip — one Tab stop, arrows along it (§4.2, D29) — and Send,
+            which is the answer rather than a tool, keeps its own stop.
+            `surface={false}`: the composer already draws the box these sit in. */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
+          <Toolbar aria-label="Compose tools" surface={false} className="flex items-center gap-1">
             <AttachFileButton onPick={uploads.add} />
-            <IconButton tooltip="Snooze" aria-label="Snooze">
+            <ToolbarButton tooltip="Snooze" aria-label="Snooze">
               <IconSquareForbid2 size={16} stroke={1.5} />
-            </IconButton>
+            </ToolbarButton>
             <HighlightButton editor={editor} container={composeRef} />
-          </div>
+          </Toolbar>
 
           {(() => {
             const hasReadyFile = uploads.files.some((f) => f.status === 'done')

@@ -22,8 +22,7 @@ import { FrameLightbox } from './FrameLightbox'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
-import { AvatarGroup, ToolbarButton } from '@estiva-app/ui'
-import { IconButton } from './ui/IconButton'
+import { AvatarGroup, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
@@ -616,13 +615,16 @@ export function ConversationCard({
                     each removable — PEE-16. */}
                 <AttachmentChips chips={editAttachments.chips} />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
+                  {/* The composer's strip, and for the same reason (§4.2, D29).
+                      Cancel and Save are answers, not tools, so they stay two
+                      stops of their own on the right. */}
+                  <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
-                    <IconButton tooltip="Snooze" aria-label="Snooze">
+                    <ToolbarButton tooltip="Snooze" aria-label="Snooze">
                       <IconSquareForbid2 size={16} stroke={1.5} />
-                    </IconButton>
+                    </ToolbarButton>
                     <HighlightButton editor={editEditor} container={editBoxRef} />
-                  </div>
+                  </Toolbar>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
                       Cancel

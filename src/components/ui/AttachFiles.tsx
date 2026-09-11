@@ -8,7 +8,7 @@
  */
 import { useRef } from 'react'
 import { IconPaperclip } from '@tabler/icons-react'
-import { IconButton } from './IconButton'
+import { ToolbarButton } from '@estiva-app/ui'
 import { PendingAttachmentChip } from './PendingAttachmentChip'
 import { FILE_ACCEPT_ATTR } from '@/lib/fileAttachments'
 import { hasConvex } from '@/api'
@@ -38,9 +38,9 @@ export function AttachFileButton({ onPick }: { onPick: (files: File[]) => void }
           e.target.value = '' // let the same file be re-picked
         }}
       />
-      <IconButton tooltip="Attach file" aria-label="Attach file" onClick={() => inputRef.current?.click()}>
+      <ToolbarButton tooltip="Attach file" aria-label="Attach file" onClick={() => inputRef.current?.click()}>
         <IconPaperclip size={16} stroke={1.5} />
-      </IconButton>
+      </ToolbarButton>
     </>
   )
 }
