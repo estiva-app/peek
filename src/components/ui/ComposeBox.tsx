@@ -11,14 +11,11 @@ import { extractHighlightType } from '@/extensions/highlight'
 import { IconSquareForbid2, IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
 import { Kbd, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { FrameArt } from './FrameArt'
-import { FrameLightbox } from '../FrameLightbox'
 import { cn } from '@/lib/utils'
 import { hasConvex, type HighlightType, type UploadedFile } from '@/api'
-import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { pastedImages } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
-import { AttachmentRemoveButton, PendingAttachmentChip } from './PendingAttachmentChip'
+import { PendingAttachmentChip } from './PendingAttachmentChip'
 import { AttachFileButton } from './AttachFiles'
 import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
@@ -29,7 +26,6 @@ export interface SendPayload {
   resolution?: { message: string }
   highlightType?: HighlightType
   /** Figma frame ids attached via the command launcher's find flow. */
-  attachments?: string[]
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
 }
@@ -143,8 +139,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const [isEmpty, setIsEmpty] = useState(true)
   const [hasUrgent, setHasUrgent] = useState(false)
   const [hasHighlight, setHasHighlight] = useState(false)
-  const [attachedFrameIds, setAttachedFrameIds] = useState<string[]>([])
-  const [previewFrame, setPreviewFrame] = useState<FigmaFrame | null>(null)
   const uploads = usePendingAttachments()
   const composeRef = useRef<HTMLDivElement>(null)
 
@@ -157,12 +151,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   draftKeyRef.current = draftKey
   const draftsRef = useRef(drafts)
   draftsRef.current = drafts
-
-  // Mirror the frame ids into a ref so the editorProps Enter handler (a stable
-  // closure) always sees the current list. The uploads keep their own ref
-  // inside `usePendingAttachments`, for the same reason.
-  const attachedFramesRef = useRef<string[]>([])
-  attachedFramesRef.current = attachedFrameIds
 
   /* The paste handler lives in `editorProps`, a closure from the first render
      — the same reason `sendFnRef` exists. */
@@ -203,16 +191,14 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           const text = serializeToText(ed)
           const resolution = extractResolution(ed)
           const hl = extractHighlightType(ed)
-          const attachments = attachedFramesRef.current
           const files = uploadsRef.current.ready()
           // Hold Enter until in-flight uploads settle, so files aren't dropped.
           if (uploadsRef.current.isUploading) return true
-          if (text || resolution.hasResolution || attachments.length > 0 || files.length > 0) {
+          if (text || resolution.hasResolution || files.length > 0) {
             const sent = sendFnRef.current?.({
               text,
               resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
               highlightType: hl,
-              attachments: attachments.length > 0 ? [...attachments] : undefined,
               files: files.length > 0 ? files : undefined,
             })
             /*
@@ -231,7 +217,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
             ed.commands.clearContent(true)
             const key = draftKeyRef.current
             if (key) draftsRef.current.clear(key)
-            setAttachedFrameIds([])
             uploadsRef.current.clear()
             void Promise.resolve(sent).then((ok) => {
               if (ok !== false) return
@@ -367,12 +352,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   // recently mounted composer is the fallback).
   useEffect(() => {
     if (!editor) return
-    const handle = {
-      editor,
-      label: contextLabel,
-      attachFrames: (ids: string[]) =>
-        setAttachedFrameIds((prev) => [...prev, ...ids.filter((id) => !prev.includes(id))]),
-    }
+    const handle = { editor, label: contextLabel }
     registerActiveComposer(handle)
     const onFocus = () => registerActiveComposer(handle)
     editor.on('focus', onFocus)
@@ -391,12 +371,11 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     const resolution = extractResolution(editor)
     const hl = extractHighlightType(editor)
     const files = uploads.ready()
-    if (!text && !resolution.hasResolution && attachedFrameIds.length === 0 && files.length === 0) return
+    if (!text && !resolution.hasResolution && files.length === 0) return
     onSend?.({
       text,
       resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
       highlightType: hl,
-      attachments: attachedFrameIds.length > 0 ? attachedFrameIds : undefined,
       files: files.length > 0 ? files : undefined,
     })
     editor.commands.clearContent(true)
@@ -404,7 +383,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     setIsEmpty(true)
     setHasUrgent(false)
     setHasHighlight(false)
-    setAttachedFrameIds([])
     uploads.clear()
   }
 
@@ -442,34 +420,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         </div>
 
         {/* Attached frames - preview cards below the text, removable, click to view */}
-        {attachedFrameIds.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {attachedFrameIds.map((id) => {
-              const frame = frameById(id)
-              if (!frame) return null
-              return (
-                <div
-                  key={id}
-                  className="group relative flex flex-col w-[132px] rounded-lg border border-border-default bg-bg-elevated p-1.5 gap-1.5 cursor-pointer"
-                  onClick={() => setPreviewFrame(frame)}
-                >
-                  <div className="h-20 rounded-md bg-bg-active flex items-center justify-center overflow-hidden">
-                    <FrameArt frame={frame} className={frame.kind === 'mobile' ? 'h-[68px]' : 'w-[90%]'} />
-                  </div>
-                  <div className="flex flex-col gap-[1px] min-w-0">
-                    <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{frame.name}</span>
-                    <span className="text-[10px] leading-[1.2] text-text-secondary truncate">{frameBreadcrumb(frame)}</span>
-                  </div>
-                  <AttachmentRemoveButton
-                    label={`Remove ${frame.name}`}
-                    onRemove={() => setAttachedFrameIds((prev) => prev.filter((fid) => fid !== id))}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
-
         {/* Pending / uploaded files — removable chips below the text. */}
         {uploads.files.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -499,7 +449,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         <div className="flex items-center justify-between">
           <Toolbar aria-label="Compose tools" surface={false} className="flex items-center gap-1">
             <AttachFileButton onPick={uploads.add} />
-            <ToolbarButton tooltip="Snooze" aria-label="Snooze">
+            <ToolbarButton tooltip="Commands" aria-label="Commands">
               <IconSquareForbid2 size={16} stroke={1.5} />
             </ToolbarButton>
             <HighlightButton editor={editor} container={composeRef} />
@@ -507,7 +457,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
 
           {(() => {
             const hasReadyFile = uploads.files.some((f) => f.status === 'done')
-            const canSend = (!isEmpty || attachedFrameIds.length > 0 || hasReadyFile) && !uploads.isUploading
+            const canSend = (!isEmpty || hasReadyFile) && !uploads.isUploading
             return (
               <div className="flex items-center gap-2.5">
               <span className="hidden signal:inline font-mono text-[9px] tracking-[0.04em] text-text-muted select-none">
@@ -535,10 +485,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           })()}
         </div>
       </div>
-
-      {previewFrame && (
-        <FrameLightbox frame={previewFrame} onClose={() => setPreviewFrame(null)} />
-      )}
     </div>
   )
 }

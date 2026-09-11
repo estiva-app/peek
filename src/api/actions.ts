@@ -25,7 +25,6 @@ export interface SendMessagePayload {
   resolution?: { message: string }
   highlightType?: HighlightType
   /** Figma frame ids attached via the launcher's find flow. */
-  attachments?: string[]
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
 }
@@ -284,7 +283,6 @@ export function usePeekActions() {
           highlightType: msg.highlightType,
           resolved: msg.isResolved,
           resolutionMessage: msg.resolutionMessage,
-          attachments: msg.attachments,
           fileAttachments: toRemoteFiles(files),
         })
       } catch (error) {
@@ -402,7 +400,7 @@ export function usePeekActions() {
     })
   }
 
-  const buildMessage = ({ text, resolution, highlightType, attachments, files }: SendMessagePayload): ConversationData => ({
+  const buildMessage = ({ text, resolution, highlightType, files }: SendMessagePayload): ConversationData => ({
     id: `sent_${Date.now()}`,
     authorName: CURRENT_USER_NAME,
     timestamp: nowTimestamp(),
@@ -412,7 +410,6 @@ export function usePeekActions() {
     isResolved: resolution ? true : undefined,
     resolvedBy: resolution ? CURRENT_USER_NAME : undefined,
     resolutionMessage: resolution?.message || undefined,
-    attachments,
     files: files && files.length > 0 ? files.map(toFileAttachment) : undefined,
   })
 
@@ -433,7 +430,7 @@ export function usePeekActions() {
     // ── Messages ──
     /** Resolves false only when nothing was written anywhere — CON-10. */
     sendTopicMessage(topicId: string, payload: SendMessagePayload): Promise<boolean> {
-      if (payload.text || payload.attachments?.length || payload.files?.length) {
+      if (payload.text || payload.files?.length) {
         const newMsg = buildMessage(payload)
         m.setSentMessages((prev) => ({ ...prev, [topicId]: [...(prev[topicId] ?? []), newMsg] }))
         return persistMessage('topic', topicId, newMsg, payload.files)
@@ -447,7 +444,7 @@ export function usePeekActions() {
 
     /** `dmId` is the partner's person key — the server resolves the pair (§2.4). */
     sendDmMessage(dmId: string, payload: SendMessagePayload): Promise<boolean> {
-      if (payload.text || payload.attachments?.length || payload.files?.length) {
+      if (payload.text || payload.files?.length) {
         const newMsg = buildMessage(payload)
         setSentDmMessages((prev) => ({ ...prev, [dmId]: [...(prev[dmId] ?? []), newMsg] }))
         return persistMessage('dm', dmId, newMsg, payload.files)
@@ -673,10 +670,10 @@ export function usePeekActions() {
     /** Send a reply; a `→ msg` resolution stamps resolvedByReplyId so the
      *  reply card can surface the resolution inline later. */
     sendReply(messageId: string, payload: SendMessagePayload): Promise<boolean> {
-      const { text, resolution, highlightType, attachments, files } = payload
+      const { text, resolution, highlightType, files } = payload
       let newReplyId: string | undefined
       let saved: Promise<boolean> = Promise.resolve(true)
-      if (text || attachments?.length || files?.length) {
+      if (text || files?.length) {
         const now = Date.now()
         newReplyId = `reply_${now}`
         const newReply: ReplyData = {
@@ -686,7 +683,6 @@ export function usePeekActions() {
           body: text,
           highlightType,
           createdAtMs: now,
-          attachments,
           files: files && files.length > 0 ? files.map(toFileAttachment) : undefined,
         }
         m.setSentReplies((prev) => ({ ...prev, [messageId]: [...(prev[messageId] ?? []), newReply] }))
@@ -699,7 +695,6 @@ export function usePeekActions() {
                 seedKey: newReply.id,
                 body: text,
                 highlightType,
-                attachments,
                 fileAttachments: toRemoteFiles(files),
               })
             } catch (error) {

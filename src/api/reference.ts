@@ -3,7 +3,7 @@
  *
  * Two categories live here:
  *
- * 1. Third-party integration mocks (files, Figma frames).
+ * 1. Third-party integration mocks (files).
  *    These stay static by design — they mock integrations that are a
  *    separate, later project (see PRDs/Peek-Domain-Model.md §6).
  *
@@ -24,15 +24,7 @@ export { PEOPLE, avatarFor } from '@/data/peopleData'
 // Non-reactive topic snapshot (static seed topics only — see module docs).
 export { TOPICS } from '@/data/topicData'
 // Files / Figma integration mocks.
-// Files / Figma / Linear integration mocks.
+// File and Linear integration mocks.
 export {
-  APP_CATEGORIES,
-  APP_FILES,
   DOCUMENT_FILES,
 } from '@/data/filesData'
-export {
-  FIGMA_FRAMES,
-  frameById,
-  frameBreadcrumb,
-  searchFigmaFrames,
-} from '@/data/figmaData'

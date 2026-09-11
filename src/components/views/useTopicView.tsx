@@ -863,7 +863,6 @@ export function useTopicView({
                           authorAvatarSrc={c.authorAvatarSrc}
                           timestamp={c.timestamp}
                           body={c.body}
-                          attachments={c.attachments}
                           files={c.files}
                           reactions={c.reactions}
                           highlightType={c.highlightType}

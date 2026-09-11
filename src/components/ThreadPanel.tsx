@@ -2,7 +2,7 @@ import { useRef, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
 import { ScrollArea } from '@estiva-app/ui'
-import { Avatar } from './ui/Avatar'
+import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
 import { draftKeys } from '@/lib/drafts'
@@ -384,24 +384,9 @@ export function ThreadPanel({
                   : []
             const total = members.length || huddleMemberCount || 0
             if (total === 0) return null
-            return (
-              <div className="bg-bg-elevated border border-border-default rounded-sm flex gap-2 items-center pl-[2px] pr-2 py-[2px]">
-                <div className="flex items-center pr-2">
-                  {(members.length > 0
-                    ? members.slice(0, 3).map((name, i) => ({ key: i, name }))
-                    : Array.from({ length: Math.min(total, 3) }, (_, i) => ({ key: i, name: undefined as string | undefined }))
-                  ).map(({ key, name }) => (
-                    <div
-                      key={key}
-                      className="-mr-2 relative shrink-0 size-6 rounded-sm overflow-hidden border-2 border-bg-elevated"
-                    >
-                      <Avatar size={24} name={name} alt={name} />
-                    </div>
-                  ))}
-                </div>
-                <span className="text-caption text-text-secondary">{total}</span>
-              </div>
-            )
+            // The header's pill, not a third copy of it (F12). It was the
+            // same chrome re-typed around a stack that clipped its own faces.
+            return <MembersPill members={members} count={total} />
           })()}
           {onOpenInDm && (
             <IconButton tooltip="Open original" aria-label="Open original" onClick={onOpenInDm}>
@@ -426,7 +411,6 @@ export function ThreadPanel({
               authorAvatarSrc={conversation.authorAvatarSrc}
               timestamp={rootTimestamp}
               body={conversation.body}
-              attachments={conversation.attachments}
               files={conversation.files}
               reactions={initialReactions}
               highlightType={initialHighlightType}
@@ -468,7 +452,6 @@ export function ThreadPanel({
                     authorAvatarSrc={reply.authorAvatarSrc}
                     timestamp={reply.timestamp}
                     body={reply.body}
-                    attachments={reply.attachments}
                     files={reply.files}
                     highlightType={reply.highlightType}
                     reactions={reply.reactions}

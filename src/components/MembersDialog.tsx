@@ -122,16 +122,27 @@ export function MembersDialog({
       bodyClassName="p-0 py-2"
     >
       {canAdd && (
-        <div
-          role="button"
-          className="flex items-center gap-3 h-12 px-5 cursor-pointer hover:bg-bg-hover transition-colors"
+        /*
+          A real `<button>`, not a `role="button"` div — 13.3, and `UI-RULES.md`
+          §3 forbids the div by name. It was reachable by pointer only: no Tab
+          stop, no Enter, no Space.
+
+          Not the package's `Button`, and not a `MenuItem`. This is a full-width
+          row that matches the member rows under it (`h-12 px-5`, a 32px leading
+          square); `Button` is a pill of its own size, and a `MenuItem` would
+          claim menu semantics in a dialog body that has no menu. The element is
+          what was wrong here, not the drawing.
+        */
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 h-12 px-5 text-left cursor-pointer hover:bg-bg-hover transition-colors"
           onClick={() => setView('add')}
         >
-          <div className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
+          <span className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
             <IconUserPlus size={16} stroke={1.5} />
-          </div>
+          </span>
           <span className="text-[14px] font-medium leading-[1.4] text-text-primary">Add members</span>
-        </div>
+        </button>
       )}
       {memberNames.map((name) => {
         const role = roleFor(name)

@@ -10,10 +10,8 @@ import {
   IconTable,
   IconPresentation,
 } from '@tabler/icons-react'
-import { ScrollArea } from '@estiva-app/ui'
-import figmaIcon from '@/assets/figma icon.svg'
 import { TOPICS } from '@/api'
-import { APP_FILES, DOCUMENT_FILES } from '@/api'
+import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -107,26 +105,20 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
               </span>
             )
           }
-          // App or document file
-          const appFile = APP_FILES.find((f) => f.title === title)
+          // A document. There used to be a second kind — an "app" file, which
+          // was only ever Figma and carried its own SVG icon; it went with the
+          // rest of that mock on 2026-09-11, and the <img> branch with it.
           const docFile = DOCUMENT_FILES.find((f) => f.title === title)
-          const fileApp = appFile?.app ?? docFile?.docType ?? ''
-          const svgIcons: Record<string, string> = { figma: figmaIcon }
           const tablerIcons: Record<string, FC<{ size: number; stroke: number; className?: string }>> = {
             pdf: IconFileTypePdf, image: IconPhoto,
             spreadsheet: IconTable, presentation: IconPresentation,
           }
-          const svgSrc = svgIcons[fileApp]
-          const TablerIcon = tablerIcons[fileApp] ?? IconFile
+          const TablerIcon = tablerIcons[docFile?.docType ?? ''] ?? IconFile
           return (
             <span key={i} className="inline-flex items-center gap-1 rounded-sm px-1 mx-0.5 bg-bg-active text-text-primary text-body-2 font-normal select-none" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
-              {svgSrc ? (
-                <img src={svgSrc} width={14} height={14} alt={fileApp} className="rounded-[2px] shrink-0" />
-              ) : (
-                <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
-                  <TablerIcon size={14} stroke={1.5} />
-                </span>
-              )}
+              <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
+                <TablerIcon size={14} stroke={1.5} />
+              </span>
               <span>{title}</span>
             </span>
           )
@@ -277,19 +269,22 @@ function Block({ block, renderRun }: { block: RenderBlock; renderRun: (run: stri
       return <h2>{inline}</h2>
     case 'codeBlock':
       // A fence is literal by definition: no mentions, no marks, no reference
-      // chips. Scrolls on its own so a long line cannot widen the card.
+      // chips.
+      //
+      // A long line **wraps** (Katerina, 2026-09-11). It used to scroll
+      // sideways, and briefly did so in the package's bar; she asked for the
+      // block to behave like the rest of the message instead. `whitespace-pre-wrap`
+      // keeps every space and newline the author typed — which is the whole
+      // point of a fence — while letting a line that is too long fold, and
+      // `break-words` folds one long unbroken token rather than widening the
+      // card. Nothing here scrolls, so there is no bar to draw.
       return (
-        <ScrollArea orientation="horizontal" className="rounded-md bg-bg-active">
-          {/* The fill and the corner are the region's, so the bar is drawn over
-              the block rather than beside it; the padding stays on the `pre`,
-              which is the box that scrolls, so both edges keep their 8px. */}
-          <pre
-            className="p-2 font-mono text-[0.9em] text-text-primary"
-            data-language={block.language}
-          >
-            <code>{(block.inline ?? []).map((run) => run.text).join('')}</code>
-          </pre>
-        </ScrollArea>
+        <pre
+          className="whitespace-pre-wrap break-words rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
+          data-language={block.language}
+        >
+          <code>{(block.inline ?? []).map((run) => run.text).join('')}</code>
+        </pre>
       )
     case 'blockquote':
       // Native blockquote so sent messages and the composer share the exact

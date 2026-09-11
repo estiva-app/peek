@@ -12,10 +12,6 @@ import {
   IconX,
   IconAlertSquareRounded,
 } from '@tabler/icons-react'
-import figmaIcon from '@/assets/figma icon.svg'
-import { FrameArt } from './ui/FrameArt'
-import { FrameLightbox } from './FrameLightbox'
-import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
@@ -111,7 +107,6 @@ interface ThreadReplyCardProps {
   reactions?: ReactionData[]
   highlightType?: HighlightType
   /** Figma frame ids attached to the reply (rendered as preview cards). */
-  attachments?: string[]
   /** Real uploaded files (rendered as file chips / image thumbnails). */
   files?: FileAttachment[]
   isNew?: boolean
@@ -151,7 +146,6 @@ export function ThreadReplyCard({
   body,
   reactions,
   highlightType,
-  attachments,
   files,
   isNew = false,
   isUrgent = false,
@@ -190,7 +184,6 @@ export function ThreadReplyCard({
   useEffect(() => { setBodyState(body) }, [body])
   useEffect(() => { setHighlightState(highlightType) }, [highlightType])
   const [isEditing, setIsEditing] = useState(false)
-  const [previewFrame, setPreviewFrame] = useState<FigmaFrame | null>(null)
   const [editEmpty, setEditEmpty] = useState(false)
   const [editHasUrgent, setEditHasUrgent] = useState(false)
   const [editHasHighlight, setEditHasHighlight] = useState(false)
@@ -462,7 +455,7 @@ export function ThreadReplyCard({
                   {/* The same strip as the message's edit box (§4.2, D29). */}
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
-                    <ToolbarButton tooltip="Snooze" aria-label="Snooze"><IconSquareForbid2 size={16} stroke={1.5} /></ToolbarButton>
+                    <ToolbarButton tooltip="Commands" aria-label="Commands"><IconSquareForbid2 size={16} stroke={1.5} /></ToolbarButton>
                     <HighlightButton editor={editEditor} container={editBoxRef} />
                   </Toolbar>
                   <div className="flex items-center gap-2">
@@ -535,36 +528,6 @@ export function ThreadReplyCard({
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
               <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} />
             </div>
-            {attachments && attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">
-                {attachments.map((id) => {
-                  const frame = frameById(id)
-                  if (!frame) return null
-                  return (
-                    <div
-                      key={id}
-                      data-interactive
-                      className="flex flex-col w-[132px] rounded-lg border border-border-subtle bg-bg-inset hover:border-border-default p-1.5 gap-1.5 cursor-pointer transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPreviewFrame(frame)
-                      }}
-                    >
-                      <div className="h-20 rounded-md bg-bg-active flex items-center justify-center overflow-hidden">
-                        <FrameArt frame={frame} className={frame.kind === 'mobile' ? 'h-[68px]' : 'w-[90%]'} />
-                      </div>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <img src={figmaIcon} width={14} height={14} alt="Figma" className="rounded-[3px] shrink-0" />
-                        <div className="flex flex-col gap-[1px] min-w-0">
-                          <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{frame.name}</span>
-                          <span className="text-[10px] leading-[1.2] text-text-secondary truncate">{frameBreadcrumb(frame)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a
                 `.pdf` chip with its icon floating in a tall empty box. */}
@@ -616,10 +579,6 @@ export function ThreadReplyCard({
 
       {confirmingDelete && (
         <ConfirmDelete what="reply" onConfirm={() => onDelete?.()} onClose={() => setConfirmingDelete(false)} />
-      )}
-
-      {previewFrame && (
-        <FrameLightbox frame={previewFrame} onClose={() => setPreviewFrame(null)} />
       )}
     </>
   )

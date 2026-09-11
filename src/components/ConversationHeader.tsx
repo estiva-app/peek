@@ -4,7 +4,7 @@ import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, Ico
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
-import { AvatarGroup } from './ui/AvatarGroup'
+import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
 
@@ -169,19 +169,7 @@ export function ConversationHeader({
               mode it opens the members dialog (huddle membership is set at
               creation, so the huddle pill stays inert). */}
           {(topicMode || huddleMode) && !hideTopicMeta && members.length > 0 && (
-            <button
-              type="button"
-              aria-label={`${members.length} members`}
-              disabled={!onShowMembers}
-              onClick={onShowMembers}
-              className={cn(
-                'bg-bg-elevated border border-border-default rounded-sm flex gap-2 items-center pl-[2px] pr-2 py-[2px]',
-                onShowMembers && 'cursor-pointer hover:border-border-strong transition-colors',
-              )}
-            >
-              <AvatarGroup members={members} />
-              <span className="text-caption text-text-secondary signal:font-mono signal:text-[10px] signal:tabular-nums">{members.length}</span>
-            </button>
+            <MembersPill members={members} onClick={onShowMembers} />
           )}
 
           {/* Start huddle (V2 / V3 only — driven by onStartHuddle prop). Hidden inside a huddle. */}

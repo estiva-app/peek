@@ -134,11 +134,11 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   const openThread = (convId: string) => setThreadConvId(convId)
   const closeThread = () => setThreadConvId(null)
 
-  const handleSendReply = ({ text, resolution, attachments, files }: SendPayload) => {
+  const handleSendReply = ({ text, resolution, files }: SendPayload) => {
     if (!threadConvId) return
     // DM replies never carry a highlight (matches pre-seam behavior).
     // Returned so `ComposeBox` can put the text back if nothing was written.
-    return actions.sendReply(threadConvId, { text, resolution, attachments, files })
+    return actions.sendReply(threadConvId, { text, resolution, files })
   }
 
   const handleDeleteReply = (replyId: string) => {
@@ -146,12 +146,12 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
     void actions.deleteReply(threadConvId, replyId).then(({ kept }) => reportDelete('reply', kept))
   }
 
-  const handleSend = ({ text, resolution, attachments, files }: SendPayload) => {
+  const handleSend = ({ text, resolution, files }: SendPayload) => {
     if (dmId == null) return
     // DM messages never carry a highlight (matches pre-seam behavior).
     // dmId is the partner's person key — the server resolves the pair and
     // creates the conversation on the first message (§2.4).
-    return actions.sendDmMessage(dmId, { text, resolution, attachments, files })
+    return actions.sendDmMessage(dmId, { text, resolution, files })
   }
 
   const handleDelete = (id: string) => {
@@ -278,7 +278,6 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   authorAvatarSrc={c.authorAvatarSrc}
                   timestamp={c.timestamp}
                   body={c.body}
-                  attachments={c.attachments}
                   files={c.files}
                   reactions={c.reactions}
                   highlightType={c.highlightType}
@@ -320,7 +319,6 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   authorAvatarSrc={m.authorAvatarSrc}
                   timestamp={m.timestamp}
                   body={m.body}
-                  attachments={m.attachments}
                   files={m.files}
                   reactions={m.reactions}
                   highlightType={m.highlightType}

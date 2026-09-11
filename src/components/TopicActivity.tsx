@@ -95,7 +95,6 @@ export function TopicActivity({
             authorAvatarSrc={conv.authorAvatarSrc}
             timestamp={conv.timestamp}
             body={conv.body}
-            attachments={conv.attachments}
             files={conv.files}
             reactions={conv.reactions}
             highlightType={conv.highlightType}

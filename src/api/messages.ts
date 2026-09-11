@@ -45,7 +45,6 @@ export interface RemoteMessage {
   /** Append-only resolve/reopen history (PEEK-128), oldest first. */
   resolutionEvents?: ResolutionEvent[]
   resolvedByReplyId?: string
-  attachments?: string[]
   /** Resolved uploaded files (storage blob → URL), server-side (§Phase 5). */
   files?: FileAttachment[]
   /** Derived server-side (list only). */
@@ -79,7 +78,6 @@ interface RemoteReply {
   body: string
   isUrgent?: boolean
   highlightType?: ConversationData['highlightType']
-  attachments?: string[]
   files?: FileAttachment[]
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
@@ -101,7 +99,6 @@ function toReplyData(r: RemoteReply, meId: string | undefined): ReplyData {
     isNew: r.isNew,
     isUrgent: r.isUrgent,
     highlightType: r.highlightType,
-    attachments: r.attachments,
     files: r.files,
     createdAtMs: r.createdAt,
     nostrReferences: r.nostrReferences,
@@ -129,7 +126,6 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
     isResolved: r.isResolved,
     resolvedBy: r.resolvedById && r.resolvedById === meId ? CURRENT_USER_NAME : r.resolvedBy,
     resolutionMessage: r.resolutionMessage,
-    attachments: r.attachments,
     files: r.files,
     reactions: r.reactions,
     hasNewMessage: r.hasNewMessage,

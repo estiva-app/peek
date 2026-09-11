@@ -57,7 +57,6 @@ export const DM_CONVERSATIONS: Record<number, ConvGroup[]> = {
           timestamp: '9:10 AM',
           body: "Morning! The design team incorporated your async export feedback from yesterday, they're now going with the job queue approach. They've got a draft of the loading state and download-ready notification in Figma if you want to take a look before it goes to eng.\n\nAlso the customer on ticket #48821 confirmed the rate limiting fix resolved their issue. Closing it out now.",
           hasNewMessage: true,
-          attachments: ['fg-frame-7', 'fg-frame-8'],
         },
       ],
     },

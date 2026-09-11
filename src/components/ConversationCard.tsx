@@ -16,10 +16,6 @@ import {
   IconSquareForbid2,
   IconDotsVertical,
 } from '@tabler/icons-react'
-import figmaIcon from '@/assets/figma icon.svg'
-import { FrameArt } from './ui/FrameArt'
-import { FrameLightbox } from './FrameLightbox'
-import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
 import { AvatarGroup, Toolbar, ToolbarButton } from '@estiva-app/ui'
@@ -59,7 +55,6 @@ interface ConversationCardProps {
   /** Time of the last reply, shown in the signal theme's reply row (ignored elsewhere). */
   lastReplyTime?: string
   /** Figma frame ids attached to the message (rendered as preview cards). */
-  attachments?: string[]
   /** Real uploaded files (rendered as file chips / image thumbnails). */
   files?: FileAttachment[]
   hasNewReply?: boolean
@@ -106,7 +101,6 @@ export function ConversationCard({
   replyCount,
   replyAuthors,
   lastReplyTime,
-  attachments,
   files,
   hasNewReply = false,
   hasNewMessage = false,
@@ -162,7 +156,6 @@ export function ConversationCard({
 
   // Edit mode
   const [isEditing, setIsEditing] = useState(false)
-  const [previewFrame, setPreviewFrame] = useState<FigmaFrame | null>(null)
   const [editEmpty, setEditEmpty] = useState(false)
   const [editHasUrgent, setEditHasUrgent] = useState(false)
   const [editHasHighlight, setEditHasHighlight] = useState(false)
@@ -620,7 +613,7 @@ export function ConversationCard({
                       stops of their own on the right. */}
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
-                    <ToolbarButton tooltip="Snooze" aria-label="Snooze">
+                    <ToolbarButton tooltip="Commands" aria-label="Commands">
                       <IconSquareForbid2 size={16} stroke={1.5} />
                     </ToolbarButton>
                     <HighlightButton editor={editEditor} container={editBoxRef} />
@@ -674,38 +667,6 @@ export function ConversationCard({
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
             <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} />
           </div>
-
-          {/* Figma frame attachments - preview cards, click to view full screen */}
-          {!isEditing && attachments && attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">
-              {attachments.map((id) => {
-                const frame = frameById(id)
-                if (!frame) return null
-                return (
-                  <div
-                    key={id}
-                    data-interactive
-                    className="flex flex-col w-[148px] rounded-lg border border-border-subtle bg-bg-inset hover:border-border-default p-1.5 gap-1.5 cursor-pointer transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setPreviewFrame(frame)
-                    }}
-                  >
-                    <div className="h-24 rounded-md bg-bg-active flex items-center justify-center overflow-hidden">
-                      <FrameArt frame={frame} className={frame.kind === 'mobile' ? 'h-20' : 'w-[90%]'} />
-                    </div>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <img src={figmaIcon} width={14} height={14} alt="Figma" className="rounded-[3px] shrink-0" />
-                      <div className="flex flex-col gap-[1px] min-w-0">
-                        <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{frame.name}</span>
-                        <span className="text-[10px] leading-[1.2] text-text-secondary truncate">{frameBreadcrumb(frame)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
 
           {/* Uploaded files — image thumbnails / file chips.
               `items-start` because they are not the same height: a file row is
@@ -868,9 +829,6 @@ export function ConversationCard({
         />
       )}
 
-      {previewFrame && (
-        <FrameLightbox frame={previewFrame} onClose={() => setPreviewFrame(null)} />
-      )}
     </>
   )
 }
