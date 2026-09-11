@@ -33,7 +33,23 @@ jobs:
       # pre-existing errors (mostly react-refresh/only-export-components), so
       # wiring it here would block every deploy on a backlog this ticket did not
       # sign up to clear. Worth fixing separately; not worth blocking on.
+
+      # Both typechecks, because there are two and they disagree.
       #
+      # `tsc -b` is the app's (`lib: ES2023`). `tsc -p convex` is the one
+      # `convex deploy` runs on the functions, and its `lib` is **ES2021** — so
+      # a `.at(-1)` typechecks under the first and fails under the second.
+      # Neither ran here until now: the app's build happened only inside
+      # `publish`, and the Convex one only inside `convex deploy`. A PR was
+      # therefore green while `main`'s deploy was broken, which is exactly what
+      # happened to #182 — the deploy failed on one line in a test file that
+      # every check on the PR had passed.
+      - name: Typecheck the app
+        run: npx tsc -b
+
+      - name: Typecheck the Convex functions
+        run: npx tsc -p convex
+
       # The token rules are a gate, on their own (D55, 2026-09-10). They are the
       # ones that catch a class which compiles to nothing — the defect that
       # shipped a transparent sign-in screen in Ship and an unfilled card in

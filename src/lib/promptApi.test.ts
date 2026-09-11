@@ -7,7 +7,7 @@
  * negative ones — what this does *not* do on the machines that cannot run it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
+import { AVAILABILITY_LIMIT_MS, OUTPUT_LANGUAGE, SESSION_OPTIONS, canPrefill, downloadFraction, downloadModel, jsonHint, looseParse, prefillAvailability, promptForObject, promptForText } from './promptApi'
 
 type Stub = {
   availability: () => Promise<string>
@@ -462,5 +462,326 @@ describe('promptForText — prose, deliberately unconstrained (INT-4)', () => {
       },
     })
     expect(await promptForText('write a reply')).toBeNull()
+  })
+})
+
+/**
+ * INT-10 — the download nothing ever offered.
+ *
+ * `canPrefill` refuses 'downloadable' so a form never starts a 22 GB fetch,
+ * and the browser starts one only when a page calls `create()`. Both correct;
+ * together a deadlock. Miky ran a week on a machine that could have run the
+ * model and got it only by pasting `create()` into the console on 2026-09-09.
+ *
+ * The assertions that matter are the ones separating this from the thing
+ * PEE-6 forbids: a fetch nobody asked for. So this suite checks both that
+ * `downloadModel` downloads **and** that no other export in this file reaches
+ * it.
+ */
+describe('downloadModel — the only path that starts a fetch (INT-10)', () => {
+  it('does nothing where the API is absent', async () => {
+    // Every phone, Safari, and jsdom. Nothing to download and nothing to say.
+    expect(await downloadModel()).toBe(false)
+  })
+
+  it('creates a session, which is what makes the browser fetch the model', async () => {
+    const create = vi.fn<(options?: unknown) => Promise<{ prompt: () => Promise<string>; destroy: () => void }>>(
+      async () => ({ prompt: async () => '', destroy: () => {} }),
+    )
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await downloadModel()).toBe(true)
+    // The sampling options still matter: a create the browser refuses over MTP
+    // downloads nothing, so the same list is tried here as everywhere else.
+    const passed = create.mock.calls[0]?.[0] as Record<string, unknown> | undefined
+    expect(passed).toMatchObject(SESSION_OPTIONS[0])
+  })
+
+  it('reports progress as a fraction, which is what the browser sends', async () => {
+    /*
+      Measured in the console on 2026-09-09 — the snippet on INT-10 renders it
+      as `Math.round(e.loaded * 100) + '%'`, so `loaded` is 0…1 and the percent
+      belongs to the caller. Getting this backwards would show "10000%".
+    */
+    const seen: number[] = []
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async (options: { monitor?: (m: unknown) => void }) => {
+        options.monitor?.({
+          addEventListener: (_type: string, listener: (event: { loaded: number }) => void) => {
+            listener({ loaded: 0 })
+            listener({ loaded: 0.5 })
+            listener({ loaded: 1 })
+          },
+        })
+        return { prompt: async () => '', destroy: () => {} }
+      }) as unknown as Stub['create'],
+    })
+
+    expect(await downloadModel((fraction) => seen.push(fraction))).toBe(true)
+    expect(seen).toEqual([0, 0.5, 1])
+  })
+
+  it('destroys the session, because the download outlives it', async () => {
+    // The model lands in the browser's own store, shared by every origin. A
+    // session held open past that just leaks the model's context.
+    const destroy = vi.fn()
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async () => ({ prompt: async () => '', destroy })) as unknown as Stub['create'],
+    })
+
+    await downloadModel()
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('downloads even where the build has no monitor to attach', async () => {
+    // Losing the progress readout is not a reason to lose the model.
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async (options: { monitor?: (m: unknown) => void }) => {
+        options.monitor?.({
+          addEventListener: () => {
+            throw new Error('no such event')
+          },
+        })
+        return { prompt: async () => '', destroy: () => {} }
+      }) as unknown as Stub['create'],
+    })
+
+    expect(await downloadModel(() => {})).toBe(true)
+  })
+
+  it('answers false on Edge, whose refusal is a policy gate and fetches nothing', async () => {
+    /*
+      Measured 2026-09-02: every `create()` shape throws *"The feature flag
+      gating model execution was disabled"*, and `edge://on-device-internals`
+      names the one failing criterion as `enabled by feature: false` — with the
+      hardware passing. So the honest answer here is false, and offering the
+      download again would be a row that can never succeed.
+    */
+    stubModel({
+      availability: async () => 'unavailable',
+      create: (async () => {
+        throw new Error('The feature flag gating model execution was disabled.')
+      }) as unknown as Stub['create'],
+    })
+
+    expect(await downloadModel()).toBe(false)
+  })
+
+  it('is NOT reached by the gate, so opening a form still downloads nothing', async () => {
+    /*
+      The PEE-6 guarantee, asserted rather than assumed. `canPrefill` is what
+      every automatic path consults, and it must answer without creating
+      anything — a create() here is a multi-gigabyte fetch on somebody who just
+      opened a launcher.
+    */
+    const create = vi.fn<(options?: unknown) => Promise<never>>(async () => {
+      throw new Error('should never be called')
+    })
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await canPrefill()).toBe(false)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('is NOT reached by the prompt paths either', async () => {
+    // `promptForObject` and `promptForText` create sessions, but never with a
+    // monitor: they run only where the caller already established a model.
+    const create = vi.fn<(options?: { monitor?: unknown }) => Promise<{ prompt: () => Promise<string>; destroy: () => void }>>(
+      async () => ({ prompt: async () => '{"title":"x"}', destroy: () => {} }),
+    )
+    stubModel({ availability: async () => 'available', create: create as unknown as Stub['create'] })
+
+    await promptForObject('go', { type: 'object', properties: { title: { type: 'string' } } })
+    await promptForText('go')
+    expect(create).toHaveBeenCalled()
+    for (const call of create.mock.calls) expect(call[0]?.monitor).toBeUndefined()
+  })
+})
+
+/**
+ * Edge 155 — `availability()` that never settles, measured 2026-09-10.
+ *
+ * A probe awaiting it printed the browser's output-language warning and then
+ * nothing: no value, no throw, no rejection. `prefillAvailability` awaited it
+ * with no deadline, so the launcher's model state never resolved — no Ask row,
+ * no download offer, no error, for the life of the page. Indistinguishable
+ * from PEE-6 degrading correctly, which is what made it cost a week.
+ *
+ * A `catch` does not catch a promise that never settles, so these are the only
+ * assertions in this file that need fake timers.
+ */
+describe('availability that never answers (Edge 155)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /**
+   * Runs `work` with every deadline elapsed.
+   *
+   * Twice the limit, so it stays correct whether or not a hang falls through
+   * to a second call. It no longer does — see the bare-call test — but a
+   * helper that only just clears the deadline turns any future fallback into
+   * a mystery test timeout rather than a failed assertion.
+   */
+  async function pastTheDeadline<T>(work: Promise<T>): Promise<T> {
+    await vi.advanceTimersByTimeAsync(AVAILABILITY_LIMIT_MS * 2)
+    return await work
+  }
+
+  it('reports "unanswered" rather than hanging for ever', async () => {
+    vi.useFakeTimers()
+    stubModel({ availability: () => new Promise<string>(() => {}) as Promise<string> })
+
+    expect(await pastTheDeadline(prefillAvailability())).toBe('unanswered')
+  })
+
+  it('does not spend a second deadline on the bare call', async () => {
+    /*
+      Measured, not assumed: in Edge 155 the bare call never settles either,
+      along with every option spelling and Summarizer, Writer and Rewriter. So
+      the fallback — which exists for a build that *rejects* options — buys
+      nothing here and would double the wait in the one browser known to need
+      it. A throw still falls back; a hang does not.
+    */
+    vi.useFakeTimers()
+    const availability = vi.fn(() => new Promise<string>(() => {}))
+    stubModel({ availability: availability as unknown as Stub['availability'] })
+
+    expect(await pastTheDeadline(prefillAvailability())).toBe('unanswered')
+    expect(availability).toHaveBeenCalledTimes(1)
+  })
+
+  it('still falls back when the options call THROWS, which is a different thing', async () => {
+    // The original reason the fallback exists, unchanged.
+    const availability = vi.fn((options?: unknown) => {
+      if (options !== undefined) throw new Error('options rejected')
+      return Promise.resolve('available')
+    })
+    stubModel({ availability: availability as unknown as Stub['availability'] })
+
+    expect(await prefillAvailability()).toBe('available')
+    expect(availability).toHaveBeenCalledTimes(2)
+  })
+
+  it('answers immediately where the browser does, without waiting out the deadline', async () => {
+    // The deadline is a floor under a hang, not a delay on every launcher open.
+    stubModel({ availability: async () => 'available' })
+    expect(await prefillAvailability()).toBe('available')
+  })
+
+  it('does NOT let the gate through, which "not downloadable" once would have', async () => {
+    /*
+      The old `canPrefill` refused two answers and admitted everything else, so
+      'unanswered' would have been admitted the day it was added — and a
+      browser that will not say whether it has a model would have had a session
+      opened against it, and the Ask row would sit on "Reading the thread…".
+    */
+    vi.useFakeTimers()
+    stubModel({ availability: () => new Promise<string>(() => {}) as Promise<string> })
+
+    expect(await pastTheDeadline(canPrefill())).toBe(false)
+  })
+})
+
+/**
+ * `downloadprogress` means different things in the two browsers.
+ *
+ * Chrome sends `{loaded}` as a fraction 0…1. Edge documents `{loaded, total}`
+ * with `loaded` a byte count, and its own sample divides one by the other:
+ *
+ * > *The event is an object with the loaded and total properties.*
+ * > `const percentageComplete = (event.loaded / event.total) * 100;`
+ *
+ * Found by reading Edge's documentation, not by running it — no browser here
+ * fires the event at all, and the launcher row would have said "428000000%".
+ */
+describe('downloadFraction — one number out of two conventions', () => {
+  it('divides where Edge sends a total', () => {
+    expect(downloadFraction({ loaded: 2_000_000, total: 8_000_000 })).toBe(0.25)
+  })
+
+  it('passes Chrome\'s fraction through untouched', () => {
+    expect(downloadFraction({ loaded: 0.25 })).toBe(0.25)
+  })
+
+  it('does not divide by a zero total, which is a percentage nobody can read', () => {
+    // Infinity and NaN both render as garbage in the row. 0 bytes of 0 is 0.
+    expect(downloadFraction({ loaded: 0, total: 0 })).toBe(0)
+  })
+
+  it('clamps, because neither browser is trusted to stay in its own range', () => {
+    expect(downloadFraction({ loaded: 9, total: 8 })).toBe(1)
+    expect(downloadFraction({ loaded: -1 })).toBe(0)
+  })
+
+  it('is what downloadModel reports, so a byte count never reaches the row', async () => {
+    const seen: number[] = []
+    stubModel({
+      availability: async () => 'downloadable',
+      create: (async (options: { monitor?: (m: unknown) => void }) => {
+        options.monitor?.({
+          addEventListener: (_t: string, listener: (e: { loaded: number; total?: number }) => void) => {
+            listener({ loaded: 4_000_000, total: 8_000_000 })
+          },
+        })
+        return { prompt: async () => '', destroy: () => {} }
+      }) as unknown as Stub['create'],
+    })
+
+    await downloadModel((fraction) => seen.push(fraction))
+    expect(seen).toEqual([0.5])
+  })
+})
+
+/**
+ * Edge documents one shape and it is not in `SESSION_OPTIONS`.
+ *
+ * Every sample on Edge's Prompt API page calls `LanguageModel.create()` bare;
+ * `monitor`, `initialPrompts` and `signal` are the only options it names. So a
+ * ladder built entirely from Chrome's sampling vocabulary can be refused at
+ * every rung by a browser that would have accepted no options at all.
+ */
+describe('downloadModel falls back to the bare create Edge documents', () => {
+  it('tries it after every sampling shape is refused', async () => {
+    const create = vi.fn(async (options: { samplingMode?: string; topK?: number; temperature?: number }) => {
+      if (options.samplingMode || options.topK !== undefined || options.temperature !== undefined) {
+        throw new Error('unknown option')
+      }
+      return { prompt: async () => '', destroy: () => {} }
+    })
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await downloadModel()).toBe(true)
+    expect(create).toHaveBeenCalledTimes(SESSION_OPTIONS.length + 1)
+    // Still monitored, or a several-gigabyte fetch reports nothing at all.
+    expect(create.mock.calls.at(-1)?.[0]).toHaveProperty('monitor')
+  })
+
+  it('keeps SESSION_OPTIONS free of a bare shape, which is the point', () => {
+    /*
+      The bare create is confined to the download, where nothing is generated.
+      A session with default sampling would sample creatively over a
+      colleague's conversation and land it in a form somebody publishes from —
+      which is why every entry here pins determinism.
+    */
+    for (const options of SESSION_OPTIONS) {
+      expect(Object.keys(options).length).toBeGreaterThan(0)
+      expect(
+        options.samplingMode === 'most-predictable' || options.topK === 1 || options.temperature === 0,
+      ).toBe(true)
+    }
+  })
+
+  it('still answers false where even bare is refused, as on Edge 154', async () => {
+    const create = vi.fn<(o?: unknown) => Promise<never>>(async () => {
+      throw new Error('The feature flag gating model execution was disabled.')
+    })
+    stubModel({ availability: async () => 'downloadable', create: create as unknown as Stub['create'] })
+
+    expect(await downloadModel()).toBe(false)
+    expect(create).toHaveBeenCalledTimes(SESSION_OPTIONS.length + 1)
   })
 })

@@ -13,7 +13,8 @@ import { api } from '../../convex/_generated/api'
 import { hasConvex } from './store'
 import { validateFile, isImageAttachment } from '@/lib/fileAttachments'
 import { validToken } from '@/auth/estivaId'
-import { uploadBlob } from '@/nostr/blob'
+import { uploadBlob } from '@estiva-app/protocol'
+import { signViaEstivaId } from '@/nostr/bridge'
 
 /** An uploaded file, ready to attach to a message/reply. `previewUrl` is a
  *  local object URL for the optimistic window (images render before the
@@ -111,7 +112,14 @@ export function useUploadActions() {
       let shareError: string | undefined
       if (relayUrl && token) {
         try {
-          blob = await uploadBlob(relayUrl, file, token)
+          blob = await uploadBlob({
+            relayUrl,
+            bytes: await file.arrayBuffer(),
+            contentType: file.type || undefined,
+            filename: file.name,
+            sign: (unsigned) => signViaEstivaId(unsigned, token.accessToken, token.pubkey),
+            pubkey: token.pubkey,
+          })
         } catch (error) {
           shareError = error instanceof Error ? error.message : String(error)
           console.warn('[nostr] attachment not uploaded to the relay:', error)

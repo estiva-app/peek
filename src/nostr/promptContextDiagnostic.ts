@@ -31,7 +31,7 @@ import {
   createSession,
   prefillAvailability,
   type LanguageModelSession,
-  type ModelAvailability,
+  type PrefillAvailability,
   type SamplingOptions,
 } from '@/lib/promptApi'
 import { THREAD_CONTEXT_CHARS, threadContext } from '@/lib/prefill'
@@ -101,7 +101,8 @@ function step(message: string): void {
 }
 
 export interface PromptContextDiagnostic {
-  availability: ModelAvailability
+  /** Includes 'unanswered', which is what Edge 155 does — see promptApi. */
+  availability: PrefillAvailability
   /** Present when the browser can price an input without generating one. */
   hasMeasureInputUsage: boolean
   /**
@@ -222,10 +223,29 @@ async function snapshot(limitMs = RUN_LIMIT_MS): Promise<PromptContextDiagnostic
     notes.push('No conversation is open — open a topic and click a message, then run this again.')
   }
 
-  const created = await createSession()
+  /*
+    **Bounded, because `create()` can hang too.** Measured in Edge 155 on
+    2026-09-10: `create()` was called from a real user gesture, Edge printed
+    its "This page uses the built-in Prompt feature" banner, and nothing
+    resolved — no session, no throw, no download progress. This call sat
+    outside the run's clock, so the diagnostic written to explain a silent
+    failure failed silently itself, before printing a single line.
+
+    `downloadModel` must stay unbounded and does; this is a hand-run report
+    that never downloads, so the run's own deadline is the right ceiling.
+  */
+  const attempt = await within(createSession(), clock.left())
+  const created = attempt === 'timeout' ? null : attempt
   if (!created) {
-    base.createdWith = 'every entry in SESSION_OPTIONS was refused'
-    notes.push('No session. On Edge 154 this is expected: it gates generative model execution.')
+    base.createdWith =
+      attempt === 'timeout'
+        ? `create() never settled within ${Math.round(RUN_LIMIT_MS / 1000)}s`
+        : 'every entry in SESSION_OPTIONS was refused'
+    notes.push(
+      attempt === 'timeout'
+        ? 'create() never answered. Edge 155 does this, and availability() does not answer either.'
+        : 'No session. On Edge 154 this is expected: it gates generative model execution.',
+    )
     return base
   }
   const { session, options } = created

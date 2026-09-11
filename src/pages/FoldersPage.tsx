@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { IconTrash, IconX } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -6,10 +7,23 @@ import { ContainerHeader } from '@/components/ContainerHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { FolderContentsView } from '@/components/views/FolderContentsView'
-import { useFolderContents, useFolders, useForeignObjects } from '@/api'
+import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
+import { ForeignConversationView } from '@/components/views/ForeignConversationView'
+import {
+  useConversationCounts,
+  useFolderContents,
+  useFolders,
+  useForeignConversation,
+  useForeignObjects,
+  useWorkspaceDirectory,
+} from '@/api'
+import type { ForeignObject } from '@estiva-app/interop'
 import { Button } from '@/components/ui/Button'
 import { TextInput } from '@/components/ui/TextInput'
+import { IconButton } from '@/components/ui/IconButton'
+import { EditableText } from '@/components/ui/EditableText'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { useToast } from '@/lib/toast'
 
 /**
@@ -29,12 +43,45 @@ export function FoldersPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { state } = useFolderContents(id)
-  const { createFolder } = useForeignObjects()
+  const { createFolder, renameFolder, deleteFolder, moveFile } = useForeignObjects()
   const { showToast } = useToast()
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
+  /*
+    Which file's conversation is open — RFC 0.5 §10.
+
+    The file itself rather than its `ref`, because the panel needs the `naddr`
+    to resolve by and the title to head the pane with, and the row already holds
+    both. Looking them up again from `state` would also go stale the moment the
+    contents re-read.
+  */
+  const [openFile, setOpenFile] = useState<ForeignObject | null>(null)
+  /** The file whose destination is being chosen, if any. */
+  const [movingFile, setMovingFile] = useState<ForeignObject | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const { state: conversation } = useForeignConversation(openFile?.naddr)
+  /*
+    One counts request for the whole listing, made here rather than inside the
+    view so the view stays a pure render of what it is handed — and so a folder
+    nobody has opened costs nothing.
+  */
+  const counts = useConversationCounts(
+    // Peers only. A nested child gets its own count when its parent is
+    // expanded, so counting it here is a request for a badge nothing draws.
+    typeof state === 'object' && 'files' in state ? peersOf(state.files) : undefined,
+  )
+  const people = useWorkspaceDirectory()
 
   const selected = folders?.find((folder) => folder.id === id)
+
+  /*
+    Changing Folder closes the panel.
+
+    Without this the previous Folder's file stays open beside the new Folder's
+    contents — a conversation the list on screen does not contain, which reads
+    as though it belongs to something here.
+  */
+  useEffect(() => setOpenFile(null), [id])
 
   async function create() {
     const trimmed = name.trim()
@@ -57,7 +104,15 @@ export function FoldersPage() {
     navigate(`/folders/${result.id}`)
   }
 
+  /*
+    The dialogs sit beside the shell, not inside a panel: a row is unmounted by
+    the re-read that follows a successful write, and a dialog unmounted
+    mid-flight takes its own "did this work" reporting with it. `AppShell` takes
+    three panels and nothing else, and `DialogShell` portals itself, so where
+    these sit in the tree does not affect where they draw.
+  */
   return (
+    <>
     <AppShell
       leftPanel={
         <div className="flex h-full flex-col">
@@ -118,15 +173,160 @@ export function FoldersPage() {
       rightPanel={
         id ? (
           <div className="flex h-full flex-col">
-            <ContainerHeader title={selected?.name ?? 'Folder'} />
+            {/*
+              The name is edited where it is shown — `EditableText`'s own
+              "When", and the reason there is no rename dialog. `ContainerHeader`
+              draws a static title, so this pane heads itself.
+            */}
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <EditableText
+                  value={selected?.name ?? ''}
+                  placeholder={id}
+                  label="Folder name"
+                  onCommit={async (next) => {
+                    const trimmed = next.trim()
+                    if (!trimmed) return false
+                    /*
+                      `hasState` is passed, never guessed. A `kind:1852` name
+                      change on a Folder with no state emits state listing
+                      nothing, and a Folder read by containment would lose every
+                      file on screen. The read that is already on this page is
+                      the only honest source for it.
+                    */
+                    const hasState = typeof state === 'object' && 'hasState' in state && state.hasState
+                    const result = await renameFolder(id, trimmed, hasState)
+                    if (!result.ok) {
+                      showToast({ label: result.reason, type: 'neutral' })
+                      return false
+                    }
+                    await reload()
+                    return true
+                  }}
+                />
+              </div>
+              <IconButton
+                tooltip="Delete folder"
+                aria-label="Delete folder"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <IconTrash size={16} stroke={1.5} />
+              </IconButton>
+            </div>
+            {/* The package's bar, not the browser's (D40). */}
             <ScrollArea className="min-h-0 flex-1">
-              <FolderContentsView state={state} />
+              <FolderContentsView
+                state={state}
+                selectedRef={openFile?.ref}
+                onSelect={setOpenFile}
+                onMove={setMovingFile}
+                counts={counts}
+              />
             </ScrollArea>
           </div>
         ) : (
           <EmptyState message="Select a folder." />
         )
       }
+      /*
+        The conversation goes in the thread pane, which is where a conversation
+        lives everywhere else in Peek — the same pane a topic's thread opens in.
+        That is the point being demonstrated rather than a layout convenience: a
+        Ship project's discussion is not a special panel bolted to a folder
+        view, it is Peek's ordinary conversation surface pointed at a file
+        another app owns.
+      */
+      threadPanel={
+        openFile ? (
+          <div className="flex h-full flex-col">
+            {/*
+              `ContainerHeader` takes no close, and Peek's thread pane does not
+              use it — `ThreadPanel` heads itself and puts the close on the
+              right. Same shape here so the two panes behave alike.
+            */}
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-body-2-strong text-text-primary">
+                  {openFile.slots.title?.value ?? 'Conversation'}
+                </p>
+                {/*
+                  Whose file this is, said plainly. The panel draws another app's
+                  conversation in Peek's own language, which is the point and is
+                  also exactly what could mislead: without this the discussion
+                  reads as something in Peek.
+                */}
+                {openFile.appName && (
+                  <p className="truncate text-caption text-text-muted">In {openFile.appName}</p>
+                )}
+              </div>
+              <IconButton
+                tooltip="Close"
+                aria-label="Close conversation"
+                onClick={() => setOpenFile(null)}
+              >
+                <IconX size={16} stroke={1.5} />
+              </IconButton>
+            </div>
+            {/* The package's bar, not the browser's (D40). This pane
+                arrived with #192, after the adoption had swept the rest. */}
+            <ScrollArea className="min-h-0 flex-1">
+              <ForeignConversationView state={conversation} people={people} />
+            </ScrollArea>
+          </div>
+        ) : undefined
+      }
     />
+<>
+          {movingFile && (
+            <MoveFileDialog
+              file={movingFile}
+              from={id ?? ''}
+              folders={folders ?? []}
+              onClose={() => setMovingFile(null)}
+              onMove={async (to) => {
+                const address = movingFile.address
+                if (!address || !id) return false
+                const result = await moveFile(address, id, to)
+                if (!result.ok) {
+                  showToast({ label: result.reason, type: 'neutral' })
+                  return false
+                }
+                // The file left this Folder, so this Folder's read is stale.
+                await reload()
+                return true
+              }}
+            />
+          )}
+          {confirmingDelete && id && (
+            <ConfirmDialog
+              title="Delete this folder?"
+              confirmLabel="Delete"
+              destructive
+              onClose={() => setConfirmingDelete(false)}
+              onConfirm={async () => {
+                const result = await deleteFolder(id)
+                if (!result.ok) {
+                  showToast({ label: result.reason, type: 'neutral' })
+                  return false
+                }
+                await reload()
+                navigate('/folders')
+                return true
+              }}
+            >
+              {/*
+                Said explicitly, because a folder full of other apps' work looks
+                like it owns that work and does not. RFC 0.4 §2: a Folder is an
+                association, so deleting it unfiles its contents and destroys
+                none of them.
+              */}
+              <p className="text-body-2 text-text-secondary">
+                The files in it are not deleted — they stay in their own apps and
+                simply stop being filed here. Everyone loses the folder.
+              </p>
+            </ConfirmDialog>
+          )}
+        </>
+    </>
   )
 }
