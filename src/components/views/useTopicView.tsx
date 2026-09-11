@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, typ
 import { registerTopicConversation, unregisterTopicConversation } from '@/lib/conversationRegistry'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { isNearBottom } from './scrollPolicy'
+import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { JoinTopicBanner } from '@/components/JoinTopicBanner'
@@ -817,7 +818,7 @@ export function useTopicView({
         }
         return (
         <>
-          <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto flex flex-col">
+          <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
             <div className="flex-1 min-h-0" />
             <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
               {isLoading && <SkeletonConversationList />}
@@ -893,7 +894,7 @@ export function useTopicView({
                 ))
               )}
             </div>
-          </div>
+          </ScrollArea>
           {!isLoading && !isMemberHere && (
             <div className="px-3 pt-2">
               <JoinTopicBanner title={topicTitle} onJoin={() => topicId != null && joinTopic(topicId)} />

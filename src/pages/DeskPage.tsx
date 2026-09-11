@@ -1,7 +1,7 @@
 ﻿import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { IconPlus, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection } from '@estiva-app/ui'
+import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { ContainerHeader } from '@/components/ContainerHeader'
@@ -278,7 +278,7 @@ export function DeskPage() {
       leftPanel={
         <div className="flex flex-col h-full">
           <ContainerHeader title="Desk" />
-          <div className="flex-1 overflow-y-auto pt-4 pb-3 px-3 flex flex-col gap-1">
+          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-1">
             {(deskLoading || starredLoading) ? (
             <SkeletonSidebarList rows={8} />
             ) : (
@@ -450,7 +450,7 @@ export function DeskPage() {
             <Divider className="my-2" />
             </>
             )}
-          </div>
+          </ScrollArea>
         </div>
       }
       rightPanel={rightPanel}

@@ -1,3 +1,4 @@
+import { ScrollArea } from '@estiva-app/ui'
 import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -68,7 +69,7 @@ export function TopicActivity({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto flex flex-col px-4 py-4 gap-3" data-topic-activity>
+    <ScrollArea className="flex-1" contentClassName="flex flex-col px-4 py-4 gap-3">
       {items.map(({ conv, about }) => (
         <div key={conv.id} className="flex flex-col gap-1" data-relation="sub-file">
           <div className="flex items-center gap-2">
@@ -113,6 +114,6 @@ export function TopicActivity({
           />
         </div>
       ))}
-    </div>
+    </ScrollArea>
   )
 }

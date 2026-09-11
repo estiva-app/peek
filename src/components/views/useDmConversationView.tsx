@@ -4,6 +4,7 @@ import { useToast } from '@/lib/toast'
 import { useReportDelete } from '@/lib/reportDelete'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { isNearBottom } from './scrollPolicy'
+import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -256,7 +257,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
           (dmId != null && dmName ? () => toggleDm({ dmId, name: dmName }) : undefined)
         }
       />
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto flex flex-col">
+      <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
         <div className="flex-1 min-h-0" />
         <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
           {isLoading && <SkeletonConversationList />}
@@ -348,7 +349,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
             </div>
           )}
         </div>
-      </div>
+      </ScrollArea>
       {!isLoading && dmGroups.length === 0 && currentSent.length === 0 && (
         <div className="px-3 pt-2">
           <NewTopicBanner kind="dm" title={dmName} />

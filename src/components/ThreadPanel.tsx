@@ -1,6 +1,7 @@
 import { useRef, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
+import { ScrollArea } from '@estiva-app/ui'
 import { Avatar } from './ui/Avatar'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
@@ -414,7 +415,7 @@ export function ThreadPanel({
       </div>
 
       {/* Scrollable content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
+      <ScrollArea className="flex-1" viewportRef={scrollRef} contentClassName="flex flex-col">
         {/* Initial message. Anchored like a reply (INT-3): a citation has to be
             able to reach the message that opened the thread too. */}
         <div className="px-4 pt-4 pb-2" data-reply-id={conversation.id}>
@@ -528,7 +529,7 @@ export function ThreadPanel({
             ) : null
           })}
         </div>
-      </div>
+      </ScrollArea>
 
       {/* Compose box */}
       <div className="p-3">

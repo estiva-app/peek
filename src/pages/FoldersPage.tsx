@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
@@ -118,9 +119,9 @@ export function FoldersPage() {
         id ? (
           <div className="flex h-full flex-col">
             <ContainerHeader title={selected?.name ?? 'Folder'} />
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <ScrollArea className="min-h-0 flex-1">
               <FolderContentsView state={state} />
-            </div>
+            </ScrollArea>
           </div>
         ) : (
           <EmptyState message="Select a folder." />

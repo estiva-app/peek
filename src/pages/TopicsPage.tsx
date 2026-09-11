@@ -8,7 +8,7 @@ import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTop
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
-import { CollapsibleSection } from '@estiva-app/ui'
+import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
@@ -256,10 +256,10 @@ export function TopicsPage() {
             prop1stActionTooltip="New topic"
             onProp1stAction={() => setCreateOpen(true)}
           />
-          <div className="flex-1 overflow-y-auto pt-4 pb-3 px-3 flex flex-col gap-0.5">
+          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
             {TOPICS === undefined && <SkeletonSidebarList rows={9} />}
             {renderTopicList()}
-          </div>
+          </ScrollArea>
         </div>
       }
       rightPanel={rightPanel}

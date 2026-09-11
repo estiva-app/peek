@@ -10,6 +10,7 @@ import {
   IconTable,
   IconPresentation,
 } from '@tabler/icons-react'
+import { ScrollArea } from '@estiva-app/ui'
 import figmaIcon from '@/assets/figma icon.svg'
 import { TOPICS } from '@/api'
 import { APP_FILES, DOCUMENT_FILES } from '@/api'
@@ -278,12 +279,17 @@ function Block({ block, renderRun }: { block: RenderBlock; renderRun: (run: stri
       // A fence is literal by definition: no mentions, no marks, no reference
       // chips. Scrolls on its own so a long line cannot widen the card.
       return (
-        <pre
-          className="overflow-x-auto rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
-          data-language={block.language}
-        >
-          <code>{(block.inline ?? []).map((run) => run.text).join('')}</code>
-        </pre>
+        <ScrollArea orientation="horizontal" className="rounded-md bg-bg-active">
+          {/* The fill and the corner are the region's, so the bar is drawn over
+              the block rather than beside it; the padding stays on the `pre`,
+              which is the box that scrolls, so both edges keep their 8px. */}
+          <pre
+            className="p-2 font-mono text-[0.9em] text-text-primary"
+            data-language={block.language}
+          >
+            <code>{(block.inline ?? []).map((run) => run.text).join('')}</code>
+          </pre>
+        </ScrollArea>
       )
     case 'blockquote':
       // Native blockquote so sent messages and the composer share the exact

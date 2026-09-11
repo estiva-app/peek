@@ -109,6 +109,18 @@ export const Quote: Story = {
 }
 
 /**
+ * A fence is literal by definition — no mentions, no marks, no chips — and a
+ * line longer than the card scrolls sideways in the shared bar rather than
+ * widening the message around it.
+ */
+export const CodeBlock: Story = {
+  args: {
+    body:
+      'The failing call, for the record:\n```ts\nconst res = await relay.publish({ kind: 1111, tags: [["e", id], ["p", author], ["client", "peek"]], content })\nif (!res.ok) throw new Error(res.reason)\n```\nEverything after the closing fence is prose again.',
+  },
+}
+
+/**
  * Links — PEE-19. A bare URL links to itself; `[label](url)` links its own
  * words; a bold link is bold. The form is SPEC §13.1's, written by Peek's
  * composer until the protocol package speaks it (PEE-25).

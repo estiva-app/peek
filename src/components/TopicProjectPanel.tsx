@@ -7,7 +7,7 @@ import type { FolderProjectState } from '@/api/useFolderProject'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { FieldLine } from '@estiva-app/ui'
+import { FieldLine, ScrollArea } from '@estiva-app/ui'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
 import { Person } from '@/components/ui/Person'
@@ -226,7 +226,7 @@ export function TopicProjectPanelView({
 
   return (
     <PanelShell>
-      <div className="flex-1 overflow-y-auto p-3">
+      <ScrollArea className="flex-1" contentClassName="p-3">
         {/* No fill, deliberately (Katerina, 2026-08-19). The reference widget
             takes one because it sits in a conversation among attachments; this
             card already has a panel of its own around it, and a second surface
@@ -303,7 +303,7 @@ export function TopicProjectPanelView({
             />
           </section>
         )}
-      </div>
+      </ScrollArea>
     </PanelShell>
   )
 }
