@@ -29,15 +29,18 @@ const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
 import {
+  buildBareFile,
   buildCreateChannel,
   buildDeleteChannel,
   buildEditChannelMetadata,
   decodeNevent,
+  encodeNaddr,
   pointerToAddress,
   referenceToPointer,
   toNostrSeconds,
 } from '@estiva-app/protocol'
 import {
+  KIND_BARE_FILE,
   matchObjectUrl,
   urlPatternsOf,
   buildActionEvent,
@@ -394,6 +397,58 @@ export async function moveFileAsViewer(
     }
   }
   return { ok: true }
+}
+
+/**
+ * Start a topic — a bare file inside a team, SPEC §6.7 (RFC 0.5 §10.7).
+ *
+ * A new topic is no longer a channel. It is a `kind:30840` carrying the team's
+ * channel as `h`, optionally naming the file it sits under with one `a` of any
+ * kind, and its conversation is `kind:1111` comments on it — which is what
+ * `applyActionAsViewer` already publishes through the bare file's built-in
+ * `comment` action. Existing topics stay channels; nothing here touches them.
+ *
+ * **Two writes when the Folder has state, one when it does not, and the
+ * caller says which.** A Folder read by containment lists the new file the
+ * moment its `h` is stored. A Folder with a `kind:30890` lists only what its
+ * state names, so it also needs a `kind:1852` `add` — and a `1852` against a
+ * Folder with *no* state emits state listing nothing, which empties the Folder
+ * on every surface (peek#192). `hasState` is required rather than guessed for
+ * exactly the reason `renameFolderAsViewer` requires it: the page has just
+ * read it, and getting it wrong is silent loss.
+ *
+ * The file is published before the `add`, so a refused `add` leaves a topic
+ * that exists and is reachable by its address, reported as partial — the same
+ * order and the same reasoning as a move.
+ */
+export async function createTopicAsViewer(
+  args: { folder: string; title: string; parent?: string; hasState: boolean },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }> {
+  const fileId = crypto.randomUUID()
+  const unsigned = buildBareFile(token.pubkey, Date.now(), {
+    fileId,
+    title: args.title,
+    channelUuid: args.folder,
+    ...(args.parent ? { parent: args.parent } : {}),
+  })
+  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+  // Never the status code: the relay refuses as 200 with `accepted: false`.
+  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the topic.' }
+  const address = `${KIND_BARE_FILE}:${token.pubkey}:${fileId}`
+  const naddr = encodeNaddr({ kind: KIND_BARE_FILE, pubkey: token.pubkey, identifier: fileId, relays: [] })
+  if (args.hasState) {
+    const added = await folderCommand({ folder: args.folder, op: 'add', addresses: [address] }, relayUrl, token)
+    if (!added.ok) {
+      return {
+        ok: false,
+        reason: 'The topic was created but could not be added to this folder’s list. Reload and try adding it again.',
+      }
+    }
+  }
+  return { ok: true, address, naddr }
 }
 
 /**

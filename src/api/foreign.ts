@@ -24,6 +24,7 @@ import {
   directoryAsViewer,
   conversationCountsAsViewer,
   createFolderAsViewer,
+  createTopicAsViewer,
   deleteFolderAsViewer,
   moveFileAsViewer,
   renameFolderAsViewer,
@@ -157,6 +158,20 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * Start a topic in a Folder — a bare file, SPEC §6.7. `parent` is the
+   * address of the file it sits under, of any kind. `hasState` comes from the
+   * Folder read on the page, never from a guess; see `createTopicAsViewer`.
+   */
+  const createTopic = useCallback(
+    async (args: { folder: string; title: string; parent?: string; hasState: boolean }) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to start a topic.' }
+      return createTopicAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
   /** Create a Folder. Refuses rather than pretending when signed out. */
   const createFolder = useCallback(
     async (name: string) => {
@@ -206,6 +221,7 @@ export function useForeignObjects() {
     conversationCounts,
     listFolders,
     createFolder,
+    createTopic,
     renameFolder,
     deleteFolder,
     moveFile,
