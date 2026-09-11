@@ -526,7 +526,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                 }}
                 disabled={!canSend}
                 aria-label="Send"
-                className={cn(canSend && 'signal:shadow-[shadow:var(--glow-accent)]')}
+                className={cn(canSend && 'signal:shadow-glow-accent')}
               >
                 <IconArrowUp size={16} stroke={1.5} />
               </IconButton>

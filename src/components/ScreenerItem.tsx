@@ -1,12 +1,12 @@
-import { useRef, useState } from 'react'
 import { IconX } from '@tabler/icons-react'
-import { ScreenerPreviewCard } from './ScreenerPreviewCard'
+import { PreviewCard } from '@estiva-app/ui'
+import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
-import { useIsTopicResolved } from '@/api'
+import { hasConvex, useIsTopicResolved } from '@/api'
 import { previewText } from '@/lib/textParsing'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
 
@@ -21,35 +21,11 @@ interface ScreenerItemProps {
 
 /** A single incoming item in the Desk Screener: who/what it is, a two-line preview,
  *  and the Open / Later / ✕ Dismiss triage actions. Rendered by ScreenerSection. */
-/** Hovering has to linger — brushing past the list shouldn't flash preview cards. */
-const HOVER_DELAY_MS = 350
-
 export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemProps) {
   const isTopicResolved = useIsTopicResolved()
-  const rowRef = useRef<HTMLDivElement>(null)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [anchor, setAnchor] = useState<DOMRect | null>(null)
 
-  const openPreview = () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => {
-      const rect = rowRef.current?.getBoundingClientRect()
-      if (rect) setAnchor(rect)
-    }, HOVER_DELAY_MS)
-  }
-  const closePreview = () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    setAnchor(null)
-  }
-
-  return (
-    <div
-      ref={rowRef}
-      onMouseEnter={openPreview}
-      onMouseLeave={closePreview}
-      className="flex flex-col p-2 rounded-lg transition-colors hover:bg-bg-hover has-[button:hover]:bg-transparent"
-    >
-      {anchor && <ScreenerPreviewCard itemId={item.id} anchor={anchor} />}
+  const row = (
+    <div className="flex flex-col p-2 rounded-lg transition-colors hover:bg-bg-hover has-[button:hover]:bg-transparent">
       {/* Item header */}
       <div className="flex items-center gap-2">
         {item.kind === 'topic' ? (
@@ -86,5 +62,23 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemP
         </IconButton>
       </div>
     </div>
+  )
+
+  /*
+    The preview needs a backend: with none, `useScreenerPreview` returns an
+    empty list and the card would open on an empty box. Offered only where it
+    can say something — the rule `AttachFileButton` already follows.
+
+    The 350ms wait, the portal, the prefer-right-flip-left and the clamp against
+    the bottom edge were all written here; they are `PreviewCard`'s now (P27),
+    and 350ms is its default, so the number is not repeated. `block w-full` on
+    the wrapper because the trigger is a row, and the component's own wrapper is
+    an inline span.
+  */
+  if (!hasConvex) return row
+  return (
+    <PreviewCard content={<ScreenerPreviewContent itemId={item.id} />} wrapperClassName="block w-full">
+      {row}
+    </PreviewCard>
   )
 }

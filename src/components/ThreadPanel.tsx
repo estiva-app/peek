@@ -231,7 +231,7 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="h-12 shrink-0 flex items-center justify-between pl-5 pr-4 py-2 border-b border-border-subtle z-20 relative bg-bg-surface">
-        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-[color:var(--text-interactive)]">Replies</span>
+        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">Replies</span>
         <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
           <IconX size={16} stroke={1.5} />
         </IconButton>
@@ -367,7 +367,7 @@ export function ThreadPanel({
           {huddleMemberCount != null && (
             <IconLock size={16} stroke={1.5} className="text-text-secondary" />
           )}
-          <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-[color:var(--text-interactive)]">Replies</span>
+          <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">Replies</span>
         </div>
         <div className="flex items-center gap-2">
           {isResolved && (

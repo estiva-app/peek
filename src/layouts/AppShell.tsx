@@ -60,7 +60,7 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
         </div>
 
         {/* App card */}
-        <div className="flex flex-1 min-w-0 bg-bg-surface rounded-2xl overflow-hidden signal:border signal:border-border-subtle signal:shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
+        <div className="flex flex-1 min-w-0 bg-bg-surface rounded-2xl overflow-hidden signal:border signal:border-border-subtle signal:shadow-highlight-inset">
           {/* Left panel - collapses to 0 width */}
           {leftPanel && (
             <div

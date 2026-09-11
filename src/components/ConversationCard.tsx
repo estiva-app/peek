@@ -664,7 +664,7 @@ export function ConversationCard({
             )}
             {hasNewMessage && isUrgent && (
               <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-[shadow:0_0_5px_rgba(255,176,32,0.4)]">
+                <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-glow-warning">
                   <IconAlertSquareRounded size={12} stroke={2.5} className="text-warning-default" />
                 </div>
               </div>
@@ -749,11 +749,11 @@ export function ConversationCard({
                   size={16}
                   stroke={1.5}
                   className={cn(
-                    'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-[color:var(--text-interactive)] signal:group-hover/replies:text-text-primary',
+                    'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-text-interactive signal:group-hover/replies:text-text-primary',
                     replyAuthors && replyAuthors.length > 0 && 'signal:hidden'
                   )}
                 />
-                <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-[color:var(--text-interactive)] signal:group-hover/replies:text-text-primary">
+                <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-text-interactive signal:group-hover/replies:text-text-primary">
                   {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
                 </span>
                 {lastReplyTime && (

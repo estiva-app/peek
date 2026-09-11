@@ -526,7 +526,7 @@ export function ThreadReplyCard({
               )}
               {isNew && isUrgent && (
                 <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-[shadow:0_0_5px_rgba(255,176,32,0.4)]">
+                  <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-glow-warning">
                     <IconAlertSquareRounded size={12} stroke={2.5} className="text-warning-default" />
                   </div>
                 </div>
