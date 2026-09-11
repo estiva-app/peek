@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react'
 import { Menu, MenuItem } from '@estiva-app/ui'
 
 /**
@@ -9,19 +10,26 @@ import { Menu, MenuItem } from '@estiva-app/ui'
  * itself. Two menus for one object is how that happens, so this is the one
  * menu, and both places pass their handlers to it.
  *
- * On the shared shell now (2026-09-01): the container, the rows, and the two
- * exits — Escape and a click outside — come from @estiva-app/ui's Menu,
- * which this component's own extraction note always argued for. Portalled,
- * because the sidebar scrolls and clips its overflow.
+ * The menu owns its trigger (`@estiva-app/ui` 0.10.0), so this component no
+ * longer takes viewport coordinates and an `onClose`: it takes the control
+ * that opens it. Both callers used to measure a rect and keep the menu's open
+ * state themselves; neither does now. Portalled and right-aligned as before —
+ * the sidebar scrolls and clips its overflow, and a content-sized menu grows
+ * leftward so long labels never run off screen.
  *
  * Deliberately short. Star and the Folder link are icons in the header
  * already, and repeating them here would make the menu longer without making
  * either easier to reach (Katerina, 2026-08-19).
  */
 export interface TopicMoreMenuProps {
-  /** Viewport coordinates of the anchor, right-aligned to the trigger. */
-  position: { top: number; right: number }
-  onClose: () => void
+  /** The control that opens the menu. The menu owns it. */
+  trigger: ReactElement
+  /**
+   * Told when the menu opens and closes — for a caller whose own look depends
+   * on it. The sidebar row keeps its hover surface and its actions visible
+   * while its menu is open, which is the whole reason this exists.
+   */
+  onOpenChange?: (open: boolean) => void
   onOpenDetails?: () => void
   /** Absent when the topic has no shareable URL — see `shareableTopicUrl`. */
   onCopyLink?: () => void
@@ -33,30 +41,27 @@ export interface TopicMoreMenuProps {
 }
 
 export function TopicMoreMenu({
-  position,
-  onClose,
+  trigger,
+  onOpenChange,
   onOpenDetails,
   onCopyLink,
   openWorkAction,
   onToggleOpenWork,
   onDeleteTopic,
 }: TopicMoreMenuProps) {
-  const run = (action: () => void) => () => {
-    onClose()
-    action()
-  }
-
   return (
-    <Menu position={position} onClose={onClose}>
-      {onOpenDetails && <MenuItem label="Topic details" onClick={run(onOpenDetails)} />}
-      {onCopyLink && <MenuItem label="Copy link" onClick={run(onCopyLink)} />}
+    /* No `run(action)` wrapper any more: a `MenuItem` closes the menu itself,
+       so an action no longer has to close it first. */
+    <Menu trigger={trigger} align="right" onOpenChange={onOpenChange}>
+      {onOpenDetails && <MenuItem label="Topic details" onClick={onOpenDetails} />}
+      {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
       {openWorkAction && onToggleOpenWork && (
         <MenuItem
           label={openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}
-          onClick={run(onToggleOpenWork)}
+          onClick={onToggleOpenWork}
         />
       )}
-      {onDeleteTopic && <MenuItem label="Delete topic" destructive onClick={run(onDeleteTopic)} />}
+      {onDeleteTopic && <MenuItem label="Delete topic" destructive onClick={onDeleteTopic} />}
     </Menu>
   )
 }

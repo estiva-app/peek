@@ -7,6 +7,10 @@ const meta = {
   title: 'Messages/Menus/ConversationMoreMenu',
   component: ConversationMoreMenu,
   args: {
+    /* The menu owns its ⋯ button now, so a canvas would otherwise be one
+       button. Held open, which is what these canvases are for; in the app it
+       opens on a press and closes on Escape or an outside press. */
+    open: true,
     isTopic: false,
     isResolved: false,
     showCreateTopic: true,

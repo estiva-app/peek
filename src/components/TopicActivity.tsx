@@ -1,6 +1,6 @@
+import { ScrollArea } from '@estiva-app/ui'
 import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { IconMessages } from '@tabler/icons-react'
 import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData } from '@/api'
 
@@ -63,18 +63,13 @@ export function TopicActivity({
   onOpenThread: (id: string) => void
 }) {
   if (items.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <EmptyState
-          icon={<IconMessages size={20} stroke={1.5} />}
-          message="Nothing related yet. Conversations on this folder's files appear here."
-        />
-      </div>
-    )
+    // One section of the panel is empty: the line alone, left, no icon (B18,
+    // D41), in the same padding as the list it stands for.
+    return <EmptyState scope="section" className="px-4 py-4" message="No related conversations yet." />
   }
 
   return (
-    <div className="flex-1 overflow-y-auto flex flex-col px-4 py-4 gap-3" data-topic-activity>
+    <ScrollArea className="flex-1" contentClassName="flex flex-col px-4 py-4 gap-3">
       {items.map(({ conv, about }) => (
         <div key={conv.id} className="flex flex-col gap-1" data-relation="sub-file">
           <div className="flex items-center gap-2">
@@ -100,7 +95,6 @@ export function TopicActivity({
             authorAvatarSrc={conv.authorAvatarSrc}
             timestamp={conv.timestamp}
             body={conv.body}
-            attachments={conv.attachments}
             files={conv.files}
             reactions={conv.reactions}
             highlightType={conv.highlightType}
@@ -119,6 +113,6 @@ export function TopicActivity({
           />
         </div>
       ))}
-    </div>
+    </ScrollArea>
   )
 }

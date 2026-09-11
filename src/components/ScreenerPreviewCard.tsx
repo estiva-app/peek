@@ -1,13 +1,15 @@
-import { createPortal } from 'react-dom'
 import { useIsTopicResolved, useScreenerPreview, type ScreenerPreviewRow } from '@/api'
 import { Avatar } from './ui/Avatar'
 import { MessageBody } from './ui/MessageBody'
 import { SkeletonBar } from './ui/Skeleton'
 
 /**
- * Presentational preview box — the triggering message plus its recent replies
- * (or a skeleton while loading). Position-agnostic; `ScreenerPreviewCard`
- * portals and positions it beside the hovered Screener row.
+ * The rows of the preview — the triggering message plus its recent replies, or
+ * a skeleton while they load.
+ *
+ * It holds no box of its own: the surface, the 360px, the padding, the 300px
+ * cap and the scrollbar are the package's `PreviewCard`, which was built from
+ * this file (P27) and carries its numbers.
  */
 export function ScreenerPreviewCardView({
   rows,
@@ -18,7 +20,7 @@ export function ScreenerPreviewCardView({
   isTopicResolved: (topicId: string) => boolean
 }) {
   return (
-    <div className="w-[360px] bg-bg-elevated border border-border-default rounded-lg shadow-lg p-3 flex flex-col gap-3 max-h-[300px] overflow-y-auto [&>*]:shrink-0">
+    <>
       {rows === undefined ? (
         <div className="flex flex-col gap-2">
           <SkeletonBar className="w-32" />
@@ -39,36 +41,20 @@ export function ScreenerPreviewCardView({
           </div>
         ))
       )}
-    </div>
+    </>
   )
 }
 
 /**
  * Hover preview for a Screener row (user request 2026-07-09): the Screener
  * itself is only a snippet, so hovering shows more of the actual conversation.
- * Portalled and positioned beside the row so it can overflow the Desk panel.
+ *
+ * This is what the card holds; `ScreenerItem` hands it to `PreviewCard` as the
+ * `content`, which renders it only while the card is open — so the query still
+ * runs on hover and not before, as it did when this file mounted itself.
  */
-export function ScreenerPreviewCard({
-  itemId,
-  anchor,
-}: {
-  itemId: string
-  anchor: DOMRect
-}) {
+export function ScreenerPreviewContent({ itemId }: { itemId: string }) {
   const rows = useScreenerPreview(itemId)
   const isTopicResolved = useIsTopicResolved()
-  if (rows !== undefined && rows.length === 0) return null
-
-  const WIDTH = 360
-  // Prefer the right of the row; flip left if it would run off-screen.
-  const spaceRight = window.innerWidth - anchor.right
-  const left = spaceRight > WIDTH + 24 ? anchor.right + 12 : Math.max(12, anchor.left - WIDTH - 12)
-  const top = Math.min(anchor.top, window.innerHeight - 320)
-
-  return createPortal(
-    <div className="fixed z-50 pointer-events-none" style={{ left, top }}>
-      <ScreenerPreviewCardView rows={rows} isTopicResolved={isTopicResolved} />
-    </div>,
-    document.body,
-  )
+  return <ScreenerPreviewCardView rows={rows} isTopicResolved={isTopicResolved} />
 }

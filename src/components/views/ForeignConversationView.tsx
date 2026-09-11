@@ -2,6 +2,7 @@ import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
 import { useIsTopicResolved } from '@/api'
 import { Avatar } from '@/components/ui/Avatar'
+import { WithTooltip } from '@estiva-app/ui'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { MessageBody } from '@/components/ui/MessageBody'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -59,8 +60,16 @@ export function ForeignConversationView({
     request that never arrived, which is exactly how a CORS-blocked read
     rendered as eighty-one missing folders.
   */
+  /*
+    A section, not a page (D51). The pane around this is not empty — it has the
+    file's name and the app it lives in in its header — so this is a region
+    inside a populated pane, and the rule sends that to the line alone, top
+    left, no icon and no centring. A `page` state centred an illustration in
+    the body of a pane that was already saying what it was about (Katerina,
+    2026-09-11). `p-4` matches the conversation's own inset below.
+  */
   if (state === 'unresolved' || 'failed' in state) {
-    return <EmptyState message="This conversation could not be read." />
+    return <EmptyState scope="section" className="p-4" message="This conversation could not be read." />
   }
 
   const object = state as ForeignObject
@@ -74,7 +83,7 @@ export function ForeignConversationView({
   const comments = [...object.comments].sort((a, b) => a.createdAt - b.createdAt)
 
   if (comments.length === 0) {
-    return <EmptyState message="Nothing said about this yet." />
+    return <EmptyState scope="section" className="p-4" message="Nothing said about this yet." />
   }
 
   return (
@@ -100,16 +109,18 @@ export function ForeignConversationView({
             <div className="min-w-0 flex-1">
               <header className="flex items-baseline gap-2">
                 <span className="text-body-2-strong text-text-primary">{name}</span>
-                <time
-                  className="text-caption text-text-muted"
-                  dateTime={new Date(at).toISOString()}
-                  title={new Date(at).toLocaleString(undefined, {
+                {/* The package's tooltip, not the browser's (§4.9): it waits
+                    the shared 300ms, fades, and shows on keyboard focus. */}
+                <WithTooltip
+                  label={new Date(at).toLocaleString(undefined, {
                     dateStyle: 'long',
                     timeStyle: 'short',
                   })}
                 >
-                  {whenLabel(at)}
-                </time>
+                  <time className="text-caption text-text-muted" dateTime={new Date(at).toISOString()}>
+                    {whenLabel(at)}
+                  </time>
+                </WithTooltip>
               </header>
               <MessageBody body={comment.body} isTopicResolved={isTopicResolved} />
             </div>

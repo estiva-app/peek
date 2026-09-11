@@ -53,7 +53,7 @@ export const NumberedList: Story = {
 export const InlineTokens: Story = {
   args: {
     body:
-      'Pinging @Daniel Stanton and !@Alice Johnson — this ties into [Ongoing onboarding issues] and the new [Onboarding flow screens]. Notes are at https://example.com/onboarding-notes.',
+      'Pinging @Daniel Stanton and !@Alice Johnson — this ties into [Ongoing onboarding issues] and the new [Brand guidelines 2026.pdf]. Notes are at https://example.com/onboarding-notes.',
   },
 }
 
@@ -105,6 +105,18 @@ export const Quote: Story = {
   args: {
     body:
       "Replying to Honza's point:\n> I'm missing quotes\n> quotes goes here\nAgreed — and note that 5 > 3 stays literal.",
+  },
+}
+
+/**
+ * A fence is literal by definition — no mentions, no marks, no chips — and a
+ * line longer than the card scrolls sideways in the shared bar rather than
+ * widening the message around it.
+ */
+export const CodeBlock: Story = {
+  args: {
+    body:
+      'The failing call, for the record:\n```ts\nconst res = await relay.publish({ kind: 1111, tags: [["e", id], ["p", author], ["client", "peek"]], content })\nif (!res.ok) throw new Error(res.reason)\n```\nEverything after the closing fence is prose again.',
   },
 }
 

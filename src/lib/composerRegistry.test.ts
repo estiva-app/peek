@@ -10,7 +10,7 @@
  * hand-written expectation here would agree with itself while disagreeing with
  * the renderer, which is the shape of failure this suite keeps finding.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { addrToNaddr, findNaddrs, stripNaddrs } from '@estiva-app/protocol'
 import type { Editor } from '@tiptap/react'
 import {
@@ -43,7 +43,7 @@ function fakeComposer() {
     run: () => (steps.push('run'), true),
   }
   const editor = { isDestroyed: false, chain: () => chain } as unknown as Editor
-  const handle: ComposerHandle = { editor, attachFrames: vi.fn(), label: 'Reply to Katerina' }
+  const handle: ComposerHandle = { editor, label: 'Reply to Katerina' }
   return { handle, editor, inserted, steps }
 }
 
@@ -203,6 +203,6 @@ describe('a drafted reply goes in, and only in (INT-4)', () => {
       would notice.
     */
     const { handle } = fakeComposer()
-    expect(Object.keys(handle)).toEqual(['editor', 'attachFrames', 'label'])
+    expect(Object.keys(handle)).toEqual(['editor', 'label'])
   })
 })

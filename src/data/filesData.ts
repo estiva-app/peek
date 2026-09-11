@@ -1,15 +1,4 @@
-import { FIGMA_FRAMES } from './figmaData'
-
 export type FileCategory = 'topic' | 'app' | 'document'
-
-export interface AppFile {
-  id: string
-  category: 'app'
-  app: 'figma'
-  appLabel: string
-  title: string
-  subtitle?: string
-}
 
 export interface DocumentFile {
   id: string
@@ -19,36 +8,15 @@ export interface DocumentFile {
   subtitle?: string
 }
 
-export type FileItem = AppFile | DocumentFile
-
-export interface AppCategory {
-  app: AppFile['app']
-  label: string
-  description: string
-}
-
-export const APP_CATEGORIES: AppCategory[] = [
-  { app: 'figma', label: 'Figma', description: 'Files & frames' },
-]
-
-export const APP_FILES: AppFile[] = [
-  // Figma
-  { id: 'fg-1', category: 'app', app: 'figma', appLabel: 'Figma', title: 'Compose box redesign', subtitle: 'Peek App v2 · Components' },
-  { id: 'fg-2', category: 'app', app: 'figma', appLabel: 'Figma', title: 'Onboarding flow screens', subtitle: 'Peek Mobile · Flows' },
-  { id: 'fg-3', category: 'app', app: 'figma', appLabel: 'Figma', title: 'Navigation rail v3', subtitle: 'Peek App v2 · Components' },
-  { id: 'fg-4', category: 'app', app: 'figma', appLabel: 'Figma', title: 'Settings page wireframes', subtitle: 'Peek App v2 · Pages' },
-  { id: 'fg-5', category: 'app', app: 'figma', appLabel: 'Figma', title: 'Brand illustration set', subtitle: 'Peek Brand · Assets' },
-  // Figma frames (from figmaData.ts) - being in APP_FILES makes their [titles]
-  // re-parse into chips after a message is sent and lists them in the [ menu.
-  ...FIGMA_FRAMES.map<AppFile>((f) => ({
-    id: f.id,
-    category: 'app',
-    app: 'figma',
-    appLabel: 'Figma',
-    title: f.name,
-    subtitle: `Frame · ${f.file} › ${f.page}`,
-  })),
-]
+/**
+ * A file you can reference from a message.
+ *
+ * There was a second kind — an "app" file, which was only ever Figma: five
+ * static documents and the frames inside them, mocking an integration nobody
+ * has built. It went on 2026-09-11 with the rest of the Figma mock, and with it
+ * went `APP_CATEGORIES` and `APP_FILES`, which had no other members.
+ */
+export type FileItem = DocumentFile
 
 export const DOCUMENT_FILES: DocumentFile[] = [
   { id: 'doc-1', category: 'document', docType: 'pdf', title: 'Brand guidelines 2026.pdf', subtitle: '2.4 MB' },

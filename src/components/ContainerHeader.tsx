@@ -9,7 +9,13 @@ import { cn } from '@/lib/utils'
 import { type ReactNode } from 'react'
 
 interface ContainerHeaderProps {
-  title: string
+  /**
+   * A string, or anything a pane needs to head itself with — the Folders
+   * pane puts an `EditableText` here, because its name is edited where it is
+   * shown. A node is rendered as given; a string keeps the single-line
+   * treatment, so no existing caller moves a pixel.
+   */
+  title: ReactNode
   chevron?: boolean
   leadingIcon?: boolean
   /** Custom slot rendered between title area and action buttons */
@@ -26,6 +32,11 @@ interface ContainerHeaderProps {
   prop3rdAction?: boolean
   prop3rdActionTooltip?: string
   onProp3rdAction?: () => void
+  /**
+   * Buttons at the right edge, for a pane whose action is its own rather than
+   * one of the three presets — a Delete, a Close. Drawn after `more`.
+   */
+  actions?: ReactNode
   className?: string
 }
 
@@ -43,9 +54,10 @@ export function ContainerHeader({
   prop3rdAction = false,
   prop3rdActionTooltip,
   onProp3rdAction,
+  actions,
   className,
 }: ContainerHeaderProps) {
-  const hasRightContent = more || prop1stAction || prop2ndAction || prop3rdAction
+  const hasRightContent = more || actions || prop1stAction || prop2ndAction || prop3rdAction
 
   return (
     <div
@@ -56,14 +68,18 @@ export function ContainerHeader({
       )}
     >
       {/* Left - leading icon + title + optional chevron */}
-      <div className="flex gap-2 items-center overflow-hidden shrink-0">
+      <div className={cn('flex gap-2 items-center overflow-hidden', typeof title === 'string' ? 'shrink-0' : 'min-w-0 flex-1')}>
         {leadingIcon && (
           <IconCircleDashed size={16} stroke={1.5} className="text-text-muted shrink-0" />
         )}
-        <div className="flex gap-1 items-center shrink-0">
-          <span className="text-body-2-strong text-text-primary whitespace-nowrap">
-            {title}
-          </span>
+        <div className={cn('flex gap-1 items-center', typeof title === 'string' ? 'shrink-0' : 'min-w-0 flex-1')}>
+          {typeof title === 'string' ? (
+            <span className="text-body-2-strong text-text-primary whitespace-nowrap">
+              {title}
+            </span>
+          ) : (
+            <div className="min-w-0 flex-1">{title}</div>
+          )}
           {chevron && (
             <IconChevronDown size={12} stroke={1.5} className="text-text-secondary shrink-0" />
           )}
@@ -74,6 +90,7 @@ export function ContainerHeader({
       {hasRightContent && (
         <div className="flex gap-3 items-center justify-end shrink-0">
           {more && <div className="shrink-0">{more}</div>}
+          {actions && <div className="flex gap-1 items-center shrink-0">{actions}</div>}
           {(prop1stAction || prop2ndAction || prop3rdAction) && (
             <div className="flex gap-1 items-center justify-end">
               {prop3rdAction && (

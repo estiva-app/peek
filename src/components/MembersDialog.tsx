@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { DialogShell } from './ui/DialogShell'
+import { Field } from './ui/Field'
 import { IconArrowLeft, IconUserPlus } from '@tabler/icons-react'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
@@ -82,7 +83,7 @@ export function MembersDialog({
             <span className="text-h4 text-text-primary truncate">Add members</span>
           </div>
         }
-        bodyClassName="flex flex-col gap-6 overflow-y-auto"
+        bodyClassName="flex flex-col gap-6"
         footer={
           <>
             <Button variant="muted" onClick={onClose}>Cancel</Button>
@@ -92,11 +93,9 @@ export function MembersDialog({
           </>
         }
       >
-        <div className="flex flex-col gap-2">
-          <label className="text-input-label text-text-primary flex items-center">
-            Invite people
-            <span className="text-error-default ml-0.5">*</span>
-          </label>
+        {/* The package Field draws the label and its required mark; the
+            hand-typed copy went on 2026-09-10 (§4.3, P16, F14). */}
+        <Field label="Invite people" required>
           <PersonChipInput
             value={invitees}
             onChange={setInvitees}
@@ -104,7 +103,7 @@ export function MembersDialog({
             excludeIds={memberIds}
             autoFocus
           />
-        </div>
+        </Field>
       </DialogShell>
     )
   }
@@ -119,19 +118,31 @@ export function MembersDialog({
           <Chip label={String(memberNames.length)} />
         </div>
       }
-      bodyClassName="p-0 py-2 max-h-[400px] overflow-y-auto"
+      bodyMaxHeight="max-h-[400px]"
+      bodyClassName="p-0 py-2"
     >
       {canAdd && (
-        <div
-          role="button"
-          className="flex items-center gap-3 h-12 px-5 cursor-pointer hover:bg-bg-hover transition-colors"
+        /*
+          A real `<button>`, not a `role="button"` div — 13.3, and `UI-RULES.md`
+          §3 forbids the div by name. It was reachable by pointer only: no Tab
+          stop, no Enter, no Space.
+
+          Not the package's `Button`, and not a `MenuItem`. This is a full-width
+          row that matches the member rows under it (`h-12 px-5`, a 32px leading
+          square); `Button` is a pill of its own size, and a `MenuItem` would
+          claim menu semantics in a dialog body that has no menu. The element is
+          what was wrong here, not the drawing.
+        */
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 h-12 px-5 text-left cursor-pointer hover:bg-bg-hover transition-colors"
           onClick={() => setView('add')}
         >
-          <div className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
+          <span className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
             <IconUserPlus size={16} stroke={1.5} />
-          </div>
+          </span>
           <span className="text-[14px] font-medium leading-[1.4] text-text-primary">Add members</span>
-        </div>
+        </button>
       )}
       {memberNames.map((name) => {
         const role = roleFor(name)

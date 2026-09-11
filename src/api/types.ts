@@ -19,14 +19,7 @@ export type { Huddle } from '@/data/huddleData'
 export type { ScreenerItem } from '@/data/screenerData'
 export type { OpenWorkItem, UrgentItem, StarredEntry } from '@/data/deskData'
 export type {
-  FigmaFrame,
-  FrameKind,
-  FrameArtVariant,
-} from '@/data/figmaData'
-export type {
   FileCategory,
-  AppFile,
   DocumentFile,
   FileItem,
-  AppCategory,
 } from '@/data/filesData'

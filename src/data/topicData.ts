@@ -48,7 +48,7 @@ export interface ReactionData {
 /** A real uploaded file attached to a message/reply (Phase 5). `url` is the
  *  resolved storage URL; `previewUrl` is a local object URL used only during
  *  the optimistic window before the server round-trips (images render
- *  instantly). Distinct from `attachments` (Figma frame ids). */
+ *  instantly). */
 export interface FileAttachment {
   storageId?: string
   url?: string
@@ -92,8 +92,7 @@ export interface ConversationData {
   resolvedBy?: string
   resolutionMessage?: string
   /** Figma frame ids attached to the message (see figmaData.ts). */
-  attachments?: string[]
-  /** Real uploaded files (Phase 5) — separate lane from Figma `attachments`. */
+  /** Real uploaded files (Phase 5). */
   files?: FileAttachment[]
   /** Numeric send time (ms). Convex rows + runtime sends carry it; static
    *  mocks don't — consumers must treat it as a sort hint, not a given. */
@@ -651,7 +650,6 @@ export const TOPIC_CONVERSATIONS: Record<string, ConvGroup[]> = {
           authorName: 'Alice Johnson',
           timestamp: '10:20 AM',
           body: "First pass at the payment flow is in Figma. Happy path plus the states we talked about: processing, success, and a first cut of the failure screen.\n\nThe error copy is still rough. I want to get the failure and 3DS-declined states right before this goes to eng, so feedback welcome.",
-          attachments: ['fg-frame-7', 'fg-frame-8'],
           replyCount: 2,
         },
         {

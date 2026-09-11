@@ -28,7 +28,11 @@ vi.mock('@/auth/useSignOut', () => ({ useSignOut: () => vi.fn() }))
 describe('TopBar viewer avatar', () => {
   it('resolves the photo through the viewer branch, not the display name', () => {
     render(<TopBar />)
-    const img = screen.getByRole('img')
+    /* The face sits inside the account button, which carries the name; the
+       picture itself is silent by design (Avatar's rule since 0.10.0, B12), so
+       it has no img role to query. Find it through the button it belongs to. */
+    const img = screen.getByRole('button', { name: 'Account menu' }).querySelector('img')
+    expect(img).not.toBeNull()
     expect(img).toHaveAttribute('src', 'https://cdn.example/me.png')
   })
 })

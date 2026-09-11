@@ -3,12 +3,11 @@ import {
   IconCircleCheck,
   IconUsers,
   IconBrackets,
-  IconLock,
-} from '@tabler/icons-react'
+  IconLock, IconFolder,} from '@tabler/icons-react'
 import { Avatar } from './Avatar'
 import { cn } from '@/lib/utils'
 
-export type TopicStateType = 'topic' | 'DM' | 'team' | 'group' | 'view' | 'huddle'
+export type TopicStateType = 'topic' | 'DM' | 'team' | 'group' | 'view' | 'huddle' | 'folder'
 export type TopicStateStatus = 'unresolved' | 'resolved' | 'default'
 
 interface TopicStateProps {
@@ -47,6 +46,14 @@ export function TopicState({
         </div>
       ) : type === 'view' ? (
         <IconBrackets size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
+      ) : /*
+           A Folder is a folder. It had no glyph of its own, so the Folders
+           list fell through to the `topic` default and drew every row the
+           dashed circle that means "an unresolved topic" — on eighty-one
+           rows, none of which is a topic (Katerina, 2026-09-11).
+         */
+        type === 'folder' ? (
+        <IconFolder size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : type === 'huddle' ? (
         <IconLock size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : null}

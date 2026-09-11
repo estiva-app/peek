@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { IconChevronRight, IconPlus, IconSortDescending } from '@tabler/icons-react'
+import { IconPlus, IconSortDescending } from '@tabler/icons-react'
+import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { ContainerHeader } from '@/components/ContainerHeader'
@@ -10,6 +11,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
 import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
@@ -31,7 +33,6 @@ import {
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useToast } from '@/lib/toast'
-import { cn } from '@/lib/utils'
 import { useTopicPath } from '@/lib/useTopicPath'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
@@ -60,7 +61,6 @@ export function DeskPage() {
   const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
   const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
   const [showAddToOpenWork, setShowAddToOpenWork] = useState(false)
-  const [starredExpanded, setStarredExpanded] = useState(true)
 
   // The 1–2 item caps are a demo-composition affordance for the mock dataset.
   // With a real backend the Screener IS the inbox and Urgent is real — capping
@@ -278,7 +278,7 @@ export function DeskPage() {
       leftPanel={
         <div className="flex flex-col h-full">
           <ContainerHeader title="Desk" />
-          <div className="flex-1 overflow-y-auto pt-4 pb-3 px-3 flex flex-col gap-1">
+          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-1">
             {(deskLoading || starredLoading) ? (
             <SkeletonSidebarList rows={8} />
             ) : (
@@ -401,32 +401,19 @@ export function DeskPage() {
 
             <Divider className="my-2" />
 
-            {/* Starred */}
-            <div className="flex flex-col">
-              <div
-                className="group flex h-[32px] items-center justify-between px-2 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover"
-                onClick={() => setStarredExpanded((v) => !v)}
-              >
-                <div className="flex items-center gap-1">
-                  <IconChevronRight
-                    size={12}
-                    stroke={1.5}
-                    className={cn(
-                      'text-text-secondary transition-transform duration-150',
-                      starredExpanded && 'rotate-90'
-                    )}
-                  />
-                  <SectionLabel>Starred</SectionLabel>
-                </div>
-              </div>
-              {starredExpanded && (
-                starredEntries.length === 0 ? (
-                  <p className="px-2 py-1 text-[12px] text-text-muted leading-[1.4]">
-                    Favorite the conversations of People or Topics you interact mostly with
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-0.5 mt-1">
-                    {starredEntries.map((entry) =>
+            {/* Starred — the package's CollapsibleSection (§4.8, D42): the same
+                32px row, but the title is a button, the rows slide, and this
+                browser remembers the fold. It was a hand-drawn copy of
+                ui/StarredSection until 2026-09-10 (Peek scan F10). */}
+            <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
+              {starredEntries.length === 0 ? (
+                <EmptyState
+                  scope="section"
+                  className="px-2 py-1"
+                  message="Favorite the conversations of People or Topics you interact mostly with"
+                />
+              ) : (
+                    starredEntries.map((entry) =>
                       entry.kind === 'dm' ? (
                         <PersonRow
                           key={entry.id}
@@ -456,16 +443,14 @@ export function DeskPage() {
                           onClick={() => selectTopic(entry.topicId, 'starred')}
                         />
                       )
-                    )}
-                  </div>
-                )
+                    )
               )}
-            </div>
+            </CollapsibleSection>
 
             <Divider className="my-2" />
             </>
             )}
-          </div>
+          </ScrollArea>
         </div>
       }
       rightPanel={rightPanel}

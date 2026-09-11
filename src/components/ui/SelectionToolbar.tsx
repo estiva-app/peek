@@ -4,9 +4,8 @@ import { IconBold, IconItalic, IconLink, IconUnderline } from '@tabler/icons-rea
 // Straight from the shared package rather than through Peek's re-export files
 // (`./IconButton`, `@/lib/utils`), which exist only to keep older import paths
 // working — a new file should name where the component actually lives.
-import { Menu } from '@estiva-app/ui'
+import { Popover, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
-import { IconButton } from './IconButton'
 import { TextInput } from './TextInput'
 import { MARKS, toggleMark, shortcutLabel, currentLink, applyLink, type MarkId } from '@/lib/composerFormats'
 import { keepSelection, releaseSelection } from '@/extensions/keptSelection'
@@ -18,12 +17,23 @@ import { keepSelection, releaseSelection } from '@/extensions/keptSelection'
  * not in the `/` menu: typing `/` replaces the selection, so by definition
  * there is nothing selected to apply them to.
  *
- * **The chrome is the shared `Menu`** — the same component `ConversationMoreMenu`
- * renders, so this reads as the same app rather than a second popover style.
- * It is laid out as a row instead of a column through `className`, which `cn`
- * merges last. Two things come free with it: the panel portals out of the
- * composer, so no overflow can clip it, and `position` is clamped on screen by
- * the package rather than by arithmetic here.
+ * **The chrome is the shared `Popover`, anchored** (P26). It was a `Menu`, and
+ * it never was one: a menu gives its contents roving focus and typeahead,
+ * which would fight the link field this panel exists for. An anchored
+ * `Popover` is the mode built for exactly this — it takes no focus, so the
+ * caret stays in the text. It is laid out as a row instead of a column
+ * through `className`, which `cn` merges last. The panel still portals out of
+ * the composer, so no overflow clips it, and Floating UI clamps it on screen.
+ *
+ * **The anchor is the selection's own point** since 0.12.2. This toolbar is
+ * *centred* over the selection (her design, PEE-19, after Linear), and the
+ * package's `Popover` aligns left or right only — Base UI has `center`, the
+ * package does not expose it (ADOPTION **B21**). So the placement arithmetic
+ * and the hand-measured `SIZE` box stay for now, and the rect handed over is
+ * positioned so the panel lands on the same pixel it always has: the
+ * package's own 4px gap is subtracted from this file's 8px, and the rect's
+ * left edge is the panel's. When `align="center"` exists, `SIZE`, `GAP` and
+ * `placement` all go and the anchor becomes the selection's own rect.
  *
  * **Two faces** (PEE-19 — Katerina, 2026-09-07, after Linear). `marks` is the
  * row of four buttons. `link` is one text field for the address: it opens from
@@ -62,13 +72,9 @@ type Mode = 'marks' | 'link'
 /** How long a selection must stand still before the toolbar appears. */
 const SETTLE_MS = 250
 const GAP = 8
-/** Each face's box, measured in Storybook (2026-09-07) — the toolbar is
- *  centred over the selection and hung this far above it. The field's height
- *  is the package TextInput's own: 14px × 1.4 line, 8px padding, 1px border. */
-const SIZE: Record<Mode, { width: number; height: number }> = {
-  marks: { width: 118, height: 34 },
-  link: { width: 274, height: 47.6 },
-}
+/** The gap the package's `Popover` adds of its own, subtracted above so the
+ *  panel keeps this file's 8px. Read from `Popover.tsx`, not guessed. */
+const POPOVER_GAP = 4
 
 export function SelectionToolbar({ editor }: { editor: Editor | null }) {
   /** The selection's top edge and horizontal centre; the face decides the rest. */
@@ -241,18 +247,33 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
     editor.commands.focus()
   }
 
-  const size = SIZE[mode]
-  const placement = { top: anchor.top - size.height - GAP, left: anchor.centre - size.width / 2 }
+  /* A zero-sized rect at the selection's own top edge and centre. The panel's
+     width is no longer this file's business: `align="center"` puts the
+     panel's middle over this point (B21, package 0.12.2), so the measured
+     `SIZE` table and the placement arithmetic that stood in for it are gone.
+     The top is this file's GAP less the package's own 4, so the panel keeps
+     the 8px it has always had. */
+  const anchorRect = new DOMRect(anchor.centre, anchor.top - (GAP - POPOVER_GAP), 0, 0)
 
   return (
-    <Menu
-      onClose={commit}
-      position={placement}
-      // A row rather than a column. `cn` merges these last, so they win over
-      // Menu's own `flex-col`, `min-w-[180px]` and `p-2`.
-      className="w-auto min-w-0 flex-row items-center gap-1 p-1"
+    <Popover
+      anchor={anchorRect}
+      open
+      side="top"
+      align="center"
+      onOpenChange={(next) => {
+        if (!next) commit()
+      }}
+      ariaLabel="Text formatting"
+      // The panel gives up its column and its padding; the strip inside draws
+      // the row. This is the package's own `Popover/FromASelection` story,
+      // class for class.
+      className="w-auto min-w-0 p-1"
     >
       {mode === 'link' ? (
+        /* One field, so no strip: a toolbar of one control is a toolbar in
+           name only, and `ToolbarInput` cannot take the ref this field is
+           focused by (ADOPTION B25). */
         <TextInput
           ref={field}
           value={url}
@@ -275,12 +296,13 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
           className="w-[264px]"
         />
       ) : (
-        <>
+        /* Four marks and a link button: one Tab stop, ← → along them (D29). */
+        <Toolbar aria-label="Text formatting" surface={false}>
           {MARKS.map((mark) => {
             const Icon = ICONS[mark.id]
             const active = editor.isActive(mark.id)
             return (
-              <IconButton
+              <ToolbarButton
                 key={mark.id}
                 aria-label={mark.label}
                 aria-pressed={active}
@@ -292,19 +314,19 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
                 onClick={() => toggleMark(editor, mark.id)}
               >
                 <Icon size={16} stroke={1.5} />
-              </IconButton>
+              </ToolbarButton>
             )
           })}
-          <IconButton
+          <ToolbarButton
             aria-label="Link"
             tooltip="Link"
             onMouseDown={(e) => e.preventDefault()}
             onClick={openField}
           >
             <IconLink size={16} stroke={1.5} />
-          </IconButton>
-        </>
+          </ToolbarButton>
+        </Toolbar>
       )}
-    </Menu>
+    </Popover>
   )
 }

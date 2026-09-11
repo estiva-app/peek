@@ -1,8 +1,10 @@
 import { useMarkRead } from '@/lib/useMarkRead'
 import { draftKeys } from '@/lib/drafts'
 import { useToast } from '@/lib/toast'
+import { useReportDelete } from '@/lib/reportDelete'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { isNearBottom } from './scrollPolicy'
+import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -56,6 +58,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   const { pendingDmThreadId, setPendingDmThreadId } = useLastSelection()
   const actions = usePeekActions()
   const { showToast } = useToast()
+  const reportDelete = useReportDelete()
 
   /**
    * Edit, and say so when it did not travel — PEE-24.
@@ -131,29 +134,29 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   const openThread = (convId: string) => setThreadConvId(convId)
   const closeThread = () => setThreadConvId(null)
 
-  const handleSendReply = ({ text, resolution, attachments, files }: SendPayload) => {
+  const handleSendReply = ({ text, resolution, files }: SendPayload) => {
     if (!threadConvId) return
     // DM replies never carry a highlight (matches pre-seam behavior).
     // Returned so `ComposeBox` can put the text back if nothing was written.
-    return actions.sendReply(threadConvId, { text, resolution, attachments, files })
+    return actions.sendReply(threadConvId, { text, resolution, files })
   }
 
   const handleDeleteReply = (replyId: string) => {
     if (!threadConvId) return
-    actions.deleteReply(threadConvId, replyId)
+    void actions.deleteReply(threadConvId, replyId).then(({ kept }) => reportDelete('reply', kept))
   }
 
-  const handleSend = ({ text, resolution, attachments, files }: SendPayload) => {
+  const handleSend = ({ text, resolution, files }: SendPayload) => {
     if (dmId == null) return
     // DM messages never carry a highlight (matches pre-seam behavior).
     // dmId is the partner's person key — the server resolves the pair and
     // creates the conversation on the first message (§2.4).
-    return actions.sendDmMessage(dmId, { text, resolution, attachments, files })
+    return actions.sendDmMessage(dmId, { text, resolution, files })
   }
 
   const handleDelete = (id: string) => {
     if (dmId == null) return
-    actions.deleteDmMessage(dmId, id)
+    void actions.deleteDmMessage(dmId, id).then(({ kept }) => reportDelete('message', kept))
   }
 
   // Close thread when switching DMs — but skip the initial mount, since we may have
@@ -254,7 +257,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
           (dmId != null && dmName ? () => toggleDm({ dmId, name: dmName }) : undefined)
         }
       />
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto flex flex-col">
+      <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
         <div className="flex-1 min-h-0" />
         <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
           {isLoading && <SkeletonConversationList />}
@@ -275,7 +278,6 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   authorAvatarSrc={c.authorAvatarSrc}
                   timestamp={c.timestamp}
                   body={c.body}
-                  attachments={c.attachments}
                   files={c.files}
                   reactions={c.reactions}
                   highlightType={c.highlightType}
@@ -317,7 +319,6 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
                   authorAvatarSrc={m.authorAvatarSrc}
                   timestamp={m.timestamp}
                   body={m.body}
-                  attachments={m.attachments}
                   files={m.files}
                   reactions={m.reactions}
                   highlightType={m.highlightType}
@@ -346,7 +347,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
             </div>
           )}
         </div>
-      </div>
+      </ScrollArea>
       {!isLoading && dmGroups.length === 0 && currentSent.length === 0 && (
         <div className="px-3 pt-2">
           <NewTopicBanner kind="dm" title={dmName} />

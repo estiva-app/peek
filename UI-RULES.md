@@ -107,6 +107,22 @@ If a rule here blocks the work, say so and stop; do not route around it. The per
 
 ---
 
+## 8. Rules for particular components
+
+Rulings that say which manner of a shared component this app uses where. Each is also on the component's own page in the package; this list is the index.
+
+- **An empty state has two manners, and the caller decides** (Katerina, 2026-09-09, D41). When the *whole column* is empty — no topics yet, a link that leads nowhere, no conversation chosen — `EmptyState` in its `page` manner: the icon over a centred line. When one *section* of a column is empty — no related conversations under a topic, a folder with nothing in it, the Starred hint — the `section` manner: the line alone, left-aligned, no icon, at 14px. A section's emptiness is one line in a column that has other things on it; it does not get a stage of its own. A hand-written "Nothing here" paragraph or span is the `section` manner, and becomes it.
+
+  Peek's columns are the test, not the browser window: the Folders list is a *section* when it is the narrow left column of a two-column page, and "Select a folder" is a *page*, because the right column is all there is.
+
+- **A column keeps the frame's contract** (D46, as it applies here). Peek draws its own frame — `layouts/AppShell.tsx`, not the package's `AppShell` — so the contract binds Peek's three columns rather than a `main`. A column is a flex child and says `flex-1 min-h-0`; it takes exactly the height it is given and scrolls *inside itself*, in a region of its own. Never `h-full`, and never a scroll class written by hand.
+
+- **A region that scrolls is `ScrollArea`, and its three class props each land on one box** (D40): `className` is the region's size and placement, `viewportClassName` is the cap — a `max-h-*` goes there and nowhere else, because on the region the viewport grows to its content and nothing scrolls — and `contentClassName` is the padding, the gap and the layout. A native `overflow-y-auto` takes its bar's width out of the content and narrows the text column the moment it appears; the package's bar is drawn over the content and takes none.
+
+- **A floating strip of controls is `Toolbar`, and the answer is not in it** (D29). Attach, snooze, highlight are things you do *to* a draft that is still there, so they are one strip and one Tab stop. Send, Cancel and Save are answers; each keeps its own stop. `surface={false}` inside anything that already draws a box — a `Popover`, a dialog, the composer's own frame.
+
+---
+
 ## The short version
 
 1. Check the package (read the page). Check `src/components/ui/`. Check for a near-match.

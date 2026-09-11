@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { IconDotsVertical } from '@tabler/icons-react'
+import { IconButton } from './IconButton'
 import { TopicMoreMenu } from './TopicMoreMenu'
 
 /**
@@ -16,6 +18,10 @@ import { TopicMoreMenu } from './TopicMoreMenu'
  *
  * Items appear only when the caller passes a handler for them, so the menu is
  * never a list of things that cannot happen here.
+ *
+ * The menu owns its trigger, so these canvases open on a press rather than
+ * standing open: press the dots. Escape closes it and gives the button its
+ * focus back.
  */
 const meta = {
   title: 'Menus/Topic more menu',
@@ -23,14 +29,17 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   decorators: [
     (Story) => (
-      <div className="h-[260px]">
+      <div className="flex h-[260px] justify-end p-4">
         <Story />
       </div>
     ),
   ],
   args: {
-    position: { top: 24, right: 24 },
-    onClose: () => {},
+    trigger: (
+      <IconButton tooltip="More actions" aria-label="More actions">
+        <IconDotsVertical size={16} stroke={1.5} />
+      </IconButton>
+    ),
     onOpenDetails: () => {},
     onToggleOpenWork: () => {},
     onDeleteTopic: () => {},

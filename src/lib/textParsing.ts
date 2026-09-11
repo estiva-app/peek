@@ -2,7 +2,7 @@ import { PEOPLE } from '@/data/peopleData'
 import { decodeNpub, encodeNpub } from '@estiva-app/protocol'
 import { personByPubkey } from '@/api/mentions'
 import { TOPICS } from '@/data/topicData'
-import { APP_FILES, DOCUMENT_FILES } from '@/data/filesData'
+import { DOCUMENT_FILES } from '@/data/filesData'
 import { parseInlineMarks, stripInlineFormatting, wrapInlineMarks } from '@estiva-app/protocol'
 
 // ── Mention regex ──
@@ -34,7 +34,6 @@ const _escapedNames = () =>
 
 const _escapedBracketTitles = [
   ...TOPICS.map((t) => t.title),
-  ...APP_FILES.map((f) => f.title),
   ...DOCUMENT_FILES.map((f) => f.title),
 ]
   .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
@@ -291,15 +290,13 @@ export function parseInlineContent(line: string): Record<string, unknown>[] {
           },
         })
       } else {
-        const appFile = APP_FILES.find((f) => f.title === title)
-        const docFile = DOCUMENT_FILES.find((f) => f.title === title)
-        const file = appFile ?? docFile
+        const file = DOCUMENT_FILES.find((f) => f.title === title)
         content.push({
           type: 'fileMention',
           attrs: {
             id: file?.id ?? title,
             label: title,
-            app: appFile?.app ?? docFile?.docType ?? '',
+            app: file?.docType ?? '',
             subtitle: file?.subtitle ?? '',
           },
         })

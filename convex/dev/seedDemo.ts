@@ -153,7 +153,6 @@ export const seed = internalMutation({
         resolvedById: conv.resolvedBy ? userIdOf(conv.resolvedBy) : undefined,
         resolutionMessage: conv.resolutionMessage,
         resolvedAt: conv.isResolved ? createdAt : undefined,
-        attachments: conv.attachments,
         seedKey: conv.id,
       })
       counts.messages++
@@ -297,7 +296,6 @@ export const seed = internalMutation({
           createdAt,
           urgent: r.isUrgent ? true : undefined,
           highlightType: r.highlightType,
-          attachments: r.attachments,
           seedKey: r.id,
         })
         counts.replies++

@@ -11,29 +11,27 @@
  * `MenuPanel` placed by hand with `absolute left-0 bottom-full mb-1`, closing
  * through its own `mousedown` listener, and its comment argued that `Menu`
  * "would fight it" — which was true only of the hand-placement it was
- * defending. `Menu` anchored to the box lands in exactly the same place:
- * `fitMenu` opens upward when the room below is smaller than the panel (which
- * is always, for a composer sitting at the foot of the screen) and hangs the
- * panel's bottom edge `GAP` above the anchor's top — and the package's GAP is
- * 4px, which is what `mb-1` was. Measured before and after, both at 180 ×
- * 175.97 with the same 4px, same left edge (2026-09-08).
+ * defending. What the app stops owning by making the trade: the Escape key,
+ * the outside-click, the portal, and being cut off at an edge.
  *
- * What the app stops owning by making the trade: the Escape key, the
- * outside-click, the portal, and being cut off at an edge. What it gains: an
- * edit box halfway down a scrolling list is not the composer at the foot of
- * the page, so the picker opens *below* the box there when that is where the
- * room is, and closes when the list scrolls out from under it. Neither was
- * possible while the panel was a child of the box.
+ * **It hangs from the button now, not from the box** (`@estiva-app/ui`
+ * 0.10.0: a menu owns its trigger, and there is no `anchor` any more). The
+ * panel used to be placed against the whole composer, so its left edge sat at
+ * the composer's; it sits at the button's now. **That is a visible change and
+ * the only one this file makes** — flagged for the screenshot diff rather than
+ * hidden, because a menu belonging to the control that opens it is the point
+ * of the move. The side is still whichever way there is room: above in the
+ * composer at the foot of the page, below in an edit box near the top of a
+ * list, which the hand-placed copy could never do.
  *
- * `container` is the box to hang from — the composer, or the edit box — not
- * the button. That is the anchor the old arithmetic used, and keeping it is
- * why the composer does not move a pixel.
+ * `open` stays controlled, because the button is not the only way in: clicking
+ * a highlight tag already in the text opens the picker that owns that box.
+ * `container` is still what answers "is that tag mine".
  */
 import { useEffect, useState, type RefObject } from 'react'
 import { IconHighlight } from '@tabler/icons-react'
 import type { Editor } from '@tiptap/react'
-import { Menu, MenuItem } from '@estiva-app/ui'
-import { IconButton } from './IconButton'
+import { Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
 import { insertHighlightTag } from '@/extensions/highlight'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
@@ -65,35 +63,35 @@ export function HighlightButton({
 
   return (
     <>
-      <IconButton
-        aria-label="Highlight"
-        tooltip="Mark as Highlight"
-        // The menu's outside-click exit listens on `mousedown`, so a trigger
-        // that toggles on `click` would close and reopen in one press —
-        // Menu.mdx's "trigger trap".
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={() => setOpen((v) => !v)}
+      {/* The `onMouseDown` guard that used to sit on this button is gone with
+          the hand-rolled open state: Base UI owns the toggle, so there is no
+          outside-press listener left for a click to fight (Menu.mdx's
+          "trigger trap" was a symptom of the caller owning the state). */}
+      <Menu
+        trigger={
+          <ToolbarButton aria-label="Highlight" tooltip="Mark as Highlight">
+            <IconHighlight size={16} stroke={1.5} />
+          </ToolbarButton>
+        }
+        open={open}
+        onOpenChange={setOpen}
+        className="w-[180px]"
       >
-        <IconHighlight size={16} stroke={1.5} />
-      </IconButton>
-      {open && (
-        <Menu onClose={() => setOpen(false)} anchor={container.current} className="w-[180px]">
-          {TYPES.map((type) => (
-            <MenuItem
-              key={type}
-              leading={<HighlightSwatch type={type} />}
-              label={HIGHLIGHT_META[type].label}
-              // On the press, not the click, and the default prevented: the
-              // caret must not leave the editor to reach the picker.
-              onMouseDown={(e) => {
-                e.preventDefault()
-                if (editor) insertHighlightTag(editor, type)
-                setOpen(false)
-              }}
-            />
-          ))}
-        </Menu>
-      )}
+        {TYPES.map((type) => (
+          <MenuItem
+            key={type}
+            leading={<HighlightSwatch type={type} />}
+            label={HIGHLIGHT_META[type].label}
+            // On the press, not the click, and the default prevented: the
+            // caret must not leave the editor to reach the picker.
+            onMouseDown={(e) => {
+              e.preventDefault()
+              if (editor) insertHighlightTag(editor, type)
+              setOpen(false)
+            }}
+          />
+        ))}
+      </Menu>
     </>
   )
 }

@@ -244,7 +244,7 @@ describe('ForeignObjectWidget', () => {
       // Reports and sets, in one control: the picker's trigger shows the
       // holder's name (PEE-1 replaced the "Assign to me" button with the
       // person list). The accessible name stays on what the control does.
-      const trigger = await screen.findByRole('button', { name: 'Assign' })
+      const trigger = await screen.findByRole('combobox', { name: 'Assign' })
       expect(trigger).toHaveTextContent('Alice Chen')
       // The person *is* the label. "Assign: Alice Chen" captioned a face with
       // the word for what a face is.
@@ -268,7 +268,7 @@ describe('ForeignObjectWidget', () => {
       )
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      await userEvent.click(await screen.findByRole('button', { name: 'Assign' }))
+      await userEvent.click(await screen.findByRole('combobox', { name: 'Assign' }))
       // Ship's option shape: Unassigned first, then everyone with a face.
       const unassigned = await screen.findByRole('option', { name: /Unassigned/ })
       expect(screen.getByRole('option', { name: /Bruno Ferreira/ })).toBeInTheDocument()
@@ -290,7 +290,7 @@ describe('ForeignObjectWidget', () => {
       )
       render(<ForeignObjectWidget naddr={NADDR} />)
 
-      const trigger = await screen.findByRole('button', { name: 'Assign' })
+      const trigger = await screen.findByRole('combobox', { name: 'Assign' })
       expect(trigger).toHaveTextContent('Unassigned')
       expect(trigger).not.toHaveTextContent(/to me/)
     })
@@ -332,7 +332,7 @@ describe('ForeignObjectWidget', () => {
       expect(await screen.findByRole('option', { name: 'Done' })).toBeInTheDocument()
       await userEvent.keyboard('{Escape}')
       // The pubkey action draws the person picker (PEE-1), not a self-assign button.
-      expect(screen.getByRole('button', { name: 'Assign' })).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Assign' })).toBeInTheDocument()
     })
 
     it('publishes the change and re-reads from the relay', async () => {
@@ -360,7 +360,7 @@ describe('ForeignObjectWidget', () => {
 
       // The picker replaced the "@me" button (PEE-1): anybody in the workspace
       // directory is one pick away, yourself included as an ordinary row.
-      await userEvent.click(await screen.findByRole('button', { name: 'Assign' }))
+      await userEvent.click(await screen.findByRole('combobox', { name: 'Assign' }))
       await userEvent.click(await screen.findByRole('option', { name: /Bruno Ferreira/ }))
       expect(applyAction).toHaveBeenCalledWith({
         naddr: NADDR,

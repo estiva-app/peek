@@ -65,6 +65,9 @@ function FileIcon({ name, className }: { name: string; className?: string }) {
 /** A simple full-screen viewer for uploaded images (mirrors FrameLightbox). */
 function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   return createPortal(
+    /* eslint-disable-next-line better-tailwindcss/no-restricted-classes -- the
+       same black scrim as FrameLightbox, for the same reason, and it goes the
+       same way when the package gains a Lightbox (ADOPTION B22, stage 7). */
     <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-8" onClick={onClose}>
       <img
         src={src}

@@ -81,7 +81,7 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
             {recipients.map((name) => (
               <span
                 key={name}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-accent-muted text-text-primary text-sm rounded-sm"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-accent-muted text-text-primary text-body-2 rounded-sm"
               >
                 {name}
                 <button
@@ -128,7 +128,7 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
               }}
               placeholder={recipients.length === 0 ? 'Add people...' : 'Add more...'}
               autoFocus
-              className="flex-1 min-w-[80px] bg-transparent text-sm text-text-primary placeholder:text-text-muted outline-none"
+              className="flex-1 min-w-[80px] bg-transparent text-body-2 text-text-primary placeholder:text-text-muted outline-none"
             />
           </div>
           <button
@@ -152,7 +152,7 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
               >
                 <Avatar size={24} name={person.name} alt={person.name} />
                 <div className="flex flex-col items-start">
-                  <span className="text-sm text-text-primary">{person.name}</span>
+                  <span className="text-body-2 text-text-primary">{person.name}</span>
                   <span className="text-caption text-text-muted">{person.role}</span>
                 </div>
               </MenuItem>

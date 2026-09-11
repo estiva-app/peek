@@ -7,8 +7,6 @@ import type { Editor } from '@tiptap/react'
  */
 export interface ComposerHandle {
   editor: Editor
-  /** Attach Figma frames (by id) to this composer's attachment strip. */
-  attachFrames: (frameIds: string[]) => void
   /** Where a launcher insert/attach lands, e.g. "Reply to Alice", "#Mobile rewrite". */
   label?: string
 }
@@ -124,11 +122,3 @@ export function insertTextIntoActiveComposer(text: string): boolean {
   return true
 }
 
-/** Attach Figma frames to the active composer's attachment strip (previews
- *  below the text, carried on send). Returns false when no composer exists. */
-export function attachFramesToActiveComposer(frameIds: string[]): boolean {
-  if (!activeComposer || activeComposer.editor.isDestroyed) return false
-  activeComposer.attachFrames(frameIds)
-  activeComposer.editor.chain().focus().run()
-  return true
-}

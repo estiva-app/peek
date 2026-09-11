@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
@@ -114,7 +115,7 @@ export function PeoplePage() {
             prop2ndAction
             prop2ndActionTooltip="Sort by"
           />
-          <div className="flex-1 overflow-y-auto pt-4 pb-3 px-3 flex flex-col gap-1">
+          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-1">
             {DMS === undefined || starredLoading ? (
               <SkeletonSidebarList rows={8} />
             ) : (
@@ -145,7 +146,7 @@ export function PeoplePage() {
                 })}
               </>
             )}
-          </div>
+          </ScrollArea>
         </div>
       }
       rightPanel={DMS === undefined ? <div className="flex-1 h-full" /> : dmView.rightPanel}

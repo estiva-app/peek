@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
@@ -14,23 +13,18 @@ import {
   IconArrowNarrowRight,
   IconCircleDashed,
   IconCircleCheck,
-  IconSquareForbid2,
+  IconDotsVertical,
 } from '@tabler/icons-react'
-import figmaIcon from '@/assets/figma icon.svg'
-import { FrameArt } from './ui/FrameArt'
-import { FrameLightbox } from './FrameLightbox'
-import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
-import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
-import { AvatarGroup } from '@estiva-app/ui'
+import { AvatarGroup, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
-import ReactionPicker from './ReactionPicker'
 import { ResolveDialog } from './ResolveDialog'
+import { ConfirmDelete } from './ConfirmDelete'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
@@ -60,7 +54,6 @@ interface ConversationCardProps {
   /** Time of the last reply, shown in the signal theme's reply row (ignored elsewhere). */
   lastReplyTime?: string
   /** Figma frame ids attached to the message (rendered as preview cards). */
-  attachments?: string[]
   /** Real uploaded files (rendered as file chips / image thumbnails). */
   files?: FileAttachment[]
   hasNewReply?: boolean
@@ -107,7 +100,6 @@ export function ConversationCard({
   replyCount,
   replyAuthors,
   lastReplyTime,
-  attachments,
   files,
   hasNewReply = false,
   hasNewMessage = false,
@@ -140,15 +132,15 @@ export function ConversationCard({
   const pathForTopic = useTopicPath()
   // The ⋯ menu: the quick-menu's measured rect, or closed. The shared Menu
   // shell owns placement and every exit (2026-09-03).
-  const [moreMenuAnchor, setMoreMenuAnchor] = useState<DOMRect | null>(null)
+  /* Not a rect any more, only whether the menu is open: the ⋯ menu owns its
+     own button since `@estiva-app/ui` 0.10.0. The card still needs to know,
+     because a card with an open menu does not react to a stray click. */
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
-  // Reactions. The picker portals above the quick bar (ThreadReplyCard's
-  // pattern) — in-flow it was clipped by the panel's scroll container on the
-  // topmost card.
+  // Reactions. The picker is the quick menu's now — the package Popover above
+  // the strip (§4.1, D30, 2026-09-10); the card only needs to know it is open.
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
-  const [reactionPickerPos, setReactionPickerPos] = useState<{ top: number; right: number } | null>(null)
-  const reactButtonRef = useRef<HTMLDivElement>(null)
-  const reactionPickerRef = useRef<HTMLDivElement>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   // Sync local reaction state if the parent passes a different override (e.g. after navigation back).
   useEffect(() => {
@@ -163,7 +155,6 @@ export function ConversationCard({
 
   // Edit mode
   const [isEditing, setIsEditing] = useState(false)
-  const [previewFrame, setPreviewFrame] = useState<FigmaFrame | null>(null)
   const [editEmpty, setEditEmpty] = useState(false)
   const [editHasUrgent, setEditHasUrgent] = useState(false)
   const [editHasHighlight, setEditHasHighlight] = useState(false)
@@ -323,19 +314,6 @@ export function ConversationCard({
     }
   }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close the reaction picker on click outside (the more menu's exits are the
-  // shared shell's own).
-  useEffect(() => {
-    if (!reactionPickerPos) return
-    const close = (e: MouseEvent) => {
-      if (reactionPickerRef.current?.contains(e.target as Node)) return
-      if (reactButtonRef.current?.contains(e.target as Node)) return
-      setReactionPickerPos(null)
-    }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [reactionPickerPos])
-
   // Resolved state - sync from parent when prop changes
   const [resolved, setResolved] = useState(initialResolved)
   const [resolvedBy, setResolvedBy] = useState(initialResolvedBy)
@@ -365,15 +343,6 @@ export function ConversationCard({
   /** Reply authors' faces, resolved as Peek's Avatar wrapper resolves any other. */
   const avatarSrcFor = useAvatarSrc()
 
-  const handleMore = (rect: DOMRect) => {
-    // Toggle; the shared shell decides above/below from the real room.
-    if (moreMenuAnchor) {
-      setMoreMenuAnchor(null)
-      return
-    }
-    setMoreMenuAnchor(rect)
-    onMore?.()
-  }
 
   const handleResolveConfirm = (message: string) => {
     setResolved(true)
@@ -387,26 +356,22 @@ export function ConversationCard({
     setResolved(false)
     setResolvedBy('')
     setResolutionMsg('')
-    setMoreMenuAnchor(null)
     onResolvedChange?.(false)
   }
 
-  const handleDelete = () => {
-    setMoreMenuAnchor(null)
-    onDelete?.()
-  }
+  // Delete asks first (D56): the menu row opens the question, the delete runs on Yes.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const handleDelete = () => setConfirmingDelete(true)
 
   const handleConvHighlight = (type: HighlightType | undefined) => {
     setHighlightState(type)
     onHighlightChange?.(type)
-    setMoreMenuAnchor(null)
     setIsHovered(false)
   }
 
   const handleEditStart = () => {
     editAttachments.begin()
     setIsEditing(true)
-    setMoreMenuAnchor(null)
   }
 
   const handleEditSave = () => {
@@ -470,7 +435,6 @@ export function ConversationCard({
   editCancelFnRef.current = handleEditCancel
 
   const openCreateTopic = () => {
-    setMoreMenuAnchor(null)
     setShowTopicDialog(true)
   }
 
@@ -487,31 +451,32 @@ export function ConversationCard({
   const handleRevertToConversation = () => {
     setIsTopic(false)
     setTopicTitle('')
-    setMoreMenuAnchor(null)
   }
 
   const handleReact = (emoji: string) => {
-    setReactionsState((prev) => {
-      let next: ReactionData[]
-      const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
-      if (existing) {
-        next = existing.count <= 1
-          ? prev.filter((r) => r !== existing)
-          : prev.map((r) => (r === existing
-              ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
-              : r))
-      } else {
-        const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
-        next = othersExisting
-          ? prev.map((r) => (r === othersExisting
-              ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
-              : r))
-          : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
-      }
-      onReactionsChange?.(next, emoji)
-      return next
-    })
-    setReactionPickerPos(null)
+    // Computed from the state in hand, not inside a state updater: React runs
+    // updaters during render, and telling the parent from there set state in
+    // another component mid-render — a warning on every reaction until
+    // 2026-09-10 (PEEK-ADOPTION.md §11.5).
+    const prev = reactionsState
+    let next: ReactionData[]
+    const existing = prev.find((r) => r.emoji === emoji && r.owner === 'yours')
+    if (existing) {
+      next = existing.count <= 1
+        ? prev.filter((r) => r !== existing)
+        : prev.map((r) => (r === existing
+            ? { ...r, count: r.count - 1, owner: 'others' as const, names: r.names?.filter((n) => n !== 'You') }
+            : r))
+    } else {
+      const othersExisting = prev.find((r) => r.emoji === emoji && r.owner === 'others')
+      next = othersExisting
+        ? prev.map((r) => (r === othersExisting
+            ? { ...r, count: r.count + 1, owner: 'yours' as const, names: r.names && [...r.names, 'You'] }
+            : r))
+        : [...prev, { emoji, count: 1, owner: 'yours' as const, names: ['You'] }]
+    }
+    setReactionsState(next)
+    onReactionsChange?.(next, emoji)
   }
 
   return (
@@ -544,14 +509,17 @@ export function ConversationCard({
         onClick={(e) => {
           if (!onClick || isEditing) return
           // Don't open thread when any overlay is active
-          if (moreMenuAnchor || showResolveDialog || showTopicDialog || reactionPickerPos) return
+          if (moreMenuOpen || showResolveDialog || showTopicDialog || pickerOpen || confirmingDelete) return
           // Don't open thread when clicking interactive children
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
           onClick()
         }}
         onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => { setIsHovered(false); setReactionPickerPos(null) }}
+        onMouseLeave={() => {
+          if (pickerOpen || moreMenuOpen) return
+          setIsHovered(false)
+        }}
       >
 
         {/* ── Topic anchor header (existing isTopic) - hidden while editing ── */}
@@ -630,7 +598,7 @@ export function ConversationCard({
                   {/* Bold / italic / underline / link over a selection. */}
                   <SelectionToolbar editor={editEditor} />
                   {editEmpty && (
-                    <div className="absolute inset-0 pointer-events-none flex items-center text-sm text-text-muted leading-[1.4]">
+                    <div className="absolute inset-0 pointer-events-none flex items-center text-body-2 text-text-muted">
                       Edit message
                     </div>
                   )}
@@ -639,13 +607,13 @@ export function ConversationCard({
                     each removable — PEE-16. */}
                 <AttachmentChips chips={editAttachments.chips} />
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1">
+                  {/* The composer's strip, and for the same reason (§4.2, D29).
+                      Cancel and Save are answers, not tools, so they stay two
+                      stops of their own on the right. */}
+                  <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
-                    <IconButton tooltip="Snooze" aria-label="Snooze">
-                      <IconSquareForbid2 size={16} stroke={1.5} />
-                    </IconButton>
                     <HighlightButton editor={editEditor} container={editBoxRef} />
-                  </div>
+                  </Toolbar>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>
                       Cancel
@@ -685,7 +653,7 @@ export function ConversationCard({
             )}
             {hasNewMessage && isUrgent && (
               <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-[shadow:0_0_5px_rgba(255,176,32,0.4)]">
+                <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-glow-warning">
                   <IconAlertSquareRounded size={12} stroke={2.5} className="text-warning-default" />
                 </div>
               </div>
@@ -695,38 +663,6 @@ export function ConversationCard({
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
             <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} />
           </div>
-
-          {/* Figma frame attachments - preview cards, click to view full screen */}
-          {!isEditing && attachments && attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 pl-8 pr-2 pb-2 w-full">
-              {attachments.map((id) => {
-                const frame = frameById(id)
-                if (!frame) return null
-                return (
-                  <div
-                    key={id}
-                    data-interactive
-                    className="flex flex-col w-[148px] rounded-lg border border-border-subtle bg-bg-inset hover:border-border-default p-1.5 gap-1.5 cursor-pointer transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setPreviewFrame(frame)
-                    }}
-                  >
-                    <div className="h-24 rounded-md bg-bg-active flex items-center justify-center overflow-hidden">
-                      <FrameArt frame={frame} className={frame.kind === 'mobile' ? 'h-20' : 'w-[90%]'} />
-                    </div>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <img src={figmaIcon} width={14} height={14} alt="Figma" className="rounded-[3px] shrink-0" />
-                      <div className="flex flex-col gap-[1px] min-w-0">
-                        <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{frame.name}</span>
-                        <span className="text-[10px] leading-[1.2] text-text-secondary truncate">{frameBreadcrumb(frame)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
 
           {/* Uploaded files — image thumbnails / file chips.
               `items-start` because they are not the same height: a file row is
@@ -770,11 +706,11 @@ export function ConversationCard({
                   size={16}
                   stroke={1.5}
                   className={cn(
-                    'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-[color:var(--text-interactive)] signal:group-hover/replies:text-text-primary',
+                    'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-text-interactive signal:group-hover/replies:text-text-primary',
                     replyAuthors && replyAuthors.length > 0 && 'signal:hidden'
                   )}
                 />
-                <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-[color:var(--text-interactive)] signal:group-hover/replies:text-text-primary">
+                <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-text-interactive signal:group-hover/replies:text-text-primary">
                   {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
                 </span>
                 {lastReplyTime && (
@@ -825,61 +761,52 @@ export function ConversationCard({
 
         {/* ── Quick menu on hover ── */}
         {isHovered && !isEditing && (
-          <div ref={reactButtonRef} className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
             <ConversationQuickMenu
               isResolved={resolved}
-              onReact={() => {
-                const rect = reactButtonRef.current?.getBoundingClientRect()
-                setReactionPickerPos((prev) => (prev || !rect ? null : { top: rect.top - 4, right: window.innerWidth - rect.right }))
-              }}
+              onReact={handleReact}
+              onPickerOpenChange={setPickerOpen}
               onReply={onReply}
               onResolve={() => setShowResolveDialog(true)}
               onReopen={handleReopen}
-              onMore={handleMore}
+              more={
+                <ConversationMoreMenu
+                  trigger={
+                    <ToolbarButton tooltip="More actions" aria-label="More actions">
+                      <IconDotsVertical size={16} stroke={1.5} />
+                    </ToolbarButton>
+                  }
+                  onOpenChange={(next) => {
+                    setMoreMenuOpen(next)
+                    if (next) onMore?.()
+                  }}
+                  isTopic={isTopic}
+                  isResolved={resolved}
+                  showCreateTopic={showCreateTopic}
+                  currentHighlight={highlightState}
+                  onHighlight={handleConvHighlight}
+                  onCreateTopic={openCreateTopic}
+                  onRevertToConversation={handleRevertToConversation}
+                  onResolve={() => setShowResolveDialog(true)}
+                  onReopen={handleReopen}
+                  onEditMessage={!isTopic ? handleEditStart : undefined}
+                  onDelete={handleDelete}
+                />
+              }
             />
           </div>
         )}
 
-        {/* ── Reaction picker (portalled — in-flow it was clipped by the panel's
-            scroll container on the topmost card) ── */}
-        {reactionPickerPos &&
-          createPortal(
-            <div
-              ref={reactionPickerRef}
-              onMouseDown={(e) => e.stopPropagation()}
-              onMouseLeave={() => setReactionPickerPos(null)}
-              style={{
-                position: 'fixed',
-                top: reactionPickerPos.top,
-                right: reactionPickerPos.right,
-                transform: 'translateY(-100%)',
-                zIndex: 50,
-              }}
-            >
-              <ReactionPicker onSelect={handleReact} />
-            </div>,
-            document.body
-          )}
-
-        {/* ── More menu — the shared shell portals, fits, and owns the exits ── */}
-        {moreMenuAnchor && (
-          <ConversationMoreMenu
-            anchor={moreMenuAnchor}
-            onClose={() => setMoreMenuAnchor(null)}
-            isTopic={isTopic}
-            isResolved={resolved}
-            showCreateTopic={showCreateTopic}
-            currentHighlight={highlightState}
-            onHighlight={handleConvHighlight}
-            onCreateTopic={openCreateTopic}
-            onRevertToConversation={handleRevertToConversation}
-            onResolve={() => { setMoreMenuAnchor(null); setShowResolveDialog(true) }}
-            onReopen={handleReopen}
-            onEditMessage={!isTopic ? handleEditStart : undefined}
-            onDelete={handleDelete}
-          />
-        )}
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDelete
+          what="message"
+          replies={replyCount ?? 0}
+          onConfirm={() => onDelete?.()}
+          onClose={() => setConfirmingDelete(false)}
+        />
+      )}
 
       {showResolveDialog && (
         <ResolveDialog
@@ -898,9 +825,6 @@ export function ConversationCard({
         />
       )}
 
-      {previewFrame && (
-        <FrameLightbox frame={previewFrame} onClose={() => setPreviewFrame(null)} />
-      )}
     </>
   )
 }

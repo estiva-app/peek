@@ -1,7 +1,8 @@
 import { useRef, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Avatar } from './ui/Avatar'
+import { ScrollArea } from '@estiva-app/ui'
+import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
 import { draftKeys } from '@/lib/drafts'
@@ -230,7 +231,7 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="h-12 shrink-0 flex items-center justify-between pl-5 pr-4 py-2 border-b border-border-subtle z-20 relative bg-bg-surface">
-        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-[color:var(--text-interactive)]">Replies</span>
+        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">Replies</span>
         <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
           <IconX size={16} stroke={1.5} />
         </IconButton>
@@ -366,7 +367,7 @@ export function ThreadPanel({
           {huddleMemberCount != null && (
             <IconLock size={16} stroke={1.5} className="text-text-secondary" />
           )}
-          <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-[color:var(--text-interactive)]">Replies</span>
+          <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">Replies</span>
         </div>
         <div className="flex items-center gap-2">
           {isResolved && (
@@ -383,24 +384,9 @@ export function ThreadPanel({
                   : []
             const total = members.length || huddleMemberCount || 0
             if (total === 0) return null
-            return (
-              <div className="bg-bg-elevated border border-border-default rounded-sm flex gap-2 items-center pl-[2px] pr-2 py-[2px]">
-                <div className="flex items-center pr-2">
-                  {(members.length > 0
-                    ? members.slice(0, 3).map((name, i) => ({ key: i, name }))
-                    : Array.from({ length: Math.min(total, 3) }, (_, i) => ({ key: i, name: undefined as string | undefined }))
-                  ).map(({ key, name }) => (
-                    <div
-                      key={key}
-                      className="-mr-2 relative shrink-0 size-6 rounded-sm overflow-hidden border-2 border-bg-elevated"
-                    >
-                      <Avatar size={24} name={name} alt={name} />
-                    </div>
-                  ))}
-                </div>
-                <span className="text-caption text-text-secondary">{total}</span>
-              </div>
-            )
+            // The header's pill, not a third copy of it (F12). It was the
+            // same chrome re-typed around a stack that clipped its own faces.
+            return <MembersPill members={members} count={total} />
           })()}
           {onOpenInDm && (
             <IconButton tooltip="Open original" aria-label="Open original" onClick={onOpenInDm}>
@@ -414,7 +400,7 @@ export function ThreadPanel({
       </div>
 
       {/* Scrollable content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
+      <ScrollArea className="flex-1" viewportRef={scrollRef} contentClassName="flex flex-col">
         {/* Initial message. Anchored like a reply (INT-3): a citation has to be
             able to reach the message that opened the thread too. */}
         <div className="px-4 pt-4 pb-2" data-reply-id={conversation.id}>
@@ -425,7 +411,6 @@ export function ThreadPanel({
               authorAvatarSrc={conversation.authorAvatarSrc}
               timestamp={rootTimestamp}
               body={conversation.body}
-              attachments={conversation.attachments}
               files={conversation.files}
               reactions={initialReactions}
               highlightType={initialHighlightType}
@@ -467,7 +452,6 @@ export function ThreadPanel({
                     authorAvatarSrc={reply.authorAvatarSrc}
                     timestamp={reply.timestamp}
                     body={reply.body}
-                    attachments={reply.attachments}
                     files={reply.files}
                     highlightType={reply.highlightType}
                     reactions={reply.reactions}
@@ -528,7 +512,7 @@ export function ThreadPanel({
             ) : null
           })}
         </div>
-      </div>
+      </ScrollArea>
 
       {/* Compose box */}
       <div className="p-3">

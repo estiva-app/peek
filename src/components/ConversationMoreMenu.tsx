@@ -5,8 +5,11 @@ import {
   IconArrowBack,
   IconHighlight,
   IconX,
+  IconDotsVertical,
 } from '@tabler/icons-react'
+import type { ReactElement } from 'react'
 import { Menu, MenuItem, MenuSection, MenuSub } from '@estiva-app/ui'
+import { IconButton } from './ui/IconButton'
 import { Divider } from './ui/Divider'
 import { HighlightSwatch } from './ui/HighlightPill'
 import { cn } from '@/lib/utils'
@@ -17,17 +20,23 @@ import { HIGHLIGHT_META, type HighlightType } from '@/api'
  * (2026-09-01), the highlight submenu is the shared MenuSub, and the
  * container is the shared Menu shell (both 2026-09-03) — hand it the
  * quick-menu's measured rect as `anchor` and the shell portals, fits the
- * viewport, and owns every exit (outside click, Escape, pointer leaving —
- * the leave grace shared with the submenu, so crossing into it never
- * closes the menu). The old caller-side portal with its own `< 200px`
- * flip heuristic and outside-click listener is gone.
+ * viewport, and owns every exit (outside click and Escape).
  *
- * Without an anchor (the stories) it stands in flow, pinned open.
+ * **It owns its ⋯ button** (`@estiva-app/ui` 0.10.0: a menu owns its
+ * trigger). It used to be handed the quick menu's measured rect as `anchor`,
+ * which meant the quick menu kept a ref, measured a button and called back,
+ * and the card kept the open state — all of it to tell the menu where a
+ * button it could have held was. The quick menu takes this whole component in
+ * its `more` slot now.
+ *
+ * `closeOnLeave` went with the same release. This menu has a `MenuSub`, and
+ * a hover-opened menu with a submenu strands itself open (D28), so it opens
+ * on a press — which is what it already did.
  */
 interface ConversationMoreMenuProps {
-  /** The quick-menu ⋯ rect. Absent: in-flow, for the stories. */
-  anchor?: DOMRect | HTMLElement | null
-  onClose?: () => void
+  /** Controlled, for a story that wants the panel standing open. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   isTopic?: boolean
   isResolved?: boolean
   showCreateTopic?: boolean
@@ -41,17 +50,20 @@ interface ConversationMoreMenuProps {
   onEditMessage?: () => void
   onViewDetails?: () => void
   onDelete?: () => void
+  /** The ⋯ button; the menu owns it. A `ToolbarButton` when the menu sits
+   *  in the hover toolbar, so the strip stays one Tab stop (D29). */
+  trigger?: ReactElement
   className?: string
 }
 
 export function ConversationMoreMenu({
-  anchor,
-  onClose,
   isTopic = false,
   isResolved = false,
   showCreateTopic = true,
   currentHighlight,
   onHighlight,
+  open,
+  onOpenChange,
   onCreateTopic,
   onRevertToConversation,
   onResolve,
@@ -60,15 +72,22 @@ export function ConversationMoreMenu({
   onEditMessage,
   onViewDetails,
   onDelete,
+  trigger,
   className,
 }: ConversationMoreMenuProps) {
   return (
     <Menu
-      anchor={anchor ?? undefined}
+      trigger={
+        trigger ?? (
+          <IconButton tooltip="More actions" aria-label="More actions">
+            <IconDotsVertical size={16} stroke={1.5} />
+          </IconButton>
+        )
+      }
       align="right"
-      closeOnLeave={!!anchor}
-      onClose={onClose ?? (() => {})}
-      className={cn('w-[244px] gap-2', !anchor && 'static', className)}
+      open={open}
+      onOpenChange={onOpenChange}
+      className={cn('w-[244px] gap-2', className)}
     >
       <MenuSection label="Utilities">
         {isTopic ? (

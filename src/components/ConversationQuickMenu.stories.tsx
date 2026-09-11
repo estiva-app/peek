@@ -1,5 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
+import { IconDotsVertical } from '@tabler/icons-react'
+import { ToolbarButton } from '@estiva-app/ui'
 
 const meta = {
   title: 'Messages/Menus/ConversationQuickMenu',
@@ -10,7 +13,18 @@ const meta = {
     onReply: () => {},
     onResolve: () => {},
     onReopen: () => {},
-    onMore: () => {},
+    /* The ⋯ menu owns its own button, so the strip takes the menu rather
+       than a callback and the button arrives with it. Press it. */
+    more: (
+      <ConversationMoreMenu
+        trigger={
+          <ToolbarButton tooltip="More actions" aria-label="More actions">
+            <IconDotsVertical size={16} stroke={1.5} />
+          </ToolbarButton>
+        }
+        onDelete={() => {}}
+      />
+    ),
   },
 } satisfies Meta<typeof ConversationQuickMenu>
 

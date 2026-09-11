@@ -8,11 +8,12 @@ import {
   IconChecks,
   IconArrowNarrowRight,
 } from '@tabler/icons-react'
-import { Menu, MenuItem } from '@estiva-app/ui'
+import { Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
+import { ConversationQuickMenu } from './ConversationQuickMenu'
+import { ConfirmDelete } from './ConfirmDelete'
 import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
-import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
 import { useReplyCount, useReplyMeta, type Huddle } from '@/api'
@@ -79,8 +80,11 @@ export function HuddleCard({
   const inStream = variant === 'inStream'
   const isResolved = huddle.state === 'resolved'
   const [isHovered, setIsHovered] = useState(false)
-  // The ⋯ menu: the trigger's rect, or closed (shared Menu shell).
-  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null)
+  /* The ⋯ menu owns its button since `@estiva-app/ui` 0.10.0, so this is no
+     longer a rect — only whether it is open, which the card still needs: an
+     open menu must not let a click through to the card, and must not let the
+     hover strip unmount from under itself. */
+  const [menuOpen, setMenuOpen] = useState(false)
 
   // Grid keeps the legacy "first + N" truncation; inStream shows full comma-joined
   // names (the user-side label is "you and these other people").
@@ -109,18 +113,9 @@ export function HuddleCard({
   const replyAuthors = replyMeta.replyAuthors ?? huddle.conversation?.replyAuthors
   const lastReplyTime = replyMeta.lastReplyTime ?? huddle.conversation?.lastReplyTime
 
-  const handleMore = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    // Toggle; the shared shell decides above/below from the real room, and
-    // owns the outside-click and Escape exits (2026-09-03).
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setMenuAnchor((prev) => (prev ? null : rect))
-  }
-
-  const handleDelete = () => {
-    setMenuAnchor(null)
-    onDelete?.()
-  }
+  // Delete asks first (D56).
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const handleDelete = () => setConfirmingDelete(true)
 
   // Single-line preview body for the inStream variant — strip newlines so the
   // truncate happens cleanly at the card's right edge.
@@ -157,14 +152,14 @@ export function HuddleCard({
           className
         )}
         onClick={(e) => {
-          if (menuAnchor) return
+          if (menuOpen) return
           const target = e.target as HTMLElement
           if (target.closest('button, [role="button"], [data-interactive]')) return
           onClick?.()
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
-          if (menuAnchor) return
+          if (menuOpen) return
           setIsHovered(false)
         }}
       >
@@ -231,7 +226,7 @@ export function HuddleCard({
           )}
           {inStream && hasNewMessage && isUrgent && (
             <div className="w-6 h-6 flex items-center justify-center shrink-0 ml-auto">
-              <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-[shadow:0_0_5px_rgba(255,176,32,0.4)]">
+              <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-glow-warning">
                 <IconAlertSquareRounded size={12} stroke={2.5} className="text-warning-default" />
               </div>
             </div>
@@ -267,7 +262,7 @@ export function HuddleCard({
             pl-8 pr-2 pb-1.5) so huddles and conversations sitting side by side in
             V3's mixed stream share the same reply-count chrome. */}
         {!inStream && replyCount > 0 && (
-          <div className="flex items-center gap-2 text-text-secondary h-6 signal:text-[color:var(--text-interactive)]">
+          <div className="flex items-center gap-2 text-text-secondary h-6 signal:text-text-interactive">
             <IconMessage2 size={14} stroke={1.5} className="shrink-0" />
             <span className="text-caption signal:font-medium">
               {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
@@ -294,11 +289,11 @@ export function HuddleCard({
                 size={16}
                 stroke={1.5}
                 className={cn(
-                  'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-[color:var(--text-interactive)] signal:group-hover/replies:text-text-primary',
+                  'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-text-interactive signal:group-hover/replies:text-text-primary',
                   replyAuthors && replyAuthors.length > 0 && 'signal:hidden'
                 )}
               />
-              <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-[color:var(--text-interactive)] signal:group-hover/replies:text-text-primary">
+              <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-text-interactive signal:group-hover/replies:text-text-primary">
                 {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
               </span>
               {lastReplyTime && (
@@ -343,36 +338,47 @@ export function HuddleCard({
           </div>
         )}
 
-        {/* Quick menu on hover — same pattern in both variants */}
+        {/* Quick menu on hover — the package Toolbar the message card uses,
+            the second copy of its chrome gone (§4.2, F7). The menu owns its
+            button; the card is clickable, so the button still swallows its
+            own click — Base UI composes its toggle onto that. */}
         {isHovered && (
           <div className="absolute right-[3px] top-[3px]" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-bg-elevated border border-border-subtle rounded-sm shadow-sm flex items-start gap-1 p-1">
-              <IconButton tooltip="Reply" aria-label="Reply" onClick={() => { onReply?.(); onClick?.() }}>
-                <IconMessage2 size={16} stroke={1.5} />
-              </IconButton>
-              <div className="w-px self-stretch bg-border-subtle" />
-              <IconButton tooltip="More actions" aria-label="More actions" onClick={handleMore}>
-                <IconDotsVertical size={16} stroke={1.5} />
-              </IconButton>
-            </div>
+            <ConversationQuickMenu
+              onReply={() => { onReply?.(); onClick?.() }}
+              more={
+              <Menu
+                trigger={
+                  <ToolbarButton
+                    tooltip="More actions"
+                    aria-label="More actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <IconDotsVertical size={16} stroke={1.5} />
+                  </ToolbarButton>
+                }
+                align="right"
+                onOpenChange={(next) => {
+                  setMenuOpen(next)
+                  if (!next) setIsHovered(false)
+                }}
+                className="w-[244px] gap-2"
+              >
+                {/* "View details" has no handler and never had one — an inert
+                    control, COMPONENTS-PEEK F3, not something to change while
+                    porting. */}
+                <MenuItem label="View details" />
+                <Divider className="mx-0" />
+                <MenuItem label="Delete" destructive onClick={handleDelete} />
+              </Menu>
+              }
+            />
           </div>
         )}
         </div>
       </div>
-
-      {/* More menu — the shared shell portals, fits, and owns the exits */}
-      {menuAnchor && (
-        <Menu
-          anchor={menuAnchor}
-          align="right"
-          closeOnLeave
-          onClose={() => { setMenuAnchor(null); setIsHovered(false) }}
-          className="w-[244px] gap-2"
-        >
-          <MenuItem label="View details" />
-          <Divider className="mx-0" />
-          <MenuItem label="Delete" destructive onClick={handleDelete} />
-        </Menu>
+      {confirmingDelete && (
+        <ConfirmDelete what="huddle" onConfirm={() => onDelete?.()} onClose={() => setConfirmingDelete(false)} />
       )}
     </>
   )

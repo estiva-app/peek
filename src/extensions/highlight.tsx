@@ -22,7 +22,7 @@ function HighlightTagView({ node }: NodeViewProps) {
   return (
     <NodeViewWrapper
       as="span"
-      className="inline-flex items-center gap-1 rounded-sm px-1 text-sm font-medium select-none cursor-pointer"
+      className="inline-flex items-center gap-1 rounded-sm px-1 text-body-2 font-medium select-none cursor-pointer"
       style={{
         backgroundColor: `color-mix(in srgb, ${meta.color} 13%, transparent)`,
         color: meta.color,

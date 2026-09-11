@@ -1,11 +1,11 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { shortcutLabel } from '@/lib/shortcuts'
-import { IconMenu2, IconHelpCircle } from '@tabler/icons-react'
+import { IconMenu2 } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
 import { IdentityMenu, MenuItem, TopBar as TopBarShell } from '@estiva-app/ui'
+import { ReadStatePanel } from './ReadStatePanel'
 import { IconButton } from './ui/IconButton'
 import { SearchInput } from './ui/SearchInput'
-import { DebugMenu } from './DebugMenu'
 import { hasConvex, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
 
 interface TopBarProps {
@@ -21,6 +21,8 @@ interface TopBarProps {
  */
 export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
   const signOut = useSignOut()
+  const [cluster, setCluster] = useState<HTMLDivElement | null>(null)
+  const [readStateOpen, setReadStateOpen] = useState(false)
   const me = useCurrentUser()
   const avatarSrcFor = useAvatarSrc()
   const relayUrl = useRelayUrl()
@@ -28,8 +30,7 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
      than read from a ref during render — the menu row that opens it unmounts
      as the account menu closes, so its own ref would be null by the time it
      is needed. The anchor is the top bar's right cluster, which persists. */
-  const [debugAnchor, setDebugAnchor] = useState<HTMLElement | null>(null)
-  const rightRef = useRef<HTMLDivElement>(null)
+
 
   const displayName = me?.name ?? CURRENT_USER_NAME
 
@@ -56,25 +57,14 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
           </div>
         }
         right={
-          /* The cluster keeps its own ref — the debug menu anchors on it. */
-          <div ref={rightRef} className="flex items-center gap-[6px]">
-            {/* Debug menu is a dev affordance over the mock dataset — hidden on the
-                real (Convex-backed) app (issue #6). */}
-            {!hasConvex && (
-              <div>
-                <IconButton
-                  tooltip="Debug"
-                  tooltipPlacement="bottom"
-                  aria-label="Debug"
-                  // Swallowed so the shared shell's outside-mousedown dismiss
-                  // does not fire first and turn the toggle into close-reopen.
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(e) => setDebugAnchor((a) => (a ? null : e.currentTarget))}
-                >
-                  <IconHelpCircle size={16} stroke={1.5} />
-                </IconButton>
-              </div>
-            )}
+          /*
+            The cluster's element is the panel's anchor, captured by a callback
+            ref into state rather than read during render: the row that opens
+            the panel unmounts as the account menu closes, so its own ref would
+            be null by the time it is wanted, and a ref read during render is
+            what the hooks lint forbids by name.
+          */
+          <div ref={setCluster} className="flex items-center gap-[6px]">
             {/* The shared IdentityMenu (2026-09-01), Ship's anatomy, her ruling:
                 identity section, workspace line naming the relay, and the actions
                 — Edit your profile in Estiva ID (the ProfileDialog this used to
@@ -99,20 +89,22 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               idBase={hasConvex ? PROFILE_EDIT_URL : undefined}
               onSignOut={hasConvex ? () => void signOut() : undefined}
             >
-              {/* Read state (Convex mode). The dual-run readout lives in the debug
-                  menu, and the debug BUTTON is hidden here (issue #6) because its
-                  other sections drive the mock dataset — so on the real app the
-                  panel existed and nothing could open it. This is the way in — a
-                  click, so no mousedown is in flight when the debug shell arms
-                  its outside dismiss (see DebugMenu's header note). */}
+              {/*
+                Read state, on the real app only — there is nothing to compare
+                against without a backend. This row is the only way in: the
+                debug button it used to share a panel with is gone (D48), and
+                was hidden on the real app anyway.
+
+                A click rather than a press, so no pointerdown is still in
+                flight when the panel arms its own outside-dismiss.
+              */}
               {hasConvex
                 ? (close: () => void) => (
                     <MenuItem
                       label="Read state"
                       onClick={() => {
-                        const anchor = rightRef.current
                         close()
-                        setDebugAnchor(anchor)
+                        setReadStateOpen(true)
                       }}
                     />
                   )
@@ -122,9 +114,7 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
         }
       />
 
-      {/* Debug menu — the shared Menu portals it to the body, so it sits
-          beside the bar in the tree without living inside it. */}
-      {debugAnchor && <DebugMenu anchorEl={debugAnchor} onClose={() => setDebugAnchor(null)} />}
+      {readStateOpen && <ReadStatePanel anchor={cluster} onClose={() => setReadStateOpen(false)} />}
     </>
   )
 }

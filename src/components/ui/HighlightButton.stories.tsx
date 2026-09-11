@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { Toolbar } from '@estiva-app/ui'
 import { PeekDataProvider } from '@/api'
 import { HighlightButton } from './HighlightButton'
 
@@ -38,9 +39,12 @@ function Box({ withText }: { withText?: boolean }) {
         className="relative w-full rounded-lg border border-border-default bg-bg-inset p-3 flex flex-col gap-4"
       >
         <EditorContent editor={editor} />
-        <div className="flex items-center gap-1">
+        {/* The button is a ToolbarButton since 2026-09-11 (§4.2), and Base UI
+            throws for a toolbar part with no strip around it. This is the strip
+            all three composers draw, so the story shows it as it is used. */}
+        <Toolbar aria-label="Compose tools" surface={false} className="flex items-center gap-1">
           <HighlightButton editor={editor} container={boxRef} />
-        </div>
+        </Toolbar>
       </div>
     </div>
   )

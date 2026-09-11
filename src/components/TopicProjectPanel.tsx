@@ -1,12 +1,13 @@
 import { describeRelayFailure, type RelayFailureKind } from '@/nostr/relayRead'
 import { useCallback, useState } from 'react'
-import { IconChevronRight, IconFolderOpen } from '@tabler/icons-react'
+import { IconChevronRight } from '@tabler/icons-react'
 import type { FolderProject, ForeignObject, ResolvedSlot } from '@estiva-app/interop'
 import { hasConvex, useForeignObjects } from '@/api'
 import type { FolderProjectState } from '@/api/useFolderProject'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { FieldLine, ScrollArea } from '@estiva-app/ui'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
 import { Person } from '@/components/ui/Person'
@@ -45,7 +46,7 @@ function PanelShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full">
       <div className="h-12 shrink-0 flex items-center pl-5 pr-4 py-2 border-b border-border-subtle">
-        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-[color:var(--text-interactive)]">
+        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">
           Files
         </span>
       </div>
@@ -124,7 +125,7 @@ function Properties({
             // A pubkey is a person: their face and their full name, never the
             // key (FEE-1). Both paths go through `Person`, so the lead reads the
             // same whether or not this viewer may reassign it.
-            <span className="min-w-0 text-xs text-text-secondary">
+            <span className="min-w-0 text-caption text-text-secondary">
               {row.slot.isPubkey ? (
                 <Person pubkey={row.slot.value} people={object.people} />
               ) : (
@@ -132,7 +133,7 @@ function Properties({
               )}
             </span>
           ) : (
-            <span className="text-xs text-text-muted">—</span>
+            <span className="text-caption text-text-muted">—</span>
           )}
         </Property>
       ))}
@@ -205,12 +206,9 @@ export function TopicProjectPanelView({
   if (folderProject !== null && 'failed' in folderProject) {
     return (
       <PanelShell>
-        <div className="flex-1 flex items-center justify-center px-6">
-          <EmptyState
-            icon={<IconFolderOpen size={16} stroke={1.5} />}
-            message={describeRelayFailure(folderProject.failed)}
-          />
-        </div>
+        {/* A section of the page is empty, not the page: the line alone,
+            left, no icon (B18, D41), in the panel's own padding. */}
+        <EmptyState scope="section" className="p-3" message={describeRelayFailure(folderProject.failed)} />
       </PanelShell>
     )
   }
@@ -218,12 +216,7 @@ export function TopicProjectPanelView({
   if (folderProject === null) {
     return (
       <PanelShell>
-        <div className="flex-1 flex items-center justify-center px-6">
-          <EmptyState
-            icon={<IconFolderOpen size={16} stroke={1.5} />}
-            message="No project linked to this topic."
-          />
-        </div>
+        <EmptyState scope="section" className="p-3" message="No project linked to this topic." />
       </PanelShell>
     )
   }
@@ -233,7 +226,7 @@ export function TopicProjectPanelView({
 
   return (
     <PanelShell>
-      <div className="flex-1 overflow-y-auto p-3">
+      <ScrollArea className="flex-1" contentClassName="p-3">
         {/* No fill, deliberately (Katerina, 2026-08-19). The reference widget
             takes one because it sits in a conversation among attachments; this
             card already has a panel of its own around it, and a second surface
@@ -251,17 +244,17 @@ export function TopicProjectPanelView({
                 href={project.openUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block truncate text-sm font-semibold text-text-primary hover:underline"
+                className="block truncate text-body-2 font-semibold text-text-primary hover:underline"
               >
                 {project.slots.title?.value ?? 'Untitled project'}
               </a>
             ) : (
-              <span className="block truncate text-sm font-semibold text-text-primary">
+              <span className="block truncate text-body-2 font-semibold text-text-primary">
                 {project.slots.title?.value ?? 'Untitled project'}
               </span>
             )}
             {project.slots.subtitle && (
-              <p className="line-clamp-2 text-xs text-text-secondary">
+              <p className="line-clamp-2 text-caption text-text-secondary">
                 {project.slots.subtitle.value}
               </p>
             )}
@@ -276,7 +269,9 @@ export function TopicProjectPanelView({
                 directory={directory}
               />
             </div>
-            {error && <p className="text-xs text-error-default">{error}</p>}
+            {/* The package's line since 0.12.2 (§4.3, B24) — under the action
+                controls as a group, and announced. */}
+            {error && <FieldLine tone="error">{error}</FieldLine>}
           </div>
 
           {/* Tickets live inside the widget: they are part of the project, not a
@@ -308,7 +303,7 @@ export function TopicProjectPanelView({
             />
           </section>
         )}
-      </div>
+      </ScrollArea>
     </PanelShell>
   )
 }

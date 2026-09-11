@@ -9,6 +9,10 @@ import { EstivaIdCallback } from './auth/EstivaIdCallback'
 import { CALLBACK_PATH } from './auth/estivaId'
 import { LastSelectionProvider } from './lib/lastSelection'
 import { ToastProvider } from './lib/toast'
+/* One TooltipProvider for the whole app (PEEK-ADOPTION.md §2.5): neighbouring
+   tooltips share one 300ms wait, so the second and third open at once while
+   the group is warm, instead of each button waiting on its own. */
+import { TooltipProvider } from '@estiva-app/ui'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import './index.css'
 import App from './App.tsx'
@@ -33,7 +37,9 @@ createRoot(document.getElementById('root')!).render(
                   <AuthGate>
                     <LastSelectionProvider>
                       <ToastProvider>
-                        <App />
+                        <TooltipProvider>
+                          <App />
+                        </TooltipProvider>
                         <Analytics />
                       </ToastProvider>
                     </LastSelectionProvider>

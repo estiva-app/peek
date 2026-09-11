@@ -25,7 +25,6 @@ export interface SendMessagePayload {
   resolution?: { message: string }
   highlightType?: HighlightType
   /** Figma frame ids attached via the launcher's find flow. */
-  attachments?: string[]
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
 }
@@ -74,6 +73,20 @@ const nowTimestamp = (now = Date.now()) =>
  * reported as any: a warning people learn to dismiss is worse than none.
  */
 export type EditOutcome = { published: true } | { published: false; reason: string }
+
+/**
+ * What came of a delete (Katerina, 2026-09-10: a delete should confirm itself).
+ *
+ * `kept: true` is the one outcome worth interrupting for: Peek hid the thing,
+ * the relay refused the tombstone, and the row is back. Without a word for it
+ * a message would reappear a second after it vanished and nothing would say
+ * why — the same silence PEEK-170 removed for topics.
+ *
+ * `kept: false` covers "the relay accepted it" *and* "there was nothing to
+ * ask" — a DM, a message that never reached the relay, mock mode. Neither is a
+ * failure, and neither may be reported as one.
+ */
+export type DeleteOutcome = { kept: boolean }
 
 export function usePeekActions() {
   const m = useTopicMutations()
@@ -270,7 +283,6 @@ export function usePeekActions() {
           highlightType: msg.highlightType,
           resolved: msg.isResolved,
           resolutionMessage: msg.resolutionMessage,
-          attachments: msg.attachments,
           fileAttachments: toRemoteFiles(files),
         })
       } catch (error) {
@@ -352,20 +364,22 @@ export function usePeekActions() {
      * either. That case is a warning, not a rollback.
      */
     restore?: () => void,
-  ) => {
-    void (async () => {
+  ): Promise<DeleteOutcome> => {
+    /* Returns rather than only restoring, so a caller can say what happened —
+       the same shape `editBody` has. `kept: true` means the row came back. */
+    return (async (): Promise<DeleteOutcome> => {
       const outcome = await removed
       const { nostrEventIds } = outcome
       if (nostrEventIds.length === 0) {
         // Nothing to ask and nothing deleted: the viewer had no claim the relay
         // could adjudicate, so the prediction was wrong.
-        if (!outcome.removed) restore?.()
-        return
+        if (!outcome.removed) { restore?.(); return { kept: true } }
+        return { kept: false }
       }
       const token = tokenForPublish('deletion')
       if (!token) {
-        if (!outcome.removed) restore?.()
-        return
+        if (!outcome.removed) { restore?.(); return { kept: true } }
+        return { kept: false }
       }
       // One kind:5 per target rather than one event with many `e` tags — that
       // is the shape Buzz accepts, and a rejected batch would lose every
@@ -377,14 +391,16 @@ export function usePeekActions() {
       }
       // The relay adjudicated and said no. `signAndPublish` has already logged
       // its words.
-      if (!outcome.removed && accepted === 0) restore?.()
+      if (!outcome.removed && accepted === 0) { restore?.(); return { kept: true } }
+      return { kept: false }
     })().catch((error) => {
       console.warn('[nostr] deletion publish failed:', error)
       restore?.()
+      return { kept: true }
     })
   }
 
-  const buildMessage = ({ text, resolution, highlightType, attachments, files }: SendMessagePayload): ConversationData => ({
+  const buildMessage = ({ text, resolution, highlightType, files }: SendMessagePayload): ConversationData => ({
     id: `sent_${Date.now()}`,
     authorName: CURRENT_USER_NAME,
     timestamp: nowTimestamp(),
@@ -394,7 +410,6 @@ export function usePeekActions() {
     isResolved: resolution ? true : undefined,
     resolvedBy: resolution ? CURRENT_USER_NAME : undefined,
     resolutionMessage: resolution?.message || undefined,
-    attachments,
     files: files && files.length > 0 ? files.map(toFileAttachment) : undefined,
   })
 
@@ -415,7 +430,7 @@ export function usePeekActions() {
     // ── Messages ──
     /** Resolves false only when nothing was written anywhere — CON-10. */
     sendTopicMessage(topicId: string, payload: SendMessagePayload): Promise<boolean> {
-      if (payload.text || payload.attachments?.length || payload.files?.length) {
+      if (payload.text || payload.files?.length) {
         const newMsg = buildMessage(payload)
         m.setSentMessages((prev) => ({ ...prev, [topicId]: [...(prev[topicId] ?? []), newMsg] }))
         return persistMessage('topic', topicId, newMsg, payload.files)
@@ -429,7 +444,7 @@ export function usePeekActions() {
 
     /** `dmId` is the partner's person key — the server resolves the pair (§2.4). */
     sendDmMessage(dmId: string, payload: SendMessagePayload): Promise<boolean> {
-      if (payload.text || payload.attachments?.length || payload.files?.length) {
+      if (payload.text || payload.files?.length) {
         const newMsg = buildMessage(payload)
         setSentDmMessages((prev) => ({ ...prev, [dmId]: [...(prev[dmId] ?? []), newMsg] }))
         return persistMessage('dm', dmId, newMsg, payload.files)
@@ -455,16 +470,18 @@ export function usePeekActions() {
       persistMessage('huddle', huddleId, newMsg)
     },
 
-    deleteTopicMessage(topicId: string, messageId: string) {
+    deleteTopicMessage(topicId: string, messageId: string): Promise<DeleteOutcome> {
       m.setSentMessages((prev) => ({ ...prev, [topicId]: (prev[topicId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
+      if (!hasConvex) return Promise.resolve({ kept: false })
+      return publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
     },
 
-    deleteDmMessage(dmId: string, messageId: string) {
+    deleteDmMessage(dmId: string, messageId: string): Promise<DeleteOutcome> {
       setSentDmMessages((prev) => ({ ...prev, [dmId]: (prev[dmId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (hasConvex) publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
+      if (!hasConvex) return Promise.resolve({ kept: false })
+      return publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
     },
 
     /** Body edit — id-keyed, applies to messages and replies alike
@@ -668,10 +685,10 @@ export function usePeekActions() {
     /** Send a reply; a `→ msg` resolution stamps resolvedByReplyId so the
      *  reply card can surface the resolution inline later. */
     sendReply(messageId: string, payload: SendMessagePayload): Promise<boolean> {
-      const { text, resolution, highlightType, attachments, files } = payload
+      const { text, resolution, highlightType, files } = payload
       let newReplyId: string | undefined
       let saved: Promise<boolean> = Promise.resolve(true)
-      if (text || attachments?.length || files?.length) {
+      if (text || files?.length) {
         const now = Date.now()
         newReplyId = `reply_${now}`
         const newReply: ReplyData = {
@@ -681,7 +698,6 @@ export function usePeekActions() {
           body: text,
           highlightType,
           createdAtMs: now,
-          attachments,
           files: files && files.length > 0 ? files.map(toFileAttachment) : undefined,
         }
         m.setSentReplies((prev) => ({ ...prev, [messageId]: [...(prev[messageId] ?? []), newReply] }))
@@ -694,7 +710,6 @@ export function usePeekActions() {
                 seedKey: newReply.id,
                 body: text,
                 highlightType,
-                attachments,
                 fileAttachments: toRemoteFiles(files),
               })
             } catch (error) {
@@ -755,13 +770,14 @@ export function usePeekActions() {
       return saved
     },
 
-    deleteReply(messageId: string, replyId: string) {
+    deleteReply(messageId: string, replyId: string): Promise<DeleteOutcome> {
       m.setSentReplies((prev) => ({ ...prev, [messageId]: (prev[messageId] ?? []).filter((r) => r.id !== replyId) }))
       // No `restore` here: a reply is hidden by dropping it from `sentReplies`,
       // which only ever held replies sent in this session. A persisted reply is
       // not hidden optimistically at all, so there is nothing to put back — it
       // simply stays until the sync removes it.
-      if (hasConvex) publishDeletions(removeReplyRemote({ key: replyId }))
+      if (!hasConvex) return Promise.resolve({ kept: false })
+      return publishDeletions(removeReplyRemote({ key: replyId }))
     },
 
     // ── Huddles ──

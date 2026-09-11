@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, typ
 import { registerTopicConversation, unregisterTopicConversation } from '@/lib/conversationRegistry'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { isNearBottom } from './scrollPolicy'
+import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { JoinTopicBanner } from '@/components/JoinTopicBanner'
@@ -48,6 +49,7 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import type { RelayState } from '@estiva-app/protocol'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
+import { useReportDelete } from '@/lib/reportDelete'
 import { useNavigate } from 'react-router-dom'
 
 interface UseTopicViewArgs {
@@ -133,6 +135,7 @@ export function useTopicView({
   const openWorkTopicIds = useOpenWorkTopicIds()
   const actions = usePeekActions()
   const { showToast } = useToast()
+  const reportDelete = useReportDelete()
 
   /**
    * Edit, and say so when it did not travel — PEE-24.
@@ -151,11 +154,11 @@ export function useTopicView({
       if (outcome.published) return
       showToast({
         label: `Edited here, but not published — ${outcome.reason}. Other apps still show the old text.`,
-        // `neutral` because the shared ToastType is success | brand | neutral
-        // and has no failure variant. `leadingIcon: false` matters more than
-        // the colour: the default is a circle-CHECK, and a tick beside "not
-        // published" is worse than no icon at all.
-        type: 'neutral',
+        // `warning` since the package gained the tone at 0.12.2; it was
+        // `neutral` for want of one. `leadingIcon: false` still matters more
+        // than the colour: the default is a circle-CHECK, and a tick beside
+        // "not published" is worse than no icon at all.
+        type: 'warning',
         leadingIcon: false,
         durationMs: 0,
       })
@@ -476,7 +479,7 @@ export function useTopicView({
 
   const handleDeleteReply = (replyId: string) => {
     if (!threadConvId) return
-    actions.deleteReply(threadConvId, replyId)
+    void actions.deleteReply(threadConvId, replyId).then(({ kept }) => reportDelete('reply', kept))
   }
 
   const handleSend = (payload: SendPayload) => {
@@ -486,7 +489,7 @@ export function useTopicView({
 
   const handleDelete = (id: string) => {
     if (topicId == null) return
-    actions.deleteTopicMessage(topicId, id)
+    void actions.deleteTopicMessage(topicId, id).then(({ kept }) => reportDelete('message', kept))
   }
 
   // The huddle creator (HuddleCreator) owns its own recipient/query/focus state and
@@ -815,7 +818,7 @@ export function useTopicView({
         }
         return (
         <>
-          <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto flex flex-col">
+          <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
             <div className="flex-1 min-h-0" />
             <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
               {isLoading && <SkeletonConversationList />}
@@ -860,7 +863,6 @@ export function useTopicView({
                           authorAvatarSrc={c.authorAvatarSrc}
                           timestamp={c.timestamp}
                           body={c.body}
-                          attachments={c.attachments}
                           files={c.files}
                           reactions={c.reactions}
                           highlightType={c.highlightType}
@@ -891,7 +893,7 @@ export function useTopicView({
                 ))
               )}
             </div>
-          </div>
+          </ScrollArea>
           {!isLoading && !isMemberHere && (
             <div className="px-3 pt-2">
               <JoinTopicBanner title={topicTitle} onJoin={() => topicId != null && joinTopic(topicId)} />

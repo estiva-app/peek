@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Person } from '@/api'
 import type { FormField, LauncherAction, LauncherApp, VocabOption } from '@/lib/launcherActions'
+import { ScrollArea } from '@estiva-app/ui'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
 import { PersonChipInput } from './ui/PersonChipInput'
@@ -224,13 +225,13 @@ export function ActionFormPanel({
         }
       }}
     >
-      <div className="flex flex-col gap-4 p-4 max-h-[400px] overflow-y-auto [&>*]:shrink-0">
+      <ScrollArea viewportClassName="max-h-[400px]" contentClassName="flex flex-col gap-4 p-4 [&>*]:shrink-0">
         {action.fields.map((field, i) => (
           <Field key={field.key} label={field.label} required={field.required}>
             {control(field, i === 0)}
           </Field>
         ))}
-      </div>
+      </ScrollArea>
 
       <div className="flex items-center justify-end px-4 pb-4 shrink-0">
         <Button variant="primary" onClick={submit} disabled={incomplete}>
