@@ -1,5 +1,10 @@
 import { useState } from 'react'
-import { IconChevronDown, IconChevronRight, IconMessage } from '@tabler/icons-react'
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconFolderShare,
+  IconMessage,
+} from '@tabler/icons-react'
 import { CONVERSATION_LIMIT } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -39,6 +44,7 @@ export function FolderContentsView({
   state,
   selectedRef,
   onSelect,
+  onMove,
   counts,
 }: {
   state: FolderContentsState
@@ -46,6 +52,8 @@ export function FolderContentsView({
   selectedRef?: string
   /** Omit and the rows carry no conversation control at all. */
   onSelect?: (file: ForeignObject) => void
+  /** Omit and the rows carry no move control — a read-only listing. */
+  onMove?: (file: ForeignObject) => void
   /**
    * Message count per file `ref`. A **missing** entry draws no badge; it means
    * nobody asked, which is not the same as none — see `useConversationCounts`.
@@ -109,6 +117,7 @@ export function FolderContentsView({
           counts={counts}
           selectedRef={selectedRef}
           onSelect={onSelect}
+          onMove={onMove}
         />
       ))}
     </div>
@@ -186,12 +195,14 @@ function FileRow({
   counts,
   selectedRef,
   onSelect,
+  onMove,
   nested = false,
 }: {
   file: ForeignObject
   counts?: Record<string, number>
   selectedRef?: string
   onSelect?: (file: ForeignObject) => void
+  onMove?: (file: ForeignObject) => void
   nested?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -249,6 +260,28 @@ function FileRow({
             onClick={() => onSelect(file)}
           >
             <IconMessage size={16} stroke={1.5} />
+          </IconButton>
+        )}
+        {/*
+          Re-filing, which only a top-level row can offer.
+
+          **Not on a nested child.** A child is in this Folder by its parent —
+          Ship writes the Folder's `h` on an issue, and the listing reaches it
+          through the project — so "move this issue" would have to move the
+          project to mean anything, and moving the issue alone would file it
+          somewhere its project is not. `parentRef` exists to draw that
+          relation; honouring it here is the other half.
+
+          Only with an `address`: a Folder's contents are addresses, so a
+          non-addressable file cannot be named in one.
+        */}
+        {onMove && !nested && file.address && (
+          <IconButton
+            aria-label={`Move ${title} to another folder`}
+            tooltip="Move"
+            onClick={() => onMove(file)}
+          >
+            <IconFolderShare size={16} stroke={1.5} />
           </IconButton>
         )}
       </div>

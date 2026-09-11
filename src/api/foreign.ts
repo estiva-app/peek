@@ -24,6 +24,9 @@ import {
   directoryAsViewer,
   conversationCountsAsViewer,
   createFolderAsViewer,
+  deleteFolderAsViewer,
+  moveFileAsViewer,
+  renameFolderAsViewer,
   resolveFolderContentsAsViewer,
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
@@ -118,6 +121,42 @@ export function useForeignObjects() {
     return v ? listFoldersAsViewer(v.relayUrl, v.token) : null
   }, [viewer])
 
+  /**
+   * Rename a Folder.
+   *
+   * `hasState` is passed through rather than looked up because the caller has
+   * just read it and a wrong guess is silent data loss — see
+   * {@link renameFolderAsViewer}.
+   */
+  const renameFolder = useCallback(
+    async (folder: string, name: string, hasState: boolean) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to rename a folder.' }
+      return renameFolderAsViewer(folder, name, hasState, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /** Delete a Folder. The files in it are unfiled, not deleted. */
+  const deleteFolder = useCallback(
+    async (folder: string) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to delete a folder.' }
+      return deleteFolderAsViewer(folder, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /** Move a file between Folders — adds to the target first. */
+  const moveFile = useCallback(
+    async (address: string, from: string, to: string) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to move a file.' }
+      return moveFileAsViewer(address, from, to, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
   /** Create a Folder. Refuses rather than pretending when signed out. */
   const createFolder = useCallback(
     async (name: string) => {
@@ -167,6 +206,9 @@ export function useForeignObjects() {
     conversationCounts,
     listFolders,
     createFolder,
+    renameFolder,
+    deleteFolder,
+    moveFile,
     applyAction,
     creatableUnder,
     folderForReference,

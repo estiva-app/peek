@@ -28,7 +28,15 @@ const KIND_TOPIC = 39000
 const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
-import { buildCreateChannel, decodeNevent, pointerToAddress, referenceToPointer } from '@estiva-app/protocol'
+import {
+  buildCreateChannel,
+  buildDeleteChannel,
+  buildEditChannelMetadata,
+  decodeNevent,
+  pointerToAddress,
+  referenceToPointer,
+  toNostrSeconds,
+} from '@estiva-app/protocol'
 import {
   matchObjectUrl,
   urlPatternsOf,
@@ -250,6 +258,142 @@ export async function createFolderAsViewer(
   // Never the status code: the relay refuses in a shape that reads as success.
   if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the folder.' }
   return { ok: true, id }
+}
+
+/** The Folder command — RFC 0.4 §4. `op` is `add`, `remove` or `set`. */
+const KIND_FOLDER_COMMAND = 1852
+
+/**
+ * Publish a Folder command and say plainly whether the relay took it.
+ *
+ * There is no builder for this in `@estiva-app/protocol` — the kind is the
+ * relay's own and the tag shape is read straight off `handle_folder_command`:
+ * `h` names the Folder, `op` is required and an unrecognised one is *refused*
+ * rather than defaulted, `a` tags are the addresses in the order given, and
+ * `name` is optional.
+ */
+async function folderCommand(
+  args: { folder: string; op: 'add' | 'remove' | 'set'; addresses?: string[]; name?: string },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const unsigned = {
+    pubkey: token.pubkey,
+    created_at: toNostrSeconds(Date.now()),
+    kind: KIND_FOLDER_COMMAND,
+    tags: [
+      ['h', args.folder],
+      ['op', args.op],
+      ...(args.addresses ?? []).map((address) => ['a', address]),
+      ...(args.name === undefined ? [] : [['name', args.name]]),
+    ],
+    content: '',
+  }
+  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+  // Never the status code: the relay refuses as 200 with `accepted: false`.
+  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
+  return { ok: true }
+}
+
+/**
+ * Rename a Folder — and the two writes are not interchangeable.
+ *
+ * **A Folder's name has two homes.** `listFolders` reads
+ * `nameOf(state) ?? nameOf(channel)`, so the folder-state name *shadows* the
+ * channel's. Writing only one of them is how a rename shows up on one surface
+ * and not another, which is the stale-name problem the project rename already
+ * produced once. So the channel is always updated, and the state's `name` too
+ * when the Folder has state.
+ *
+ * **Never a `kind:1852` on a Folder with no state.** `handle_folder_command`
+ * computes `next` from the *existing* state, and there is none — so `op: add`
+ * with no addresses emits folder state listing **nothing**. The Folder would
+ * stop being read by containment and instantly show empty, which for a Folder
+ * whose contents are entirely implied by `h` means losing all of them. That is
+ * why `hasState` is a required argument rather than something guessed here: the
+ * caller has just read it, and getting it wrong is silent data loss on screen.
+ */
+export async function renameFolderAsViewer(
+  folder: string,
+  name: string,
+  hasState: boolean,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const unsigned = buildEditChannelMetadata(token.pubkey, Date.now(), { channelUuid: folder, name })
+  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused the rename.' }
+  if (!hasState) return { ok: true }
+  /*
+    `op: add` with no addresses, which the handler turns into `next = current` —
+    the contents are preserved and only the name changes. `set` would empty the
+    Folder, and there is no `rename` op.
+  */
+  return folderCommand({ folder, op: 'add', name }, relayUrl, token)
+}
+
+/**
+ * Delete a Folder.
+ *
+ * NIP-29 `kind:9008`. The relay soft-deletes the channel, sweeps its discovery
+ * events and — since the fix in buzz#15 — its folder state too, which is what
+ * makes the Folder actually leave `listFolders` rather than linger there named
+ * and populated.
+ *
+ * **The files are not deleted and are not meant to be.** A Folder is an
+ * association (RFC 0.4 §2); deleting it unfiles its contents and destroys
+ * nothing. A Ship project whose only Folder is gone is still a Ship project,
+ * which is why this takes no cascade argument.
+ */
+export async function deleteFolderAsViewer(
+  folder: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const unsigned = buildDeleteChannel(token.pubkey, Date.now(), { channelUuid: folder })
+  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to delete the folder.' }
+  return { ok: true }
+}
+
+/**
+ * Move a file from one Folder to another.
+ *
+ * **Two commands, and the order is the whole design.** There is no atomic move:
+ * the Folder state is per-Folder, so this is an `add` to the target and a
+ * `remove` from the source, and something can fail between them.
+ *
+ * So it **adds first**. A failure after the add leaves the file in *both*
+ * Folders — visible, obviously wrong to a person, and fixable by moving it
+ * again. Removing first and failing would leave it in *neither*, which looks
+ * exactly like a file that was never there and is the harder thing to notice
+ * and the harder thing to undo.
+ *
+ * The remove failing is therefore reported as a partial move rather than a
+ * failure, because the file did arrive and saying "it failed" would send
+ * somebody looking for it in the wrong place.
+ */
+export async function moveFileAsViewer(
+  address: string,
+  from: string,
+  to: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (from === to) return { ok: true }
+  const added = await folderCommand({ folder: to, op: 'add', addresses: [address] }, relayUrl, token)
+  if (!added.ok) return added
+  const removed = await folderCommand({ folder: from, op: 'remove', addresses: [address] }, relayUrl, token)
+  if (!removed.ok) {
+    return {
+      ok: false,
+      reason: 'Added to the new folder, but it is still in the old one. Try moving it again.',
+    }
+  }
+  return { ok: true }
 }
 
 /**
