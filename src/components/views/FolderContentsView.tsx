@@ -333,10 +333,17 @@ function ChildRows({
     can say which happened. Rendering a refused read as "nothing inside" is the
     same defect as the folder view's, and the reason that view has two branches.
   */
+  /*
+    Sections, like the two above them. These draw indented under the row that
+    was expanded, inside a list — not as a whole column — so they are the line
+    alone, no icon, no centring (D51). They were `page` scope, which centres
+    with `flex-1` and brings an icon: a centred illustration for the contents
+    of one row inside a list (Katerina, 2026-09-11).
+  */
   if (state === 'unresolved' || (!Array.isArray(state) && 'failed' in state)) {
-    return <EmptyState message="What is in this could not be read." />
+    return <EmptyState scope="section" message="What is in this could not be read." />
   }
-  if (children.length === 0) return <EmptyState message="Nothing in this yet." />
+  if (children.length === 0) return <EmptyState scope="section" message="Nothing in this yet." />
 
   return (
     <>

@@ -317,7 +317,7 @@ export function FoldersPage() {
             />
             {/* The package's bar, not the browser's (D40). This pane
                 arrived with #192, after the adoption had swept the rest. */}
-            <ScrollArea className="min-h-0 flex-1">
+<ScrollArea className="min-h-0 flex-1">
               <ForeignConversationView state={conversation} people={people} />
             </ScrollArea>
           </div>
