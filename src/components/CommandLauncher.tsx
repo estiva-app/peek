@@ -1241,6 +1241,10 @@ export function CommandLauncher({
   return createPortal(
     <>
       {/* Backdrop */}
+      {/* eslint-disable-next-line better-tailwindcss/no-restricted-classes -- the
+          launcher becomes a Base UI Dialog at D8 and takes that component's
+          backdrop with it; a token minted for a scrim about to be deleted would
+          be a token nothing ends up using. */}
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
 
       {/* Launcher - anchored high like a launcher, not centered like a dialog */}

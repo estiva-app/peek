@@ -253,11 +253,11 @@ export function TopicDetailsDialogView({
             */}
           <div className="rounded-lg border border-border-subtle">
             <div className="flex flex-col gap-2 px-3 py-2.5">
-              <span className="min-w-0 truncate text-sm font-semibold text-text-primary">
+              <span className="min-w-0 truncate text-body-2 font-semibold text-text-primary">
                 {folderProject.project.slots.title?.value ?? 'Untitled'}
               </span>
               {folderProject.project.slots.subtitle && (
-                <p className="line-clamp-2 text-xs text-text-secondary">
+                <p className="line-clamp-2 text-caption text-text-secondary">
                   {folderProject.project.slots.subtitle.value}
                 </p>
               )}
@@ -370,7 +370,7 @@ export function TopicDetailsDialog({ topicKey, onClose }: { topicKey: string; on
  */
 function ReadOnlyPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-6 items-center gap-1.5 rounded-lg border border-border-default px-2 text-xs text-text-secondary">
+    <span className="inline-flex h-6 items-center gap-1.5 rounded-lg border border-border-default px-2 text-caption text-text-secondary">
       {children}
     </span>
   )

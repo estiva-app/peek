@@ -14,6 +14,12 @@ interface FrameLightboxProps {
   onAction?: () => void
 }
 
+/* eslint-disable better-tailwindcss/no-restricted-classes --
+   A lightbox is a black scrim with white type on it, whatever theme the app is
+   wearing: the thing being looked at is the picture, and a surface token would
+   tint it. There is no token for this because the package has no Lightbox yet
+   — ADOPTION B22, stage 7 — and when it does, this file goes. */
+
 /** Full-screen preview of a Figma frame - opened from the launcher's frame
  *  picker or by clicking an attachment on a message. */
 export function FrameLightbox({ frame, onClose, actionLabel, onAction }: FrameLightboxProps) {

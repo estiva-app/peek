@@ -49,7 +49,7 @@ export function CommentAnchor({
     <div
       data-comment-anchor={state}
       data-block-id={blockId}
-      className={cn('border-l-2 border-border-default pl-2 text-xs text-text-muted', className)}
+      className={cn('border-l-2 border-border-default pl-2 text-caption text-text-muted', className)}
     >
       {children}
     </div>
@@ -69,7 +69,7 @@ export function CommentAnchor({
       <div
         data-comment-anchor="resolved"
         data-block-id={blockId}
-        className={cn('border-l-2 border-border-strong pl-2 text-xs text-text-muted', className)}
+        className={cn('border-l-2 border-border-strong pl-2 text-caption text-text-muted', className)}
       >
         <span className="line-clamp-2 italic">{text || 'an empty block'}</span>
       </div>

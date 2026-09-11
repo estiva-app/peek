@@ -59,7 +59,7 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
       }
     >
       {candidates.length === 0 ? (
-        <p className="text-sm text-text-secondary leading-[1.4] py-1">
+        <p className="text-body-2 text-text-secondary py-1">
           Every topic is already in your Open work.
         </p>
       ) : (

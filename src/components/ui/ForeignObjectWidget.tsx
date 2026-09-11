@@ -64,7 +64,7 @@ export function StatusPill({ slot, className }: { slot: ResolvedSlot; className?
         // 12px suits the row widget and the panel's dense property rows; the
         // details dialog reads its properties at body size, so the size is the
         // caller's to set.
-        'inline-flex items-center text-xs font-medium',
+        'inline-flex items-center text-caption font-medium',
         COLOUR[slot.colour ?? 'muted'] ?? COLOUR.muted,
         className,
       )}
@@ -88,12 +88,12 @@ function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
   // the value to body text beside the `PAY-1`s it sits with.
   if (slot.isPubkey) {
     return (
-      <Person pubkey={slot.value} people={people} className="text-xs text-text-secondary" />
+      <Person pubkey={slot.value} people={people} className="text-caption text-text-secondary" />
     )
   }
 
   return (
-    <span className="text-xs text-text-secondary">
+    <span className="text-caption text-text-secondary">
       {slot.label ? `${slot.label}: ` : ''}
       {slot.value}
     </span>
@@ -211,7 +211,7 @@ export function ActionControl({
         onChange={(e) => setDraft(e.target.value)}
         placeholder={`${action.label}…`}
         disabled={busy}
-        className="min-w-0 flex-1 rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-xs disabled:opacity-50"
+        className="min-w-0 flex-1 rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-caption disabled:opacity-50"
       />
     </form>
   )
@@ -278,7 +278,7 @@ function OpenInApp({ object }: { object: ForeignObject }) {
       href={object.openUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-xs text-text-secondary underline decoration-dotted underline-offset-2 hover:text-text-primary"
+      className="text-caption text-text-secondary underline decoration-dotted underline-offset-2 hover:text-text-primary"
     >
       Open in {object.appName ?? 'app'} ↗
     </a>
@@ -391,12 +391,12 @@ export function ForeignObjectCard({
                 href={object.openUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="truncate text-sm font-semibold text-text-primary hover:underline"
+                className="truncate text-body-2 font-semibold text-text-primary hover:underline"
               >
                 {slots.title?.value}
               </a>
             ) : (
-              <span className="truncate text-sm font-semibold text-text-primary">
+              <span className="truncate text-body-2 font-semibold text-text-primary">
                 {slots.title?.value}
               </span>
             )}
@@ -406,7 +406,7 @@ export function ForeignObjectCard({
               except in the sidebar, where the description is what makes a
               ticket scannable without opening it. */}
           {widget === 'card' && slots.subtitle && (
-            <p className="mt-1 text-xs text-text-secondary">{slots.subtitle.value}</p>
+            <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
           )}
           {/* The description, in whichever content model its own app writes —
               PRO-2. A card only, for the reason the subtitle is: a row is a
@@ -592,7 +592,7 @@ export function ForeignObjectWidget({
 
   if (object.unreachable) {
     return (
-      <div className="mt-1 rounded-lg border border-border-subtle px-3 py-2 text-xs text-text-secondary">
+      <div className="mt-1 rounded-lg border border-border-subtle px-3 py-2 text-caption text-text-secondary">
         {object.appName ?? 'Another app'} object — you may not have access to this Folder.{' '}
         {object.openUrl && <OpenInApp object={object} />}
       </div>

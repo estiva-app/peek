@@ -99,7 +99,7 @@ export function PersonRow({
 
       <span
         className={cn(
-          'flex-1 text-sm truncate',
+          'flex-1 text-body-2 truncate',
           isUnread ? 'font-medium' : 'font-normal',
           isSelected || isUnread ? 'text-text-primary' : 'text-text-secondary'
         )}

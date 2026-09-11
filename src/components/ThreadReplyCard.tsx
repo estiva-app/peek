@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
 import { Menu, MenuItem, MenuSub, ToolbarButton } from '@estiva-app/ui'
+import { IconButton } from './ui/IconButton'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
@@ -17,7 +18,6 @@ import { FrameArt } from './ui/FrameArt'
 import { FrameLightbox } from './FrameLightbox'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
 import { Button } from './ui/Button'
-import { IconButton } from './ui/IconButton'
 import { Avatar } from './ui/Avatar'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
@@ -453,7 +453,7 @@ export function ThreadReplyCard({
                   {/* Bold / italic / underline / link over a selection. */}
                   <SelectionToolbar editor={editEditor} />
                   {editEmpty && (
-                    <div className="absolute inset-0 pointer-events-none flex items-center text-sm text-text-muted leading-[1.4]">
+                    <div className="absolute inset-0 pointer-events-none flex items-center text-body-2 text-text-muted">
                       Edit message
                     </div>
                   )}

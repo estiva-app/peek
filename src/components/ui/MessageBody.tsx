@@ -95,7 +95,7 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           if (topic) {
             const resolved = isTopicResolved(topic.id)
             return (
-              <span key={i} className="inline-flex items-center gap-1 rounded-sm px-1 mx-0.5 bg-bg-active text-text-primary text-sm font-normal select-none" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
+              <span key={i} className="inline-flex items-center gap-1 rounded-sm px-1 mx-0.5 bg-bg-active text-text-primary text-body-2 font-normal select-none" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
                 <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0">
                   {resolved ? (
                     <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
@@ -119,7 +119,7 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           const svgSrc = svgIcons[fileApp]
           const TablerIcon = tablerIcons[fileApp] ?? IconFile
           return (
-            <span key={i} className="inline-flex items-center gap-1 rounded-sm px-1 mx-0.5 bg-bg-active text-text-primary text-sm font-normal select-none" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
+            <span key={i} className="inline-flex items-center gap-1 rounded-sm px-1 mx-0.5 bg-bg-active text-text-primary text-body-2 font-normal select-none" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
               {svgSrc ? (
                 <img src={svgSrc} width={14} height={14} alt={fileApp} className="rounded-[2px] shrink-0" />
               ) : (
@@ -139,7 +139,7 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
             <span
               key={i}
               className={cn(
-                'rounded-sm px-1 mx-0.5 text-sm font-normal select-none',
+                'rounded-sm px-1 mx-0.5 text-body-2 font-normal select-none',
                 urgent ? 'bg-warning-muted text-warning-default' : 'bg-accent-muted text-accent-primary'
               )}
             >
@@ -362,7 +362,7 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlock
   // `RenderBlocks` emits nothing for an empty string rather than an empty
   // paragraph that still takes a gap.
   return (
-    <div data-message-body className="flex flex-col gap-1 text-sm text-text-secondary leading-[1.4] break-words">
+    <div data-message-body className="flex flex-col gap-1 text-body-2 text-text-secondary break-words">
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}

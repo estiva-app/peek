@@ -350,7 +350,7 @@ function TopicMentionView({ node }: NodeViewProps) {
   const isTopicResolved = useIsTopicResolved()
   const liveResolved = id ? isTopicResolved(String(id)) : isResolved
   return (
-    <NodeViewWrapper as="span" className="inline-flex items-center gap-1 rounded-sm px-1 bg-bg-active text-text-primary text-sm font-normal select-none cursor-default" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
+    <NodeViewWrapper as="span" className="inline-flex items-center gap-1 rounded-sm px-1 bg-bg-active text-text-primary text-body-2 font-normal select-none cursor-default" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
       <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0">
         {liveResolved ? (
           <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
@@ -469,7 +469,7 @@ function FileMentionView({ node }: NodeViewProps) {
   const svgSrc = FILE_SVG_ICONS[app]
   const TablerIcon = FILE_TABLER_ICONS[app] ?? IconFile
   return (
-    <NodeViewWrapper as="span" className="inline-flex items-center gap-1 rounded-sm px-1 bg-bg-active text-text-primary text-sm font-normal select-none cursor-default" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
+    <NodeViewWrapper as="span" className="inline-flex items-center gap-1 rounded-sm px-1 bg-bg-active text-text-primary text-body-2 font-normal select-none cursor-default" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
       {svgSrc ? (
         <img src={svgSrc} width={14} height={14} alt={app} className="rounded-[2px] shrink-0" />
       ) : (

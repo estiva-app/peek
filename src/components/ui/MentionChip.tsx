@@ -52,10 +52,10 @@ export function MentionChip({ uri, className }: { uri: string; className?: strin
       data-resolved={person ? 'true' : 'false'}
       title={person ? undefined : uri}
       className={cn(
-        'rounded-sm px-1 mx-0.5 text-sm font-normal select-none bg-accent-muted text-accent-primary',
+        'rounded-sm px-1 mx-0.5 text-body-2 font-normal select-none bg-accent-muted text-accent-primary',
         // Unresolved keys are still mentions, just anonymous ones. Muted rather
         // than absent, so nobody reads a stranger's key as an error.
-        !person && 'bg-bg-active text-text-muted font-mono text-xs',
+        !person && 'bg-bg-active text-text-muted font-mono text-caption',
         className,
       )}
     >

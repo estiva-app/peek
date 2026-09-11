@@ -125,7 +125,7 @@ function Properties({
             // A pubkey is a person: their face and their full name, never the
             // key (FEE-1). Both paths go through `Person`, so the lead reads the
             // same whether or not this viewer may reassign it.
-            <span className="min-w-0 text-xs text-text-secondary">
+            <span className="min-w-0 text-caption text-text-secondary">
               {row.slot.isPubkey ? (
                 <Person pubkey={row.slot.value} people={object.people} />
               ) : (
@@ -133,7 +133,7 @@ function Properties({
               )}
             </span>
           ) : (
-            <span className="text-xs text-text-muted">—</span>
+            <span className="text-caption text-text-muted">—</span>
           )}
         </Property>
       ))}
@@ -244,17 +244,17 @@ export function TopicProjectPanelView({
                 href={project.openUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block truncate text-sm font-semibold text-text-primary hover:underline"
+                className="block truncate text-body-2 font-semibold text-text-primary hover:underline"
               >
                 {project.slots.title?.value ?? 'Untitled project'}
               </a>
             ) : (
-              <span className="block truncate text-sm font-semibold text-text-primary">
+              <span className="block truncate text-body-2 font-semibold text-text-primary">
                 {project.slots.title?.value ?? 'Untitled project'}
               </span>
             )}
             {project.slots.subtitle && (
-              <p className="line-clamp-2 text-xs text-text-secondary">
+              <p className="line-clamp-2 text-caption text-text-secondary">
                 {project.slots.subtitle.value}
               </p>
             )}

@@ -427,7 +427,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
               and the note here still said so.) */}
           <SelectionToolbar editor={editor} />
           {isEmpty && !hasHighlight && (
-            <div className="absolute inset-0 pointer-events-none flex items-center gap-1 text-sm text-text-muted leading-[1.4] flex-wrap">
+            <div className="absolute inset-0 pointer-events-none flex items-center gap-1 text-body-2 text-text-muted flex-wrap">
               {placeholder === 'reply' ? (
                 <span>Reply...</span>
               ) : (

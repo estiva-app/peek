@@ -1,3 +1,7 @@
+/* eslint-disable better-tailwindcss/no-unknown-classes --
+   The `sig-*` classes in this story are written by the `<style>` block further
+   down the file, not by Tailwind. The lint reads tailwind.config.js, so plain
+   CSS of a story's own is unknown to it by definition. */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Kbd } from '@estiva-app/ui'
 import {

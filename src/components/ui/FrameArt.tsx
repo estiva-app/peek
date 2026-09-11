@@ -1,3 +1,10 @@
+/* eslint-disable better-tailwindcss/no-restricted-classes --
+   This file draws a picture of a Figma frame: a mock of somebody else's screen,
+   shown inside Peek. Its palette is a fixed light canvas on purpose, so the art
+   reads the same in all four of Peek's themes — a design that followed the
+   theme would make a screenshot change colour when the reader changed theirs.
+   Tokens are for Peek's own surfaces; there is no token for "a picture of a
+   different product", and inventing one would be the wrong shape. */
 import { cn } from '@/lib/utils'
 import type { FigmaFrame } from '@/api'
 

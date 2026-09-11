@@ -87,7 +87,7 @@ export function ProjectTickets({
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex shrink-0 items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
+          className="flex shrink-0 items-center gap-1 text-caption text-text-secondary hover:text-text-primary"
         >
           <IconChevronRight
             size={14}
@@ -117,7 +117,7 @@ export function ProjectTickets({
           /* A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1). */
           <EmptyState scope="section" className="border-t border-border-subtle px-3 py-2" message="No tickets in this project yet." />
         ) : (
-          <table className="w-full table-fixed border-t border-border-subtle text-xs">
+          <table className="w-full table-fixed border-t border-border-subtle text-caption">
             <tbody>
               {tickets.map((ticket) => (
                 /*

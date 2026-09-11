@@ -20,10 +20,10 @@ import figmaIcon from '@/assets/figma icon.svg'
 import { FrameArt } from './ui/FrameArt'
 import { FrameLightbox } from './FrameLightbox'
 import { frameById, frameBreadcrumb, type FigmaFrame } from '@/api'
-import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
 import { AvatarGroup, ToolbarButton } from '@estiva-app/ui'
+import { IconButton } from './ui/IconButton'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
@@ -607,7 +607,7 @@ export function ConversationCard({
                   {/* Bold / italic / underline / link over a selection. */}
                   <SelectionToolbar editor={editEditor} />
                   {editEmpty && (
-                    <div className="absolute inset-0 pointer-events-none flex items-center text-sm text-text-muted leading-[1.4]">
+                    <div className="absolute inset-0 pointer-events-none flex items-center text-body-2 text-text-muted">
                       Edit message
                     </div>
                   )}
