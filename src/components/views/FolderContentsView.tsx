@@ -4,6 +4,7 @@ import {
   IconChevronRight,
   IconFolderShare,
   IconMessage,
+  IconMessagePlus,
 } from '@tabler/icons-react'
 import { CONVERSATION_LIMIT } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
@@ -45,6 +46,7 @@ export function FolderContentsView({
   selectedRef,
   onSelect,
   onMove,
+  onStartTopic,
   counts,
 }: {
   state: FolderContentsState
@@ -54,6 +56,8 @@ export function FolderContentsView({
   onSelect?: (file: ForeignObject) => void
   /** Omit and the rows carry no move control — a read-only listing. */
   onMove?: (file: ForeignObject) => void
+  /** Start a topic — a bare file, SPEC §6.7 — under this file. Omit and no row offers it. */
+  onStartTopic?: (file: ForeignObject) => void
   /**
    * Message count per file `ref`. A **missing** entry draws no badge; it means
    * nobody asked, which is not the same as none — see `useConversationCounts`.
@@ -114,10 +118,12 @@ export function FolderContentsView({
         <FileRow
           key={file.ref}
           file={file}
+          listed={folder.files}
           counts={counts}
           selectedRef={selectedRef}
           onSelect={onSelect}
           onMove={onMove}
+          onStartTopic={onStartTopic}
         />
       ))}
     </div>
@@ -151,6 +157,26 @@ export function FolderContentsView({
 export function peersOf(files: ForeignObject[]): ForeignObject[] {
   const listed = new Set(files.map((file) => file.address).filter(Boolean) as string[])
   return files.filter((file) => !(file.parentRef && listed.has(file.parentRef)))
+}
+
+/**
+ * The files in this listing that name `parent` as theirs — the other half of
+ * {@link peersOf}, and the half that was missing.
+ *
+ * `peersOf` hides a child whose parent is listed; `ChildRows` fetches the
+ * children the parent's *owner declared* — a project's issues. A bare-file
+ * topic started under a project (SPEC §6.7) is neither: Ship never declared
+ * bare files as children of a project and never will, so it was hidden at the
+ * top and absent from the expansion — in the listing and on no screen.
+ *
+ * So a row shows both: what its owner's manifest fetches, and what this
+ * listing already holds that points at it. No request, no recursion budget —
+ * these objects are resolved already — and a kind nobody has met nests under
+ * whatever it names.
+ */
+function listedChildrenOf(parent: ForeignObject, files: ForeignObject[]): ForeignObject[] {
+  if (!parent.address) return []
+  return files.filter((file) => file.parentRef === parent.address && file.ref !== parent.ref)
 }
 
 /**
@@ -192,21 +218,34 @@ function ConversationCount({ count }: { count: number | undefined }) {
  */
 function FileRow({
   file,
+  listed = [],
   counts,
   selectedRef,
   onSelect,
   onMove,
+  onStartTopic,
   nested = false,
 }: {
   file: ForeignObject
+  /** The whole listing, so a row can find the listed files that name it. */
+  listed?: ForeignObject[]
   counts?: Record<string, number>
   selectedRef?: string
   onSelect?: (file: ForeignObject) => void
   onMove?: (file: ForeignObject) => void
+  onStartTopic?: (file: ForeignObject) => void
   nested?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const title = file.slots.title?.value ?? 'this file'
+  const listedChildren = listedChildrenOf(file, listed)
+  /*
+    Expandable when the owner declares children *or* the listing holds files
+    that name this one. A nested row keeps only the second half: the fetch is
+    capped at one level (`MAX_LIST_DEPTH`), but a topic under an issue is
+    already in hand, and hiding it would be the same defect one level down.
+  */
+  const expandable = (!nested && file.listsChildren) || listedChildren.length > 0
 
   return (
     <div data-file={file.ref}>
@@ -217,7 +256,7 @@ function FileRow({
           expandable would read as two lists.
         */}
         <div className="w-6 shrink-0 pt-1">
-          {!nested && file.listsChildren && (
+          {expandable && (
             <IconButton
               aria-label={open ? `Hide what is in ${title}` : `Show what is in ${title}`}
               aria-expanded={open}
@@ -284,6 +323,21 @@ function FileRow({
           Only with an `address`: a Folder's contents are addresses, so a
           non-addressable file cannot be named in one.
         */}
+        {/*
+          Start a topic under this file — SPEC §6.7. Any file with an address
+          can be a parent, whatever app owns it: a project, an issue, another
+          topic. The relation is the topic naming this file, so the owner
+          declares nothing and needs to know nothing.
+        */}
+        {onStartTopic && file.address && (
+          <IconButton
+            aria-label={`Start a topic under ${title}`}
+            tooltip="Start a topic here"
+            onClick={() => onStartTopic(file)}
+          >
+            <IconMessagePlus size={16} stroke={1.5} />
+          </IconButton>
+        )}
         {onMove && !nested && file.address && (
           <IconButton
             aria-label={`Move ${title} to another folder`}
@@ -295,9 +349,29 @@ function FileRow({
         )}
         </div>
       </div>
-      {open && file.naddr && (
+      {open && (
         <div className="mt-2 flex flex-col gap-2 pl-6" data-children-of={file.ref}>
-          <ChildRows naddr={file.naddr} selectedRef={selectedRef} onSelect={onSelect} />
+          {!nested && file.listsChildren && file.naddr && (
+            <ChildRows
+              naddr={file.naddr}
+              exclude={listedChildren}
+              selectedRef={selectedRef}
+              onSelect={onSelect}
+              onStartTopic={onStartTopic}
+            />
+          )}
+          {listedChildren.map((child) => (
+            <FileRow
+              key={child.ref}
+              file={child}
+              listed={listed}
+              counts={counts}
+              selectedRef={selectedRef}
+              onSelect={onSelect}
+              onStartTopic={onStartTopic}
+              nested
+            />
+          ))}
         </div>
       )}
     </div>
@@ -314,15 +388,21 @@ function FileRow({
  */
 function ChildRows({
   naddr,
+  exclude = [],
   selectedRef,
   onSelect,
+  onStartTopic,
 }: {
   naddr: string
+  /** Already drawn from the listing — a fetched twin would be a second row. */
+  exclude?: ForeignObject[]
   selectedRef?: string
   onSelect?: (file: ForeignObject) => void
+  onStartTopic?: (file: ForeignObject) => void
 }) {
   const { state } = useForeignChildren(naddr)
-  const children = Array.isArray(state) ? state : []
+  const drawn = new Set(exclude.map((file) => file.ref))
+  const children = Array.isArray(state) ? state.filter((child) => !drawn.has(child.ref)) : []
   const counts = useConversationCounts(Array.isArray(state) ? state : undefined)
 
   if (state === 'loading') return <SkeletonRow />
@@ -343,7 +423,11 @@ function ChildRows({
   if (state === 'unresolved' || (!Array.isArray(state) && 'failed' in state)) {
     return <EmptyState scope="section" message="What is in this could not be read." />
   }
-  if (children.length === 0) return <EmptyState scope="section" message="Nothing in this yet." />
+  // "Nothing in this yet" only when the listing drew nothing either — a
+  // project with one topic under it and no issues is not empty.
+  if (children.length === 0) {
+    return exclude.length === 0 ? <EmptyState scope="section" message="Nothing in this yet." /> : null
+  }
 
   return (
     <>
@@ -354,6 +438,7 @@ function ChildRows({
           counts={counts}
           selectedRef={selectedRef}
           onSelect={onSelect}
+          onStartTopic={onStartTopic}
           nested
         />
       ))}

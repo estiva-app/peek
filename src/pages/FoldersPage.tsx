@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { IconTrash, IconX } from '@tabler/icons-react'
+import { IconMessagePlus, IconSend, IconTrash, IconX } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -24,6 +24,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { EditableText } from '@/components/ui/EditableText'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
+import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { useToast } from '@/lib/toast'
 
 /**
@@ -42,8 +43,9 @@ export function FoldersPage() {
   const { folders, signedOut, reload } = useFolders()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
-  const { state } = useFolderContents(id)
-  const { createFolder, renameFolder, deleteFolder, moveFile } = useForeignObjects()
+  const { state, reload: reloadContents } = useFolderContents(id)
+  const { createFolder, createTopic, renameFolder, deleteFolder, moveFile, applyAction } =
+    useForeignObjects()
   const { showToast } = useToast()
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -58,8 +60,24 @@ export function FoldersPage() {
   const [openFile, setOpenFile] = useState<ForeignObject | null>(null)
   /** The file whose destination is being chosen, if any. */
   const [movingFile, setMovingFile] = useState<ForeignObject | null>(null)
+  /*
+    A topic being started — SPEC §6.7. `parent` is the file it will sit under
+    when it was started from a row; `undefined` from the folder header means a
+    topic at the top of the Folder. Two different sentences in the dialog and
+    one different tag on the wire.
+  */
+  const [startingTopic, setStartingTopic] = useState<{ parent?: ForeignObject } | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const { state: conversation } = useForeignConversation(openFile?.naddr)
+  const { state: conversation, reload: reloadConversation } = useForeignConversation(openFile?.naddr)
+  /*
+    The composer follows the manifest, not the kind. A bare file's built-in
+    manifest declares `comment`; so does Ship's for a project and an issue.
+    RFC 0.5 §10.7 says Peek is where you talk about any file, and peek#189 left
+    this open pending exactly that decision — so the control appears wherever
+    the owner says a comment may be written, and nowhere else.
+  */
+  const canComment =
+    !!openFile?.naddr && (openFile.actions ?? []).some((action) => action.id === 'comment')
   /*
     One counts request for the whole listing, made here rather than inside the
     view so the view stays a pure render of what it is handed — and so a folder
@@ -82,6 +100,19 @@ export function FoldersPage() {
     as though it belongs to something here.
   */
   useEffect(() => setOpenFile(null), [id])
+
+  async function send(body: string): Promise<boolean> {
+    if (!openFile?.naddr) return false
+    const result = await applyAction({ naddr: openFile.naddr, actionId: 'comment', value: body })
+    if (!result.ok) {
+      showToast({ label: result.reason ?? 'The relay refused the comment.', type: 'neutral' })
+      return false
+    }
+    // The relay has it; the pane re-reads rather than appending a copy, so
+    // what is shown is what every other reader sees.
+    await reloadConversation()
+    return true
+  }
 
   async function create() {
     const trimmed = name.trim()
@@ -245,13 +276,22 @@ export function FoldersPage() {
                 </div>
               }
               actions={
-                <IconButton
-                  tooltip="Delete folder"
-                  aria-label="Delete folder"
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  <IconTrash size={16} stroke={1.5} />
-                </IconButton>
+                <>
+                  <IconButton
+                    tooltip="Start a topic"
+                    aria-label="Start a topic in this folder"
+                    onClick={() => setStartingTopic({})}
+                  >
+                    <IconMessagePlus size={16} stroke={1.5} />
+                  </IconButton>
+                  <IconButton
+                    tooltip="Delete folder"
+                    aria-label="Delete folder"
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    <IconTrash size={16} stroke={1.5} />
+                  </IconButton>
+                </>
               }
             />
             {/* The package's bar, not the browser's (D40). */}
@@ -261,6 +301,7 @@ export function FoldersPage() {
                 selectedRef={openFile?.ref}
                 onSelect={setOpenFile}
                 onMove={setMovingFile}
+                onStartTopic={(file) => setStartingTopic({ parent: file })}
                 counts={counts}
               />
             </ScrollArea>
@@ -320,11 +361,47 @@ export function FoldersPage() {
 <ScrollArea className="min-h-0 flex-1">
               <ForeignConversationView state={conversation} people={people} />
             </ScrollArea>
+            {canComment && (
+              // Keyed on the file: a draft belongs to the conversation it was
+              // typed in, and a new key is a new composer with an empty one.
+              <CommentComposer
+                key={openFile.ref}
+                placeholder={`Comment on ${openFile.slots.title?.value ?? 'this file'}`}
+                onSend={send}
+              />
+            )}
           </div>
         ) : undefined
       }
     />
 <>
+          {startingTopic && id && (
+            <StartTopicDialog
+              folderName={selected?.name ?? id}
+              parent={startingTopic.parent}
+              onClose={() => setStartingTopic(null)}
+              onCreate={async (title) => {
+                /*
+                  `hasState` from the read on this page, never guessed — the
+                  same argument as the rename: a `kind:1852` against a Folder
+                  with no state empties it on every surface.
+                */
+                const hasState = typeof state === 'object' && 'hasState' in state && state.hasState
+                const result = await createTopic({
+                  folder: id,
+                  title,
+                  parent: startingTopic.parent?.address,
+                  hasState,
+                })
+                if (!result.ok) {
+                  showToast({ label: result.reason, type: 'neutral' })
+                  return false
+                }
+                await reloadContents()
+                return true
+              }}
+            />
+          )}
           {movingFile && (
             <MoveFileDialog
               file={movingFile}
@@ -376,5 +453,54 @@ export function FoldersPage() {
           )}
         </>
     </>
+  )
+}
+
+/**
+ * The smallest composer that is honest: one line, Enter sends, and the draft
+ * dies with the conversation it was typed in (the parent keys this on the
+ * file). Not Peek's message composer — that one is `kind:9`-shaped, with
+ * attachments and drafts that survive navigation (CON-10), and the shared
+ * conversation package (CON-5) is where the two become one. Until then this
+ * publishes exactly what the owner's manifest declared a comment to be.
+ */
+function CommentComposer({
+  placeholder,
+  onSend,
+}: {
+  placeholder: string
+  onSend: (body: string) => Promise<boolean>
+}) {
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+
+  async function send() {
+    const body = draft.trim()
+    if (!body || sending) return
+    setSending(true)
+    const ok = await onSend(body)
+    setSending(false)
+    if (ok) setDraft('')
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-t border-border-subtle px-3 py-2">
+      <TextInput
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault()
+            void send()
+          }
+        }}
+        placeholder={placeholder}
+        aria-label="Comment"
+        disabled={sending}
+      />
+      <IconButton tooltip="Send" aria-label="Send comment" disabled={!draft.trim() || sending} onClick={() => void send()}>
+        <IconSend size={16} stroke={1.5} />
+      </IconButton>
+    </div>
   )
 }

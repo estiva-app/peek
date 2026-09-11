@@ -229,3 +229,83 @@ describe('a child is not also a peer', () => {
     expect(screen.getByRole('button', { name: /Show what is in Payments/ })).toBeInTheDocument()
   })
 })
+
+describe('a topic under a file its owner never declared children for', () => {
+  /*
+    SPEC §6.7. A bare-file topic names its parent itself, so Ship's project
+    manifest lists issues and nothing else — and before this the topic was
+    hidden at the top (`peersOf`) and absent from the expansion (declared
+    children only). In the listing, and on no screen.
+  */
+  const PROJ = '30850:abc:p1'
+  const project = file({ ref: PROJ, address: PROJ, listsChildren: true, slots: { title: { value: 'Payments' } } })
+  const topicUnder = (parent: string, title: string) =>
+    file({
+      ref: `30840:def:${title}`,
+      address: `30840:def:${title}`,
+      kind: 30840,
+      appName: 'File',
+      parentRef: parent,
+      slots: { title: { value: title } },
+    })
+
+  it('is drawn under its parent when the parent is expanded, beside the declared children', async () => {
+    children.state = [file({ ref: 'iss1', kind: 30851, widget: 'row', slots: { title: { value: 'Refunds' } } })]
+    render(<FolderContentsView state={folder([project, topicUnder(PROJ, 'Naming')])} />)
+
+    // Hidden as a peer, as before.
+    expect(screen.queryByText('Naming')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /Show what is in Payments/ }))
+
+    const nest = document.querySelector('[data-children-of="30850:abc:p1"]')
+    expect(nest?.textContent).toContain('Refunds')
+    expect(nest?.textContent).toContain('Naming')
+  })
+
+  it('makes a parent expandable even when its owner declared no child list', async () => {
+    // An issue under which somebody started a topic. Ship declares no children of an issue.
+    const ISS = '30851:abc:i1'
+    const issue = file({ ref: ISS, address: ISS, kind: 30851, widget: 'row', slots: { title: { value: 'Refunds' } } })
+    children.state = []
+    render(<FolderContentsView state={folder([issue, topicUnder(ISS, 'Edge cases')])} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Show what is in Refunds/ }))
+    expect(document.querySelector('[data-children-of="30851:abc:i1"]')?.textContent).toContain('Edge cases')
+  })
+
+  it('does not say "Nothing in this yet" about a parent whose only children came from the listing', async () => {
+    children.state = []
+    render(<FolderContentsView state={folder([project, topicUnder(PROJ, 'Naming')])} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Show what is in Payments/ }))
+
+    expect(screen.queryByText('Nothing in this yet.')).not.toBeInTheDocument()
+    expect(screen.getByText('Naming')).toBeInTheDocument()
+  })
+
+  it('does not draw a listed child twice when the fetch returns it too', async () => {
+    // A sub-topic under a topic: the bare file's own manifest fetches 30840 children by `a`.
+    const TOP = '30840:def:Naming'
+    const parentTopic = file({ ref: TOP, address: TOP, kind: 30840, appName: 'File', listsChildren: true, slots: { title: { value: 'Naming' } } })
+    const sub = topicUnder(TOP, 'Colours')
+    children.state = [sub]
+    render(<FolderContentsView state={folder([parentTopic, sub])} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Show what is in Naming/ }))
+    expect(screen.getAllByText('Colours')).toHaveLength(1)
+  })
+
+  it('offers "start a topic here" on any row with an address, when the page asks for it', () => {
+    const onStartTopic = vi.fn()
+    render(<FolderContentsView state={folder([project])} onStartTopic={onStartTopic} />)
+
+    screen.getByRole('button', { name: 'Start a topic under Payments' }).click()
+    expect(onStartTopic).toHaveBeenCalledWith(expect.objectContaining({ ref: PROJ }))
+  })
+
+  it('offers no such control when the page did not ask for it', () => {
+    render(<FolderContentsView state={folder([project])} />)
+    expect(screen.queryByRole('button', { name: /Start a topic under/ })).not.toBeInTheDocument()
+  })
+})
