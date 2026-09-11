@@ -1,7 +1,5 @@
 import type { Decorator, Preview } from '@storybook/react-vite'
 import { useEffect } from 'react'
-import { addons } from 'storybook/preview-api'
-import { GLOBALS_UPDATED } from 'storybook/internal/core-events'
 import { themes } from 'storybook/theming'
 import { PeekDataProvider } from '../src/api'
 import { DebugProvider } from '../src/lib/debug'
@@ -11,20 +9,23 @@ import './preview.css'
 import './signal.css'
 
 /**
- * The themes this library renders.
+ * The themes this Storybook renders — and there is no picker for them
+ * (Katerina, 2026-09-11, D58).
  *
- * - `signal` — what Peek actually ships, and the only theme the app has.
- * - `dark` — Signal's base, kept selectable because Signal only overrides part
- *   of it and the difference is worth being able to see.
- * - `estiva-id` — the Estiva ID account screens. Neither class is applied, so
- *   the `:root` palette in index.css takes over: **light colours, with the
- *   typography, spacing and radius tokens unchanged**, since those are not
- *   theme-scoped. That is the whole point — one token system, a different
- *   palette per app, which is what unifying these designs has to mean.
+ * - `signal` — what Peek actually ships, and the only theme the app has. Every
+ *   Peek story gets it, because a Peek story cannot honestly be anything else.
+ * - `estiva-id` — the Estiva ID account screens, whose stories are loaded from
+ *   that repo and pin themselves with `parameters.forceTheme` (their
+ *   `estivaIdParameters`). Neither class is applied, so the `:root` palette in
+ *   index.css takes over: **light colours, with the typography, spacing and
+ *   radius tokens unchanged**, since those are not theme-scoped.
  *
- * `light` is deliberately not offered. The palette is still in index.css and is
- * exactly what `estiva-id` renders; it is just not a theme Peek has any more.
- * To bring it back, add 'light' to the toolbar items below.
+ * A toolbar offered `signal` / `dark` / `estiva-id` until 2026-09-11. It was a
+ * choice the app cannot make: Peek ships one theme and cannot switch at
+ * runtime, so a Peek component seen in `dark` was a component in a state
+ * nobody can reach. Checking a *shared* component across themes is estiva-ui's
+ * Storybook's job, and it has the picker. `applyTheme` stays — `forceTheme`
+ * drives it, and estiva-id's screens depend on that.
  */
 const applyTheme = (theme?: string) => {
   // "signal" is a dark-based theme: keep .dark active so dark: variants apply,
@@ -50,24 +51,16 @@ const applyTheme = (theme?: string) => {
   document.body.classList.toggle('font-sans', !estivaId)
 }
 
-// Drive the theme class from the toolbar for EVERY page — including standalone
-// MDX docs (Introduction, Design Tokens), which don't run story decorators.
-try {
-  addons.getChannel().on(GLOBALS_UPDATED, ({ globals }: { globals: { theme?: string } }) => {
-    applyTheme(globals?.theme)
-  })
-} catch {
-  /* channel not ready at import — the decorator still covers story pages */
-}
-
-// Apply the default (signal) immediately so standalone MDX pages — Introduction,
-// Design Tokens — render themed on first load, before any GLOBALS_UPDATED fires.
+// Apply signal once, for EVERY page — including standalone MDX docs
+// (Introduction, Design Tokens), which don't run story decorators. The toolbar
+// listener that used to sit here went with the picker: nothing changes the
+// theme global any more, so there is nothing to follow.
 applyTheme('signal')
 
 const withTheme: Decorator = (Story, context) => {
-  // parameters.forceTheme lets theme-specific stories (e.g. the Signal
-  // specimens page) pin their theme regardless of the toolbar.
-  const theme = (context.parameters.forceTheme as string) ?? context.globals.theme ?? 'signal'
+  // parameters.forceTheme is now the only way a story asks for another theme:
+  // the Signal specimens page, and every Estiva ID screen.
+  const theme = (context.parameters.forceTheme as string) ?? 'signal'
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
@@ -99,20 +92,6 @@ const withProviders: Decorator = (Story) => (
 const preview: Preview = {
   // Every component gets a Docs tab from its JSDoc + argTypes (D4: global autodocs).
   tags: ['autodocs'],
-  globalTypes: {
-    theme: {
-      description: 'Color theme',
-      toolbar: {
-        title: 'Theme',
-        icon: 'mirror',
-        // 'light' removed with Peek's theme picker — `estiva-id` renders that
-        // same palette. Re-add it here if a light Peek is ever wanted again.
-        items: ['signal', 'dark', 'estiva-id'],
-        dynamicTitle: true,
-      },
-    },
-  },
-  initialGlobals: { theme: 'signal' },
   parameters: {
     layout: 'centered',
     controls: { expanded: true },
