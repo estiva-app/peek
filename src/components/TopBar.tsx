@@ -1,8 +1,9 @@
-
+import { useState } from 'react'
 import { shortcutLabel } from '@/lib/shortcuts'
 import { IconMenu2 } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
-import { IdentityMenu, TopBar as TopBarShell } from '@estiva-app/ui'
+import { IdentityMenu, MenuItem, TopBar as TopBarShell } from '@estiva-app/ui'
+import { ReadStatePanel } from './ReadStatePanel'
 import { IconButton } from './ui/IconButton'
 import { SearchInput } from './ui/SearchInput'
 import { hasConvex, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
@@ -20,6 +21,8 @@ interface TopBarProps {
  */
 export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
   const signOut = useSignOut()
+  const [cluster, setCluster] = useState<HTMLDivElement | null>(null)
+  const [readStateOpen, setReadStateOpen] = useState(false)
   const me = useCurrentUser()
   const avatarSrcFor = useAvatarSrc()
   const relayUrl = useRelayUrl()
@@ -54,7 +57,14 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
           </div>
         }
         right={
-          <div className="flex items-center gap-[6px]">
+          /*
+            The cluster's element is the panel's anchor, captured by a callback
+            ref into state rather than read during render: the row that opens
+            the panel unmounts as the account menu closes, so its own ref would
+            be null by the time it is wanted, and a ref read during render is
+            what the hooks lint forbids by name.
+          */
+          <div ref={setCluster} className="flex items-center gap-[6px]">
             {/* The shared IdentityMenu (2026-09-01), Ship's anatomy, her ruling:
                 identity section, workspace line naming the relay, and the actions
                 — Edit your profile in Estiva ID (the ProfileDialog this used to
@@ -78,10 +88,33 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               relayUrl={relayUrl}
               idBase={hasConvex ? PROFILE_EDIT_URL : undefined}
               onSignOut={hasConvex ? () => void signOut() : undefined}
-            />
+            >
+              {/*
+                Read state, on the real app only — there is nothing to compare
+                against without a backend. This row is the only way in: the
+                debug button it used to share a panel with is gone (D48), and
+                was hidden on the real app anyway.
+
+                A click rather than a press, so no pointerdown is still in
+                flight when the panel arms its own outside-dismiss.
+              */}
+              {hasConvex
+                ? (close: () => void) => (
+                    <MenuItem
+                      label="Read state"
+                      onClick={() => {
+                        close()
+                        setReadStateOpen(true)
+                      }}
+                    />
+                  )
+                : undefined}
+            </IdentityMenu>
           </div>
         }
       />
+
+      {readStateOpen && <ReadStatePanel anchor={cluster} onClose={() => setReadStateOpen(false)} />}
     </>
   )
 }
