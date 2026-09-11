@@ -138,7 +138,7 @@ export const HuddleAnchor: Story = {
 export const InlineTokens: Story = {
   args: {
     body:
-      'Pinging @Alice Johnson and !@Greg Bothman — ties into [Ongoing onboarding issues] and [Onboarding flow screens]. Fix is in PR #1234, tracked as PEEK-142; verify build #5102.',
+      'Pinging @Alice Johnson and !@Greg Bothman — ties into [Ongoing onboarding issues] and [Brand guidelines 2026.pdf]. Fix is in PR #1234, tracked as PEEK-142; verify build #5102.',
     replyCount: 2,
   },
 }

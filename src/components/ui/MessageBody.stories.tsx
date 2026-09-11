@@ -53,7 +53,7 @@ export const NumberedList: Story = {
 export const InlineTokens: Story = {
   args: {
     body:
-      'Pinging @Daniel Stanton and !@Alice Johnson — this ties into [Ongoing onboarding issues] and the new [Onboarding flow screens]. Notes are at https://example.com/onboarding-notes.',
+      'Pinging @Daniel Stanton and !@Alice Johnson — this ties into [Ongoing onboarding issues] and the new [Brand guidelines 2026.pdf]. Notes are at https://example.com/onboarding-notes.',
   },
 }
 
