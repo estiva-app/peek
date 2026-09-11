@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { IconX } from '@tabler/icons-react'
+import { IconTrash, IconX } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
@@ -19,6 +19,9 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { Button } from '@/components/ui/Button'
 import { TextInput } from '@/components/ui/TextInput'
 import { IconButton } from '@/components/ui/IconButton'
+import { EditableText } from '@/components/ui/EditableText'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { useToast } from '@/lib/toast'
 
 /**
@@ -38,7 +41,7 @@ export function FoldersPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { state } = useFolderContents(id)
-  const { createFolder } = useForeignObjects()
+  const { createFolder, renameFolder, deleteFolder, moveFile } = useForeignObjects()
   const { showToast } = useToast()
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -51,6 +54,9 @@ export function FoldersPage() {
     contents re-read.
   */
   const [openFile, setOpenFile] = useState<ForeignObject | null>(null)
+  /** The file whose destination is being chosen, if any. */
+  const [movingFile, setMovingFile] = useState<ForeignObject | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const { state: conversation } = useForeignConversation(openFile?.naddr)
   /*
     One counts request for the whole listing, made here rather than inside the
@@ -96,7 +102,15 @@ export function FoldersPage() {
     navigate(`/folders/${result.id}`)
   }
 
+  /*
+    The dialogs sit beside the shell, not inside a panel: a row is unmounted by
+    the re-read that follows a successful write, and a dialog unmounted
+    mid-flight takes its own "did this work" reporting with it. `AppShell` takes
+    three panels and nothing else, and `DialogShell` portals itself, so where
+    these sit in the tree does not affect where they draw.
+  */
   return (
+    <>
     <AppShell
       leftPanel={
         <div className="flex h-full flex-col">
@@ -154,12 +168,52 @@ export function FoldersPage() {
       rightPanel={
         id ? (
           <div className="flex h-full flex-col">
-            <ContainerHeader title={selected?.name ?? 'Folder'} />
+            {/*
+              The name is edited where it is shown — `EditableText`'s own
+              "When", and the reason there is no rename dialog. `ContainerHeader`
+              draws a static title, so this pane heads itself.
+            */}
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <EditableText
+                  value={selected?.name ?? ''}
+                  placeholder={id}
+                  label="Folder name"
+                  onCommit={async (next) => {
+                    const trimmed = next.trim()
+                    if (!trimmed) return false
+                    /*
+                      `hasState` is passed, never guessed. A `kind:1852` name
+                      change on a Folder with no state emits state listing
+                      nothing, and a Folder read by containment would lose every
+                      file on screen. The read that is already on this page is
+                      the only honest source for it.
+                    */
+                    const hasState = typeof state === 'object' && 'hasState' in state && state.hasState
+                    const result = await renameFolder(id, trimmed, hasState)
+                    if (!result.ok) {
+                      showToast({ label: result.reason, type: 'neutral' })
+                      return false
+                    }
+                    await reload()
+                    return true
+                  }}
+                />
+              </div>
+              <IconButton
+                tooltip="Delete folder"
+                aria-label="Delete folder"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <IconTrash size={16} stroke={1.5} />
+              </IconButton>
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               <FolderContentsView
                 state={state}
                 selectedRef={openFile?.ref}
                 onSelect={setOpenFile}
+                onMove={setMovingFile}
                 counts={counts}
               />
             </div>
@@ -214,5 +268,57 @@ export function FoldersPage() {
         ) : undefined
       }
     />
+<>
+          {movingFile && (
+            <MoveFileDialog
+              file={movingFile}
+              from={id ?? ''}
+              folders={folders ?? []}
+              onClose={() => setMovingFile(null)}
+              onMove={async (to) => {
+                const address = movingFile.address
+                if (!address || !id) return false
+                const result = await moveFile(address, id, to)
+                if (!result.ok) {
+                  showToast({ label: result.reason, type: 'neutral' })
+                  return false
+                }
+                // The file left this Folder, so this Folder's read is stale.
+                await reload()
+                return true
+              }}
+            />
+          )}
+          {confirmingDelete && id && (
+            <ConfirmDialog
+              title="Delete this folder?"
+              confirmLabel="Delete"
+              destructive
+              onClose={() => setConfirmingDelete(false)}
+              onConfirm={async () => {
+                const result = await deleteFolder(id)
+                if (!result.ok) {
+                  showToast({ label: result.reason, type: 'neutral' })
+                  return false
+                }
+                await reload()
+                navigate('/folders')
+                return true
+              }}
+            >
+              {/*
+                Said explicitly, because a folder full of other apps' work looks
+                like it owns that work and does not. RFC 0.4 §2: a Folder is an
+                association, so deleting it unfiles its contents and destroys
+                none of them.
+              */}
+              <p className="text-body-2 text-text-secondary">
+                The files in it are not deleted — they stay in their own apps and
+                simply stop being filed here. Everyone loses the folder.
+              </p>
+            </ConfirmDialog>
+          )}
+        </>
+    </>
   )
 }
