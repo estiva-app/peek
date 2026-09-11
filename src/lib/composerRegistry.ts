@@ -71,14 +71,23 @@ export function insertFileMentionIntoActiveComposer(attrs: FileMentionAttrs): bo
  * They can add "@Katerina can you take this?" to the same message.
  *
  * Sent, `MessageBody` finds the `nostr:naddr1…` back out of the body
- * (`findNaddrs`), drops it from the prose (`stripNaddrs`) and renders the
- * object through its own projection. So the *spelling* is the contract here,
- * not the node type: this must stay plain text matching `NADDR_RE`.
+ * (`findNaddrs`) and renders the object through its own projection. So the
+ * *spelling* is the contract here, not the node type: this must stay plain text
+ * matching `NADDR_RE`.
+ *
+ * **Where the cursor was decides how it is drawn, since RIC-10.** Inserted into
+ * an empty composer it is the whole message, and the object is a card below the
+ * text as it always was. Inserted after "Filed it —" it is part of a sentence,
+ * and the object is drawn in place: the title, and its status. Both are correct
+ * and neither is chosen here — this function only writes the pointer, and
+ * `standaloneReference` decides at read time, in the package, so Ship reaches
+ * the same answer for the same message.
  *
  * Marks are cleared first. The cursor may sit inside a bold or code run, and an
- * inherited mark serialises to marker characters around the reference — which
- * `stripNaddrs` then leaves behind as `**` once the reference itself is taken
- * out of the prose.
+ * inherited mark serialises to marker characters around the reference, which
+ * used to be left behind as a dangling `**` when the reference between them was
+ * taken out of the prose. The reference stays now, but a bolded pointer is
+ * still not what anybody typed.
  */
 export function insertReferenceIntoActiveComposer(naddr: string): boolean {
   if (!activeComposer || activeComposer.editor.isDestroyed) return false

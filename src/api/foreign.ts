@@ -232,6 +232,68 @@ export function useForeignObjects() {
 }
 
 /**
+ * A body's references, resolved once for the whole body — RIC-10.
+ *
+ * The widget below a message resolves itself, one round trip per widget, and
+ * that was fine while a reference had exactly one place to appear. It now has
+ * two: a pointer written mid-sentence is drawn in place. Letting each of them
+ * ask separately would mean two fetches for one object and — worse — the same
+ * object drawn in two different states on one screen, which is the failure
+ * `dedupeReferences` exists to prevent one layer up.
+ *
+ * So the body resolves its references and hands the answers down. `undefined`
+ * for a reference not yet answered, `null` for one that resolved to nothing:
+ * §13.1 draws both as the shortened URI, but they are different facts and this
+ * hook does not flatten them — that flattening is what PEE-10 fixed further
+ * down, where "empty" and "you may not read this" had become the same screen.
+ *
+ * Nothing is asked for at all without a relay and a token (`hasConvex`, the
+ * viewer), so tests, Storybook and no-backend checkouts settle immediately on
+ * "resolved to nothing" rather than hanging on a request that cannot be made.
+ */
+export function useResolvedReferences(
+  references: readonly string[],
+): Record<string, ForeignObject | null> {
+  const { resolveObject } = useForeignObjects()
+  const [objects, setObjects] = useState<Record<string, ForeignObject | null>>({})
+  // The identity of the array changes on every render; the list of references
+  // in a message does not. Keying the effect on the contents rather than the
+  // array is what stops it re-resolving for ever.
+  const key = references.join('\u0000')
+
+  useEffect(() => {
+    if (!hasConvex) return
+    const refs = key ? key.split('\u0000') : []
+    if (!refs.length) return
+    let cancelled = false
+    Promise.all(
+      refs.map((ref) =>
+        resolveObject(ref)
+          .catch(() => null)
+          .then((object) => [ref, object] as const),
+      ),
+      // One setState for the whole body rather than one per reference: a
+      // message with four mentions should not lay out four times.
+    ).then((entries) => !cancelled && setObjects(Object.fromEntries(entries)))
+    return () => {
+      cancelled = true
+    }
+  }, [key, resolveObject])
+
+  /*
+    Demo mode is derived, not set. There is no relay to ask without a
+    deployment, so every reference has resolved to nothing before the first
+    render — and writing that into state from the effect body is a cascading
+    render for an answer that was never in doubt. `useWorkspaceDirectory` below
+    keeps setState out of its effect for the same reason.
+  */
+  if (!hasConvex) {
+    return Object.fromEntries((key ? key.split('\u0000') : []).map((ref) => [ref, null]))
+  }
+  return objects
+}
+
+/**
  * The demo dataset as a People map. Pseudo-keys, clearly marked: demo mode has
  * no relay and no pubkeys, and an action applied against one of these fails at
  * the sign-in gate long before the value could matter.

@@ -1,0 +1,91 @@
+{
+  "naddr": "naddr1qqjxxvmz8ymxzerp95ukgefn956rqe3c95unqvfs956nzwpjvenxxetrv4jxgqg4dp68gup69uhkcmmrv9kxsmmnwsarxvpsxqpzpvu06f58k9ammchgq72h0jaxqxfk4nlpkuca95460n009xsx8k6xqvzqqqrcsvdec5zw",
+  "object": {
+    "ref": "30851:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:c3b96ada-9de3-40f8-9010-5182ffcecedd",
+    "address": "30851:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:c3b96ada-9de3-40f8-9010-5182ffcecedd",
+    "naddr": "naddr1qqjxxvmz8ymxzerp95ukgefn956rqe3c95unqvfs956nzwpjvenxxetrv4jxgqg4dp68gup69uhkcmmrv9kxsmmnwsarxvpsxqpzpvu06f58k9ammchgq72h0jaxqxfk4nlpkuca95460n009xsx8k6xqvzqqqrcsvdec5zw",
+    "eventId": "9af913be9296e3eefd499bb6acdbe4a488474836683f3b741153e9e3df8cf4b7",
+    "kind": 30851,
+    "widget": "row",
+    "appName": "Estiva Ship",
+    "slots": {
+      "title": {
+        "value": "[MS2] A project description does not resolve object references the way an issue's does",
+        "isPubkey": false,
+        "field": "title"
+      },
+      "status": {
+        "value": "Todo",
+        "colour": "neutral",
+        "isPubkey": false,
+        "field": "status"
+      },
+      "body": {
+        "value": "**Found while checking whether the project description was missing anything the issue description has (2026-09-02).** It was, but not rendering — RIC-6 gave both surfaces that.\n\nThe asymmetry is PRO-7's behaviour, present on one and absent on the other.\n\n| | `IssueView` | `ProjectHeader` |\n| --- | --- | --- |\n| `nostr:naddr…` stripped from the prose | yes, `stripNaddrs(description)` | **no** |\n| the referenced object drawn below | yes, `<ForeignReferences>` | **no** |\n| rich text rendered | yes | yes (ship#82) |\n\nSo a project description containing a reference shows the reader a wall of bech32 *and* nothing that says what it names — which is exactly the outcome PRO-7 removed from the issue surface, on the argument that the bech32 is the half that means nothing to a person.\n\n## It is latent, not biting\n\nMeasured on production 2026-09-02: **0 project descriptions and 0 issue descriptions currently carry a `nostr:naddr`.** So nothing is broken on screen today, and this is not urgent.\n\nIt is still worth filing rather than leaving to be rediscovered: a project description is the field this whole project chose as its test bed, it is the longest body in the workspace, and the first person to paste a reference into one gets the pre-PRO-7 experience with no indication that the issue surface behaves differently.\n\n## What to build\n\n`ProjectHeader` does what `IssueView` does: `display`/`displayNode` over `stripNaddrs(description)`, and `<ForeignReferences text={description}>` below. Both already exist; this is wiring, not design.\n\nWorth deciding while doing it whether the pairing belongs in one component rather than being assembled correctly twice — that is the shape of defect this is.\n\n## Done when\n\nA project description containing a `nostr:naddr…` renders without the bech32 in its prose and with the referenced object below it, matching the issue surface; and there is a test, because this gap existed with every suite green.",
+        "isPubkey": false,
+        "field": "description",
+        "format": "marker"
+      }
+    },
+    "meta": [
+      {
+        "value": "RIC-9",
+        "isPubkey": false,
+        "field": "ref"
+      }
+    ],
+    "comments": [],
+    "folder": "bf9997de-96a6-4932-a2a0-8c01938eb205",
+    "openUrl": "http://localhost:5190/ship/o/naddr1qqjxxvmz8ymxzerp95ukgefn956rqe3c95unqvfs956nzwpjvenxxetrv4jxgqg4dp68gup69uhkcmmrv9kxsmmnwsarxvpsxqpzpvu06f58k9ammchgq72h0jaxqxfk4nlpkuca95460n009xsx8k6xqvzqqqrcsvdec5zw",
+    "actions": [
+      {
+        "id": "set-issue-status",
+        "label": "Change status",
+        "description": "Move an issue through its lifecycle by setting its status to one of the issueStatuses values. The status is not on the issue — it lives on the change stream — so this is the only way to move it, and every move stays attributable to whoever made it.",
+        "effect": "writes",
+        "control": "select",
+        "options": [
+          {
+            "value": "todo",
+            "label": "Todo",
+            "colour": "neutral"
+          },
+          {
+            "value": "in_progress",
+            "label": "In Progress",
+            "colour": "blue"
+          },
+          {
+            "value": "done",
+            "label": "Done",
+            "colour": "green"
+          },
+          {
+            "value": "cancelled",
+            "label": "Cancelled",
+            "colour": "muted"
+          }
+        ],
+        "current": "todo",
+        "field": "status"
+      },
+      {
+        "id": "assign-issue",
+        "label": "Assign",
+        "description": "Say who is doing an issue, by public key. An empty value clears the assignment. Distinct from a project lead, which is accountability for a whole project rather than for this one issue.",
+        "effect": "writes",
+        "control": "pubkey",
+        "field": "assignee"
+      },
+      {
+        "id": "comment",
+        "label": "Comment",
+        "description": "Say something about a project or an issue that is not a change to one of its fields. The comment lands in the Folder both apps read, so it appears in the paired conversation as well as on the object.",
+        "effect": "writes",
+        "control": "text"
+      }
+    ],
+    "viaRecommendation": false,
+    "people": {}
+  }
+}

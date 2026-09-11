@@ -1,5 +1,5 @@
 import type { FC, ReactNode } from 'react'
-import { MentionChip } from './MentionChip'
+import { Reference } from './Reference'
 import { CommentAnchor } from './CommentAnchor'
 import {
   IconCircleCheck,
@@ -16,11 +16,13 @@ import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsin
 import { cn } from '@/lib/utils'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
+import { useResolvedReferences } from '@/api'
 import {
   findNaddrs,
   pointerToAddress,
   referenceToPointer,
-  stripNaddrs,
+  referencesIn,
+  standaloneReference,
   toRenderTree,
 } from '@estiva-app/protocol'
 import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protocol'
@@ -155,16 +157,19 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
  * than dropped: the widget renders nothing for it, which is the same outcome,
  * and silently discarding references here would hide the reason.
  */
+function addressOf(ref: string): string {
+  try {
+    return pointerToAddress(referenceToPointer(ref))
+  } catch {
+    return ref
+  }
+}
+
 function dedupeReferences(refs: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const ref of refs) {
-    let key: string
-    try {
-      key = pointerToAddress(referenceToPointer(ref))
-    } catch {
-      key = ref
-    }
+    const key = addressOf(ref)
     if (seen.has(key)) continue
     seen.add(key)
     out.push(ref)
@@ -216,7 +221,15 @@ function withBreaks(text: string, renderRun: (run: string) => ReactNode): ReactN
   ))
 }
 
-function Inline({ runs, renderRun }: { runs?: RenderInline[]; renderRun: (run: string) => ReactNode }) {
+function Inline({
+  runs,
+  renderRun,
+  resolved,
+}: {
+  runs?: RenderInline[]
+  renderRun: (run: string) => ReactNode
+  resolved?: Record<string, ForeignObject | null>
+}) {
   return (
     <>
       {(runs ?? []).map((run, k) =>
@@ -227,8 +240,13 @@ function Inline({ runs, renderRun }: { runs?: RenderInline[]; renderRun: (run: s
             reference; handing it back as text would invite each caller to
             re-detect it with a regex, which is how the display-name mention
             ended up needing a directory in the first place.
+
+            Whatever it names: a person, or an object with the title and status
+            its owner's manifest declares (RIC-10). `resolved` is the body's own
+            answer sheet — absent, as it is inside another app's body, an object
+            draws as its shortened URI and nothing is fetched.
           */
-          <MentionChip key={k} uri={run.reference} />
+          <Reference key={k} uri={run.reference} object={resolved?.[run.reference]} />
         ) : run.marks.includes('code') ? (
           // `code` never combines with another mark and its content is never
           // parsed further — SPEC §13.1.
@@ -252,15 +270,23 @@ function Inline({ runs, renderRun }: { runs?: RenderInline[]; renderRun: (run: s
   )
 }
 
-function Block({ block, renderRun }: { block: RenderBlock; renderRun: (run: string) => ReactNode }) {
-  const inline = <Inline runs={block.inline} renderRun={renderRun} />
+function Block({
+  block,
+  renderRun,
+  resolved,
+}: {
+  block: RenderBlock
+  renderRun: (run: string) => ReactNode
+  resolved?: Record<string, ForeignObject | null>
+}) {
+  const inline = <Inline runs={block.inline} renderRun={renderRun} resolved={resolved} />
   switch (block.type) {
     // Lists are native ul/ol so sent messages and the composer share the exact
     // same markers, indent, and item spacing (see index.css).
     case 'bulletList':
-      return <ul>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} /></li>)}</ul>
+      return <ul>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} resolved={resolved} /></li>)}</ul>
     case 'orderedList':
-      return <ol>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} /></li>)}</ol>
+      return <ol>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} resolved={resolved} /></li>)}</ol>
     case 'heading':
       // Same sizes the composer's h1/h2 get in index.css. Level 3 exists only
       // in a block document — §13.2's marker dialect stops at `##`.
@@ -312,16 +338,31 @@ export function RenderBlocks({
   value,
   format,
   renderRun,
+  resolved,
+  hideStandalone = false,
 }: {
   value: string
   format: RenderFormat
   renderRun: (run: string) => ReactNode
+  /** The body's resolved objects, for a reference drawn in place — RIC-10. */
+  resolved?: Record<string, ForeignObject | null>
+  /**
+   * Drop the blocks that are nothing but a reference, because the caller is
+   * drawing those below as widgets instead (RIC-10).
+   *
+   * The alternative was to keep cutting pointers out of the text with
+   * `stripNaddrs` and let the widget list stand for all of them, which is what
+   * this replaced: it could not tell a pointer written as a whole line from one
+   * written mid-sentence, so it removed both.
+   */
+  hideStandalone?: boolean
 }) {
-  const blocks = value ? toRenderTree(value, format) : []
+  const all = value ? toRenderTree(value, format) : []
+  const blocks = hideStandalone ? all.filter((block) => !standaloneReference(block)) : all
   return (
     <>
       {blocks.map((block, i) => (
-        <Block key={i} block={block} renderRun={renderRun} />
+        <Block key={i} block={block} renderRun={renderRun} resolved={resolved} />
       ))}
     </>
   )
@@ -347,23 +388,82 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlock
    * in different notations and would otherwise render each one twice.
    */
   const references = dedupeReferences([...(nostrReferences ?? []), ...findNaddrs(body)])
-  
-  // The pointer itself is dropped from the prose (PEEK-18). It was left in
-  // originally so a reader could copy it somewhere Peek cannot render, but that
-  // trades a rare need against every reader of every message: the widget below
-  // already says what the reference is, and says it in words.
-  const text = stripNaddrs(body)
-  // A message that was *only* a reference has nothing left to lay out.
-  // `RenderBlocks` emits nothing for an empty string rather than an empty
-  // paragraph that still takes a gap.
+
+  /**
+   * Where the pointer was written decides how it is drawn — RIC-10.
+   *
+   * PEEK-18 cut every `naddr` out of the prose with `stripNaddrs`, on the
+   * grounds that the widget below already says what the reference is and says
+   * it in words. That was the honest thing to build when a message had no
+   * structure to put a widget into, and it is still right for a pointer sitting
+   * alone on its own line.
+   *
+   * It was never right for one written *inside a sentence*, which lost its
+   * place in the sentence — Miky, 2026-09-02: *"Imagine mentioning project in
+   * your message in the middle of sentence that shows the name."* So the two
+   * cases are told apart instead of being flattened into one.
+   *
+   * `standaloneReference` lives in `@estiva-app/protocol` rather than here, so
+   * Ship reaches the same answer for the same body. The two apps disagreeing
+   * about which pointers survive the prose is exactly the class of thing
+   * §13.5's shared render tree exists to rule out — and RIC-10's done-when asks
+   * for the same body to render the same way in both.
+   */
+  const blocks = body ? toRenderTree(body, 'marker') : []
+  const standalone = blocks.map(standaloneReference).filter((ref): ref is string => !!ref)
+  const inline = referencesIn(blocks).filter((ref) => !standalone.includes(ref))
+  /*
+    What the caller already has, if anything. `resolvedObjects` is the seam for
+    a surface with no relay to ask — a story, a test — and the widget below
+    honours it already. Honouring it here too is not a convenience: without it
+    one screen would show the card resolved and the chip beside it unresolved,
+    for the same object.
+
+    Looked up with and without the scheme, because the two lists spell it
+    differently: `findNaddrs` returns a bare `naddr1…` and a `reference` run
+    carries the `nostr:` URI it was written as.
+  */
+  const supplied = (ref: string) =>
+    resolvedObjects?.[ref] ?? resolvedObjects?.[ref.replace(/^nostr:/, '')]
+  /*
+    Only what is left, and only what a widget could be drawn for. A person
+    resolves synchronously from the directory, so asking the relay about an
+    `npub` would be a round trip with nothing at the end of it.
+  */
+  const fetched = useResolvedReferences(
+    inline.filter((ref) => !/^nostr:npub1/i.test(ref) && !supplied(ref)),
+  )
+  const resolved: Record<string, ForeignObject | null> = { ...fetched }
+  for (const ref of inline) {
+    const known = supplied(ref)
+    if (known) resolved[ref] = known
+  }
+  /*
+    Drawn in place, so not drawn again below. A message composed here puts the
+    pointer in the body *and* publishes an `a` tag for it, so without this the
+    same object would appear twice — once mid-sentence and once as a card, the
+    second one arriving on its own schedule. Compared by address, because the
+    two sources spell it differently (see `dedupeReferences`).
+  */
+  const drawnInline = new Set(inline.map(addressOf))
+  const attachments = references.filter((ref) => !drawnInline.has(addressOf(ref)))
+  // A message that was *only* a reference has no blocks left to lay out, and
+  // `RenderBlocks` emits nothing rather than an empty paragraph that still
+  // takes a gap.
   return (
     <div data-message-body className="flex flex-col gap-1 text-body-2 text-text-secondary break-words">
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}
       <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />
-      <RenderBlocks value={text} format="marker" renderRun={(run) => renderTokens(run, isTopicResolved)} />
-      {references.map((naddr) => (
+      <RenderBlocks
+        value={body}
+        format="marker"
+        renderRun={(run) => renderTokens(run, isTopicResolved)}
+        resolved={resolved}
+        hideStandalone
+      />
+      {attachments.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={resolvedObjects?.[naddr]} />
       ))}
       {/*
@@ -376,7 +476,7 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlock
         resolves to null and draws nothing, and drawing a skeleton under every
         ordinary link meanwhile would be worse than the gap it fills.
       */}
-      {findUrls(text).map((url) => (
+      {findUrls(body).map((url) => (
         <ForeignObjectWidget key={url} naddr={url} resolved={resolvedObjects?.[url]} quiet />
       ))}
     </div>
