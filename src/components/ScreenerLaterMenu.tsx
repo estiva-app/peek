@@ -27,17 +27,16 @@ export function ScreenerLaterMenu({ onPick }: { onPick: (untilMs: number) => voi
       trigger={<Button variant="outlined" size="small">Later</Button>}
       className="min-w-[160px] p-1"
     >
-      {/* The heights here override the shared rows and are older than this
-          change; they are a question of their own (PEEK-ADOPTION §13.4), and
-          this commit must not move a pixel. */}
-      <MenuSection label="Remind me" className="h-7 px-3">
+      {/* No heights here. This menu forced `h-9 px-3` on its rows and
+          `h-7 px-3` on its heading, and was the only menu in Peek doing it —
+          measured 36.00px against every other menu's 31.59px (2026-09-11).
+          Katerina ruled the package was the one that should change: a menu
+          row is never shorter than 36px now, so the rows Peek wanted are the
+          rows it gets. The 12px inset goes with the override — the package
+          insets a row by 8px, as it does in all six other menus. */}
+      <MenuSection label="Remind me">
         {OPTIONS.map((o) => (
-          <MenuItem
-            key={o.label}
-            className="h-9 px-3"
-            label={o.label}
-            onClick={() => onPick(Date.now() + o.ms)}
-          />
+          <MenuItem key={o.label} label={o.label} onClick={() => onPick(Date.now() + o.ms)} />
         ))}
       </MenuSection>
     </Menu>
