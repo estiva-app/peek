@@ -8,9 +8,9 @@ import { peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive } from '@/extensions/mention'
 import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
-import { IconSquareForbid2, IconArrowUp } from '@tabler/icons-react'
+import { IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
-import { Kbd, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Kbd, Toolbar } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 import { hasConvex, type HighlightType, type UploadedFile } from '@/api'
 import { pastedImages } from '@/lib/fileAttachments'
@@ -449,9 +449,6 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         <div className="flex items-center justify-between">
           <Toolbar aria-label="Compose tools" surface={false} className="flex items-center gap-1">
             <AttachFileButton onPick={uploads.add} />
-            <ToolbarButton tooltip="Commands" aria-label="Commands">
-              <IconSquareForbid2 size={16} stroke={1.5} />
-            </ToolbarButton>
             <HighlightButton editor={editor} container={composeRef} />
           </Toolbar>
 

@@ -8,7 +8,6 @@ import { extractResolution, extractResolutionFromText } from '@/extensions/resol
 import { extractHighlightType } from '@/extensions/highlight'
 import {
   IconDotsVertical,
-  IconSquareForbid2,
   IconX,
   IconAlertSquareRounded,
 } from '@tabler/icons-react'
@@ -455,7 +454,6 @@ export function ThreadReplyCard({
                   {/* The same strip as the message's edit box (§4.2, D29). */}
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
-                    <ToolbarButton tooltip="Commands" aria-label="Commands"><IconSquareForbid2 size={16} stroke={1.5} /></ToolbarButton>
                     <HighlightButton editor={editEditor} container={editBoxRef} />
                   </Toolbar>
                   <div className="flex items-center gap-2">

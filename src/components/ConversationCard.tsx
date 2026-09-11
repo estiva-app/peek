@@ -13,7 +13,6 @@ import {
   IconArrowNarrowRight,
   IconCircleDashed,
   IconCircleCheck,
-  IconSquareForbid2,
   IconDotsVertical,
 } from '@tabler/icons-react'
 import { Button } from './ui/Button'
@@ -613,9 +612,6 @@ export function ConversationCard({
                       stops of their own on the right. */}
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
-                    <ToolbarButton tooltip="Commands" aria-label="Commands">
-                      <IconSquareForbid2 size={16} stroke={1.5} />
-                    </ToolbarButton>
                     <HighlightButton editor={editEditor} container={editBoxRef} />
                   </Toolbar>
                   <div className="flex items-center gap-2">
