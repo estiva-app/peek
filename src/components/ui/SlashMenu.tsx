@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
-import { EnterHint, MenuItem, MenuPanel, MenuSection, Divider } from '@estiva-app/ui'
+import { EnterHint, MenuItem, MenuSection, Divider } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
 import { FORMATS, type FormatId } from '@/lib/composerFormats'
 import type { HighlightType } from '@/api'
@@ -121,7 +121,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
   }
 
   return (
-    <MenuPanel className="max-h-[400px] w-[300px] gap-2 overflow-y-auto">
+    <div className="flex flex-col gap-2">
       {formats.length > 0 && (
         <MenuSection label="Format">
           {formats.map((item) => row(item, item.id, { shortcut: item.trigger }))}
@@ -144,7 +144,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
           )}
         </MenuSection>
       )}
-    </MenuPanel>
+    </div>
   )
 })
 SlashMenu.displayName = 'SlashMenu'

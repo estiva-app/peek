@@ -1,11 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
 import { IconMessage } from '@tabler/icons-react'
-import { EnterHint, MenuItem, MenuPanel, MenuSection } from '@estiva-app/ui'
+import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
 import { TopicState } from './TopicState'
 import { useIsTopicResolved } from '@/api'
-import { type Topic } from '@/api'
 import { previewText } from '@/lib/textParsing'
-import type { ConversationMessage } from '@/lib/conversationRegistry'
+import { filterFilesItems, type FilesMenuItem } from './filesMenuItems'
 
 /**
  * The picker `[` opens: the topics you can reference, and the messages on
@@ -26,9 +25,7 @@ import type { ConversationMessage } from '@/lib/conversationRegistry'
  * even specific person"*), and it is offered from the same key.
  */
 
-export type FilesMenuItem =
-  | { kind: 'topic'; data: Topic }
-  | { kind: 'message'; data: ConversationMessage }
+export type { FilesMenuItem } from './filesMenuItems'
 
 export type FilesMenuRef = {
   onKeyDown: (props: { event: KeyboardEvent }) => boolean
@@ -40,34 +37,11 @@ interface FilesMenuProps {
   onSelect: (item: FilesMenuItem) => void
 }
 
-/** Where the picker will find one message among many on screen. */
-const MESSAGE_LIMIT = 6
-
-function matches(item: FilesMenuItem, q: string): boolean {
-  if (item.kind === 'topic') return item.data.title.toLowerCase().includes(q)
-  // By what was said or who said it — "what Ada said" is found either way.
-  return item.data.body.toLowerCase().includes(q) || item.data.author.toLowerCase().includes(q)
-}
-
-function filterItems(items: FilesMenuItem[], query: string): FilesMenuItem[] {
-  const q = query.toLowerCase()
-  const shown = q ? items.filter((i) => matches(i, q)) : items
-  /*
-    Topics first and messages capped, newest last as the thread shows them. A
-    topic list is bounded by the workspace; a thread is not, and a menu that
-    grew with it would put the topics somebody actually typed for below a
-    hundred rows of prose.
-  */
-  const topics = shown.filter((i) => i.kind === 'topic')
-  const messages = shown.filter((i) => i.kind === 'message').slice(-MESSAGE_LIMIT)
-  return [...topics, ...messages]
-}
-
 export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, query, onSelect }, ref) => {
   const [highlight, setHighlight] = useState(0)
   const isTopicResolved = useIsTopicResolved()
 
-  const shown = filterItems(items, query)
+  const shown = filterFilesItems(items, query)
   const topics = shown.filter((i): i is Extract<FilesMenuItem, { kind: 'topic' }> => i.kind === 'topic')
   const messages = shown.filter((i): i is Extract<FilesMenuItem, { kind: 'message' }> => i.kind === 'message')
 
@@ -118,7 +92,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, quer
   )
 
   return (
-    <MenuPanel className="max-h-[360px] w-[658px] overflow-y-auto">
+    <>
       {topics.length > 0 && (
         <MenuSection label="Topics" className="px-2">
           {topics.map((item, i) =>
@@ -149,7 +123,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, quer
           )}
         </MenuSection>
       )}
-    </MenuPanel>
+    </>
   )
 })
 FilesMenu.displayName = 'FilesMenu'

@@ -20,7 +20,7 @@
     "@estiva-app/interop": "^0.19.0",
     "@estiva-app/platform": "^0.1.0",
     "@estiva-app/protocol": "^0.20.0",
-    "@estiva-app/ui": "^0.12.3",
+    "@estiva-app/ui": "^0.12.6",
     "@noble/curves": "^1.9.2",
     "@noble/hashes": "^1.8.0",
     "@tabler/icons-react": "^3.41.1",

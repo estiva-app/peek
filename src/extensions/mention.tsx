@@ -11,8 +11,9 @@ import { mentionMessages, topicAddress } from '@/api/mentions'
 import { previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
 import { MentionMenu } from '@/components/ui/MentionMenu'
-import { FilesMenu, type FilesMenuItem, type FilesMenuRef } from '@/components/ui/FilesMenu'
-import { hangSuggestion } from './suggestionPlacement'
+import { FilesMenu, type FilesMenuRef } from '@/components/ui/FilesMenu'
+import { filterFilesItems, type FilesMenuItem } from '@/components/ui/filesMenuItems'
+import { SuggestionPopover } from './SuggestionPopover'
 
 // ─── Types ───
 
@@ -58,21 +59,36 @@ const MentionListWrapper = forwardRef<MentionListRef, MentionListProps>(
 
     if (props.items.length === 0) return null
 
+    // Nothing to show, no panel: the menu itself returns null when the list
+    // is empty, and a `Popover` around null is an empty box (D47).
+    if (props.items.length === 0) return null
+
     return (
-      <MentionMenu
-        people={props.items}
-        highlight={highlight}
-        isUrgent={props.isUrgent}
-        onSelect={selectItem}
-        onHighlightChange={setHighlight}
-      />
+      <SuggestionPopover
+        rect={props.clientRect?.() ?? null}
+        width={MENU_WIDTH}
+        maxHeight={MENU_MAX_HEIGHT}
+        ariaLabel={props.isUrgent ? 'Urgent mention' : 'People'}
+      >
+        <MentionMenu
+          people={props.items}
+          highlight={highlight}
+          isUrgent={props.isUrgent}
+          onSelect={selectItem}
+          onHighlightChange={setHighlight}
+        />
+      </SuggestionPopover>
     )
   }
 )
 MentionListWrapper.displayName = 'MentionListWrapper'
 
-/** The people and the files menus are the same width. */
-const MENU_WIDTH = 658
+/** The people and the files menus are the same box: the width the hand-built
+ *  container had to be *told*, because it could not measure its own child, and
+ *  the 360px cap the menus used to carry themselves. Both are the panel's now
+ *  (D47) — see `SuggestionPopover` for why the cap is load-bearing. */
+const MENU_WIDTH = 'w-[658px]'
+const MENU_MAX_HEIGHT = 'max-h-[360px]'
 
 // ─── Global flag: is a suggestion popup currently open? ───
 // Counter instead of boolean - multiple suggestion plugins (mention, urgent, topic)
@@ -122,17 +138,17 @@ class SuggestionPopup {
       editor: props.editor,
     })
 
+    // A mount point, nothing more: the panel is a `Popover` and portals
+    // itself. No position, no z-index, no arithmetic (D47).
     this.container = document.createElement('div')
-    this.container.style.position = 'fixed'
-    this.container.style.zIndex = '50'
     document.body.appendChild(this.container)
     this.container.appendChild(this.component.element)
-    this.updatePosition(props)
   }
 
   onUpdate(props: SuggestionProps, isUrgent: boolean) {
+    // The caret's rect rides in `props`, so re-rendering is what moves the
+    // panel — there is nothing else to update.
     this.component?.updateProps({ ...props, isUrgent })
-    this.updatePosition(props)
   }
 
   onKeyDown(props: { event: KeyboardEvent }) {
@@ -150,13 +166,6 @@ class SuggestionPopup {
     this.container?.remove()
     this.component = null
     this.container = null
-  }
-
-  private updatePosition(props: SuggestionProps) {
-    if (!this.container || !props.clientRect) return
-    const rect = (props.clientRect as () => DOMRect)()
-    if (!rect) return
-    hangSuggestion(this.container, rect, MENU_WIDTH)
   }
 }
 
@@ -286,13 +295,24 @@ const FilesListWrapper = forwardRef<FilesMenuRef, SuggestionProps>(
       onKeyDown: (p: { event: KeyboardEvent }) => menuRef.current?.onKeyDown(p) ?? false,
     }))
 
+    // As above — and the query matters here, so it asks the same filter the
+    // menu draws from rather than counting the raw items.
+    if (filterFilesItems(props.items as FilesMenuItem[], props.query).length === 0) return null
+
     return (
-      <FilesMenu
-        ref={menuRef}
-        items={props.items}
-        query={props.query}
-        onSelect={(item) => props.command(item)}
-      />
+      <SuggestionPopover
+        rect={props.clientRect?.() ?? null}
+        width={MENU_WIDTH}
+        maxHeight={MENU_MAX_HEIGHT}
+        ariaLabel="Topics and messages"
+      >
+        <FilesMenu
+          ref={menuRef}
+          items={props.items}
+          query={props.query}
+          onSelect={(item) => props.command(item)}
+        />
+      </SuggestionPopover>
     )
   }
 )
@@ -309,16 +329,12 @@ class FilesSuggestionPopup {
       editor: props.editor,
     })
     this.container = document.createElement('div')
-    this.container.style.position = 'fixed'
-    this.container.style.zIndex = '50'
     document.body.appendChild(this.container)
     this.container.appendChild(this.component.element)
-    this.updatePosition(props)
   }
 
   onUpdate(props: SuggestionProps) {
     this.component?.updateProps(props)
-    this.updatePosition(props)
   }
 
   onKeyDown(props: { event: KeyboardEvent }) {
@@ -336,13 +352,6 @@ class FilesSuggestionPopup {
     this.container?.remove()
     this.component = null
     this.container = null
-  }
-
-  private updatePosition(props: SuggestionProps) {
-    if (!this.container || !props.clientRect) return
-    const rect = (props.clientRect as () => DOMRect)()
-    if (!rect) return
-    hangSuggestion(this.container, rect, MENU_WIDTH)
   }
 }
 

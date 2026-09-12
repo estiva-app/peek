@@ -1,8 +1,43 @@
+import { useCallback, useState, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { TOPICS } from '@/api'
 import { PeekDataProvider } from '@/api'
-import { FilesMenu, type FilesMenuItem } from './FilesMenu'
+import { SuggestionPopover } from '@/extensions/SuggestionPopover'
+import { FilesMenu } from './FilesMenu'
+import { filterFilesItems, type FilesMenuItem } from './filesMenuItems'
 import type { ConversationMessage } from '@/lib/conversationRegistry'
+
+/**
+ * The menu draws rows and nothing else since D47 — the box, its placement and
+ * its scrolling are the package `Popover`'s, which the `[` extension opens
+ * against the caret. The story opens the same shell against a marker standing
+ * in for the caret.
+ */
+function InTheShell({ children }: { children: ReactNode }) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const caret = useCallback((el: HTMLDivElement | null) => {
+    setRect(el ? el.getBoundingClientRect() : null)
+  }, [])
+  return (
+    <div className="flex h-[560px] items-end justify-start p-4">
+      <div ref={caret} className="text-body-2 text-text-secondary">
+        the caret is here
+      </div>
+      <SuggestionPopover rect={rect} width="w-[658px]" maxHeight="max-h-[360px]" ariaLabel="Topics and messages">
+        {children}
+      </SuggestionPopover>
+    </div>
+  )
+}
+
+/** The caret, and nothing above it. */
+InTheShell.Empty = function Empty() {
+  return (
+    <div className="flex h-[560px] items-end justify-start p-4">
+      <div className="text-body-2 text-text-secondary">the caret is here</div>
+    </div>
+  )
+}
 
 // Exactly what the `[` extension offers (mention.tsx): the topics, and the
 // messages on screen (RIC-11). The Apps and Documents sections were mock rows
@@ -28,6 +63,17 @@ const meta = {
       </PeekDataProvider>
     ),
   ],
+  /* The shell opens only when there is something to draw, exactly as the `[`
+     extension does: a `Popover` wrapped around a menu that returned null is an
+     empty box, where the old hand-built container was invisible (D47). */
+  render: (args) =>
+    filterFilesItems(args.items, args.query).length === 0 ? (
+      <InTheShell.Empty />
+    ) : (
+      <InTheShell>
+        <FilesMenu {...args} />
+      </InTheShell>
+    ),
   args: {
     items: ITEMS,
     query: '',
