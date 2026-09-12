@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useState } from 'react'
 import { EnterHint, MenuItem, MenuSection, Divider } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
 import { FORMATS, type FormatId } from '@/lib/composerFormats'
@@ -95,6 +95,8 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
     },
   }), [items, highlight, onSelect])
 
+  const base = useId()
+
   if (items.length === 0) return null
 
   const formats = items.filter((i): i is SlashItem & { kind: 'format' } => i.kind === 'format')
@@ -104,9 +106,16 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
   const row = (item: SlashItem, key: string, extra: Partial<Parameters<typeof MenuItem>[0]> = {}) => {
     const index = items.indexOf(item)
     const selected = index === highlight
+    /* A row is an `option` in the popup's listbox (P28): an id for the
+       editor's `aria-activedescendant`, `aria-selected` on the highlighted
+       one, and no Tab stop because focus stays in the text. */
     return (
       <MenuItem
         key={key}
+        role="option"
+        id={`${base}-${index}`}
+        aria-selected={selected}
+        tabIndex={-1}
         ref={selected ? scrollRef : undefined}
         label={item.label}
         selected={selected}
@@ -123,18 +132,23 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
   return (
     <div className="flex flex-col gap-2">
       {formats.length > 0 && (
+        <div role="group" aria-label="Format">
         <MenuSection label="Format">
           {formats.map((item) => row(item, item.id, { shortcut: item.trigger }))}
         </MenuSection>
+        </div>
       )}
       {formats.length > 0 && shortcuts.length > 0 && <Divider className="mx-0" />}
       {shortcuts.length > 0 && (
+        <div role="group" aria-label="Shortcuts">
         <MenuSection label="Shortcuts">
           {shortcuts.map((item) => row(item, item.trigger, { shortcut: item.trigger }))}
         </MenuSection>
+        </div>
       )}
       {shortcuts.length > 0 && highlights.length > 0 && <Divider className="mx-0" />}
       {highlights.length > 0 && (
+        <div role="group" aria-label="Highlights">
         <MenuSection label="Highlights">
           {highlights.map((item) =>
             row(item, item.type, {
@@ -143,6 +157,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
             }),
           )}
         </MenuSection>
+        </div>
       )}
     </div>
   )

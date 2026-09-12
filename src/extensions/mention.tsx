@@ -69,6 +69,7 @@ const MentionListWrapper = forwardRef<MentionListRef, MentionListProps>(
         width={MENU_WIDTH}
         maxHeight={MENU_MAX_HEIGHT}
         ariaLabel={props.isUrgent ? 'Urgent mention' : 'People'}
+        editorElement={props.editor.view.dom}
       >
         <MentionMenu
           people={props.items}
@@ -305,6 +306,7 @@ const FilesListWrapper = forwardRef<FilesMenuRef, SuggestionProps>(
         width={MENU_WIDTH}
         maxHeight={MENU_MAX_HEIGHT}
         ariaLabel="Topics and messages"
+        editorElement={props.editor.view.dom}
       >
         <FilesMenu
           ref={menuRef}
