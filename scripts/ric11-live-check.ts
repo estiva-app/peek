@@ -26,17 +26,36 @@
  *   cd ~/estiva-agent && set -a && . ~/.estiva-agent.env && set +a && cd -
  *   npx tsx scripts/ric11-live-check.ts
  */
-import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { addrToNaddr, encodeNevent, type SignedEvent } from '@estiva-app/protocol'
 import { resolveForeignEvent, resolveForeignObject, createProjectionCache } from '@estiva-app/interop'
-import type { SignedEvent } from '@estiva-app/interop'
-// The agent's own client, not a re-hand-rolled bridge: the NIP-98 nonce, the
-// bare-array `/query` and the token grant have each been mis-typed by a probe
-// before and each looked like a relay bug.
-import { clientCredentialsToken, loadCredentials } from '../../estiva-agent/lib/agent/credentials'
-import { estivaIdSigner } from '../../estiva-agent/lib/nostr/signer'
-import { Relay } from '../../estiva-agent/node_modules/@estiva-app/protocol/dist/index.js'
 
 const RELAY_URL = (process.env.RELAY_URL ?? 'https://estiva.estiva.app').replace(/\/+$/, '')
+/**
+ * The agent's own relay client, not a re-hand-rolled bridge: the NIP-98
+ * nonce, the bare-array `/query` and the token grant have each been mis-typed
+ * by a probe before and each looked like a relay bug. Loaded at run time from
+ * the sibling checkout because CI typechecks `scripts/` and has no sibling;
+ * the shapes below are the three calls this file makes, and nothing more.
+ */
+const AGENT_DIR = process.env.ESTIVA_AGENT_DIR ?? join(homedir(), 'estiva-agent')
+interface AgentClient {
+  loadCredentials(): { base: string; clientId: string }
+  clientCredentialsToken(credentials: unknown): Promise<{ pubkey: string; access_token: string }>
+  estivaIdSigner(options: { base: string; pubkey: string; token: string }): unknown
+  Relay: new (url: string, signer: unknown) => { query(filters: Record<string, unknown>[]): Promise<SignedEvent[]> }
+}
+async function agentClient(): Promise<AgentClient> {
+  const load = (rel: string) => import(pathToFileURL(join(AGENT_DIR, rel)).href)
+  const [credentials, signer, protocol] = await Promise.all([
+    load('lib/agent/credentials.ts'),
+    load('lib/nostr/signer.ts'),
+    load('node_modules/@estiva-app/protocol/dist/index.js'),
+  ])
+  return { ...credentials, ...signer, Relay: protocol.Relay }
+}
 const KIND_TOPIC = 39000
 const KIND_MESSAGE = 9
 const KIND_MANIFEST = 31990
@@ -46,20 +65,21 @@ const check = (label: string, ok: boolean, detail = '') => {
   console.log(`${ok ? '✅' : '❌'} ${label}${detail ? ` — ${detail}` : ''}`)
   if (!ok) failures++
 }
-const tag = (event: SignedEvent, name: string) => event.tags.find((t) => t[0] === name)?.[1]
+const tag = (event: SignedEvent, name: string) => event.tags.find((t: string[]) => t[0] === name)?.[1]
 
 async function main() {
+  const { loadCredentials, clientCredentialsToken, estivaIdSigner, Relay } = await agentClient()
   const credentials = loadCredentials()
   const token = await clientCredentialsToken(credentials)
   const relay = new Relay(RELAY_URL, estivaIdSigner({ base: credentials.base, pubkey: token.pubkey, token: token.access_token }))
-  const query = (filters: Record<string, unknown>[]) => relay.query(filters) as Promise<SignedEvent[]>
+  const query = (filters: Record<string, unknown>[]) => relay.query(filters)
   console.log(`relay ${RELAY_URL}, reading as ${token.pubkey.slice(0, 8)}…\n`)
 
   // Who draws these kinds. Discovery is the runtime's job; this only reports
   // what it will find, so a null below can be told from "no manifest".
   const manifests = await query([{ kinds: [KIND_MANIFEST], limit: 50 }])
   const claims = (kind: number) =>
-    manifests.filter((m) => m.tags.some((t) => t[0] === 'k' && t[1] === String(kind))).map((m) => tag(m, 'd') ?? m.pubkey.slice(0, 8))
+    manifests.filter((m) => m.tags.some((t: string[]) => t[0] === 'k' && t[1] === String(kind))).map((m) => tag(m, 'd') ?? m.pubkey.slice(0, 8))
   check(`a manifest claims kind:${KIND_TOPIC}`, claims(KIND_TOPIC).length > 0, claims(KIND_TOPIC).join(', '))
   check(`a manifest claims kind:${KIND_MESSAGE}`, claims(KIND_MESSAGE).length > 0, claims(KIND_MESSAGE).join(', '))
 
