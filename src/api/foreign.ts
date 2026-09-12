@@ -48,7 +48,7 @@ import type { FolderContents, FolderProject, FolderSummary, ForeignObject, Peopl
  * there is nowhere to ask. Returning null lets each caller degrade in the way
  * that suits it rather than guessing here.
  */
-function useRelayViewer() {
+export function useRelayViewer() {
   const config = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
   return useCallback(() => {
     const relayUrl = config?.relayUrl

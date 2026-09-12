@@ -67,6 +67,12 @@ export interface ConversationMessage {
   timestamp: string
   body: string
   /**
+   * The event this message was published as, when it has reached the relay —
+   * what a mention of it is written as (`nostr:nevent…`, RIC-11). Absent for
+   * a message still on its way, and for one that was never published.
+   */
+  eventId?: string
+  /**
    * The conversation this message belongs to, when that is not the thread on
    * screen (INT-8).
    *
@@ -116,6 +122,25 @@ let topic: ConversationSnapshot | null = null
  */
 export function getActiveConversation(): ConversationSnapshot | null {
   return active ?? topic
+}
+
+/**
+ * A message on screen by the event it was published as — **either** snapshot,
+ * not the winner above (RIC-11).
+ *
+ * The priority rule answers "what is being read"; this answers "what does
+ * this `nevent` in the editor name", and a message mentioned from the topic
+ * list is still on screen when its thread is not the one open. Undefined when
+ * nothing on screen carries that id, which the caller draws as the URI's own
+ * shortened form rather than as an error.
+ */
+export function findMessageByEventId(eventId: string): ConversationMessage | undefined {
+  const id = eventId.toLowerCase()
+  for (const snapshot of [active, topic]) {
+    const found = snapshot?.messages.find((m) => m.eventId?.toLowerCase() === id)
+    if (found) return found
+  }
+  return undefined
 }
 
 export function registerActiveConversation(snapshot: ConversationSnapshot) {

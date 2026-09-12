@@ -110,6 +110,9 @@ export interface ConversationData {
   lastReplyTime?: string
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** The published event's id — what a mention of this message names (RIC-11).
+   *  Absent until it reaches the relay, and for anything never published. */
+  nostrEventId?: string
   /**
    * Which block of the referenced object this comment is about — SPEC §13.6.
    *

@@ -446,7 +446,19 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlock
     two sources spell it differently (see `dedupeReferences`).
   */
   const drawnInline = new Set(inline.map(addressOf))
-  const attachments = references.filter((ref) => !drawnInline.has(addressOf(ref)))
+  /*
+    A message alone on its line is attached, the way an object alone on its
+    line is (RIC-11). `references` only ever held addresses — `a` tags and
+    `findNaddrs` — so a paragraph that was nothing but a `nostr:nevent…` was
+    hidden from the prose above and then drawn by nothing below, and the
+    message it mentioned simply vanished. Same test as for an `naddr`,
+    `standaloneReference`, so the two apps keep agreeing about which is which.
+    Spelled bare, as `findNaddrs` spells its answers, so one list has one form.
+  */
+  const attachedEvents = standalone
+    .filter((ref) => /^nostr:(?:nevent|note)1/i.test(ref))
+    .map((ref) => ref.replace(/^nostr:/i, ''))
+  const attachments = [...references.filter((ref) => !drawnInline.has(addressOf(ref))), ...attachedEvents]
   // A message that was *only* a reference has no blocks left to lay out, and
   // `RenderBlocks` emits nothing rather than an empty paragraph that still
   // takes a gap.
@@ -464,7 +476,7 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlock
         hideStandalone
       />
       {attachments.map((naddr) => (
-        <ForeignObjectWidget key={naddr} naddr={naddr} resolved={resolvedObjects?.[naddr]} />
+        <ForeignObjectWidget key={naddr} naddr={naddr} resolved={supplied(naddr)} />
       ))}
       {/*
         A pasted app URL, rendered as the object it names — RFC 0.5 §7.5,

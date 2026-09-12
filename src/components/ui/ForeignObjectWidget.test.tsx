@@ -423,3 +423,45 @@ describe('the body slot', () => {
     expect(container.textContent).toContain('Billing entry')
   })
 })
+
+/**
+ * A title that is a person — RIC-11.
+ *
+ * Peek's own manifest titles a message by its author: `{ field: "pubkey", as:
+ * "pubkey" }`. The card drew `slots.title.value` as text, which for that
+ * object is 64 hex characters — the meta line had honoured `isPubkey` since
+ * FEE-1 and the title never had to, because Ship titles everything in words.
+ */
+describe('a person-titled object', () => {
+  // Imported lazily, as the body-slot tests do: the mock above must bind first.
+  const card = async () => (await import('./ForeignObjectWidget')).ForeignObjectCard
+  const message = () =>
+    object({
+      ref: 'nevent1msg',
+      address: undefined,
+      naddr: undefined,
+      kind: 9,
+      widget: ['message', 'card'],
+      appName: 'Peek',
+      slots: {
+        title: { value: 'a'.repeat(64), isPubkey: true },
+        body: { value: 'Green. Leaving the pin in place until Monday.' },
+      },
+      meta: [],
+    })
+
+  it('names the author in the title, never the key', async () => {
+    const ForeignObjectCard = await card()
+    const { container } = render(<ForeignObjectCard object={message()} />)
+    expect(container.textContent).toContain('Alice Chen')
+    expect(container.textContent).not.toContain('a'.repeat(64))
+    expect(container.textContent).toContain('Green. Leaving the pin')
+  })
+
+  it('draws the em dash for an author nobody has published a name for', async () => {
+    const ForeignObjectCard = await card()
+    const { container } = render(<ForeignObjectCard object={{ ...message(), people: {} }} />)
+    expect(container.textContent).not.toContain('a'.repeat(64))
+    expect(container.textContent).toContain('—')
+  })
+})

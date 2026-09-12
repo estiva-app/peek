@@ -174,3 +174,30 @@ export const LongTitle: Story = {
     onAct: () => {},
   },
 }
+
+/**
+ * A Peek message, attached the way an issue is (RIC-11): a `nostr:nevent…`
+ * alone on its line. Its manifest titles it by its author's pubkey, so the
+ * title is a person — face and name — and the body is the message. Nothing
+ * here says "Peek"; a Ship comment titled the same way would draw the same.
+ */
+export const PersonTitled: Story = {
+  args: {
+    object: {
+      ...issue,
+      ref: 'nevent1msg',
+      address: undefined,
+      naddr: undefined,
+      kind: 9,
+      widget: ['message', 'card'],
+      appName: 'Peek',
+      slots: {
+        title: { value: 'a'.repeat(64), isPubkey: true },
+        body: { value: 'Green. Leaving the **pin** in place until Monday.' },
+      },
+      meta: [],
+      people: { ['a'.repeat(64)]: { displayName: 'Ada Lovelace' } },
+      actions: [],
+    },
+  },
+}

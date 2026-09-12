@@ -3,9 +3,13 @@ import { ReactRenderer, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/r
 import Mention from '@tiptap/extension-mention'
 import { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion'
 import { type NodeViewProps } from '@tiptap/react'
-import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
+import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
+import { encodeNevent } from '@estiva-app/protocol'
 import { mentionPeople, mentionTopics, type Person } from '@/api'
 import { useIsTopicResolved } from '@/api'
+import { mentionMessages, topicAddress } from '@/api/mentions'
+import { previewText } from '@/lib/textParsing'
+import { MESSAGE_KIND } from '@/nostr/manifest'
 import { MentionMenu } from '@/components/ui/MentionMenu'
 import { FilesMenu, type FilesMenuItem, type FilesMenuRef } from '@/components/ui/FilesMenu'
 import { hangSuggestion } from './suggestionPlacement'
@@ -374,6 +378,15 @@ export const TopicMention = Mention.extend({
       id: { default: null },
       label: { default: null },
       isResolved: { default: false },
+      /**
+       * The topic's address — `39000:<relay-pubkey>:<channel-uuid>` — when
+       * Peek can spell it (RIC-11). `id` is a Convex key and `label` is a
+       * title that goes stale; this is what the body is serialised with, so
+       * the mention resolves in an app that holds neither and survives a
+       * rename. Null for a topic with no channel, which serialises as the
+       * bracket form it always did.
+       */
+      address: { default: null },
     }
   },
 
@@ -402,15 +415,19 @@ export const TopicMention = Mention.extend({
   suggestion: {
     char: '[',
     items: (): FilesMenuItem[] => {
-      // Topics only (Katerina, 2026-09-05). The Apps and Documents sections
-      // were mock rows — a Figma category and a handful of invented files —
-      // and they only ever appeared in mock mode, so the menu you reviewed
-      // was not the menu the app shows. Placeholders retired, the way the
-      // prototype reference chips were in #148.
+      // Topics, and the messages on screen (RIC-11). The Apps and Documents
+      // sections that used to sit here were mock rows — a Figma category and
+      // a handful of invented files — and they only ever appeared in mock
+      // mode, so the menu you reviewed was not the menu the app shows.
+      // Placeholders retired (Katerina, 2026-09-05), the way the prototype
+      // reference chips were in #148.
       //
       // APP_FILES / DOCUMENT_FILES stay in `src/data`: MessageBody still
       // resolves them so reference chips in existing messages keep working.
-      return mentionTopics().map((t) => ({ kind: 'topic', data: t }))
+      return [
+        ...mentionTopics().map((t): FilesMenuItem => ({ kind: 'topic', data: t })),
+        ...mentionMessages().map((m): FilesMenuItem => ({ kind: 'message', data: m })),
+      ]
     },
 
     render: () => {
@@ -424,27 +441,116 @@ export const TopicMention = Mention.extend({
     },
 
     command: ({ editor, range, props: item }: any) => {
-      // Topics are all `[` offers now, so this inserts a topicMention and
-      // nothing else. The `fileMention` node it used to insert still exists
-      // and MessageBody still renders it — messages already sent keep their
-      // file references; there is simply no longer a way to add a new one.
-      const topic = (item as FilesMenuItem).data
+      // A topic or a message (RIC-11). The `fileMention` node this used to
+      // insert still exists and MessageBody still renders it — messages
+      // already sent keep their file references; there is simply no longer a
+      // way to add a new one.
+      const picked = item as FilesMenuItem
+      const node =
+        picked.kind === 'topic'
+          ? {
+              type: 'topicMention',
+              attrs: {
+                id: picked.data.id,
+                label: picked.data.title,
+                isResolved: picked.data.isResolved,
+                address: topicAddress(picked.data),
+              },
+            }
+          : {
+              type: 'messageMention',
+              attrs: {
+                id: picked.data.eventId,
+                label: picked.data.author,
+                snippet: previewText(picked.data.body),
+                /*
+                  The kind travels in the pointer so a reader can fetch the
+                  manifest and the event together rather than one after the
+                  other (`resolveForeignEvent`). No relay hint: the same
+                  omission every `naddr` Peek writes makes, and for the same
+                  reason — a reader on this relay needs none, and one elsewhere
+                  cannot read the event anyway.
+                */
+                uri: `nostr:${encodeNevent({ id: picked.data.eventId as string, relays: [], kind: MESSAGE_KIND })}`,
+              },
+            }
       editor
         .chain()
         .focus()
-        .insertContentAt(range, [
-          {
-            type: 'topicMention',
-            attrs: {
-              id: topic.id,
-              label: topic.title,
-              isResolved: topic.isResolved,
-            },
-          },
-          { type: 'text', text: ' ' },
-        ])
+        .insertContentAt(range, [node, { type: 'text', text: ' ' }])
         .run()
     },
+  },
+})
+
+// ─── Message mention (RIC-11) ───
+
+function MessageMentionView({ node }: NodeViewProps) {
+  const { label, snippet } = node.attrs
+  return (
+    <NodeViewWrapper as="span" className="inline-flex items-center gap-1 rounded-sm px-1 bg-bg-active text-text-primary text-body-2 font-normal select-none cursor-default" style={{ verticalAlign: 'text-bottom', height: '1.4em', maxWidth: '24ch' }}>
+      <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
+        <IconMessage size={14} stroke={1.5} />
+      </span>
+      <span className="truncate">{snippet ? `${label}: ${snippet}` : label}</span>
+    </NodeViewWrapper>
+  )
+}
+
+/**
+ * A message, mentioned mid-sentence — SPEC §13.1's reference, pointed at an
+ * event rather than an address (RIC-11).
+ *
+ * Its own node rather than a `topicMention` with a different icon because the
+ * two serialise differently: a topic has an address and a bracket fallback, a
+ * message has an event id and nothing older to fall back to — there was never
+ * a way to write one before this, so `uri` is never null.
+ */
+export const MessageMention = Mention.extend({
+  name: 'messageMention',
+  group: 'inline',
+  inline: true,
+  atom: true,
+
+  addAttributes() {
+    return {
+      /** The event id. */
+      id: { default: null },
+      /** The author, as the thread showed them. */
+      label: { default: null },
+      /** The opening words, marks stripped — a caption, never parsed. */
+      snippet: { default: '' },
+      /** `nostr:nevent…`, exactly as the body carries it. */
+      uri: { default: null },
+    }
+  },
+
+  renderHTML({ node }) {
+    return [
+      'span',
+      {
+        'data-message-mention': 'true',
+        'data-id': node.attrs.id,
+        class:
+          'inline-flex items-center gap-1 rounded-sm px-1 bg-bg-active text-text-primary text-sm select-none cursor-default',
+      },
+      node.attrs.snippet ? `${node.attrs.label}: ${node.attrs.snippet}` : node.attrs.label,
+    ]
+  },
+
+  parseHTML() {
+    return [{ tag: 'span[data-message-mention]' }]
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(MessageMentionView, { as: 'span' })
+  },
+}).configure({
+  HTMLAttributes: {},
+  // Inserted by the `[` menu above; it opens no menu of its own.
+  suggestion: {
+    char: '\0',
+    items: () => [],
   },
 })
 

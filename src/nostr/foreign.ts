@@ -49,6 +49,7 @@ import {
   resolveFolderProject,
   resolveFolderContents,
   listFolders,
+  resolveForeignEvent,
   resolveForeignObject,
   resolveManifest,
   type FolderContents,
@@ -204,7 +205,54 @@ export async function resolveObjectAsViewer(
       if (!address) return null
       return await resolveForeignObject(address, query, cachedPeople(query))
     }
+    /*
+      A message is an event, not an address (RIC-11).
+
+      `resolveForeignObject` takes an `naddr` or a `<kind>:<pubkey>:<d>` and
+      nothing else — a `kind:9` has no `d`, so it cannot be spelled that way and
+      `referenceToPointer` throws on its `nevent`. PRO-11 built the counterpart
+      for exactly this case and nothing called it: a mention of a message in a
+      body reached this function, threw, was caught below and drew as its own
+      shortened URI, which is the "never blank" rule doing its job over a gap
+      rather than a resolution. Dispatched by form, so every surface that
+      already resolves a reference resolves a message with no further wiring.
+    */
+    if (isEventReference(reference)) {
+      return await resolveForeignEvent(reference, query, cachedPeople(query))
+    }
     return await resolveForeignObject(reference, query, cachedPeople(query))
+  } catch (error) {
+    if (error instanceof RelayReadError) return null
+    throw error
+  }
+}
+
+/** `nostr:nevent1…`, `nostr:note1…`, or a bare 64-hex event id. */
+export function isEventReference(reference: string): boolean {
+  const bare = reference.replace(/^nostr:/i, '')
+  return /^(?:nevent|note)1/i.test(bare) || /^[0-9a-f]{64}$/i.test(bare)
+}
+
+/**
+ * The key the relay signs its channel records with — the `<pubkey>` in every
+ * topic's address (RIC-11).
+ *
+ * A topic is `39000:<relay-pubkey>:<channel-uuid>` (RFC 0.4 §5.2), and Peek
+ * holds the uuid on every topic row but has never held the key: no surface
+ * needed to *write* a topic's address before a mention did. §5.3 measured the
+ * key as one per deployment and non-rotating — every relay-signed event on
+ * production has a single author, equal to NIP-11 `self` — so it is read off
+ * any one channel record rather than fetched per topic, and read once.
+ *
+ * `null` when the relay serves no channel record this viewer can read, which
+ * is a real answer: a mention then falls back to the bracket form, exactly as
+ * a person with no key is still mentioned by name.
+ */
+export async function relaySigningKeyAsViewer(relayUrl: string, token: StoredToken): Promise<string | null> {
+  const query = viewerQuery(relayUrl, token)
+  try {
+    const [record] = await query([{ kinds: [KIND_TOPIC], limit: 1 }])
+    return record?.pubkey ?? null
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error

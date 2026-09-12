@@ -322,6 +322,17 @@ export function ForeignObjectCard({
     because Peek only consumes Ship, whose widgets are bare strings.
   */
   const widget = pickWidget(object.widget, ['card', 'row', 'table', 'stat'] as const, 'card')
+  /*
+    A title that is a person — `as: "pubkey"` on the title slot, which is how
+    Peek's own manifest titles a message, by its author (RIC-11). The same
+    rule the meta line already keeps (FEE-1): a key is never on screen, so
+    the title draws the face and the name, or the em dash for a stranger.
+  */
+  const title = slots.title?.isPubkey ? (
+    <Person pubkey={slots.title.value} people={object.people} className="font-semibold text-text-primary" />
+  ) : (
+    slots.title?.value
+  )
 
   /**
    * Only the controls that set a field.
@@ -393,11 +404,11 @@ export function ForeignObjectCard({
                 rel="noopener noreferrer"
                 className="truncate text-body-2 font-semibold text-text-primary hover:underline"
               >
-                {slots.title?.value}
+                {title}
               </a>
             ) : (
               <span className="truncate text-body-2 font-semibold text-text-primary">
-                {slots.title?.value}
+                {title}
               </span>
             )}
             {status && <StatusPill slot={status} />}

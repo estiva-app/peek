@@ -292,8 +292,10 @@ export function ThreadPanel({
     the modal. `id` is the same one the reply wrapper renders as
     `data-reply-id`, which is what a citation scrolls to.
   */
+  // The event id rides along since RIC-11: a mention of a message is written
+  // as its `nevent`, and the `[` menu reads it off this snapshot.
   const bodyKey = messages
-    .map((m) => [m.id, m.authorName, m.timestamp, m.body ?? ''].join('\u0001'))
+    .map((m) => [m.id, m.authorName, m.timestamp, m.nostrEventId ?? '', m.body ?? ''].join('\u0001'))
     .join('\u0000')
   /*
     Rebuilt from the key rather than from `messages`, which is the round-trip
@@ -305,8 +307,8 @@ export function ThreadPanel({
     () =>
       bodyKey
         ? bodyKey.split('\u0000').map((row) => {
-            const [id, author, timestamp, ...body] = row.split('\u0001')
-            return { id, author, timestamp, body: body.join('\u0001') }
+            const [id, author, timestamp, eventId, ...body] = row.split('\u0001')
+            return { id, author, timestamp, eventId: eventId || undefined, body: body.join('\u0001') }
           })
         : [],
     [bodyKey],

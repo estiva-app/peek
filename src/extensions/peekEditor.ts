@@ -1,5 +1,5 @@
 import { peekStarterKit } from './editorKit'
-import { PeekMention, UrgentMention, TopicMention, FileMention } from './mention'
+import { PeekMention, UrgentMention, TopicMention, FileMention, MessageMention } from './mention'
 import { ResolutionBlock } from './resolution'
 import { HighlightTag } from './highlight'
 import { SlashCommands } from './slashCommands'
@@ -39,6 +39,7 @@ export const peekEditorExtensions = [
   UrgentMention,
   TopicMention,
   FileMention,
+  MessageMention,
   ResolutionBlock,
   HighlightTag,
   SlashCommands,
