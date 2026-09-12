@@ -38,6 +38,7 @@ import {
   pointerToAddress,
   referenceToPointer,
   toNostrSeconds,
+  type AddressPointer,
 } from '@estiva-app/protocol'
 import {
   KIND_BARE_FILE,
@@ -554,18 +555,34 @@ export async function listFoldersAsViewer(
 }
 
 /**
- * The Peek Folder a `nostr:` reference points into, or null (PRO-11).
+ * Where in Peek a `nostr:` reference opens — see {@link placeForReferenceAsViewer}.
+ *
+ * `folder` is always the Folder to land in. `file` is set when the reference
+ * names a file *inside* that Folder rather than the Folder itself: the page
+ * lands on the Folder and opens that file's conversation beside it.
+ */
+export type ReferencePlace = { folder: string; file?: string }
+
+/**
+ * The place in Peek a `nostr:` reference points at, or null (PRO-11).
  *
  * This is what makes the manifest's `web` template true. NIP-89 lets an app say
  * *"open one of my objects at this URL"*, and Peek published one before it had
  * any route to serve it — a consumer holding a Topic or a Message resolved it,
  * offered "open in Peek", and landed the person on their desk.
  *
- * Two shapes, and only one of them needs the relay:
+ * Three shapes, and only two of them need the relay:
  *
  * - **A Topic is an `naddr`,** and a Topic's `d` **is** the channel uuid —
  *   measured across all 50 production channels (RFC 0.4 §5.2). So the answer is
  *   in the pointer and no read is required.
+ * - **A bare file is an `naddr` too** (SPEC §6.7) — a topic started since #194,
+ *   or any ownerless file — and it is the one address Peek opens that is *not*
+ *   its own kind: RFC 0.5 §10.7 makes Peek the app that renders every file's
+ *   conversation, and interop hands a consumer this URL for exactly that
+ *   reason (FOL-17). Its Folder is its `h`, which means fetching it; the place
+ *   is that Folder with the file open, since the file is not a container and
+ *   has no page of its own.
  * - **A Message is an `nevent`,** because a `kind:9` has no `d` at all, so
  *   nothing but its event id can name it. Its Folder is the `h` tag, which
  *   means fetching it.
@@ -574,20 +591,34 @@ export async function listFoldersAsViewer(
  * reference that Peek has nowhere to open, and saying so beats redirecting
  * somewhere arbitrary.
  */
-export async function folderForReferenceAsViewer(
+export async function placeForReferenceAsViewer(
   reference: string,
   relayUrl: string,
   token: StoredToken,
-): Promise<string | null> {
+): Promise<ReferencePlace | null> {
   const bare = reference.replace(/^nostr:/i, '')
 
+  let pointer: AddressPointer | null = null
   try {
-    const pointer = referenceToPointer(bare)
-    // Only Peek's own container kind. Another app's addressable object is not
-    // ours to open, however well-formed its reference is.
-    return pointer.kind === KIND_TOPIC && pointer.identifier ? pointer.identifier : null
+    pointer = referenceToPointer(bare)
   } catch {
-    // Not an address — fall through to the event forms below.
+    // Not an address — the event forms below.
+  }
+  if (pointer) {
+    // Peek's own container kind answers from the pointer alone.
+    if (pointer.kind === KIND_TOPIC) {
+      return pointer.identifier ? { folder: pointer.identifier } : null
+    }
+    if (pointer.kind === KIND_BARE_FILE && pointer.identifier) {
+      const [file] = await viewerQuery(relayUrl, token)([
+        { kinds: [KIND_BARE_FILE], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
+      ])
+      const folder = file ? folderOf(file) : null
+      return folder ? { folder, file: pointerToAddress(pointer) } : null
+    }
+    // Another app's addressable object is not ours to open, however
+    // well-formed its reference is.
+    return null
   }
 
   let id: string
@@ -598,7 +629,8 @@ export async function folderForReferenceAsViewer(
   }
 
   const [event] = await viewerQuery(relayUrl, token)([{ ids: [id], limit: 1 }])
-  return event?.tags.find((t) => t[0] === 'h')?.[1] ?? null
+  const folder = event?.tags.find((t) => t[0] === 'h')?.[1]
+  return folder ? { folder } : null
 }
 
 /**

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { IconMessagePlus, IconSend, IconTrash, IconX } from '@tabler/icons-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
@@ -55,9 +55,36 @@ export function FoldersPage() {
     The file itself rather than its `ref`, because the panel needs the `naddr`
     to resolve by and the title to head the pane with, and the row already holds
     both. Looking them up again from `state` would also go stale the moment the
-    contents re-read.
+    contents re-read — and a row a parent's manifest fetched is not in `state`
+    at all.
+
+    The URL says *which* — `?file=<address>` (FOL-17). That is what makes a
+    bare file openable from outside: Ship's card links to `/o/<naddr>`, which
+    resolves to this Folder with the file named, and the listing supplies the
+    object once it has loaded. A selection made here holds the row's own
+    object under the same name, so a re-read cannot pull the pane out from
+    under a conversation, and selecting or closing rewrites the URL so a
+    reload lands where you were. Leaving the Folder drops the parameter, so
+    the pane closes with it and nothing has to reset it.
+
+    A named file the listing does not hold — one the reader cannot see, or a
+    link to something since moved — opens nothing; the Folder is still the
+    right place to be.
   */
-  const [openFile, setOpenFile] = useState<ForeignObject | null>(null)
+  const [heldFile, setHeldFile] = useState<ForeignObject | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const namedFile = searchParams.get('file')
+  const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
+  const openFile =
+    heldFile && heldFile.ref === namedFile
+      ? heldFile
+      : namedFile
+        ? (listed?.find((file) => file.ref === namedFile) ?? null)
+        : null
+  const setOpenFile = (file: ForeignObject | null) => {
+    setHeldFile(file)
+    setSearchParams(file ? { file: file.ref } : {}, { replace: true })
+  }
   /** The file whose destination is being chosen, if any. */
   const [movingFile, setMovingFile] = useState<ForeignObject | null>(null)
   /*
@@ -91,15 +118,6 @@ export function FoldersPage() {
   const people = useWorkspaceDirectory()
 
   const selected = folders?.find((folder) => folder.id === id)
-
-  /*
-    Changing Folder closes the panel.
-
-    Without this the previous Folder's file stays open beside the new Folder's
-    contents — a conversation the list on screen does not contain, which reads
-    as though it belongs to something here.
-  */
-  useEffect(() => setOpenFile(null), [id])
 
   async function send(body: string): Promise<boolean> {
     if (!openFile?.naddr) return false
