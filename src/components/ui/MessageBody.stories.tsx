@@ -1,7 +1,48 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ForeignObject } from '@estiva-app/interop'
+import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
 import { MessageBody } from './MessageBody'
 import recorded from '@/data/recordedShipIssue.json'
+
+// A topic and a message as interop resolves them through Peek's manifest
+// (src/nostr/manifest.ts): a kind:39000 titled from its `name` tag, and a
+// kind:9 titled by its author's pubkey with the content as `body`.
+const RELAY_KEY = 'f3a38fa6c6a1e5d2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920'
+const ADA = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
+const TOPIC_ADDRESS = `39000:${RELAY_KEY}:b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91`
+const TOPIC_NADDR = addrToNaddr(TOPIC_ADDRESS, [])
+const TOPIC_OBJECT = {
+  ref: TOPIC_ADDRESS,
+  eventId: 'e'.repeat(64),
+  address: TOPIC_ADDRESS,
+  naddr: TOPIC_NADDR,
+  kind: 39000,
+  widget: 'card',
+  appName: 'Peek',
+  slots: { title: { value: 'Office layout (renamed)' } },
+  meta: [],
+  comments: [],
+  actions: [],
+  viaRecommendation: true,
+} as unknown as ForeignObject
+const MESSAGE_ID = 'a1b2c3d4e5f60718293a4b5c6d7e8f9011223344556677889900aabbccddeeff'
+const MESSAGE_NEVENT = encodeNevent({ id: MESSAGE_ID, relays: [], kind: 9 })
+const MESSAGE_OBJECT = {
+  ref: MESSAGE_NEVENT,
+  eventId: MESSAGE_ID,
+  kind: 9,
+  widget: ['message', 'card'],
+  appName: 'Peek',
+  slots: {
+    title: { value: ADA, isPubkey: true },
+    body: { value: 'Green. Leaving the **pin** in place until Monday.' },
+  },
+  people: { [ADA]: { displayName: 'Ada Lovelace' } },
+  meta: [],
+  comments: [],
+  actions: [],
+  viaRecommendation: true,
+} as unknown as ForeignObject
 
 const meta = {
   title: 'Messages/MessageBody',
@@ -168,5 +209,41 @@ export const StandaloneReference: Story = {
   args: {
     body: `Tracked in it for now.\n\nnostr:${recorded.naddr}`,
     resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  },
+}
+
+/**
+ * A topic mentioned mid-sentence (RIC-11). The chip is `Reference` drawing a
+ * kind:39000 the runtime resolved, so the label is the topic's *current*
+ * name — the body carries only its address, and a rename reaches every
+ * older message that pointed at it. The object here is the shape interop
+ * hands back for one, through Peek's own manifest.
+ */
+export const InlineTopicMention: Story = {
+  args: {
+    body: `We settled this in nostr:${TOPIC_NADDR} last week.`,
+    resolvedObjects: { [TOPIC_NADDR]: TOPIC_OBJECT },
+  },
+}
+
+/**
+ * A message mentioned mid-sentence (RIC-11). A message has no title of its
+ * own, so the manifest titles it by its author — a pubkey, and `Reference`
+ * names the person and quotes the opening words rather than printing 64 hex
+ * characters. The pointer is an `nevent`, not an address: a message is an
+ * event, and it is fetched by id.
+ */
+export const InlineMessageMention: Story = {
+  args: {
+    body: `As nostr:${MESSAGE_NEVENT} said, the pin stays until Monday.`,
+    resolvedObjects: { [MESSAGE_NEVENT]: MESSAGE_OBJECT },
+  },
+}
+
+/** The same message, alone on its line: attached below the prose as a card. */
+export const StandaloneMessageMention: Story = {
+  args: {
+    body: `This is the one I meant.\n\nnostr:${MESSAGE_NEVENT}`,
+    resolvedObjects: { [MESSAGE_NEVENT]: MESSAGE_OBJECT },
   },
 }

@@ -138,6 +138,7 @@ export function toConversationData(r: RemoteMessage, meId: string | undefined): 
     lastReplyTime: r.lastReplyAt !== undefined ? formatLastReplyTimestamp(r.lastReplyAt, r.createdAt) : undefined,
     createdAtMs: r.createdAt,
     nostrReferences: r.nostrReferences,
+    nostrEventId: r.nostrEventId,
     nostrBlockId: r.nostrBlockId,
   }
 }

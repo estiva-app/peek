@@ -366,6 +366,9 @@ export async function shape(ctx: QueryCtx | MutationCtx, m: Doc<'messages'>, fac
     attachments: m.attachments,
     files: await resolveFileAttachments(ctx, m.fileAttachments),
     nostrReferences: m.nostrReferences,
+    /** What a mention of this message is written as (RIC-11); replies have
+     *  carried theirs since PEE-17. */
+    nostrEventId: m.nostrEventId,
     nostrBlockId: m.nostrBlockId,
   }
 }

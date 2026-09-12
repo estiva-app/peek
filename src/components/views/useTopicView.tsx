@@ -637,7 +637,7 @@ export function useTopicView({
     simply stop having them.
   */
   const topicKey = [...allGroups.flatMap((g) => g.convs), ...currentSent]
-    .map((c) => [c.id, c.authorName, c.timestamp, c.replyCount ?? 0, c.body ?? ''].join('\u0001'))
+    .map((c) => [c.id, c.authorName, c.timestamp, c.replyCount ?? 0, c.nostrEventId ?? '', c.body ?? ''].join('\u0001'))
     .join('\u0000')
   // Rebuilt from the key, the round-trip `ThreadPanel` uses for the same
   // reason: a new array identity every render would re-register constantly.
@@ -645,11 +645,12 @@ export function useTopicView({
     () =>
       topicKey
         ? topicKey.split('\u0000').map((row) => {
-            const [id, author, timestamp, replies, ...body] = row.split('\u0001')
+            const [id, author, timestamp, replies, eventId, ...body] = row.split('\u0001')
             return {
               id,
               author,
               timestamp,
+              eventId: eventId || undefined,
               body: body.join('\u0001'),
               // Every message here IS a conversation, so the citation that
               // opens it and the message it lands on are the same row.

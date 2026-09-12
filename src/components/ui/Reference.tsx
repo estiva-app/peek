@@ -2,8 +2,41 @@ import { useSyncExternalStore } from 'react'
 import { decodeNpub } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { mentionsVersion, personByPubkey, subscribeMentions } from '@/api/mentions'
+import { previewText } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { StatusPill } from './ForeignObjectWidget'
+
+/**
+ * What a resolved object is called, in a chip's worth of words.
+ *
+ * The title slot, read the way the manifest declared it: `as: "pubkey"` means
+ * *show a person*, and the object's `people` is where the runtime put their
+ * name — drawing the value itself would put 64 hex characters where a name
+ * goes, which is what a Peek message did the first time one was mentioned
+ * (RIC-11): its manifest titles a message by its author, because a message
+ * has no title of its own. Undefined when there is no title to read, which
+ * the caller draws as the URI's shortened form.
+ *
+ * A message also gets its opening words, because "Ada" is not enough to know
+ * *which* message — the same caption the composer's chip wears, so the
+ * mention reads the same before and after it is sent.
+ */
+function objectLabel(object: ForeignObject): string | undefined {
+  const title = object.slots.title
+  if (!title) return undefined
+  const name = title.isPubkey ? (object.people?.[title.value]?.displayName ?? shortKey(title.value)) : title.value
+  const body = object.slots.body?.value
+  return body && isMessage(object) ? `${name}: ${previewText(body)}` : name
+}
+
+/** The manifest's `message` widget, wherever it sits in the fallback chain (§13.3). */
+function isMessage(object: ForeignObject): boolean {
+  return (Array.isArray(object.widget) ? object.widget : [object.widget]).includes('message')
+}
+
+function shortKey(pubkey: string): string {
+  return `${pubkey.slice(0, 8)}…`
+}
 
 /**
  * A `nostr:` reference drawn where it was written — SPEC §13.1, RIC-10.
@@ -99,7 +132,7 @@ export function Reference({
   }
 
   if (object && !object.unreachable) {
-    const title = object.slots.title?.value ?? short
+    const title = objectLabel(object) ?? short
     return (
       <span
         data-reference="object"

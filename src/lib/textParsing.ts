@@ -1,6 +1,8 @@
 import { PEOPLE } from '@/data/peopleData'
-import { decodeNpub, encodeNpub } from '@estiva-app/protocol'
-import { personByPubkey } from '@/api/mentions'
+import { addrToNaddr, decodeNevent, decodeNpub, encodeNpub, referenceToPointer } from '@estiva-app/protocol'
+import { personByPubkey, topicByFolderId } from '@/api/mentions'
+import { findMessageByEventId } from '@/lib/conversationRegistry'
+import { TOPIC_KIND } from '@/nostr/manifest'
 import { TOPICS } from '@/data/topicData'
 import { DOCUMENT_FILES } from '@/data/filesData'
 import { parseInlineMarks, stripInlineFormatting, wrapInlineMarks } from '@estiva-app/protocol'
@@ -56,13 +58,21 @@ const _escapedBracketTitles = [
  *  once the message was rendered. */
 const _wordStart = '(?<![A-Za-z0-9._%+-])'
 
+/**
+ * A `nostr:` URI the editor loads back as a chip — SPEC §13.1's reference.
+ * The same four forms `findNostrUris` reads, so what renders as a reference
+ * in a body edits as one: a person (`npub`), a topic or any other addressable
+ * object (`naddr`), a message (`nevent`, `note`).
+ */
+const _nostrUriPattern = 'nostr:(?:npub|naddr|nevent|note)1[023456789acdefghjklmnpqrstuvwxyz]+'
+
 function _buildMentionRe(): RegExp {
   return new RegExp(
-    // `nostr:npub…` first, so a key is recognised whole before any of the
+    // A `nostr:` URI first, so a key is recognised whole before any of the
     // name-shaped alternatives can match part of it. It is listed here rather
     // than parsed separately because this regex is what decides where a run of
     // plain text ends, and a key is not plain text.
-    `(nostr:npub1[023456789acdefghjklmnpqrstuvwxyz]+|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\](?!\\())`,
+    `(${_nostrUriPattern}|${_wordStart}(?:!@|@)(?:${_escapedNames()})|${_wordStart}@[a-z][a-z0-9-]+(?![a-zA-Z/-])|\\[(?:${_escapedBracketTitles})\\](?!\\())`,
     'g'
   )
 }
@@ -235,6 +245,32 @@ export function findUrls(body: string): string[] {
 
 // ── Inline content parser ──
 
+/** §13.1's shortened form of a URI, for a reference nothing here can name. */
+function shortUri(uri: string): string {
+  return `${uri.replace(/^nostr:/i, '').slice(0, 12)}…`
+}
+
+/**
+ * The topic a `nostr:naddr…` names, when it is one this workspace holds —
+ * with the address it was written as, so the chip serialises back to it.
+ */
+function topicForAddress(uri: string): { id: string; title: string; isResolved: boolean; address: string } | null {
+  try {
+    const pointer = referenceToPointer(uri)
+    if (pointer.kind !== TOPIC_KIND || !pointer.identifier) return null
+    const topic = topicByFolderId(pointer.identifier)
+    if (!topic) return null
+    return {
+      id: topic.id,
+      title: topic.title,
+      isResolved: topic.isResolved,
+      address: `${pointer.kind}:${pointer.pubkey}:${pointer.identifier}`,
+    }
+  } catch {
+    return null
+  }
+}
+
 /** Parse a single line into Tiptap inline JSON nodes (text + mention nodes,
  *  with bold/italic/underline marks parsed from storage markers). */
 export function parseInlineContent(line: string): Record<string, unknown>[] {
@@ -265,8 +301,61 @@ export function parseInlineContent(line: string): Record<string, unknown>[] {
         type: 'mention',
         attrs: {
           id: known?.id ?? pubkey ?? part,
-          label: known?.name ?? `${part.replace(/^nostr:/i, '').slice(0, 12)}…`,
+          label: known?.name ?? shortUri(part),
           pubkey,
+        },
+      })
+    } else if (/^nostr:naddr1/i.test(part)) {
+      /*
+        An address — a topic's, when it is one of ours (RIC-11).
+
+        `39000:<relay>:<uuid>` names a channel, and the uuid is the `folderId`
+        Peek holds on the topic row, so a topic in this workspace loads back
+        as the chip it was picked from, wearing its *current* title. The
+        address is what the chip serialises to again, so a topic that has
+        since been renamed is written back unchanged and keeps resolving.
+
+        Any other address — another app's object, or a topic this workspace
+        does not hold — stays as the text it was, and is written back as the
+        same text. The editor has no chip that would say more than the URI
+        does, and inventing one would put a label on an object it cannot name.
+      */
+      const topic = topicForAddress(part)
+      if (topic) {
+        content.push({
+          type: 'topicMention',
+          attrs: {
+            id: topic.id,
+            label: topic.title,
+            isResolved: topic.isResolved,
+            address: topic.address,
+          },
+        })
+      } else {
+        content.push({ type: 'text', text: part })
+      }
+    } else if (/^nostr:(?:nevent|note)1/i.test(part)) {
+      /*
+        A message (RIC-11). Labelled from what is on screen when the message
+        is, which is where a mention of one is almost always edited; otherwise
+        the URI's own shortened form, the same "never blank" answer §13.1 gives
+        a reader. The URI is kept whole on the node and written back verbatim,
+        so editing a message never rewrites a mention it did not touch.
+      */
+      let eventId: string | null = null
+      try {
+        eventId = decodeNevent(part).id
+      } catch {
+        eventId = null
+      }
+      const message = eventId ? findMessageByEventId(eventId) : undefined
+      content.push({
+        type: 'messageMention',
+        attrs: {
+          id: eventId ?? part,
+          label: message?.author ?? shortUri(part),
+          snippet: message ? previewText(message.body) : '',
+          uri: part,
         },
       })
     } else if (part.startsWith('!@') && part.length > 2) {
@@ -359,7 +448,18 @@ export function serializeInline(node: TiptapNode): string {
       // urgent mention of somebody with a key is still just a mention of them.
       text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `!@${child.attrs.label}`
     } else if (child.type.name === 'topicMention') {
-      text += `[${child.attrs.label}] `
+      /*
+        SPEC §13.1 — the topic's address, when Peek can spell it (RIC-11).
+        `39000:<relay>:<uuid>` is what another app resolves through Peek's
+        manifest and what survives a rename; the bracketed title is what
+        every message before this carried, and it stays the form for a topic
+        with no address — a mock one, or a session that has not read the
+        relay's key — exactly as a person with no key is still `@Name`.
+      */
+      text += child.attrs.address ? `nostr:${addrToNaddr(child.attrs.address, [])}` : `[${child.attrs.label}] `
+    } else if (child.type.name === 'messageMention') {
+      // Written back as the URI it was picked or loaded as, verbatim.
+      text += child.attrs.uri
     } else if (child.type.name === 'fileMention') {
       text += `[${child.attrs.label}] `
     } else {

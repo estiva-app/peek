@@ -161,6 +161,53 @@ describe('Reference, for an object', () => {
   })
 })
 
+/**
+ * A Peek message, through Peek's own manifest (RIC-11). It has no title of its
+ * own, so the manifest titles it by its author — `field: "pubkey", as:
+ * "pubkey"` — and carries the body as `body`. Drawing the title slot's value
+ * would draw 64 hex characters.
+ */
+describe('Reference, for a message', () => {
+  const message = (people?: ForeignObject['people']) =>
+    object({
+      ref: 'nevent1msg',
+      address: undefined,
+      naddr: undefined,
+      kind: 9,
+      widget: ['message', 'card'],
+      appName: 'Peek',
+      slots: {
+        title: { value: KNOWN, isPubkey: true },
+        body: { value: 'The **build** is green again, thanks all.' },
+      },
+      people,
+    })
+
+  it('names the author and quotes the opening words, marks stripped', () => {
+    const c = render(<Reference uri="nostr:nevent1msg" object={message({ [KNOWN]: { displayName: 'Ada Lovelace' } })} />).container
+    expect(c.textContent).toBe('Ada Lovelace: The build is green again, thanks all.')
+    expect(c.textContent).not.toContain(KNOWN)
+  })
+
+  it('shortens the key when the runtime found no profile, rather than printing it', () => {
+    const c = render(<Reference uri="nostr:nevent1msg" object={message()} />).container
+    expect(c.textContent).toContain(`${KNOWN.slice(0, 8)}…`)
+    expect(c.textContent).not.toContain(KNOWN)
+  })
+
+  it('shows a person-titled object that is not a message by the name alone', () => {
+    // `as: "pubkey"` on a title is not what makes something a message; the
+    // widget is. An object titled by a person still draws the person.
+    const c = render(
+      <Reference
+        uri="nostr:naddr1abc"
+        object={object({ slots: { title: { value: KNOWN, isPubkey: true }, body: { value: 'not quoted' } }, people: { [KNOWN]: { displayName: 'Ada' } } })}
+      />,
+    ).container
+    expect(c.textContent).toBe('Ada')
+  })
+})
+
 describe('Reference, unresolved', () => {
   it('never shows a raw pointer, however long it was', () => {
     /*
