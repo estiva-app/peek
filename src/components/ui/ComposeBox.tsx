@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { encodeNpub } from '@estiva-app/protocol'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
-import { textToTiptapContent } from '@/lib/textParsing'
+import { serializeTiptapToText, textToTiptapContent } from '@/lib/textParsing'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive } from '@/extensions/mention'
@@ -17,7 +16,6 @@ import { pastedImages } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { PendingAttachmentChip } from './PendingAttachmentChip'
 import { AttachFileButton } from './AttachFiles'
-import { serializeTextChild } from '@/lib/textParsing'
 import { SelectionToolbar } from './SelectionToolbar'
 import { HighlightButton } from './HighlightButton'
 
@@ -61,76 +59,17 @@ interface ComposeBoxProps {
   className?: string
 }
 
-function serializeInline(node: { forEach: (cb: (child: { type: { name: string }; attrs: Record<string, string>; text?: string; marks?: ReadonlyArray<{ type: { name: string }; attrs?: Record<string, unknown> }> }) => void) => void }): string {
-  let text = ''
-  node.forEach((child) => {
-    if (child.type.name === 'hardBreak') {
-      text += '\n'
-    } else if (child.type.name === 'mention') {
-      // SPEC §13.1 — a key, when we have one. `label` is what a person typed
-      // and reads well; it is also the thing that goes stale on a rename and
-      // means nothing to another app, so it is the fallback rather than the
-      // form. Somebody with no Estiva ID key still mentions by name, which is
-      // exactly what every existing message already does.
-      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `@${child.attrs.label}`
-    } else if (child.type.name === 'urgentMention') {
-      // The urgency is Peek's own affordance and has no wire form, so an
-      // urgent mention of somebody with a key is still just a mention of them.
-      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `!@${child.attrs.label}`
-    } else if (child.type.name === 'topicMention') {
-      text += `[${child.attrs.label}]`
-    } else if (child.type.name === 'fileMention') {
-      text += `[${child.attrs.label}]`
-    } else if (child.type.name === 'highlightTag') {
-      // Skip - extracted as metadata, not serialized into text
-    } else {
-      // Marks, and a link as `[label](url)` — one writer with the edit path
-      // (textParsing), so the two cannot disagree about a link. PEE-19.
-      text += serializeTextChild(child)
-    }
-  })
-  return text
-}
-
-function serializeToText(editor: ReturnType<typeof useEditor>): string {
-  if (!editor) return ''
-  const lines: string[] = []
-  editor.state.doc.forEach((node) => {
-    // Skip resolution blocks - they are consumed by the resolve action
-    if (node.type.name === 'resolutionBlock') return
-    if (node.type.name === 'paragraph') {
-      lines.push(serializeInline(node))
-    } else if (node.type.name === 'heading') {
-      const text = serializeInline(node)
-      if (text.trim()) lines.push(`${'#'.repeat(node.attrs.level === 2 ? 2 : 1)} ${text}`)
-    } else if (node.type.name === 'bulletList') {
-      node.forEach((li) => {
-        li.forEach((liChild) => {
-          if (liChild.type.name === 'paragraph') {
-            lines.push(`- ${serializeInline(liChild)}`)
-          }
-        })
-      })
-    } else if (node.type.name === 'orderedList') {
-      let idx = 1
-      node.forEach((li) => {
-        li.forEach((liChild) => {
-          if (liChild.type.name === 'paragraph') {
-            lines.push(`${idx}. ${serializeInline(liChild)}`)
-            idx++
-          }
-        })
-      })
-    } else if (node.type.name === 'blockquote') {
-      node.forEach((qChild) => {
-        if (qChild.type.name === 'paragraph') {
-          lines.push(`> ${serializeInline(qChild)}`)
-        }
-      })
-    }
-  })
-  return lines.join('\n').trim()
-}
+/*
+  What a message is *sent* as is what an edit is *saved* as — one writer,
+  `serializeTiptapToText`. This file used to carry its own copy of that walk,
+  and the two drifted the way two copies do: RIC-11 taught the edit path to
+  write a topic as `nostr:naddr…` and a message as `nostr:nevent…`, and the
+  composer went on sending `[Title]` and dropping the message node on the
+  floor, so the first pointer mention ever typed on production went out as
+  the bracket form with nothing after it. PEE-19 had already made the same
+  argument for a link; this finishes it.
+*/
+const serializeToText = serializeTiptapToText
 
 
 const DEFAULT_DRAFTS = browserDrafts()
