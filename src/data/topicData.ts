@@ -6,6 +6,9 @@ export interface Topic {
   invitees?: string[]
   /** Optional Folder id (NIP-29 channel UUID) when this topic is published / synced with the relay. */
   folderId?: string | null
+  /** Messages and replies past the reaction horizon, which the last sync did
+   *  not ask about (SPEC §6.6, PEE-21). Drawn once under the container. */
+  reactionTargetsOmitted?: number
 }
 
 export const TOPICS: Topic[] = [
@@ -18,8 +21,11 @@ export const TOPICS: Topic[] = [
   // The one mock topic carrying a channel uuid. Every topic on production has
   // one, and object URLs are built from it (PEE-14) — without a single fixture
   // that has one, the canonical URL is unreachable in tests and Storybook.
+  // Also the one fixture past the reaction horizon (PEE-21): only a synced
+  // topic can have one, and nothing on production is over the cap yet, so
+  // without this the caption is unreachable in tests and Storybook.
   { id: '7', title: 'Updates on the new office layout',              isResolved: false,
-    folderId: 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91' },
+    folderId: 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91', reactionTargetsOmitted: 14 },
   { id: '8', title: 'Quick fix needed for staging deployment issue', isResolved: false },
   { id: '9', title: 'Feedback on mobile onboarding flow',            isResolved: false },
   { id: '10', title: 'Payment integration',                          isResolved: false },

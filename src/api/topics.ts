@@ -39,6 +39,7 @@ export function useTopics(): Topic[] | undefined {
         : undefined,
       // channelUuid from the server maps to the client-visible Folder id
       folderId,
+      reactionTargetsOmitted: t.reactionTargetsOmitted,
     }
   })
   const ids = new Set(mapped.map((t) => t.id))
