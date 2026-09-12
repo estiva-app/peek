@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { eventIdFromRef } from '@estiva-app/interop'
 import { Navigate, useParams } from 'react-router-dom'
 import { useForeignObjects } from '@/api'
+import type { ReferencePlace } from '@/nostr/foreign'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 /**
@@ -13,9 +14,11 @@ import { EmptyState } from '@/components/ui/EmptyState'
  * failure mode §13.6 describes: *renders fine, quietly does less.*
  *
  * This route exists to make the claim true. It resolves the reference to a
- * Folder and hands off to the canonical topic URL, which `TopicsPage` already
- * owns; it deliberately renders nothing of its own beyond the two states a
- * person needs to tell apart.
+ * place and hands off to the page that owns it — the canonical topic URL for
+ * a Topic or a Message, which `TopicsPage` already owns; the Folder with the
+ * file open for a bare file (FOL-17), which `FoldersPage` owns. It
+ * deliberately renders nothing of its own beyond the two states a person needs
+ * to tell apart.
  *
  * **A reference Peek cannot open says so.** Another app's `naddr` is a valid
  * reference, and redirecting it somewhere arbitrary would be worse than an
@@ -24,8 +27,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
  */
 export function ObjectPage() {
   const { ref } = useParams<{ ref: string }>()
-  const { folderForReference } = useForeignObjects()
-  const [state, setState] = useState<{ folder: string } | 'looking' | 'unopenable'>('looking')
+  const { placeForReference } = useForeignObjects()
+  const [state, setState] = useState<ReferencePlace | 'looking' | 'unopenable'>('looking')
 
   useEffect(() => {
     if (!ref) {
@@ -40,10 +43,10 @@ export function ObjectPage() {
       passed through untouched.
     */
     const decoded = decodeURIComponent(ref)
-    folderForReference(eventIdFromRef(decoded) ?? decoded)
-      .then((folder) => {
+    placeForReference(eventIdFromRef(decoded) ?? decoded)
+      .then((place) => {
         if (cancelled) return
-        setState(folder ? { folder } : 'unopenable')
+        setState(place ?? 'unopenable')
       })
       .catch(() => {
         // A read that failed and a reference that names nothing are the same
@@ -53,7 +56,7 @@ export function ObjectPage() {
     return () => {
       cancelled = true
     }
-  }, [ref, folderForReference])
+  }, [ref, placeForReference])
 
   // The page's own frame: a flex column the height of the window, so the
   // page-scope empty state fills it as a flex child and centres (D46) — it
@@ -65,6 +68,11 @@ export function ObjectPage() {
         <EmptyState message="That link does not point at anything Peek can open." />
       </div>
     )
+  }
+  // A file is not a container and has no page of its own: it opens beside the
+  // Folder it lives in, which `FoldersPage` reads off `?file=`.
+  if (state.file) {
+    return <Navigate to={`/folders/${state.folder}?file=${encodeURIComponent(state.file)}`} replace />
   }
   // `/topic/<uuid>` without a slug: TopicsPage canonicalises the URL once the
   // topic resolves and it knows the title, exactly as it does for a legacy link.

@@ -350,6 +350,18 @@ async function main() {
     check('the manifest declares a web template per entity type', types.includes('naddr') && types.includes('nevent'), types.join(', '))
   }
 
+  {
+    /*
+      The aspect, read back the way a consumer reads it (FOL-17). Checked
+      against the *stored* event and by name, because this is the field that
+      makes a bare file's card a link in Ship, and interop 0.20.0 finds it by
+      sweeping every manifest for `aspect: "conversation"` — a typo here is
+      found by nobody until somebody clicks a card that is not one.
+    */
+    const content = JSON.parse(stored.content) as { aspect?: string }
+    check('the manifest declares the conversation aspect', content.aspect === 'conversation', content.aspect ?? '(none)')
+  }
+
   console.log(
     failures === 0
       ? `\nManifest published and satisfiable. Address: 31990:${identity.pubkey}:${MANIFEST_D_TAG}`
