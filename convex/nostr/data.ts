@@ -101,7 +101,14 @@ export const syncableTopicByKey = internalQuery({
       ? rows.find((r) => (r._id as string) === (normalized as string))
       : rows.find((r) => r.seedKey === topicKey)
     if (!t?.channelUuid) return null
-    return { topicId: t._id, channelUuid: t.channelUuid, since: t.nostrSyncedAt ?? null }
+    return {
+      topicId: t._id,
+      channelUuid: t.channelUuid,
+      since: t.nostrSyncedAt ?? null,
+      // What the last run recorded, so `importChannel` writes only on change.
+      // Absent reads as 0: a never-synced topic omitted nothing.
+      reactionTargetsOmitted: t.reactionTargetsOmitted ?? 0,
+    }
   },
 })
 
@@ -307,20 +314,19 @@ export const importReply = internalMutation({
  * the ones that arrived in the current sync window.
  *
  * Newest first and capped, so a long-running channel does not build an
- * unbounded filter.
+ * unbounded filter. `total` is how many there were before the cap — the rows
+ * are all read anyway, and the caller reports what the horizon left out
+ * (PEE-21), which the capped list alone cannot say.
  */
 export const listMessageEventIdsForTopic = internalQuery({
   args: { topicId: v.id('topics'), limit: v.number() },
-  handler: async (ctx, { topicId, limit }) => {
+  handler: async (ctx, { topicId, limit }): Promise<{ ids: string[]; total: number }> => {
     const rows = await ctx.db
       .query('messages')
       .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
       .collect()
-    return rows
-      .filter((m) => m.nostrEventId)
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, limit)
-      .map((m) => m.nostrEventId!)
+    const published = rows.filter((m) => m.nostrEventId).sort((a, b) => b.createdAt - a.createdAt)
+    return { ids: published.slice(0, limit).map((m) => m.nostrEventId!), total: published.length }
   },
 })
 
@@ -443,10 +449,13 @@ export const removeByNostrEventId = internalMutation({
   },
 })
 
-/** Newest reply event ids in a topic — reaction targets too (PEE-12). */
+/**
+ * Newest reply event ids in a topic — reaction targets too (PEE-12). Same
+ * shape as `listMessageEventIdsForTopic`: capped ids plus the true total.
+ */
 export const listReplyEventIdsForTopic = internalQuery({
   args: { topicId: v.id('topics'), limit: v.number() },
-  handler: async (ctx, { topicId, limit }) => {
+  handler: async (ctx, { topicId, limit }): Promise<{ ids: string[]; total: number }> => {
     const messages = await ctx.db
       .query('messages')
       .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
@@ -461,10 +470,8 @@ export const listReplyEventIdsForTopic = internalQuery({
         if (r.nostrEventId) out.push({ createdAt: r.createdAt, id: r.nostrEventId })
       }
     }
-    return out
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, limit)
-      .map((r) => r.id)
+    out.sort((a, b) => b.createdAt - a.createdAt)
+    return { ids: out.slice(0, limit).map((r) => r.id), total: out.length }
   },
 })
 
@@ -641,6 +648,24 @@ export const setTopicSyncCursor = internalMutation({
     // and re-import everything.
     if (t && (t.nostrSyncedAt ?? 0) < nostrSyncedAt) {
       await ctx.db.patch(topicId, { nostrSyncedAt })
+    }
+  },
+})
+
+/**
+ * Record how many reaction targets the last sync left past the horizon
+ * (PEE-21), so the topic view can say so — see `topics.reactionTargetsOmitted`
+ * in the schema.
+ *
+ * Unlike the cursor above this may go down: a deleted message brings the
+ * count back under the cap, and the caption should go with it.
+ */
+export const setReactionTargetsOmitted = internalMutation({
+  args: { topicId: v.id('topics'), omitted: v.number() },
+  handler: async (ctx, { topicId, omitted }) => {
+    const t = await ctx.db.get(topicId)
+    if (t && (t.reactionTargetsOmitted ?? 0) !== omitted) {
+      await ctx.db.patch(topicId, { reactionTargetsOmitted: omitted })
     }
   },
 })

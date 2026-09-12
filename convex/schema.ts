@@ -126,6 +126,12 @@ export default defineSchema({
     /** Sync cursor: the newest `created_at` (Nostr seconds) already projected
      *  from the relay into `messages`. Absent means "never synced". */
     nostrSyncedAt: v.optional(v.number()),
+    /** How many of this topic's messages and replies the last sync did not
+     *  ask the relay about reactions for — everything past SPEC §6.6's horizon
+     *  of 100. Written by `importChannel`, drawn once under the container so a
+     *  quiet old message is distinguishable from an unasked one (PEE-21).
+     *  Absent means 0: never synced, or nothing past the cap. */
+    reactionTargetsOmitted: v.optional(v.number()),
   }).index('by_channelUuid', ['channelUuid']),
 
   /**

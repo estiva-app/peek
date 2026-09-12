@@ -80,6 +80,9 @@ export const list = query({
         memberIds,
         isResolved,
         channelUuid: t.channelUuid ?? null,
+        // Recorded by the sync, not derived here: the true count needs every
+        // reply in the topic, which the sync already reads and this does not.
+        reactionTargetsOmitted: t.reactionTargetsOmitted ?? 0,
       })
     }
     return out.sort((a, b) => a.createdAt - b.createdAt)

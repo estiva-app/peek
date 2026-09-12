@@ -70,6 +70,22 @@ describe('app smoke (seam wiring)', () => {
   })
 
   /**
+   * PEE-21's done-when: a container past the reaction horizon says how many
+   * messages were not checked, once, and one under it says nothing. The number
+   * rides on the topic (`reactionTargetsOmitted`, recorded by the sync and
+   * carried by `topics.list`); this proves the view actually draws it.
+   */
+  it('says how many messages were past the reaction horizon', () => {
+    renderApp('/topics/7')
+    expect(present(/14 older ones were not checked/)).toBe(1)
+  })
+
+  it('says nothing about the horizon under the cap', () => {
+    renderApp('/topics/3')
+    expect(screen.queryByText(/were not checked/)).toBeNull()
+  })
+
+  /**
    * PEE-14's done-when, exercised the way it is actually used: a cold load of a
    * pasted URL in a fresh tab, through the real router and the real provider
    * stack. Nothing here is carried over from a previous navigation — no

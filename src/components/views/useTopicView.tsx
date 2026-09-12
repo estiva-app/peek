@@ -8,6 +8,7 @@ import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { JoinTopicBanner } from '@/components/JoinTopicBanner'
+import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { MembersDialog, type MembersDialogView } from '@/components/MembersDialog'
 import { HuddleCreator } from '@/components/HuddleCreator'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -892,6 +893,16 @@ export function useTopicView({
                   </div>
                 ))
               )}
+              {/*
+                The reaction horizon, once per container (PEE-21). Under the
+                newest message rather than above the oldest: the top of this
+                stream is "Show earlier messages", a rendering boundary, and a
+                caption about an unasked question sitting beside it would read
+                as part of the same thing. The bottom is where a reader is when
+                the topic opens, which is what makes the cap visible on the day
+                it bites. Where Ship draws its line too.
+              */}
+              {!isLoading && <ReactionHorizon omitted={topic?.reactionTargetsOmitted ?? 0} />}
             </div>
           </ScrollArea>
           {!isLoading && !isMemberHere && (

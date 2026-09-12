@@ -27,12 +27,15 @@ import type { Id } from '../_generated/dataModel'
 import { ASSERTION_SUBTYPE, KIND, parseProfile } from '@estiva-app/protocol'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { viewerId } from '../users'
+import { REACTION_TARGET_LIMIT } from '../../src/nostr/reactionHorizon'
 
 /** Cap per topic per run so one busy channel cannot starve the others. */
 const PAGE_LIMIT = 200
 
-/**
- * How many targets one run asks about — **SPEC §6.6's horizon, adopted**.
+/*
+ * How many targets one run asks about is `REACTION_TARGET_LIMIT` — **SPEC
+ * §6.6's horizon, adopted**, and shared with the caption that reports it (see
+ * `src/nostr/reactionHorizon.ts` for why it lives there).
  *
  * Reactions have no cursor (see `listMessageEventIdsForTopic`), so this is a
  * trade rather than a completeness bug: reactions on messages older than the
@@ -40,25 +43,18 @@ const PAGE_LIMIT = 200
  *
  * **The number is not Peek's to pick.** §6.6 fixes N at 100 as a rule
  * (estiva-docs#76, closing CON-1), and this adopts it — if the two ever
- * disagree, this one is wrong. The reason is interoperability rather than
- * performance: two apps showing one conversation with different N disagree
- * about the count legitimately and unfixably, and a reader cannot tell that
- * from a bug. Ship's `REACTION_TARGET_LIMIT` cites the same rule.
+ * disagree, this one is wrong. Production, 2026-09-07: the busiest container
+ * holds 77 messages and nothing is at or over 100 — so this bites nowhere yet,
+ * which is the point of fixing it before it does.
  *
- * Production, 2026-09-07: the busiest container holds 77 messages and nothing
- * is at or over 100 — so this bites nowhere yet, which is the point of fixing
- * it before it does.
- *
- * **Peek does not yet honour the other half of §6.6**, which requires a client
- * to *report* when it truncates: an unreported cap is indistinguishable from
- * "nobody reacted". Ship names the cap and the number skipped; Peek truncates
- * silently. That gap is PEE-21, and SPEC's own compliance table says so rather
- * than implying both apps comply.
+ * **The other half of §6.6 is reporting the cap** (PEE-21): an unreported cap
+ * is indistinguishable from "nobody reacted". `importChannel` counts what it
+ * did not ask about and records it on the topic row, and the topic view draws
+ * that once per container — the same shape as Ship's `useReactions().omitted`.
  *
  * A real implementation would subscribe over WebSocket instead of re-querying
  * by target.
  */
-const REACTION_TARGET_LIMIT = 100
 
 /**
  * When an edit claims to have been made, in milliseconds — RFC 0.4 §7.2.1.
@@ -97,8 +93,13 @@ export function editIsLater(a: SignedEvent, b: SignedEvent): boolean {
  * Both lists arrive newest-first, so a truncated side keeps its recent end,
  * which is where reactions are.
  *
- * The cap is still invisible when it bites — CON-1's finding, and the reason
- * this is a share rather than a bigger number.
+ * The cap is a share rather than a bigger number because a bigger number is
+ * still a cap, and one that bites later is harder to notice. What makes it
+ * visible when it does bite is `importChannel` counting what this left out
+ * (PEE-21) — that count is the caller's, because the two lists it receives
+ * are themselves capped (`listMessageEventIdsForTopic` and its reply twin
+ * return the true total alongside), so `messages.length + replies.length`
+ * here can be short by any amount past 200.
  */
 export function shareTargetBudget(messages: string[], replies: string[], limit: number): string[] {
   if (messages.length + replies.length <= limit) return [...messages, ...replies]
@@ -596,6 +597,14 @@ export const watchableChannels = query({
  * Returns the reaction targets and the reaction ids Peek already holds, because
  * the browser cannot know either. **Both are computed after the import**, so a
  * message that arrived in this same run can still receive its reactions.
+ *
+ * Also returns `omitted` — how many messages and replies were past the horizon
+ * and not asked about — and **records it on the topic row** (PEE-21). The
+ * number is computed here and nowhere else, and the surface that draws the
+ * container is a reactive `topics.list`, not this action's caller: the two
+ * sync paths (HTTP backfill, live socket) both end here, and neither feeds
+ * component state — a late result for a topic the reader has left would land
+ * on the wrong one. The row is keyed by the topic, so it cannot.
  */
 export const importChannel = action({
   args: {
@@ -611,6 +620,8 @@ export const importChannel = action({
     targets?: string[]
     known?: string[]
     deletable?: string[]
+    /** Messages and replies past the horizon, not asked about — SPEC §6.6. */
+    omitted?: number
     reason?: string
   }> => {
     const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
@@ -629,15 +640,27 @@ export const importChannel = action({
     // the events from this sync window meant a reaction on any older message
     // was silently never imported (found by testing, not by reading).
     // Replies are reaction targets too (PEE-12); the cap covers the union.
-    const messageTargets: string[] = await ctx.runQuery(
+    const messages: { ids: string[]; total: number } = await ctx.runQuery(
       internal.nostr.data.listMessageEventIdsForTopic,
       { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
     )
-    const replyTargets: string[] = await ctx.runQuery(
+    const replies: { ids: string[]; total: number } = await ctx.runQuery(
       internal.nostr.data.listReplyEventIdsForTopic,
       { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
     )
-    const targets = shareTargetBudget(messageTargets, replyTargets, REACTION_TARGET_LIMIT)
+    const targets = shareTargetBudget(messages.ids, replies.ids, REACTION_TARGET_LIMIT)
+    // What the horizon left out, from the true totals rather than the capped
+    // lists — the lists are already short at 100 a side, and "total minus
+    // asked" is right whatever the share decided.
+    const omitted = messages.total + replies.total - targets.length
+    // Written only when it changes: every flush of the live socket runs this,
+    // and the number moves once per message, not once per flush.
+    if (omitted !== topic.reactionTargetsOmitted) {
+      await ctx.runMutation(internal.nostr.data.setReactionTargetsOmitted, {
+        topicId: topic.topicId,
+        omitted,
+      })
+    }
     const known: string[] = await ctx.runQuery(
       internal.nostr.data.listReactionEventIdsForTopic,
       { topicId: topic.topicId, limit: PAGE_LIMIT },
@@ -649,7 +672,7 @@ export const importChannel = action({
       internal.nostr.data.listDeletableEventIdsForTopic,
       { topicId: topic.topicId, limit: PAGE_LIMIT },
     )
-    return { ok: true, targets, known, deletable }
+    return { ok: true, targets, known, deletable, omitted }
   },
 })
 
