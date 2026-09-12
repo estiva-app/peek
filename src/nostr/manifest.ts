@@ -77,6 +77,21 @@ export function manifestContent() {
     about: 'Conversations',
 
     /**
+     * **Peek is a generic app: it renders the conversation of every file**
+     * (RFC 0.5 §10.7, the one field that section adds to a manifest).
+     *
+     * The `k` tags below say which kinds Peek *owns* — a channel and a
+     * message, both legacy shapes. This says what it does for everybody
+     * else's files, and it is what a consumer reads to find where a file
+     * nobody owns can be opened: a bare file (`kind:30840`, a topic since
+     * peek#194) has no `web` template of its own, so interop takes the one
+     * on the manifest declaring this aspect. Ship's Related card for a topic
+     * under a project becomes a link into `/o/<naddr>` the moment this is
+     * published (FOL-17), and `ObjectPage` opens it beside its Folder.
+     */
+    aspect: 'conversation',
+
+    /**
      * **No `records` rule, and that is a statement rather than an omission.**
      *
      * Ship declares one because a Ship issue's status lives in change events

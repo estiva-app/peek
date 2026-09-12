@@ -20,7 +20,8 @@ import { hasConvex } from './store'
 import {
   applyActionAsViewer,
   creatableUnderAsViewer,
-  folderForReferenceAsViewer,
+  placeForReferenceAsViewer,
+  type ReferencePlace,
   directoryAsViewer,
   conversationCountsAsViewer,
   createFolderAsViewer,
@@ -205,11 +206,11 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  /** The Folder a `nostr:` reference points into — see `folderForReferenceAsViewer`. */
-  const folderForReference = useCallback(
-    async (reference: string) => {
+  /** Where in Peek a `nostr:` reference opens — see `placeForReferenceAsViewer`. */
+  const placeForReference = useCallback(
+    async (reference: string): Promise<ReferencePlace | null> => {
       const v = viewer()
-      return v ? folderForReferenceAsViewer(reference, v.relayUrl, v.token) : null
+      return v ? placeForReferenceAsViewer(reference, v.relayUrl, v.token) : null
     },
     [viewer],
   )
@@ -227,7 +228,7 @@ export function useForeignObjects() {
     moveFile,
     applyAction,
     creatableUnder,
-    folderForReference,
+    placeForReference,
   }
 }
 
