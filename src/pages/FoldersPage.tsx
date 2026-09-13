@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { IconMessagePlus, IconSend, IconTrash, IconX } from '@tabler/icons-react'
+import { IconArrowUpRight, IconMessagePlus, IconSend, IconTrash, IconX } from '@tabler/icons-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -15,6 +15,7 @@ import {
   useFolders,
   useForeignConversation,
   useForeignObjects,
+  useTopics,
   useWorkspaceDirectory,
 } from '@/api'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -26,6 +27,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { useToast } from '@/lib/toast'
+import { topicPath } from '@/lib/objectUrl'
 import { useMarkFileRead } from '@/lib/useMarkRead'
 
 /**
@@ -128,6 +130,21 @@ export function FoldersPage() {
   const people = useWorkspaceDirectory()
 
   const selected = folders?.find((folder) => folder.id === id)
+  /*
+    The Folder that is one of this Peek's topics.
+
+    A topic's channel *is* its Folder (`Topic.folderId`), so every topic is in
+    the list on the left beside the Folders people made on purpose — and the
+    relay cannot tell them apart. Renaming or deleting it here reaches only the
+    relay: the Convex twin keeps the old name, or keeps the whole topic, which
+    then looks alive in Peek while every publish into it is refused and none
+    of its messages can be read by pointer. Fourteen topics were lost that way
+    in the two days after the delete shipped, and the dialog had promised that
+    nothing in the folder would be. So a topic's Folder is managed from the
+    topic, where the rename and the delete do both halves.
+  */
+  const topics = useTopics()
+  const topic = topics?.find((t) => t.folderId === id)
 
   async function send(body: string): Promise<boolean> {
     if (!openFile?.naddr) return false
@@ -266,6 +283,15 @@ export function FoldersPage() {
             */}
             <ContainerHeader
               title={
+                topic ? (
+                  /*
+                    A topic's name is the topic's to change: its rename writes
+                    Convex and the relay together, and a rename here would move
+                    only the relay's half. A string title wears the same
+                    `text-body-2-strong` as the editable one below.
+                  */
+                  topic.title
+                ) : (
                 <div className="-ml-2 min-w-0">
                 <EditableText
                   /*
@@ -302,6 +328,7 @@ export function FoldersPage() {
                   }}
                 />
                 </div>
+                )
               }
               actions={
                 <>
@@ -312,13 +339,30 @@ export function FoldersPage() {
                   >
                     <IconMessagePlus size={16} stroke={1.5} />
                   </IconButton>
-                  <IconButton
-                    tooltip="Delete folder"
-                    aria-label="Delete folder"
-                    onClick={() => setConfirmingDelete(true)}
-                  >
-                    <IconTrash size={16} stroke={1.5} />
-                  </IconButton>
+                  {topic ? (
+                    /*
+                      Not a delete. Deleting a topic is the topic's own action,
+                      which removes its rows and then its channel; a channel
+                      delete from here would leave the topic standing in Peek
+                      with its relay half gone. The way to that action is the
+                      only thing offered.
+                    */
+                    <IconButton
+                      tooltip="Open topic"
+                      aria-label="Open this folder's topic"
+                      onClick={() => navigate(topicPath(topic))}
+                    >
+                      <IconArrowUpRight size={16} stroke={1.5} />
+                    </IconButton>
+                  ) : (
+                    <IconButton
+                      tooltip="Delete folder"
+                      aria-label="Delete folder"
+                      onClick={() => setConfirmingDelete(true)}
+                    >
+                      <IconTrash size={16} stroke={1.5} />
+                    </IconButton>
+                  )}
                 </>
               }
             />

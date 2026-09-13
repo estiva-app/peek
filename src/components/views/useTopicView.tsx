@@ -136,8 +136,23 @@ export function useTopicView({
   const joinTopic = useJoinTopic()
   const inviteToTopic = useInviteToTopic()
   const openWorkTopicIds = useOpenWorkTopicIds()
-  const actions = usePeekActions()
   const { showToast } = useToast()
+  const actions = usePeekActions({
+    /*
+      Sent, and not published — the send's counterpart of PEE-24's edit toast,
+      and worded the same way so the two read as one rule. Not auto-dismissed
+      for the same reason: this is the outcome where Peek and the world
+      disagree, and the message is exactly the one that then cannot be
+      mentioned or read by pointer, which is how the silence was found.
+    */
+    onMirrorRefused: ({ what, reason }) =>
+      showToast({
+        label: `Sent here, but not published — ${reason}. Other apps cannot read this ${what}, and it cannot be mentioned.`,
+        type: 'warning',
+        leadingIcon: false,
+        durationMs: 0,
+      }),
+  })
   const reportDelete = useReportDelete()
 
   /**
