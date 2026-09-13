@@ -32,7 +32,9 @@ export function ReadStatePanel({ anchor, onClose }: { anchor: HTMLElement | null
       side="bottom"
       align="right"
       ariaLabel="Read state"
-      className="w-[300px] gap-2 p-2"
+      // No padding here: the package pads the content 8px, and a `p-2` on the
+      // panel was added to it from 0.12.6 on (migration docs D68, Finding 60).
+      className="w-[300px] gap-2"
     >
       <SectionLabel>Read state</SectionLabel>
       {/* The box carries the switch, the label names it, and the `<label>` makes
