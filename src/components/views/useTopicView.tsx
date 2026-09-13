@@ -3,6 +3,7 @@ import { useMarkRead } from '@/lib/useMarkRead'
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { registerTopicConversation, unregisterTopicConversation } from '@/lib/conversationRegistry'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
+import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { isNearBottom } from './scrollPolicy'
 import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
@@ -125,7 +126,8 @@ export function useTopicView({
 }: UseTopicViewArgs): ViewSlots {
   const scrollRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
-  const { setPendingDmThreadId, pendingTopicThread, setPendingTopicThread } = useLastSelection()
+  const { setPendingDmThreadId, pendingTopicThread, setPendingTopicThread, pendingTopicMessage, setPendingTopicMessage } =
+    useLastSelection()
   const { isTopicStarred, toggleTopic } = useStarred()
   const findTopic = useTopicLookup()
   const huddleLookup = useHuddleLookup()
@@ -666,6 +668,24 @@ export function useTopicView({
     registerTopicConversation({ references: [], messages: topicSnapshot })
     return unregisterTopicConversation
   }, [topicSnapshot])
+
+  /*
+    A `/message/<id>` link lands on the message (RIC-16). `ObjectPage` knows
+    the event and its Folder and nothing Peek-private, so the one-shot is keyed
+    by those and answered here, where the conversations are: once this Folder's
+    snapshot carries the event, open its conversation and scroll to it. Waiting
+    on the snapshot rather than the mount is what makes a cold load work — the
+    messages arrive a render or more after the topic does.
+  */
+  useEffect(() => {
+    if (!pendingTopicMessage || !topicFolderId || pendingTopicMessage.folder !== topicFolderId) return
+    const wanted = pendingTopicMessage.eventId.toLowerCase()
+    const found = topicSnapshot.find((m) => m.eventId?.toLowerCase() === wanted)
+    if (!found) return
+    setPendingTopicMessage(null)
+    openThread(found.conversationId)
+    void scrollToMessageWhenReady(found.id)
+  }, [pendingTopicMessage, topicFolderId, topicSnapshot, openThread, setPendingTopicMessage])
 
   /*
     And how to open one of them (INT-8). A citation into a conversation that is

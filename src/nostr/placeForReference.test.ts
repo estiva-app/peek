@@ -50,7 +50,9 @@ describe('a Message has no address, so its Folder has to be fetched', () => {
       ok: true,
       events: [{ id: MESSAGE_ID, kind: 9, pubkey: AUTHOR, tags: [['h', FOLDER]], content: '', created_at: 1, sig: '' }],
     })
-    expect(await resolve(`nostr:${encodeNevent({ id: MESSAGE_ID, relays: [] })}`)).toEqual({ folder: FOLDER })
+    // The message comes back with its Folder: the topic view lands on it
+    // rather than merely opening the topic around it (RIC-16).
+    expect(await resolve(`nostr:${encodeNevent({ id: MESSAGE_ID, relays: [] })}`)).toEqual({ folder: FOLDER, message: MESSAGE_ID })
   })
 
   it('accepts a bare event id, which is what a pasted `e` tag gives you', async () => {
@@ -58,7 +60,7 @@ describe('a Message has no address, so its Folder has to be fetched', () => {
       ok: true,
       events: [{ id: MESSAGE_ID, kind: 9, pubkey: AUTHOR, tags: [['h', FOLDER]], content: '', created_at: 1, sig: '' }],
     })
-    expect(await resolve(MESSAGE_ID)).toEqual({ folder: FOLDER })
+    expect(await resolve(MESSAGE_ID)).toEqual({ folder: FOLDER, message: MESSAGE_ID })
   })
 
   it('returns null for an event that is not readable from here', async () => {
