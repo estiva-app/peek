@@ -88,7 +88,24 @@ export type EditOutcome = { published: true } | { published: false; reason: stri
  */
 export type DeleteOutcome = { kept: boolean }
 
-export function usePeekActions() {
+/**
+ * A send whose relay mirror was refused.
+ *
+ * The send's own answer is Convex's and stays so (CON-10) — the row is written
+ * and on every Peek screen, so the draft must not come back. But a message that
+ * never reached the relay is invisible to every other app, cannot be mentioned
+ * (the `[` menu offers only messages with an event id) and cannot be resolved
+ * by pointer, and until now all of that was a `console.warn`. Fourteen topics
+ * had their channel deleted on the relay in the two days after the Folder
+ * delete shipped, and every message sent into them since went this way with
+ * nothing on screen to say so. The reason is the relay's own words, or Estiva
+ * ID's when it would not sign.
+ */
+export type MirrorRefusal = { what: 'message' | 'reply'; reason: string }
+
+export function usePeekActions(
+  options: { onMirrorRefused?: (refusal: MirrorRefusal) => void } = {},
+) {
   const m = useTopicMutations()
   const openWork = useOpenWorkOverrides()
   // One-shot reads. `useQuery` is reactive and cannot be called mid-action.
@@ -318,7 +335,11 @@ export function usePeekActions() {
           console.warn('[nostr] message not published:', built.reason)
           return
         }
-        const eventId = await signAndPublish(built.unsigned, token)
+        // A refusal from here on is one worth saying: the event was built and
+        // the relay or the signer declined it.
+        const eventId = await signAndPublish(built.unsigned, token, (reason) =>
+          options.onMirrorRefused?.({ what: 'message', reason }),
+        )
         if (eventId) await recordMessagePublished({ messageId, nostrEventId: eventId })
       })().catch((error) => console.warn('[nostr] message publish failed:', error))
 
@@ -735,7 +756,9 @@ export function usePeekActions() {
                 console.warn('[nostr] reply not published:', built.reason)
                 return
               }
-              const eventId = await signAndPublish(built.unsigned, token)
+              const eventId = await signAndPublish(built.unsigned, token, (reason) =>
+                options.onMirrorRefused?.({ what: 'reply', reason }),
+              )
               if (eventId) await recordReplyPublished({ replyId, nostrEventId: eventId })
             })().catch((error) => console.warn('[nostr] reply publish failed:', error))
 

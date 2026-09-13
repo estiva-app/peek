@@ -43,6 +43,13 @@ const topic: ForeignObject = {
 */
 const relay = vi.hoisted(() => ({ files: [] as unknown[] }))
 /*
+  Which listed Folders are this Peek's own topics. Empty for the tests above;
+  the last group sets one, because a topic's Folder is the one row the page
+  must not offer to rename or delete.
+*/
+const TOPIC_CHANNEL = '3789d2ca-103c-40e5-906f-0490782db5fd'
+const peekTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; folderId: string | null }[] }))
+/*
   The read-state writers, spied — FOL-16. What the page must do is mark the
   open file's own stream after a dwell, and what it must never do is mark the
   Folder's channel, so both are recorded and one is asserted absent.
@@ -60,10 +67,14 @@ vi.mock('@/api', async () => ({
     markThreadRead: marks.thread,
   }),
   useFolders: () => ({
-    folders: [{ id: FOLDER, name: 'Folders', hasState: true }],
+    folders: [
+      { id: FOLDER, name: 'Folders', hasState: true },
+      { id: TOPIC_CHANNEL, name: 'For testing', hasState: false },
+    ],
     signedOut: false,
     reload: async () => {},
   }),
+  useTopics: () => peekTopics.list,
   useFolderContents: () => ({
     state: { id: FOLDER, name: 'Folders', hasState: true, source: 'state', files: relay.files },
     reload: async () => {},
@@ -101,6 +112,8 @@ function mount(url: string) {
     <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/folders/:id" element={<><FoldersPage /><Probe /></>} />
+        {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
+        <Route path="*" element={<Probe />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -189,5 +202,39 @@ describe('FoldersPage marks the open file read, and only the file', () => {
       vi.advanceTimersByTime(READ_DWELL_MS * 2)
     })
     expect(marks.file).not.toHaveBeenCalled()
+  })
+})
+
+/*
+  A topic's channel is its Folder, so every topic is in this list beside the
+  Folders people made on purpose. Deleting one here reached only the relay:
+  the topic stayed in Peek with every publish into it refused and none of its
+  messages readable by pointer, and the dialog had promised nothing in the
+  folder would be deleted. Fourteen topics went that way in the two days after
+  the delete shipped. A topic's Folder is managed from the topic.
+*/
+describe('FoldersPage manages a topic’s Folder from the topic', () => {
+  beforeEach(() => {
+    peekTopics.list = [{ id: 'k1', title: 'For testing', folderId: TOPIC_CHANNEL }]
+  })
+  afterEach(() => {
+    peekTopics.list = []
+  })
+
+  it('offers neither the delete nor the rename on a Folder that is a topic, and leads to the topic', async () => {
+    mount(`/folders/${TOPIC_CHANNEL}`)
+    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
+    // The title is drawn, and drawn once: the list row and the header share it.
+    expect(screen.getAllByText('For testing').length).toBeGreaterThan(0)
+    await userEvent.click(screen.getByRole('button', { name: "Open this folder's topic" }))
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/for-testing-${TOPIC_CHANNEL}`)
+  })
+
+  it('still offers the delete and the rename on a Folder that is not a topic', () => {
+    mount(`/folders/${FOLDER}`)
+    expect(screen.getByRole('button', { name: 'Delete folder' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: "Open this folder's topic" })).toBeNull()
   })
 })
