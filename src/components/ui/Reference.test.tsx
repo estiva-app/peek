@@ -13,10 +13,13 @@
  * drawn here now, and a reader must never see a 200-character pointer either
  * way.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render } from '@testing-library/react'
-import { encodeNpub } from '@estiva-app/protocol'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
+import { addrToNaddr, encodeNevent, encodeNpub } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
+import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
+import { registerTopicConversation, unregisterTopicConversation } from '@/lib/conversationRegistry'
 
 const KNOWN = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const STRANGER = 'cd'.repeat(32)
@@ -241,5 +244,114 @@ describe('Reference, unresolved', () => {
       <Reference uri="nostr:naddr1abc" object={object({ unreachable: true, slots: {} })} />,
     ).container
     expect(c.textContent).toMatch(/^naddr1.*…$/)
+  })
+})
+
+/**
+ * A chip leads to the thing it names — RIC-16.
+ *
+ * Miky, after the first pointer mention on production: *"It only creates a
+ * label, but not really a link to the mentioned thing"* — and, once it did
+ * link: *"It opens the reply thread panel"*, because the card under the chip
+ * opens its thread on any click. So there are two things to prove: that the
+ * chip is a real link, and that following it is not also a click on the card.
+ */
+describe('Reference, as a link (RIC-16)', () => {
+  const UUID = '0212db6d-bcbf-40d0-890e-f4f056db2f5d'
+  const TOPIC_ADDRESS = `39000:${'ab'.repeat(32)}:${UUID}`
+  const TOPIC_URI = `nostr:${addrToNaddr(TOPIC_ADDRESS, [])}`
+  const topic = () =>
+    object({ ref: TOPIC_ADDRESS, address: TOPIC_ADDRESS, kind: 39000, appName: 'Peek', slots: { title: { value: 'Feedback on Ship' } } })
+  const MESSAGE_ID = 'cd'.repeat(32)
+  const MESSAGE_URI = `nostr:${encodeNevent({ id: MESSAGE_ID, relays: [], kind: 9 })}`
+  const message = () =>
+    object({ ref: MESSAGE_URI, address: undefined, naddr: undefined, eventId: MESSAGE_ID, kind: 9, widget: ['message', 'card'], appName: 'Peek', slots: { title: { value: KNOWN, isPubkey: true } } })
+
+  function Where() {
+    return <output data-testid="where">{useLocation().pathname}</output>
+  }
+  const routed = (ui: React.ReactNode) =>
+    render(
+      <MemoryRouter initialEntries={['/topics']}>
+        {ui}
+        <Where />
+      </MemoryRouter>,
+    )
+
+  afterEach(() => {
+    unregisterThreadOpener()
+    unregisterTopicConversation()
+  })
+
+  it('a topic chip is a real link to the topic, even with no router around it', () => {
+    const c = render(<Reference uri={TOPIC_URI} object={topic()} />).container
+    const a = c.querySelector('a')
+    expect(a?.getAttribute('href')).toBe(`/topic/feedback-on-ship-${UUID}`)
+    expect(a?.textContent).toBe('Feedback on Ship')
+  })
+
+  it('a person chip is a link to their DM', () => {
+    const c = render(<Reference uri={`nostr:${encodeNpub(KNOWN)}`} />).container
+    expect(c.querySelector('a')?.getAttribute('href')).toBe('/people/Ada%20Lovelace')
+  })
+
+  it('a label that leads nowhere is not a link', () => {
+    expect(render(<Reference uri={TOPIC_URI} object={null} />).container.querySelector('a')).toBeNull()
+    expect(render(<Reference uri={`nostr:${encodeNpub(STRANGER)}`} />).container.querySelector('a')).toBeNull()
+  })
+
+  it('following a chip is not a click on the card under it', () => {
+    const card = vi.fn()
+    const c = routed(
+      <div onClick={card}>
+        <Reference uri={TOPIC_URI} object={topic()} />
+      </div>,
+    ).container
+    const a = c.querySelector('a')!
+    // The card's own test for "not mine", and the event never reaching it.
+    expect(a.hasAttribute('data-interactive')).toBe(true)
+    fireEvent.click(a)
+    expect(card).not.toHaveBeenCalled()
+  })
+
+  it('a plain click opens the topic in place; a modified click is left to the browser', () => {
+    const r = routed(<Reference uri={TOPIC_URI} object={topic()} />)
+    const a = r.container.querySelector('a')!
+    expect(fireEvent.click(a, { ctrlKey: true })).toBe(true) // default not prevented: open in new tab
+    expect(r.getByTestId('where').textContent).toBe('/topics')
+    expect(fireEvent.click(a)).toBe(false)
+    expect(r.getByTestId('where').textContent).toBe(`/topic/feedback-on-ship-${UUID}`)
+  })
+
+  it('a message on screen opens its conversation rather than leaving the page', () => {
+    const opener = vi.fn()
+    registerThreadOpener(opener)
+    registerTopicConversation({
+      references: [],
+      messages: [{ id: 'c1', author: 'Ada', timestamp: '9:41 AM', body: 'Green.', eventId: MESSAGE_ID, conversationId: 'c1' }],
+    })
+    const r = routed(<Reference uri={MESSAGE_URI} object={message()} />)
+    const a = r.container.querySelector('a')!
+    expect(a.getAttribute('href')).toBe(`/message/${MESSAGE_ID}`)
+    fireEvent.click(a)
+    expect(opener).toHaveBeenCalledWith('c1')
+    expect(r.getByTestId('where').textContent).toBe('/topics')
+  })
+
+  it('a message elsewhere leaves for /message/<id>, which finds its topic', () => {
+    const r = routed(<Reference uri={MESSAGE_URI} object={message()} />)
+    fireEvent.click(r.container.querySelector('a')!)
+    expect(r.getByTestId('where').textContent).toBe(`/message/${MESSAGE_ID}`)
+  })
+
+  it("another app's object opens in that app, in a new tab", () => {
+    const r = routed(<Reference uri="nostr:naddr1issue" object={object({ openUrl: 'https://ship.estiva.app/i/abc' })} />)
+    const a = r.container.querySelector('a')!
+    expect(a.getAttribute('href')).toBe('https://ship.estiva.app/i/abc')
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toContain('noopener')
+    // Not intercepted: the router has nowhere to take a foreign URL.
+    expect(fireEvent.click(a)).toBe(true)
+    expect(r.getByTestId('where').textContent).toBe('/topics')
   })
 })

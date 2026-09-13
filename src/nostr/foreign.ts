@@ -561,7 +561,12 @@ export async function listFoldersAsViewer(
  * names a file *inside* that Folder rather than the Folder itself: the page
  * lands on the Folder and opens that file's conversation beside it.
  */
-export type ReferencePlace = { folder: string; file?: string }
+export type ReferencePlace = {
+  folder: string
+  file?: string
+  /** The event id of the message the reference named, so the topic can land on it (RIC-16). */
+  message?: string
+}
 
 /**
  * The place in Peek a `nostr:` reference points at, or null (PRO-11).
@@ -630,7 +635,7 @@ export async function placeForReferenceAsViewer(
 
   const [event] = await viewerQuery(relayUrl, token)([{ ids: [id], limit: 1 }])
   const folder = event?.tags.find((t) => t[0] === 'h')?.[1]
-  return folder ? { folder } : null
+  return folder ? { folder, message: id } : null
 }
 
 /**

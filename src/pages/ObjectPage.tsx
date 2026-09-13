@@ -3,6 +3,7 @@ import { eventIdFromRef } from '@estiva-app/interop'
 import { Navigate, useParams } from 'react-router-dom'
 import { useForeignObjects } from '@/api'
 import type { ReferencePlace } from '@/nostr/foreign'
+import { useLastSelection } from '@/lib/lastSelection'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 /**
@@ -28,6 +29,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 export function ObjectPage() {
   const { ref } = useParams<{ ref: string }>()
   const { placeForReference } = useForeignObjects()
+  const { setPendingTopicMessage } = useLastSelection()
   const [state, setState] = useState<ReferencePlace | 'looking' | 'unopenable'>('looking')
 
   useEffect(() => {
@@ -46,6 +48,13 @@ export function ObjectPage() {
     placeForReference(eventIdFromRef(decoded) ?? decoded)
       .then((place) => {
         if (cancelled) return
+        /*
+          A message link lands on the message, not merely in its topic (RIC-16).
+          The topic view opens the conversation once it has loaded — the same
+          one-shot the launcher's search results use, keyed by what this page
+          knows (the Folder and the event) rather than by Peek's own ids.
+        */
+        if (place?.message) setPendingTopicMessage({ folder: place.folder, eventId: place.message })
         setState(place ?? 'unopenable')
       })
       .catch(() => {
@@ -56,7 +65,7 @@ export function ObjectPage() {
     return () => {
       cancelled = true
     }
-  }, [ref, placeForReference])
+  }, [ref, placeForReference, setPendingTopicMessage])
 
   // The page's own frame: a flex column the height of the window, so the
   // page-scope empty state fills it as a flex child and centres (D46) — it

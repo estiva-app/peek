@@ -1,7 +1,12 @@
-import { useSyncExternalStore } from 'react'
+import { useSyncExternalStore, type HTMLAttributes, type MouseEvent, type ReactNode } from 'react'
+import { useInRouterContext, useNavigate } from 'react-router-dom'
 import { decodeNpub } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { mentionsVersion, personByPubkey, subscribeMentions } from '@/api/mentions'
+import { findMessageByEventId } from '@/lib/conversationRegistry'
+import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
+import { referenceLink, type ReferenceLink } from '@/lib/referenceLink'
+import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
 import { StatusPill } from './ForeignObjectWidget'
@@ -62,6 +67,20 @@ function shortKey(pubkey: string): string {
  * sense: *"never blank"*. A reference to something outside this workspace still
  * says a reference is there, which is the honest answer.
  *
+ * **A chip that names something leads to it (RIC-16).** It was a label from the
+ * prototype on — Miky, after the first pointer mention on production: *"It only
+ * creates a label, but not really a link to the mentioned thing."* Now a person
+ * opens their DM, a topic opens the topic, a message opens its conversation and
+ * lands on it, and another app's object opens in that app — `referenceLink`
+ * decides which from what resolved. The anchor is real, so open-in-new-tab and
+ * copy-link work; a plain left click is intercepted and routed in place, the
+ * way `NavItem` does it (UI-RULES §3), because a bare anchor would reload the
+ * app. Outside a router — a story, a test — it stays a plain anchor.
+ *
+ * A click on a chip is a click on the chip, not on the card under it: the card
+ * opens its thread on click, and following a mention must not also do that
+ * (`data-interactive` is the card's contract for "not mine").
+ *
  * **It never resolves anything itself.** A body's references are resolved once
  * for the whole body, so the same object cannot appear in two states on one
  * screen and a message costs one round trip per reference rather than one per
@@ -113,7 +132,9 @@ export function Reference({
     }
     const person = pubkey ? personByPubkey(pubkey) : undefined
     return (
-      <span
+      <Chip
+        // A person opens their DM — `/people/<id>` is the DM with them (§2.4).
+        link={person ? { place: 'person', href: `/people/${encodeURIComponent(person.id)}` } : null}
         data-reference="person"
         data-mention={pubkey ?? undefined}
         data-resolved={person ? 'true' : 'false'}
@@ -127,14 +148,15 @@ export function Reference({
         )}
       >
         {person ? `@${person.name}` : short}
-      </span>
+      </Chip>
     )
   }
 
   if (object && !object.unreachable) {
     const title = objectLabel(object) ?? short
     return (
-      <span
+      <Chip
+        link={referenceLink(uri, object)}
         data-reference="object"
         data-object={object.address}
         data-resolved="true"
@@ -158,7 +180,7 @@ export function Reference({
       >
         <span className="truncate">{title}</span>
         {object.slots.status && <StatusPill slot={object.slots.status} className="shrink-0" />}
-      </span>
+      </Chip>
     )
   }
 
@@ -171,4 +193,69 @@ export function Reference({
       {short}
     </span>
   )
+}
+
+type ChipLink = ReferenceLink | { place: 'person'; href: string }
+
+type ChipProps = Omit<HTMLAttributes<HTMLElement>, 'onClick'> & {
+  /** Where the chip leads, or null for a chip that is a label only. */
+  link: ChipLink | null
+  children: ReactNode
+}
+
+/**
+ * The chip's box: an anchor when it leads somewhere, a span when it does not.
+ *
+ * Split in two so the router hook is only ever called inside a router.
+ * `useInRouterContext` is always called; `useNavigate` lives in the routed
+ * variant, which only mounts when there is a router to navigate with. Outside
+ * one the anchor is plain and its `href` still real — a story or a test gets a
+ * link that would work, not a crash.
+ */
+function Chip({ link, ...rest }: ChipProps) {
+  const inRouter = useInRouterContext()
+  if (!link) return <span {...rest} />
+  return inRouter ? <RoutedChip link={link} {...rest} /> : <PlainChip link={link} {...rest} />
+}
+
+const isModified = (event: MouseEvent) =>
+  event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+
+/** Another app's URL opens in a new tab; a stranger published it into a shared relay, hence `noopener`. */
+const targetFor = (link: ChipLink) =>
+  link.place === 'app' ? { target: '_blank', rel: 'noopener noreferrer' } : {}
+
+function PlainChip({ link, ...rest }: ChipProps & { link: ChipLink }) {
+  return <a href={link.href} data-interactive="" onClick={(event) => event.stopPropagation()} {...targetFor(link)} {...rest} />
+}
+
+function RoutedChip({ link, ...rest }: ChipProps & { link: ChipLink }) {
+  const navigate = useNavigate()
+  const follow = (event: MouseEvent<HTMLAnchorElement>) => {
+    // The card underneath opens a thread on click; a click on a mention is not that.
+    event.stopPropagation()
+    // Another app's link is the browser's to follow, and so is any modified
+    // click — open-in-new-tab keeps working, as the router link allowed.
+    if (link.place === 'app' || isModified(event)) return
+    event.preventDefault()
+    if (link.place === 'message') {
+      /*
+        The same three steps a citation takes (INT-3, INT-8), because the
+        message is often on screen already: scroll to it if its thread is open,
+        open its thread if the topic is, and only otherwise leave the page.
+        `/message/<id>` finds the topic and lands on the message either way —
+        that is the slow path, not a different destination.
+      */
+      const here = findMessageByEventId(link.eventId)
+      if (here) {
+        if (scrollToMessage(here.id)) return
+        if (here.conversationId && openConversation(here.conversationId)) {
+          void scrollToMessageWhenReady(here.id)
+          return
+        }
+      }
+    }
+    navigate(link.href)
+  }
+  return <a href={link.href} data-interactive="" onClick={follow} {...targetFor(link)} {...rest} />
 }
