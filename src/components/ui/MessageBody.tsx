@@ -14,6 +14,7 @@ import { TOPICS } from '@/api'
 import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
+import { INLINE_CHIP_STYLE, inlineChipClassName } from './inlineChip'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { useResolvedReferences } from '@/api'
@@ -95,7 +96,7 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           if (topic) {
             const resolved = isTopicResolved(topic.id)
             return (
-              <span key={i} className="inline-flex items-center gap-1 rounded-sm px-1 mx-0.5 bg-bg-active text-text-primary text-body-2 font-normal select-none" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
+              <span key={i} className={inlineChipClassName('neutral')} style={INLINE_CHIP_STYLE}>
                 <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0">
                   {resolved ? (
                     <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
@@ -117,7 +118,7 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           }
           const TablerIcon = tablerIcons[docFile?.docType ?? ''] ?? IconFile
           return (
-            <span key={i} className="inline-flex items-center gap-1 rounded-sm px-1 mx-0.5 bg-bg-active text-text-primary text-body-2 font-normal select-none" style={{ verticalAlign: 'text-bottom', height: '1.4em' }}>
+            <span key={i} className={inlineChipClassName('neutral')} style={INLINE_CHIP_STYLE}>
               <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
                 <TablerIcon size={14} stroke={1.5} />
               </span>
@@ -130,13 +131,7 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           // mentions wear the warning colors, plain mentions the accent.
           const urgent = part.startsWith('!@')
           return (
-            <span
-              key={i}
-              className={cn(
-                'rounded-sm px-1 mx-0.5 text-body-2 font-normal select-none',
-                urgent ? 'bg-warning-muted text-warning-default' : 'bg-accent-muted text-accent-primary'
-              )}
-            >
+            <span key={i} className={inlineChipClassName(urgent ? 'urgent' : 'mention')} style={INLINE_CHIP_STYLE}>
               {part}
             </span>
           )

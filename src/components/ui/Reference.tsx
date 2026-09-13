@@ -8,7 +8,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { referenceLink, type ReferenceLink } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
-import { cn } from '@/lib/utils'
+import { INLINE_CHIP_STYLE, inlineChipClassName } from './inlineChip'
 import { StatusPill } from './ForeignObjectWidget'
 
 /**
@@ -120,8 +120,8 @@ export function Reference({
   useSyncExternalStore(subscribeMentions, mentionsVersion, mentionsVersion)
 
   const short = `${uri.replace(/^nostr:/, '').slice(0, 12)}…`
-  const base = 'rounded-sm px-1 mx-0.5 text-body-2 font-normal select-none'
-  const quiet = 'bg-bg-active text-text-muted font-mono text-caption'
+  // Every chip below is the one inline chip (`inlineChip.ts`, D67): the same
+  // shape as a `[Topic]` in the reader and in the editor.
 
   if (/^nostr:npub1/i.test(uri)) {
     let pubkey: string | null = null
@@ -139,13 +139,10 @@ export function Reference({
         data-mention={pubkey ?? undefined}
         data-resolved={person ? 'true' : 'false'}
         title={person ? undefined : uri}
-        className={cn(
-          base,
-          // An unresolved key is still a mention, just an anonymous one. Muted
-          // rather than absent, so nobody reads a stranger's key as an error.
-          person ? 'bg-accent-muted text-accent-primary' : quiet,
-          className,
-        )}
+        // An unresolved key is still a mention, just an anonymous one. Muted
+        // rather than absent, so nobody reads a stranger's key as an error.
+        className={inlineChipClassName(person ? 'mention' : 'quiet', className)}
+        style={INLINE_CHIP_STYLE}
       >
         {person ? `@${person.name}` : short}
       </Chip>
@@ -162,7 +159,7 @@ export function Reference({
         data-resolved="true"
         // The full title on hover, because the visible one is truncated.
         title={title}
-        className={cn(base, 'inline-flex items-center gap-1 bg-bg-active text-text-primary', className)}
+        className={inlineChipClassName('neutral', className)}
         /*
           The same box a `[Topic]` chip gets: one line high, aligned to the text
           baseline it sits on. A chip that grows to two lines pushes the line
@@ -176,7 +173,7 @@ export function Reference({
           title is a sentence of its own. Ship's inline reference truncates for
           the same reason.
         */
-        style={{ verticalAlign: 'text-bottom', height: '1.4em', maxWidth: '24ch' }}
+        style={{ ...INLINE_CHIP_STYLE, maxWidth: '24ch' }}
       >
         <span className="truncate">{title}</span>
         {object.slots.status && <StatusPill slot={object.slots.status} className="shrink-0" />}
@@ -188,7 +185,8 @@ export function Reference({
     <span
       data-reference={object === null ? 'unresolved' : 'pending'}
       title={uri}
-      className={cn(base, quiet, className)}
+      className={inlineChipClassName('quiet', className)}
+      style={INLINE_CHIP_STYLE}
     >
       {short}
     </span>
