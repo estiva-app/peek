@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:tokens": "eslint --config eslint.tokens.config.js .",
+    "gates:status": "node scripts/gates-status.mjs",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",

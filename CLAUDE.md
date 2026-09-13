@@ -6,6 +6,9 @@ at `k:\PeekApp` (GitHub `cath23/Peek`, tag `prototype-v1`). See `PROTOTYPE.md`
 and `MIGRATION.md` for lineage, and `PRDs/Peek-Product-Overview.md` for the
 feature spec.
 
+**The UI Guardrails project:** where it stands is `docs/GATES.md` §0 in the `estiva-ui` checkout beside this repository.
+`npm run gates:status` here shows Peek's part of it, read from the code.
+
 ## UI: the shared package, and the rules every session follows
 
 @UI-RULES.md
