@@ -225,7 +225,9 @@ describe('an app is offered what it declares, and nothing else', () => {
 
     await userEvent.type(await screen.findByLabelText(/message/i), 'Shall we split PRO-18?')
     await userEvent.click(screen.getByLabelText(/topic/i))
-    await userEvent.click(await screen.findByText('Intelligence in Peek'))
+    // By role: text also finds the option in the list before it has opened
+    // (see `createIssue` in CommandLauncher.live.test.tsx).
+    await userEvent.click(await screen.findByRole('option', { name: 'Intelligence in Peek' }))
     // Exact, not a pattern: the form's chip carries a "Leave Start a
     // conversation" button that a loose match also finds.
     await userEvent.click(screen.getByRole('button', { name: 'Start a conversation' }))
