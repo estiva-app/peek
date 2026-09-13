@@ -23,7 +23,7 @@ import {
   placeForReferenceAsViewer,
   type ReferencePlace,
   directoryAsViewer,
-  conversationCountsAsViewer,
+  conversationsAsViewer,
   createFolderAsViewer,
   createTopicAsViewer,
   deleteFolderAsViewer,
@@ -39,7 +39,14 @@ import {
 import { RelayReadError } from '@/nostr/relayRead'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import type { SignedEvent } from '@estiva-app/protocol'
-import type { FolderContents, FolderProject, FolderSummary, ForeignObject, People } from '@estiva-app/interop'
+import type {
+  ConversationMessage,
+  FolderContents,
+  FolderProject,
+  FolderSummary,
+  ForeignObject,
+  People,
+} from '@estiva-app/interop'
 
 /**
  * The relay origin and the viewer's token, or null when either is missing.
@@ -86,16 +93,16 @@ export function useForeignObjects() {
    * the count is the disclosure, so the two must not be distinguishable).
    */
   /**
-   * Message counts for a set of already-resolved files.
+   * What each of a set of already-resolved files' conversations holds.
    *
    * `{}` signed out rather than null: a folder listing renders either way, and
    * "no badge" is the honest rendering of "we did not ask". A caller must not
-   * read a missing entry as a zero — see `useConversationCounts`.
+   * read a missing entry as an empty conversation — see `useConversationBadges`.
    */
-  const conversationCounts = useCallback(
-    async (files: ForeignObject[]): Promise<Record<string, number>> => {
+  const conversations = useCallback(
+    async (files: ForeignObject[]): Promise<Record<string, ConversationMessage[]>> => {
       const v = viewer()
-      return v ? conversationCountsAsViewer(files, v.relayUrl, v.token) : {}
+      return v ? conversationsAsViewer(files, v.relayUrl, v.token) : {}
     },
     [viewer],
   )
@@ -219,7 +226,7 @@ export function useForeignObjects() {
     resolveObject,
     resolveFolderProject,
     resolveFolderContents,
-    conversationCounts,
+    conversations,
     listFolders,
     createFolder,
     createTopic,

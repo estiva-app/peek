@@ -16,7 +16,7 @@ import { dmHasUnread as mockDmHasUnread } from '@/data/dmData'
 import { mockConvIdFor } from './directory'
 import { hasConvex } from './store'
 import { useTopicLookup } from './topics'
-import { recordContainerRead, recordThreadRead } from '@/nostr/useReadStateSync'
+import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/useReadStateSync'
 
 /**
  * Sidebar indicators, per viewer:
@@ -99,6 +99,17 @@ export function useReadActions() {
       // For a relay-synced message the Peek key *is* the event id; for one that
       // has never been published, `recordThreadRead` finds no context and stops.
       recordThreadRead(messageKey, Date.now())
+    },
+    /**
+     * A file's conversation was read — the pane a Folder opens on a file
+     * (SPEC §11.1, FOL-16). Relay only: Convex has no watermark for a file,
+     * and the listing judges from the relay frontier for exactly that reason.
+     * §11.2: this advances the file's own stream and nothing else — not the
+     * Folder's channel, whose general chat the person did not read.
+     */
+    markFileRead(address: string | null | undefined) {
+      if (!hasConvex) return
+      recordFileRead(address, Date.now())
     },
   }
 }

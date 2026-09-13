@@ -6,6 +6,7 @@ import {
   advanceContexts,
   buildReadStateEvent,
   containerContext,
+  fileContext,
   isPublishableContextId,
   loadSlotIdentity,
   messageContext,
@@ -21,6 +22,8 @@ const UUID = 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91'
 const EVENT = 'a'.repeat(64)
 const OTHER_EVENT = 'b'.repeat(64)
 const SLOT = '0123456789abcdef0123456789abcdef'
+const PUBKEY = 'e'.repeat(64)
+const ISSUE = `30851:${PUBKEY}:9f1b4a2c-7e3d-4c8a-9b2e-1d5f6a7b8c9d`
 
 describe('context identifiers (SPEC §11.1)', () => {
   /**
@@ -57,6 +60,37 @@ describe('context identifiers (SPEC §11.1)', () => {
     expect(threadContext('m5')).toBeUndefined()
     expect(threadContext('a'.repeat(63))).toBeUndefined()
     expect(messageContext('not-an-event-id')).toBeUndefined()
+  })
+
+  /*
+    The file grain — §11.1, FOL-16. The bare address, because that is the `a`
+    a comment carries on the wire, exactly as the container is the bare `h`.
+    Grow-only blobs again: a `file:` prefix published once would be permanent,
+    and would name a context Ship never advances.
+  */
+  describe('the file context is the BARE address (FOL-16)', () => {
+    it('is the address verbatim, for any parameterised-replaceable kind', () => {
+      expect(fileContext(ISSUE)).toBe(ISSUE)
+      expect(fileContext(ISSUE)).not.toContain('file:')
+      expect(fileContext(`30850:${PUBKEY}:project-d`)).toBe(`30850:${PUBKEY}:project-d`)
+      expect(fileContext(`30840:${PUBKEY}:${UUID}`)).toBe(`30840:${PUBKEY}:${UUID}`)
+    })
+
+    it('keeps the d verbatim — a d is case-sensitive, so lowercasing it would name another file', () => {
+      const mixed = `30851:${PUBKEY}:Issue-ABC`
+      expect(fileContext(mixed)).toBe(mixed)
+    })
+
+    it('refuses what is not an address, rather than coercing it', () => {
+      expect(fileContext(`1111:${PUBKEY}:x`)).toBeUndefined() // a comment kind is not addressable
+      expect(fileContext('30851:not-a-pubkey:x')).toBeUndefined()
+      expect(fileContext(`30851:${PUBKEY}:has space`)).toBeUndefined()
+      expect(fileContext(UUID)).toBeUndefined() // a channel is the other container
+      expect(fileContext(`thread:${EVENT}`)).toBeUndefined()
+      expect(fileContext(`30851:${PUBKEY}:${'x'.repeat(200)}`)).toBeUndefined() // over 256 bytes
+      expect(fileContext('')).toBeUndefined()
+      expect(fileContext(undefined)).toBeUndefined()
+    })
   })
 })
 
@@ -172,6 +206,20 @@ describe('advanceContexts — the write discipline (SPEC §11.2, §11.4)', () =>
     expect(after).toEqual({})
   })
 
+  /*
+    §11.2 for the file grain (FOL-16): reading one issue's talk advances that
+    issue's address and nothing else — not the Folder's channel, whose general
+    chat was not read, and not the sibling issue in the same Folder.
+  */
+  it('advancing a file leaves the channel and a sibling file untouched', () => {
+    const sibling = `30851:${PUBKEY}:sibling`
+    const before = { [UUID]: 1000, [sibling]: 1000 }
+    const after = advanceContexts(before, { [ISSUE]: 2000 })
+    expect(after[UUID]).toBe(1000)
+    expect(after[sibling]).toBe(1000)
+    expect(after[ISSUE]).toBe(2000)
+  })
+
   it('caps at 10,000 contexts by dropping the oldest markers', () => {
     const current: Record<string, number> = {}
     for (let i = 0; i < MAX_CONTEXTS; i++) {
@@ -186,11 +234,13 @@ describe('advanceContexts — the write discipline (SPEC §11.2, §11.4)', () =>
 })
 
 describe('isPublishableContextId', () => {
-  it('accepts the three well-known grains and nothing else', () => {
+  it('accepts the four well-known grains and nothing else', () => {
     expect(isPublishableContextId(UUID)).toBe(true)
+    expect(isPublishableContextId(ISSUE)).toBe(true) // the file grain, FOL-16
     expect(isPublishableContextId(`thread:${EVENT}`)).toBe(true)
     expect(isPublishableContextId(`msg:${EVENT}`)).toBe(true)
     expect(isPublishableContextId(`h:${UUID}`)).toBe(false)
+    expect(isPublishableContextId(`file:${ISSUE}`)).toBe(false)
     expect(isPublishableContextId('folder:30850:abc:def')).toBe(false)
     expect(isPublishableContextId('')).toBe(false)
   })

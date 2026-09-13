@@ -61,6 +61,12 @@ export const SLOT_STORAGE_KEY = 'estiva-peek:read-state-slot'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const EVENT_ID_RE = /^[0-9a-f]{64}$/
+// A file's address, `<kind>:<pubkey>:<d>` — the `a` value a comment carries on
+// the wire. Kind 30000–39999 and a 64-hex pubkey are what make it an address;
+// the `d` is whatever the file chose, and is kept verbatim (a `d` is case-sensitive,
+// so lowercasing it would name a different file). No whitespace, because the
+// `a` tag would not carry it either.
+const ADDRESS_RE = /^3[0-9]{4}:[0-9a-f]{64}:[^\s]*$/
 
 /**
  * The container context: the **bare** channel uuid, no prefix.
@@ -74,6 +80,25 @@ export function containerContext(channelUuid: string | null | undefined): string
   if (!channelUuid) return undefined
   const value = channelUuid.toLowerCase()
   return UUID_RE.test(value) ? value : undefined
+}
+
+/**
+ * The file context: the file's **bare** address, no prefix (SPEC §11.1, FOL-16).
+ *
+ * A file's conversation is its own stream — the roots whose `a` names the
+ * file — and this is that stream's frontier. It is the address verbatim
+ * because that is the scope a comment carries on the wire, exactly as the
+ * container context is the bare `h`. Reading the channel does not advance it
+ * and it does not advance the channel (§11.3): that is the whole point.
+ *
+ * Refuses anything that is not an address, on the same terms as
+ * {@link containerContext} — a Peek topic id or a `file:`-prefixed guess must
+ * not reach a grow-only blob.
+ */
+export function fileContext(address: string | null | undefined): string | undefined {
+  if (!address) return undefined
+  if (new TextEncoder().encode(address).length > MAX_CONTEXT_ID_BYTES) return undefined
+  return ADDRESS_RE.test(address) ? address : undefined
 }
 
 /**
@@ -267,8 +292,9 @@ export function isPublishableContextId(id: string): boolean {
   if (new TextEncoder().encode(id).length > MAX_CONTEXT_ID_BYTES) return false
   if (id.startsWith('thread:')) return EVENT_ID_RE.test(id.slice('thread:'.length))
   if (id.startsWith('msg:')) return EVENT_ID_RE.test(id.slice('msg:'.length))
-  // Anything else is a container context, which SPEC §11.1 fixes as a bare uuid.
-  return UUID_RE.test(id)
+  // Anything else is a container: a bare channel uuid, or since FOL-16 a bare
+  // file address — the two scopes a message carries on the wire (SPEC §11.1).
+  return UUID_RE.test(id) || ADDRESS_RE.test(id)
 }
 
 /** Serialize for encryption. Sorted keys, so an unchanged set is an unchanged string. */

@@ -43,4 +43,4 @@ export {
   type ForeignConversationState,
   type ForeignChildrenState,
 } from './useForeignConversation'
-export { useConversationCounts } from './useConversationCounts'
+export { useConversationBadges } from './useConversationBadges'

@@ -154,6 +154,13 @@ async function resolveContextId(ctx: QueryCtx | MutationCtx, context: string): P
    * Reported as unresolved rather than folded into the thread watermark —
    * conflating them would advance a whole thread because one message in it was
    * read, which is §11.2's failure in a different direction.
+   *
+   * A **file** context — the bare `<kind>:<pubkey>:<d>` (§11.1, FOL-16) — is
+   * unresolved here by design too. It is the frontier of one file's
+   * conversation, and folding it into the Folder's topic row would let a read
+   * of one issue silently read the team's general chat (§11.3 says the two do
+   * not reach each other). The Folder listing judges files from the relay
+   * frontier directly, so this cache never needs to hold them.
    */
   return null
 }

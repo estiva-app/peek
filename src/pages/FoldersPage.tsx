@@ -10,7 +10,7 @@ import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import {
-  useConversationCounts,
+  useConversationBadges,
   useFolderContents,
   useFolders,
   useForeignConversation,
@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { useToast } from '@/lib/toast'
+import { useMarkFileRead } from '@/lib/useMarkRead'
 
 /**
  * `/folders` and `/folders/:id` — navigation by Folder (RFC 0.4 §4).
@@ -97,6 +98,15 @@ export function FoldersPage() {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const { state: conversation, reload: reloadConversation } = useForeignConversation(openFile?.naddr)
   /*
+    The open file's conversation counts as read after a dwell — and *only* that
+    file's (SPEC §11.1–§11.2, FOL-16). The Folder's channel is not advanced by
+    this page: the person is reading one file's talk, not the team's general
+    chat, and a sibling file in the same Folder stays exactly as unread as it
+    was. Judge it from the listing's dot or `window.__readState.marker(...)`,
+    never by opening the sibling, which would read it.
+  */
+  useMarkFileRead(openFile?.address)
+  /*
     The composer follows the manifest, not the kind. A bare file's built-in
     manifest declares `comment`; so does Ship's for a project and an issue.
     RFC 0.5 §10.7 says Peek is where you talk about any file, and peek#189 left
@@ -106,11 +116,11 @@ export function FoldersPage() {
   const canComment =
     !!openFile?.naddr && (openFile.actions ?? []).some((action) => action.id === 'comment')
   /*
-    One counts request for the whole listing, made here rather than inside the
-    view so the view stays a pure render of what it is handed — and so a folder
-    nobody has opened costs nothing.
+    One request for the whole listing's badges, made here rather than inside
+    the view so the view stays a pure render of what it is handed — and so a
+    folder nobody has opened costs nothing.
   */
-  const counts = useConversationCounts(
+  const { counts, unread } = useConversationBadges(
     // Peers only. A nested child gets its own count when its parent is
     // expanded, so counting it here is a request for a badge nothing draws.
     typeof state === 'object' && 'files' in state ? peersOf(state.files) : undefined,
@@ -321,6 +331,7 @@ export function FoldersPage() {
                 onMove={setMovingFile}
                 onStartTopic={(file) => setStartingTopic({ parent: file })}
                 counts={counts}
+                unread={unread}
               />
             </ScrollArea>
           </div>

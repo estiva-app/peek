@@ -33,7 +33,7 @@
  * Anything without one is skipped rather than published under a Peek-private
  * id, because the blob is grow-only and a bad identifier in it is permanent.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { validToken } from '@/auth/estivaId'
@@ -41,6 +41,7 @@ import { hasConvex } from '@/api/store'
 import type { RelaySeam } from './stars'
 import {
   containerContext,
+  fileContext,
   loadSlotIdentity,
   rotateSlotId,
   threadContext,
@@ -60,6 +61,72 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
  * that blocks the cutover.
  */
 let previousRelayMerge: Record<string, number> | undefined
+
+/*
+ * The frontier as this tab knows it, for a surface that judges unread from the
+ * relay rather than from Convex (FOL-16).
+ *
+ * Peek's own indicators read `readState` in Convex, and the merge is written
+ * into that cache as it arrives — but only for contexts Convex can name, a
+ * topic or a message. A **file's** marker (SPEC §11.1, the bare address) has no
+ * row there, so the Folder listing reads it from here: the last merge over every
+ * slot, advanced by whatever this tab has recorded since, so a file just read
+ * goes quiet without waiting for the next fetch. One module-level store, bumped
+ * where the merge lands and where a marker is recorded, so a page can subscribe
+ * without running a second relay fetch of its own — `ReadStateSync` is the one
+ * place the merge happens, and relay reads are metered.
+ */
+let frontierVersion = 0
+let frontierCache: { version: number; contexts: Record<string, number> } | undefined
+const frontierListeners = new Set<() => void>()
+function frontierChanged(): void {
+  frontierVersion += 1
+  for (const listener of frontierListeners) listener()
+}
+function subscribeFrontier(listener: () => void): () => void {
+  frontierListeners.add(listener)
+  return () => frontierListeners.delete(listener)
+}
+function frontierVersionNow(): number {
+  return frontierVersion
+}
+/** The merge, advanced by this tab's own records — max of the two, never lower. */
+function frontierContexts(): Record<string, number> {
+  if (frontierCache?.version === frontierVersion) return frontierCache.contexts
+  const contexts: Record<string, number> = { ...(previousRelayMerge ?? {}) }
+  for (const [context, at] of Object.entries(queue?.snapshot() ?? {})) {
+    if (contexts[context] === undefined || at > contexts[context]) contexts[context] = at
+  }
+  frontierCache = { version: frontierVersion, contexts }
+  return contexts
+}
+
+/** What a surface reading the relay frontier gets (FOL-16). */
+export interface ReadFrontier {
+  /** One context's marker in unix seconds, or `undefined` for absent. */
+  marker: (context: string | undefined) => number | undefined
+  /** False until the first merge has landed — absent-because-unfetched is not absent. */
+  ready: boolean
+}
+
+/**
+ * The person's read frontier, merged across every installation and advanced by
+ * this tab, for judging unread where Convex has no watermark to offer.
+ *
+ * Re-renders when the merge lands or a marker is recorded; nothing here fetches.
+ */
+export function useReadFrontier(): ReadFrontier {
+  const version = useSyncExternalStore(subscribeFrontier, frontierVersionNow, frontierVersionNow)
+  return useMemo(() => {
+    const contexts = frontierContexts()
+    return {
+      marker: (context: string | undefined) => (context ? contexts[context] : undefined),
+      ready: previousRelayMerge !== undefined,
+    }
+    // `version` is what the store hands out; the contexts are read behind it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version])
+}
 
 /** Facts the diagnostic reports that live outside the queue. */
 let readPathRuns = 0
@@ -159,6 +226,8 @@ export function resetReadStateQueueForTests(): void {
   lastMergeAt = undefined
   lastCacheSize = undefined
   lastDiffSummary = undefined
+  frontierCache = undefined
+  frontierChanged()
 }
 
 /**
@@ -200,6 +269,24 @@ export function recordContainerRead(channelUuid: string | null | undefined, atMs
   const context = containerContext(channelUuid)
   if (!context) return
   ensureQueue().record(context, toContextSeconds(atMs))
+  frontierChanged()
+}
+
+/**
+ * Record that a file's conversation was read, at `atMs` (SPEC §11.1, FOL-16).
+ *
+ * `address` is the file's `<kind>:<pubkey>:<d>`, the `a` its comments carry.
+ * **This must never advance the container either** (§11.2): a person reading
+ * one issue's talk has not read the team's general chat, nor the sibling
+ * issue's — and the channel's marker does not reach a file's stream in the
+ * other direction (§11.3). Same shape as {@link recordThreadRead}: there is
+ * simply no path from here to the container context.
+ */
+export function recordFileRead(address: string | null | undefined, atMs: number): void {
+  const context = fileContext(address)
+  if (!context) return
+  ensureQueue().record(context, toContextSeconds(atMs))
+  frontierChanged()
 }
 
 /**
@@ -215,6 +302,7 @@ export function recordThreadRead(rootEventId: string | null | undefined, atMs: n
   const context = threadContext(rootEventId)
   if (!context) return
   ensureQueue().record(context, toContextSeconds(atMs))
+  frontierChanged()
 }
 
 /** Publish anything pending now. Exposed for tests and for the tab-hidden flush. */
@@ -380,6 +468,7 @@ export function useMergedReadState(): MergedReadStateView {
         setReadStateDiff(report)
       }
       previousRelayMerge = state.merged
+      frontierChanged()
 
       setReady(true)
     } catch (error) {

@@ -61,7 +61,8 @@ import {
   type PeopleFn,
   type ResolvedAction,
   type QueryFn,
-  conversationCountsOf,
+  type ConversationMessage,
+  conversationsOf,
 } from '@estiva-app/interop'
 
 export interface ActResult {
@@ -524,20 +525,24 @@ export async function resolveFolderContentsAsViewer(
 }
 
 /**
- * How many messages each of these files' conversations holds.
+ * What each of these files' conversations holds — when, who, which thread.
  *
  * Separate from the folder read on purpose. `resolveFolderContents` is flat in
  * the number of files and stays that way; this is one more request, made only
- * where a count is actually going to be drawn, and it is the caller's choice to
+ * where a badge is actually going to be drawn, and it is the caller's choice to
  * spend it. Bundling it in would have charged every surface that lists files —
  * the sidebar included — for a badge only the folder view shows.
+ *
+ * The messages rather than a count (FOL-16): a count says whether a file is
+ * worth opening, and whether it is *new* needs each message's time, author and
+ * thread against the person's read frontier. One request either way.
  */
-export async function conversationCountsAsViewer(
+export async function conversationsAsViewer(
   files: ForeignObject[],
   relayUrl: string,
   token: StoredToken,
-): Promise<Record<string, number>> {
-  return conversationCountsOf(files, viewerQuery(relayUrl, token))
+): Promise<Record<string, ConversationMessage[]>> {
+  return conversationsOf(files, viewerQuery(relayUrl, token))
 }
 
 /**

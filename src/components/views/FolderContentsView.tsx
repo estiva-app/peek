@@ -9,11 +9,12 @@ import {
 import { CONVERSATION_LIMIT } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { useConversationCounts, useForeignChildren } from '@/api'
+import { useConversationBadges, useForeignChildren } from '@/api'
 import { ForeignObjectCard } from '@/components/ui/ForeignObjectWidget'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { IconButton } from '@/components/ui/IconButton'
+import { UnreadDot } from '@/components/ui/UnreadDot'
 
 /**
  * One Folder, and everything in it — RFC 0.4 §4 and §5.
@@ -48,6 +49,7 @@ export function FolderContentsView({
   onMove,
   onStartTopic,
   counts,
+  unread,
 }: {
   state: FolderContentsState
   /** `ref` of the file whose conversation is open, if any. */
@@ -60,9 +62,15 @@ export function FolderContentsView({
   onStartTopic?: (file: ForeignObject) => void
   /**
    * Message count per file `ref`. A **missing** entry draws no badge; it means
-   * nobody asked, which is not the same as none — see `useConversationCounts`.
+   * nobody asked, which is not the same as none — see `useConversationBadges`.
    */
   counts?: Record<string, number>
+  /**
+   * Whether each file's conversation holds something the viewer has not read,
+   * per `ref` — judged against the **file's own** marker, never the Folder's
+   * (SPEC §11.1–§11.3, FOL-16). Missing means not judged, and draws nothing.
+   */
+  unread?: Record<string, boolean>
 }) {
   if (state === 'loading') {
     return (
@@ -120,6 +128,7 @@ export function FolderContentsView({
           file={file}
           listed={folder.files}
           counts={counts}
+          unread={unread}
           selectedRef={selectedRef}
           onSelect={onSelect}
           onMove={onMove}
@@ -220,6 +229,7 @@ function FileRow({
   file,
   listed = [],
   counts,
+  unread,
   selectedRef,
   onSelect,
   onMove,
@@ -230,6 +240,7 @@ function FileRow({
   /** The whole listing, so a row can find the listed files that name it. */
   listed?: ForeignObject[]
   counts?: Record<string, number>
+  unread?: Record<string, boolean>
   selectedRef?: string
   onSelect?: (file: ForeignObject) => void
   onMove?: (file: ForeignObject) => void
@@ -281,6 +292,14 @@ function FileRow({
           so the chevron, the title and these all start on one line.
         */}
         <div className="flex shrink-0 items-center gap-1 pt-1">
+        {/*
+          Something new in *this file's* conversation — SPEC §11.1–§11.3,
+          FOL-16. Its own marker decides, so the dot on an issue outlives
+          somebody reading the Folder's general chat and goes out only when this
+          file's talk was read, here or in Ship. The button's name carries the
+          word, since the disc says nothing to a screen reader.
+        */}
+        {unread?.[file.ref] && <UnreadDot />}
         <ConversationCount count={counts?.[file.ref]} />
         {/*
           Peek's aspect of this file, on request — RFC 0.5 §10.2.
@@ -298,11 +317,14 @@ function FileRow({
         */}
         {onSelect && file.naddr && (
           <IconButton
-            aria-label={
+            aria-label={[
               counts?.[file.ref]
                 ? `Conversation about ${title}, ${counts[file.ref]} messages`
-                : `Conversation about ${title}`
-            }
+                : `Conversation about ${title}`,
+              unread?.[file.ref] ? 'unread' : undefined,
+            ]
+              .filter(Boolean)
+              .join(', ')}
             tooltip="Conversation"
             aria-current={file.ref === selectedRef ? true : undefined}
             onClick={() => onSelect(file)}
@@ -366,6 +388,7 @@ function FileRow({
               file={child}
               listed={listed}
               counts={counts}
+              unread={unread}
               selectedRef={selectedRef}
               onSelect={onSelect}
               onStartTopic={onStartTopic}
@@ -403,7 +426,7 @@ function ChildRows({
   const { state } = useForeignChildren(naddr)
   const drawn = new Set(exclude.map((file) => file.ref))
   const children = Array.isArray(state) ? state.filter((child) => !drawn.has(child.ref)) : []
-  const counts = useConversationCounts(Array.isArray(state) ? state : undefined)
+  const { counts, unread } = useConversationBadges(Array.isArray(state) ? state : undefined)
 
   if (state === 'loading') return <SkeletonRow />
   /*
@@ -436,6 +459,7 @@ function ChildRows({
           key={child.ref}
           file={child}
           counts={counts}
+          unread={unread}
           selectedRef={selectedRef}
           onSelect={onSelect}
           onStartTopic={onStartTopic}
