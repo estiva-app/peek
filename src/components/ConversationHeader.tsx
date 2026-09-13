@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import type { ReactNode } from 'react'
 import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare, IconLayoutSidebarRight, IconLayoutSidebarRightFilled } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'

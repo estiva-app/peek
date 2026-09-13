@@ -438,8 +438,11 @@ export function ThreadReplyCard({
             <div className="flex items-start gap-2">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} className="shrink-0 mt-1" />
               {/* `relative` so the highlight picker hangs off this box, the
-                  way it hangs off the composer's. */}
-              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4">
+                  way it hangs off the composer's. The focus ring is
+                  ConversationCard's edit box's, which this one lacked: typing
+                  here drew no ring where typing there and in the composer
+                  does (Katerina, 2026-09-13, D66). */}
+              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
                 <div className={cn('relative min-h-[20px] transition-all', (editHasUrgent || editHasHighlight) && 'border-l-[4px] border-border-strong pl-2')}>
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}

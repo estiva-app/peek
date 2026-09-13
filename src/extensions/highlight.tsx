@@ -2,6 +2,8 @@ import { Node, type Editor } from '@tiptap/core'
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
+import { INLINE_CHIP_CLASSES, INLINE_CHIP_STYLE, INLINE_CHIP_STYLE_ATTR } from '@/components/ui/inlineChip'
+import { cn } from '@/lib/utils'
 
 /**
  * HighlightTag - an inline atom node inserted at the start of a message
@@ -22,12 +24,12 @@ function HighlightTagView({ node }: NodeViewProps) {
   return (
     <NodeViewWrapper
       as="span"
-      className="inline-flex items-center gap-1 rounded-sm px-1 text-body-2 font-medium select-none cursor-pointer"
+      // The one inline chip (D67), in the highlight's own colour and weight.
+      className={cn(INLINE_CHIP_CLASSES, 'font-medium cursor-pointer')}
       style={{
+        ...INLINE_CHIP_STYLE,
         backgroundColor: `color-mix(in srgb, ${meta.color} 13%, transparent)`,
         color: meta.color,
-        verticalAlign: 'text-bottom',
-        height: '1.4em',
       }}
       onClick={handleClick}
       contentEditable={false}
@@ -61,7 +63,8 @@ export const HighlightTag = Node.create({
       {
         'data-highlight-tag': 'true',
         'data-type': node.attrs.highlightType,
-        class: 'inline-flex items-center gap-1 rounded-sm px-1 text-sm font-medium select-none',
+        class: cn(INLINE_CHIP_CLASSES, 'font-medium'),
+        style: INLINE_CHIP_STYLE_ATTR,
       },
       node.attrs.highlightType,
     ]
