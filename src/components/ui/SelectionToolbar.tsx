@@ -265,10 +265,13 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
         if (!next) commit()
       }}
       ariaLabel="Text formatting"
-      // The panel gives up its column and its padding; the strip inside draws
-      // the row. This is the package's own `Popover/FromASelection` story,
-      // class for class.
-      className="w-auto min-w-0 p-1"
+      // The panel gives up its column; the strip inside draws the row. The 4px
+      // around it is `contentClassName`'s: on `className` it was added to the
+      // package's 8px from 0.12.6 on, and the toolbar grew 8px a side
+      // (Katerina, 2026-09-13; migration docs D68, Finding 60). This is the
+      // package's own `Popover/A toolbar` story, class for class.
+      className="w-auto min-w-0"
+      contentClassName="p-1"
     >
       {mode === 'link' ? (
         /* One field, so no strip: a toolbar of one control is a toolbar in

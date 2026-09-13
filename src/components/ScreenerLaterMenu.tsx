@@ -25,7 +25,10 @@ export function ScreenerLaterMenu({ onPick }: { onPick: (untilMs: number) => voi
   return (
     <Menu
       trigger={<Button variant="outlined" size="small">Later</Button>}
-      className="min-w-[160px] p-1"
+      className="min-w-[160px]"
+      // The 4px is the rows' content's; on `className` it added to the
+      // package's 8px from 0.12.6 on (migration docs D68, Finding 60).
+      contentClassName="p-1"
     >
       {/* No heights here. This menu forced `h-9 px-3` on its rows and
           `h-7 px-3` on its heading, and was the only menu in Peek doing it —
