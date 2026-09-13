@@ -35,6 +35,7 @@ import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
 import { HighlightPill } from './ui/HighlightPill'
 import { MessageBody } from './ui/MessageBody'
+import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { useTopicPath } from '@/lib/useTopicPath'
 import { useEditAttachments } from '@/lib/useEditAttachments'
@@ -646,11 +647,7 @@ export function ConversationCard({
               <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
               {highlightState && <HighlightPill type={highlightState} />}
             </div>
-            {hasNewMessage && !isUrgent && (
-              <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                <div className="w-1.5 h-1.5 rounded-full bg-accent-primary" />
-              </div>
-            )}
+            {hasNewMessage && !isUrgent && <UnreadDot />}
             {hasNewMessage && isUrgent && (
               <div className="w-6 h-6 flex items-center justify-center shrink-0">
                 <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-glow-warning">

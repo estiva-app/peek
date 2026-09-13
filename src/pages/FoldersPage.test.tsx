@@ -8,11 +8,12 @@
  * fix on this side; the tests pin that the page reads it, writes it, and does
  * not invent a pane for a file it cannot see.
  */
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
+import { READ_DWELL_MS } from '@/api'
 import { FoldersPage } from './FoldersPage'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -41,8 +42,23 @@ const topic: ForeignObject = {
   conversation still loading.
 */
 const relay = vi.hoisted(() => ({ files: [] as unknown[] }))
+/*
+  The read-state writers, spied — FOL-16. What the page must do is mark the
+  open file's own stream after a dwell, and what it must never do is mark the
+  Folder's channel, so both are recorded and one is asserted absent.
+*/
+const marks = vi.hoisted(() => ({
+  file: vi.fn<(address: string | null | undefined) => void>(),
+  container: vi.fn<(kind: string, key: string) => void>(),
+  thread: vi.fn<(key: string) => void>(),
+}))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  useReadActions: () => ({
+    markFileRead: marks.file,
+    markContainerRead: marks.container,
+    markThreadRead: marks.thread,
+  }),
   useFolders: () => ({
     folders: [{ id: FOLDER, name: 'Folders', hasState: true }],
     signedOut: false,
@@ -55,7 +71,7 @@ vi.mock('@/api', async () => ({
   useForeignObjects: () => ({}),
   useForeignConversation: () => ({ state: 'loading', reload: async () => {} }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
-  useConversationCounts: () => ({}),
+  useConversationBadges: () => ({ counts: {}, unread: {} }),
   useWorkspaceDirectory: () => undefined,
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
@@ -121,5 +137,57 @@ describe('FoldersPage opens the file the URL names', () => {
     expect(screen.queryByRole('button', { name: 'Close conversation' })).not.toBeInTheDocument()
     expect(screen.getByTestId('url')).toHaveTextContent(`/folders/${FOLDER}`)
     expect(screen.getByTestId('url')).not.toHaveTextContent('file=')
+  })
+})
+
+/*
+  Reading one file's conversation reads that file — SPEC §11.1–§11.2, FOL-16.
+  The Folder's channel is not advanced here, ever: a person reading one issue's
+  talk has not read the team's general chat, and a sibling issue in the same
+  Folder must stay exactly as unread as it was.
+*/
+describe('FoldersPage marks the open file read, and only the file', () => {
+  beforeEach(() => {
+    marks.file.mockClear()
+    marks.container.mockClear()
+    marks.thread.mockClear()
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("advances the file's own address after the dwell, and never the Folder's channel", () => {
+    relay.files = [topic]
+    mount(`/folders/${FOLDER}?file=${encodeURIComponent(FILE_ADDRESS)}`)
+    expect(marks.file).not.toHaveBeenCalled()
+    act(() => {
+      vi.advanceTimersByTime(READ_DWELL_MS)
+    })
+    expect(marks.file).toHaveBeenCalledTimes(1)
+    expect(marks.file).toHaveBeenCalledWith(FILE_ADDRESS)
+    expect(marks.container).not.toHaveBeenCalled()
+    expect(marks.thread).not.toHaveBeenCalled()
+  })
+
+  it('marks nothing when no pane is open — a listing is not a reading', () => {
+    relay.files = [topic]
+    mount(`/folders/${FOLDER}`)
+    act(() => {
+      vi.advanceTimersByTime(READ_DWELL_MS * 2)
+    })
+    expect(marks.file).not.toHaveBeenCalled()
+    expect(marks.container).not.toHaveBeenCalled()
+  })
+
+  it('marks nothing when the pane closes before the dwell', () => {
+    relay.files = [topic]
+    mount(`/folders/${FOLDER}?file=${encodeURIComponent(FILE_ADDRESS)}`)
+    // A plain DOM click: `userEvent` waits on real timers, which are faked here.
+    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }))
+    act(() => {
+      vi.advanceTimersByTime(READ_DWELL_MS * 2)
+    })
+    expect(marks.file).not.toHaveBeenCalled()
   })
 })

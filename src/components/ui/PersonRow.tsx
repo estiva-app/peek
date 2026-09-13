@@ -3,6 +3,7 @@ import { IconDotsVertical, IconAlertSquareRounded, IconX } from '@tabler/icons-r
 import { TopicState, type TopicStateType, type TopicStateStatus } from './TopicState'
 import { IconButton } from './IconButton'
 import { TopicMoreMenu } from './TopicMoreMenu'
+import { UnreadDot } from './UnreadDot'
 import { cn } from '@/lib/utils'
 import { useAvatarSrc } from '@/api'
 
@@ -140,9 +141,7 @@ export function PersonRow({
           </div>
         </div>
       ) : isUnread ? (
-        <div className="w-6 h-6 flex items-center justify-center shrink-0">
-          <div className="w-1.5 h-1.5 rounded-full bg-accent-primary" />
-        </div>
+        <UnreadDot />
       ) : null}
 
     </div>

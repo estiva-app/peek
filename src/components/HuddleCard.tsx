@@ -14,6 +14,7 @@ import { ConfirmDelete } from './ConfirmDelete'
 import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
+import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
 import { useReplyCount, useReplyMeta, type Huddle } from '@/api'
@@ -219,11 +220,7 @@ export function HuddleCard({
                 ? `${huddle.lastActivity}, ${huddle.conversation.timestamp}`
                 : huddle.lastActivity}
           </span>
-          {inStream && hasNewMessage && !isUrgent && (
-            <div className="w-6 h-6 flex items-center justify-center shrink-0 ml-auto">
-              <div className="w-1.5 h-1.5 rounded-full bg-accent-primary" />
-            </div>
-          )}
+          {inStream && hasNewMessage && !isUrgent && <UnreadDot className="ml-auto" />}
           {inStream && hasNewMessage && isUrgent && (
             <div className="w-6 h-6 flex items-center justify-center shrink-0 ml-auto">
               <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-glow-warning">

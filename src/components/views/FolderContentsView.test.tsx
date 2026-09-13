@@ -24,7 +24,7 @@ const children = vi.hoisted(() => ({ state: [] as unknown }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   useForeignChildren: () => ({ state: children.state, reload: async () => {} }),
-  useConversationCounts: () => ({}),
+  useConversationBadges: () => ({ counts: {}, unread: {} }),
 }))
 
 const file = (over: Partial<ForeignObject>): ForeignObject =>
@@ -183,6 +183,43 @@ describe('how many messages a file holds', () => {
     )
     expect(
       screen.getByRole('button', { name: /Conversation about Payments, 12 messages/ }),
+    ).toBeInTheDocument()
+  })
+})
+
+/*
+  Per file, and per file only — SPEC §11.1–§11.3, FOL-16. The view is handed
+  the judgement; what it must not do is invent one, and what it must do is say
+  it where a screen reader can hear it.
+*/
+describe('something new in a file', () => {
+  const project = file({ ref: 'proj', slots: { title: { value: 'Payments' } } })
+  const issue = file({ ref: 'iss', address: 'b', slots: { title: { value: 'Login fails' } } })
+
+  it('draws the dot on the file that has something new and not on its sibling', () => {
+    const { container } = render(
+      <FolderContentsView state={folder([project, issue])} unread={{ proj: true, iss: false }} />,
+    )
+    expect(container.querySelector('[data-file="proj"] [data-unread]')).not.toBeNull()
+    expect(container.querySelector('[data-file="iss"] [data-unread]')).toBeNull()
+  })
+
+  it('draws nothing when nobody judged, which is not the same as nothing new', () => {
+    const { container } = render(<FolderContentsView state={folder([project])} />)
+    expect(container.querySelector('[data-unread]')).toBeNull()
+  })
+
+  it("says 'unread' in the conversation control's name, since the disc says nothing aloud", () => {
+    render(
+      <FolderContentsView
+        state={folder([project])}
+        counts={{ proj: 3 }}
+        unread={{ proj: true }}
+        onSelect={() => {}}
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Conversation about Payments, 3 messages, unread' }),
     ).toBeInTheDocument()
   })
 })

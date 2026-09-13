@@ -32,6 +32,7 @@ import { HIGHLIGHT_META, type HighlightType } from '@/api'
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
 import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
+import { UnreadDot } from './ui/UnreadDot'
 
 // ── Reply More Menu ──
 
@@ -510,11 +511,7 @@ export function ThreadReplyCard({
                 )}
                 {highlightState && <HighlightPill type={highlightState} />}
               </div>
-              {isNew && !isUrgent && (
-                <div className="w-6 h-6 flex items-center justify-center shrink-0">
-                  <div className="w-1.5 h-1.5 rounded-full bg-accent-primary" />
-                </div>
-              )}
+              {isNew && !isUrgent && <UnreadDot />}
               {isNew && isUrgent && (
                 <div className="w-6 h-6 flex items-center justify-center shrink-0">
                   <div className="flex items-center p-0.5 rounded-full bg-warning-muted signal:shadow-glow-warning">
