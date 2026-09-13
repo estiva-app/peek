@@ -25,7 +25,7 @@ export default function define(h) {
       { ref: "UIG-2", title: "The tracking rails — GATES.md, the status script, the guide committed", owner: false, checks: [
         { what: "npm run gates:status is wired", run: () => h.script("package.json", "gates:status") },
       ] },
-      { ref: "UIG-3", title: "Tracer bullet — one lint rule, end to end, blocking in Peek", owner: true, checks: [
+      { ref: "UIG-3", title: "Tracer bullet — one rule, end to end, blocking in Peek", owner: true, checks: [
         { what: "the gate lint config loads", run: () => h.loads(GATES) },
         { what: "package.json has lint:rules", run: () => h.script("package.json", "lint:rules") },
         { what: "CI runs lint:rules", run: () => h.ci("lint:rules") },
