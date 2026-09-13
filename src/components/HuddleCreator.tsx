@@ -1,11 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { Kbd } from '@estiva-app/ui'
-import { IconX } from '@tabler/icons-react'
-import { MenuItem } from '@estiva-app/ui'
-import { Avatar } from './ui/Avatar'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
-import { usePeople } from '@/api'
-import { cn } from '@/lib/utils'
+import { PersonChipInput } from './ui/PersonChipInput'
+import { type Person } from '@/api'
 
 interface HuddleCreatorProps {
   /** Topic the huddle is being started in — drives the compose box's context label. */
@@ -21,40 +18,28 @@ interface HuddleCreatorProps {
  *  its recipient/query state and closes itself on Escape or an outside click. */
 export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorProps) {
   const rootRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [recipients, setRecipients] = useState<string[]>([])
-  const [query, setQuery] = useState('')
-  const [focused, setFocused] = useState(false)
-  const [suggestionIndex, setSuggestionIndex] = useState(0)
+  /*
+   * The recipients are the shared people picker's now (ADOPTION P14, stage 5,
+   * 2026-09-13) — the same `PersonChipInput` the Members and New topic dialogs
+   * use, on the package's `ChipInput`. This file used to rebuild all of it:
+   * its own chips, its own input, its own list with its own arrow keys and
+   * Enter, and a blur timeout to keep a click on a row from closing the list.
+   * `onCreate` still receives names, so nothing upstream changes.
+   */
+  const [recipients, setRecipients] = useState<Person[]>([])
 
   // Ref so the once-mounted outside-click/Escape listener always sees the latest onCancel.
   const onCancelRef = useRef(onCancel)
   onCancelRef.current = onCancel
 
-  const addRecipient = (name: string) => {
-    if (!recipients.includes(name)) setRecipients((prev) => [...prev, name])
-    setQuery('')
-    setSuggestionIndex(0)
-    // Re-focus the To: input so the user can keep typing more people without re-clicking.
-    setTimeout(() => inputRef.current?.focus(), 0)
-  }
-  const removeRecipient = (name: string) => setRecipients((prev) => prev.filter((n) => n !== name))
-
-  const people = usePeople() ?? []
-  const suggestions = people.filter(
-    (p) => !recipients.includes(p.name) && p.name.toLowerCase().includes(query.toLowerCase())
-  )
-
-  // Keep the To: input focused whenever the recipient list changes.
-  useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 0)
-    return () => clearTimeout(t)
-  }, [recipients.length])
-
   // Close on outside click or Escape.
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (rootRef.current?.contains(e.target as Node)) return
+      // The picker's suggestion list is portalled to the body, so a click on a
+      // person lands outside this component's box — and must not read as a
+      // click away from the huddle.
+      if ((e.target as Element | null)?.closest?.('[role="listbox"]')) return
       onCancelRef.current()
     }
     const handleKey = (e: KeyboardEvent) => {
@@ -69,7 +54,7 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
   }, [])
 
   const handleSend = ({ text }: SendPayload) => {
-    if (text) onCreate(recipients, text)
+    if (text) onCreate(recipients.map((p) => p.name), text)
   }
 
   return (
@@ -77,59 +62,8 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
       <div className="relative">
         <div className="flex items-center gap-2 px-3 py-2 bg-bg-elevated border border-border-default rounded-t-lg">
           <span className="text-caption text-text-muted shrink-0">To:</span>
-          <div className="flex-1 flex items-center gap-1 flex-wrap min-h-[24px]">
-            {recipients.map((name) => (
-              <span
-                key={name}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-accent-muted text-text-primary text-body-2 rounded-sm"
-              >
-                {name}
-                <button
-                  onClick={() => removeRecipient(name)}
-                  className="text-text-muted hover:text-text-primary cursor-pointer"
-                >
-                  <IconX size={12} stroke={1.5} />
-                </button>
-              </span>
-            ))}
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                // Reset highlight when the query changes — list contents are now different.
-                setSuggestionIndex(0)
-              }}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setTimeout(() => {
-                // Only mark unfocused if the input genuinely lost focus. Without
-                // this guard, briefly stealing focus on click + immediately refocusing
-                // would still trigger setFocused(false) 150ms later, closing the dropdown.
-                if (document.activeElement !== inputRef.current) {
-                  setFocused(false)
-                }
-              }, 150)}
-              onKeyDown={(e) => {
-                if (suggestions.length === 0) return
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault()
-                  setSuggestionIndex((i) => (i + 1) % suggestions.length)
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  setSuggestionIndex((i) => (i - 1 + suggestions.length) % suggestions.length)
-                } else if (e.key === 'Enter') {
-                  const pick = suggestions[suggestionIndex]
-                  if (pick) {
-                    e.preventDefault()
-                    addRecipient(pick.name)
-                  }
-                }
-              }}
-              placeholder={recipients.length === 0 ? 'Add people...' : 'Add more...'}
-              autoFocus
-              className="flex-1 min-w-[80px] bg-transparent text-body-2 text-text-primary placeholder:text-text-muted outline-none"
-            />
+          <div className="flex-1 min-w-0">
+            <PersonChipInput value={recipients} onChange={setRecipients} placeholder="Add people..." autoFocus />
           </div>
           <button
             onClick={onCancel}
@@ -139,26 +73,6 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
             <Kbd>Esc</Kbd>
           </button>
         </div>
-        {focused && suggestions.length > 0 && (
-          <div className="absolute left-0 right-0 bottom-full mb-1 bg-bg-elevated border border-border-default rounded-lg shadow-md py-1 max-h-[200px] overflow-y-auto z-50">
-            {suggestions.map((person, i) => (
-              <MenuItem
-                key={person.id}
-                className="rounded-none gap-2 px-3"
-                selected={i === suggestionIndex}
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setSuggestionIndex(i)}
-                onClick={() => addRecipient(person.name)}
-              >
-                <Avatar size={24} name={person.name} alt={person.name} />
-                <div className="flex flex-col items-start">
-                  <span className="text-body-2 text-text-primary">{person.name}</span>
-                  <span className="text-caption text-text-muted">{person.role}</span>
-                </div>
-              </MenuItem>
-            ))}
-          </div>
-        )}
       </div>
       {recipients.length === 0 ? (
         // Mirror ComposeBox's outer dimensions (p-3 + min-h-[20px] editor row + gap-4 +
