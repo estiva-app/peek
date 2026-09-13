@@ -81,7 +81,9 @@ describe('Peek renders a live object-creating action as a form (PRO-4)', () => {
     await userEvent.type(screen.getByRole('textbox'), 'Billing entry')
     // The shared Select is a button and a portalled menu, not a native <select>.
     await userEvent.click(screen.getByLabelText('Project'))
-    await userEvent.click(await screen.findByText('Projection layer'))
+    // By role: text also finds the option in the list before it has opened
+    // (see `createIssue` in CommandLauncher.live.test.tsx).
+    await userEvent.click(await screen.findByRole('option', { name: 'Projection layer' }))
 
     const submit = screen.getByRole('button', { name: /create issue/i })
     expect(submit).toBeEnabled()

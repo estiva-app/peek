@@ -126,7 +126,15 @@ async function createIssue(title = 'Billing entry') {
   await userEvent.click(await screen.findByText('Add issue'))
   await userEvent.type(screen.getByRole('textbox'), title)
   await userEvent.click(screen.getByLabelText('Project'))
-  await userEvent.click(await screen.findByText('Projection layer'))
+  /*
+    By role, not by text. Focusing the trigger puts Base UI's list in the page
+    at once, but a mouse press opens it one animation frame later; until then
+    the list is `hidden` and `pointer-events: none`. A text query finds the
+    option inside that closed list, and when the click lands before the frame
+    user-event refuses it — the "pointer-events: none" flake. A role query
+    skips hidden elements, so it waits for the list to be open.
+  */
+  await userEvent.click(await screen.findByRole('option', { name: 'Projection layer' }))
   // Exact, because the chip that leaves the form is also "…Add issue".
   await userEvent.click(screen.getByRole('button', { name: 'Add issue' }))
 }

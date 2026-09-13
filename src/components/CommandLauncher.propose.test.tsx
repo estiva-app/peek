@@ -327,7 +327,9 @@ describe('the model proposes; a person creates', () => {
 
     await userEvent.type(await screen.findByLabelText(/species/i), 'Kingfisher')
     await userEvent.click(screen.getByLabelText(/parent/i))
-    await userEvent.click(await screen.findByText('Weir colony'))
+    // By role: text also finds the option in the list before it has opened
+    // (see `createIssue` in CommandLauncher.live.test.tsx).
+    await userEvent.click(await screen.findByRole('option', { name: 'Weir colony' }))
     await userEvent.click(screen.getByRole('button', { name: 'Log a sighting' }))
 
     expect(applyAction).toHaveBeenCalledTimes(1)
