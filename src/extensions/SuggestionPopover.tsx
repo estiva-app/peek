@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Popover } from '@estiva-app/ui'
 
 /**
@@ -49,6 +49,7 @@ export function SuggestionPopover({
   width,
   maxHeight,
   ariaLabel,
+  editorElement,
   children,
 }: {
   /** The caret's rect, from the suggestion plugin's `clientRect()`. */
@@ -73,8 +74,60 @@ export function SuggestionPopover({
    */
   maxHeight: string
   ariaLabel: string
+  /**
+   * The editor's own element (`editor.view.dom`) — the text the person is
+   * typing into, which is what a screen reader has focus on. Absent in a
+   * story that draws the popup without an editor.
+   */
+  editorElement?: HTMLElement | null
   children: ReactNode
 }) {
+  const listboxId = useId()
+  const [list, setList] = useState<HTMLDivElement | null>(null)
+
+  /*
+   * **The popup is a listbox, and the editor is the field it completes**
+   * (ADOPTION P28, stage 5, 2026-09-13).
+   *
+   * These are not `Combobox`es: the text being completed is ProseMirror, not
+   * an `<input>`, and Tiptap's suggestion plugin owns the keyboard. So the
+   * pattern Base UI's `Combobox` builds is wired here by hand, once, for all
+   * four popups: the list is `role="listbox"`, each row is an `option`, and
+   * the editor is told three things while the popup is open — that it
+   * completes into a list (`aria-autocomplete`), which list
+   * (`aria-controls`), and which row is active (`aria-activedescendant`).
+   * Focus never leaves the text, which is the whole point.
+   *
+   * The menus only mark their rows: `role="option"`, an id, and
+   * `aria-selected` on the highlighted one. This shell watches for that
+   * attribute and moves `aria-activedescendant` to follow it, so the three
+   * menus keep their highlight wherever they already kept it — in a wrapper's
+   * state or their own — and none of them has to know the editor exists.
+   *
+   * Everything is removed again when the popup closes; an editor left saying
+   * it controls a list that is gone would be worse than saying nothing.
+   */
+  useEffect(() => {
+    if (!editorElement || !list) return
+    editorElement.setAttribute('aria-autocomplete', 'list')
+    editorElement.setAttribute('aria-haspopup', 'listbox')
+    editorElement.setAttribute('aria-controls', listboxId)
+    const follow = () => {
+      const active = list.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')
+      if (active?.id) editorElement.setAttribute('aria-activedescendant', active.id)
+      else editorElement.removeAttribute('aria-activedescendant')
+    }
+    follow()
+    const observer = new MutationObserver(follow)
+    observer.observe(list, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-selected'] })
+    return () => {
+      observer.disconnect()
+      for (const name of ['aria-autocomplete', 'aria-haspopup', 'aria-controls', 'aria-activedescendant']) {
+        editorElement.removeAttribute(name)
+      }
+    }
+  }, [editorElement, list, listboxId])
+
   if (!rect) return null
   return (
     <Popover
@@ -86,7 +139,10 @@ export function SuggestionPopover({
       maxHeight={maxHeight}
       ariaLabel={ariaLabel}
     >
-      {children}
+      {/* `flex flex-col`, as the content box it sits in, so no row moves. */}
+      <div ref={setList} id={listboxId} role="listbox" aria-label={ariaLabel} className="flex flex-col">
+        {children}
+      </div>
     </Popover>
   )
 }

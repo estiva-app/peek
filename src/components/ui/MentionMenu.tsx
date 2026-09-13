@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useId } from 'react'
 import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
 import { Avatar } from './Avatar'
 import { type Person } from '@/api'
@@ -29,14 +29,26 @@ export function MentionMenu({
   const scrollRef = useCallback((el: HTMLElement | null) => {
     el?.scrollIntoView({ block: 'nearest' })
   }, [])
+  const base = useId()
 
   if (people.length === 0) return null
 
+  const section = isUrgent ? 'Urgent mention' : 'People'
+  /* A row is an `option` in the popup's listbox (P28): an id for the editor's
+   `aria-activedescendant` to point at, `aria-selected` on the highlighted one,
+   and `tabIndex={-1}` because focus stays in the text — the row is reached by
+   the arrow keys through the editor, never by Tab. `SuggestionPopover` does
+   the rest. */
   return (
-    <MenuSection label={isUrgent ? 'Urgent mention' : 'People'} className="px-3 py-1">
+    <div role="group" aria-label={section}>
+    <MenuSection label={section} className="px-3 py-1">
           {people.map((person, i) => (
             <MenuItem
               key={person.id}
+              role="option"
+              id={`${base}-${i}`}
+              aria-selected={i === highlight}
+              tabIndex={-1}
               size="tall"
               ref={i === highlight ? scrollRef : undefined}
               leading={<Avatar size={32} alt={person.name} />}
@@ -52,5 +64,6 @@ export function MentionMenu({
             />
           ))}
     </MenuSection>
+    </div>
   )
 }

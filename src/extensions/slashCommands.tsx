@@ -52,6 +52,7 @@ const SlashListWrapper = forwardRef<SlashMenuRef, SuggestionProps<SlashItem>>((p
       width={MENU_WIDTH}
       maxHeight={MENU_MAX_HEIGHT}
       ariaLabel="Commands"
+      editorElement={props.editor.view.dom}
     >
       <SlashMenu ref={menuRef} items={props.items} onSelect={(item) => props.command(item)} />
     </SuggestionPopover>
