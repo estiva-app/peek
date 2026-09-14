@@ -128,6 +128,8 @@ vi.mock('@/api', async () => ({
   useFileThreads: () => ({ state: threads.state, reload: threads.reload }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useTeamUnread: () => ({ unread: {} }),
+  // The tree's "Open folder" asks whether a Folder is one of Peek's topics.
+  useTopics: () => [],
   useWorkspaceDirectory: () => undefined,
   useIsTopicResolved: () => () => false,
   useResolvedReferences: () => ({}),
