@@ -49,6 +49,7 @@ import {
   buildActionEvent,
   folderOf,
   createPeopleCache,
+  createProjectionCache,
   resolveFolderProject,
   resolveFolderContents,
   listFolders,
@@ -118,6 +119,24 @@ const profiles = createPeopleCache()
 const cachedPeople = (query: QueryFn): PeopleFn => profiles.viaRelay(query)
 
 /**
+ * Manifests already resolved this session — interop's `ProjectionCache`, owned
+ * here because interop refuses to own it ("invisible global state"), and at
+ * module scope for the reason `profiles` is: the tree, the listing and every
+ * widget in a conversation ask about the same three apps.
+ *
+ * Nothing in Peek passed one until FOL-21 measured the Folder tree against
+ * production: opening a fold cost 13 `POST /query` and expanding a project row
+ * 8, cold and warm identical, because every resolve re-fetched each app's
+ * manifest — two POSTs per app, per call — against a meter of 300 a minute
+ * (`scripts/probe-fol21-tree-cost.ts`). With this, the same fold is 3 and the
+ * same row 2. Only the manifest is remembered, for interop's five minutes: the
+ * object, its changes, its comments and its children are what a refresh
+ * exists to notice. Cleared with the URL shapes after a manifest is
+ * republished, which is the one moment a remembered manifest is wrong.
+ */
+const manifests = createProjectionCache()
+
+/**
  * Resolve a `nostr:naddr…` into a renderable widget.
  *
  * `null` when it cannot be resolved — a broken reference in a message degrades
@@ -142,6 +161,7 @@ let shapesPromise: Promise<ReturnType<typeof urlPatternsOf>> | null = null
 /** Forget the cached shapes — for tests, and after a manifest is republished. */
 export function forgetUrlShapes(): void {
   shapesPromise = null
+  manifests.clear()
 }
 
 async function urlShapes(query: QueryFn) {
@@ -210,7 +230,7 @@ export async function resolveObjectAsViewer(
     if (/^https?:\/\//i.test(reference)) {
       const address = await addressFromUrlAsViewer(reference, relayUrl, token)
       if (!address) return null
-      return await resolveForeignObject(address, query, cachedPeople(query))
+      return await resolveForeignObject(address, query, cachedPeople(query), 0, manifests)
     }
     /*
       A message is an event, not an address (RIC-11).
@@ -225,9 +245,9 @@ export async function resolveObjectAsViewer(
       already resolves a reference resolves a message with no further wiring.
     */
     if (isEventReference(reference)) {
-      return await resolveForeignEvent(reference, query, cachedPeople(query))
+      return await resolveForeignEvent(reference, query, cachedPeople(query), manifests)
     }
-    return await resolveForeignObject(reference, query, cachedPeople(query))
+    return await resolveForeignObject(reference, query, cachedPeople(query), 0, manifests)
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error
@@ -283,7 +303,7 @@ export async function resolveFolderProjectAsViewer(
   token: StoredToken,
 ): Promise<FolderProject | null> {
   const query = viewerQuery(relayUrl, token)
-  return resolveFolderProject(folder, query, cachedPeople(query))
+  return resolveFolderProject(folder, query, cachedPeople(query), 0, manifests)
 }
 
 /**
@@ -526,7 +546,7 @@ export async function resolveFolderContentsAsViewer(
   token: StoredToken,
 ): Promise<FolderContents> {
   const query = viewerQuery(relayUrl, token)
-  return resolveFolderContents(folder, query, cachedPeople(query))
+  return resolveFolderContents(folder, query, cachedPeople(query), manifests)
 }
 
 /**
@@ -547,7 +567,7 @@ export async function conversationsAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<Record<string, ConversationMessage[]>> {
-  return conversationsOf(files, viewerQuery(relayUrl, token))
+  return conversationsOf(files, viewerQuery(relayUrl, token), manifests)
 }
 
 /** One message of a file's conversation, with enough of it to draw and to reply to. */
@@ -620,7 +640,7 @@ export async function threadsAsViewer(
     return empty
   }
   const query = viewerQuery(relayUrl, token)
-  const resolved = await resolveManifest(pointer, query)
+  const resolved = await resolveManifest(pointer, query, manifests)
   if (!resolved) return empty
   const kinds = commentKindsOf(resolved.manifest)
   if (kinds.length === 0) return empty
@@ -866,7 +886,7 @@ export async function creatableUnderAsViewer(
     const address = pointerToAddress({ kind: root.kind, pubkey: root.pubkey, identifier, relays: [] })
     if (!actions) {
       // The one resolve. Its projection is the kind's, not this object's.
-      const object = await resolveForeignObject(address, query, people)
+      const object = await resolveForeignObject(address, query, people, 0, manifests)
       if (!object) continue
       actions = object.actions.filter((a) => a.control === 'form')
       parents.push({ address, title: object.slots.title?.value ?? identifier })
@@ -934,7 +954,7 @@ export async function applyActionAsViewer(
   const address = pointerToAddress(pointer)
   const query = viewerQuery(relayUrl, token)
 
-  const resolved = await resolveManifest(pointer, query)
+  const resolved = await resolveManifest(pointer, query, manifests)
   if (!resolved) return fail('No app claims this kind, so there is nothing to act on.')
 
   // The Folder has to come off the object itself: it is required on the event

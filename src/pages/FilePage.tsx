@@ -3,25 +3,20 @@ import { IconArrowUpRight, IconX } from '@tabler/icons-react'
 import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
-import { PersonRow } from '@/components/ui/PersonRow'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { IconButton } from '@/components/ui/IconButton'
 import { CommentComposer } from '@/components/ui/CommentComposer'
-import { FileTreeView } from '@/components/views/FileTreeView'
+import { FolderTree } from '@/components/views/FolderTree'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
 import {
   useFileThreads,
-  useFolderContents,
-  useFolders,
   useForeignConversation,
   useForeignObjects,
-  useTeamUnread,
   useWorkspaceDirectory,
 } from '@/api'
 import { useToast } from '@/lib/toast'
-import { addressFromRef, filePath } from '@/lib/objectUrl'
+import { addressFromRef } from '@/lib/objectUrl'
 import { useMarkFileRead } from '@/lib/useMarkRead'
 import { KIND_TOPIC } from '@/nostr/foreign'
 
@@ -99,27 +94,6 @@ export function FilePage() {
     a dot for a file the person never saw.
   */
   useMarkFileRead(file?.address)
-
-  /*
-    The navigation: every Folder, with the one this file lives in opened to its
-    contents. The Folder comes off the resolved file rather than the URL, which
-    is what lets a bare address open in a fresh tab with the left pane in the
-    right place — §7.2's property, one level up: the identity in the link is
-    enough, and nothing else has to be carried.
-  */
-  const { folders, signedOut } = useFolders()
-  const { state: contents } = useFolderContents(file?.folder)
-  const { unread: teamUnread } = useTeamUnread(folders)
-  const listed = typeof contents === 'object' && 'files' in contents ? contents.files : undefined
-  /*
-    The row to open so this file is visible: the listed file this one names as
-    its parent. `peersOf` hides a child whose parent is listed, so without this
-    a Ship issue would be in the Folder and drawn nowhere — which is the same
-    shape of gap the route itself was opened for.
-  */
-  const parentRow = file?.parentRef
-    ? listed?.find((candidate) => candidate.address === file.parentRef)
-    : undefined
 
   /*
     Which thread is open, in the URL rather than in state, so a thread is a
@@ -204,65 +178,22 @@ export function FilePage() {
   return (
     <AppShell
       leftPanel={
-        <div className="flex h-full flex-col">
-          <ContainerHeader title="Folders" />
-          {/*
-            The list scrolls, and it is the package's bar (D40). Same column and
-            same insets as the Folders page's, because it is the same navigation
-            — what differs is that the Folder holding this file is opened in
-            place rather than in a second pane.
-
-            The list column of a three-column page, so its empties are sections
-            (D51): the line alone, left, no icon. Loading is a skeleton (§4.7).
-          */}
-          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
-            {signedOut ? (
-              <EmptyState scope="section" message="Sign in to see folders." />
-            ) : folders === null ? (
-              <SkeletonSidebarList />
-            ) : folders.length === 0 ? (
-              <EmptyState scope="section" message="No folders yet." />
-            ) : (
-              folders.map((folder) => (
-                <div key={folder.id}>
-                  <PersonRow
-                    name={folder.name ?? folder.id}
-                    type="folder"
-                    /* `=== true`: an unjudged Folder draws no dot, not a dark one. */
-                    isUnread={teamUnread[folder.id] === true}
-                    isSelected={folder.id === file?.folder}
-                    onClick={() => navigate(`/folders/${folder.id}`)}
-                  />
-                  {/*
-                    Only this file's Folder is opened, and only one level of it.
-                    Every Folder expanded would be one read per row — eighty-one
-                    of them on today's workspace — and the whole tree is FOL-21's
-                    to design. What this page owes is the path to the file it is
-                    showing.
-                  */}
-                  {/*
-                    Rows, not cards: the Topics list's row, indented under its
-                    Folder, so the column stays a tree. `FolderContentsView`
-                    was here first and wrapped a project's whole card into a
-                    290px tower (Miky, 2026-09-14).
-                  */}
-                  {folder.id === file?.folder && (
-                    <div className="pl-2">
-                      <FileTreeView
-                        state={contents}
-                        selectedRef={file.ref}
-                        expand={parentRow ? [parentRow.ref] : undefined}
-                        onSelect={(next) => {
-                          if (next.address) navigate(filePath(next.address))
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </ScrollArea>
-        </div>
+        /*
+          The navigation: the Folder tree (FOL-21), opened to the Folder this
+          file lives in and to the row it sits under. Both come off the
+          resolved file rather than the URL, which is what lets a bare address
+          open in a fresh tab with the left pane in the right place — §7.2's
+          property, one level up: the identity in the link is enough, and
+          nothing else has to be carried. `selectedParent` is the file this one
+          names as its parent: `peersOf` hides a child whose parent is listed,
+          so without it a Ship issue would be in the Folder and drawn nowhere —
+          the same shape of gap the route itself was opened for.
+        */
+        <FolderTree
+          currentFolder={file?.folder}
+          selectedRef={file?.ref}
+          selectedParent={file?.parentRef}
+        />
       }
       rightPanel={
         <div className="flex h-full flex-col">

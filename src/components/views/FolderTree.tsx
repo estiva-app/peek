@@ -1,0 +1,247 @@
+import { useNavigate } from 'react-router-dom'
+import { IconArrowUpRight } from '@tabler/icons-react'
+import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
+import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
+import { useFolderContents, useFolders, useTeamUnread } from '@/api'
+import { ContainerHeader } from '@/components/ContainerHeader'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { SkeletonSidebarList } from '@/components/ui/Skeleton'
+import { UnreadDot } from '@/components/ui/UnreadDot'
+import { FileTreeView } from '@/components/views/FileTreeView'
+import { filePath } from '@/lib/objectUrl'
+import { useRememberedOpen } from '@/lib/rememberedOpen'
+import { useFolderPath } from '@/lib/useFolderPath'
+
+/**
+ * The left column: the Folders the person is in, each a fold over its first
+ * level — FOL-21, the visible payoff of v1.
+ *
+ * **This replaces "Your topics / Other topics".** The column used to be a flat
+ * list of Peek's own conversations, split by membership; it is now the
+ * navigation for the whole suite, and a Peek topic appears in it only by what
+ * it is on the relay — a Folder, until FOL-22 sorts the twenty-five into teams
+ * and files. Nothing here knows what a topic is, and nothing here knows what
+ * Ship is: a Folder is a section, a file is a row, and which app owns the file
+ * is the row's glyph.
+ *
+ * ## What is read, and when
+ *
+ * The list of Folders, once (`useFolders`, one `POST /query`), and one batched
+ * read for every Folder's union dot (`useTeamUnread`, FOL-18 — two POSTs for
+ * all of production's 162). **Nothing else until a fold opens.** An open
+ * Folder reads its first level (`useFolderContents`, two POSTs) and its rows'
+ * dots (one more); a row with a chevron reads its children when it is
+ * expanded and never before (`FileTreeView` → `useForeignChildren`, **one
+ * POST**, and one for the children's dots). The first Folder or row of a
+ * session that meets an app pays for that app's manifest on top — that is the
+ * seam's `ProjectionCache`, which this ticket's measurement made Peek start
+ * passing: without it a fold was 13 POSTs and a row 8, warm or cold. Measured
+ * against production by `scripts/probe-fol21-tree-cost.ts`; the seam-level
+ * half — that nothing is *asked* before the fold or the row opens — is
+ * `FolderTree.test.tsx`. This is why the union dot exists: the tree hides
+ * things, so it must say when something hidden is new.
+ *
+ * ## Which folds are open
+ *
+ * Only the Folder holding the open page, by default — 162 Folders open at
+ * once would be the whole minute's relay budget on every cold load. The
+ * default is live and the person's choice beats it (`useRememberedOpen`), so a
+ * Folder somebody opened stays open across reloads and one they closed stays
+ * closed whatever is selected inside it, which is `CollapsibleSection`'s own
+ * ruling.
+ *
+ * ## Sections, not rows, for the Folders
+ *
+ * A Folder is a `CollapsibleSection` — the package's group-of-rows, the same
+ * thing Ship's sidebar makes of its projects and Linear's of its teams — so
+ * its title toggles and its rows are the files. Opening the Folder *itself* is
+ * the header's action; where that leads is `useFolderPath`'s decision. Until
+ * FOL-22 a topic is a Folder, so opening a topic is that action rather than a
+ * click on a row, and the open topic has no highlighted row — its section is
+ * the open one. Both go away when topics become files.
+ */
+export function FolderTree({
+  currentFolder,
+  selectedRef,
+  selectedParent,
+  onNewTopic,
+}: {
+  /** The Folder holding the open page. Its section starts open. */
+  currentFolder?: string | null
+  /** `ref` of the open file, whose row is current. */
+  selectedRef?: string
+  /**
+   * The address the open file names as its parent, so the row it is under
+   * starts expanded and the file is visible in the tree — a Ship issue is its
+   * project's child, and `peersOf` hides a child whose parent is listed.
+   */
+  selectedParent?: string | null
+  /** Offered in the header when the page can start a topic. */
+  onNewTopic?: () => void
+}) {
+  const navigate = useNavigate()
+  const { folders, signedOut } = useFolders()
+  const { unread } = useTeamUnread(folders)
+  const folderPath = useFolderPath()
+
+  return (
+    <div className="flex h-full flex-col">
+      <ContainerHeader
+        title="Folders"
+        prop1stAction={!!onNewTopic}
+        prop1stActionTooltip="New topic"
+        onProp1stAction={onNewTopic}
+      />
+      {/*
+        The list scrolls, and it is the package's bar (D40). Same column and
+        same insets as every other list column in Peek. The list column of a
+        three-column page, so its empties are sections (D51): the line alone,
+        left, no icon. Loading is a skeleton (§4.7).
+      */}
+      <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
+        <FolderTreeView
+          folders={folders}
+          signedOut={signedOut}
+          unread={unread}
+          currentFolder={currentFolder}
+          selectedRef={selectedRef}
+          selectedParent={selectedParent}
+          onSelect={(file) => {
+            if (file.address) navigate(filePath(file.address))
+          }}
+          onOpenFolder={(id) => navigate(folderPath(id))}
+        />
+      </ScrollArea>
+    </div>
+  )
+}
+
+/** The column's body, handed what it draws — the part a story can show. */
+export function FolderTreeView({
+  folders,
+  signedOut,
+  unread,
+  currentFolder,
+  selectedRef,
+  selectedParent,
+  onSelect,
+  onOpenFolder,
+}: {
+  /** `null` while the first read is in flight, or when signed out. */
+  folders: FolderSummary[] | null
+  signedOut: boolean
+  /** The union dot per Folder id (FOL-18). Missing means unjudged. */
+  unread: Record<string, boolean>
+  currentFolder?: string | null
+  selectedRef?: string
+  selectedParent?: string | null
+  onSelect: (file: ForeignObject) => void
+  onOpenFolder: (folderId: string) => void
+}) {
+  /*
+    Three states, not two: "not signed in", "still loading" and "there are
+    genuinely none" are different sentences — the Folders page's lesson.
+  */
+  if (signedOut) return <EmptyState scope="section" message="Sign in to see folders." />
+  if (folders === null) return <SkeletonSidebarList />
+  if (folders.length === 0) return <EmptyState scope="section" message="No folders yet." />
+
+  // Alphabetical, as the topic list was. The relay's order is arrival order,
+  // which tells the person nothing.
+  const ordered = [...folders].sort((a, b) =>
+    (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }),
+  )
+
+  return (
+    <>
+      {ordered.map((folder) => (
+        <FolderSection
+          key={folder.id}
+          folder={folder}
+          /* `=== true`: an unjudged Folder draws no dot, not a dark one. */
+          unread={unread[folder.id] === true}
+          current={folder.id === currentFolder}
+          selectedRef={selectedRef}
+          selectedParent={selectedParent}
+          onSelect={onSelect}
+          onOpen={() => onOpenFolder(folder.id)}
+        />
+      ))}
+    </>
+  )
+}
+
+/** One Folder: a fold, and its first level once it is open. */
+function FolderSection({
+  folder,
+  unread,
+  current,
+  selectedRef,
+  selectedParent,
+  onSelect,
+  onOpen,
+}: {
+  folder: FolderSummary
+  unread: boolean
+  current: boolean
+  selectedRef?: string
+  selectedParent?: string | null
+  onSelect: (file: ForeignObject) => void
+  onOpen: () => void
+}) {
+  const [open, setOpen] = useRememberedOpen(`peek.tree.folder.${folder.id}`, current)
+  /*
+    The read is the fold. `null` while closed is the hook's "nothing to read"
+    — no request, no refresh trigger, no socket subscription — so a Folder
+    nobody opened costs the column nothing beyond its dot.
+  */
+  const { state } = useFolderContents(open ? folder.id : null)
+  const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
+  const parentRow = selectedParent
+    ? listed?.find((candidate) => candidate.address === selectedParent)
+    : undefined
+
+  return (
+    <div className="shrink-0" data-tree-folder={folder.id} data-open={open}>
+      <CollapsibleSection
+        /*
+          The id when there is no name. A Folder with no state event has only
+          its channel's name, and a channel created by an app rather than a
+          person may carry none — the ordinary case on today's data.
+        */
+        title={folder.name ?? folder.id}
+        open={open}
+        onOpenChange={setOpen}
+        /*
+          The union dot in the slot for a count: information rather than an
+          affordance, so it does not come and go with the hover. A collapsed
+          Folder hides its rows, and this is what says one of them is new.
+        */
+        trailing={unread ? <UnreadDot /> : undefined}
+        actions={[
+          {
+            icon: <IconArrowUpRight size={16} stroke={1.5} />,
+            tooltip: 'Open folder',
+            onClick: onOpen,
+          },
+        ]}
+        contentClassName="pl-2"
+      >
+        {/*
+          Rows only while open. The section keeps its panel mounted while
+          closed so find-in-page can reach into it, but a closed Folder has
+          nothing read, so there would be nothing to find — only a skeleton
+          per Folder, 147 of them, hidden.
+        */}
+        {open && (
+          <FileTreeView
+            state={state}
+            selectedRef={selectedRef}
+            expand={parentRow ? [parentRow.ref] : undefined}
+            onSelect={onSelect}
+          />
+        )}
+      </CollapsibleSection>
+    </div>
+  )
+}
