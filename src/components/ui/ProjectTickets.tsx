@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link, ProgressBar } from '@estiva-app/ui'
 import { EmptyState } from './EmptyState'
 import { IconChevronRight } from '@tabler/icons-react'
 import type { ForeignObject, ResolvedSlot } from '@estiva-app/interop'
@@ -12,26 +13,15 @@ import { cn } from '@/lib/utils'
  * "how is this project going" is the question somebody opens a project with.
  * Rides the same line as the count and stays deliberately quiet: two hairlines
  * of muted colour, no legend, no percentage. It is a glance, not a chart.
+ *
+ * The package's ProgressBar, its `quiet` look (UIG-27): 4px by Katerina's
+ * ruling of 14 September, where this bar was 3px.
  */
 function Progress({ done, open }: { done: number; open: number }) {
   const total = done + open
   if (total === 0) return null
 
-  return (
-    <div
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={done}
-      aria-label={`${done} of ${total} tickets done`}
-      className="h-[3px] flex-1 overflow-hidden rounded-full bg-bg-inset"
-    >
-      <div
-        className="h-full rounded-full bg-success-muted transition-[width] duration-300"
-        style={{ width: `${Math.round((done / total) * 100)}%` }}
-      />
-    </div>
-  )
+  return <ProgressBar value={done} max={total} label={`${done} of ${total} tickets done`} variant="quiet" className="flex-1" />
 }
 
 /**
@@ -114,8 +104,12 @@ export function ProjectTickets({
 
       {expanded &&
         (tickets.length === 0 ? (
-          /* A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1). */
-          <EmptyState scope="section" className="border-t border-border-subtle px-3 py-2" message="No tickets in this project yet." />
+          /* A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1). Level
+             with the rows' words (Katerina, 2026-09-14): each row's cell pads
+             itself, so the line takes that inset here, never on EmptyState. */
+          <div className="border-t border-border-subtle px-3 py-2">
+            <EmptyState scope="section" message="No tickets in this project yet." />
+          </div>
         ) : (
           <table className="w-full table-fixed border-t border-border-subtle text-caption">
             <tbody>
@@ -151,14 +145,14 @@ export function ProjectTickets({
                       </span>
                     )}
                     {ticket.openUrl ? (
-                      <a
+                      <Link
                         href={ticket.openUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        variant="plain"
+                        external
                         className="text-text-secondary transition-colors after:absolute after:inset-0 group-hover:text-text-primary group-hover:underline"
                       >
                         {ticket.slots.title?.value ?? 'Untitled'}
-                      </a>
+                      </Link>
                     ) : (
                       <span className="text-text-secondary">
                         {ticket.slots.title?.value ?? 'Untitled'}

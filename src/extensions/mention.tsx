@@ -11,7 +11,7 @@ import { mentionMessages, topicAddress } from '@/api/mentions'
 import { previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
 import { MentionMenu } from '@/components/ui/MentionMenu'
-import { INLINE_CHIP_STYLE, INLINE_CHIP_STYLE_ATTR, inlineChipClassName } from '@/components/ui/inlineChip'
+import { inlineChipClassName } from '@estiva-app/ui'
 import { FilesMenu, type FilesMenuRef } from '@/components/ui/FilesMenu'
 import { filterFilesItems, type FilesMenuItem } from '@/components/ui/filesMenuItems'
 import { SuggestionPopover } from './SuggestionPopover'
@@ -231,8 +231,7 @@ export const PeekMention = Mention.extend({
         'data-mention': 'true',
         'data-id': node.attrs.id,
         // No node view, so this spec is what the editor draws: the one chip (D67).
-        class: inlineChipClassName('mention', 'cursor-default'),
-        style: INLINE_CHIP_STYLE_ATTR,
+        class: inlineChipClassName('person', 'cursor-default'),
       },
       `@${node.attrs.label}`,
     ]
@@ -272,7 +271,6 @@ export const UrgentMention = Mention.extend({
         'data-id': node.attrs.id,
         // No node view, so this spec is what the editor draws: the one chip (D67).
         class: inlineChipClassName('urgent', 'cursor-default'),
-        style: INLINE_CHIP_STYLE_ATTR,
       },
       `@${node.attrs.label}`,
     ]
@@ -368,7 +366,7 @@ function TopicMentionView({ node }: NodeViewProps) {
   const isTopicResolved = useIsTopicResolved()
   const liveResolved = id ? isTopicResolved(String(id)) : isResolved
   return (
-    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')} style={INLINE_CHIP_STYLE}>
+    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')}>
       <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0">
         {liveResolved ? (
           <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
@@ -411,7 +409,6 @@ export const TopicMention = Mention.extend({
         'data-topic-mention': 'true',
         'data-id': node.attrs.id,
         class: inlineChipClassName('neutral', 'cursor-default'),
-        style: INLINE_CHIP_STYLE_ATTR,
       },
       `[${node.attrs.label}]`,
     ]
@@ -502,7 +499,7 @@ export const TopicMention = Mention.extend({
 function MessageMentionView({ node }: NodeViewProps) {
   const { label, snippet } = node.attrs
   return (
-    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')} style={{ ...INLINE_CHIP_STYLE, maxWidth: '24ch' }}>
+    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')} style={{ maxWidth: '24ch' }}>
       <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
         <IconMessage size={14} stroke={1.5} />
       </span>
@@ -546,7 +543,6 @@ export const MessageMention = Mention.extend({
         'data-message-mention': 'true',
         'data-id': node.attrs.id,
         class: inlineChipClassName('neutral', 'cursor-default'),
-        style: INLINE_CHIP_STYLE_ATTR,
       },
       node.attrs.snippet ? `${node.attrs.label}: ${node.attrs.snippet}` : node.attrs.label,
     ]
@@ -582,7 +578,7 @@ function FileMentionView({ node }: NodeViewProps) {
   const { label, app } = node.attrs
   const TablerIcon = FILE_TABLER_ICONS[app] ?? IconFile
   return (
-    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')} style={INLINE_CHIP_STYLE}>
+    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')}>
       <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
         <TablerIcon size={14} stroke={1.5} />
       </span>
@@ -614,7 +610,6 @@ export const FileMention = Mention.extend({
         'data-id': node.attrs.id,
         'data-app': node.attrs.app,
         class: inlineChipClassName('neutral', 'cursor-default'),
-        style: INLINE_CHIP_STYLE_ATTR,
       },
       `[${node.attrs.label}]`,
     ]

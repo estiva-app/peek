@@ -2,7 +2,7 @@ import { Node, type Editor } from '@tiptap/core'
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
-import { INLINE_CHIP_CLASSES, INLINE_CHIP_STYLE, INLINE_CHIP_STYLE_ATTR } from '@/components/ui/inlineChip'
+import { INLINE_CHIP_CLASSES } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 
 /**
@@ -27,7 +27,6 @@ function HighlightTagView({ node }: NodeViewProps) {
       // The one inline chip (D67), in the highlight's own colour and weight.
       className={cn(INLINE_CHIP_CLASSES, 'font-medium cursor-pointer')}
       style={{
-        ...INLINE_CHIP_STYLE,
         backgroundColor: `color-mix(in srgb, ${meta.color} 13%, transparent)`,
         color: meta.color,
       }}
@@ -64,7 +63,6 @@ export const HighlightTag = Node.create({
         'data-highlight-tag': 'true',
         'data-type': node.attrs.highlightType,
         class: cn(INLINE_CHIP_CLASSES, 'font-medium'),
-        style: INLINE_CHIP_STYLE_ATTR,
       },
       node.attrs.highlightType,
     ]

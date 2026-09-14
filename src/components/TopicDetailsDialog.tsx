@@ -16,7 +16,7 @@ import { Person } from './ui/Person'
 import { ProjectTickets } from './ui/ProjectTickets'
 import { StatusPill } from './ui/ForeignObjectWidget'
 import { TextInput } from './ui/TextInput'
-import { FieldLine } from '@estiva-app/ui'
+import { Card, FieldLine } from '@estiva-app/ui'
 
 /**
  * Everything a topic is, and the one place its name can be changed (PEE-2).
@@ -251,7 +251,7 @@ export function TopicDetailsDialogView({
             * tickets accordion with its counter and bar. It is the same project
             * either way — showing it two ways would only invite them to drift.
             */}
-          <div className="rounded-lg border border-border-subtle">
+          <Card fill="none">
             <div className="flex flex-col gap-2 px-3 py-2.5">
               <span className="min-w-0 truncate text-body-2 font-semibold text-text-primary">
                 {folderProject.project.slots.title?.value ?? 'Untitled'}
@@ -287,7 +287,7 @@ export function TopicDetailsDialogView({
               openCount={folderProject.openCount}
               doneCount={folderProject.doneCount}
             />
-          </div>
+          </Card>
         </Section>
       )}
 

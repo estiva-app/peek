@@ -16,6 +16,9 @@ import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { IconButton } from '@/components/ui/IconButton'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 
+/** The box the rows live in, written once: the rows, or the line that says why there are none. */
+const ROWS = 'flex flex-col gap-2 p-4'
+
 /**
  * One Folder, and everything in it — RFC 0.4 §4 and §5.
  *
@@ -96,16 +99,25 @@ export function FolderContentsView({
     ambiguity PEE-10 exists to remove. The same trap is here, one level up.
   */
   if ('failed' in state) {
-    return <EmptyState scope="section" className="p-4" message="This folder could not be read." />
+    return (
+      <div className={ROWS}>
+        <EmptyState scope="section" message="This folder could not be read." />
+      </div>
+    )
   }
 
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <EmptyState scope="section" className="p-4" message="Nothing in this folder yet." />
+    // Where the first row would be: in the rows' box, never padded itself (Katerina, 2026-09-14).
+    return (
+      <div className={ROWS}>
+        <EmptyState scope="section" message="Nothing in this folder yet." />
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col gap-2 p-4" data-folder={folder.id} data-source={folder.source}>
+    <div className={ROWS} data-folder={folder.id} data-source={folder.source}>
       {/*
         Said out loud, because the two are not equivalent and a short list is
         the only visible symptom. Containment by `h` lists an app's records and

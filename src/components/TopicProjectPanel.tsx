@@ -7,7 +7,7 @@ import type { FolderProjectState } from '@/api/useFolderProject'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { FieldLine, ScrollArea } from '@estiva-app/ui'
+import { Card, FieldLine, Link, ScrollArea } from '@estiva-app/ui'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
 import { Person } from '@/components/ui/Person'
@@ -41,6 +41,9 @@ import { cn } from '@/lib/utils'
  * the whole column, and the two layouts stopped being the same thing the moment
  * this one grew a properties list and a ticket table.
  */
+
+/** The panel's own padding, written once: the project card and an empty line both sit in it. */
+const PANEL_INSET = 'p-3'
 
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
@@ -207,8 +210,11 @@ export function TopicProjectPanelView({
     return (
       <PanelShell>
         {/* A section of the page is empty, not the page: the line alone,
-            left, no icon (B18, D41), in the panel's own padding. */}
-        <EmptyState scope="section" className="p-3" message={describeRelayFailure(folderProject.failed)} />
+            left, no icon (B18, D41), in the panel's own padding — never its
+            own (Katerina, 2026-09-14). */}
+        <div className={PANEL_INSET}>
+          <EmptyState scope="section" message={describeRelayFailure(folderProject.failed)} />
+        </div>
       </PanelShell>
     )
   }
@@ -216,7 +222,9 @@ export function TopicProjectPanelView({
   if (folderProject === null) {
     return (
       <PanelShell>
-        <EmptyState scope="section" className="p-3" message="No project linked to this topic." />
+        <div className={PANEL_INSET}>
+          <EmptyState scope="section" message="No project linked to this topic." />
+        </div>
       </PanelShell>
     )
   }
@@ -226,7 +234,7 @@ export function TopicProjectPanelView({
 
   return (
     <PanelShell>
-      <ScrollArea className="flex-1" contentClassName="p-3">
+      <ScrollArea className="flex-1" contentClassName={PANEL_INSET}>
         {/* No fill, deliberately (Katerina, 2026-08-19). The reference widget
             takes one because it sits in a conversation among attachments; this
             card already has a panel of its own around it, and a second surface
@@ -235,19 +243,19 @@ export function TopicProjectPanelView({
             It carried `bg-surface-raised`, which is not a token this app
             defines — so it always rendered unfilled. Dropped rather than kept,
             since a class that emits nothing is a claim the file cannot back. */}
-        <div className="rounded-lg border border-border-subtle">
+        <Card fill="none">
           <div className="flex flex-col gap-2 p-3">
             {/* Full width, and the only way into Linear-lite from here — a
                 separate "open in app" link was the same destination twice. */}
             {project.openUrl ? (
-              <a
+              <Link
                 href={project.openUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block truncate text-body-2 font-semibold text-text-primary hover:underline"
+                variant="quiet"
+                external
+                className="block truncate text-body-2 font-semibold text-text-primary"
               >
                 {project.slots.title?.value ?? 'Untitled project'}
-              </a>
+              </Link>
             ) : (
               <span className="block truncate text-body-2 font-semibold text-text-primary">
                 {project.slots.title?.value ?? 'Untitled project'}
@@ -277,7 +285,7 @@ export function TopicProjectPanelView({
           {/* Tickets live inside the widget: they are part of the project, not a
               second thing in the column beside it. */}
           <ProjectTickets tickets={tickets} openCount={openCount} doneCount={doneCount} />
-        </div>
+        </Card>
 
         {/*
           Activity — CON-9's second list, under the files it is about.

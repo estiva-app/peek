@@ -407,11 +407,11 @@ export function DeskPage() {
                 ui/StarredSection until 2026-09-10 (Peek scan F10). */}
             <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
               {starredEntries.length === 0 ? (
-                <EmptyState
-                  scope="section"
-                  className="px-2 py-1"
-                  message="Favorite the conversations of People or Topics you interact mostly with"
-                />
+                // Level with the rows (Katerina, 2026-09-14): each PersonRow pads itself,
+                // so the line takes a row's inset here, never on EmptyState.
+                <div className="px-2 py-1">
+                  <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
+                </div>
               ) : (
                     starredEntries.map((entry) =>
                       entry.kind === 'dm' ? (

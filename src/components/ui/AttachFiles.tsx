@@ -8,9 +8,8 @@
  */
 import { useRef } from 'react'
 import { IconPaperclip } from '@tabler/icons-react'
-import { ToolbarButton } from '@estiva-app/ui'
-import { PendingAttachmentChip } from './PendingAttachmentChip'
-import { FILE_ACCEPT_ATTR } from '@/lib/fileAttachments'
+import { AttachmentCard, ToolbarButton } from '@estiva-app/ui'
+import { FILE_ACCEPT_ATTR, pendingAttachmentNote } from '@/lib/fileAttachments'
 import { hasConvex } from '@/api'
 import type { EditAttachmentChip } from '@/lib/useEditAttachments'
 
@@ -51,16 +50,15 @@ export function AttachmentChips({ chips }: { chips: EditAttachmentChip[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {chips.map((c) => (
-        <PendingAttachmentChip
+        <AttachmentCard
           key={c.key}
+          pending
           name={c.name}
           size={c.size}
           contentType={c.contentType}
-          status={c.status}
-          error={c.error}
-          shareError={c.shareError}
-          previewUrl={c.previewUrl}
+          src={c.previewUrl}
           onRemove={c.onRemove}
+          {...pendingAttachmentNote(c)}
         />
       ))}
     </div>

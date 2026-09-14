@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
@@ -17,7 +16,8 @@ import {
 } from '@tabler/icons-react'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
-import { AvatarGroup, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { AvatarGroup, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { RouterLink } from './RouterLink'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
@@ -482,40 +482,36 @@ export function ConversationCard({
 
   return (
     <>
-      <div
-        className={cn(
-          'relative rounded-lg transition-colors border',
-          isEditing
-            ? 'bg-bg-selected border-accent-primary'
-            : cn(
-                isSelected
-                  ? 'bg-bg-selected'
-                  : isHovered
-                    ? 'bg-bg-hover'
-                    : 'bg-bg-surface',
-                // Notification borders override the default state border
-                (hasNewMessage || hasNewReply)
-                  ? isUrgent
-                    ? 'border-warning-muted'
-                    : 'border-accent-muted'
-                  : isSelected
-                    ? 'border-border-subtle'
-                    : isHovered
-                      ? 'border-border-default'
-                      : 'border-transparent'
-              ),
-          onClick && !isEditing && 'cursor-pointer',
-          className
-        )}
-        onClick={(e) => {
-          if (!onClick || isEditing) return
-          // Don't open thread when any overlay is active
-          if (moreMenuOpen || showResolveDialog || showTopicDialog || pickerOpen || confirmingDelete) return
-          // Don't open thread when clicking interactive children
-          const target = e.target as HTMLElement
-          if (target.closest('button, [role="button"], [data-interactive]')) return
-          onClick()
-        }}
+      {/*
+        The package's Card (UIG-27): lights up when pointed at, no hairline until
+        then. `hovered` is this card's own state, not the pointer's: it holds
+        while the ⋯ menu or the emoji picker is open, which open outside the
+        card. Being edited is `active`; something new asks for attention in the
+        hairline, and wins over the selected one's.
+      */}
+      <Card
+        fill="surface"
+        hover="fill"
+        quietUntilHover
+        hovered={isHovered}
+        selected={isSelected}
+        active={isEditing}
+        attention={hasNewMessage || hasNewReply ? (isUrgent ? 'warning' : 'accent') : undefined}
+        className={cn('relative', className)}
+        // Only a card that opens something is clicked, and shows the pointer.
+        onClick={
+          onClick
+            ? (e) => {
+                if (isEditing) return
+                // Don't open thread when any overlay is active
+                if (moreMenuOpen || showResolveDialog || showTopicDialog || pickerOpen || confirmingDelete) return
+                // Don't open thread when clicking interactive children
+                const target = e.target as HTMLElement
+                if (target.closest('button, [role="button"], [data-interactive]')) return
+                onClick()
+              }
+            : undefined
+        }
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
           if (pickerOpen || moreMenuOpen) return
@@ -569,14 +565,15 @@ export function ConversationCard({
             </div>
             <div className="flex-1 min-w-0 flex items-center gap-1.5 h-4">
               <span className="text-h5 text-text-secondary shrink-0">Huddle in</span>
-              <Link
-                to={pathForTopic(huddleContext.topicId)}
+              <RouterLink
+                href={pathForTopic(huddleContext.topicId)}
+                variant="quiet"
                 data-interactive
                 onClick={(e) => e.stopPropagation()}
-                className="text-h5 text-text-primary hover:underline truncate"
+                className="text-h5 text-text-primary truncate"
               >
                 {huddleContext.topicTitle}
-              </Link>
+              </RouterLink>
             </div>
           </div>
         )}
@@ -794,7 +791,7 @@ export function ConversationCard({
           </div>
         )}
 
-      </div>
+      </Card>
 
       {confirmingDelete && (
         <ConfirmDelete

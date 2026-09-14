@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
 import { ScrollArea } from '@estiva-app/ui'
+import { RouterLink } from './RouterLink'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
@@ -489,8 +489,9 @@ export function ThreadPanel({
                       "Promoted to" prefix and the date suffix always stay. */}
                   <span className="flex items-center gap-1 min-w-0 whitespace-nowrap">
                     <span className="shrink-0">Promoted to</span>
-                    <Link
-                      to={pathForTopic(promotionDivider.topicId)}
+                    <RouterLink
+                      href={pathForTopic(promotionDivider.topicId)}
+                      variant="quiet"
                       data-interactive
                       onClick={(e) => {
                         e.stopPropagation()
@@ -502,10 +503,10 @@ export function ThreadPanel({
                           promotionDivider.onTopicClick()
                         }
                       }}
-                      className="text-text-primary hover:underline min-w-0 truncate"
+                      className="text-text-primary min-w-0 truncate"
                     >
                       {promotionDivider.topicTitle}
-                    </Link>
+                    </RouterLink>
                     <span className="shrink-0">· {promotionDivider.dateLabel}</span>
                   </span>
                 </span>
