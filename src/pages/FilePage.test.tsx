@@ -265,12 +265,22 @@ describe('FilePage draws every app’s file in the same panes', () => {
     expect(left.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).toBeNull()
   })
 
-  it("the listing's conversation control leads to the other file's address", () => {
+  it("clicking another file's row leads to that file's address", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
-    fireEvent.click(within(topicRow).getByRole('button', { name: /Conversation/ }))
+    fireEvent.click(within(topicRow).getByText('FOL-15 test topic 2'))
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${TOPIC_ADDRESS}`)
+  })
+
+  it('draws the tree as rows, not cards — no widget in the column', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const left = screen.getByTestId('left')
+    // A card would carry the project's status pill and app name; a row is
+    // its title alone, on the Topics list's row.
+    expect(left.querySelector('[data-foreign-object]')).toBeNull()
+    expect(within(left).getByText('Folders: navigation for the whole suite')).toBeInTheDocument()
+    expect(within(left).queryByText('Estiva Ship')).toBeNull()
   })
 })
 
