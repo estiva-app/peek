@@ -9,12 +9,11 @@ import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
 import { IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
-import { Kbd, Toolbar } from '@estiva-app/ui'
+import { AttachmentCard, Kbd, Toolbar } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 import { hasConvex, type HighlightType, type UploadedFile } from '@/api'
-import { pastedImages } from '@/lib/fileAttachments'
+import { pastedImages, pendingAttachmentNote } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
-import { PendingAttachmentChip } from './PendingAttachmentChip'
 import { AttachFileButton } from './AttachFiles'
 import { SelectionToolbar } from './SelectionToolbar'
 import { HighlightButton } from './HighlightButton'
@@ -363,19 +362,18 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         {uploads.files.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {uploads.files.map((f) => (
-              <PendingAttachmentChip
+              <AttachmentCard
                 key={f.localId}
+                pending
                 name={f.name}
                 size={f.size}
                 contentType={f.contentType}
-                status={f.status}
-                error={f.error}
+                src={f.uploaded?.previewUrl}
+                onRemove={() => uploads.remove(f.localId)}
                 // CON-12 — the file uploaded here but not to the relay, so
                 // only Peek can see it. Said before send, while it is still
                 // something the sender can act on.
-                shareError={f.uploaded?.shareError}
-                previewUrl={f.uploaded?.previewUrl}
-                onRemove={() => uploads.remove(f.localId)}
+                {...pendingAttachmentNote({ status: f.status, error: f.error, shareError: f.uploaded?.shareError })}
               />
             ))}
           </div>

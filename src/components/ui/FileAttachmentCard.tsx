@@ -1,23 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  IconFile,
-  IconFileTypePdf,
-  IconFileTypeDocx,
-  IconFileTypeXls,
-  IconFileTypePpt,
-  IconFileTypeCsv,
-  IconFileTypeZip,
-  IconFileTypeTxt,
-  IconJson,
-  IconMarkdown,
-  IconX,
-  IconDownload,
-} from '@tabler/icons-react'
-import { fileExtension, isImageAttachment, formatBytes, fileTypeLabel } from '@/lib/fileAttachments'
+import { IconX } from '@tabler/icons-react'
+import { AttachmentCard } from '@estiva-app/ui'
+import { isImageAttachment } from '@/lib/fileAttachments'
 import type { FileAttachment } from '@/api'
-import { IconButton } from './IconButton'
-import { cn } from '@/lib/utils'
 import { blobObjectUrl } from '@/nostr/media'
 
 /** Force a real save of a (possibly cross-origin) storage file: fetch the
@@ -39,27 +25,6 @@ async function downloadFile(url: string, name: string) {
   } catch {
     window.open(url, '_blank', 'noopener')
   }
-}
-
-const ICON_BY_EXT: Record<string, React.FC<{ size?: number; stroke?: number; className?: string }>> = {
-  pdf: IconFileTypePdf,
-  doc: IconFileTypeDocx,
-  docx: IconFileTypeDocx,
-  xls: IconFileTypeXls,
-  xlsx: IconFileTypeXls,
-  ppt: IconFileTypePpt,
-  pptx: IconFileTypePpt,
-  csv: IconFileTypeCsv,
-  txt: IconFileTypeTxt,
-  rtf: IconFileTypeTxt,
-  zip: IconFileTypeZip,
-  json: IconJson,
-  md: IconMarkdown,
-}
-
-function FileIcon({ name, className }: { name: string; className?: string }) {
-  const Icon = ICON_BY_EXT[fileExtension(name)] ?? IconFile
-  return <Icon size={20} stroke={1.5} className={className} />
 }
 
 /** A simple full-screen viewer for uploaded images (mirrors FrameLightbox). */
@@ -141,6 +106,16 @@ interface FileAttachmentCardProps {
  * and open in a lightbox; other types show a type icon + name + size and open
  * in a new tab (download). `url` is the resolved storage URL; during the
  * optimistic window only `previewUrl` (a local object URL) may exist.
+ *
+ * **The card is the package's `AttachmentCard`** (UIG-27): it draws every
+ * shape and state. What stays here is what only Peek can do — fetching a
+ * relay file with the reader's own authorization, opening an image full
+ * screen, saving a file — handed to the card as `src`, `href`, `state`,
+ * `onOpen` and `onDownload`.
+ *
+ * Every card that can be clicked carries `data-interactive`: the conversation
+ * and huddle cards under it open their thread on a click, and a click on a file
+ * is not that.
  */
 export function FileAttachmentCard({ file, className }: FileAttachmentCardProps) {
   const [lightbox, setLightbox] = useState(false)
@@ -163,39 +138,30 @@ export function FileAttachmentCard({ file, className }: FileAttachmentCardProps)
   const fullHref = local ?? full.url ?? preview.url
   const isImage = isImageAttachment(file.name, file.contentType)
 
-  /** Download control (shared IconButton) — only when the file has a URL.
-   *  Fades in on card hover (or keyboard focus); it keeps its layout slot so
-   *  revealing it never shifts the row. */
-  const downloadButton = href || fromRelay ? (
-    <IconButton
-      variant="muted"
-      tooltip="Download"
-      aria-label={`Download ${file.name}`}
-      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity"
-      onClick={(e) => {
-        e.stopPropagation()
-        /*
-          A relay file downloads the **original**, never the thumbnail that is
-          on screen — `href` may be the thumb. Fetching it here rather than
-          reusing `full` keeps the download off the lightbox's state: someone
-          can save a file they never opened.
-        */
-        if (fromRelay && file.mediaUrl) {
-          // The rejection handler is not decoration: without it a refused read
-          // is an unhandled rejection in the page rather than a download that
-          // did not happen.
-          void blobObjectUrl(file.mediaUrl).then(
-            (resolved) => downloadFile(resolved, file.name),
-            () => {},
-          )
-          return
+  /** Download — only when the file has a URL, or one can be fetched. The card
+   *  fades its control in on hover or keyboard focus. */
+  const download =
+    href || fromRelay
+      ? () => {
+          /*
+            A relay file downloads the **original**, never the thumbnail that is
+            on screen — `href` may be the thumb. Fetching it here rather than
+            reusing `full` keeps the download off the lightbox's state: someone
+            can save a file they never opened.
+          */
+          if (fromRelay && file.mediaUrl) {
+            // The rejection handler is not decoration: without it a refused read
+            // is an unhandled rejection in the page rather than a download that
+            // did not happen.
+            void blobObjectUrl(file.mediaUrl).then(
+              (resolved) => downloadFile(resolved, file.name),
+              () => {},
+            )
+            return
+          }
+          if (href) void downloadFile(href, file.name)
         }
-        if (href) void downloadFile(href, file.name)
-      }}
-    >
-      <IconDownload size={16} stroke={1.5} />
-    </IconButton>
-  ) : null
+      : undefined
 
   /*
     An image from the relay that is not on screen yet, and one that will not be.
@@ -208,105 +174,42 @@ export function FileAttachmentCard({ file, className }: FileAttachmentCardProps)
     which it is not.
   */
   if (isImage && fromRelay && !href) {
-    if (preview.failed) {
-      return (
-        <div
-          data-attachment="unreadable"
-          className={cn(
-            'flex items-center gap-2 w-[240px] rounded-lg border border-border-subtle bg-bg-inset p-1.5 opacity-70',
-            className,
-          )}
-        >
-          <div className="size-9 rounded-md bg-bg-active flex items-center justify-center shrink-0 text-text-secondary">
-            <FileIcon name={file.name} />
-          </div>
-          <div className="flex flex-col gap-[1px] min-w-0 text-left">
-            <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{file.name}</span>
-            <span className="text-[10px] leading-[1.2] text-text-secondary truncate">Could not be loaded</span>
-          </div>
-        </div>
-      )
-    }
-    return (
-      <div
-        data-attachment="loading"
-        aria-busy="true"
-        aria-label={`Loading ${file.name}`}
-        className={cn('w-[180px] h-28 rounded-lg border border-border-subtle bg-bg-inset animate-pulse', className)}
-      />
+    return preview.failed ? (
+      <AttachmentCard data-attachment="unreadable" name={file.name} contentType={file.contentType} state="unreadable" className={className} />
+    ) : (
+      <AttachmentCard data-attachment="loading" name={file.name} contentType={file.contentType} state="loading" className={className} />
     )
   }
 
   if (isImage && href) {
     return (
       <>
-        <div
+        <AttachmentCard
           data-interactive
-          className={cn(
-            'group relative flex flex-col w-[180px] rounded-lg border border-border-subtle overflow-hidden bg-bg-inset hover:border-border-default transition-colors',
-            className,
-          )}
-        >
-          <button
-            type="button"
-            className="block w-full"
-            aria-label={`Preview ${file.name}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              setLightbox(true)
-            }}
-          >
-            <img src={href} alt={file.name} className="w-full h-28 object-cover" />
-          </button>
-          <div className="flex items-center gap-1 pl-2 pr-1 py-1 min-w-0">
-            <span className="flex-1 text-[12px] leading-[1.3] text-text-primary truncate">{file.name}</span>
-            {downloadButton}
-          </div>
-        </div>
+          name={file.name}
+          size={file.size}
+          contentType={file.contentType}
+          src={href}
+          onOpen={() => setLightbox(true)}
+          onDownload={download}
+          className={className}
+        />
         {lightbox && fullHref && <ImageLightbox src={fullHref} alt={file.name} onClose={() => setLightbox(false)} />}
       </>
     )
   }
 
-  // Non-image (or image without a URL yet): a compact file row. The body opens
-  // the file in a new tab (preview); the trailing IconButton downloads it.
-  const body = (
-    <>
-      <div className="size-9 rounded-md bg-bg-active flex items-center justify-center shrink-0 text-text-secondary">
-        <FileIcon name={file.name} />
-      </div>
-      <div className="flex flex-col gap-[1px] min-w-0 text-left">
-        <span className="text-[12px] font-medium leading-[1.3] text-text-primary truncate">{file.name}</span>
-        <span className="text-[10px] leading-[1.2] text-text-secondary truncate">
-          {fileTypeLabel(file.name)} · {formatBytes(file.size)}
-        </span>
-      </div>
-    </>
-  )
-
+  // Non-image (or image without a URL yet): a compact file row. The row opens
+  // the file in a new tab (preview); the download control saves it.
   return (
-    <div
+    <AttachmentCard
       data-interactive
-      className={cn(
-        'group flex items-center gap-2 w-[240px] rounded-lg border border-border-subtle bg-bg-inset p-1.5 pr-1 transition-colors',
-        href ? 'hover:border-border-default' : 'opacity-70',
-        className,
-      )}
-    >
-      {href ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {body}
-        </a>
-      ) : (
-        <div className="flex items-center gap-2 min-w-0 flex-1">{body}</div>
-      )}
-      {downloadButton}
-    </div>
+      name={file.name}
+      size={file.size}
+      contentType={file.contentType}
+      href={href}
+      onDownload={download}
+      className={className}
+    />
   )
 }

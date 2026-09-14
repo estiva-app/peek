@@ -52,6 +52,37 @@ export function fileTypeLabel(name: string): string {
 }
 
 /**
+ * What a file waiting in a composer says, in the terms the package's
+ * `AttachmentCard` takes (`pending`, UIG-27) — the part of the old
+ * `PendingAttachmentChip` that is Peek's own.
+ *
+ * Three states: **uploading**, **ready** (the card shows the size), and
+ * **failed** (why, in place of the size). And one qualifier on ready — CON-12:
+ * a file can upload to Peek and fail to reach the relay. It still sends and
+ * Peek still draws it; what is lost is every **other** reader, which is
+ * invisible from here. Miky posted an image on 2026-09-08 and Ship showed
+ * nothing, because the event reached the relay with no `imeta` and neither app
+ * said so.
+ *
+ * So that case is drawn, in **warning** rather than error: nothing failed for
+ * the person holding this screen. The words name the consequence — other apps
+ * — and the relay's own words ("403 kind_not_allowed") go on hover, where a
+ * maintainer finds them and nobody else has to read them. A real failure wins
+ * over the sharing note, and an upload still in flight says nothing about
+ * sharing yet.
+ */
+export function pendingAttachmentNote(file: { status: 'uploading' | 'done' | 'error'; error?: string; shareError?: string }): {
+  state: 'uploading' | 'ready' | 'failed' | 'warning'
+  note?: string
+  noteHint?: string
+} {
+  if (file.status === 'error') return { state: 'failed', note: file.error }
+  if (file.status === 'uploading') return { state: 'uploading' }
+  if (file.shareError) return { state: 'warning', note: "Other apps won't see this", noteHint: `Not shared with other apps — ${file.shareError}` }
+  return { state: 'ready' }
+}
+
+/**
  * Client-side validation. Returns an error message to surface, or null when
  * the file is acceptable. The server trusts the client here (uploads are
  * viewer-gated) — this is UX, not a security boundary.
