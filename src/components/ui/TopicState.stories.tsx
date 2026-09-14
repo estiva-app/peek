@@ -10,7 +10,7 @@ const meta = {
     status: 'default',
   },
   argTypes: {
-    type: { control: 'inline-radio', options: ['topic', 'DM', 'team', 'group', 'view', 'huddle'] },
+    type: { control: 'inline-radio', options: ['topic', 'DM', 'team', 'group', 'view', 'huddle', 'folder', 'file'] },
     status: { control: 'inline-radio', options: ['unresolved', 'resolved', 'default'] },
   },
 } satisfies Meta<typeof TopicState>
@@ -51,6 +51,8 @@ export const AllTypes: Story = {
           { label: 'group', node: <TopicState type="group" memberCount={4} /> },
           { label: 'view', node: <TopicState type="view" /> },
           { label: 'huddle', node: <TopicState type="huddle" /> },
+          { label: 'folder', node: <TopicState type="folder" /> },
+          { label: 'file', node: <TopicState type="file" /> },
         ] as const
       ).map(({ label, node }) => (
         <div key={label} className="flex flex-col items-center gap-1.5">

@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { IconButton } from '@/components/ui/IconButton'
 import { CommentComposer } from '@/components/ui/CommentComposer'
-import { FolderContentsView } from '@/components/views/FolderContentsView'
+import { FileTreeView } from '@/components/views/FileTreeView'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
 import {
@@ -240,15 +240,23 @@ export function FilePage() {
                     to design. What this page owes is the path to the file it is
                     showing.
                   */}
+                  {/*
+                    Rows, not cards: the Topics list's row, indented under its
+                    Folder, so the column stays a tree. `FolderContentsView`
+                    was here first and wrapped a project's whole card into a
+                    290px tower (Miky, 2026-09-14).
+                  */}
                   {folder.id === file?.folder && (
-                    <FolderContentsView
-                      state={contents}
-                      selectedRef={file.ref}
-                      expand={parentRow ? [parentRow.ref] : undefined}
-                      onSelect={(next) =>
-                        next.address ? navigate(filePath(next.address)) : undefined
-                      }
-                    />
+                    <div className="pl-2">
+                      <FileTreeView
+                        state={contents}
+                        selectedRef={file.ref}
+                        expand={parentRow ? [parentRow.ref] : undefined}
+                        onSelect={(next) => {
+                          if (next.address) navigate(filePath(next.address))
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               ))

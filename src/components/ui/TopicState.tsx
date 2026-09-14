@@ -3,11 +3,11 @@ import {
   IconCircleCheck,
   IconUsers,
   IconBrackets,
-  IconLock, IconFolder,} from '@tabler/icons-react'
+  IconLock, IconFolder, IconFile,} from '@tabler/icons-react'
 import { Avatar } from './Avatar'
 import { cn } from '@/lib/utils'
 
-export type TopicStateType = 'topic' | 'DM' | 'team' | 'group' | 'view' | 'huddle' | 'folder'
+export type TopicStateType = 'topic' | 'DM' | 'team' | 'group' | 'view' | 'huddle' | 'folder' | 'file'
 export type TopicStateStatus = 'unresolved' | 'resolved' | 'default'
 
 interface TopicStateProps {
@@ -54,6 +54,14 @@ export function TopicState({
          */
         type === 'folder' ? (
         <IconFolder size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
+      ) : /*
+           A file another app owns — a Ship project or issue in the file tree
+           (FOL-19). Not the dashed circle: that glyph means "an unresolved
+           topic", and a Ship issue is neither. Peek's own bare file is a topic
+           and keeps the topic glyph; this is for everything else.
+         */
+        type === 'file' ? (
+        <IconFile size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : type === 'huddle' ? (
         <IconLock size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : null}

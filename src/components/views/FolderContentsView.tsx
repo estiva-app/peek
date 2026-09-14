@@ -192,7 +192,7 @@ export function peersOf(files: ForeignObject[]): ForeignObject[] {
  * these objects are resolved already — and a kind nobody has met nests under
  * whatever it names.
  */
-function listedChildrenOf(parent: ForeignObject, files: ForeignObject[]): ForeignObject[] {
+export function listedChildrenOf(parent: ForeignObject, files: ForeignObject[]): ForeignObject[] {
   if (!parent.address) return []
   return files.filter((file) => file.parentRef === parent.address && file.ref !== parent.ref)
 }
