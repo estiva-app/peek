@@ -16,13 +16,19 @@ import { useFolderPath } from '@/lib/useFolderPath'
  * The left column: the Folders the person is in, each a fold over its first
  * level — FOL-21, the visible payoff of v1.
  *
- * **This replaces "Your topics / Other topics".** The column used to be a flat
- * list of Peek's own conversations, split by membership; it is now the
- * navigation for the whole suite, and a Peek topic appears in it only by what
- * it is on the relay — a Folder, until FOL-22 sorts the twenty-five into teams
- * and files. Nothing here knows what a topic is, and nothing here knows what
- * Ship is: a Folder is a section, a file is a row, and which app owns the file
- * is the row's glyph.
+ * **The navigation for the whole suite** — a Peek topic appears in it only by
+ * what it is on the relay: a Folder, until FOL-22 sorts the twenty-five into
+ * teams and files. Nothing here knows what a topic is, and nothing here knows
+ * what Ship is: a Folder is a section, a file is a row, and which app owns the
+ * file is the row's glyph.
+ *
+ * Where it is drawn: the Folders rail item (`FoldersPage`, peek#214) and the
+ * file page (`FilePage`). peek#213 also put it in the Topics column in place of
+ * "Your topics / Other topics", and that was taken back the same day (Miky,
+ * 2026-09-14): while a topic is a Folder it is a section here, opened from a
+ * hover action with no highlighted row, which is not a column to read topics
+ * from. The topic list returns to the tree's place when FOL-22 makes topics
+ * rows — `onNewTopic` is kept for that day.
  *
  * ## What is read, and when
  *
