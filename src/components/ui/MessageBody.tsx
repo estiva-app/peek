@@ -14,7 +14,7 @@ import { TOPICS } from '@/api'
 import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
-import { InlineChip } from '@estiva-app/ui'
+import { InlineChip, Link } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { useResolvedReferences } from '@/api'
@@ -49,16 +49,16 @@ import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protoc
  */
 function BodyLink({ href, breakAll, children }: { href: string; breakAll?: boolean; children: ReactNode }) {
   return (
-    <a
+    <Link
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      variant="text"
+      external
       data-interactive
-      className={cn('text-info-default underline underline-offset-2 hover:opacity-80', breakAll ? 'break-all' : 'break-words')}
+      className={breakAll ? 'break-all' : 'break-words'}
       onClick={(e) => e.stopPropagation()}
     >
       {children}
-    </a>
+    </Link>
   )
 }
 

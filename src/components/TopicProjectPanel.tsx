@@ -7,7 +7,7 @@ import type { FolderProjectState } from '@/api/useFolderProject'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { FieldLine, ScrollArea } from '@estiva-app/ui'
+import { FieldLine, Link, ScrollArea } from '@estiva-app/ui'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
 import { Person } from '@/components/ui/Person'
@@ -240,14 +240,14 @@ export function TopicProjectPanelView({
             {/* Full width, and the only way into Linear-lite from here — a
                 separate "open in app" link was the same destination twice. */}
             {project.openUrl ? (
-              <a
+              <Link
                 href={project.openUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block truncate text-body-2 font-semibold text-text-primary hover:underline"
+                variant="quiet"
+                external
+                className="block truncate text-body-2 font-semibold text-text-primary"
               >
                 {project.slots.title?.value ?? 'Untitled project'}
-              </a>
+              </Link>
             ) : (
               <span className="block truncate text-body-2 font-semibold text-text-primary">
                 {project.slots.title?.value ?? 'Untitled project'}

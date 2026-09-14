@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from '@estiva-app/ui'
 import { EmptyState } from './EmptyState'
 import { IconChevronRight } from '@tabler/icons-react'
 import type { ForeignObject, ResolvedSlot } from '@estiva-app/interop'
@@ -151,14 +152,14 @@ export function ProjectTickets({
                       </span>
                     )}
                     {ticket.openUrl ? (
-                      <a
+                      <Link
                         href={ticket.openUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        variant="plain"
+                        external
                         className="text-text-secondary transition-colors after:absolute after:inset-0 group-hover:text-text-primary group-hover:underline"
                       >
                         {ticket.slots.title?.value ?? 'Untitled'}
-                      </a>
+                      </Link>
                     ) : (
                       <span className="text-text-secondary">
                         {ticket.slots.title?.value ?? 'Untitled'}

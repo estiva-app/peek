@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
-import { Menu, MenuItem, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Link, Menu, MenuItem, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
@@ -501,13 +501,14 @@ export function ThreadReplyCard({
                 */}
                 {messageLink ? (
                   <WithTooltip label="Link to this message" wrapperClassName="shrink-0">
-                    <a
+                    <Link
                       href={messageLink}
+                      variant="quiet"
                       data-interactive
-                      className="text-caption text-text-muted shrink-0 whitespace-nowrap hover:underline signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums"
+                      className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums"
                     >
                       {timestamp}
-                    </a>
+                    </Link>
                   </WithTooltip>
                 ) : (
                   <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>

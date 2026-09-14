@@ -12,7 +12,7 @@ import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
-import { FieldLine, SectionLabel } from '@estiva-app/ui'
+import { FieldLine, Link, SectionLabel } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -274,14 +274,10 @@ function Actions({
 function OpenInApp({ object }: { object: ForeignObject }) {
   if (!object.openUrl) return null
   return (
-    <a
-      href={object.openUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-caption text-text-secondary underline decoration-dotted underline-offset-2 hover:text-text-primary"
-    >
+    // Solid, not dotted: one look for "open it elsewhere" in both apps (Katerina, 2026-09-13).
+    <Link href={object.openUrl} variant="underlined" external className="text-caption text-text-secondary">
       Open in {object.appName ?? 'app'} ↗
-    </a>
+    </Link>
   )
 }
 
@@ -398,14 +394,9 @@ export function ForeignObjectCard({
             {/* The title is the way into the owning app. A reference you cannot
                 follow is a screenshot. */}
             {object.openUrl ? (
-              <a
-                href={object.openUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate text-body-2 font-semibold text-text-primary hover:underline"
-              >
+              <Link href={object.openUrl} variant="quiet" external className="truncate text-body-2 font-semibold text-text-primary">
                 {title}
-              </a>
+              </Link>
             ) : (
               <span className="truncate text-body-2 font-semibold text-text-primary">
                 {title}

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { ScrollArea } from '@estiva-app/ui'
+import { Link, ScrollArea } from '@estiva-app/ui'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
@@ -274,6 +274,7 @@ export function ThreadPanel({
 }: ThreadPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pathForTopic = useTopicPath()
+  const navigate = useNavigate()
 
   /*
     Publish what this thread refers to, so Cmd+K can offer those objects as the
@@ -490,7 +491,8 @@ export function ThreadPanel({
                   <span className="flex items-center gap-1 min-w-0 whitespace-nowrap">
                     <span className="shrink-0">Promoted to</span>
                     <Link
-                      to={pathForTopic(promotionDivider.topicId)}
+                      href={pathForTopic(promotionDivider.topicId)}
+                      variant="quiet"
                       data-interactive
                       onClick={(e) => {
                         e.stopPropagation()
@@ -500,9 +502,14 @@ export function ThreadPanel({
                         if (promotionDivider.onTopicClick) {
                           e.preventDefault()
                           promotionDivider.onTopicClick()
+                          return
                         }
+                        // In place through the router, as NavItem does; a modified click is the browser's (a new tab).
+                        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                        e.preventDefault()
+                        navigate(pathForTopic(promotionDivider.topicId))
                       }}
-                      className="text-text-primary hover:underline min-w-0 truncate"
+                      className="text-text-primary min-w-0 truncate"
                     >
                       {promotionDivider.topicTitle}
                     </Link>
