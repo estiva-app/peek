@@ -50,6 +50,12 @@ const relay = vi.hoisted(() => ({ files: [] as unknown[] }))
 const TOPIC_CHANNEL = '3789d2ca-103c-40e5-906f-0490782db5fd'
 const peekTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; folderId: string | null }[] }))
 /*
+  What the team-unread hook answers per Folder — FOL-18. The judging is unit
+  tested in `teamUnread.test.ts`; here the question is only that a Folder row
+  draws the dot it is told to, and no dot for a Folder it was told nothing about.
+*/
+const teamUnread = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
+/*
   The read-state writers, spied — FOL-16. What the page must do is mark the
   open file's own stream after a dwell, and what it must never do is mark the
   Folder's channel, so both are recorded and one is asserted absent.
@@ -83,6 +89,7 @@ vi.mock('@/api', async () => ({
   useForeignConversation: () => ({ state: 'loading', reload: async () => {} }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
+  useTeamUnread: () => ({ unread: teamUnread.unread }),
   useWorkspaceDirectory: () => undefined,
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
@@ -236,5 +243,33 @@ describe('FoldersPage manages a topic’s Folder from the topic', () => {
     expect(screen.getByRole('button', { name: 'Delete folder' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: "Open this folder's topic" })).toBeNull()
+  })
+})
+
+/*
+  SPEC §11.3, FOL-18: the dot on a Folder row is the union of its streams. The
+  rule is `teamHasUnread`'s; what the page owes it is a dot on exactly the rows
+  it says, and none on a row it did not judge — "not judged" is not "dark".
+*/
+describe('FoldersPage draws the union dot on a Folder row', () => {
+  afterEach(() => {
+    teamUnread.unread = {}
+  })
+
+  it('lights the Folder the hook says is unread, and only that one', () => {
+    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: false }
+    const { container } = mount(`/folders/${TOPIC_CHANNEL}`)
+    const lit = container.querySelectorAll('[data-unread]')
+    expect(lit).toHaveLength(1)
+    // The dot is the row's last child, so its parent is the row — and the row
+    // named "Folders" is the one the hook lit, not the selected "For testing".
+    expect(lit[0].parentElement?.textContent).toContain('Folders')
+    expect(lit[0].parentElement?.textContent).not.toContain('For testing')
+  })
+
+  it('draws no dot for a Folder it was told nothing about', () => {
+    teamUnread.unread = {}
+    const { container } = mount(`/folders/${FOLDER}`)
+    expect(container.querySelectorAll('[data-unread]')).toHaveLength(0)
   })
 })

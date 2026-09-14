@@ -15,6 +15,7 @@ import {
   useFolders,
   useForeignConversation,
   useForeignObjects,
+  useTeamUnread,
   useTopics,
   useWorkspaceDirectory,
 } from '@/api'
@@ -127,6 +128,15 @@ export function FoldersPage() {
     // expanded, so counting it here is a request for a badge nothing draws.
     typeof state === 'object' && 'files' in state ? peersOf(state.files) : undefined,
   )
+  /*
+    The dot on each Folder row: the union of its streams (SPEC §11.3, FOL-18).
+    One batched read for every row, judged against the same frontier as the
+    listing's per-file dots, so a Folder lights while a file nobody read has a
+    new comment and goes dark only when that file's stream is read — never
+    because somebody read the team's chat, and never because this page was
+    opened, which reads nothing.
+  */
+  const { unread: teamUnread } = useTeamUnread(folders)
   const people = useWorkspaceDirectory()
 
   const selected = folders?.find((folder) => folder.id === id)
@@ -260,6 +270,8 @@ export function FoldersPage() {
                      through to `topic` and drew the dashed circle that means
                      "an unresolved topic" on every row. */
                   type="folder"
+                  /* `=== true`: an unjudged Folder draws no dot, not a dark one. */
+                  isUnread={teamUnread[folder.id] === true}
                   isSelected={folder.id === id}
                   onClick={() => navigate(`/folders/${folder.id}`)}
                 />
