@@ -1,7 +1,7 @@
 import { useRef, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Link, ScrollArea } from '@estiva-app/ui'
+import { ScrollArea } from '@estiva-app/ui'
+import { RouterLink } from './RouterLink'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { ThreadReplyCard } from './ThreadReplyCard'
@@ -274,7 +274,6 @@ export function ThreadPanel({
 }: ThreadPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pathForTopic = useTopicPath()
-  const navigate = useNavigate()
 
   /*
     Publish what this thread refers to, so Cmd+K can offer those objects as the
@@ -490,7 +489,7 @@ export function ThreadPanel({
                       "Promoted to" prefix and the date suffix always stay. */}
                   <span className="flex items-center gap-1 min-w-0 whitespace-nowrap">
                     <span className="shrink-0">Promoted to</span>
-                    <Link
+                    <RouterLink
                       href={pathForTopic(promotionDivider.topicId)}
                       variant="quiet"
                       data-interactive
@@ -502,17 +501,12 @@ export function ThreadPanel({
                         if (promotionDivider.onTopicClick) {
                           e.preventDefault()
                           promotionDivider.onTopicClick()
-                          return
                         }
-                        // In place through the router, as NavItem does; a modified click is the browser's (a new tab).
-                        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                        e.preventDefault()
-                        navigate(pathForTopic(promotionDivider.topicId))
                       }}
                       className="text-text-primary min-w-0 truncate"
                     >
                       {promotionDivider.topicTitle}
-                    </Link>
+                    </RouterLink>
                     <span className="shrink-0">· {promotionDivider.dateLabel}</span>
                   </span>
                 </span>

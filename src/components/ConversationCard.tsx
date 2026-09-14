@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
@@ -17,7 +16,8 @@ import {
 } from '@tabler/icons-react'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
-import { AvatarGroup, Link, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { AvatarGroup, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { RouterLink } from './RouterLink'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
@@ -131,7 +131,6 @@ export function ConversationCard({
 }: ConversationCardProps) {
   const [isHovered, setIsHovered] = useState(false)
   const pathForTopic = useTopicPath()
-  const navigate = useNavigate()
   // The ⋯ menu: the quick-menu's measured rect, or closed. The shared Menu
   // shell owns placement and every exit (2026-09-03).
   /* Not a rect any more, only whether the menu is open: the ⋯ menu owns its
@@ -570,21 +569,15 @@ export function ConversationCard({
             </div>
             <div className="flex-1 min-w-0 flex items-center gap-1.5 h-4">
               <span className="text-h5 text-text-secondary shrink-0">Huddle in</span>
-              <Link
+              <RouterLink
                 href={pathForTopic(huddleContext.topicId)}
                 variant="quiet"
                 data-interactive
-                onClick={(e) => {
-                  e.stopPropagation()
-                  // In place through the router, as NavItem does; a modified click is the browser's (a new tab).
-                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                  e.preventDefault()
-                  navigate(pathForTopic(huddleContext.topicId))
-                }}
+                onClick={(e) => e.stopPropagation()}
                 className="text-h5 text-text-primary truncate"
               >
                 {huddleContext.topicTitle}
-              </Link>
+              </RouterLink>
             </div>
           </div>
         )}
