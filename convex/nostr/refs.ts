@@ -10,7 +10,7 @@
  *
  * No Convex imports: this file is pure so either runtime can use it.
  */
-import { decodeNaddr, findNaddrs, pointerToAddress } from '@estiva-app/protocol'
+import { decodeNaddr, decodeNpub, findNaddrs, findNostrUris, pointerToAddress } from '@estiva-app/protocol'
 
 /**
  * The relay rejects any event whose `created_at` is more than ±15 minutes from
@@ -46,4 +46,30 @@ export function referencedAddresses(body: string): string[] {
     }
   }
   return [...addresses]
+}
+
+/**
+ * Who a body mentions — the `p` tags NIP-27 asks for beside an inline
+ * `nostr:npub…` (RIC-2).
+ *
+ * The composer writes a person mention as the key (`textParsing.ts`), so the
+ * body already says *who*; this repeats it as a tag so a reader can find every
+ * mention of somebody with a `#p` filter instead of parsing content. The ticket
+ * was filed believing these tags were already emitted, and no kind:9 on
+ * production carried one: `buildMessage` accepted `mentions` and nothing here
+ * passed any. Same shape as {@link referencedAddresses} for the same reason —
+ * the body is the source, and a tag that disagreed with it would be a second
+ * record to reconcile.
+ */
+export function mentionedPubkeys(body: string): string[] {
+  const pubkeys = new Set<string>()
+  for (const uri of findNostrUris(body)) {
+    if (!/^nostr:npub1/i.test(uri)) continue
+    try {
+      pubkeys.add(decodeNpub(uri))
+    } catch {
+      // A malformed key is prose, the same as a malformed pointer above.
+    }
+  }
+  return [...pubkeys]
 }

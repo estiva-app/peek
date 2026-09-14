@@ -26,7 +26,7 @@ import { mutation, query, type QueryCtx } from '../_generated/server'
 import type { Doc } from '../_generated/dataModel'
 import { buildEdit, buildMessage, buildReaction, buildResolution, imetaTag } from '@estiva-app/protocol'
 import type { NostrTag } from '@estiva-app/protocol'
-import { referencedAddresses, withinDriftWindow } from './refs'
+import { mentionedPubkeys, referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
 import type { UnsignedEvent } from '@estiva-app/protocol'
 
@@ -121,6 +121,7 @@ export const unsignedMessage = query({
         channelUuid: topic.channelUuid,
         content: m.body,
         about: referencedAddresses(m.body),
+        mentions: mentionedPubkeys(m.body),
         mediaTags: imetaTagsFor(m.fileAttachments),
       }),
     }
@@ -166,6 +167,7 @@ export const unsignedReply = query({
         channelUuid: topic.channelUuid,
         content: r.body,
         threadRef: { rootId: parent.nostrEventId, parentId: parent.nostrEventId },
+        mentions: mentionedPubkeys(r.body),
         // A reply carries files too, and CON-12 named `unsignedReply` as having
         // the identical gap. Fixing one and not the other would leave the same
         // defect on half the surface.
