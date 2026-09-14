@@ -28,6 +28,8 @@ const KIND_TOPIC = 39000
 const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
+import { readChannelStreams, type StreamMessage } from './channelStreams'
+import { PEEK_HORIZON_DAYS } from './readState'
 import {
   buildBareFile,
   buildCreateChannel,
@@ -543,6 +545,26 @@ export async function conversationsAsViewer(
   token: StoredToken,
 ): Promise<Record<string, ConversationMessage[]>> {
   return conversationsOf(files, viewerQuery(relayUrl, token))
+}
+
+/**
+ * Every stream of every Folder listed — the read behind a team's dot (FOL-18).
+ *
+ * Distinct from {@link conversationsAsViewer} in what it is keyed on: that one
+ * asks by file address and needs the files first, this one asks by channel and
+ * needs only the Folder ids the sidebar already has. Inside the horizon only,
+ * because a marker older than it has aged out of the merge and a message older
+ * than it is not something the person missed since (`fileHasUnread`, §11.6).
+ * Batched to as few POSTs as the relay allows — `channelStreams.ts` has the
+ * measurement, and the reason the listing's per-Folder shape was not used.
+ */
+export async function channelStreamsAsViewer(
+  folderIds: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<Record<string, StreamMessage[]>> {
+  const since = toNostrSeconds(Date.now()) - PEEK_HORIZON_DAYS * 24 * 60 * 60
+  return readChannelStreams(folderIds, since, viewerQuery(relayUrl, token))
 }
 
 /**
