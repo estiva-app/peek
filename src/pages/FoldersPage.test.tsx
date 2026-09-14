@@ -219,10 +219,12 @@ describe('FoldersPage draws the union dot on a Folder row', () => {
     const { container } = mount(`/folders/${TOPIC_CHANNEL}`)
     const lit = container.querySelectorAll('[data-unread]')
     expect(lit).toHaveLength(1)
-    // The dot is the row's last child, so its parent is the row — and the row
-    // named "Folders" is the one the hook lit, not the selected "For testing".
-    expect(lit[0].parentElement?.textContent).toContain('Folders')
-    expect(lit[0].parentElement?.textContent).not.toContain('For testing')
+    // The dot sits in its Folder's section header (FOL-21) — and the section
+    // named "Folders" is the one the hook lit, not the open "For testing".
+    const section = lit[0].closest('[data-tree-folder]') as HTMLElement
+    expect(section.dataset.treeFolder).toBe(FOLDER)
+    expect(section.textContent).toContain('Folders')
+    expect(section.textContent).not.toContain('For testing')
   })
 
   it('draws no dot for a Folder it was told nothing about', () => {

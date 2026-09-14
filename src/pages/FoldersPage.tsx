@@ -4,10 +4,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
-import { PersonRow } from '@/components/ui/PersonRow'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
+import { FolderTreeView } from '@/components/views/FolderTree'
 import {
   useConversationBadges,
   useFolderContents,
@@ -26,6 +25,7 @@ import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { useToast } from '@/lib/toast'
 import { filePath, topicPath } from '@/lib/objectUrl'
+import { useFolderPath } from '@/lib/useFolderPath'
 
 /**
  * `/folders` and `/folders/:id` — navigation by Folder (RFC 0.4 §4).
@@ -77,6 +77,8 @@ export function FoldersPage() {
     opened, which reads nothing.
   */
   const { unread: teamUnread } = useTeamUnread(folders)
+  /* Where a Folder's own control leads — its topic when it is one (FOL-21). */
+  const folderPath = useFolderPath()
 
   const selected = folders?.find((folder) => folder.id === id)
   /*
@@ -175,34 +177,23 @@ export function FoldersPage() {
             sentence (§4.7).
           */}
           <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
-            {signedOut ? (
-              <EmptyState scope="section" message="Sign in to see folders." />
-            ) : folders === null ? (
-              <SkeletonSidebarList />
-            ) : folders.length === 0 ? (
-              <EmptyState scope="section" message="No folders yet." />
-            ) : (
-              folders.map((folder) => (
-                <PersonRow
-                  key={folder.id}
-                  /*
-                    The id when there is no name. A Folder with no state event
-                    has only its channel's name, and a channel created by an app
-                    rather than a person may carry none — so this is the ordinary
-                    case on today's data, not a defensive branch.
-                  */
-                  name={folder.name ?? folder.id}
-                  /* A Folder, so a folder's glyph. Without a type this fell
-                     through to `topic` and drew the dashed circle that means
-                     "an unresolved topic" on every row. */
-                  type="folder"
-                  /* `=== true`: an unjudged Folder draws no dot, not a dark one. */
-                  isUnread={teamUnread[folder.id] === true}
-                  isSelected={folder.id === id}
-                  onClick={() => navigate(`/folders/${folder.id}`)}
-                />
-              ))
-            )}
+            {/*
+              The same tree the Topics column draws (FOL-21), so the two rail
+              items navigate the same way: a Folder is a fold over its first
+              level, the one open on the right starts open, and a row opens
+              its file in three panes. The body rather than `FolderTree`
+              because this page already holds the Folder list — it re-reads
+              it after a create, a rename and a delete — and the create form
+              sits between the header and the list.
+            */}
+            <FolderTreeView
+              folders={folders}
+              signedOut={signedOut}
+              unread={teamUnread}
+              currentFolder={id}
+              onSelect={(file) => file.address && navigate(filePath(file.address))}
+              onOpenFolder={(folder) => navigate(folderPath(folder))}
+            />
           </ScrollArea>
         </div>
       }
