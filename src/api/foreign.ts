@@ -35,7 +35,11 @@ import {
   resolveFolderProjectAsViewer,
   resolveObjectAsViewer,
   searchMessagesAsViewer,
+  threadsAsViewer,
+  replyToCommentAsViewer,
   type ActResult,
+  type FileComment,
+  type FileThreads,
 } from '@/nostr/foreign'
 import { RelayReadError } from '@/nostr/relayRead'
 import type { StreamMessage } from '@/nostr/channelStreams'
@@ -219,6 +223,31 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * What is under each of a file's comments — the thread panel's read (FOL-19).
+   *
+   * Signed out this is an empty answer rather than a throw, on the same terms
+   * as the rest of this seam: the panes render, and a viewer who is not signed
+   * in genuinely has no replies to see.
+   */
+  const threads = useCallback(
+    async (reference: string, rootIds: readonly string[]): Promise<FileThreads> => {
+      const v = viewer()
+      return v ? threadsAsViewer(reference, rootIds, v.relayUrl, v.token) : { roots: {}, replies: {} }
+    },
+    [viewer],
+  )
+
+  /** Reply to a comment on a file — see `replyToCommentAsViewer`. */
+  const replyToComment = useCallback(
+    async (args: { reference: string; parent: FileComment; body: string }): Promise<ActResult> => {
+      const v = viewer()
+      if (!v) return { ok: false, reason: 'Sign in to reply.' }
+      return replyToCommentAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
   /** See `creatableUnderAsViewer`. Null when signed out, as everything here is. */
   const creatableUnder = useCallback(
     async (parentKind: number) => {
@@ -250,6 +279,8 @@ export function useForeignObjects() {
     deleteFolder,
     moveFile,
     applyAction,
+    threads,
+    replyToComment,
     creatableUnder,
     placeForReference,
   }

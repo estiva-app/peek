@@ -1,12 +1,10 @@
+import { IconMessage } from '@tabler/icons-react'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
-import { useIsTopicResolved } from '@/api'
-import { Avatar } from '@/components/ui/Avatar'
-import { WithTooltip } from '@estiva-app/ui'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { MessageBody } from '@/components/ui/MessageBody'
+import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { whenLabel } from '@/components/ui/ActivityTimeline'
+import { CommentRow } from '@/components/views/CommentRow'
 
 /**
  * One file's conversation, drawn by Peek, owned by somebody else — RFC 0.5 §10.
@@ -34,13 +32,29 @@ import { whenLabel } from '@/components/ui/ActivityTimeline'
 export function ForeignConversationView({
   state,
   people,
+  onOpenThread,
+  openThreadId,
+  replyCounts,
 }: {
   state: ForeignConversationState
   /** Names and avatars for comment authors. Absent renders shortened keys. */
   people?: People
+  /**
+   * Open this comment's thread. Omit and no row offers one — the manner this
+   * view had before FOL-19, and still the right one inside a topic's own
+   * conversation, where there is no third pane to open into.
+   */
+  onOpenThread?: (commentId: string) => void
+  /** The comment whose thread is open beside this pane, if any. */
+  openThreadId?: string
+  /**
+   * Replies per comment id. A **missing** entry draws no count, on the same
+   * terms as the listing's badges: nobody asked, which is not the same as none.
+   * A reply carries no `a` tag, so it is never in `state.comments` and the
+   * number cannot be derived here.
+   */
+  replyCounts?: Record<string, number>
 }) {
-  const isTopicResolved = useIsTopicResolved()
-
   if (state === 'loading') {
     return (
       <div className="p-4" data-loading="foreign-conversation">
@@ -88,43 +102,54 @@ export function ForeignConversationView({
 
   return (
     <div
-      className="flex flex-col gap-3 p-4"
+      className="flex flex-col gap-1 p-4"
       data-foreign-conversation={object.ref}
       data-app={object.appName}
     >
       {comments.map((comment) => {
-        const profile = people?.[comment.author]
-        /*
-          A shortened key, not "Unknown". Whoever wrote this has an identity even
-          when no kind:0 has been published for it, and the key is how the person
-          reading can tell two unnamed authors apart — which "Unknown" twice
-          cannot.
-        */
-        const name = profile?.displayName ?? `${comment.author.slice(0, 8)}…`
-        // Nostr seconds; `whenLabel` and `Date` both want milliseconds.
-        const at = comment.createdAt * 1000
+        const replies = replyCounts?.[comment.id]
         return (
-          <article key={comment.id} className="flex gap-2" data-comment={comment.id}>
-            <Avatar src={profile?.picture} name={name} size={24} />
-            <div className="min-w-0 flex-1">
-              <header className="flex items-baseline gap-2">
-                <span className="text-body-2-strong text-text-primary">{name}</span>
-                {/* The package's tooltip, not the browser's (§4.9): it waits
-                    the shared 300ms, fades, and shows on keyboard focus. */}
-                <WithTooltip
-                  label={new Date(at).toLocaleString(undefined, {
-                    dateStyle: 'long',
-                    timeStyle: 'short',
-                  })}
-                >
-                  <time className="text-caption text-text-muted" dateTime={new Date(at).toISOString()}>
-                    {whenLabel(at)}
-                  </time>
-                </WithTooltip>
-              </header>
-              <MessageBody body={comment.body} isTopicResolved={isTopicResolved} />
-            </div>
-          </article>
+          <CommentRow
+            key={comment.id}
+            comment={comment}
+            people={people}
+            /*
+              The open thread is marked on the row it belongs to, so the middle
+              pane says which of its comments the right pane is showing. Without
+              it the thread panel is a box with no visible origin — the same
+              objection that gives the folder listing its `aria-current`.
+            */
+            className={
+              openThreadId === comment.id
+                ? 'rounded-md bg-bg-inset px-2 py-1.5 -mx-2'
+                : 'px-2 py-1.5 -mx-2'
+            }
+            actions={
+              onOpenThread && (
+                <>
+                  {/*
+                    A count only when we have one, and never a nought: an
+                    absence here means the replies were not asked for, and a
+                    "0" would be an assertion nobody made — `ConversationCount`
+                    takes the same line one pane to the left.
+                  */}
+                  {!!replies && (
+                    <span className="text-caption text-text-muted tabular-nums" data-replies={replies}>
+                      {replies}
+                    </span>
+                  )}
+                  <IconButton
+                    tooltip="Open thread"
+                    aria-label={replies ? `Open thread, ${replies} replies` : 'Open thread'}
+                    aria-current={openThreadId === comment.id ? true : undefined}
+                    onClick={() => onOpenThread(comment.id)}
+                  >
+                    <IconMessage size={16} stroke={1.5} />
+                  </IconButton>
+                </>
+              )
+            }
+          />
         )
       })}
     </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { IconArrowUpRight, IconMessagePlus, IconSend, IconTrash, IconX } from '@tabler/icons-react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
@@ -8,16 +8,13 @@ import { PersonRow } from '@/components/ui/PersonRow'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
-import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import {
   useConversationBadges,
   useFolderContents,
   useFolders,
-  useForeignConversation,
   useForeignObjects,
   useTeamUnread,
   useTopics,
-  useWorkspaceDirectory,
 } from '@/api'
 import type { ForeignObject } from '@estiva-app/interop'
 import { Button } from '@/components/ui/Button'
@@ -28,8 +25,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { useToast } from '@/lib/toast'
-import { topicPath } from '@/lib/objectUrl'
-import { useMarkFileRead } from '@/lib/useMarkRead'
+import { filePath, topicPath } from '@/lib/objectUrl'
 
 /**
  * `/folders` and `/folders/:id` — navigation by Folder (RFC 0.4 §4).
@@ -48,47 +44,10 @@ export function FoldersPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { state, reload: reloadContents } = useFolderContents(id)
-  const { createFolder, createTopic, renameFolder, deleteFolder, moveFile, applyAction } =
-    useForeignObjects()
+  const { createFolder, createTopic, renameFolder, deleteFolder, moveFile } = useForeignObjects()
   const { showToast } = useToast()
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
-  /*
-    Which file's conversation is open — RFC 0.5 §10.
-
-    The file itself rather than its `ref`, because the panel needs the `naddr`
-    to resolve by and the title to head the pane with, and the row already holds
-    both. Looking them up again from `state` would also go stale the moment the
-    contents re-read — and a row a parent's manifest fetched is not in `state`
-    at all.
-
-    The URL says *which* — `?file=<address>` (FOL-17). That is what makes a
-    bare file openable from outside: Ship's card links to `/o/<naddr>`, which
-    resolves to this Folder with the file named, and the listing supplies the
-    object once it has loaded. A selection made here holds the row's own
-    object under the same name, so a re-read cannot pull the pane out from
-    under a conversation, and selecting or closing rewrites the URL so a
-    reload lands where you were. Leaving the Folder drops the parameter, so
-    the pane closes with it and nothing has to reset it.
-
-    A named file the listing does not hold — one the reader cannot see, or a
-    link to something since moved — opens nothing; the Folder is still the
-    right place to be.
-  */
-  const [heldFile, setHeldFile] = useState<ForeignObject | null>(null)
-  const [searchParams, setSearchParams] = useSearchParams()
-  const namedFile = searchParams.get('file')
-  const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
-  const openFile =
-    heldFile && heldFile.ref === namedFile
-      ? heldFile
-      : namedFile
-        ? (listed?.find((file) => file.ref === namedFile) ?? null)
-        : null
-  const setOpenFile = (file: ForeignObject | null) => {
-    setHeldFile(file)
-    setSearchParams(file ? { file: file.ref } : {}, { replace: true })
-  }
   /** The file whose destination is being chosen, if any. */
   const [movingFile, setMovingFile] = useState<ForeignObject | null>(null)
   /*
@@ -99,25 +58,6 @@ export function FoldersPage() {
   */
   const [startingTopic, setStartingTopic] = useState<{ parent?: ForeignObject } | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const { state: conversation, reload: reloadConversation } = useForeignConversation(openFile?.naddr)
-  /*
-    The open file's conversation counts as read after a dwell — and *only* that
-    file's (SPEC §11.1–§11.2, FOL-16). The Folder's channel is not advanced by
-    this page: the person is reading one file's talk, not the team's general
-    chat, and a sibling file in the same Folder stays exactly as unread as it
-    was. Judge it from the listing's dot or `window.__readState.marker(...)`,
-    never by opening the sibling, which would read it.
-  */
-  useMarkFileRead(openFile?.address)
-  /*
-    The composer follows the manifest, not the kind. A bare file's built-in
-    manifest declares `comment`; so does Ship's for a project and an issue.
-    RFC 0.5 §10.7 says Peek is where you talk about any file, and peek#189 left
-    this open pending exactly that decision — so the control appears wherever
-    the owner says a comment may be written, and nowhere else.
-  */
-  const canComment =
-    !!openFile?.naddr && (openFile.actions ?? []).some((action) => action.id === 'comment')
   /*
     One request for the whole listing's badges, made here rather than inside
     the view so the view stays a pure render of what it is handed — and so a
@@ -137,7 +77,6 @@ export function FoldersPage() {
     opened, which reads nothing.
   */
   const { unread: teamUnread } = useTeamUnread(folders)
-  const people = useWorkspaceDirectory()
 
   const selected = folders?.find((folder) => folder.id === id)
   /*
@@ -155,19 +94,6 @@ export function FoldersPage() {
   */
   const topics = useTopics()
   const topic = topics?.find((t) => t.folderId === id)
-
-  async function send(body: string): Promise<boolean> {
-    if (!openFile?.naddr) return false
-    const result = await applyAction({ naddr: openFile.naddr, actionId: 'comment', value: body })
-    if (!result.ok) {
-      showToast({ label: result.reason ?? 'The relay refused the comment.', type: 'neutral' })
-      return false
-    }
-    // The relay has it; the pane re-reads rather than appending a copy, so
-    // what is shown is what every other reader sees.
-    await reloadConversation()
-    return true
-  }
 
   async function create() {
     const trimmed = name.trim()
@@ -382,8 +308,14 @@ export function FoldersPage() {
             <ScrollArea className="min-h-0 flex-1">
               <FolderContentsView
                 state={state}
-                selectedRef={openFile?.ref}
-                onSelect={setOpenFile}
+                /*
+                  A row's conversation opens at the file's own address, not in a
+                  pane beside this listing — `/topic/<address>`, FOL-19. The
+                  pane that used to be here could only show a file the listing
+                  held, so a Ship issue (its project's child, never a peer in
+                  the Folder) had no way to open at all.
+                */
+                onSelect={(file) => file.address && navigate(filePath(file.address))}
                 onMove={setMovingFile}
                 onStartTopic={(file) => setStartingTopic({ parent: file })}
                 counts={counts}
@@ -396,68 +328,14 @@ export function FoldersPage() {
         )
       }
       /*
-        The conversation goes in the thread pane, which is where a conversation
-        lives everywhere else in Peek — the same pane a topic's thread opens in.
-        That is the point being demonstrated rather than a layout convenience: a
-        Ship project's discussion is not a special panel bolted to a folder
-        view, it is Peek's ordinary conversation surface pointed at a file
-        another app owns.
+        No third pane here any more. A file's conversation is a page of its own
+        — `/topic/<address>`, FOL-19 — because a pane on this page could only
+        ever show a file this listing holds, and the files people most want to
+        open are the ones it does not: a Ship issue is its project's child,
+        resolved by address rather than found among peers. The three panes moved
+        wholesale to `FilePage`, which is why this one lost its conversation
+        rather than gaining a second way in.
       */
-      threadPanel={
-        openFile ? (
-          <div className="flex h-full flex-col">
-            {/*
-              The same header as every other pane. This used to be a hand-made
-              row, on the reasoning that `ThreadPanel` heads itself so this pane
-              should too — but `ThreadPanel`'s own header is `h-12 pl-5 pr-4
-              border-b`, which is `ContainerHeader`'s geometry exactly. The row
-              here was `px-3 py-2`, so it matched neither (Katerina,
-              2026-09-11). `actions` carries the close.
-            */}
-            <ContainerHeader
-              title={
-                <div className="min-w-0">
-                  <p className="truncate text-body-2-strong text-text-primary">
-                    {openFile.slots.title?.value ?? 'Conversation'}
-                  </p>
-                {/*
-                  Whose file this is, said plainly. The panel draws another app's
-                  conversation in Peek's own language, which is the point and is
-                  also exactly what could mislead: without this the discussion
-                  reads as something in Peek.
-                */}
-                  {openFile.appName && (
-                    <p className="truncate text-caption text-text-muted">In {openFile.appName}</p>
-                  )}
-                </div>
-              }
-              actions={
-                <IconButton
-                  tooltip="Close"
-                  aria-label="Close conversation"
-                  onClick={() => setOpenFile(null)}
-                >
-                  <IconX size={16} stroke={1.5} />
-                </IconButton>
-              }
-            />
-            {/* The package's bar, not the browser's (D40). This pane
-                arrived with #192, after the adoption had swept the rest. */}
-<ScrollArea className="min-h-0 flex-1">
-              <ForeignConversationView state={conversation} people={people} />
-            </ScrollArea>
-            {canComment && (
-              // Keyed on the file: a draft belongs to the conversation it was
-              // typed in, and a new key is a new composer with an empty one.
-              <CommentComposer
-                key={openFile.ref}
-                placeholder={`Comment on ${openFile.slots.title?.value ?? 'this file'}`}
-                onSend={send}
-              />
-            )}
-          </div>
-        ) : undefined
-      }
     />
 <>
           {startingTopic && id && (
@@ -541,51 +419,3 @@ export function FoldersPage() {
   )
 }
 
-/**
- * The smallest composer that is honest: one line, Enter sends, and the draft
- * dies with the conversation it was typed in (the parent keys this on the
- * file). Not Peek's message composer — that one is `kind:9`-shaped, with
- * attachments and drafts that survive navigation (CON-10), and the shared
- * conversation package (CON-5) is where the two become one. Until then this
- * publishes exactly what the owner's manifest declared a comment to be.
- */
-function CommentComposer({
-  placeholder,
-  onSend,
-}: {
-  placeholder: string
-  onSend: (body: string) => Promise<boolean>
-}) {
-  const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
-
-  async function send() {
-    const body = draft.trim()
-    if (!body || sending) return
-    setSending(true)
-    const ok = await onSend(body)
-    setSending(false)
-    if (ok) setDraft('')
-  }
-
-  return (
-    <div className="flex items-center gap-2 border-t border-border-subtle px-3 py-2">
-      <TextInput
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            void send()
-          }
-        }}
-        placeholder={placeholder}
-        aria-label="Comment"
-        disabled={sending}
-      />
-      <IconButton tooltip="Send" aria-label="Send comment" disabled={!draft.trim() || sending} onClick={() => void send()}>
-        <IconSend size={16} stroke={1.5} />
-      </IconButton>
-    </div>
-  )
-}

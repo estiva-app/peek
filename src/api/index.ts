@@ -40,8 +40,10 @@ export { useFolderContents, useFolders, type FolderContentsState } from './useFo
 export {
   useForeignConversation,
   useForeignChildren,
+  useFileThreads,
   type ForeignConversationState,
   type ForeignChildrenState,
+  type FileThreadsState,
 } from './useForeignConversation'
 export { useConversationBadges } from './useConversationBadges'
 export { useTeamUnread } from './useTeamUnread'

@@ -50,10 +50,18 @@ export function FolderContentsView({
   onStartTopic,
   counts,
   unread,
+  expand,
 }: {
   state: FolderContentsState
   /** `ref` of the file whose conversation is open, if any. */
   selectedRef?: string
+  /**
+   * `ref`s to start expanded — how a file opened by address gets its parent
+   * opened on the left (FOL-19). It is a default, not a lock: a person who
+   * collapses a row keeps it collapsed, because the answer to "is this open"
+   * is theirs the moment they give one.
+   */
+  expand?: readonly string[]
   /** Omit and the rows carry no conversation control at all. */
   onSelect?: (file: ForeignObject) => void
   /** Omit and the rows carry no move control — a read-only listing. */
@@ -130,6 +138,7 @@ export function FolderContentsView({
           counts={counts}
           unread={unread}
           selectedRef={selectedRef}
+          expand={expand}
           onSelect={onSelect}
           onMove={onMove}
           onStartTopic={onStartTopic}
@@ -231,6 +240,7 @@ function FileRow({
   counts,
   unread,
   selectedRef,
+  expand,
   onSelect,
   onMove,
   onStartTopic,
@@ -242,12 +252,25 @@ function FileRow({
   counts?: Record<string, number>
   unread?: Record<string, boolean>
   selectedRef?: string
+  expand?: readonly string[]
   onSelect?: (file: ForeignObject) => void
   onMove?: (file: ForeignObject) => void
   onStartTopic?: (file: ForeignObject) => void
   nested?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  /*
+    `null` until somebody says otherwise, and `expand` decides until they do.
+
+    Not `useState(expand.includes(...))`: the ancestor to open is known only
+    once the file it leads to has resolved, which is after this row has
+    mounted, and an initialiser runs once. Not an effect either — that is a
+    second render and the React Compiler's set-state-in-effect rule. The
+    person's answer wins as soon as there is one, which is what makes this a
+    default rather than a lock.
+  */
+  const [toggled, setToggled] = useState<boolean | null>(null)
+  const open = toggled ?? !!expand?.includes(file.ref)
+  const setOpen = (next: boolean) => setToggled(next)
   const title = file.slots.title?.value ?? 'this file'
   const listedChildren = listedChildrenOf(file, listed)
   /*
@@ -272,7 +295,7 @@ function FileRow({
               aria-label={open ? `Hide what is in ${title}` : `Show what is in ${title}`}
               aria-expanded={open}
               tooltip={open ? 'Collapse' : 'Expand'}
-              onClick={() => setOpen((v) => !v)}
+              onClick={() => setOpen(!open)}
             >
               {open ? (
                 <IconChevronDown size={16} stroke={1.5} />
@@ -378,6 +401,7 @@ function FileRow({
               naddr={file.naddr}
               exclude={listedChildren}
               selectedRef={selectedRef}
+              expand={expand}
               onSelect={onSelect}
               onStartTopic={onStartTopic}
             />
@@ -390,6 +414,7 @@ function FileRow({
               counts={counts}
               unread={unread}
               selectedRef={selectedRef}
+              expand={expand}
               onSelect={onSelect}
               onStartTopic={onStartTopic}
               nested
@@ -413,6 +438,7 @@ function ChildRows({
   naddr,
   exclude = [],
   selectedRef,
+  expand,
   onSelect,
   onStartTopic,
 }: {
@@ -420,6 +446,7 @@ function ChildRows({
   /** Already drawn from the listing — a fetched twin would be a second row. */
   exclude?: ForeignObject[]
   selectedRef?: string
+  expand?: readonly string[]
   onSelect?: (file: ForeignObject) => void
   onStartTopic?: (file: ForeignObject) => void
 }) {
@@ -461,6 +488,7 @@ function ChildRows({
           counts={counts}
           unread={unread}
           selectedRef={selectedRef}
+          expand={expand}
           onSelect={onSelect}
           onStartTopic={onStartTopic}
           nested

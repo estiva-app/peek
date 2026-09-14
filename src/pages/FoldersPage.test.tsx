@@ -1,19 +1,21 @@
 /**
- * A bare file's conversation is named by the URL — FOL-17.
+ * A file's conversation is a page, and this one is the way to it — FOL-19.
  *
- * Before this, which file's pane was open lived only in component state, so
- * nothing outside the page could open one: Ship's Related card resolved to
- * `/o/<naddr>`, `ObjectPage` found the Folder, and the person landed on the
- * listing with the conversation closed. `?file=<address>` is the whole of the
- * fix on this side; the tests pin that the page reads it, writes it, and does
- * not invent a pane for a file it cannot see.
+ * FOL-17 opened the conversation in a pane here, named by `?file=<address>`,
+ * and the address had to be *in this listing* for the pane to find the object.
+ * That was the limit: a Ship issue is its project's child, fetched from the
+ * project's manifest when a row is expanded, and never a peer in the Folder —
+ * so a link to one opened the Folder and nothing else. The pane is gone; a row
+ * now leads to `/topic/<address>`, where the file is resolved on its own.
+ *
+ * The dwell tests that were here went with it, to `FilePage.test.tsx`: this
+ * page marks nothing read, because a listing is not a reading.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
-import { READ_DWELL_MS } from '@/api'
 import { FoldersPage } from './FoldersPage'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -86,7 +88,6 @@ vi.mock('@/api', async () => ({
     reload: async () => {},
   }),
   useForeignObjects: () => ({}),
-  useForeignConversation: () => ({ state: 'loading', reload: async () => {} }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useTeamUnread: () => ({ unread: teamUnread.unread }),
@@ -126,89 +127,46 @@ function mount(url: string) {
   )
 }
 
-describe('FoldersPage opens the file the URL names', () => {
-  it('opens the conversation pane for a listed file named by ?file=', () => {
-    // This is the leg Ship's card depends on: `/o/<naddr>` redirects here
-    // with the address, and the pane has to be open on arrival.
-    relay.files = [topic]
-    mount(`/folders/${FOLDER}?file=${encodeURIComponent(FILE_ADDRESS)}`)
-    expect(screen.getByRole('button', { name: 'Close conversation' })).toBeInTheDocument()
-    expect(screen.getAllByText('FOL-15 test topic 2').length).toBeGreaterThan(0)
-  })
-
-  it('opens nothing without the parameter', () => {
-    relay.files = [topic]
-    mount(`/folders/${FOLDER}`)
-    expect(screen.queryByRole('button', { name: 'Close conversation' })).not.toBeInTheDocument()
-  })
-
-  it('opens nothing for a file the listing does not hold', () => {
-    // A link into a Folder the reader is in, to a file they cannot see — or
-    // one since moved. The Folder is still the right place; the pane is not.
-    relay.files = []
-    mount(`/folders/${FOLDER}?file=${encodeURIComponent(FILE_ADDRESS)}`)
-    expect(screen.queryByRole('button', { name: 'Close conversation' })).not.toBeInTheDocument()
-  })
-
-  it('closing the pane drops the parameter, so a reload stays closed', async () => {
-    relay.files = [topic]
-    mount(`/folders/${FOLDER}?file=${encodeURIComponent(FILE_ADDRESS)}`)
-    await userEvent.click(screen.getByRole('button', { name: 'Close conversation' }))
-    expect(screen.queryByRole('button', { name: 'Close conversation' })).not.toBeInTheDocument()
-    expect(screen.getByTestId('url')).toHaveTextContent(`/folders/${FOLDER}`)
-    expect(screen.getByTestId('url')).not.toHaveTextContent('file=')
-  })
-})
-
 /*
-  Reading one file's conversation reads that file — SPEC §11.1–§11.2, FOL-16.
-  The Folder's channel is not advanced here, ever: a person reading one issue's
-  talk has not read the team's general chat, and a sibling issue in the same
-  Folder must stay exactly as unread as it was.
+  The route this page hands off to — FOL-19, and the replacement for "a file
+  the listing does not hold opens nothing". That assertion was true of the pane
+  and is now false of the product: a file this listing does not hold is exactly
+  what the route exists to open, which `FilePage.test.tsx` pins from the other
+  side. What is left to check here is the handoff, and that nothing is read by
+  looking at a list.
 */
-describe('FoldersPage marks the open file read, and only the file', () => {
+describe('FoldersPage opens a file at its own address', () => {
   beforeEach(() => {
     marks.file.mockClear()
     marks.container.mockClear()
     marks.thread.mockClear()
-    vi.useFakeTimers()
-  })
-  afterEach(() => {
-    vi.useRealTimers()
   })
 
-  it("advances the file's own address after the dwell, and never the Folder's channel", () => {
-    relay.files = [topic]
-    mount(`/folders/${FOLDER}?file=${encodeURIComponent(FILE_ADDRESS)}`)
-    expect(marks.file).not.toHaveBeenCalled()
-    act(() => {
-      vi.advanceTimersByTime(READ_DWELL_MS)
-    })
-    expect(marks.file).toHaveBeenCalledTimes(1)
-    expect(marks.file).toHaveBeenCalledWith(FILE_ADDRESS)
-    expect(marks.container).not.toHaveBeenCalled()
-    expect(marks.thread).not.toHaveBeenCalled()
-  })
-
-  it('marks nothing when no pane is open — a listing is not a reading', () => {
+  it("a row's conversation control leads to /topic/<address>", async () => {
     relay.files = [topic]
     mount(`/folders/${FOLDER}`)
-    act(() => {
-      vi.advanceTimersByTime(READ_DWELL_MS * 2)
-    })
-    expect(marks.file).not.toHaveBeenCalled()
-    expect(marks.container).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: /Conversation/i }))
+    /*
+      The address, uncut and with its colons intact. A colon is a legal path
+      character and `%3A` would make the one part of the URL carrying meaning
+      unreadable — RFC 0.5 §7.3's objection to bech32 in URLs, arrived at from
+      the other side.
+    */
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/${FILE_ADDRESS}`)
   })
 
-  it('marks nothing when the pane closes before the dwell', () => {
+  it('opens no pane of its own — the conversation is a page now', () => {
     relay.files = [topic]
-    mount(`/folders/${FOLDER}?file=${encodeURIComponent(FILE_ADDRESS)}`)
-    // A plain DOM click: `userEvent` waits on real timers, which are faked here.
-    fireEvent.click(screen.getByRole('button', { name: 'Close conversation' }))
-    act(() => {
-      vi.advanceTimersByTime(READ_DWELL_MS * 2)
-    })
+    mount(`/folders/${FOLDER}`)
+    expect(screen.queryByRole('button', { name: 'Close conversation' })).toBeNull()
+  })
+
+  it('marks nothing read: a listing is not a reading', () => {
+    relay.files = [topic]
+    mount(`/folders/${FOLDER}`)
     expect(marks.file).not.toHaveBeenCalled()
+    expect(marks.container).not.toHaveBeenCalled()
+    expect(marks.thread).not.toHaveBeenCalled()
   })
 })
 

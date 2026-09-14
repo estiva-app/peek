@@ -82,6 +82,60 @@ export function identifierFromRef(ref: string): string | null {
   return match ? match[0].toLowerCase() : null
 }
 
+/**
+ * A NIP-33 address — `<kind>:<pubkey>:<d>` — and nothing else.
+ *
+ * The `d` is deliberately unconstrained: RFC 0.4 §4.3 says a uuid, Ship writes
+ * one, and an app nobody has written may not. What makes this unambiguous
+ * against the `<slug>-<uuid>` refs beside it is the two colons, which a slug
+ * cannot contain.
+ */
+const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/i
+
+/**
+ * The address a `/topic/<ref>` path names, or `null` when it names a topic —
+ * FOL-19.
+ *
+ * One route serves two grammars. `/topic/<slug>-<uuid>` is Peek's own topic,
+ * §7's shape and the only one that existed before this; `/topic/<address>` is
+ * **any file**, Peek's or another app's, resolved by address rather than
+ * against a listing's peers. Which one a link is, is readable from the link:
+ * an address carries two colons and a slug carries none, so nothing has to be
+ * fetched to decide and a legacy link is untouched.
+ *
+ * The ref as given is tested **first**, because `useParams` has already decoded
+ * the path segment and decoding twice would corrupt a `d` containing a literal
+ * `%`. The second attempt is for a link that arrived still escaped — a chat
+ * client that percent-encoded the colons, or `location.pathname` read directly.
+ */
+export function addressFromRef(ref: string): string | null {
+  if (ADDRESS_RE.test(ref)) return ref
+  try {
+    const decoded = decodeURIComponent(ref)
+    return ADDRESS_RE.test(decoded) ? decoded : null
+  } catch {
+    // A stray `%` is not an address either.
+    return null
+  }
+}
+
+/**
+ * The path one file opens at — RFC 0.5 §10.7 and the project brief's "one page
+ * shape for every file" (FOL-19).
+ *
+ * The colons are left as they are. A colon is a legal path character (RFC 3986
+ * `pchar`), and `%3A` would make the one part of the URL that carries meaning
+ * unreadable — §7.3's objection to bech32 in URLs, arrived at from the other
+ * side. Only the `d` is escaped, because it is the one segment an app is free
+ * to put anything in.
+ */
+export function filePath(address: string): string {
+  const match = ADDRESS_RE.exec(address)
+  if (!match) return `/topic/${encodeURIComponent(address)}`
+  const [, kind, pubkey, identifier] = match
+  return `/topic/${kind}:${pubkey.toLowerCase()}:${encodeURIComponent(identifier)}`
+}
+
 /** What `topicPath` needs to build a link — a `Topic`, or anything shaped like one. */
 export interface TopicLinkTarget {
   id: string

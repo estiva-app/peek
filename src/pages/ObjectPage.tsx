@@ -4,6 +4,7 @@ import { Navigate, useParams } from 'react-router-dom'
 import { useForeignObjects } from '@/api'
 import type { ReferencePlace } from '@/nostr/foreign'
 import { useLastSelection } from '@/lib/lastSelection'
+import { filePath } from '@/lib/objectUrl'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 /**
@@ -16,10 +17,9 @@ import { EmptyState } from '@/components/ui/EmptyState'
  *
  * This route exists to make the claim true. It resolves the reference to a
  * place and hands off to the page that owns it — the canonical topic URL for
- * a Topic or a Message, which `TopicsPage` already owns; the Folder with the
- * file open for a bare file (FOL-17), which `FoldersPage` owns. It
- * deliberately renders nothing of its own beyond the two states a person needs
- * to tell apart.
+ * a Topic or a Message, which `TopicsPage` already owns; the file's own page
+ * for anything else (FOL-19), which `FilePage` owns. It deliberately renders
+ * nothing of its own beyond the two states a person needs to tell apart.
  *
  * **A reference Peek cannot open says so.** Another app's `naddr` is a valid
  * reference, and redirecting it somewhere arbitrary would be worse than an
@@ -78,10 +78,17 @@ export function ObjectPage() {
       </div>
     )
   }
-  // A file is not a container and has no page of its own: it opens beside the
-  // Folder it lives in, which `FoldersPage` reads off `?file=`.
+  /*
+    A file opens at its own address — `/topic/<address>`, FOL-19.
+
+    This used to be `/folders/<folder>?file=<address>`, which needed the file to
+    be *in that Folder's listing* and so opened nothing for a Ship issue: an
+    issue is its project's child, fetched from the project's manifest, never a
+    peer in the listing. The file route resolves the address on its own, so
+    every reference lands on the file rather than near it.
+  */
   if (state.file) {
-    return <Navigate to={`/folders/${state.folder}?file=${encodeURIComponent(state.file)}`} replace />
+    return <Navigate to={filePath(state.file)} replace />
   }
   // `/topic/<uuid>` without a slug: TopicsPage canonicalises the URL once the
   // topic resolves and it knows the title, exactly as it does for a legacy link.
