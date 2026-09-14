@@ -50,6 +50,9 @@ export interface TopicActivityItem {
   about?: string
 }
 
+/** The box the rows live in, written once: the list and its empty line both sit in it. */
+const LIST = 'flex flex-col px-4 py-4 gap-3'
+
 export function TopicActivity({
   items,
   labelFor,
@@ -64,12 +67,17 @@ export function TopicActivity({
 }) {
   if (items.length === 0) {
     // One section of the panel is empty: the line alone, left, no icon (B18,
-    // D41), in the same padding as the list it stands for.
-    return <EmptyState scope="section" className="px-4 py-4" message="No related conversations yet." />
+    // D41), where the list's first row would be — in the list's own box, and
+    // never padded itself (Katerina, 2026-09-14).
+    return (
+      <div className={LIST}>
+        <EmptyState scope="section" message="No related conversations yet." />
+      </div>
+    )
   }
 
   return (
-    <ScrollArea className="flex-1" contentClassName="flex flex-col px-4 py-4 gap-3">
+    <ScrollArea className="flex-1" contentClassName={LIST}>
       {items.map(({ conv, about }) => (
         <div key={conv.id} className="flex flex-col gap-1" data-relation="sub-file">
           <div className="flex items-center gap-2">

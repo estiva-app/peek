@@ -11,6 +11,19 @@ import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
 
 /**
+ * A line where the tree's rows would be: empty, or unreadable. Level with the
+ * rows (Katerina, 2026-09-14): each PersonRow pads itself, so the line takes a
+ * row's inset here, and EmptyState is never padded.
+ */
+function TreeLine({ message }: { message: string }) {
+  return (
+    <div className="px-2 py-1">
+      <EmptyState scope="section" message={message} />
+    </div>
+  )
+}
+
+/**
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
  *
  * **Lines, not cards.** `FolderContentsView` draws every file as a
@@ -57,11 +70,11 @@ export function FileTreeView({
   }
   // Unreadable is not empty — the line the whole codebase holds (PEE-10).
   if ('failed' in state) {
-    return <EmptyState scope="section" className="px-2 py-1" message="This folder could not be read." />
+    return <TreeLine message="This folder could not be read." />
   }
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <EmptyState scope="section" className="px-2 py-1" message="Nothing in this folder yet." />
+    return <TreeLine message="Nothing in this folder yet." />
   }
 
   return (
@@ -193,10 +206,10 @@ function FetchedRows({
 
   if (state === 'loading') return <SkeletonRow />
   if (state === 'unresolved' || (!Array.isArray(state) && 'failed' in state)) {
-    return <EmptyState scope="section" className="px-2 py-1" message="What is in this could not be read." />
+    return <TreeLine message="What is in this could not be read." />
   }
   if (children.length === 0) {
-    return exclude.length === 0 ? <EmptyState scope="section" className="px-2 py-1" message="Nothing in this yet." /> : null
+    return exclude.length === 0 ? <TreeLine message="Nothing in this yet." /> : null
   }
   return (
     <>

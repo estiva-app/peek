@@ -42,6 +42,9 @@ import { cn } from '@/lib/utils'
  * this one grew a properties list and a ticket table.
  */
 
+/** The panel's own padding, written once: the project card and an empty line both sit in it. */
+const PANEL_INSET = 'p-3'
+
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full">
@@ -207,8 +210,11 @@ export function TopicProjectPanelView({
     return (
       <PanelShell>
         {/* A section of the page is empty, not the page: the line alone,
-            left, no icon (B18, D41), in the panel's own padding. */}
-        <EmptyState scope="section" className="p-3" message={describeRelayFailure(folderProject.failed)} />
+            left, no icon (B18, D41), in the panel's own padding — never its
+            own (Katerina, 2026-09-14). */}
+        <div className={PANEL_INSET}>
+          <EmptyState scope="section" message={describeRelayFailure(folderProject.failed)} />
+        </div>
       </PanelShell>
     )
   }
@@ -216,7 +222,9 @@ export function TopicProjectPanelView({
   if (folderProject === null) {
     return (
       <PanelShell>
-        <EmptyState scope="section" className="p-3" message="No project linked to this topic." />
+        <div className={PANEL_INSET}>
+          <EmptyState scope="section" message="No project linked to this topic." />
+        </div>
       </PanelShell>
     )
   }
@@ -226,7 +234,7 @@ export function TopicProjectPanelView({
 
   return (
     <PanelShell>
-      <ScrollArea className="flex-1" contentClassName="p-3">
+      <ScrollArea className="flex-1" contentClassName={PANEL_INSET}>
         {/* No fill, deliberately (Katerina, 2026-08-19). The reference widget
             takes one because it sits in a conversation among attachments; this
             card already has a panel of its own around it, and a second surface

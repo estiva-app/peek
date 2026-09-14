@@ -43,12 +43,12 @@ export function StarredSection({
     <CollapsibleSection title="Starred" storageKey="peek.people.starred" className={className} contentClassName="gap-1 mt-1">
       {isEmpty ? (
         /* One section of the page is empty: the line alone, left, no icon
-           (B18, D41) — where a hand-made paragraph stood until 2026-09-10. */
-        <EmptyState
-          scope="section"
-          className="px-2 py-1"
-          message="Favorite the conversations of People or Topics you interact mostly with"
-        />
+           (B18, D41) — where a hand-made paragraph stood until 2026-09-10.
+           Level with the rows (Katerina, 2026-09-14): each PersonRow pads
+           itself, so the line takes a row's inset here, never on EmptyState. */
+        <div className="px-2 py-1">
+          <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
+        </div>
       ) : (
         items.map((item) => (
           <PersonRow

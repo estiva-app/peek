@@ -104,8 +104,12 @@ export function ProjectTickets({
 
       {expanded &&
         (tickets.length === 0 ? (
-          /* A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1). */
-          <EmptyState scope="section" className="border-t border-border-subtle px-3 py-2" message="No tickets in this project yet." />
+          /* A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1). Level
+             with the rows' words (Katerina, 2026-09-14): each row's cell pads
+             itself, so the line takes that inset here, never on EmptyState. */
+          <div className="border-t border-border-subtle px-3 py-2">
+            <EmptyState scope="section" message="No tickets in this project yet." />
+          </div>
         ) : (
           <table className="w-full table-fixed border-t border-border-subtle text-caption">
             <tbody>
