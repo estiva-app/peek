@@ -2,7 +2,7 @@
  * What gates:status checks in peek.
  *
  * `owner: true` is a ticket peek owns. `owner: false` is peek's part of a
- * ticket another repo owns. The list of all 29 tickets, and who owns each, is
+ * ticket another repo owns. The list of all 30 tickets, and who owns each, is
  * in estiva-ui's scripts/gates-checks.mjs. Run gates:status there to see them
  * all together.
  *
@@ -90,6 +90,10 @@ export default function define(h) {
         { what: "the installed package has Link", run: () => h.contains(installed, /\bLink\b/, "the installed @estiva-app/ui exports Link") },
         { what: "the installed package has ProgressBar", run: () => h.contains(installed, /\bProgressBar\b/, "the installed @estiva-app/ui exports ProgressBar") },
         { what: "Peek's hand-made progress bar is gone", run: () => h.exists("src/components/ui/ProjectTickets.tsx") ? h.lacks("src/components/ui/ProjectTickets.tsx", 'role="progressbar"') : h.PASS("ProjectTickets.tsx is gone") },
+        // The adoption deleted these; the checks keep them deleted.
+        { what: "Peek's own inline chip is gone", run: () => h.exists("src/components/ui/inlineChip.ts") ? h.FAIL("src/components/ui/inlineChip.ts is back: use the package's InlineChip") : h.PASS("src/components/ui/inlineChip.ts is gone") },
+        { what: "Peek's own pending attachment chip is gone", run: () => h.exists("src/components/ui/PendingAttachmentChip.tsx") ? h.FAIL("src/components/ui/PendingAttachmentChip.tsx is back: use the package's AttachmentCard") : h.PASS("src/components/ui/PendingAttachmentChip.tsx is gone") },
+        { what: "a posted file is the package's AttachmentCard", run: () => h.contains("src/components/ui/FileAttachmentCard.tsx", /\bAttachmentCard\b/, "FileAttachmentCard.tsx draws AttachmentCard") },
       ] },
       { ref: "UIG-28", title: "Close the two holes in the token contract — arbitrary values, and inline style", owner: false, checks: [
         { what: "text-[14px] is an error", run: probe(component('<div className="text-[14px]">x</div>'), "error", undefined, PROBE, "eslint.tokens.config.js") },
@@ -104,6 +108,9 @@ export default function define(h) {
           return h.lacks(file, /@estiva-escape:[^\n]*UIG-29/, "it passes, and no escape names UIG-29");
         } },
         { what: "its dialog is the package's DialogShell", run: () => h.contains("src/components/CommandLauncher.tsx", /import\s*\{[^}]*\bDialogShell\b[^}]*\}\s*from\s*['"]@estiva-app\/ui['"]/, "CommandLauncher imports DialogShell from @estiva-app/ui") },
+      ] },
+      { ref: "UIG-30", title: "RichText — one component that draws a message's text, for both apps", owner: false, checks: [
+        { what: "the installed package has RichText", run: () => h.contains(installed, /\bRichText\b/, "the installed @estiva-app/ui exports RichText") },
       ] },
     ],
   };

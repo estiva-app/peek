@@ -295,12 +295,12 @@ if (!spec.all) {
   const parts = report.rows.filter((r) => !r.owner).map((r) => ({ ...r, ownerRepo: "", status: statusOf(r.checks) }));
   out.push("", `Tickets ${spec.repo} owns (${own.length}):`, printRows(own, { showOwner: false }));
   out.push("", `Parts of tickets another repo owns, checked here (${parts.length}):`, printRows(parts, { showOwner: false }));
-  out.push("", "For all 29 tickets across the repos, run npm run gates:status in estiva-ui.");
+  out.push("", "For every ticket across the repos, run npm run gates:status in estiva-ui.");
   console.log(out.join("\n"));
   process.exit(0);
 }
 
-// estiva-ui: gather the sibling checkouts and join everything into the 29 rows.
+// estiva-ui: gather the sibling checkouts and join everything into one row per ticket.
 const reports = [report];
 const found = [];
 for (const s of spec.siblings) {
