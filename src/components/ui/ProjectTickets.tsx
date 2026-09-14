@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from '@estiva-app/ui'
+import { Link, ProgressBar } from '@estiva-app/ui'
 import { EmptyState } from './EmptyState'
 import { IconChevronRight } from '@tabler/icons-react'
 import type { ForeignObject, ResolvedSlot } from '@estiva-app/interop'
@@ -13,26 +13,15 @@ import { cn } from '@/lib/utils'
  * "how is this project going" is the question somebody opens a project with.
  * Rides the same line as the count and stays deliberately quiet: two hairlines
  * of muted colour, no legend, no percentage. It is a glance, not a chart.
+ *
+ * The package's ProgressBar, its `quiet` look (UIG-27): 4px by Katerina's
+ * ruling of 14 September, where this bar was 3px.
  */
 function Progress({ done, open }: { done: number; open: number }) {
   const total = done + open
   if (total === 0) return null
 
-  return (
-    <div
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={done}
-      aria-label={`${done} of ${total} tickets done`}
-      className="h-[3px] flex-1 overflow-hidden rounded-full bg-bg-inset"
-    >
-      <div
-        className="h-full rounded-full bg-success-muted transition-[width] duration-300"
-        style={{ width: `${Math.round((done / total) * 100)}%` }}
-      />
-    </div>
-  )
+  return <ProgressBar value={done} max={total} label={`${done} of ${total} tickets done`} variant="quiet" className="flex-1" />
 }
 
 /**

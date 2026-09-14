@@ -191,7 +191,9 @@ describe('TopicProjectPanelView', () => {
     const bar = screen.getByRole('progressbar', { name: '2 of 3 tickets done' })
     expect(bar).toHaveAttribute('aria-valuenow', '2')
     expect(bar).toHaveAttribute('aria-valuemax', '3')
-    expect(bar.firstElementChild).toHaveStyle({ width: '67%' })
+    // The package's bar: the track, then the fill, whose width is the exact share (it was rounded to 67%).
+    const fill = bar.firstElementChild!.firstElementChild as HTMLElement
+    expect(parseFloat(fill.style.width)).toBeCloseTo(66.67, 2)
   })
 
   it('draws no progress bar for a project with no tickets at all', () => {
