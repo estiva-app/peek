@@ -141,6 +141,18 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
         horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
       })
     }
+    /*
+      A Folder listed inside another is one of that team's streams (FOL-22): a
+      topic is a channel of its own, placed in its team by address, and its
+      messages carry the topic's `h`, not the team's — so the team's own stream
+      says nothing about it. Its verdict is folded into every container that
+      lists it. Only a confident "yes" travels: a topic judged read leaves the
+      team's entry as it was, and a topic not judged says nothing.
+    */
+    for (const folder of folders ?? []) {
+      if (!unread[folder.id] || !folder.listedIn) continue
+      for (const container of folder.listedIn) unread[container] = true
+    }
     return { unread }
-  }, [held, frontier, ids])
+  }, [held, frontier, ids, folders])
 }

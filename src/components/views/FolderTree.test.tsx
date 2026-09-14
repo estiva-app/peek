@@ -57,10 +57,14 @@ const file = foreign({
   slots: { title: { value: 'FOL-15 test topic 2' } },
 })
 
+/** A topic placed in the team by address (FOL-22): a row in Peek, never a section. */
+const PLACED = '9e1b7f3a-5c2d-4e8f-9a1b-2c3d4e5f6a7b'
+
 const folders: FolderSummary[] = [
   { id: OTHER, name: 'Zebra', hasState: false },
   { id: TEAM, name: 'Peek', hasState: true },
   { id: TOPIC_FOLDER, name: 'A topic of ours', hasState: false },
+  { id: PLACED, name: 'Aardvark, placed', hasState: false, listedIn: [TEAM] },
 ]
 
 const reads = vi.hoisted(() => ({
@@ -132,6 +136,12 @@ describe('the Folders, as folds', () => {
     expect(titles).toEqual(['A topic of ours', 'Peek', 'Zebra'])
     expect(screen.queryByText('Your topics')).toBeNull()
     expect(screen.queryByText('Other topics')).toBeNull()
+  })
+
+  it('a Folder another Folder lists is a row in that section, not a section of its own (FOL-22)', () => {
+    mount()
+    expect(section(PLACED)).toBeNull()
+    expect(screen.queryByText('Aardvark, placed')).toBeNull()
   })
 
   it('opens only the Folder holding the page, and reads only that one — none before', () => {
