@@ -157,19 +157,23 @@ export const resolveExternalUser = internalMutation({
       .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', nostrPubkey))
       .unique()
     if (existing) {
-      // Fill in what Peek does not have, and never overwrite what it does
-      // (PEEK-72). Estiva ID is the sole publisher of `kind:0` (PEEK-31), so the
-      // relay is now the *upstream* for a profile rather than merely the output
-      // of one — but a name someone typed into Peek still wins over it.
+      // The relay's `kind:0` is the profile, and this row is Peek's cache of it
+      // (PEEK-42). Estiva ID is its sole publisher (PEEK-31) and the only place
+      // a name or a picture is edited (`api/profile.ts`), so whatever it says
+      // now replaces whatever Peek held.
       //
-      // The old rule was `isExternal` only, and it left every Estiva ID user
-      // stranded: `adoptIdentity` inserts `nostr:<8 chars>` with no image and
-      // clears `isExternal`, after which nothing could ever fill either field.
-      // Real profiles existed on the relay, with pictures, and Peek rendered
-      // placeholders and silhouettes for all of them.
-      const isPlaceholderName = /^nostr:[0-9a-f]{8}$/.test(existing.name)
+      // The name used to be guarded — patched only for an `isExternal` row or a
+      // `nostr:<8 chars>` placeholder, "so a name someone typed into Peek still
+      // wins". Nobody can type one into Peek any more, and the guard's real
+      // effect was that a rename in Estiva ID never reached anyone who had
+      // signed in here: their author line, and every `nostr:npub…` mention of
+      // them, kept the old name for ever while Ship — which reads `kind:0`
+      // straight from the relay — showed the new one (RIC-2). A mention that
+      // names a key is only an improvement on one that names a display name if
+      // the key resolves to the *current* name, so the name now follows the
+      // relay exactly as the picture already did.
       const patch: { name?: string; image?: string } = {}
-      if (displayName && displayName !== existing.name && (existing.isExternal || isPlaceholderName)) {
+      if (displayName && displayName !== existing.name) {
         patch.name = displayName
       }
       // Nothing outranks the relay now (PEEK-42). This used to skip anyone with

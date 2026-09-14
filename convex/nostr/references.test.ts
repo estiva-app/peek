@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   addressToPointer,
   encodeNaddr,
+  encodeNpub,
   pointerToAddress,
   referenceToPointer,
 } from '@estiva-app/protocol'
+import { mentionedPubkeys } from './refs'
 
 const POINTER = {
   identifier: 'fee-1',
@@ -54,5 +56,25 @@ describe('a reference in either notation', () => {
     expect(() => referenceToPointer('just some text')).toThrow()
     expect(() => referenceToPointer('30851:not-a-pubkey:fee-1')).toThrow()
     expect(() => referenceToPointer('')).toThrow()
+  })
+})
+
+describe('who a body mentions (RIC-2)', () => {
+  const ADA = 'a'.repeat(64)
+  const GRACE = 'b'.repeat(64)
+
+  it('reads each nostr:npub once, as a hex key, in order of first appearance', () => {
+    const body = `nostr:${encodeNpub(GRACE)} and nostr:${encodeNpub(ADA)}, then nostr:${encodeNpub(GRACE)} again`
+    expect(mentionedPubkeys(body)).toEqual([GRACE, ADA])
+  })
+
+  it('does not tag an object reference, a display-name mention, or prose', () => {
+    // An naddr goes to `about`; `@Ada` names nobody the wire can identify.
+    expect(mentionedPubkeys(`see nostr:${encodeNaddr(POINTER)} and @Ada Lovelace`)).toEqual([])
+    expect(mentionedPubkeys('nothing here')).toEqual([])
+  })
+
+  it('treats a malformed key as prose rather than refusing the message', () => {
+    expect(mentionedPubkeys('nostr:npub1notarealkey')).toEqual([])
   })
 })

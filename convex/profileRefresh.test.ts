@@ -108,8 +108,62 @@ describe('recording what comes back', () => {
         .unique(),
     )
     expect(row?.image).toBe(NEW_URL)
-    // The name someone typed into Peek is not overwritten by the relay's.
     expect(row?.name).toBe('Grace')
+  })
+
+  it('follows a rename, for someone who has signed in here (RIC-2)', async () => {
+    /*
+      The row is settled: a real name, no `isExternal`, no placeholder — exactly
+      what `adoptIdentity` leaves behind once the first refresh has filled it.
+      The old guard patched the name only for an external or placeholder row,
+      so this person could change their name in Estiva ID and Peek would keep
+      the old one for ever: on their messages, and on every `nostr:npub…`
+      mention of them — which is the case the mention was written as a key to
+      survive.
+    */
+    const t = convexTest(schema, modules)
+    await seed(t)
+
+    await t.run(async (ctx) => {
+      await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
+        nostrPubkey: SETTLED,
+        displayName: 'Grace Hopper',
+        picture: OLD_URL,
+      })
+    })
+
+    const row = await t.run(async (ctx) =>
+      ctx.db
+        .query('users')
+        .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', SETTLED))
+        .unique(),
+    )
+    expect(row?.name).toBe('Grace Hopper')
+    // And the resolver every mention reads answers with the new name at once.
+    const names = await t.withIdentity(asUser(VIEWER)).query(api.people.mentionNames, {})
+    expect(names.find((n) => n.pubkey === SETTLED)?.name).toBe('Grace Hopper')
+  })
+
+  it('keeps the name when the profile has none to offer', async () => {
+    // A `kind:0` with only a picture must not blank a name Peek already holds.
+    const t = convexTest(schema, modules)
+    await seed(t)
+
+    await t.run(async (ctx) => {
+      await ctx.runMutation(internal.nostr.data.resolveExternalUser, {
+        nostrPubkey: SETTLED,
+        picture: NEW_URL,
+      })
+    })
+
+    const row = await t.run(async (ctx) =>
+      ctx.db
+        .query('users')
+        .withIndex('by_nostrPubkey', (q) => q.eq('nostrPubkey', SETTLED))
+        .unique(),
+    )
+    expect(row?.name).toBe('Grace')
+    expect(row?.image).toBe(NEW_URL)
   })
 
   it('writes nothing when the picture is unchanged', async () => {

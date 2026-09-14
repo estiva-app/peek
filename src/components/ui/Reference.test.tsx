@@ -135,6 +135,26 @@ describe('Reference, for a person', () => {
     expect(c.textContent).toBe('@Katerina Kelepouri')
     expect(c.querySelector('[data-resolved="true"]')).not.toBeNull()
   })
+
+  it('follows a rename: the same key, drawn in an old message, shows the current name (RIC-2)', () => {
+    /*
+      The reason a mention is written as a key. The body is immutable, so a
+      display name in it can never be corrected; a key is resolved every time it
+      is drawn, so a person who changes their name is named correctly in every
+      message that ever mentioned them. This half is the renderer; the other
+      half — Peek's directory actually learning the new name from the relay —
+      is `resolveExternalUser`, pinned in `convex/profileRefresh.test.ts`.
+    */
+    const uri = `nostr:${encodeNpub(KNOWN)}`
+    const c = render(<Reference uri={uri} />).container
+    expect(c.textContent).toBe('@Ada Lovelace')
+
+    directoryArrives([[KNOWN, 'Ada King']])
+
+    expect(c.textContent).toBe('@Ada King')
+    // Still the same person: the key on the chip is what a reader acts on.
+    expect(c.querySelector(`[data-mention="${KNOWN}"]`)).not.toBeNull()
+  })
 })
 
 describe('Reference, for an object', () => {

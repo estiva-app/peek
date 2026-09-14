@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 import { api } from './_generated/api'
 import schema from './schema'
 import { ESTIVA_ID_ISSUER } from './users'
-import { KIND } from '@estiva-app/protocol'
+import { encodeNpub, KIND } from '@estiva-app/protocol'
 
 const modules = import.meta.glob('./**/*.ts')
 
@@ -31,7 +31,7 @@ const CHANNEL = '0d1c9f5a-6f7e-4a2b-9c3d-8e5f4a1b2c3d'
 const asUser = (pubkey: string) => ({ issuer: ESTIVA_ID_ISSUER, subject: pubkey })
 
 /** A topic with a published channel, one member, and one message from them. */
-async function seed(t: ReturnType<typeof convexTest>, opts: { channelUuid?: string | null } = {}) {
+async function seed(t: ReturnType<typeof convexTest>, opts: { channelUuid?: string | null; body?: string } = {}) {
   return await t.run(async (ctx) => {
     const authorId = await ctx.db.insert('users', { name: 'Ada', nostrPubkey: PUBKEY })
     const topicId = await ctx.db.insert('topics', {
@@ -44,7 +44,7 @@ async function seed(t: ReturnType<typeof convexTest>, opts: { channelUuid?: stri
       parentKind: 'topic',
       parentId: topicId as string,
       authorId,
-      body: 'hello',
+      body: opts.body ?? 'hello',
       createdAt: Date.now(),
     })
     return { authorId, topicId, messageId }
@@ -69,6 +69,38 @@ describe('unsignedMessage', () => {
     expect(built.unsigned.tags).toContainEqual(['h', CHANNEL])
     // An unsigned event must carry no signature — the browser adds it.
     expect(built.unsigned).not.toHaveProperty('sig')
+  })
+
+  it('tags each person the body mentions, so a `#p` filter finds it (RIC-2)', async () => {
+    /*
+      NIP-27: an inline `nostr:npub…` is accompanied by a `p` tag. The composer
+      writes the key into the body; this is the half that was believed to exist
+      and did not — no kind:9 on production carried a `p` tag, because nothing
+      passed `mentions` to the builder.
+    */
+    const t = convexTest(schema, modules)
+    const { messageId } = await seed(t, {
+      body: `ping nostr:${encodeNpub(OTHER_PUBKEY)} and again nostr:${encodeNpub(OTHER_PUBKEY)}, not @Ada`,
+    })
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    // Once per person, however often they are named; the display-name form
+    // carries no key and so cannot be tagged.
+    expect(built.unsigned.tags.filter((tag) => tag[0] === 'p')).toEqual([['p', OTHER_PUBKEY]])
+  })
+
+  it('carries no `p` tag when nobody is mentioned, so the wire shape is unchanged', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seed(t)
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.unsigned.tags.some((tag) => tag[0] === 'p')).toBe(false)
   })
 
   it('refuses somebody else’s message', async () => {
@@ -150,6 +182,27 @@ describe('unsignedReply', () => {
     // "reply" — not a root/reply pair. Getting this wrong changes the event id.
     const eTags = built.unsigned.tags.filter((tag) => tag[0] === 'e')
     expect(eTags).toEqual([['e', EVENT_ID, '', 'reply']])
+  })
+
+  it('tags a person mentioned in a reply too (RIC-2)', async () => {
+    // The same gap on the other half of the surface, as CON-12 found for files.
+    const t = convexTest(schema, modules)
+    const { messageId, authorId } = await seed(t)
+    const replyId = await t.run(async (ctx) => {
+      await ctx.db.patch(messageId, { nostrEventId: EVENT_ID })
+      return ctx.db.insert('replies', {
+        messageId,
+        authorId,
+        body: `nostr:${encodeNpub(OTHER_PUBKEY)} see above`,
+        createdAt: Date.now(),
+      })
+    })
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedReply, { replyId })
+
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.unsigned.tags).toContainEqual(['p', OTHER_PUBKEY])
   })
 
   it('refuses while the parent message is not on the relay', async () => {
