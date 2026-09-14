@@ -8,7 +8,7 @@ import {
   IconChecks,
   IconArrowNarrowRight,
 } from '@tabler/icons-react'
-import { Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
+import { Card, Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
 import { Avatar } from './ui/Avatar'
@@ -124,34 +124,23 @@ export function HuddleCard({
 
   return (
     <>
-      <div
-        className={cn(
-          'relative flex flex-col rounded-lg cursor-pointer transition-colors overflow-hidden',
-          'border',
-          inStream ? '' : 'h-[130px]',
-          // Color register:
-          // inStream V3 huddles use bg-surface for the body — same tier as
-          // ConversationCard so they sit at the same level on the page. The
-          // bg-inset banner above (same surface tier as the ComposeBox container)
-          // does the visual differentiation: a labeled inset/recessed strip in
-          // light mode, a lighter strip in dark mode.
-          inStream
-            ? cn(
-                isSelected ? 'bg-bg-selected' : isHovered ? 'bg-bg-hover' : 'bg-bg-surface',
-                // Notification border overrides the default (mirrors ConversationCard).
-                (hasNewMessage || hasNewReply)
-                  ? isUrgent
-                    ? 'border-warning-muted'
-                    : 'border-accent-muted'
-                  : 'border-border-default'
-              )
-            : isSelected
-              ? 'bg-bg-selected border-border-subtle'
-              : isHovered
-                ? 'bg-bg-hover border-border-default'
-                : 'bg-bg-surface border-border-subtle',
-          className
-        )}
+      {/*
+        The package's Card (UIG-27). Color register: huddles use the surface fill
+        for the body — same tier as ConversationCard so they sit at the same level
+        on the page. The bg-inset banner above (same surface tier as the ComposeBox
+        container) does the visual differentiation: a labeled inset/recessed strip
+        in light mode, a lighter strip in dark mode. It lights up when pointed at,
+        and `hovered` holds while its menu is open. Selected is the conversation
+        card's selected, softer hairline included (Katerina, 2026-09-15); only
+        the stream's huddle carries notification chrome, as before.
+      */}
+      <Card
+        fill="surface"
+        hover="fill"
+        hovered={isHovered}
+        selected={isSelected}
+        attention={inStream && (hasNewMessage || hasNewReply) ? (isUrgent ? 'warning' : 'accent') : undefined}
+        className={cn('relative flex flex-col overflow-hidden', inStream ? '' : 'h-[130px]', className)}
         onClick={(e) => {
           if (menuOpen) return
           const target = e.target as HTMLElement
@@ -373,7 +362,7 @@ export function HuddleCard({
           </div>
         )}
         </div>
-      </div>
+      </Card>
       {confirmingDelete && (
         <ConfirmDelete what="huddle" onConfirm={() => onDelete?.()} onClose={() => setConfirmingDelete(false)} />
       )}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
-import { Link, Menu, MenuItem, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Card, Link, Menu, MenuItem, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { peekEditorExtensions } from '@/extensions/peekEditor'
@@ -410,23 +410,16 @@ export function ThreadReplyCard({
 
   return (
     <>
-      <div
-        className={cn(
-          'relative rounded-lg transition-colors border',
-          isEditing
-            ? 'bg-bg-selected border-accent-primary'
-            : cn(
-                isHovered ? 'bg-bg-hover' : 'bg-bg-surface',
-                isNew
-                  ? isUrgent
-                    ? 'border-warning-muted'
-                    : 'border-accent-muted'
-                  : isHovered
-                    ? 'border-border-default'
-                    : 'border-transparent'
-              ),
-          className
-        )}
+      {/* The package's Card, as the conversation card draws it (UIG-27): `hovered`
+          holds while this reply's menu or picker is open. */}
+      <Card
+        fill="surface"
+        hover="fill"
+        quietUntilHover
+        hovered={isHovered}
+        active={isEditing}
+        attention={isNew ? (isUrgent ? 'warning' : 'accent') : undefined}
+        className={cn('relative', className)}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => {
           if (pickerOpen || moreMenuOpen) return
@@ -574,7 +567,7 @@ export function ThreadReplyCard({
             }
           />
         )}
-      </div>
+      </Card>
 
       {confirmingDelete && (
         <ConfirmDelete what="reply" onConfirm={() => onDelete?.()} onClose={() => setConfirmingDelete(false)} />
