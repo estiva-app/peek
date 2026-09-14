@@ -12,7 +12,7 @@ import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
-import { FieldLine, Link, SectionLabel } from '@estiva-app/ui'
+import { Card, FieldLine, Link, SectionLabel } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -364,24 +364,20 @@ export function ForeignObjectCard({
   const visibleMeta = meta.filter(shown)
 
   return (
-    <div
+    <Card
+      /*
+       * The same surface a file attachment sits on (Katerina, 2026-08-19): the
+       * package Card's `inset` fill with its subtle hairline. This card once
+       * asked for `bg-surface-raised`, which is not a token this app defines,
+       * so Tailwind emitted nothing and it rendered fully transparent. A soft
+       * edge over the page reads thinner than the same edge over a fill.
+       *
+       * `inset` is what the attachment cards use, and a reference is the same
+       * sort of thing: something attached to a message from elsewhere.
+       */
+      fill="inset"
       data-foreign-object={object.address}
-      className={cn(
-        /*
-         * The same surface a file attachment sits on (Katerina, 2026-08-19).
-         * The border was never the difference — both are 1px of
-         * `--border-subtle` at 8px radius — but this card asked for
-         * `bg-surface-raised`, which is not a token this app defines, so
-         * Tailwind emitted nothing and it rendered fully transparent. A soft
-         * edge over the page reads thinner than the same edge over a fill.
-         *
-         * `--bg-inset` is what the attachment cards use, and a reference is the
-         * same sort of thing: something attached to a message from elsewhere.
-         */
-        'rounded-lg border border-border-subtle bg-bg-inset',
-        widget === 'card' ? 'p-3' : 'px-3 py-2',
-        className,
-      )}
+      className={cn(widget === 'card' ? 'p-3' : 'px-3 py-2', className)}
     >
       {/*
        * Baselines, not box tops. The app name is 10px beside a 14px title, so
@@ -454,7 +450,7 @@ export function ForeignObjectCard({
           onAct={onAct}
         />
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -595,10 +591,11 @@ export function ForeignObjectWidget({
 
   if (object.unreachable) {
     return (
-      <div className="mt-1 rounded-lg border border-border-subtle px-3 py-2 text-caption text-text-secondary">
+      // A card that cannot be read: dashed, in both apps (Katerina, 2026-09-14).
+      <Card fill="none" unreadable className="mt-1 px-3 py-2 text-caption text-text-secondary">
         {object.appName ?? 'Another app'} object — you may not have access to this Folder.{' '}
         {object.openUrl && <OpenInApp object={object} />}
-      </div>
+      </Card>
     )
   }
 

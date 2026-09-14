@@ -7,7 +7,7 @@ import type { FolderProjectState } from '@/api/useFolderProject'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { FieldLine, Link, ScrollArea } from '@estiva-app/ui'
+import { Card, FieldLine, Link, ScrollArea } from '@estiva-app/ui'
 import { ActionControl, StatusPill } from '@/components/ui/ForeignObjectWidget'
 import { useWorkspaceDirectory } from '@/api'
 import { Person } from '@/components/ui/Person'
@@ -235,7 +235,7 @@ export function TopicProjectPanelView({
             It carried `bg-surface-raised`, which is not a token this app
             defines — so it always rendered unfilled. Dropped rather than kept,
             since a class that emits nothing is a claim the file cannot back. */}
-        <div className="rounded-lg border border-border-subtle">
+        <Card fill="none">
           <div className="flex flex-col gap-2 p-3">
             {/* Full width, and the only way into Linear-lite from here — a
                 separate "open in app" link was the same destination twice. */}
@@ -277,7 +277,7 @@ export function TopicProjectPanelView({
           {/* Tickets live inside the widget: they are part of the project, not a
               second thing in the column beside it. */}
           <ProjectTickets tickets={tickets} openCount={openCount} doneCount={doneCount} />
-        </div>
+        </Card>
 
         {/*
           Activity — CON-9's second list, under the files it is about.
