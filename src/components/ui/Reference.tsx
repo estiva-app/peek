@@ -8,7 +8,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { referenceLink, type ReferenceLink } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
-import { INLINE_CHIP_STYLE, inlineChipClassName } from './inlineChip'
+import { InlineChip, type InlineChipTone } from '@estiva-app/ui'
 import { StatusPill } from './ForeignObjectWidget'
 
 /**
@@ -120,8 +120,8 @@ export function Reference({
   useSyncExternalStore(subscribeMentions, mentionsVersion, mentionsVersion)
 
   const short = `${uri.replace(/^nostr:/, '').slice(0, 12)}…`
-  // Every chip below is the one inline chip (`inlineChip.ts`, D67): the same
-  // shape as a `[Topic]` in the reader and in the editor.
+  // Every chip below is the package's InlineChip (D67, moved into the package by
+  // UIG-27): the same shape as a `[Topic]` in the reader and in the editor.
 
   if (/^nostr:npub1/i.test(uri)) {
     let pubkey: string | null = null
@@ -141,8 +141,8 @@ export function Reference({
         title={person ? undefined : uri}
         // An unresolved key is still a mention, just an anonymous one. Muted
         // rather than absent, so nobody reads a stranger's key as an error.
-        className={inlineChipClassName(person ? 'mention' : 'quiet', className)}
-        style={INLINE_CHIP_STYLE}
+        tone={person ? 'person' : 'quiet'}
+        className={className}
       >
         {person ? `@${person.name}` : short}
       </Chip>
@@ -159,7 +159,8 @@ export function Reference({
         data-resolved="true"
         // The full title on hover, because the visible one is truncated.
         title={title}
-        className={inlineChipClassName('neutral', className)}
+        tone="neutral"
+        className={className}
         /*
           The same box a `[Topic]` chip gets: one line high, aligned to the text
           baseline it sits on. A chip that grows to two lines pushes the line
@@ -173,7 +174,7 @@ export function Reference({
           title is a sentence of its own. Ship's inline reference truncates for
           the same reason.
         */
-        style={{ ...INLINE_CHIP_STYLE, maxWidth: '24ch' }}
+        style={{ maxWidth: '24ch' }}
       >
         <span className="truncate">{title}</span>
         {object.slots.status && <StatusPill slot={object.slots.status} className="shrink-0" />}
@@ -182,14 +183,9 @@ export function Reference({
   }
 
   return (
-    <span
-      data-reference={object === null ? 'unresolved' : 'pending'}
-      title={uri}
-      className={inlineChipClassName('quiet', className)}
-      style={INLINE_CHIP_STYLE}
-    >
+    <InlineChip tone="quiet" data-reference={object === null ? 'unresolved' : 'pending'} title={uri} className={className}>
       {short}
-    </span>
+    </InlineChip>
   )
 }
 
@@ -198,11 +194,12 @@ type ChipLink = ReferenceLink | { place: 'person'; href: string }
 type ChipProps = Omit<HTMLAttributes<HTMLElement>, 'onClick'> & {
   /** Where the chip leads, or null for a chip that is a label only. */
   link: ChipLink | null
+  tone: InlineChipTone
   children: ReactNode
 }
 
 /**
- * The chip's box: an anchor when it leads somewhere, a span when it does not.
+ * The chip: the package's InlineChip, an anchor when it leads somewhere, a span when it does not.
  *
  * Split in two so the router hook is only ever called inside a router.
  * `useInRouterContext` is always called; `useNavigate` lives in the routed
@@ -212,7 +209,7 @@ type ChipProps = Omit<HTMLAttributes<HTMLElement>, 'onClick'> & {
  */
 function Chip({ link, ...rest }: ChipProps) {
   const inRouter = useInRouterContext()
-  if (!link) return <span {...rest} />
+  if (!link) return <InlineChip {...rest} />
   return inRouter ? <RoutedChip link={link} {...rest} /> : <PlainChip link={link} {...rest} />
 }
 
@@ -224,7 +221,7 @@ const targetFor = (link: ChipLink) =>
   link.place === 'app' ? { target: '_blank', rel: 'noopener noreferrer' } : {}
 
 function PlainChip({ link, ...rest }: ChipProps & { link: ChipLink }) {
-  return <a href={link.href} data-interactive="" onClick={(event) => event.stopPropagation()} {...targetFor(link)} {...rest} />
+  return <InlineChip href={link.href} data-interactive="" onClick={(event) => event.stopPropagation()} {...targetFor(link)} {...rest} />
 }
 
 function RoutedChip({ link, ...rest }: ChipProps & { link: ChipLink }) {
@@ -255,5 +252,5 @@ function RoutedChip({ link, ...rest }: ChipProps & { link: ChipLink }) {
     }
     navigate(link.href)
   }
-  return <a href={link.href} data-interactive="" onClick={follow} {...targetFor(link)} {...rest} />
+  return <InlineChip href={link.href} data-interactive="" onClick={follow} {...targetFor(link)} {...rest} />
 }

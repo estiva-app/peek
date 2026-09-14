@@ -14,7 +14,7 @@ import { TOPICS } from '@/api'
 import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
-import { INLINE_CHIP_STYLE, inlineChipClassName } from './inlineChip'
+import { InlineChip } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { useResolvedReferences } from '@/api'
@@ -96,16 +96,18 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           if (topic) {
             const resolved = isTopicResolved(topic.id)
             return (
-              <span key={i} className={inlineChipClassName('neutral')} style={INLINE_CHIP_STYLE}>
-                <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0">
-                  {resolved ? (
+              <InlineChip
+                key={i}
+                icon={
+                  resolved ? (
                     <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
                   ) : (
                     <IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />
-                  )}
-                </span>
+                  )
+                }
+              >
                 <span>{title}</span>
-              </span>
+              </InlineChip>
             )
           }
           // A document. There used to be a second kind — an "app" file, which
@@ -118,12 +120,9 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           }
           const TablerIcon = tablerIcons[docFile?.docType ?? ''] ?? IconFile
           return (
-            <span key={i} className={inlineChipClassName('neutral')} style={INLINE_CHIP_STYLE}>
-              <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
-                <TablerIcon size={14} stroke={1.5} />
-              </span>
+            <InlineChip key={i} icon={<TablerIcon size={14} stroke={1.5} />}>
               <span>{title}</span>
-            </span>
+            </InlineChip>
           )
         }
         if (/^(?:!@|@)/.test(part) && part.length > 1) {
@@ -131,9 +130,9 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
           // mentions wear the warning colors, plain mentions the accent.
           const urgent = part.startsWith('!@')
           return (
-            <span key={i} className={inlineChipClassName(urgent ? 'urgent' : 'mention')} style={INLINE_CHIP_STYLE}>
+            <InlineChip key={i} tone={urgent ? 'urgent' : 'person'}>
               {part}
-            </span>
+            </InlineChip>
           )
         }
         return part ? <span key={i}>{part}</span> : null
