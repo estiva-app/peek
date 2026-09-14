@@ -1,8 +1,80 @@
 import { describe, it, expect } from 'vitest'
-import { slugify, objectRef, identifierFromRef, topicPath, shareableTopicUrl, shareableMessageUrl } from './objectUrl'
+import {
+  slugify,
+  objectRef,
+  identifierFromRef,
+  addressFromRef,
+  filePath,
+  topicPath,
+  shareableTopicUrl,
+  shareableMessageUrl,
+} from './objectUrl'
 
 /** A real production channel uuid, from RFC 0.5 §7.2's own example. */
 const UUID = '925897ad-796e-4bc6-999c-ca19df26c4aa'
+const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
+const ISSUE = `30851:${SHIP}:d68a8c78-5ec7-4652-b236-89ab57ac5b1e`
+
+/*
+  One route, two grammars — FOL-19. `/topic/<slug>-<uuid>` is a topic and
+  `/topic/<address>` is any file; the link says which, and nothing is fetched
+  to find out.
+*/
+describe('addressFromRef', () => {
+  it('reads an address out of the ref, colons and all', () => {
+    expect(addressFromRef(ISSUE)).toBe(ISSUE)
+  })
+
+  it('is null for a topic ref, which is what the route used to mean', () => {
+    // A slug cannot contain a colon, so nothing a topic link carries can be
+    // mistaken for an address — and every published topic link keeps working.
+    expect(addressFromRef(`design-review-${UUID}`)).toBe(null)
+    expect(addressFromRef(UUID)).toBe(null)
+  })
+
+  it('tolerates a link whose colons were percent-encoded on the way', () => {
+    expect(addressFromRef(encodeURIComponent(ISSUE))).toBe(ISSUE)
+  })
+
+  it('does not decode twice: a d with a literal percent survives', () => {
+    // `useParams` has already decoded the segment once. A second decode would
+    // turn `%25` into `%` and the address into a different address.
+    const odd = `30840:${SHIP}:a%25b`
+    expect(addressFromRef(odd)).toBe(odd)
+  })
+
+  it('is null for things that are nearly an address', () => {
+    expect(addressFromRef(`30851:${SHIP.slice(0, 63)}:x`)).toBe(null)
+    expect(addressFromRef(`30851:${SHIP}:`)).toBe(null)
+    expect(addressFromRef('naddr1qq')).toBe(null)
+    expect(addressFromRef('%E0%A4%A')).toBe(null)
+  })
+})
+
+describe('filePath', () => {
+  it('opens a file under /topic/ at its bare address', () => {
+    // The colons stay: a legal path character, and the one part of the URL
+    // that carries meaning stays readable (§7.3, from the other side).
+    expect(filePath(ISSUE)).toBe(`/topic/${ISSUE}`)
+  })
+
+  it('escapes only the d, which is the one segment an app may put anything in', () => {
+    expect(filePath(`30840:${SHIP}:a b/c`)).toBe(`/topic/30840:${SHIP}:a%20b%2Fc`)
+  })
+
+  it('lowercases the pubkey so a link that was upper-cased in transit still resolves', () => {
+    expect(filePath(`30851:${SHIP.toUpperCase()}:d`)).toBe(`/topic/30851:${SHIP}:d`)
+  })
+
+  it('round-trips through the router and addressFromRef', () => {
+    // A `/` in the d would split the path into two segments, so it must be
+    // escaped; the router decodes the segment once before the page sees it.
+    const withSlash = `30840:${SHIP}:a/b`
+    const segment = filePath(withSlash).slice('/topic/'.length)
+    expect(segment).not.toContain('/')
+    expect(addressFromRef(decodeURIComponent(segment))).toBe(withSlash)
+  })
+})
 
 describe('slugify', () => {
   it('reduces a title to url-safe words', () => {
