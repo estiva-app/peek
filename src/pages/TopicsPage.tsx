@@ -1,17 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { IconMessagePlus, IconLinkOff } from '@tabler/icons-react'
 import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
+import { ContainerHeader } from '@/components/ContainerHeader'
 import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTopicDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
+import { PersonRow } from '@/components/ui/PersonRow'
+import { Divider } from '@/components/ui/Divider'
+import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { FolderTree } from '@/components/views/FolderTree'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
 import { useFolderProject } from '@/api/useFolderProject'
-import { hasConvex, useTopics, useCreateTopic, useDeleteTopic } from '@/api'
+import { hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useOpenWorkTopicIds, usePeekActions } from '@/api'
+import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
@@ -19,6 +23,7 @@ import { identifierFromRef, topicPath } from '@/lib/objectUrl'
 import { useTopicPath } from '@/lib/useTopicPath'
 
 export function TopicsPage() {
+  const { topicHasUnread, topicIsUrgent } = useUnread()
   const navigate = useNavigate()
   const location = useLocation()
   const { id: legacyRouteId, ref: routeRef } = useParams<{ id?: string; ref?: string }>()
@@ -28,6 +33,10 @@ export function TopicsPage() {
   const TOPICS = useTopics()
   const createTopic = useCreateTopic()
   const deleteTopic = useDeleteTopic()
+  const isTopicResolved = useIsTopicResolved()
+  const isTopicMember = useIsTopicMember()
+  const openWorkTopicIds = useOpenWorkTopicIds()
+  const actions = usePeekActions()
   const pathForTopic = useTopicPath()
   const { showToast, dismissToast } = useToast()
   /** The Folder panel is dismissible, not part of the layout (PEEK-24). Open to
@@ -125,6 +134,10 @@ export function TopicsPage() {
     setLastTopicId,
   ])
 
+  const handleSelectTopic = (id: string) => {
+    navigate(pathForTopic(id))
+  }
+
   /** Which topic's details are open, if any. */
   const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
 
@@ -156,6 +169,14 @@ export function TopicsPage() {
       navigate('/topics', { replace: true })
     }
   }
+
+  // Always alphabetical by title; unread-first overlay when the toggle is on.
+  const alphaSorted = [...(TOPICS ?? [])].sort((a, b) =>
+    a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
+  )
+  const orderedTopics = showUnreads
+    ? alphaSorted.sort((a, b) => Number(topicHasUnread(b.id)) - Number(topicHasUnread(a.id)))
+    : alphaSorted
 
   const view = useTopicView({
     folderProject: folderProject.state,
@@ -226,15 +247,28 @@ export function TopicsPage() {
     <AppShell
       leftPanel={
         /*
-          The Folder tree, not the topic list (FOL-21). "Your topics / Other
-          topics" were Peek's own conversations split by membership; the
-          column is now the navigation for the whole suite, and this topic
-          appears in it as what it is on the relay — a Folder, whose section
-          starts open. The sort control that came with the old list went with
-          it: the tree is alphabetical and folds, which is what the list's
-          sort was for.
+          The topic list, back (Miky, 2026-09-14). peek#213 put the Folder
+          tree here, and until FOL-22 turns the twenty-five topics into rows a
+          topic is a Folder in it — a section, opened from a hover action, with
+          no highlighted row. That is not a column to read topics from. So the
+          list stays until then, and the tree is where a Folder is navigated:
+          the Folders rail item (`FoldersPage`, peek#214) and the file page.
         */
-        <FolderTree currentFolder={selectedTopic?.folderId} onNewTopic={() => setCreateOpen(true)} />
+        <div className="flex flex-col h-full">
+          <ContainerHeader
+            title="All topics"
+            chevron
+            prop2ndAction
+            prop2ndActionTooltip="Sort by"
+            prop1stAction
+            prop1stActionTooltip="New topic"
+            onProp1stAction={() => setCreateOpen(true)}
+          />
+          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
+            {TOPICS === undefined && <SkeletonSidebarList rows={9} />}
+            {renderTopicList()}
+          </ScrollArea>
+        </div>
       }
       rightPanel={rightPanel}
       threadPanel={
@@ -258,4 +292,55 @@ export function TopicsPage() {
     />
     </>
   )
+
+  /** The sidebar list body. With non-member topics present, splits into
+   *  "Your topics" / "Other topics" sections (QA #2.7 ruling); otherwise a
+   *  flat list, exactly as before (mock data carries no membership). */
+  function renderTopicList(): ReactNode {
+    const memberTopics = orderedTopics.filter((t) => isTopicMember(t.id))
+    const otherTopics = orderedTopics.filter((t) => !isTopicMember(t.id))
+    if (otherTopics.length === 0) return orderedTopics.map(renderTopicRow)
+    return (
+      <>
+        {/* The package's CollapsibleSection (§4.8, D42): the section owns its
+            rows, the slide and the memory of the fold — the page no longer
+            keeps an expanded flag per section. */}
+        <CollapsibleSection title="Your topics" storageKey="peek.topics.yours" className="shrink-0" contentClassName="gap-0.5">
+          {memberTopics.map(renderTopicRow)}
+        </CollapsibleSection>
+        <Divider className="my-2" />
+        <CollapsibleSection title="Other topics" storageKey="peek.topics.others" className="shrink-0" contentClassName="gap-0.5">
+          {otherTopics.map(renderTopicRow)}
+        </CollapsibleSection>
+      </>
+    )
+  }
+
+  function renderTopicRow(topic: NonNullable<typeof TOPICS>[number]): ReactNode {
+              const topicSelected = selectedId === topic.id && !selectedHuddleId
+              return (
+                <div key={topic.id} className="flex flex-col gap-0.5">
+                  <PersonRow
+                    name={topic.title}
+                    type="topic"
+                    topicStatus={isTopicResolved(topic.id) ? 'resolved' : 'unresolved'}
+                    isUnread={(showUnreads && topicHasUnread(topic.id)) || (showUnreads && topicIsUrgent(topic.id))}
+                    isUrgent={showUnreads && topicIsUrgent(topic.id)}
+                    isSelected={topicSelected}
+                    onClick={() => handleSelectTopic(topic.id)}
+                    onDeleteTopic={() => handleDeleteTopic(topic.id)}
+                    onOpenDetails={() => setDetailsTopicId(topic.id)}
+                    openWorkAction={openWorkTopicIds.has(topic.id) ? 'remove' : 'add'}
+                    onToggleOpenWork={() => {
+                      if (openWorkTopicIds.has(topic.id)) {
+                        actions.removeTopicFromOpenWork(topic.id)
+                      } else {
+                        actions.addTopicsToOpenWork([topic.id])
+                        showToast({ label: 'Added to Open work', type: 'success' })
+                      }
+                    }}
+                  />
+                </div>
+              )
+  }
 }
