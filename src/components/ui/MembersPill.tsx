@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import { AvatarGroup } from './AvatarGroup'
+import { Button } from './Button'
 
 /**
  * Who is in this conversation: up to three faces and the total, in a small
@@ -34,19 +35,21 @@ export function MembersPill({
   const total = count ?? members.length
   if (total === 0) return null
   return (
-    <button
-      type="button"
+    /*
+      The package's Button, outlined, at its default 32px (UIG-3, Katerina's
+      pick of 15 September): the faces sit 3px inside the hairline on the top,
+      the bottom and the left, 8px from the count. The small size is 24px, the
+      faces' own height, so they covered the hairline.
+    */
+    <Button
+      variant="outlined"
       aria-label={`${total} members`}
       disabled={!onClick}
       onClick={onClick}
-      className={cn(
-        'bg-bg-elevated border border-border-default rounded-sm flex gap-2 items-center pl-[2px] pr-2 py-[2px]',
-        onClick && 'cursor-pointer hover:border-border-strong transition-colors',
-        className,
-      )}
+      className={cn('gap-2 pl-[3px] pr-2', className)}
     >
       <AvatarGroup members={members} />
       <span className="text-caption text-text-secondary signal:font-mono signal:text-small signal:tabular-nums">{total}</span>
-    </button>
+    </Button>
   )
 }
