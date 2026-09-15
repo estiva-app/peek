@@ -195,14 +195,14 @@ export function HuddleCard({
               inside a cn() call (both share the `text-` prefix). Explicit arbitrary values
               preserve the body-2-strong styling: 14px / 140% line-height / weight 500. */}
           <span className={cn(
-            'text-[14px] leading-[140%] font-medium text-text-primary truncate',
+            'text-body-2-strong text-text-primary truncate',
             // inStream: shrink so the timestamp can sit immediately after the names.
             // grid: take remaining flex width so the timestamp stays at the right edge.
             inStream ? 'min-w-0' : 'flex-1'
           )}>
             {inStream ? inStreamMemberLabel : gridMemberLabel}
           </span>
-          <span className="text-caption text-text-muted whitespace-nowrap shrink-0 signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">
+          <span className="text-caption text-text-muted whitespace-nowrap shrink-0 signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
             {inStream
               ? (huddle.conversation?.timestamp ?? huddle.lastActivity)
               : huddle.conversation

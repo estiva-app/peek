@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
@@ -182,7 +182,7 @@ export function ConversationCard({
     extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
-        class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
+        class: PEEK_EDITOR_CLASSES,
         style: 'caret-color: var(--text-primary)',
       },
       /* A screenshot pasted while editing becomes an attachment, exactly as it
@@ -587,10 +587,10 @@ export function ConversationCard({
               {/* `relative` so the highlight picker hangs off this box, the
                   way it hangs off the composer's — the edit box is a compose
                   box, and everything the composer can do belongs here. */}
-              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
+              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring">
                 <div className={cn(
                   'relative min-h-[20px] transition-all',
-                  (editHasUrgent || editHasHighlight) && 'border-l-[4px] border-border-strong pl-2'
+                  (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2'
                 )}>
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}
@@ -641,7 +641,7 @@ export function ConversationCard({
             <div className="flex items-center gap-2 shrink-0">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
               <span className="text-body-2-strong text-text-primary whitespace-nowrap">{authorName}</span>
-              <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
+              <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
               {highlightState && <HighlightPill type={highlightState} />}
             </div>
             {hasNewMessage && !isUrgent && <UnreadDot />}

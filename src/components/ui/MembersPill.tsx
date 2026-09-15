@@ -46,7 +46,7 @@ export function MembersPill({
       )}
     >
       <AvatarGroup members={members} />
-      <span className="text-caption text-text-secondary signal:font-mono signal:text-[10px] signal:tabular-nums">{total}</span>
+      <span className="text-caption text-text-secondary signal:font-mono signal:text-small signal:tabular-nums">{total}</span>
     </button>
   )
 }

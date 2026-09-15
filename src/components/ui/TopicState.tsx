@@ -31,7 +31,7 @@ export function TopicState({
   return (
     <div className={cn('relative shrink-0 flex items-center justify-center w-4 h-4', className)}>
       {type === 'topic' && status === 'resolved' ? (
-        <IconCircleCheck size={16} stroke={1.5} className="text-success-default signal:drop-shadow-[0_0_5px_rgba(63,222,140,0.7)]" />
+        <IconCircleCheck size={16} stroke={1.5} className="text-success-default signal:drop-shadow-glow-success" />
       ) : type === 'topic' ? (
         <IconCircleDashed size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : type === 'DM' ? (
@@ -40,7 +40,7 @@ export function TopicState({
         <IconUsers size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : type === 'group' ? (
         <div className="flex items-center justify-center bg-bg-inset rounded-sm px-[2px] min-w-[16px] h-[16px]">
-          <span className={cn('text-[11px] font-medium text-text-secondary leading-none signal:font-mono signal:text-[10px] signal:tabular-nums', iconClassName)}>
+          <span className={cn('text-[11px] font-medium text-text-secondary leading-none signal:font-mono signal:text-small signal:tabular-nums', iconClassName)}>
             {memberCount ?? 0}
           </span>
         </div>

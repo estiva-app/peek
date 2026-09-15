@@ -16,7 +16,7 @@
  */
 
 // Presentation constant for highlight types (uses design tokens).
-export { HIGHLIGHT_META } from '@/data/topicData'
+export { HIGHLIGHT_META, HIGHLIGHT_FILL_CLASSES, HIGHLIGHT_TEXT_CLASSES } from '@/data/topicData'
 
 // People + avatar lookup. Phase 3 replaces name-keyed lookups with userIds.
 export { PEOPLE, avatarFor } from '@/data/peopleData'

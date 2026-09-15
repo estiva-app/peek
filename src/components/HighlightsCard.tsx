@@ -4,7 +4,7 @@ import highlightsIcon from '@/assets/highlights icon.png'
 import { Button } from './ui/Button'
 import { HighlightPill } from './ui/HighlightPill'
 import { SectionLabel } from './ui/SectionHeader'
-import { HIGHLIGHT_META, type HighlightType } from '@/api'
+import { HIGHLIGHT_FILL_CLASSES, type HighlightType } from '@/api'
 import { cn } from '@/lib/utils'
 
 // ── Highlights card ──
@@ -73,13 +73,13 @@ function TodoRow({ todo }: { todo: HighlightTodo }) {
         {todo.done && <IconCheck size={12} stroke={2.5} />}
       </span>
       {todo.assignee && (
-        <span className="h-5 px-1 rounded-sm bg-bg-active flex items-center shrink-0 text-[14px] leading-[1.4] text-text-primary whitespace-nowrap">
+        <span className="h-5 px-1 rounded-sm bg-bg-active flex items-center shrink-0 text-body-2 text-text-primary whitespace-nowrap">
           @{todo.assignee}
         </span>
       )}
       <span
         className={cn(
-          'text-[14px] leading-[1.4] text-text-secondary truncate',
+          'text-body-2 text-text-secondary truncate',
           todo.done && 'line-through text-text-muted'
         )}
       >
@@ -94,7 +94,7 @@ function Block({ block }: { block: HighlightBlock }) {
     // Extra top margin so a heading reads as a new section (12px total
     // against the container's 8px gap), matching the Figma rhythm.
     return (
-      <p className="text-[14px] leading-[1.4] font-medium text-text-primary mt-1 first:mt-0">
+      <p className="text-body-2-strong text-text-primary mt-1 first:mt-0">
         {block.text}
       </p>
     )
@@ -103,7 +103,7 @@ function Block({ block }: { block: HighlightBlock }) {
     return (
       <div className="flex flex-col gap-[2px]">
         {block.lines.map((line, i) => (
-          <p key={i} className="text-[14px] leading-[1.4] text-text-secondary">{line}</p>
+          <p key={i} className="text-body-2 text-text-secondary">{line}</p>
         ))}
       </div>
     )
@@ -114,7 +114,7 @@ function Block({ block }: { block: HighlightBlock }) {
     return (
       <ul className="w-full">
         {block.items.map((item, i) => (
-          <li key={i} className="text-[14px] leading-[1.4] text-text-secondary">{item}</li>
+          <li key={i} className="text-body-2 text-text-secondary">{item}</li>
         ))}
       </ul>
     )
@@ -125,7 +125,7 @@ function Block({ block }: { block: HighlightBlock }) {
         <HighlightPill type={block.type} />
         <ul className="w-full">
           {block.lines.map((line, i) => (
-            <li key={i} className="text-[14px] leading-[1.4] text-text-secondary">{line}</li>
+            <li key={i} className="text-body-2 text-text-secondary">{line}</li>
           ))}
         </ul>
       </div>
@@ -163,15 +163,11 @@ export function HighlightsCard({ data, defaultExpanded = false, className }: Hig
           {types.length > 0 && (
             <span className="flex items-center gap-[2px]">
               {types.map((t) => (
-                <span
-                  key={t}
-                  className="size-2 rounded-[2px]"
-                  style={{ backgroundColor: HIGHLIGHT_META[t].color }}
-                />
+                <span key={t} className={cn('size-2 rounded-[2px]', HIGHLIGHT_FILL_CLASSES[t])} />
               ))}
             </span>
           )}
-          <span className="text-[12px] leading-[1.2] text-text-muted whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">
+          <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
             {data.timestamp}
           </span>
         </div>
@@ -196,7 +192,7 @@ export function HighlightsCard({ data, defaultExpanded = false, className }: Hig
       {/* Content */}
       {expanded && (
         <div className="py-2 pr-2 flex flex-col gap-2 items-start w-full">
-          <p className="text-[18px] leading-[1.2] font-semibold text-text-primary mb-1">
+          <p className="text-h3 text-text-primary mb-1">
             {data.title}
           </p>
           {data.blocks.map((block, i) => (

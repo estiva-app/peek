@@ -33,7 +33,7 @@ export function ScreenerPreviewCardView({
             <div className="flex items-center gap-2">
               <Avatar size={16} name={r.authorName} alt={r.authorName} />
               <span className="text-[12px] font-medium leading-[1.3] text-text-primary">{r.authorName}</span>
-              <span className="text-[11px] leading-[1.2] text-text-muted signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{r.timestamp}</span>
+              <span className="text-[11px] leading-[1.2] text-text-muted signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{r.timestamp}</span>
             </div>
             <div className="text-[12px] leading-[1.45] text-text-secondary line-clamp-4">
               <MessageBody body={r.body} isTopicResolved={isTopicResolved} />

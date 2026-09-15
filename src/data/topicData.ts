@@ -41,6 +41,28 @@ export const HIGHLIGHT_META: Record<HighlightType, { color: string; label: strin
   summary:    { color: 'var(--highlight-summary)', label: 'Summary' },
 }
 
+/**
+ * The same colours as classes, for a highlight's dot and its text. A colour in
+ * an inline `style` is outside the token lint and a map named `…_CLASSES` is
+ * inside it (UIG-28). `color` above stays for what no class can say: the tag's
+ * 13% tint.
+ */
+export const HIGHLIGHT_FILL_CLASSES: Record<HighlightType, string> = {
+  insight:    'bg-warning-default',
+  concern:    'bg-error-default',
+  conclusion: 'bg-success-default',
+  question:   'bg-info-default',
+  summary:    'bg-highlight-summary',
+}
+
+export const HIGHLIGHT_TEXT_CLASSES: Record<HighlightType, string> = {
+  insight:    'text-warning-default',
+  concern:    'text-error-default',
+  conclusion: 'text-success-default',
+  question:   'text-info-default',
+  summary:    'text-highlight-summary',
+}
+
 export interface ReactionData {
   emoji: string
   count: number
