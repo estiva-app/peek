@@ -80,10 +80,18 @@ const TRIAGE: Array<[string, keyof typeof TEAMS, Fate]> = [
 ]
 
 /**
- * The 8 test topics the FOL-11 run refused, each holding one `30840` — the
- * file goes first (`kind:5` by its author, which is this identity), then the
- * `9008`. Read off `plan` on 2026-09-15; `delete` re-reads and refuses any
- * bare Folder not in this list rather than guessing.
+ * The 8 test topics the FOL-11 run refused. Each holds one test **issue**
+ * (`30851`, by Miky, Katerina or Ship's own key — not a `30840`, which is
+ * what the ticket assumed), and a `kind:5` is the author's to send, so the
+ * `9008` is refused until the issue is deleted in Ship. Read off `plan` on
+ * 2026-09-15; `delete` re-reads and refuses any bare Folder not in this list
+ * rather than guessing.
+ *
+ * Nine of the 25 topics are refused the same way, for a better reason: they
+ * were the Peek half of a paired Ship project ("Feedback on Peek", the six
+ * "Project: …" ones, …) and hold 148 issues by `h` between them — record
+ * Folders in substance, which FOL-25 says never to delete. The relay's count
+ * is the guard; the run reports the refusal and moves on.
  */
 const TEST_TOPICS = [
   'katerina topic',
@@ -108,12 +116,17 @@ async function token(): Promise<Token> {
   return { accessToken: body.access_token, pubkey: body.pubkey }
 }
 
-async function sign(unsigned: UnsignedEvent, t: Token): Promise<SignedEvent> {
+/** A run of 549 re-posts outlives the access token (~1 h); a 401 mints a new one and retries once. */
+async function sign(unsigned: UnsignedEvent, t: Token, retried = false): Promise<SignedEvent> {
   const res = await fetch(`${ID_ORIGIN}/sign`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${t.accessToken}` },
     body: JSON.stringify({ event: unsigned }),
   })
+  if (res.status === 401 && !retried) {
+    t.accessToken = (await token()).accessToken
+    return sign(unsigned, t, true)
+  }
   if (!res.ok) throw new Error(`POST /sign: ${res.status} ${await res.text()}`)
   return ((await res.json()) as { event: SignedEvent }).event
 }
