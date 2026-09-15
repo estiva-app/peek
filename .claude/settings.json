@@ -25,5 +25,18 @@
       "Bash(python3 -c ':*)",
       "Bash(wc -l /k/PeekApp/peek-app/src/data/*.ts)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/gates.mjs\""
+          }
+        ]
+      }
+    ]
   }
 }
