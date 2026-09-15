@@ -1,6 +1,12 @@
 import betterTailwindcss from 'eslint-plugin-better-tailwindcss'
 import { getDefaultSelectors } from 'eslint-plugin-better-tailwindcss/defaults'
+import { createRequire } from 'node:module'
 import { parser as typescriptParser } from 'typescript-eslint'
+
+// Tailwind's own loader: the preset imports `tailwindcss/plugin`, which a plain
+// `import` cannot resolve.
+const require = createRequire(import.meta.url)
+const preset = require('tailwindcss/loadConfig')(require.resolve('@estiva-app/ui/tailwind-preset'))
 
 /**
  * The token contract as a machine rule — the package's `eslint.config.js`
@@ -83,7 +89,9 @@ export const tokenLint = {
             message: "Tailwind's palette is not a token. Use a colour from the package (bg-bg-surface, text-text-primary, border-border-subtle...); a colour with no token is a missing token.",
           },
           {
-            pattern: '^(?:[a-z0-9-]+:)*[a-z-]+-[[][^]]*(?:#[0-9a-fA-F]{3}|rgba?[(]|hsla?[(]|oklch[(])',
+            // `[^]]*` read as "any one character, then `]`", so this matched
+            // nothing (UIG-28 R1); the package's pattern, which works.
+            pattern: '^(?:[a-z0-9-]+:)*[a-z-]+-\\[[^\\]]*(?:#[0-9a-fA-F]{3}|rgba?\\(|hsla?\\(|oklch\\()',
             message: 'A raw colour is a missing token: add it to the package (tokens.css in every theme block, and the preset), or say why not in an eslint-disable comment.',
           },
           {
@@ -91,6 +99,116 @@ export const tokenLint = {
             message: 'An opacity modifier on a token colour compiles to nothing. A transparent colour is a token of its own (D16): add it to the package.',
           },
         ],
+      },
+    ],
+  },
+}
+
+/**
+ * UIG-28: the values the tokens already name, written by hand (Katerina's
+ * rulings B11, B12, C3 of 13 September and R2 of 15 September). The same block
+ * as the package's `eslint.config.js`; both configs add it after `tokenLint`,
+ * whose parser and plugin settings it borrows.
+ *
+ * `tokenLint` stops `text-sm` and `bg-[#fff]`. Until this, `text-[14px]` and
+ * `style={{ color }}` walked straight past it.
+ *
+ * - Errors: type (`text-[14px]`, `leading-[1.4]`, `tracking-[0.08em]`),
+ *   corners (`rounded-[3px]`) and shadows (`shadow-[…]`), and an inline
+ *   `style` that sets a colour, a font size, a border or a shadow.
+ * - Warnings, reported and never blocking: heights and spacing (`h-[240px]`,
+ *   `gap-[3px]`) and border or ring widths (`ring-[1.5px]`). The preset has no
+ *   spacing token; those steps are Tailwind's own scale.
+ *
+ * They sit under their own rule names, `token-values` and `token-spacing`
+ * (the same plugin registered twice, so one runs as errors and one as
+ * warnings), for two reasons: `tokenLint` stays as it was, and an escape for a
+ * hand-written size cannot also silence a raw colour on the same line.
+ *
+ * The variant part of every pattern reads arbitrary variants too
+ * (`[&_pre]:`, `data-[state]:`, `group-hover/row:`). A colour inside
+ * `text-[…]` is left to the raw-colour rule above.
+ *
+ * Tests are out (ruling of 13 September): a test mounts markup to test it.
+ *
+ * A place that keeps a hand-written value says why (Katerina, 15 September):
+ * `// eslint-disable-next-line <rule> -- @estiva-escape: <reason>`.
+ */
+const V = '^(?:(?:[^:\\[\\]\\s]|\\[[^\\]]*\\])+:)*!?'
+const NOT_COLOUR = '(?!color:|#|rgba?\\(|hsla?\\(|oklch\\(|var\\()'
+const HAND_WRITTEN = {
+  type: `${V}(?:text-\\[${NOT_COLOUR}|text-\\[length:|leading-\\[|tracking-\\[)[^\\]]+\\](?:/\\S*)?$`,
+  corner: `${V}rounded(?:-(?:t|r|b|l|s|e|tl|tr|br|bl|ss|se|es|ee))?-\\[[^\\]]+\\]$`,
+  shadow: `${V}(?:shadow|drop-shadow)-\\[(?!color:)[^\\]]+\\]$`,
+  spacing: `${V}-?(?:w|h|size|min-w|min-h|max-w|max-h|p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|translate-[xy]|basis|indent|scroll-[mp][xytrblse]?|border-spacing(?:-[xy])?)-\\[[^\\]]+\\]$`,
+  width: `${V}(?:border(?:-[xytrblse])?|divide-[xy]|outline|ring|ring-offset)-\\[(?:length:)?-?[0-9.]+(?:px|rem|em)?\\]$`,
+}
+
+// `text-[14px]` names the token of that size, read from the preset, so the
+// message stays true when the ramp changes.
+const tokensBySize = {}
+for (const [name, value] of Object.entries(preset.theme.extend.fontSize)) {
+  const size = Array.isArray(value) ? value[0] : value
+  ;(tokensBySize[size] ??= []).push(`text-${name}`)
+}
+const cornersBySize = {}
+for (const [name, size] of Object.entries(preset.theme.extend.borderRadius)) (cornersBySize[size] ??= []).push(name === 'DEFAULT' ? 'rounded' : `rounded-${name}`)
+
+const INLINE_STYLE_TOKEN_PROPERTIES =
+  '/^(color|background|backgroundColor|backgroundImage|fill|stroke|fontSize|border|borderTop|borderRight|borderBottom|borderLeft|borderBlock|borderInline|borderStyle|boxShadow|textShadow)$|Color$/'
+
+export const tokenValues = {
+  files: ['**/*.{ts,tsx}'],
+  ignores: ['**/*.test.ts', '**/*.test.tsx'],
+  plugins: { 'token-values': betterTailwindcss, 'token-spacing': betterTailwindcss },
+  rules: {
+    'token-values/no-restricted-classes': [
+      'error',
+      {
+        restrict: [
+          ...Object.entries(tokensBySize).map(([size, names]) => ({
+            pattern: `${V}text-\\[${size.replace('.', '\\.')}\\](?:/\\S*)?$`,
+            message: `$0 is the type ramp written by hand. Use ${names.join(' or ')}.`,
+          })),
+          {
+            pattern: HAND_WRITTEN.type,
+            message: '$0 is type written by hand. A token from the package sets the size, line height, letter spacing and weight together (text-body-2, text-caption, text-h5...); if none fits, add one to the package, or say why not in an eslint-disable comment.',
+          },
+          ...Object.entries(cornersBySize).map(([size, names]) => ({
+            pattern: `${V}rounded(?:-(?:t|r|b|l|s|e|tl|tr|br|bl|ss|se|es|ee))?-\\[${size.replace('.', '\\.')}\\]$`,
+            message: `$0 is a corner written by hand. Use ${names.join(' or ')} (with the same side, if it has one).`,
+          })),
+          {
+            pattern: HAND_WRITTEN.corner,
+            message: '$0 is a corner written by hand, and no token has it. Use a corner from the package (rounded-sm 4px, rounded-md 6px, rounded-lg 8px...), or say why not in an eslint-disable comment.',
+          },
+          {
+            pattern: HAND_WRITTEN.shadow,
+            message: '$0 is a shadow written by hand. Use a shadow from the package (shadow-sm, shadow-md, shadow-focus-ring, drop-shadow-glow-success...); a shadow with no token is a missing token.',
+          },
+        ],
+      },
+    ],
+    'token-spacing/no-restricted-classes': [
+      'warn',
+      {
+        restrict: [
+          {
+            pattern: HAND_WRITTEN.spacing,
+            message: '$0 is a size or a space written by hand. Use a step of the spacing scale (p-3, h-9, gap-2...) if one fits. Reported, not blocked.',
+          },
+          {
+            pattern: HAND_WRITTEN.width,
+            message: '$0 is a border or ring width written by hand. Use border, border-2, ring-1... if one fits. Reported, not blocked.',
+          },
+        ],
+      },
+    ],
+    'no-restricted-syntax': [
+      'error',
+      {
+        selector: `JSXAttribute[name.name="style"] > JSXExpressionContainer > ObjectExpression > Property[key.name=${INLINE_STYLE_TOKEN_PROPERTIES}]`,
+        message: 'An inline style that sets a colour, a font size, a border or a shadow is outside the token contract: use a token class. If the value is computed (a palette, a size from a prop), say why in an eslint-disable comment. Width, height and transforms are fine.',
       },
     ],
   },

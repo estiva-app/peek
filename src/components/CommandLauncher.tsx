@@ -815,12 +815,14 @@ export function CommandLauncher({
     <div
       className={cn(
         'flex items-center justify-center size-8 rounded-sm shrink-0',
+        // eslint-disable-next-line better-tailwindcss/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written Ship colour waits for that
         app.id === 'peek' ? 'bg-accent-muted' : 'bg-[rgba(75,88,212,0.14)]',
       )}
     >
       {app.id === 'peek' ? (
         <PeekLogoMark height={14} />
       ) : (
+        // eslint-disable-next-line better-tailwindcss/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written Ship colour waits for that
         <ShipLogoMark height={14} className="text-[#5c69dc]" />
       )}
     </div>
@@ -888,7 +890,9 @@ export function CommandLauncher({
         <>
           {icon != null && iconTile(icon)}
           <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
+            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
             <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{title}</div>
+            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
             {subtitle && <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{subtitle}</div>}
           </div>
         </>
@@ -938,6 +942,7 @@ export function CommandLauncher({
           compact: true,
           onSelect: () => {},
           render: () => (
+            // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
             <div className="px-3 py-2 text-[13px] leading-[1.2] text-text-secondary">{liveNote}</div>
           ),
         })
@@ -1193,6 +1198,7 @@ export function CommandLauncher({
           compact: true,
           onSelect: () => {},
           render: () => (
+            // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
             <div className="px-3 py-2 text-[13px] leading-[1.2] text-text-secondary">{note}</div>
           ),
         })
@@ -1212,7 +1218,9 @@ export function CommandLauncher({
           <>
             {appTile(a)}
             <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
+              {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
               <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{a.label}</div>
+              {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
               <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{`${a.description} · ${a.actions.length} actions`}</div>
             </div>
           </>
@@ -1357,6 +1365,7 @@ export function CommandLauncher({
                 ) : (
                   <IconMessageQuestion size={10} stroke={1.5} className="text-text-secondary" />
                 )}
+                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                 <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap max-w-[220px] truncate">
                   {asking.intent === 'propose' && !asking.request ? 'Make something' : asking.request}
                 </span>
@@ -1376,6 +1385,7 @@ export function CommandLauncher({
             {scope && (
               <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
                 {appIcon(scope, 10)}
+                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                 <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap">
                   {chipLabel}
                 </span>
@@ -1397,6 +1407,7 @@ export function CommandLauncher({
             {!contextCleared && ctx.composer && (
               <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-1.5 pr-1 py-0.5 max-h-[24px] max-w-[220px] shrink-0">
                 <IconPencil size={12} stroke={1.5} className="text-text-secondary shrink-0" />
+                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                 <span className="text-[12px] leading-[1.2] font-medium text-text-primary truncate">
                   {ctx.composer?.label ?? 'Compose box'}
                 </span>
@@ -1452,6 +1463,7 @@ export function CommandLauncher({
               {/* Make is about the conversation rather than the words, so it
                   has nothing to echo back. */}
               {asking.intent !== 'propose' && (
+                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                 <p className="text-[14px] leading-[1.4] text-text-primary">{asking.request}</p>
               )}
 
@@ -1459,8 +1471,10 @@ export function CommandLauncher({
                 proposal === null ? (
                   // Two waits behind this one: a relay read for the manifests
                   // and then the model. Saying so beats a blank panel.
+                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                   <p className="text-[13px] leading-[1.4] text-text-secondary">Reading the conversation…</p>
                 ) : proposal === false ? (
+                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                   <p className="text-[13px] leading-[1.4] text-text-secondary">
                     Nothing here matches what any app offers to make. Leave Make to go back to searching.
                   </p>
@@ -1471,9 +1485,11 @@ export function CommandLauncher({
                       apps — two of them may declare something plausibly
                       matching, and this names the one about to be written to.
                     */}
+                    {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                     <p className="text-[12px] leading-[1.2] text-text-secondary">
                       {proposal.entry.appLabel} · {proposal.entry.launcher.label}
                     </p>
+                    {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                     <p data-testid="proposal" className="text-[14px] leading-[1.5] text-text-primary">
                       {proposal.preview}
                     </p>
@@ -1495,6 +1511,7 @@ export function CommandLauncher({
                       >
                         Open the form
                       </Button>
+                      {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                       <span className="text-[12px] leading-[1.2] text-text-secondary">
                         Nothing is created until you submit it.
                       </span>
@@ -1503,6 +1520,7 @@ export function CommandLauncher({
                 )
               ) : asking.intent === 'ask' ? (
                 answer === null ? (
+                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                   <p className="text-[13px] leading-[1.4] text-text-secondary">Reading the thread…</p>
                 ) : answer === false ? (
                   /*
@@ -1511,6 +1529,7 @@ export function CommandLauncher({
                     person who typed a question and pressed Enter is owed an
                     answer or a reason, never nothing.
                   */
+                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                   <p className="text-[13px] leading-[1.4] text-text-secondary">
                     No answer came back. Edit the question and press Enter to try again.
                   </p>
@@ -1518,6 +1537,7 @@ export function CommandLauncher({
                   <>
                     <p
                       data-testid="answer"
+                      // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                       className="text-[14px] leading-[1.5] text-text-primary whitespace-pre-wrap"
                     >
                       {answer.text}
@@ -1567,13 +1587,16 @@ export function CommandLauncher({
                           }}
                           className="text-left px-3 py-2 rounded-md hover:bg-bg-hover flex flex-col gap-0.5"
                         >
+                          {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                           <span className="text-[12px] leading-[1.2] text-text-secondary">
                             [{n}] {message.author} · {message.timestamp}
                           </span>
+                          {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                           <span className="text-[13px] leading-[1.4] text-text-primary line-clamp-2">
                             {message.body}
                           </span>
                           {unreachable === message.id && (
+                            // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                             <span className="text-[12px] leading-[1.2] text-text-secondary">
                               Not loaded in the thread — scroll up to load earlier messages.
                             </span>
@@ -1589,6 +1612,7 @@ export function CommandLauncher({
                       `threadContext` still has.
                     */}
                     {(answer.byRecency || answer.omitted > 0 || answer.repliesNotRead > 0) && (
+                      // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                       <p className="text-[12px] leading-[1.4] text-text-secondary">
                         {[
                           answer.byRecency
@@ -1617,8 +1641,10 @@ export function CommandLauncher({
                 // Saying it is working, because a blank panel for several
                 // seconds reads as a broken one. Measured: 8000 characters of
                 // thread costs about 2.3s before a word is generated (INT-1).
+                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                 <p className="text-[13px] leading-[1.4] text-text-secondary">Writing a draft…</p>
               ) : draft === false ? (
+                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                 <p className="text-[13px] leading-[1.4] text-text-secondary">
                   No draft came back. Leave Draft to go back to searching — what you typed is still there.
                 </p>
@@ -1629,6 +1655,7 @@ export function CommandLauncher({
                       seeing it first costs nothing. */}
                   <p
                     data-testid="draft"
+                    // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                     className="text-[14px] leading-[1.5] text-text-primary whitespace-pre-wrap border-l-2 border-border-default pl-3"
                   >
                     {draft}
@@ -1645,6 +1672,7 @@ export function CommandLauncher({
                     >
                       Put it in the composer
                     </Button>
+                    {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                     <span className="text-[12px] leading-[1.2] text-text-secondary">
                       It will not send — edit it first.
                     </span>
@@ -1677,11 +1705,13 @@ export function CommandLauncher({
                   that knows what the manifest allowed, and a generic failure
                   here would throw that away. */}
               {submitError && (
+                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                 <p role="alert" className="px-4 pb-3 -mt-1 text-[12px] leading-[1.4] text-error-default">
                   {submitError}
                 </p>
               )}
               {submitting && (
+                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
                 <p className="px-4 pb-3 -mt-1 text-[12px] leading-[1.4] text-text-secondary">Creating…</p>
               )}
             </div>
@@ -1713,6 +1743,7 @@ export function CommandLauncher({
             {rows.length === 0 && headers.get(0)}
             {rows.length === 0 && !headers.get(0) && (
               <div className="flex items-center h-12 px-3">
+                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                 <span className="text-[14px] text-text-secondary">Nothing for that here.</span>
               </div>
             )}
@@ -1721,6 +1752,7 @@ export function CommandLauncher({
 
           {/* The footer carries the shortcuts in every theme — the input row
               stopped duplicating esc (Katerina 2026-08-31). */}
+          {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
           <div className="flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 select-none text-caption text-text-secondary signal:font-mono signal:text-[10px] signal:text-text-muted">
             {formAction ? (
               <>

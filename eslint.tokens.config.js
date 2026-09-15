@@ -1,6 +1,6 @@
 import reactHooks from 'eslint-plugin-react-hooks'
 import { defineConfig, globalIgnores } from 'eslint/config'
-import { tokenLint, TOKEN_LINT_IGNORES } from './eslint.tokens.js'
+import { tokenLint, tokenValues, TOKEN_LINT_IGNORES } from './eslint.tokens.js'
 
 /**
  * The token rules on their own — `npm run lint:tokens`, and the CI gate (D55).
@@ -26,4 +26,6 @@ export default defineConfig([
     linterOptions: { reportUnusedDisableDirectives: 'off' },
   },
   tokenLint,
+  // UIG-28: hand-written sizes, corners, shadows and inline colours.
+  tokenValues,
 ])
