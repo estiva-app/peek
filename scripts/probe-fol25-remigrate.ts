@@ -91,10 +91,54 @@ async function convexTopics(): Promise<Array<{ title: string; uuid: string }>> {
   return rows.filter((r) => r.channelUuid).map((r) => ({ title: r.title, uuid: r.channelUuid! }))
 }
 
+/**
+ * Does every reply's `p` name the author of the message it answers?
+ *
+ * `verify` checks that a reply's `e` points at its parent's copy, which is the
+ * clause the ticket wrote down — but NIP-22's lowercase `p` is a second claim
+ * about the same edge, and nothing checked it. A wrong `p` misattributes who
+ * is being answered, which is what the whole re-migration was about. Run while
+ * the channels are still readable.
+ */
+async function replyAttribution(query: (f: Record<string, unknown>[]) => Promise<SignedEvent[]>, agent: string) {
+  const files = (await query(Object.values(TEAMS).map((h) => ({ kinds: [30840], '#h': [h], authors: [agent], limit: 200 }))))
+    .filter((e) => !!tag(e, 'd'))
+    .sort((a, b) => (tag(a, 'title') ?? '').localeCompare(tag(b, 'title') ?? ''))
+  let replies = 0
+  let badParent = 0
+  let badAuthor = 0
+  const authors = new Map<string, number>()
+  for (const f of files) {
+    const onFile = await query([{ kinds: [1111], '#A': [`30840:${f.pubkey}:${tag(f, 'd')}`], limit: 2000 }])
+    const byId = new Map(onFile.map((e) => [e.id, e]))
+    for (const e of onFile) {
+      const parentId = e.tags.find((x) => x[0] === 'e')?.[1]
+      if (!parentId) continue
+      replies++
+      const parent = byId.get(parentId)
+      if (!parent) {
+        badParent++
+        console.log(`    ${tag(f, 'title')}: reply ${e.id.slice(0, 8)} names ${parentId.slice(0, 8)}, not on this file`)
+        continue
+      }
+      const claimed = e.tags.find((x) => x[0] === 'p')?.[1]
+      authors.set(parent.pubkey, (authors.get(parent.pubkey) ?? 0) + 1)
+      if (claimed !== parent.pubkey) {
+        badAuthor++
+        console.log(`    ${tag(f, 'title')}: reply ${e.id.slice(0, 8)} claims p=${claimed?.slice(0, 8)}, parent is by ${parent.pubkey.slice(0, 8)}`)
+      }
+    }
+  }
+  console.log(`\n${replies} replies: ${badParent} with an unresolvable parent, ${badAuthor} with a wrong p`)
+  console.log(`parents answered, by author:`)
+  for (const [pk, n] of [...authors].sort((a, b) => b[1] - a[1])) console.log(`    ${pk.slice(0, 12)}… ${n}`)
+}
+
 async function main() {
   const t = await token()
   const query = queryAs(t)
   console.log(`identity ${t.pubkey.slice(0, 8)}…  relay ${RELAY_URL}\n`)
+  if (process.argv[2] === 'replies') return replyAttribution(query, t.pubkey)
 
   // ---- 4 + 1. Every file this identity owns in the five teams, and what hangs off it.
   const files = (await query(Object.values(TEAMS).map((h) => ({ kinds: [30840], '#h': [h], authors: [t.pubkey], limit: 200 }))))
