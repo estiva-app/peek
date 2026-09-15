@@ -223,12 +223,12 @@ export function HuddleCard({
             indented with pl-8 to align under the names (matches ConversationCard's
             body which uses pl-8 to sit under the author name). */}
         {inStream ? (
-          <p className="pl-8 text-caption text-text-secondary leading-[1.4] truncate">
+          <p className="pl-8 text-caption leading-snug text-text-secondary truncate">
             {flatBody}
           </p>
         ) : (
           <div className="pt-1 flex-1 min-h-0 overflow-hidden">
-            <p className="text-caption text-text-secondary leading-[1.4] line-clamp-2">
+            <p className="text-caption leading-snug text-text-secondary line-clamp-2">
               {bodyText.split('\n').filter(Boolean).map((line, i) => {
                 const cleaned = line.replace(/^[-•]\s/, '• ').replace(/^\d+\.\s/, (m) => m)
                 return (
@@ -283,7 +283,7 @@ export function HuddleCard({
                 {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
               </span>
               {lastReplyTime && (
-                <span className="hidden signal:inline font-mono text-[9.5px] leading-[12px] mt-px text-text-muted tabular-nums">
+                <span className="hidden signal:inline font-mono text-small leading-3 mt-px text-text-muted tabular-nums">
                   {lastReplyTime}
                 </span>
               )}
@@ -312,13 +312,13 @@ export function HuddleCard({
         {inStream && isResolved && (
           <div className="flex items-center gap-2 pl-8 pr-2 pb-2 pt-1">
             <IconChecks size={16} stroke={1.5} className="text-success-default shrink-0" />
-            <span className="text-[12px] leading-[1.1] font-medium text-success-default whitespace-nowrap">
+            <span className="text-h5 text-success-default whitespace-nowrap">
               {huddle.conversation?.resolvedBy || 'Someone'} resolved
             </span>
             {huddle.conversation?.resolutionMessage && (
               <>
                 <IconArrowNarrowRight size={12} stroke={1.5} className="text-text-primary shrink-0" />
-                <span className="text-[12px] leading-[1.1] font-medium text-text-primary truncate">{huddle.conversation.resolutionMessage}</span>
+                <span className="text-h5 text-text-primary truncate">{huddle.conversation.resolutionMessage}</span>
               </>
             )}
           </div>

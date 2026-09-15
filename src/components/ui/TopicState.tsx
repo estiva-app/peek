@@ -40,7 +40,7 @@ export function TopicState({
         <IconUsers size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : type === 'group' ? (
         <div className="flex items-center justify-center bg-bg-inset rounded-sm px-[2px] min-w-[16px] h-[16px]">
-          <span className={cn('text-[11px] font-medium text-text-secondary leading-none signal:font-mono signal:text-small signal:tabular-nums', iconClassName)}>
+          <span className={cn('text-chip text-text-secondary leading-none signal:font-mono signal:text-small signal:tabular-nums', iconClassName)}>
             {memberCount ?? 0}
           </span>
         </div>

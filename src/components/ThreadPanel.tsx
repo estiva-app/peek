@@ -47,7 +47,7 @@ function ResolutionTimeline({ events }: { events: ResolutionEvent[] }) {
               <span className={cn('size-1 rounded-full', e.kind === 'resolved' ? 'bg-success-default' : 'bg-text-muted')} />
             </span>
           </span>
-          <p className="text-[12px] leading-[1.4] font-medium min-w-0">
+          <p className="text-h5 leading-snug min-w-0">
             {e.kind === 'resolved' ? (
               <>
                 <span className="text-success-default whitespace-nowrap">{e.by || 'Someone'} resolved</span>
@@ -65,7 +65,7 @@ function ResolutionTimeline({ events }: { events: ResolutionEvent[] }) {
               </>
             )}
             {e.atMs !== undefined && (
-              <span className="text-[11px] font-normal text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
+              <span className="text-chip font-normal text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
                 {' '}· {formatReplyTimestamp(e.atMs)}
               </span>
             )}

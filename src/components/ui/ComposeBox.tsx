@@ -394,7 +394,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
             const canSend = (!isEmpty || hasReadyFile) && !uploads.isUploading
             return (
               <div className="flex items-center gap-2.5">
-              <span className="hidden signal:inline font-mono text-[9px] tracking-[0.04em] text-text-muted select-none">
+              <span className="hidden signal:inline font-mono text-menu font-normal tracking-wider text-text-muted select-none">
                 Enter to send · Shift+Enter new line
               </span>
               {/* The shared IconButton's `primary`, which this button was a
