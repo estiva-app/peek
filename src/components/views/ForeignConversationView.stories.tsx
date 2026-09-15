@@ -94,6 +94,50 @@ export const AProjectsConversation: Story = {
 }
 
 /**
+ * A conversation with threads under it — the manner FOL-19 added and FOL-25 met.
+ *
+ * The fixture is the shape of a migrated topic: most comments have nothing
+ * under them, a few carry most of the discussion. It exists because the thread
+ * affordance shipped without one — nothing rendered `replyCounts` or
+ * `onOpenThread`, so nobody saw that 31 of a file's 50 messages had become
+ * seven unlabelled icons until somebody opened the page on production.
+ */
+export const WithThreads: Story = {
+  args: {
+    people: PEOPLE,
+    onOpenThread: () => {},
+    replyCounts: { c1: 9, c3: 2 },
+    state: project([
+      {
+        id: 'c1',
+        author: CATH,
+        body: 'Renamed and rescoped — teams, nesting, then labels.',
+        createdAt: now - 30 * HOUR,
+      },
+      {
+        id: 'c2',
+        author: SHIP,
+        body: 'Folder state is relay-signed now, so the peers agree outside Ship too.',
+        createdAt: now - 4 * HOUR,
+      },
+      {
+        id: 'c3',
+        author: CATH,
+        body: 'Then the last unproven leg is the browser one.',
+        createdAt: now - 40 * 60,
+      },
+    ]),
+  },
+}
+
+/**
+ * The thread that is open in the pane beside this one, marked on its own row.
+ */
+export const ThreadOpen: Story = {
+  args: { ...WithThreads.args, openThreadId: 'c1' },
+}
+
+/**
  * An author with no `kind:0`, shown as a shortened key rather than "Unknown".
  *
  * Two unnamed authors both called Unknown cannot be told apart, and one of them

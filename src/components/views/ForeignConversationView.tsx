@@ -1,8 +1,8 @@
 import { IconMessage } from '@tabler/icons-react'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
+import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { CommentRow } from '@/components/views/CommentRow'
 
@@ -136,29 +136,43 @@ export function ForeignConversationView({
                 ? 'rounded-md bg-bg-inset px-2 py-1.5 -mx-2'
                 : 'px-2 py-1.5 -mx-2'
             }
-            actions={
+            below={
               onOpenThread && (
-                <>
+                /*
+                  **A labelled control, under the message, saying how many.**
+
+                  This was an unlabelled 16px icon at the far right of the
+                  header with a bare number beside it, and FOL-25 is what that
+                  cost: nine migrated conversations went up whose replies were
+                  real, correctly threaded and counted — and every reader
+                  reported the page as flat with most of its messages missing.
+                  Thirty-one of one file's fifty messages sat behind seven of
+                  those icons. The count was never the problem; nothing on the
+                  row said the word "replies", and a number floated against the
+                  opposite margin from its message reads as a timestamp.
+
+                  So the count is spelled out, next to the body it belongs to.
+                  A row with no replies still offers the control, because the
+                  only way to start a thread is to open one — but it says
+                  "Reply", which is the true offer, rather than showing a
+                  count nobody has.
+                */
+                <Button
+                  variant="muted"
+                  size="small"
+                  leadingIcon={<IconMessage size={14} stroke={1.5} />}
+                  aria-current={openThreadId === comment.id ? true : undefined}
+                  onClick={() => onOpenThread(comment.id)}
+                  data-replies={replies ?? undefined}
+                >
                   {/*
                     A count only when we have one, and never a nought: an
                     absence here means the replies were not asked for, and a
                     "0" would be an assertion nobody made — `ConversationCount`
                     takes the same line one pane to the left.
                   */}
-                  {!!replies && (
-                    <span className="text-caption text-text-muted tabular-nums" data-replies={replies}>
-                      {replies}
-                    </span>
-                  )}
-                  <IconButton
-                    tooltip="Open thread"
-                    aria-label={replies ? `Open thread, ${replies} replies` : 'Open thread'}
-                    aria-current={openThreadId === comment.id ? true : undefined}
-                    onClick={() => onOpenThread(comment.id)}
-                  >
-                    <IconMessage size={16} stroke={1.5} />
-                  </IconButton>
-                </>
+                  {replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Reply'}
+                </Button>
               )
             }
           />

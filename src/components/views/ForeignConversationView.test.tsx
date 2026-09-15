@@ -118,6 +118,75 @@ describe('ForeignConversationView', () => {
     expect(screen.getByText('Spring tide at 06:12.')).toBeInTheDocument()
   })
 
+  /*
+    The affordance FOL-19 added and FOL-25 had to fix. It shipped with neither a
+    story nor a test, and what that cost was nine migrated conversations whose
+    replies were real, correctly threaded and counted, and which every reader
+    reported as flat with most of their messages missing. The count had always
+    been right; it was drawn as a bare number against the far margin beside an
+    unlabelled icon, and nothing on the row said the word "replies".
+  */
+  describe('says what is under a comment', () => {
+    const two = object({
+      comments: [
+        { id: 'c1', author: CATH, body: 'Renamed and rescoped.', createdAt: at(3600) },
+        { id: 'c2', author: SHIP, body: 'Accepted.', createdAt: at(60) },
+      ],
+    })
+
+    it('spells the count out, and gets the singular right', () => {
+      render(
+        <ForeignConversationView
+          people={PEOPLE}
+          state={two}
+          onOpenThread={() => {}}
+          replyCounts={{ c1: 9, c2: 1 }}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: '9 replies' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '1 reply' })).toBeInTheDocument()
+    })
+
+    it('offers a reply, not a nought, where nobody has replied', () => {
+      render(
+        <ForeignConversationView
+          people={PEOPLE}
+          state={two}
+          onOpenThread={() => {}}
+          replyCounts={{ c1: 2 }}
+        />,
+      )
+
+      // A missing entry is "nobody asked", and a "0" would be an assertion
+      // nobody made — so the row says what it can offer instead.
+      expect(screen.getByRole('button', { name: '2 replies' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Reply' })).toBeInTheDocument()
+      expect(screen.queryByText('0')).not.toBeInTheDocument()
+    })
+
+    it('offers no thread control at all where the caller opens none', () => {
+      // Inside a topic's own conversation there is no third pane to open into.
+      render(<ForeignConversationView people={PEOPLE} state={two} />)
+
+      expect(screen.queryByRole('button', { name: /repl/i })).not.toBeInTheDocument()
+    })
+
+    it('marks the comment whose thread is open', () => {
+      render(
+        <ForeignConversationView
+          people={PEOPLE}
+          state={two}
+          onOpenThread={() => {}}
+          replyCounts={{ c1: 9 }}
+          openThreadId="c1"
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: '9 replies', current: true })).toBeInTheDocument()
+    })
+  })
+
   it('names an author with no profile by key rather than calling them Unknown', () => {
     render(
       <ForeignConversationView

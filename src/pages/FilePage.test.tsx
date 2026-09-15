@@ -161,6 +161,14 @@ function mount(url: string) {
   )
 }
 
+/*
+  The thread control's accessible name is its visible label, which is the point
+  of it: FOL-25 replaced an unlabelled icon whose only `aria-label` said "Open
+  thread" with the count spelled out, because nobody reading the page could tell
+  the icon meant a thread. So the tests match what a person reads.
+*/
+const THREAD_CONTROL = /^(Reply|\d+ repl(y|ies))$/
+
 /** What one mounted page looks like, reduced to what must not differ between apps. */
 function shape() {
   const left = screen.getByTestId('left')
@@ -170,7 +178,7 @@ function shape() {
     folderRows: within(left).getAllByRole('button').length > 0,
     listingOpen: left.querySelector(`[data-folder="${FOLDER}"]`) !== null,
     comments: middle.querySelectorAll('[data-comment]').length,
-    threadButtons: within(middle).queryAllByRole('button', { name: /Open thread/ }).length,
+    threadButtons: within(middle).queryAllByRole('button', { name: THREAD_CONTROL }).length,
     composer: within(middle).queryByRole('textbox') !== null,
     openFolder: within(middle).queryByRole('button', { name: 'Open folder' }) !== null,
   }
@@ -293,13 +301,13 @@ describe('FilePage opens a thread beside the conversation', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     const middle = screen.getByTestId('middle')
-    fireEvent.click(within(middle).getAllByRole('button', { name: /Open thread/ })[0])
+    fireEvent.click(within(middle).getAllByRole('button', { name: THREAD_CONTROL })[0])
     const thread = screen.getByTestId('thread')
     expect(thread.querySelector(`[data-thread="${rootId}"]`)).not.toBeNull()
     expect(within(thread).getByText('First on the issue')).toBeInTheDocument()
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     // The comment whose thread is open is marked in the middle pane.
-    expect(within(middle).getByRole('button', { name: /Open thread/, current: true })).toBeInTheDocument()
+    expect(within(middle).getByRole('button', { name: THREAD_CONTROL, current: true })).toBeInTheDocument()
   })
 
   it('opens from a pasted ?thread= link', () => {
@@ -319,7 +327,7 @@ describe('FilePage opens a thread beside the conversation', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     expect(within(screen.getByTestId('thread')).getByText('A reply from Ship')).toBeInTheDocument()
     const middle = screen.getByTestId('middle')
-    expect(within(middle).getByRole('button', { name: 'Open thread, 1 replies' })).toBeInTheDocument()
+    expect(within(middle).getByRole('button', { name: '1 reply' })).toBeInTheDocument()
     // No count on the comment nobody replied to: absent, not "0".
     expect(middle.querySelectorAll('[data-replies]')).toHaveLength(1)
   })
