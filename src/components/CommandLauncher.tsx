@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Kbd } from '@estiva-app/ui'
 import { shortcutLabel } from '@/lib/shortcuts'
 import { createPortal } from 'react-dom'
-import { IconSearch, IconChevronRight, IconX, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting, IconSparkles, IconDownload } from '@tabler/icons-react'
+import { IconSearch, IconChevronRight, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting, IconSparkles, IconDownload } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { EnterHint, MenuItem } from '@estiva-app/ui'
+import { EnterHint, InputChip, MenuItem } from '@estiva-app/ui'
 import { Button } from '@/components/ui/Button'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { ActionFormPanel } from './ActionFormPanel'
@@ -1351,53 +1351,43 @@ export function CommandLauncher({
           <div className="flex items-center gap-3 h-12 px-4 border-b border-border-subtle shrink-0">
             <IconSearch size={16} stroke={1.5} className="text-text-secondary shrink-0" />
 
+            {/* The three chips are the package's InputChip (UIG-3, Katerina's pick
+                of 15 September): one shape for all three, the Ask chip without its
+                own tint, 16px icons. Each ✕ keeps its name, and a long label is
+                cut where it was. */}
+
             {/* Scope chip - the state made visible. Click the X (or Backspace on
                 an empty input) to pop one level back out. */}
-            {/* Ask chip — deliberately its own, not the scope chip's shape with
-                an app icon in it. Ask is a mode, and drawing it beside Ship and
-                Peek would read as a third application that does not exist. */}
+            {/* Ask chip — a mode, not an application: its icon is the mode's. */}
             {asking !== null && (
-              <div className="inline-flex items-center gap-1.5 bg-accent-muted border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
-                {asking.intent === 'draft' ? (
-                  <IconWriting size={10} stroke={1.5} className="text-text-secondary" />
-                ) : asking.intent === 'propose' ? (
-                  <IconSparkles size={10} stroke={1.5} className="text-text-secondary" />
-                ) : (
-                  <IconMessageQuestion size={10} stroke={1.5} className="text-text-secondary" />
-                )}
-                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap max-w-[220px] truncate">
-                  {asking.intent === 'propose' && !asking.request ? 'Make something' : asking.request}
-                </span>
-                <button
-                  type="button"
-                  onClick={popLevel}
-                  className="size-4 flex items-center justify-center rounded-full hover:bg-bg-hover text-text-secondary"
-                  aria-label={
-                    asking.intent === 'draft' ? 'Leave Draft' : asking.intent === 'propose' ? 'Leave Make' : 'Leave Ask'
-                  }
-                >
-                  <IconX size={10} stroke={1.5} />
-                </button>
-              </div>
+              <InputChip
+                label={asking.intent === 'propose' && !asking.request ? 'Make something' : asking.request}
+                leading={
+                  asking.intent === 'draft' ? (
+                    <IconWriting size={16} stroke={1.5} className="text-text-secondary" />
+                  ) : asking.intent === 'propose' ? (
+                    <IconSparkles size={16} stroke={1.5} className="text-text-secondary" />
+                  ) : (
+                    <IconMessageQuestion size={16} stroke={1.5} className="text-text-secondary" />
+                  )
+                }
+                onRemove={popLevel}
+                removeLabel={asking.intent === 'draft' ? 'Leave Draft' : asking.intent === 'propose' ? 'Leave Make' : 'Leave Ask'}
+                truncate
+                // The label's 220px, as before, plus the chip around it: 1+2 edge,
+                // 16 icon, 6 gap, 6 gap, 16 ✕, 4+1 edge.
+                className="shrink-0 max-w-[272px]"
+              />
             )}
 
             {scope && (
-              <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-2 pr-1 py-0.5 max-h-[24px] shrink-0">
-                {appIcon(scope, 10)}
-                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                <span className="text-[12px] leading-[1.2] font-medium text-text-primary whitespace-nowrap">
-                  {chipLabel}
-                </span>
-                <button
-                  type="button"
-                  onClick={popLevel}
-                  className="size-4 flex items-center justify-center rounded-full hover:bg-bg-hover text-text-secondary"
-                  aria-label={formAction ? `Leave ${formAction.label}` : `Leave ${scope.label}`}
-                >
-                  <IconX size={10} stroke={1.5} />
-                </button>
-              </div>
+              <InputChip
+                label={chipLabel ?? scope.label}
+                leading={appIcon(scope, 16)}
+                onRemove={popLevel}
+                removeLabel={formAction ? `Leave ${formAction.label}` : `Leave ${scope.label}`}
+                className="shrink-0"
+              />
             )}
 
             {/* Context chip - what the launcher is acting on (the composer
@@ -1405,21 +1395,14 @@ export function CommandLauncher({
                 globally-capable set. Kept in form mode on purpose: it is where
                 the created object's reference will land (see submitAction). */}
             {!contextCleared && ctx.composer && (
-              <div className="inline-flex items-center gap-1.5 bg-bg-inset border border-border-default rounded-full pl-1.5 pr-1 py-0.5 max-h-[24px] max-w-[220px] shrink-0">
-                <IconPencil size={12} stroke={1.5} className="text-text-secondary shrink-0" />
-                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                <span className="text-[12px] leading-[1.2] font-medium text-text-primary truncate">
-                  {ctx.composer?.label ?? 'Compose box'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setContextCleared(true)}
-                  className="size-4 flex items-center justify-center rounded-full hover:bg-bg-hover text-text-secondary shrink-0"
-                  aria-label="Clear context"
-                >
-                  <IconX size={10} stroke={1.5} />
-                </button>
-              </div>
+              <InputChip
+                label={ctx.composer?.label ?? 'Compose box'}
+                leading={<IconPencil size={16} stroke={1.5} className="text-text-secondary" />}
+                onRemove={() => setContextCleared(true)}
+                removeLabel="Clear context"
+                truncate
+                className="shrink-0 max-w-[220px]"
+              />
             )}
 
             {/* A form is not searched: the input yields to the chips there. */}
@@ -1552,9 +1535,11 @@ export function CommandLauncher({
                     <SectionLabel>{answer.sources.length === 1 ? 'Source' : 'Sources'}</SectionLabel>
                     <div data-testid="sources" className="flex flex-col">
                       {answer.sources.map(({ n, message }) => (
-                        <button
+                        // The package's MenuItem with this row's own inset (UIG-3,
+                        // Katerina's pick of 15 September): the same 12px/8px
+                        // padding and words, a hover fill with 8px corners.
+                        <MenuItem
                           key={message.id}
-                          type="button"
                           onClick={() => {
                             /*
                               Scroll first, close second. A thread paginates, so
@@ -1585,23 +1570,25 @@ export function CommandLauncher({
                             }
                             setUnreachable(message.id)
                           }}
-                          className="text-left px-3 py-2 rounded-md hover:bg-bg-hover flex flex-col gap-0.5"
+                          className="px-3 py-2"
                         >
-                          {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                          <span className="text-[12px] leading-[1.2] text-text-secondary">
-                            [{n}] {message.author} · {message.timestamp}
-                          </span>
-                          {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                          <span className="text-[13px] leading-[1.4] text-text-primary line-clamp-2">
-                            {message.body}
-                          </span>
-                          {unreachable === message.id && (
-                            // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
+                          <span className="flex flex-col gap-0.5 min-w-0">
+                            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
                             <span className="text-[12px] leading-[1.2] text-text-secondary">
-                              Not loaded in the thread — scroll up to load earlier messages.
+                              [{n}] {message.author} · {message.timestamp}
                             </span>
-                          )}
-                        </button>
+                            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
+                            <span className="text-[13px] leading-[1.4] text-text-primary line-clamp-2">
+                              {message.body}
+                            </span>
+                            {unreachable === message.id && (
+                              // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
+                              <span className="text-[12px] leading-[1.2] text-text-secondary">
+                                Not loaded in the thread — scroll up to load earlier messages.
+                              </span>
+                            )}
+                          </span>
+                        </MenuItem>
                       ))}
                     </div>
 

@@ -40,6 +40,7 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
         className="max-w-full max-h-full object-contain rounded-lg"
         onClick={(e) => e.stopPropagation()}
       />
+      {/* @estiva-escape: the package's IconButton is a 26px square with no fill, hard to find on a photo; this viewer becomes the package's Lightbox at migration stage 7 (Katerina, 15 September) */}
       <button
         type="button"
         aria-label="Close"

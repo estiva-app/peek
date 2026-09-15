@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MenuItem } from '@estiva-app/ui'
 import { DialogShell } from './ui/DialogShell'
 import { Field } from './ui/Field'
 import { IconArrowLeft, IconUserPlus } from '@tabler/icons-react'
@@ -123,26 +124,27 @@ export function MembersDialog({
     >
       {canAdd && (
         /*
-          A real `<button>`, not a `role="button"` div — 13.3, and `UI-RULES.md`
-          §3 forbids the div by name. It was reachable by pointer only: no Tab
-          stop, no Enter, no Space.
+          A real button, not a `role="button"` div — 13.3, and `UI-RULES.md` §3
+          forbids the div by name. It was reachable by pointer only: no Tab stop,
+          no Enter, no Space.
 
-          Not the package's `Button`, and not a `MenuItem`. This is a full-width
-          row that matches the member rows under it (`h-12 px-5`, a 32px leading
-          square); `Button` is a pill of its own size, and a `MenuItem` would
-          claim menu semantics in a dialog body that has no menu. The element is
-          what was wrong here, not the drawing.
+          The package's `MenuItem` (UIG-3, Katerina's pick of 15 September), with
+          the member rows' own inset, so its square stays over their faces at the
+          same 48px. Outside a `Menu` a `MenuItem` is a plain button with no menu
+          role, so it claims nothing in a dialog body. What changes: the words are
+          regular weight, and the hover fill has 8px corners.
         */
-        <button
-          type="button"
-          className="flex w-full items-center gap-3 h-12 px-5 text-left cursor-pointer hover:bg-bg-hover transition-colors"
+        <MenuItem
+          size="tall"
+          className="px-5 py-2"
           onClick={() => setView('add')}
-        >
-          <span className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
-            <IconUserPlus size={16} stroke={1.5} />
-          </span>
-          <span className="text-body-2-strong text-text-primary">Add members</span>
-        </button>
+          leading={
+            <span className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
+              <IconUserPlus size={16} stroke={1.5} />
+            </span>
+          }
+          label="Add members"
+        />
       )}
       {memberNames.map((name) => {
         const role = roleFor(name)
