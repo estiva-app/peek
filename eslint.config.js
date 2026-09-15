@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 import { tokenLint, tokenValues, TOKEN_LINT_IGNORES } from './eslint.tokens.js'
+import { gateLint } from './eslint.gates.js'
 
 export default defineConfig([
   globalIgnores(['dist']),
@@ -28,4 +29,7 @@ export default defineConfig([
   tokenLint,
   // UIG-28: hand-written sizes, corners, shadows and inline colours.
   tokenValues,
+  // The UI Guardrails' rules (UIG-3), so an editor shows them where the element
+  // is typed. `npm run lint:rules` runs these alone, and that is the CI gate.
+  gateLint,
 ])

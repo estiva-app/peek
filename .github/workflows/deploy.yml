@@ -58,6 +58,14 @@ jobs:
       - name: Token lint
         run: npm run lint:tokens
 
+      # The UI Guardrails' rules, on their own (UIG-3): a raw element the
+      # package already has fails here, with a message naming the component.
+      # `npm run lint:rules` also writes .gates-count.json and fails on an
+      # eslint-disable that switches one of these rules off. Zero errors on the
+      # day this landed, so it stays zero.
+      - name: Gate lint
+        run: npm run lint:rules
+
       - name: Test
         run: npm run test:run
 

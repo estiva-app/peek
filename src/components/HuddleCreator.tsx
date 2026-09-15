@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Kbd } from '@estiva-app/ui'
+import { Button } from './ui/Button'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { PersonChipInput } from './ui/PersonChipInput'
 import { type Person } from '@/api'
@@ -65,13 +66,11 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
           <div className="flex-1 min-w-0">
             <PersonChipInput value={recipients} onChange={setRecipients} placeholder="Add people..." autoFocus />
           </div>
-          <button
-            onClick={onCancel}
-            className="flex items-center gap-1.5 text-caption text-text-muted hover:text-text-primary transition-colors cursor-pointer"
-          >
-            Cancel
-            <Kbd>Esc</Kbd>
-          </button>
+          {/* The package's Button (UIG-3, Katerina's pick of 15 September): brighter
+              than the grey text it was, 24px tall, a fill on hover. */}
+          <Button variant="muted" size="small" onClick={onCancel}>
+            Cancel <Kbd>Esc</Kbd>
+          </Button>
         </div>
       </div>
       {recipients.length === 0 ? (

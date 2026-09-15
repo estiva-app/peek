@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, ProgressBar } from '@estiva-app/ui'
+import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { IconChevronRight } from '@tabler/icons-react'
 import type { ForeignObject, ResolvedSlot } from '@estiva-app/interop'
@@ -73,17 +74,22 @@ export function ProjectTickets({
   return (
     <div className={className}>
       <div className="flex items-center gap-3 border-t border-border-subtle px-3 py-2">
-        <button
-          type="button"
+        {/* The package's Button (UIG-3, Katerina's pick of 15 September): 24px tall,
+            brighter words, a fill on hover. */}
+        <Button
+          variant="muted"
+          size="small"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex shrink-0 items-center gap-1 text-caption text-text-secondary hover:text-text-primary"
+          className="shrink-0"
+          leadingIcon={
+            <IconChevronRight
+              size={14}
+              stroke={1.5}
+              className={cn('shrink-0 transition-transform', expanded && 'rotate-90')}
+            />
+          }
         >
-          <IconChevronRight
-            size={14}
-            stroke={1.5}
-            className={cn('shrink-0 transition-transform', expanded && 'rotate-90')}
-          />
           {/*
            * Done over total: 0/3 nothing finished, 3/3 all of it. It used to be
            * open over done, which read as a fraction but was two separate
@@ -96,7 +102,7 @@ export function ProjectTickets({
            * counter rather than as an empty project.
            */}
           Tickets{doneCount + openCount > 0 && ` (${doneCount}/${doneCount + openCount})`}
-        </button>
+        </Button>
         {/* Beside the button rather than inside it: a progressbar nested in a
             control folds its label into the button's accessible name. */}
         <Progress done={doneCount} open={openCount} />

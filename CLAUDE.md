@@ -9,6 +9,17 @@ feature spec.
 **The UI Guardrails project:** where it stands is `docs/GATES.md` §0 in the `estiva-ui` checkout beside this repository.
 `npm run gates:status` here shows Peek's part of it, read from the code.
 
+**The gate lint, and a session opened above this folder.** A raw element the
+package already has (today a `<button>`; the message names what to use) is
+refused by `npm run lint:rules`, by CI's "Gate lint", and before the write by
+`.claude/hooks/gates.mjs` — but that hook runs only in a Claude session started
+in this folder. A session started in a folder above it (a workspace holding
+several repositories) does not get the hook, so: after changing any `.tsx`
+under `src/`, run `npm run lint:rules` in this repository and fix everything it
+reports before you finish. Keep an element only with its reason on the line
+above, `// @estiva-escape: <reason>` or `{/* @estiva-escape: <reason> */}`,
+never with `eslint-disable`.
+
 ## UI: the shared package, and the rules every session follows
 
 @UI-RULES.md
