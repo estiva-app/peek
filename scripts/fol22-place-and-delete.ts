@@ -247,7 +247,16 @@ async function place(p: Plan, query: QueryFn, t: Token) {
 
 async function remove(p: Plan, query: QueryFn, t: Token) {
   const keep = new Set([...Object.values(TEAMS), ...p.topics.values()])
-  const doomed = p.folders.filter((f) => !keep.has(f.id))
+  /*
+    A `9008` hides everything carrying the Folder's `h`, and a Ship issue
+    carries the `h` of the Folder it was filed in — deleting `Folders`
+    (85db5b59) on 2026-09-14 took FOL-1…FOL-24 out of Ship until the box
+    un-deleted it. So a Folder with state, or a project's record channel, is
+    never a candidate here: those are hidden from the column, not deleted.
+    And the relay lets only the channel's owner send its `9008`, so `owners`
+    says whose hands the rest need.
+  */
+  const doomed = p.folders.filter((f) => !keep.has(f.id) && !f.hasState && !/^project-[0-9a-f]{8}$/.test(f.name ?? ''))
   const refused: string[] = []
   for (const [i, f] of doomed.entries()) {
     const result = await publish(buildDeleteChannel(t.pubkey, Date.now(), { channelUuid: f.id }), t)
@@ -260,9 +269,35 @@ async function remove(p: Plan, query: QueryFn, t: Token) {
   for (const f of after) console.log(`    ${f.id}  ${f.hasState ? 'state' : 'bare '}  ${JSON.stringify(f.name ?? '')}`)
 }
 
+/**
+ * Who can delete what. The relay's rule for `kind:9008` is owner only
+ * (`side_effects.rs`: "only owner can delete group"), and the owner is the
+ * member the relay lists with that role in the channel's `kind:39001`. So the
+ * Folders still to delete are grouped by owner, named through their profile,
+ * and the run that deletes them has to be signed by each.
+ */
+async function owners(p: Plan, query: QueryFn) {
+  const keep = new Set([...Object.values(TEAMS), ...p.topics.values()])
+  const doomed = p.folders.filter((f) => !keep.has(f.id))
+  const admins = await query([{ kinds: [39001], '#d': doomed.map((f) => f.id), limit: 500 }])
+  const byOwner = new Map<string, FolderSummary[]>()
+  for (const f of doomed) {
+    const event = admins.find((e) => e.tags.some((t) => t[0] === 'd' && t[1] === f.id))
+    const owner = event?.tags.find((t) => t[0] === 'p' && t[2] === 'owner')?.[1] ?? '(no 39001 — no owner listed)'
+    byOwner.set(owner, [...(byOwner.get(owner) ?? []), f])
+  }
+  const people = createPeopleCache().viaRelay(query)
+  const named = await people([...byOwner.keys()].filter((k) => /^[0-9a-f]{64}$/.test(k)))
+  for (const [owner, folders] of byOwner) {
+    const name = named[owner]?.displayName
+    console.log(`\n${owner}${name ? ` (${name})` : ''} owns ${folders.length}:`)
+    for (const f of folders) console.log(`    ${f.id}  ${JSON.stringify(f.name ?? '')}`)
+  }
+}
+
 async function main() {
   const mode = process.argv[2]
-  if (!['plan', 'place', 'delete'].includes(mode ?? '')) throw new Error('mode: plan | place | delete')
+  if (!['plan', 'place', 'delete', 'owners'].includes(mode ?? '')) throw new Error('mode: plan | place | delete | owners')
   const t = await token()
   const query = queryFn(t)
   console.log(`identity ${t.pubkey.slice(0, 8)}… relay ${RELAY_URL} mode ${mode}\n`)
