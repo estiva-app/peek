@@ -15,6 +15,10 @@
  *    (visible, fixable) or in neither (looks like it was never there).
  *  - **Delete must not touch the files.** A Folder is an association — RFC 0.4
  *    §2 — so deleting it unfiles its contents and destroys none of them.
+ *  - **Create must give the Folder state** (PEE-31). The navigation lists only
+ *    Folders with a `kind:30890`, so a bare channel is created and never seen.
+ *    The one place a `kind:1852` on a stateless Folder is right: it holds
+ *    nothing yet, so state listing nothing is the truth.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
@@ -25,6 +29,7 @@ const { publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 vi.mock('./bridge', () => ({ publishSigned, signViaEstivaId, queryRelay: vi.fn() }))
 
 import {
+  createFolderAsViewer,
   deleteFolderAsViewer,
   moveFileAsViewer,
   renameFolderAsViewer,
@@ -49,6 +54,39 @@ beforeEach(() => {
   signViaEstivaId.mockReset()
   signViaEstivaId.mockImplementation(async (event: unknown) => event)
   publishSigned.mockResolvedValue({ ok: true })
+})
+
+describe('creating a folder', () => {
+  it('creates the channel and then names it as a Folder, so it has state', async () => {
+    const result = await createFolderAsViewer('Leaf', 'https://relay.test', token)
+
+    expect(result).toMatchObject({ ok: true })
+    expect(sent().map((e) => e.kind)).toEqual([9007, 1852])
+    const command = sent()[1]!
+    expect(tag(command, 'h')).toEqual([(result as { id: string }).id])
+    expect(tag(command, 'name')).toEqual(['Leaf'])
+    expect(tag(command, 'op')).toEqual(['add'])
+    // Nothing to list: the channel was created a moment ago.
+    expect(tag(command, 'a')).toEqual([])
+  })
+
+  it('reports a partial create when the relay refused the state', async () => {
+    publishSigned.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, reason: 'refused' })
+
+    const result = await createFolderAsViewer('Leaf', 'https://relay.test', token)
+
+    expect(result.ok).toBe(false)
+    expect((result as { reason: string }).reason).toMatch(/created but/)
+  })
+
+  it('sends no command when the channel itself was refused', async () => {
+    publishSigned.mockResolvedValueOnce({ ok: false, reason: 'refused' })
+
+    const result = await createFolderAsViewer('Leaf', 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: false, reason: 'refused' })
+    expect(sent().map((e) => e.kind)).toEqual([9007])
+  })
 })
 
 describe('renaming a folder', () => {

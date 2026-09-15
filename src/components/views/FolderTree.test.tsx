@@ -60,11 +60,15 @@ const file = foreign({
 /** A topic placed in the team by address (FOL-22): a row in Peek, never a section. */
 const PLACED = '9e1b7f3a-5c2d-4e8f-9a1b-2c3d4e5f6a7b'
 
+/** A Ship project's record channel: in `listFolders`, nobody's Folder (PEE-31). */
+const RECORD = '0804b906-1c2d-4e3f-8a5b-6c7d8e9f0a1b'
+
 const folders: FolderSummary[] = [
-  { id: OTHER, name: 'Zebra', hasState: false },
+  { id: OTHER, name: 'Zebra', hasState: true },
   { id: TEAM, name: 'Peek', hasState: true },
-  { id: TOPIC_FOLDER, name: 'A topic of ours', hasState: false },
+  { id: TOPIC_FOLDER, name: 'A topic of ours', hasState: true },
   { id: PLACED, name: 'Aardvark, placed', hasState: false, listedIn: [TEAM] },
+  { id: RECORD, name: 'project-0804b906', hasState: false },
 ]
 
 const reads = vi.hoisted(() => ({
@@ -128,12 +132,17 @@ afterEach(() => {
 })
 
 describe('the Folders, as folds', () => {
-  it('lists every Folder alphabetically, as a section each, and no topic list', () => {
+  it('lists the top-level Folders alphabetically, as a section each, and no topic list', () => {
     mount()
     const titles = [...document.querySelectorAll('[data-tree-folder]')].map(
       (node) => within(node as HTMLElement).getAllByRole('button')[0].textContent,
     )
     expect(titles).toEqual(['A topic of ours', 'Peek', 'Zebra'])
+    // A placed channel is a row in its team; a bare record channel is nobody's
+    // section (PEE-31). Both are in `listFolders`, neither is navigation.
+    expect(document.querySelector(`[data-tree-folder="${PLACED}"]`)).toBeNull()
+    expect(document.querySelector(`[data-tree-folder="${RECORD}"]`)).toBeNull()
+    expect(screen.queryByText('project-0804b906')).toBeNull()
     expect(screen.queryByText('Your topics')).toBeNull()
     expect(screen.queryByText('Other topics')).toBeNull()
   })

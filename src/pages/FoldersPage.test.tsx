@@ -50,6 +50,7 @@ const relay = vi.hoisted(() => ({ files: [] as unknown[] }))
   must not offer to rename or delete.
 */
 const TOPIC_CHANNEL = '3789d2ca-103c-40e5-906f-0490782db5fd'
+const RECORD_CHANNEL = '0804b906-1c2d-4e3f-8a5b-6c7d8e9f0a1b'
 const peekTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; folderId: string | null }[] }))
 /*
   What the team-unread hook answers per Folder — FOL-18. The judging is unit
@@ -77,7 +78,9 @@ vi.mock('@/api', async () => ({
   useFolders: () => ({
     folders: [
       { id: FOLDER, name: 'Folders', hasState: true },
-      { id: TOPIC_CHANNEL, name: 'For testing', hasState: false },
+      { id: TOPIC_CHANNEL, name: 'For testing', hasState: true },
+      // A Ship record channel: in the list the relay answers, never a section (PEE-31).
+      { id: RECORD_CHANNEL, name: 'project-0804b906', hasState: false },
     ],
     signedOut: false,
     reload: async () => {},
@@ -153,6 +156,13 @@ describe('FoldersPage opens a file at its own address', () => {
       the other side.
     */
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${FILE_ADDRESS}`)
+  })
+
+  it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
+    mount(`/folders/${FOLDER}`)
+    const listed = [...document.querySelectorAll('[data-tree-folder]')].map((node) => (node as HTMLElement).dataset.treeFolder)
+    expect(listed.sort()).toEqual([FOLDER, TOPIC_CHANNEL].sort())
+    expect(screen.queryByText('project-0804b906')).toBeNull()
   })
 
   it('opens no pane of its own — the conversation is a page now', () => {
