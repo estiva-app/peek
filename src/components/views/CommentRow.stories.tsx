@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { People } from '@estiva-app/interop'
 import { IconMessage } from '@tabler/icons-react'
+import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { CommentRow } from './CommentRow'
 
@@ -53,16 +54,29 @@ export const Unnamed: Story = {
   args: { comment: { id: 'c2', author: SHIP, body: 'Filed.', createdAt: now - 120 } },
 }
 
-/** With the conversation pane's thread control in the actions slot. */
+/**
+ * The conversation pane's thread control, in the slot it actually uses.
+ *
+ * Under the body, labelled, counted. It was an unlabelled icon in the `actions`
+ * slot until FOL-25, and what that cost is written on `ForeignConversationView`.
+ */
+export const WithThread: Story = {
+  args: {
+    below: (
+      <Button variant="muted" size="small" leadingIcon={<IconMessage size={14} stroke={1.5} />}>
+        3 replies
+      </Button>
+    ),
+  },
+}
+
+/** The actions slot: the row's right edge, on the name's line. */
 export const WithActions: Story = {
   args: {
     actions: (
-      <>
-        <span className="text-caption text-text-muted tabular-nums">3</span>
-        <IconButton tooltip="Open thread" aria-label="Open thread, 3 replies">
-          <IconMessage size={16} stroke={1.5} />
-        </IconButton>
-      </>
+      <IconButton tooltip="Copy link" aria-label="Copy link">
+        <IconMessage size={16} stroke={1.5} />
+      </IconButton>
     ),
   },
 }

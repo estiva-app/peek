@@ -34,6 +34,7 @@ export function CommentRow({
   comment,
   people,
   actions,
+  below,
   className,
 }: {
   comment: DrawableComment
@@ -41,6 +42,13 @@ export function CommentRow({
   people?: People
   /** Drawn at the row's right edge, on the name's line. */
   actions?: ReactNode
+  /**
+   * Drawn under the body, indented with it — where what a message *has* goes,
+   * as against what you can do to it. Peek's own messages put their reply row
+   * here for the same reason: a thread belongs to the message it hangs from,
+   * and a control at the far right of the header reads as neither (FOL-25).
+   */
+  below?: ReactNode
   className?: string
 }) {
   const isTopicResolved = useIsTopicResolved()
@@ -76,6 +84,7 @@ export function CommentRow({
             {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
           </header>
           <MessageBody body={comment.body} isTopicResolved={isTopicResolved} />
+          {below && <div className="mt-1 flex items-center gap-2">{below}</div>}
         </div>
       </div>
     </article>
