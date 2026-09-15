@@ -163,7 +163,7 @@ export function HighlightsCard({ data, defaultExpanded = false, className }: Hig
           {types.length > 0 && (
             <span className="flex items-center gap-[2px]">
               {types.map((t) => (
-                <span key={t} className={cn('size-2 rounded-[2px]', HIGHLIGHT_FILL_CLASSES[t])} />
+                <span key={t} className={cn('size-2 rounded-sm', HIGHLIGHT_FILL_CLASSES[t])} />
               ))}
             </span>
           )}

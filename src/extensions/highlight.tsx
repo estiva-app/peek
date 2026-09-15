@@ -31,7 +31,7 @@ function HighlightTagView({ node }: NodeViewProps) {
       onClick={handleClick}
       contentEditable={false}
     >
-      <span className={cn('size-[10px] rounded-[2px] shrink-0', HIGHLIGHT_FILL_CLASSES[hlType])} />
+      <span className={cn('size-[10px] rounded-sm shrink-0', HIGHLIGHT_FILL_CLASSES[hlType])} />
       <span>{meta.label}</span>
     </NodeViewWrapper>
   )
