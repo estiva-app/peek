@@ -128,23 +128,26 @@ export function MembersDialog({
           forbids the div by name. It was reachable by pointer only: no Tab stop,
           no Enter, no Space.
 
-          The package's `MenuItem` (UIG-3, Katerina's pick of 15 September), with
-          the member rows' own inset, so its square stays over their faces at the
-          same 48px. Outside a `Menu` a `MenuItem` is a plain button with no menu
-          role, so it claims nothing in a dialog body. What changes: the words are
-          regular weight, and the hover fill has 8px corners.
+          The package's `MenuItem` (UIG-3, Katerina's pick of 15 September).
+          Outside a `Menu` a `MenuItem` is a plain button with no menu role, so it
+          claims nothing in a dialog body. Its hover fill sits 8px in from the
+          dialog's sides, as a row does in a menu (Katerina, 15 September); the
+          row's own 12px inset then puts its square over the member rows' faces,
+          20px in, at the same 48px. The words are regular weight.
         */
-        <MenuItem
-          size="tall"
-          className="px-5 py-2"
-          onClick={() => setView('add')}
-          leading={
-            <span className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
-              <IconUserPlus size={16} stroke={1.5} />
-            </span>
-          }
-          label="Add members"
-        />
+        <div className="px-2">
+          <MenuItem
+            size="tall"
+            className="py-2"
+            onClick={() => setView('add')}
+            leading={
+              <span className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
+                <IconUserPlus size={16} stroke={1.5} />
+              </span>
+            }
+            label="Add members"
+          />
+        </div>
       )}
       {memberNames.map((name) => {
         const role = roleFor(name)
