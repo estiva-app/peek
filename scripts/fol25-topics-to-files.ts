@@ -6,6 +6,7 @@
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts survey
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts migrate
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts delete
+ *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts unmigrate
  *
  * `survey` reads and prints what each topic holds — messages, authors, dates,
  * attachments, files — which is the input to Miky's per-topic triage. The
@@ -378,9 +379,45 @@ async function remove(p: { folders: FolderSummary[]; topics: Topic[] }, query: Q
   for (const f of after) if (!/^project-[0-9a-f]{8}$/.test(f.name ?? '')) console.log(`    ${f.id}  ${f.hasState ? 'state' : 'bare '}  ${JSON.stringify(f.name ?? '')}`)
 }
 
+/**
+ * Take back a migrated copy whose channel turned out to be a record Folder:
+ * the relay refused its `9008` because it holds Ship issues, so the topic
+ * stays and the re-posted file duplicates a conversation that is still live
+ * (Miky, 2026-09-15: never keep both). A topic still in `listFolders` after
+ * `delete`, and not triaged `delete`, is one; its file and every comment
+ * under it are this identity's, so a `kind:5` each is ours to send. One
+ * deletion per event: the relay's rule is written for one target.
+ */
+async function unmigrate(p: { folders: FolderSummary[]; topics: Topic[] }, query: QueryFn, t: Token) {
+  const onRelay = new Set(p.folders.map((f) => f.id))
+  for (const topic of p.topics) {
+    if (topic.fate === 'delete' || topic.fate === 'ask' || !onRelay.has(topic.uuid)) continue
+    const team = TEAMS[topic.team]!
+    const file = (await query([{ kinds: [30840], '#h': [team], authors: [t.pubkey], limit: 200 }])).find((e) => tag(e, 'title') === topic.name)
+    if (!file) {
+      console.log(`${topic.name}: no copy in ${topic.team}, nothing to take back`)
+      continue
+    }
+    const address = `30840:${t.pubkey}:${tag(file, 'd')}`
+    const comments = await query([{ kinds: [1111], '#a': [address], authors: [t.pubkey], limit: 2000 }])
+    console.log(`${topic.name}: channel still on the relay; taking back ${comments.length} comment(s) and the file`)
+    let refused = 0
+    for (const e of [...comments, file]) {
+      const r = await publish(buildDeletion(t.pubkey, Date.now(), { targetEventId: e.id }), t)
+      if (!r.ok) {
+        refused++
+        console.log(`    kind:5 ${e.id.slice(0, 8)} → REFUSED ${r.reason}`)
+      }
+      await sleep(WRITE_GAP_MS)
+    }
+    const left = await query([{ kinds: [1111], '#a': [address], authors: [t.pubkey], limit: 2000 }, { kinds: [30840], '#d': [tag(file, 'd')!], authors: [t.pubkey], limit: 1 }])
+    console.log(`    refused ${refused}; relay now answers ${left.length} event(s) for the copy`)
+  }
+}
+
 async function main() {
   const mode = process.argv[2]
-  const modes = ['survey', 'migrate', 'delete']
+  const modes = ['survey', 'migrate', 'delete', 'unmigrate']
   if (!modes.includes(mode ?? '')) throw new Error(`mode: ${modes.join(' | ')}`)
   const t = await token()
   const query = queryFn(t)
@@ -389,6 +426,7 @@ async function main() {
   if (mode === 'survey') await survey(p, query)
   if (mode === 'migrate') await migrate(p, query, t)
   if (mode === 'delete') await remove(p, query, t)
+  if (mode === 'unmigrate') await unmigrate(p, query, t)
 }
 
 main().catch((e) => {
