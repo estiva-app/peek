@@ -314,10 +314,15 @@ export async function resolveFolderProjectAsViewer(
  * and conversation is the container files now live in. The relay emits the
  * `kind:39000` whose `name` this list reads.
  *
- * No `kind:1852` is sent. A folder with no contents yet has nothing to put in a
- * contents list, and the name is already on the channel — a state event here
- * would say exactly what the discovery event says, and be a second thing to
- * keep in step.
+ * **Then a `kind:1852`, so the Folder has state from birth** (PEE-31). Until
+ * 2026-09-15 none was sent — an empty Folder had nothing to list and the name
+ * was on the channel — and that left a person-made Folder indistinguishable
+ * from a Ship record channel or a test topic, which are also bare channels.
+ * The navigation lists only Folders with state (`topLevelFolders`), so a
+ * Folder without one would be created and never seen. The command names the
+ * Folder and lists nothing, which is what it holds; a `kind:1852` on a Folder
+ * that already holds files by `h` is the case `renameFolderAsViewer` forbids,
+ * and a channel this function just created holds none.
  *
  * Note what this is *not*: creating a Peek **topic**, which additionally
  * records a Convex row and publishes memberships (`publishTopicChannel`). Today
@@ -335,6 +340,11 @@ export async function createFolderAsViewer(
   const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
   // Never the status code: the relay refuses in a shape that reads as success.
   if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the folder.' }
+  const named = await folderCommand({ folder: id, op: 'add', name }, relayUrl, token)
+  if (!named.ok) {
+    // The channel exists and is reachable by its id; only the list will not show it.
+    return { ok: false, reason: 'The folder was created but the relay refused to list it. Reload and rename it to try again.' }
+  }
   return { ok: true, id }
 }
 

@@ -36,7 +36,7 @@ export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionTopics } from './mentions'
 export { useStarred } from '@/api/internal/starred'
 export { PeekDataProvider, hasConvex } from './store'
-export { useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
+export { topLevelFolders, useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
 export {
   useForeignConversation,
   useForeignChildren,

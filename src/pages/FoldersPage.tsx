@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
 import { FolderTreeView } from '@/components/views/FolderTree'
 import {
+  topLevelFolders,
   useConversationBadges,
   useFolderContents,
   useFolders,
@@ -79,6 +80,12 @@ export function FoldersPage() {
   const { unread: teamUnread } = useTeamUnread(folders)
   /* Where a Folder's own control leads — its topic when it is one (FOL-21). */
   const folderPath = useFolderPath()
+  /*
+    The five teams, and any Folder somebody makes beside them (PEE-31). The
+    list the relay answers is every channel; the dots above are judged over
+    all of them, because a hidden channel's stream is still one of its team's.
+  */
+  const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
 
   const selected = folders?.find((folder) => folder.id === id)
   /*
@@ -187,7 +194,7 @@ export function FoldersPage() {
               sits between the header and the list.
             */}
             <FolderTreeView
-              folders={folders}
+              folders={topLevel}
               signedOut={signedOut}
               unread={teamUnread}
               currentFolder={id}

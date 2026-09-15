@@ -109,6 +109,36 @@ export function useFolderContents(folder: string | null | undefined): {
 }
 
 /**
+ * The Folders a person navigates by: the top of the tree (PEE-31).
+ *
+ * `listFolders` answers with every channel this viewer can see, and most of
+ * production's are nobody's Folder: a Ship project's record channel (forty
+ * `project-…`), the channel a project's issues live in by `h`, a test topic.
+ * Each is reached through the object it belongs to and was never navigation.
+ * Listing them beside the five teams is what Miky objected to on 2026-09-15:
+ * "in both Peek and Ship have 5 folders … under those there should be all the
+ * topics and projects."
+ *
+ * Two facts the summary already carries decide it, with no further read:
+ *
+ * - **It has state.** A `kind:30890` exists once somebody has sent a Folder
+ *   command at the channel — placed something in it, named it as a Folder.
+ *   That is the relay's own mark that the channel is used as a Folder; a
+ *   record channel or a conversation container never gets one. Peek's Create
+ *   gives a new Folder state at birth for exactly this reason
+ *   (`createFolderAsViewer`).
+ * - **Nothing lists it.** A Folder placed in another (`listedIn`, FOL-22) is a
+ *   row inside that one, not a section beside it.
+ *
+ * Not the five by id: a sixth team is a Folder somebody creates, not a code
+ * change. A Folder this hides is still reachable at `/folders/<id>` and from
+ * the object it belongs to.
+ */
+export function topLevelFolders(folders: FolderSummary[]): FolderSummary[] {
+  return folders.filter((folder) => folder.hasState && !folder.listedIn?.length)
+}
+
+/**
  * Every Folder this viewer can see, for the navigation.
  *
  * **Read once on mount, not on the refresh triggers.** A Folder's *name*
