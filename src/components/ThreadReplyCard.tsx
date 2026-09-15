@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, type ReactElement } from 'react'
 import { Card, Link, Menu, MenuItem, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
-import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
@@ -208,7 +208,7 @@ export function ThreadReplyCard({
     extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
-        class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
+        class: PEEK_EDITOR_CLASSES,
         style: 'caret-color: var(--text-primary)',
       },
       /* A pasted screenshot becomes an attachment here too — PEE-16. See
@@ -435,8 +435,8 @@ export function ThreadReplyCard({
                   ConversationCard's edit box's, which this one lacked: typing
                   here drew no ring where typing there and in the composer
                   does (Katerina, 2026-09-13, D66). */}
-              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
-                <div className={cn('relative min-h-[20px] transition-all', (editHasUrgent || editHasHighlight) && 'border-l-[4px] border-border-strong pl-2')}>
+              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring">
+                <div className={cn('relative min-h-[20px] transition-all', (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2')}>
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}
                   <SelectionToolbar editor={editEditor} />
@@ -498,13 +498,13 @@ export function ThreadReplyCard({
                       href={messageLink}
                       variant="quiet"
                       data-interactive
-                      className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums"
+                      className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums"
                     >
                       {timestamp}
                     </Link>
                   </WithTooltip>
                 ) : (
-                  <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
+                  <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
                 )}
                 {highlightState && <HighlightPill type={highlightState} />}
               </div>

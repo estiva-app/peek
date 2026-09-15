@@ -357,7 +357,7 @@ export function DeskPage() {
                 </div>
               </div>
               {openWorkItems.length === 0 ? (
-                <p className="px-2 py-1 text-[12px] text-text-muted leading-[1.4]">
+                <p className="px-2 py-1 text-caption leading-snug text-text-muted">
                   Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.
                 </p>
               ) : (

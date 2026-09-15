@@ -12,6 +12,7 @@ import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
+import { TextInput } from './TextInput'
 import { Card, FieldLine, Link, SectionLabel } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
@@ -206,12 +207,13 @@ export function ActionControl({
         setDraft('')
       }}
     >
-      <input
+      <TextInput
+        size="small"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={`${action.label}…`}
         disabled={busy}
-        className="min-w-0 flex-1 rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-caption disabled:opacity-50"
+        className="min-w-0 flex-1"
       />
     </form>
   )

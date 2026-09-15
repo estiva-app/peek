@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
@@ -182,7 +182,7 @@ export function ConversationCard({
     extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
-        class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
+        class: PEEK_EDITOR_CLASSES,
         style: 'caret-color: var(--text-primary)',
       },
       /* A screenshot pasted while editing becomes an attachment, exactly as it
@@ -587,10 +587,10 @@ export function ConversationCard({
               {/* `relative` so the highlight picker hangs off this box, the
                   way it hangs off the composer's — the edit box is a compose
                   box, and everything the composer can do belongs here. */}
-              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
+              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring">
                 <div className={cn(
                   'relative min-h-[20px] transition-all',
-                  (editHasUrgent || editHasHighlight) && 'border-l-[4px] border-border-strong pl-2'
+                  (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2'
                 )}>
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}
@@ -641,7 +641,7 @@ export function ConversationCard({
             <div className="flex items-center gap-2 shrink-0">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
               <span className="text-body-2-strong text-text-primary whitespace-nowrap">{authorName}</span>
-              <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">{timestamp}</span>
+              <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
               {highlightState && <HighlightPill type={highlightState} />}
             </div>
             {hasNewMessage && !isUrgent && <UnreadDot />}
@@ -708,7 +708,7 @@ export function ConversationCard({
                   {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
                 </span>
                 {lastReplyTime && (
-                  <span className="hidden signal:inline font-mono text-[9.5px] leading-[12px] mt-px text-text-muted tabular-nums">
+                  <span className="hidden signal:inline font-mono text-small leading-3 mt-px text-text-muted tabular-nums">
                     {lastReplyTime}
                   </span>
                 )}
@@ -739,15 +739,15 @@ export function ConversationCard({
             signal:ml-10 = card px-2 (8) + reply-row pl-8 (32): the banner's box
             edge lines up with the reply pill's hover background above it. */}
         {!isTopic && resolved && !isEditing && (
-          <div className="flex items-center gap-2 pl-10 pr-3 pb-2 signal:ml-10 signal:mr-3 signal:mb-2 signal:pl-3 signal:pr-3 signal:py-2.5 signal:rounded-[10px] signal:border signal:border-success-outline signal:bg-success-wash">
-            <IconChecks size={16} stroke={1.5} className="text-success-default shrink-0 signal:drop-shadow-[0_0_5px_rgba(63,222,140,0.6)]" />
-            <span className="text-[12px] leading-[1.1] font-medium text-success-default whitespace-nowrap">
+          <div className="flex items-center gap-2 pl-10 pr-3 pb-2 signal:ml-10 signal:mr-3 signal:mb-2 signal:pl-3 signal:pr-3 signal:py-2.5 signal:rounded-lg signal:border signal:border-success-outline signal:bg-success-wash">
+            <IconChecks size={16} stroke={1.5} className="text-success-default shrink-0 signal:drop-shadow-glow-success" />
+            <span className="text-h5 text-success-default whitespace-nowrap">
               {resolvedBy || 'Someone'} resolved
             </span>
             {resolutionMsg && (
               <>
                 <IconArrowNarrowRight size={12} stroke={1.5} className="text-text-primary shrink-0" />
-                <span className="text-[12px] leading-[1.1] font-medium text-text-primary truncate">{resolutionMsg}</span>
+                <span className="text-h5 text-text-primary truncate">{resolutionMsg}</span>
               </>
             )}
           </div>

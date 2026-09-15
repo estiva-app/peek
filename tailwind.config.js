@@ -24,6 +24,9 @@ export default {
         'border-private': 'var(--border-private)',
         // brand wordmark (PeekLogo renders in currentColor)
         logo: 'var(--logo)',
+        // the Summary highlight's colour (src/index.css), so a highlight paints
+        // with a class like the other four, not an inline style (UIG-28)
+        'highlight-summary': 'var(--highlight-summary)',
       },
     },
   },

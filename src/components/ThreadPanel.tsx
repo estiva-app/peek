@@ -47,7 +47,7 @@ function ResolutionTimeline({ events }: { events: ResolutionEvent[] }) {
               <span className={cn('size-1 rounded-full', e.kind === 'resolved' ? 'bg-success-default' : 'bg-text-muted')} />
             </span>
           </span>
-          <p className="text-[12px] leading-[1.4] font-medium min-w-0">
+          <p className="text-h5 leading-snug min-w-0">
             {e.kind === 'resolved' ? (
               <>
                 <span className="text-success-default whitespace-nowrap">{e.by || 'Someone'} resolved</span>
@@ -65,7 +65,7 @@ function ResolutionTimeline({ events }: { events: ResolutionEvent[] }) {
               </>
             )}
             {e.atMs !== undefined && (
-              <span className="text-[11px] font-normal text-text-muted whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">
+              <span className="text-chip font-normal text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
                 {' '}· {formatReplyTimestamp(e.atMs)}
               </span>
             )}
@@ -231,7 +231,7 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="h-12 shrink-0 flex items-center justify-between pl-5 pr-4 py-2 border-b border-border-subtle z-20 relative bg-bg-surface">
-        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">Replies</span>
+        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-small signal:font-medium signal:uppercase signal:tracking-widest signal:text-text-interactive">Replies</span>
         <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
           <IconX size={16} stroke={1.5} />
         </IconButton>
@@ -369,11 +369,11 @@ export function ThreadPanel({
           {huddleMemberCount != null && (
             <IconLock size={16} stroke={1.5} className="text-text-secondary" />
           )}
-          <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">Replies</span>
+          <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-small signal:font-medium signal:uppercase signal:tracking-widest signal:text-text-interactive">Replies</span>
         </div>
         <div className="flex items-center gap-2">
           {isResolved && (
-            <span className="text-caption text-success-default signal:font-mono signal:text-[9.5px] signal:font-semibold signal:uppercase signal:tracking-[0.1em] signal:bg-success-wash signal:border signal:border-success-outline signal:rounded-full signal:px-2 signal:py-[3px]">Resolved</span>
+            <span className="text-caption text-success-default signal:font-mono signal:text-small signal:font-semibold signal:uppercase signal:tracking-widest signal:bg-success-wash signal:border signal:border-success-outline signal:rounded-full signal:px-2 signal:py-[3px]">Resolved</span>
           )}
           {(() => {
             // Show member pill for huddle threads OR DM threads. Both display

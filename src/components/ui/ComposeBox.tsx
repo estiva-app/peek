@@ -3,7 +3,7 @@ import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegist
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { serializeTiptapToText, textToTiptapContent } from '@/lib/textParsing'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
 import { isSuggestionActive } from '@/extensions/mention'
 import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
@@ -101,7 +101,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
-        class: 'outline-none w-full bg-transparent text-sm text-text-primary leading-[1.4] break-words min-h-[20px]',
+        class: PEEK_EDITOR_CLASSES,
         style: 'caret-color: var(--text-primary)',
       },
       /**
@@ -328,12 +328,12 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   return (
     <div ref={composeRef} className={cn('relative', className)}>
 
-      <div className="relative bg-bg-inset border border-border-default focus-within:border-border-strong rounded-lg p-3 flex flex-col gap-4 transition-colors signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-[shadow:var(--focus-ring)]">
+      <div className="relative bg-bg-inset border border-border-default focus-within:border-border-strong rounded-lg p-3 flex flex-col gap-4 transition-colors signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring">
         {/* Editable area - left border when urgent or highlight */}
         <div data-composer-editor className={cn(
           'relative min-h-[20px] transition-all',
-          hasUrgent && 'border-l-[4px] border-border-strong pl-2',
-          !hasUrgent && hasHighlight && 'border-l-[4px] border-border-strong pl-2'
+          hasUrgent && 'border-l-4 border-border-strong pl-2',
+          !hasUrgent && hasHighlight && 'border-l-4 border-border-strong pl-2'
         )}>
           <EditorContent editor={editor} />
           {/* Bold / italic / underline / link over a selection. Rendered here
@@ -394,7 +394,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
             const canSend = (!isEmpty || hasReadyFile) && !uploads.isUploading
             return (
               <div className="flex items-center gap-2.5">
-              <span className="hidden signal:inline font-mono text-[9px] tracking-[0.04em] text-text-muted select-none">
+              <span className="hidden signal:inline font-mono text-menu font-normal tracking-wider text-text-muted select-none">
                 Enter to send · Shift+Enter new line
               </span>
               {/* The shared IconButton's `primary`, which this button was a

@@ -74,7 +74,7 @@ export function CreateTopicDialog({
       {dmContext && (
         <div className="flex items-start gap-2 border border-warning-default rounded-lg px-3 py-2.5">
           <IconLock size={16} stroke={1.5} className="text-text-primary shrink-0 mt-0.5" />
-          <p className="text-body-2 text-text-primary leading-[1.4]">
+          <p className="text-body-2 text-text-primary">
             This DM becomes a private huddle inside the new topic. Only you and the other DM participants can see it — the topic itself is public.
           </p>
         </div>

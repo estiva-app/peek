@@ -244,6 +244,7 @@ function Inline({
         ) : run.marks.includes('code') ? (
           // `code` never combines with another mark and its content is never
           // parsed further — SPEC §13.1.
+          // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: code is 0.9 of the text around it, so it scales with a heading; a named size is fixed
           <code key={k} className="rounded-sm bg-bg-active px-1 py-0.5 font-mono text-[0.9em] text-text-primary">
             {run.text}
           </code>
@@ -300,6 +301,7 @@ function Block({
       // card. Nothing here scrolls, so there is no bar to draw.
       return (
         <pre
+          // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: code is 0.9 of the text around it, so it scales with a heading; a named size is fixed
           className="whitespace-pre-wrap break-words rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
           data-language={block.language}
         >

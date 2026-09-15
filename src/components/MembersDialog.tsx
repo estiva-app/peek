@@ -141,7 +141,7 @@ export function MembersDialog({
           <span className="size-8 rounded-md bg-accent-muted flex items-center justify-center shrink-0 text-accent-primary">
             <IconUserPlus size={16} stroke={1.5} />
           </span>
-          <span className="text-[14px] font-medium leading-[1.4] text-text-primary">Add members</span>
+          <span className="text-body-2-strong text-text-primary">Add members</span>
         </button>
       )}
       {memberNames.map((name) => {
@@ -150,9 +150,9 @@ export function MembersDialog({
           <div key={name} className="flex items-center gap-3 h-12 px-5">
             <Avatar size={32} name={name} alt={name} />
             <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
-              <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{name}</div>
+              <div className="text-body-2 text-text-primary truncate">{name}</div>
               {role && (
-                <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{role}</div>
+                <div className="text-caption text-text-secondary truncate">{role}</div>
               )}
             </div>
           </div>

@@ -52,7 +52,7 @@ const applyTheme = (theme?: string) => {
 }
 
 // Apply signal once, for EVERY page — including standalone MDX docs
-// (Introduction, Design Tokens), which don't run story decorators. The toolbar
+// (Introduction), which don't run story decorators. The toolbar
 // listener that used to sit here went with the picker: nothing changes the
 // theme global any more, so there is nothing to follow.
 applyTheme('signal')
@@ -103,7 +103,7 @@ const preview: Preview = {
       storySort: {
         order: [
           'Docs',
-          ['Introduction', 'Design Tokens'],
+          ['Introduction'],
           'Flows',
           'Layouts',
           'Auth',

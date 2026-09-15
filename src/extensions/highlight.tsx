@@ -1,7 +1,7 @@
 import { Node, type Editor } from '@tiptap/core'
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { HIGHLIGHT_META, type HighlightType } from '@/api'
+import { HIGHLIGHT_FILL_CLASSES, HIGHLIGHT_META, HIGHLIGHT_TEXT_CLASSES, type HighlightType } from '@/api'
 import { INLINE_CHIP_CLASSES } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 
@@ -25,18 +25,13 @@ function HighlightTagView({ node }: NodeViewProps) {
     <NodeViewWrapper
       as="span"
       // The one inline chip (D67), in the highlight's own colour and weight.
-      className={cn(INLINE_CHIP_CLASSES, 'font-medium cursor-pointer')}
-      style={{
-        backgroundColor: `color-mix(in srgb, ${meta.color} 13%, transparent)`,
-        color: meta.color,
-      }}
+      className={cn(INLINE_CHIP_CLASSES, 'font-medium cursor-pointer', HIGHLIGHT_TEXT_CLASSES[hlType])}
+      // eslint-disable-next-line no-restricted-syntax -- @estiva-escape: the tag's tint is 13% of its highlight's colour, and no token holds that tint
+      style={{ backgroundColor: `color-mix(in srgb, ${meta.color} 13%, transparent)` }}
       onClick={handleClick}
       contentEditable={false}
     >
-      <span
-        className="size-[10px] rounded-[2px] shrink-0"
-        style={{ backgroundColor: meta.color }}
-      />
+      <span className={cn('size-[10px] rounded-sm shrink-0', HIGHLIGHT_FILL_CLASSES[hlType])} />
       <span>{meta.label}</span>
     </NodeViewWrapper>
   )

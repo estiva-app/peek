@@ -46,7 +46,7 @@ export function ForeignBody({ slot, className }: { slot: ResolvedSlot; className
   return (
     <div
       data-foreign-body
-      className={cn('flex flex-col gap-1 break-words text-caption text-text-secondary leading-[1.4]', className)}
+      className={cn('flex flex-col gap-1 break-words text-caption leading-snug text-text-secondary', className)}
     >
       <RenderBlocks value={slot.value} format={slot.format ?? 'marker'} renderRun={(run) => run} />
     </div>

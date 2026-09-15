@@ -38,7 +38,7 @@ export function TopicsPage() {
   const openWorkTopicIds = useOpenWorkTopicIds()
   const actions = usePeekActions()
   const pathForTopic = useTopicPath()
-  const { showToast, dismissToast } = useToast()
+  const { showToast } = useToast()
   /** The Folder panel is dismissible, not part of the layout (PEEK-24). Open to
    *  begin with, since a topic paired with a project is the case it exists for;
    *  the header button closes it and the choice holds while you browse. */
@@ -159,7 +159,7 @@ export function TopicsPage() {
   const runDeleteTopic = (topicId: string) => {
     void deleteTopic(topicId).then((outcome) => {
       if (outcome?.message) {
-        showToast({ label: outcome.message, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss', onAction: dismissToast })
+        showToast({ label: outcome.message, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' })
       }
     })
     // Deleting what you're looking at → back to the bare list, no stale URL

@@ -22,7 +22,7 @@ import { useToast } from '@/lib/toast'
 export type Deletable = 'message' | 'reply' | 'huddle' | 'topic'
 
 export function useReportDelete(): (what: Deletable, kept: boolean) => void {
-  const { showToast, dismissToast } = useToast()
+  const { showToast } = useToast()
   return useCallback(
     (what: Deletable, kept: boolean) => {
       const noun = what === 'reply' ? 'Reply' : what === 'huddle' ? 'Huddle' : what === 'topic' ? 'Topic' : 'Message'
@@ -35,9 +35,8 @@ export function useReportDelete(): (what: Deletable, kept: boolean) => void {
         type: 'warning',
         durationMs: 0,
         actionLabel: 'Dismiss',
-        onAction: dismissToast,
       })
     },
-    [showToast, dismissToast],
+    [showToast],
   )
 }

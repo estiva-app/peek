@@ -153,11 +153,11 @@ export function ConversationHeader({
             <>
               {/* Open / resolved counts */}
               <div className="flex items-center gap-2">
-                <span className="text-caption text-text-secondary whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">
+                <span className="text-caption text-text-secondary whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
                   {openCount} open
                 </span>
                 <div className="w-[3px] h-[3px] rounded-full bg-text-muted shrink-0" />
-                <span className="text-caption text-success-default whitespace-nowrap signal:font-mono signal:text-[10px] signal:tracking-[0.02em] signal:tabular-nums">
+                <span className="text-caption text-success-default whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
                   {resolvedCount} resolved
                 </span>
               </div>

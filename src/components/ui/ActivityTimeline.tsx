@@ -106,11 +106,11 @@ export function ActivityTimeline({ entries }: { entries: ActivityEntry[] }) {
             * gets the full line and the times still read down one edge.
             */}
           <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-            <p className="text-[12px] leading-[1.4]">
+            <p className="text-caption leading-snug">
               <Line entry={entry} />
             </p>
             <WithTooltip label={exactly(entry.at)} wrapperClassName="self-start">
-              <span className="text-[12px] leading-[1.4] text-text-muted">{whenLabel(entry.at)}</span>
+              <span className="text-caption leading-snug text-text-muted">{whenLabel(entry.at)}</span>
             </WithTooltip>
           </div>
         </div>

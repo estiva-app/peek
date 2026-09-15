@@ -184,7 +184,7 @@ export function TopicDetailsDialogView({
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[14px] leading-[1.4] text-text-primary">
+            <span className="min-w-0 flex-1 truncate text-body-2 text-text-primary">
               {details?.title ?? '—'}
             </span>
             {/* Absent, not disabled, for anyone who cannot rename. There is
@@ -226,10 +226,10 @@ export function TopicDetailsDialogView({
             <div key={member.name} className="flex h-12 items-center gap-3">
               <Avatar size={32} src={member.avatarUrl} name={member.name} alt={member.name} />
               <div className="flex min-w-0 flex-1 flex-col justify-center gap-[2px]">
-                <span className="truncate text-[14px] font-normal leading-[1.4] text-text-primary">
+                <span className="truncate text-body-2 text-text-primary">
                   {member.name}
                 </span>
-                <span className="truncate text-[12px] leading-[1.2] text-text-secondary">
+                <span className="truncate text-caption text-text-secondary">
                   {member.role}
                 </span>
               </div>

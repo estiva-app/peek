@@ -49,7 +49,7 @@ function PanelShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full">
       <div className="h-12 shrink-0 flex items-center pl-5 pr-4 py-2 border-b border-border-subtle">
-        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-[10px] signal:font-medium signal:uppercase signal:tracking-[0.16em] signal:text-text-interactive">
+        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-small signal:font-medium signal:uppercase signal:tracking-widest signal:text-text-interactive">
           Files
         </span>
       </div>

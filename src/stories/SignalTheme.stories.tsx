@@ -2,6 +2,9 @@
    The `sig-*` classes in this story are written by the `<style>` block further
    down the file, not by Tailwind. The lint reads tailwind.config.js, so plain
    CSS of a story's own is unknown to it by definition. */
+/* eslint-disable no-restricted-syntax -- @estiva-escape: a Storybook-only preview
+   of the design-lab palette and its detail specimens, drawn in inline styles (27
+   of them); nothing here ships to the app (UIG-28). */
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Kbd } from '@estiva-app/ui'
 import {

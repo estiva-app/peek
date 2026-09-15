@@ -33,6 +33,16 @@ import { SlashCommands } from './slashCommands'
  * sends and a box that saves. Those stay with each editor. Only the grammar
  * is shared.
  */
+/**
+ * The editable area's classes, for the same three editors.
+ *
+ * They were written out in each `editorProps.attributes.class`, where the
+ * token lint cannot see a class (it reads `className`, `cn()` and a `const`
+ * named `…_CLASSES`), so `text-sm leading-[1.4]` sat there unchecked: Tailwind's
+ * ramp and a hand-written line height, together exactly `text-body-2` (UIG-28 R5).
+ */
+export const PEEK_EDITOR_CLASSES = 'outline-none w-full bg-transparent text-body-2 text-text-primary break-words min-h-[20px]'
+
 export const peekEditorExtensions = [
   peekStarterKit,
   PeekMention,

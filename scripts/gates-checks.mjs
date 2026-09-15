@@ -99,6 +99,16 @@ export default function define(h) {
         { what: "text-[14px] is an error", run: probe(component('<div className="text-[14px]">x</div>'), "error", undefined, PROBE, "eslint.tokens.config.js") },
         { what: "a colour in an inline style is an error", run: probe(component("<div style={{ backgroundColor: '#ff0000' }}>x</div>"), "error", undefined, PROBE, "eslint.tokens.config.js") },
         { what: "h-[240px] is a warning", run: probe(component('<div className="h-[240px]">x</div>'), "warning", undefined, PROBE, "eslint.tokens.config.js") },
+        { what: "h-[240px] is not an error", run: probe(component('<div className="h-[240px]">x</div>'), "none", undefined, PROBE, "eslint.tokens.config.js") },
+        { what: "a hand-written line height behind an arbitrary variant is an error", run: probe(component('<div className="[&_p]:leading-[1.4]">x</div>'), "error", undefined, PROBE, "eslint.tokens.config.js") },
+        { what: "a raw colour in a class is an error (the pattern that matched nothing, R1)", run: probe(component('<div className="bg-[#5c69dc]">x</div>'), "error", "raw colour", PROBE, "eslint.tokens.config.js") },
+        { what: "a width and height from a prop pass", run: probe("export function Probe({ size }: { size: number }) {\n  return <div style={{ width: size, height: size }}>x</div>\n}\n", "none", undefined, PROBE, "eslint.tokens.config.js") },
+        { what: "a test file is not checked for hand-written values, while source is", run: async () => {
+          const code = component("<div className=\"text-[14px]\" style={{ color: 'red' }}>x</div>");
+          const source = await probe(code, "error", undefined, PROBE, "eslint.tokens.config.js")();
+          if (source.result !== "pass") return h.FAIL(`source is not checked yet, so this proves nothing: ${source.detail}`);
+          return probe(code, "none", undefined, "src/components/__gates_probe__.test.tsx", "eslint.tokens.config.js")();
+        } },
       ] },
       { ref: "UIG-29", title: "CommandLauncher — 1,655 lines that will fail almost every lint rule", owner: true, checks: [
         { what: "CommandLauncher passes the gate lint, with no escape still naming UIG-29", run: async () => {
