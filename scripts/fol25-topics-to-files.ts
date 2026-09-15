@@ -44,36 +44,39 @@ const TEAMS: Record<string, string> = {
 type Fate = 'file' | 'bare' | 'delete' | 'ask'
 
 /**
- * Miky's sort into teams (FOL-22, 2026-09-14) and triage (FOL-25). `ask` is a
- * topic nobody has decided on yet: `migrate` and `delete` both skip it and say
- * so, so a run before the triage is complete cannot touch it.
+ * Miky's sort into teams (FOL-22, 2026-09-14) and triage (FOL-25, 2026-09-15):
+ * the five empty topics are kept as bare files; the test topic, the empty
+ * Steer one and the archived project's agent log are deleted; the rest are
+ * re-posted. `ask` is a topic nobody has decided on yet: `migrate` and
+ * `delete` both skip it and say so, so a run before the triage is complete
+ * cannot touch it.
  */
 const TRIAGE: Array<[string, keyof typeof TEAMS, Fate]> = [
-  ['AI Tips', 'Estiva HQ', 'ask'],
-  ['Alternatives to Estiva / Peek', 'Estiva HQ', 'ask'],
-  ['Claude on Estiva / Estiva Steer', 'Steer', 'ask'],
-  ['Conversation across apps', 'Peek', 'ask'],
-  ['Estiva Suits Updates', 'Estiva HQ', 'ask'],
-  ['Feedback on Peek', 'Peek', 'ask'],
-  ['Feedback on Ship', 'Ship', 'ask'],
-  ['Folders: Universal navigation concept', 'Estiva HQ', 'ask'],
-  ['For testing', 'Peek', 'ask'],
-  ['Intelligence in Peek', 'Peek', 'ask'],
-  ['Interesting Claude-generated docs - Renamed 4', 'Steer', 'ask'],
-  ['Local & AI development', 'Estiva HQ', 'ask'],
-  ['Pitch for Nostr for Business', 'Estiva HQ', 'ask'],
-  ['Planning and sequencing', 'Estiva HQ', 'ask'],
-  ['Project: Catch up the Buzz fork', 'Peek', 'ask'],
-  ['Project: Cross-app read state', 'Peek', 'ask'],
-  ['Project: DMs on Nostr (DM channels)', 'Peek', 'ask'],
-  ["Project: Peek's Intelligence", 'Peek', 'ask'],
-  ['Project: Rewrite Ship with shared foundation', 'Ship', 'ask'],
-  ['Project: Shared foundation packages', 'Estiva HQ', 'ask'],
-  ['Scenarios to demonstrate Nostr for Business', 'Estiva HQ', 'ask'],
-  ['Widgets', 'Estiva HQ', 'ask'],
-  ['Domain name - brainstorming', 'Estiva HQ', 'ask'],
-  ['Peek vision - initial notes', 'Peek', 'ask'],
-  ['Researching using Buzz "backend" to power Peek', 'Peek', 'ask'],
+  ['AI Tips', 'Estiva HQ', 'file'],
+  ['Alternatives to Estiva / Peek', 'Estiva HQ', 'file'],
+  ['Claude on Estiva / Estiva Steer', 'Steer', 'file'],
+  ['Conversation across apps', 'Peek', 'file'],
+  ['Estiva Suits Updates', 'Estiva HQ', 'file'],
+  ['Feedback on Peek', 'Peek', 'file'],
+  ['Feedback on Ship', 'Ship', 'file'],
+  ['Folders: Universal navigation concept', 'Estiva HQ', 'file'],
+  ['For testing', 'Peek', 'delete'],
+  ['Intelligence in Peek', 'Peek', 'file'],
+  ['Interesting Claude-generated docs - Renamed 4', 'Steer', 'delete'],
+  ['Local & AI development', 'Estiva HQ', 'file'],
+  ['Pitch for Nostr for Business', 'Estiva HQ', 'bare'],
+  ['Planning and sequencing', 'Estiva HQ', 'file'],
+  ['Project: Catch up the Buzz fork', 'Peek', 'delete'],
+  ['Project: Cross-app read state', 'Peek', 'file'],
+  ['Project: DMs on Nostr (DM channels)', 'Peek', 'file'],
+  ["Project: Peek's Intelligence", 'Peek', 'file'],
+  ['Project: Rewrite Ship with shared foundation', 'Ship', 'file'],
+  ['Project: Shared foundation packages', 'Estiva HQ', 'file'],
+  ['Scenarios to demonstrate Nostr for Business', 'Estiva HQ', 'bare'],
+  ['Widgets', 'Estiva HQ', 'file'],
+  ['Domain name - brainstorming', 'Estiva HQ', 'bare'],
+  ['Peek vision - initial notes', 'Peek', 'bare'],
+  ['Researching using Buzz "backend" to power Peek', 'Peek', 'bare'],
 ]
 
 /**
