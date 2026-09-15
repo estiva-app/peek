@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrowUpRight } from '@tabler/icons-react'
 import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
@@ -61,10 +62,10 @@ import { useFolderPath } from '@/lib/useFolderPath'
  * A Folder is a `CollapsibleSection` — the package's group-of-rows, the same
  * thing Ship's sidebar makes of its projects and Linear's of its teams — so
  * its title toggles and its rows are the files. Opening the Folder *itself* is
- * the header's action; where that leads is `useFolderPath`'s decision. Until
- * FOL-22 a topic is a Folder, so opening a topic is that action rather than a
- * click on a row, and the open topic has no highlighted row — its section is
- * the open one. Both go away when topics become files.
+ * the header's action; where that leads is `useFolderPath`'s decision. Since
+ * FOL-22 a topic is a channel placed in its team by address (`listedIn`), so
+ * it is a row in the team's section, and a `39000:` row opens the topic page
+ * (`FilePage` sends it there). A Folder nothing lists is a section of its own.
  */
 export function FolderTree({
   currentFolder,
@@ -87,7 +88,15 @@ export function FolderTree({
 }) {
   const navigate = useNavigate()
   const { folders, signedOut } = useFolders()
+  /*
+    The dots are judged over every Folder, the sections drawn for the top-level
+    ones (FOL-22). A topic is a channel placed in its team by address, so it is
+    in `listFolders` like any channel, and it is a row inside the team's
+    section rather than a section of its own — but its stream is one of the
+    team's, and `useTeamUnread` folds its verdict into the team's dot.
+  */
   const { unread } = useTeamUnread(folders)
+  const topLevel = useMemo(() => folders?.filter((folder) => !folder.listedIn?.length) ?? null, [folders])
   const folderPath = useFolderPath()
 
   return (
@@ -106,7 +115,7 @@ export function FolderTree({
       */}
       <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
         <FolderTreeView
-          folders={folders}
+          folders={topLevel}
           signedOut={signedOut}
           unread={unread}
           currentFolder={currentFolder}

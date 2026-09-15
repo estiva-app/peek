@@ -103,6 +103,30 @@ describe('useTeamUnread', () => {
     expect(relay.channelStreams).toHaveBeenCalledTimes(1)
   })
 
+  it("a topic placed in a team lights the team, and reading the topic's channel puts it out (FOL-22)", async () => {
+    const TOPIC = '33333333-3333-4333-8333-333333333333'
+    relay.channelStreams.mockResolvedValue({
+      [FOLDER_A]: [],
+      [FOLDER_B]: [],
+      // The topic's own channel: a plain message, no `about`, said an hour ago.
+      [TOPIC]: [{ id: 't', at: NOW - 3600, by: THEM, root: 't', about: [] }],
+    })
+    const { result } = renderHook(() =>
+      useTeamUnread([...folders, { id: TOPIC, name: 'A topic', hasState: false, listedIn: [FOLDER_B] }]),
+    )
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    // One read for the lot — the topic's channel is asked for with the teams'.
+    expect(relay.channelStreams).toHaveBeenCalledWith([FOLDER_A, FOLDER_B, TOPIC])
+    advance({})
+    await waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: true, [TOPIC]: true }))
+    // Reading the team's own chat is not reading the topic.
+    advance({ [FOLDER_B]: NOW })
+    expect(result.current.unread[FOLDER_B]).toBe(true)
+    // The topic page advances the topic's container, and that is what the team's dot follows.
+    advance({ [TOPIC]: NOW })
+    expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false, [TOPIC]: false })
+  })
+
   it('asks nothing for an empty list', async () => {
     const { result } = renderHook(() => useTeamUnread([]))
     advance({})
