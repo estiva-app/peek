@@ -9,8 +9,12 @@ This is the living component reference for **Peek**, the team-communication app
 its variants and states. Use the **Theme** toolbar (☾) to check light and dark —
 Peek is token-driven and **pixel-perfect**, so both must always look right.
 
-New here? Start with **[Design Tokens](?path=/docs/docs-design-tokens--docs)** —
-the colors, type, radius, and shadows every component is built from.
+New here? Start with the colors, type, radius, and shadows every component is
+built from: **Docs → Design Tokens** in the package's Storybook (`npm run
+storybook` in estiva-ui, http://localhost:6008). Peek does not keep a copy of
+that page; a copy drifts from the tokens it describes. Peek's own few colours
+(the huddle register, the wordmark, the Summary highlight) are listed in
+`tailwind.config.js`.
 
 ## How the sidebar is organized
 
@@ -19,7 +23,7 @@ Generic building blocks sit at the top; everything else is grouped by the
 
 | Section | What lives here |
 |---|---|
-| **Docs** | This intro + the Design Tokens reference. |
+| **Docs** | This intro and the Signal theme specimens. |
 | **Primitives** | Generic, reusable atoms — Button, IconButton, Avatar, Chip, Tooltip, Divider, DateDivider. |
 | **Feedback** | System/status surfaces — EmptyState, Toast. |
 | **Inputs** | Form controls — SearchInput, PersonChipInput. |
@@ -35,7 +39,7 @@ Generic building blocks sit at the top; everything else is grouped by the
   One story per meaningful variant axis, plus an `AllVariants` matrix where the
   axes are enumerable. Exemplar: **Primitives/Button**.
 - **Tokens only.** Reuse existing primitives (Avatar / Chip / ListRow…); never
-  re-hand-roll markup or use raw hex. See **Design Tokens**.
+  re-hand-roll markup or use raw hex. See the package's **Design Tokens**.
 - **Both themes.** Check every story in light *and* dark via the toolbar.
 - **Autodocs.** Each component has a **Docs** tab generated from its JSDoc and
   `argTypes`.
