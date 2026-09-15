@@ -256,7 +256,7 @@ async function remove(p: Plan, query: QueryFn, t: Token) {
     And the relay lets only the channel's owner send its `9008`, so `owners`
     says whose hands the rest need.
   */
-  const doomed = p.folders.filter((f) => !keep.has(f.id) && !f.hasState && !/^project-[0-9a-f]{8}$/.test(f.name ?? ''))
+  const doomed = doomedFolders(p)
   const refused: string[] = []
   for (const [i, f] of doomed.entries()) {
     const result = await publish(buildDeleteChannel(t.pubkey, Date.now(), { channelUuid: f.id }), t)
@@ -269,16 +269,27 @@ async function remove(p: Plan, query: QueryFn, t: Token) {
   for (const f of after) console.log(`    ${f.id}  ${f.hasState ? 'state' : 'bare '}  ${JSON.stringify(f.name ?? '')}`)
 }
 
+/** The Folders `delete` would send a `9008` at — see the note in `remove`. */
+function doomedFolders(p: Plan): FolderSummary[] {
+  const keep = new Set([...Object.values(TEAMS), ...p.topics.values()])
+  return p.folders.filter((f) => !keep.has(f.id) && !f.hasState && !/^project-[0-9a-f]{8}$/.test(f.name ?? ''))
+}
+
 /**
- * Who can delete what. The relay's rule for `kind:9008` is owner only
+ * Who can delete what. The relay's rule for `kind:9008` was owner only
  * (`side_effects.rs`: "only owner can delete group"), and the owner is the
- * member the relay lists with that role in the channel's `kind:39001`. So the
- * Folders still to delete are grouped by owner, named through their profile,
- * and the run that deletes them has to be signed by each.
+ * member the relay lists with that role in the channel's `kind:39001`. Since
+ * FOL-11 a community steward — `owner` or `admin` in the relay's roster,
+ * `members` prints it — can send it too, so a Folder whose owner is a key
+ * nobody holds is no longer stuck. The Folders still to delete are grouped by
+ * owner, named through their profile; `delete` as a steward takes them all.
  */
 async function owners(p: Plan, query: QueryFn) {
-  const keep = new Set([...Object.values(TEAMS), ...p.topics.values()])
-  const doomed = p.folders.filter((f) => !keep.has(f.id))
+  const doomed = doomedFolders(p)
+  if (doomed.length === 0) {
+    console.log('nothing left to delete')
+    return
+  }
   const admins = await query([{ kinds: [39001], '#d': doomed.map((f) => f.id), limit: 500 }])
   const byOwner = new Map<string, FolderSummary[]>()
   for (const f of doomed) {
@@ -295,16 +306,65 @@ async function owners(p: Plan, query: QueryFn) {
   }
 }
 
+/**
+ * The relay's roster (`kind:13534`, relay-signed, one `member` tag per member with the
+ * role in the tag), which is what FOL-11's steward rule reads. Says whether
+ * this identity is one.
+ */
+async function members(query: QueryFn, t: Token) {
+  const [list] = await query([{ kinds: [13534], limit: 1 }])
+  if (!list) {
+    console.log('no kind:13534 on the relay — the roster is not published')
+    return
+  }
+  const rows = list.tags.filter((tag) => tag[0] === 'member').map((tag) => ({ pubkey: tag[1], role: tag[2] ?? 'member' }))
+  const people = createPeopleCache().viaRelay(query)
+  const named = await people(rows.map((r) => r.pubkey))
+  console.log(`${rows.length} relay member(s), signed ${new Date(list.created_at * 1000).toISOString()}:`)
+  for (const r of rows) console.log(`    ${r.role.padEnd(6)} ${r.pubkey}${named[r.pubkey]?.displayName ? `  ${named[r.pubkey].displayName}` : ''}${r.pubkey === t.pubkey ? '  ← this identity' : ''}`)
+}
+
+/**
+ * Is FOL-11 deployed? Built is not deployed, so read the relay's answer to
+ * two `9008`s and compare the reasons, never the image tag.
+ *
+ * The control is a `9008` at the Peek team Folder, which holds files and
+ * whose owner this identity is not. Before FOL-11 the relay says "only owner
+ * can delete group"; after, a steward is told the Folder "holds N file(s)"
+ * and anyone else "only the channel owner or a community admin". Nothing can
+ * be deleted by this send in either version, which is why it is the control.
+ * Then one `9008` at the first doomed Folder, which is what `delete` would do
+ * for all of them.
+ */
+async function probe(p: Plan, t: Token) {
+  const control = await publish(buildDeleteChannel(t.pubkey, Date.now(), { channelUuid: TEAMS.Peek }), t)
+  console.log(`control 9008 ${TEAMS.Peek} (Peek, holds files) → ${control.ok ? 'ACCEPTED — this must never happen' : `refused: ${control.reason}`}`)
+  // Prefer a `liv1 …` probe channel: nobody will miss one, whichever way it goes.
+  const doomed = doomedFolders(p)
+  const first = doomed.find((f) => /^liv1\b/.test(f.name ?? '')) ?? doomed[0]
+  if (!first) {
+    console.log('nothing left to delete, no positive probe')
+    return
+  }
+  await sleep(WRITE_GAP_MS)
+  const result = await publish(buildDeleteChannel(t.pubkey, Date.now(), { channelUuid: first.id }), t)
+  console.log(`probe   9008 ${first.id} ${JSON.stringify(first.name ?? '')} → ${result.ok ? 'accepted' : `refused: ${result.reason}`}`)
+}
+
 async function main() {
   const mode = process.argv[2]
-  if (!['plan', 'place', 'delete', 'owners'].includes(mode ?? '')) throw new Error('mode: plan | place | delete | owners')
+  const modes = ['plan', 'place', 'delete', 'owners', 'members', 'probe']
+  if (!modes.includes(mode ?? '')) throw new Error(`mode: ${modes.join(' | ')}`)
   const t = await token()
   const query = queryFn(t)
   console.log(`identity ${t.pubkey.slice(0, 8)}… relay ${RELAY_URL} mode ${mode}\n`)
+  if (mode === 'members') return members(query, t)
   const p = await plan(query)
   if (mode === 'plan') printPlan(p)
   if (mode === 'place') await place(p, query, t)
   if (mode === 'delete') await remove(p, query, t)
+  if (mode === 'owners') await owners(p, query)
+  if (mode === 'probe') await probe(p, t)
 }
 
 main().catch((e) => {
