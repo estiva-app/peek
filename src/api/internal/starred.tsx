@@ -1,14 +1,76 @@
+/**
+ * Starred conversations — the set on the relay, the rendering from Convex.
+ *
+ * SHR-6 flipped which of those is the truth. CRO-11 had already published the
+ * set as a SPEC §12 layer-2 blob (`src/nostr/stars.ts`) and restored from it on
+ * request, but `api.desk.starsList` was still what rendered, so the relay copy
+ * was a backup and the person could not take their stars anywhere. Now the blob
+ * is the set and Convex is out of that read.
+ *
+ * ## The set and the rendering are two different things, and mixing them is a bug
+ *
+ * The set is ids: topic ids and person keys, and nothing else is published.
+ * Rendering resolves those through `useTopics()` and `usePeople()` — a title, a
+ * resolved state, a name, an avatar — which is ADR 0001's layer 3 doing exactly
+ * what it is for. An id the index cannot resolve is dropped from `entries` and
+ * **kept in the set**: they are separate values here for that reason. Deriving
+ * the publish from the rendered rows instead would drop a star from the
+ * person's set every time the workspace index was a beat behind, permanently,
+ * because the blob is last-write-wins.
+ *
+ * The cost of that rule, paid deliberately: an id whose topic is deleted for
+ * good stays in the blob. Convex used to drop the star row with the topic;
+ * nothing prunes the blob, because pruning means deciding that an id the index
+ * cannot resolve is gone rather than late, and that is the same judgement the
+ * paragraph above refuses to make. A dead id renders nothing and costs a few
+ * dozen bytes against a 65,535-byte limit the set is nowhere near.
+ *
+ * ## Both halves, not just topics
+ *
+ * The ticket scoped this to topics, on the grounds that starred people are
+ * keyed by an app-local `dmId` with no portable identifier. That argument is
+ * `stars.ts`'s, and it is an argument against **layer 1** — a NIP-51 set full
+ * of Convex ids is one nobody else can read. At layer 2 `stars.ts:34-40` says
+ * the opposite in as many words: only Peek reads this blob, so app-local ids
+ * are legitimate rather than a compromise. Reading back a key you wrote needs
+ * no portable identifier, and topic ids are `seedKey ?? _id` too — equally
+ * unportable, and shipped. SHR-7 settled the same question the same way for
+ * `deskOpenWork`. Widened with Miky, 2026-09-16.
+ *
+ * ## Where Convex still appears, and why it is temporary
+ *
+ * `api.desk.starsList` is read, and is not the set. It serves while the relay
+ * has not answered — no origin configured, no token in this tab, or a read that
+ * failed — and it is the seed for a person whose stars predate CRO-11's
+ * dual-write, published the moment the relay says it holds nothing. Both cases
+ * are bounded by `useStarsSync`'s `state`; neither can fire once a blob exists.
+ * `desk.toggleStar` still writes Convex on every toggle, which is what makes
+ * that fallback safe and is the reason it can be removed only after it is no
+ * longer needed to recover from a failed publish (`unpublished`).
+ */
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { STARRED_ENTRIES, type StarredEntry } from '@/data/deskData'
-import { useAvatarSrc } from '@/api/avatars'
 import { hasConvex } from '@/api/store'
+import { usePeople } from '@/api/people'
+import { useTopics } from '@/api/topics'
 import { useStarsSync } from '@/nostr/useStarsSync'
 import type { TopicStateStatus } from '@/components/ui/TopicState'
 
 const entryLabel = (e: StarredEntry) => (e.kind === 'dm' ? e.name : e.title)
-const entryKey = (e: StarredEntry) => (e.kind === 'dm' ? `dm:${e.dmId}` : `topic:${e.topicId}`)
+const byLabel = (a: StarredEntry, b: StarredEntry) =>
+  entryLabel(a).localeCompare(entryLabel(b), undefined, { sensitivity: 'base' })
+
+/** The person's set, as it is published: ids only. */
+interface StarSet {
+  topics: string[]
+  people: string[]
+}
+
+/** Overlay keys. The two prefixes cannot shadow each other. */
+const TOPIC = 'topic:'
+const PERSON = 'dm:'
 
 interface StarDmInput {
   dmId: string
@@ -28,145 +90,205 @@ interface StarredContextValue {
   isTopicStarred: (topicId: string) => boolean
   toggleDm: (input: StarDmInput) => void
   toggleTopic: (input: StarTopicInput) => void
-  /** True while the Convex stars query is in flight. */
+  /** True until a source has settled and there is a set to render. */
   isLoading: boolean
   /**
-   * Stars the relay holds that this deployment does not (CRO-11).
+   * Stars Convex holds that the relay does not.
    *
-   * The person owns the set, so it lives on the relay as a SPEC §12 blob and
-   * Convex renders it. This is what a "restore my stars" affordance would read;
-   * it is deliberately not applied automatically — see `useStarsSync`.
+   * This was `missingLocally`, pointing the other way: what the relay held that
+   * the deployment did not. Since the blob became the set, that direction is
+   * structurally always empty — the local set *is* the relay's — and a field
+   * that can never report anything is worse than no field. The direction that
+   * now carries something is this one, and what it carries is exactly the stars
+   * a failed publish left behind: `desk.toggleStar` wrote Convex, the relay
+   * never heard, and a reload reads the relay. This is what a "restore my
+   * stars" affordance would offer; it is deliberately not applied
+   * automatically — see `useStarsSync`.
    */
-  missingLocally: { topics: string[]; people: string[] }
+  unpublished: { topics: string[]; people: string[] }
 }
 
 const StarredContext = createContext<StarredContextValue | null>(null)
 
 export function StarredProvider({ children }: { children: ReactNode }) {
-  const avatarSrcFor = useAvatarSrc()
   // Mock-mode state (full source of truth without a deployment).
   const [mockEntries, setMockEntries] = useState<StarredEntry[]>(STARRED_ENTRIES)
-  // Convex-mode optimistic overlay: session toggles applied over the query
-  // until it catches up (starred=true carries the entry to render meanwhile).
-  const [pending, setPending] = useState<Map<string, { starred: boolean; entry?: StarredEntry }>>(new Map())
-  const remote = useQuery(api.desk.starsList, hasConvex ? {} : 'skip')
-  const toggleRemote = useMutation(api.desk.toggleStar)
+  // Session toggles applied over the settled set until it catches up. A plain
+  // starred/not: the row to draw comes from the workspace index, which already
+  // has whatever the person just clicked a star on.
+  const [pending, setPending] = useState<Map<string, boolean>>(new Map())
+
   // Where the relay lives — a query rather than a build-time variable, so the
   // bundle and the backend cannot disagree about it (convex/nostr/config.ts).
   const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
   const stars = useStarsSync(relayUrl)
+  const convexStars = useQuery(api.desk.starsList, hasConvex ? {} : 'skip')
+  const toggleRemote = useMutation(api.desk.toggleStar)
 
-  const rawEntries = useMemo<StarredEntry[]>(() => {
-    if (!hasConvex) return mockEntries
-    const base: StarredEntry[] = (remote ?? []).map((e) =>
-      e.kind === 'dm' ? { ...e, avatarSrc: avatarSrcFor(e.name) } : e,
-    )
-    const baseKeys = new Set(base.map(entryKey))
-    const kept = base.filter((e) => pending.get(entryKey(e))?.starred !== false)
-    const added = [...pending.values()]
-      .filter((p) => p.starred && p.entry && !baseKeys.has(entryKey(p.entry)))
-      .map((p) => p.entry!)
-    return [...kept, ...added]
-  }, [mockEntries, remote, pending, avatarSrcFor])
+  // Rendering only. Never the set — see the header.
+  const topics = useTopics()
+  const people = usePeople()
 
-  const entries = useMemo(
-    () => [...rawEntries].sort((a, b) => entryLabel(a).localeCompare(entryLabel(b), undefined, { sensitivity: 'base' })),
-    [rawEntries],
-  )
+  const convexSet = useMemo<StarSet | undefined>(() => {
+    if (convexStars === undefined) return undefined
+    return {
+      topics: convexStars.flatMap((e) => (e.kind === 'topic' ? [e.topicId] : [])),
+      people: convexStars.flatMap((e) => (e.kind === 'dm' ? [e.dmId] : [])),
+    }
+  }, [convexStars])
+
+  const relaySet = useMemo<StarSet | undefined>(() => {
+    if (stars.state !== 'present' || !stars.relayBlob) return undefined
+    return {
+      topics: stars.relayBlob.topics.map((t) => t.id),
+      people: stars.relayBlob.people.map((p) => p.key),
+    }
+  }, [stars.state, stars.relayBlob])
+
+  /** The set as last settled, before this session's toggles. */
+  const settledSet = relaySet ?? convexSet
+
+  const effectiveSet = useMemo<StarSet | undefined>(() => {
+    if (!settledSet) return undefined
+    const apply = (ids: string[], prefix: string) => {
+      const kept = ids.filter((id) => pending.get(`${prefix}${id}`) !== false)
+      const have = new Set(kept)
+      const added = [...pending.entries()]
+        .filter(([key, starred]) => starred && key.startsWith(prefix) && !have.has(key.slice(prefix.length)))
+        .map(([key]) => key.slice(prefix.length))
+      return [...kept, ...added]
+    }
+    return { topics: apply(settledSet.topics, TOPIC), people: apply(settledSet.people, PERSON) }
+  }, [settledSet, pending])
+
+  const entries = useMemo<StarredEntry[]>(() => {
+    if (!hasConvex) return [...mockEntries].sort(byLabel)
+    if (!effectiveSet) return []
+    const topicById = new Map((topics ?? []).map((t) => [t.id, t]))
+    const personByKey = new Map((people ?? []).map((p) => [p.id, p]))
+    const out: StarredEntry[] = []
+    for (const topicId of effectiveSet.topics) {
+      const topic = topicById.get(topicId)
+      // Not in the index: deleted, or the index has not arrived. Either way
+      // there is no row to draw — and the id stays in the set regardless.
+      if (!topic) continue
+      out.push({
+        id: `star_topic_${topicId}`,
+        kind: 'topic',
+        topicId,
+        title: topic.title,
+        topicStatus: topic.isResolved ? 'resolved' : 'unresolved',
+      })
+    }
+    for (const dmId of effectiveSet.people) {
+      const person = personByKey.get(dmId)
+      if (!person) continue
+      out.push({ id: `star_dm_${dmId}`, kind: 'dm', dmId, name: person.name, avatarSrc: person.avatarSrc })
+    }
+    return out.sort(byLabel)
+  }, [mockEntries, effectiveSet, topics, people])
 
   /*
-    Publish the set the person can see, not the toggle that changed it.
+    Publish the set the person owns, not the toggle that changed it.
 
     Driving this from the handlers would publish twice per toggle — once
-    optimistically and once when the Convex query caught up — and would miss a
-    star that arrived from another tab. `starsToPublish` returns undefined for an
-    unchanged set, so a re-render costs nothing.
+    optimistically and once when the set caught up — and would miss a star that
+    arrived from another tab. `starsToPublish` returns undefined for an
+    unchanged set, so a re-render costs nothing, and once the relay is the
+    source this republishes what it already holds, which is that same nothing.
+
+    The guard SHR-6 had to keep, in its new form. It used to be
+    `remote === undefined`: do not publish while the Convex query is in flight,
+    because a briefly-empty set is a last-write-wins publish that makes the loss
+    permanent. Convex is no longer what is being waited for, and two things are
+    — the relay's own answer, guarded inside `useStarsSync`, and whichever
+    source the set came from, which is `effectiveSet` being undefined here.
+    `topics` and `people` are deliberately *not* waited for; they resolve rows,
+    not membership of the set.
 
     Mock mode publishes nothing: there is no session and no relay, and a fixture
     is not the person's data.
   */
+  const publishSet = stars.publish
   useEffect(() => {
     if (!hasConvex) return
-    // `remote === undefined` is the query in flight. Publishing then would
-    // briefly assert an empty set, which last-write-wins would make permanent.
-    if (remote === undefined) return
-    void stars.publish({
-      topics: rawEntries
-        .filter((e): e is Extract<StarredEntry, { kind: 'topic' }> => e.kind === 'topic')
-        .map((e) => ({ id: e.topicId })),
-      people: rawEntries
-        .filter((e): e is Extract<StarredEntry, { kind: 'dm' }> => e.kind === 'dm')
-        .map((e) => ({ key: e.dmId })),
+    if (!effectiveSet) return
+    void publishSet({
+      topics: effectiveSet.topics.map((id) => ({ id })),
+      people: effectiveSet.people.map((key) => ({ key })),
     })
-  }, [rawEntries, remote, stars])
+  }, [effectiveSet, publishSet])
 
-  const missingLocally = useMemo(() => {
-    const missing = stars.restoreFromRelay(
-      rawEntries.filter((e) => e.kind === 'topic').map((e) => (e as Extract<StarredEntry, { kind: 'topic' }>).topicId),
-      rawEntries.filter((e) => e.kind === 'dm').map((e) => (e as Extract<StarredEntry, { kind: 'dm' }>).dmId),
-    )
-    return { topics: missing.topics.map((t) => t.id), people: missing.people.map((p) => p.key) }
-  }, [stars, rawEntries])
+  const unpublished = useMemo(() => {
+    if (!relaySet || !convexSet) return { topics: [], people: [] }
+    const onRelay = { topics: new Set(relaySet.topics), people: new Set(relaySet.people) }
+    return {
+      topics: convexSet.topics.filter((id) => !onRelay.topics.has(id)),
+      people: convexSet.people.filter((key) => !onRelay.people.has(key)),
+    }
+  }, [relaySet, convexSet])
 
   const isDmStarred = useCallback(
-    (dmId: string) => rawEntries.some((e) => e.kind === 'dm' && e.dmId === dmId),
-    [rawEntries],
+    (dmId: string) => {
+      // The set, never `entries`: a star on somebody the directory has not
+      // delivered yet is still a star, and reading it off the rows would let
+      // the next toggle add a second one.
+      if (!hasConvex) return mockEntries.some((e) => e.kind === 'dm' && e.dmId === dmId)
+      return effectiveSet?.people.includes(dmId) ?? false
+    },
+    [mockEntries, effectiveSet],
   )
 
   const isTopicStarred = useCallback(
-    (topicId: string) => rawEntries.some((e) => e.kind === 'topic' && e.topicId === topicId),
-    [rawEntries],
+    (topicId: string) => {
+      if (!hasConvex) return mockEntries.some((e) => e.kind === 'topic' && e.topicId === topicId)
+      return effectiveSet?.topics.includes(topicId) ?? false
+    },
+    [mockEntries, effectiveSet],
   )
 
-  const toggleDm = useCallback(({ dmId, name, avatarSrc }: StarDmInput) => {
-    if (!hasConvex) {
-      setMockEntries((prev) => {
-        const exists = prev.some((e) => e.kind === 'dm' && e.dmId === dmId)
-        if (exists) return prev.filter((e) => !(e.kind === 'dm' && e.dmId === dmId))
-        return [...prev, { id: `star_dm_${dmId}`, kind: 'dm', dmId, name, avatarSrc }]
-      })
-      return
-    }
-    const key = `dm:${dmId}`
-    const currentlyStarred = rawEntries.some((e) => e.kind === 'dm' && e.dmId === dmId)
-    setPending((prev) => {
-      const next = new Map(prev)
-      next.set(key, {
-        starred: !currentlyStarred,
-        entry: { id: `star_dm_${dmId}`, kind: 'dm', dmId, name, avatarSrc: avatarSrc ?? avatarSrcFor(name) },
-      })
-      return next
-    })
-    void toggleRemote({ kind: 'dm', targetKey: dmId })
-  }, [rawEntries, toggleRemote, avatarSrcFor])
+  const toggleDm = useCallback(
+    ({ dmId, name, avatarSrc }: StarDmInput) => {
+      if (!hasConvex) {
+        setMockEntries((prev) => {
+          const exists = prev.some((e) => e.kind === 'dm' && e.dmId === dmId)
+          if (exists) return prev.filter((e) => !(e.kind === 'dm' && e.dmId === dmId))
+          return [...prev, { id: `star_dm_${dmId}`, kind: 'dm', dmId, name, avatarSrc }]
+        })
+        return
+      }
+      const currentlyStarred = effectiveSet?.people.includes(dmId) ?? false
+      setPending((prev) => new Map(prev).set(`${PERSON}${dmId}`, !currentlyStarred))
+      void toggleRemote({ kind: 'dm', targetKey: dmId })
+    },
+    [effectiveSet, toggleRemote],
+  )
 
-  const toggleTopic = useCallback(({ topicId, title, topicStatus }: StarTopicInput) => {
-    if (!hasConvex) {
-      setMockEntries((prev) => {
-        const exists = prev.some((e) => e.kind === 'topic' && e.topicId === topicId)
-        if (exists) return prev.filter((e) => !(e.kind === 'topic' && e.topicId === topicId))
-        return [...prev, { id: `star_topic_${topicId}`, kind: 'topic', topicId, title, topicStatus }]
-      })
-      return
-    }
-    const key = `topic:${topicId}`
-    const currentlyStarred = rawEntries.some((e) => e.kind === 'topic' && e.topicId === topicId)
-    setPending((prev) => {
-      const next = new Map(prev)
-      next.set(key, {
-        starred: !currentlyStarred,
-        entry: { id: `star_topic_${topicId}`, kind: 'topic', topicId, title, topicStatus },
-      })
-      return next
-    })
-    void toggleRemote({ kind: 'topic', targetKey: topicId })
-  }, [rawEntries, toggleRemote])
+  const toggleTopic = useCallback(
+    ({ topicId, title, topicStatus }: StarTopicInput) => {
+      if (!hasConvex) {
+        setMockEntries((prev) => {
+          const exists = prev.some((e) => e.kind === 'topic' && e.topicId === topicId)
+          if (exists) return prev.filter((e) => !(e.kind === 'topic' && e.topicId === topicId))
+          return [...prev, { id: `star_topic_${topicId}`, kind: 'topic', topicId, title, topicStatus }]
+        })
+        return
+      }
+      const currentlyStarred = effectiveSet?.topics.includes(topicId) ?? false
+      setPending((prev) => new Map(prev).set(`${TOPIC}${topicId}`, !currentlyStarred))
+      void toggleRemote({ kind: 'topic', targetKey: topicId })
+    },
+    [effectiveSet, toggleRemote],
+  )
 
-  const isLoading = hasConvex && remote === undefined
+  // Not gated on `topics`/`people`: those settle only for a signed-in viewer,
+  // and hanging on them would leave the whole desk sidebar under a skeleton for
+  // anyone they never settle for (DeskPage gates the column on this).
+  const isLoading = hasConvex && effectiveSet === undefined
 
   return (
     <StarredContext.Provider
-      value={{ entries, isDmStarred, isTopicStarred, toggleDm, toggleTopic, isLoading, missingLocally }}
+      value={{ entries, isDmStarred, isTopicStarred, toggleDm, toggleTopic, isLoading, unpublished }}
     >
       {children}
     </StarredContext.Provider>
