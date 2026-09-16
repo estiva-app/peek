@@ -28,6 +28,7 @@ export function ComposerBanner({ icon: Icon, children, action }: ComposerBannerP
           <Icon size={16} stroke={1.5} className="text-accent-muted signal:text-[color:var(--text-inverse)]" />
         </div>
         <span className="text-body-2 text-text-primary truncate">{children}</span>
+        <button type="button">UIG-6 proof</button>
       </div>
       {action && (
         <Button variant="muted" size="small" className="shrink-0" onClick={action.onClick}>
