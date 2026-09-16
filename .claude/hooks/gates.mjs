@@ -1,5 +1,5 @@
 /**
- * The editor gate (UIG-3): before Claude writes a `.tsx` under `src/`, lint
+ * The editor gate (UIG-3): before Claude writes a `.ts` or `.tsx` under `src/`, lint
  * the text it is about to write with the UI Guardrails' rules, and refuse the
  * write on an error. Exit 2 blocks the write and hands the messages back to
  * Claude, which can then use the component the message names.
@@ -35,7 +35,7 @@ if (typeof args.file_path !== 'string') process.exit(0)
 
 const file = isAbsolute(args.file_path) ? args.file_path : resolve(cwd ?? root, args.file_path)
 const rel = relative(root, file).split(sep).join('/')
-if (rel.startsWith('../') || !/^src\/.+\.tsx$/.test(rel) || /\.test\.tsx$/.test(rel)) process.exit(0)
+if (rel.startsWith('../') || !/^src\/.+\.tsx?$/.test(rel) || /\.test\.tsx?$/.test(rel) || /\.d\.ts$/.test(rel)) process.exit(0)
 
 /** The file as it will be after this tool call, or null when that cannot be known. */
 function proposed() {

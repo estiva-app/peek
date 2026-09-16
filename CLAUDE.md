@@ -10,16 +10,19 @@ feature spec.
 `npm run gates:status` here shows Peek's part of it, read from the code.
 
 **The gate lint, and a session opened above this folder.** A raw interactive
-element (a `<button>`, an `<input>`, a `<form>`, a link…; the message names
-the package part to use, or says there is none yet) is
-refused by `npm run lint:rules`, by CI's "Gate lint", and before the write by
-`.claude/hooks/gates.mjs` — but that hook runs only in a Claude session started
-in this folder. A session started in a folder above it (a workspace holding
-several repositories) does not get the hook, so: after changing any `.tsx`
-under `src/`, run `npm run lint:rules` in this repository and fix everything it
-reports before you finish. Keep an element only with its reason on the line
-above, `// @estiva-escape: <reason>` or `{/* @estiva-escape: <reason> */}`,
-never with `eslint-disable`.
+element (a `<button>`, an `<input>`, a `<form>`, a link…), and behaviour a
+package part already owns written by hand (a Base UI import, `createPortal`, a
+click or key listener on the whole page, arrow keys compared by hand, a
+hand-written `role` such as `option` or `alert`, `tabIndex` 0 on a box,
+`overflow-auto`), are refused — the message names the package part to use, or
+says there is none yet — by `npm run lint:rules`, by CI's "Gate lint", and
+before the write by `.claude/hooks/gates.mjs` — but that hook runs only in a
+Claude session started in this folder. A session started in a folder above it
+(a workspace holding several repositories) does not get the hook, so: after
+changing any `.ts` or `.tsx` under `src/`, run `npm run lint:rules` in this
+repository and fix everything it reports before you finish. Keep one only with
+its reason on the line above, `// @estiva-escape: <reason>` or
+`{/* @estiva-escape: <reason> */}`, never with `eslint-disable`.
 
 ## UI: the shared package, and the rules every session follows
 
