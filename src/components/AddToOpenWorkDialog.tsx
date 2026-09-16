@@ -5,7 +5,6 @@ import { Button } from './ui/Button'
 import { Checkbox } from './ui/Checkbox'
 import { TopicState } from './ui/TopicState'
 import { useTopics, useIsTopicResolved, useOpenWorkTopicIds } from '@/api'
-import { cn } from '@/lib/utils'
 
 interface AddToOpenWorkDialogProps {
   /** Called with the selected topic ids. The dialog closes itself via onClose. */
@@ -16,7 +15,8 @@ interface AddToOpenWorkDialogProps {
 /**
  * The Desk's "+" picker: multi-select topics into Open work. Only topics NOT
  * already there are offered (the action can always succeed); unresolved
- * topics list first. Rows toggle on click anywhere; the checkbox mirrors.
+ * topics list first. Each row is the package Checkbox's row: a click anywhere
+ * on it toggles, and Tab and Space reach it from the keyboard.
  */
 export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps) {
   const topics = useTopics()
@@ -67,32 +67,18 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
       ) : (
         // The package Form (UIG-7), the body's own column inside it; Add sends it.
         <Form id={formId} onSubmit={() => { if (selected.size > 0) handleAdd() }} className="flex flex-col gap-0.5">
-        {candidates.map((t) => {
-          const checked = selected.has(t.id)
-          return (
-            <div
-              key={t.id}
-              role="option"
-              aria-selected={checked}
-              className={cn(
-                'flex shrink-0 items-center gap-3 h-10 px-3 rounded-lg cursor-pointer transition-colors hover:bg-bg-hover',
-                checked && 'bg-bg-selected',
-              )}
-              onClick={() => toggle(t.id)}
-            >
-              <TopicState type="topic" status={isTopicResolved(t.id) ? 'resolved' : 'unresolved'} />
-              <span className="flex-1 min-w-0 text-body-2 text-text-primary truncate">
-                {t.title}
-              </span>
-              {/* No aria-label. Without onChange the Checkbox is a picture of
-                  the row's state — aria-hidden, no role, no tab stop — and the
-                  row is the one control, saying the state itself through
-                  role="option" and aria-selected. The label had been ignored
-                  since the package's stage 1. */}
-              <Checkbox checked={checked} />
-            </div>
-          )
-        })}
+        {candidates.map((t) => (
+          // The package Checkbox's row (UIG-8, Katerina's pick B): the same pixels
+          // the hand-made row drew, as a tick box that names itself by its title.
+          <Checkbox
+            key={t.id}
+            row
+            leading={<TopicState type="topic" status={isTopicResolved(t.id) ? 'resolved' : 'unresolved'} />}
+            label={t.title}
+            checked={selected.has(t.id)}
+            onChange={() => toggle(t.id)}
+          />
+        ))}
         </Form>
       )}
     </DialogShell>

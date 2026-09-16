@@ -17,9 +17,10 @@ import { TOKEN_LINT_IGNORES } from './eslint.tokens.js'
  * runs; `eslint.config.js` adds them beside everything else, so an editor shows
  * them where the element is typed.
  *
- * Where: every `.tsx` under `src`, stories included (a story is what people read
- * and copy), tests not (a test mounts markup to test it) — Katerina's rulings of
- * 13 September.
+ * Where: every `.ts` and `.tsx` under `src`, stories included (a story is what
+ * people read and copy), tests not (a test mounts markup to test it) — Katerina's
+ * rulings of 13 September. `.ts` since UIG-8: a listener on the whole page in a
+ * hook file is behaviour rebuilt by hand too.
  *
  * A place that keeps a raw element says why, on the line above:
  * `// @estiva-escape: <reason>`, or `{/* @estiva-escape: <reason> *\/}` as a JSX
@@ -31,7 +32,7 @@ export const GATE_LINT_IGNORES = TOKEN_LINT_IGNORES
 
 export const gateLint = {
   ...estiva.configs.recommended,
-  files: ['src/**/*.tsx'],
+  files: ['src/**/*.{ts,tsx}'],
   ignores: ['**/*.test.ts', '**/*.test.tsx'],
   languageOptions: {
     parser: typescriptParser,

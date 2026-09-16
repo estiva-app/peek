@@ -40,6 +40,7 @@ const MentionListWrapper = forwardRef<MentionListRef, MentionListProps>(
     )
 
     useImperativeHandle(ref, () => ({
+      // @estiva-escape: the editor hands its arrow keys to this list; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
       onKeyDown: ({ event }: { event: KeyboardEvent }) => {
         if (event.key === 'ArrowDown') {
           setHighlight((h) => Math.min(h + 1, props.items.length - 1))

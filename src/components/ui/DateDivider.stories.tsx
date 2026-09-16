@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { ScrollArea } from '@estiva-app/ui'
 import { DateDivider } from './DateDivider'
 
 const meta = {
@@ -43,17 +44,19 @@ export const RepliesLabel: Story = {
 export const StickyInScroll: Story = {
   parameters: { controls: { disable: true } },
   render: () => (
-    <div className="h-64 w-96 overflow-y-auto rounded-lg border border-border-default bg-bg-surface">
-      {['Yesterday', 'Today'].map(day => (
-        <div key={day} className="flex flex-col">
-          <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />
-          {Array.from({ length: 6 }, (_, i) => (
-            <p key={i} className="px-4 py-3 text-body-2 text-text-secondary">
-              Message {i + 1} from {day.toLowerCase()}
-            </p>
-          ))}
-        </div>
-      ))}
+    <div className="h-64 w-96 overflow-hidden rounded-lg border border-border-default bg-bg-surface">
+      <ScrollArea className="h-full">
+        {['Yesterday', 'Today'].map(day => (
+          <div key={day} className="flex flex-col">
+            <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />
+            {Array.from({ length: 6 }, (_, i) => (
+              <p key={i} className="px-4 py-3 text-body-2 text-text-secondary">
+                Message {i + 1} from {day.toLowerCase()}
+              </p>
+            ))}
+          </div>
+        ))}
+      </ScrollArea>
     </div>
   ),
 }

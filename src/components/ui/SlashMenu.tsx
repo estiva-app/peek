@@ -77,6 +77,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
   }, [])
 
   useImperativeHandle(ref, () => ({
+    // @estiva-escape: the editor hands its arrow keys to this list; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
     onKeyDown: ({ event }) => {
       if (event.key === 'ArrowDown') {
         setHighlight((h) => (items.length ? (h + 1) % items.length : 0))
@@ -110,6 +111,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
        editor's `aria-activedescendant`, `aria-selected` on the highlighted
        one, and no Tab stop because focus stays in the text. */
     return (
+      // @estiva-escape: a row of a list the editor drives from its caret; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
       <MenuItem
         key={key}
         role="option"

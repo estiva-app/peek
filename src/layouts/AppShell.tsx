@@ -31,6 +31,7 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
         setLauncher((v) => (v ? null : { context: captureLauncherContext() }))
       }
     }
+    // @estiva-escape: Ctrl+K opens the launcher from anywhere; no part owns a shortcut for the whole app, and opening CommandPalette is Peek's (UIG-8)
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])

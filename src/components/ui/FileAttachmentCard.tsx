@@ -29,6 +29,7 @@ async function downloadFile(url: string, name: string) {
 
 /** A simple full-screen viewer for uploaded images (mirrors FrameLightbox). */
 function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  // @estiva-escape: a full-screen picture viewer; it becomes the package's Lightbox at migration stage 7 (B22), which carries its own layer (Katerina, 15 September)
   return createPortal(
     /* eslint-disable-next-line better-tailwindcss/no-restricted-classes -- the
        same black scrim as FrameLightbox, for the same reason, and it goes the
