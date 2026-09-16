@@ -46,6 +46,25 @@ export default function define(h) {
       { ref: "UIG-7", title: "Lint rule — every remaining raw element", owner: false, checks: [
         { what: "a raw <input> is an error naming TextInput", run: probe(component("<input />"), "error", "TextInput") },
         { what: "a raw <a> is an error naming Link", run: probe(component('<a href="/topics">Topics</a>'), "error", "Link") },
+        { what: "a raw <form> is an error naming Form, and a file input one naming FilePicker", run: async () => {
+          const form = await probe(component("<form />"), "error", "`Form`")();
+          if (form.result !== "pass") return form;
+          return probe(component('<input type="file" />'), "error", "FilePicker")();
+        } },
+        { what: "<textarea>, <select>, <dialog> and <label> name Textarea, Select, DialogShell and Field", run: async () => {
+          for (const [element, part] of [["textarea", "Textarea"], ["select", "Select"], ["dialog", "DialogShell"], ["label", "Field"]]) {
+            const one = await probe(component(`<${element} />`), "error", `\`${part}\``)();
+            if (one.result !== "pass") return one;
+          }
+          return h.PASS("all four are errors, each naming its part");
+        } },
+        { what: "an element the package has no part for is an error that says to ask for one", run: probe(component('<iframe title="Map" />'), "error", "ask Katerina") },
+        { what: "an escaped element is not an error, while the same element is", run: async () => {
+          const raw = await probe(component("<form />"), "error")();
+          if (raw.result !== "pass") return h.FAIL(`a raw <form> is not caught yet, so this proves nothing: ${raw.detail}`);
+          return probe("export function Probe() {\n  return (\n    // @estiva-escape: a probe that keeps its element on purpose\n    <form />\n  )\n}\n", "none")();
+        } },
+        { what: "a real page, full of elements that are not controls, gets no error", run: () => { const expect = "none"; return h.lint({ config: GATES, file: "src/pages/TopicsPage.tsx", code: h.read("src/pages/TopicsPage.tsx"), expect }); } },
       ] },
       { ref: "UIG-8", title: "Lint rule — forbid the reach", owner: false, checks: [
         { what: "createPortal is an error", run: probe("import { createPortal } from 'react-dom'\nexport const Probe = (to: HTMLElement) => createPortal(<span />, to)\n", "error") },

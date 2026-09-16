@@ -4,7 +4,7 @@ import { IconBold, IconItalic, IconLink, IconUnderline } from '@tabler/icons-rea
 // Straight from the shared package rather than through Peek's re-export files
 // (`./IconButton`, `@/lib/utils`), which exist only to keep older import paths
 // working — a new file should name where the component actually lives.
-import { Popover, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Form, Popover, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 import { TextInput } from './TextInput'
 import { MARKS, toggleMark, shortcutLabel, currentLink, applyLink, type MarkId } from '@/lib/composerFormats'
@@ -277,6 +277,8 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
         /* One field, so no strip: a toolbar of one control is a toolbar in
            name only, and `ToolbarInput` cannot take the ref this field is
            focused by (ADOPTION B25). */
+        // The package Form (UIG-7): Enter applies the link. `flex`, so the field keeps its own height.
+        <Form onSubmit={submit} className="flex">
         <TextInput
           ref={field}
           value={url}
@@ -285,10 +287,7 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
             draft.current = e.target.value
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              submit()
-            } else if (e.key === 'Escape') {
+            if (e.key === 'Escape') {
               // Before the Menu's own Escape, which would apply instead.
               e.stopPropagation()
               discard()
@@ -298,6 +297,7 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
           aria-label="Link URL"
           className="w-[264px]"
         />
+        </Form>
       ) : (
         /* Four marks and a link button: one Tab stop, ← → along them (D29). */
         <Toolbar aria-label="Text formatting" surface={false}>

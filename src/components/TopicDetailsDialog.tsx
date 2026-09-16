@@ -16,7 +16,7 @@ import { Person } from './ui/Person'
 import { ProjectTickets } from './ui/ProjectTickets'
 import { StatusPill } from './ui/ForeignObjectWidget'
 import { TextInput } from './ui/TextInput'
-import { Card, FieldLine } from '@estiva-app/ui'
+import { Card, FieldLine, Form } from '@estiva-app/ui'
 
 /**
  * Everything a topic is, and the one place its name can be changed (PEE-2).
@@ -140,7 +140,8 @@ export function TopicDetailsDialogView({
     >
       <Section label="Name">
         {editing ? (
-          <div className="flex flex-col gap-2">
+          // The package Form (UIG-7): Enter saves, and the field locks while saving.
+          <Form busy={saving} onSubmit={save} className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <TextInput
                 autoFocus
@@ -148,12 +149,7 @@ export function TopicDetailsDialogView({
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label="Topic name"
                 onKeyDown={(e) => {
-                  // Enter saves and Escape abandons, because a field with two
-                  // buttons under it still gets Enter pressed at it.
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void save()
-                  }
+                  // Escape abandons; Enter is the Form's, and saves.
                   if (e.key === 'Escape') {
                     e.preventDefault()
                     setEditing(false)
@@ -161,12 +157,7 @@ export function TopicDetailsDialogView({
                   }
                 }}
               />
-              <Button
-                variant="primary"
-                size="small"
-                disabled={!changed || saving}
-                onClick={() => void save()}
-              >
+              <Button variant="primary" size="small" type="submit" disabled={!changed || saving}>
                 {saving ? 'Saving…' : 'Save'}
               </Button>
               <Button
@@ -181,7 +172,7 @@ export function TopicDetailsDialogView({
               </Button>
             </div>
             <Outcome outcome={outcome} />
-          </div>
+          </Form>
         ) : (
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-body-2 text-text-primary">

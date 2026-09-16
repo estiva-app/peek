@@ -8,7 +8,7 @@
  */
 import { useRef } from 'react'
 import { IconPaperclip } from '@tabler/icons-react'
-import { AttachmentCard, ToolbarButton } from '@estiva-app/ui'
+import { AttachmentCard, FilePicker, ToolbarButton } from '@estiva-app/ui'
 import { FILE_ACCEPT_ATTR, pendingAttachmentNote } from '@/lib/fileAttachments'
 import { hasConvex } from '@/api'
 import type { EditAttachmentChip } from '@/lib/useEditAttachments'
@@ -26,17 +26,8 @@ export function AttachFileButton({ onPick }: { onPick: (files: File[]) => void }
   if (!hasConvex) return null
   return (
     <>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept={FILE_ACCEPT_ATTR}
-        className="hidden"
-        onChange={(e) => {
-          onPick(Array.from(e.target.files ?? []))
-          e.target.value = '' // let the same file be re-picked
-        }}
-      />
+      {/* Clears itself, so the same file can be re-picked; calls onPick only when something was chosen. */}
+      <FilePicker ref={inputRef} multiple accept={FILE_ACCEPT_ATTR} onPick={onPick} />
       <ToolbarButton tooltip="Attach file" aria-label="Attach file" onClick={() => inputRef.current?.click()}>
         <IconPaperclip size={16} stroke={1.5} />
       </ToolbarButton>

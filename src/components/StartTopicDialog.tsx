@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
+import { Form } from '@estiva-app/ui'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
@@ -33,6 +34,7 @@ export function StartTopicDialog({
 }) {
   const [title, setTitle] = useState('')
   const [creating, setCreating] = useState(false)
+  const formId = useId()
   const parentTitle = parent?.slots.title?.value ?? 'this file'
   const trimmed = title.trim()
 
@@ -53,13 +55,14 @@ export function StartTopicDialog({
           <Button variant="muted" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={!trimmed || creating} onClick={() => void create()}>
+          <Button variant="primary" type="submit" form={formId} disabled={!trimmed || creating}>
             {creating ? 'Starting…' : 'Start'}
           </Button>
         </>
       }
     >
-      <div className="flex flex-col gap-2">
+      {/* The package Form (UIG-7): Enter in the title and the footer's Start send it the same way. */}
+      <Form id={formId} busy={creating} onSubmit={create} className="flex flex-col gap-2">
         <p className="text-body-2 text-text-secondary">
           {parent
             ? `A conversation about one part of ${parentTitle}. Everyone in ${folderName} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`
@@ -69,15 +72,12 @@ export function StartTopicDialog({
           <TextInput
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void create()
-            }}
             placeholder="What is it about?"
             aria-label="Topic title"
             autoFocus
           />
         </Field>
-      </div>
+      </Form>
     </DialogShell>
   )
 }

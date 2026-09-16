@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { MenuItem } from '@estiva-app/ui'
+import { useId, useState } from 'react'
+import { Form, MenuItem } from '@estiva-app/ui'
 import { DialogShell } from './ui/DialogShell'
 import { Field } from './ui/Field'
 import { IconArrowLeft, IconUserPlus } from '@tabler/icons-react'
@@ -59,6 +59,7 @@ export function MembersDialog({
   }
 
   const canConfirm = invitees.length > 0
+  const inviteFormId = useId()
   const confirmInvite = () => {
     if (!canConfirm) return
     onInvite(invitees)
@@ -88,7 +89,7 @@ export function MembersDialog({
         footer={
           <>
             <Button variant="muted" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={!canConfirm} onClick={confirmInvite}>
+            <Button variant="primary" type="submit" form={inviteFormId} disabled={!canConfirm}>
               Invite
             </Button>
           </>
@@ -96,6 +97,8 @@ export function MembersDialog({
       >
         {/* The package Field draws the label and its required mark; the
             hand-typed copy went on 2026-09-10 (§4.3, P16, F14). */}
+        {/* The package Form (UIG-7): Enter in the picker picks a person; Ctrl+Enter or Invite sends. */}
+        <Form id={inviteFormId} onSubmit={confirmInvite}>
         <Field label="Invite people" required>
           <PersonChipInput
             value={invitees}
@@ -105,6 +108,7 @@ export function MembersDialog({
             autoFocus
           />
         </Field>
+        </Form>
       </DialogShell>
     )
   }
