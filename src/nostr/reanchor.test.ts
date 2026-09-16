@@ -11,7 +11,7 @@ const B = 'c8d2f1b5-3a4e-4b97-8d26-9e1f7a3b5c02'
  * to the first device's — because Convex is per *deployment* and not per device.
  * Every new Peek install read the shared horizon cache and republished the whole
  * thing as its own slot. Nothing is lost (the merge is a maximum), but every
- * slot grows toward the 32,768-byte plaintext limit together and `client_id`
+ * slot grows toward the 65,535-byte plaintext ceiling together and `client_id`
  * stops meaning "the installation that read this".
  */
 describe('reanchorable', () => {

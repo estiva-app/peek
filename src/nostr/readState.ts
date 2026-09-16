@@ -47,10 +47,64 @@ export const READ_STATE_TAG = 'read-state'
 /** The `d`-tag prefix the relay's NIP-RS predicate keys on (SPEC §11.6). */
 export const READ_STATE_D_PREFIX = 'read-state:'
 
-/** Limits from NIP-RS and the reference implementation (SPEC §11.6). */
+/**
+ * Limits from NIP-RS and the reference implementation (SPEC §11.6).
+ *
+ * **`MAX_CONTEXTS` is not the cap a blob meets, and it cannot fire for one.**
+ * SHR-3 measured Miky's slot on production on 2026-09-16: 24,379 bytes across
+ * 287 contexts — 37.2 % of the real ceiling — at a mix of 202 `thread:`, 44
+ * container, 41 file and 0 `msg:` keys. Extrapolated at that mix the blob is
+ * refused at **~771 contexts**, which puts 10,000 some thirteen times past
+ * reach. Tightening the number would not fix that; the cap has to be in bytes,
+ * which is {@link MAX_CONTEXTS_BYTES} (SHR-4).
+ *
+ * It is kept because the merged view across slots is a different object: eight
+ * full slots can legitimately hold more contexts than one blob may, so
+ * `mergeSlots` is the one place this number can still bind.
+ */
 export const MAX_CONTEXTS = 10_000
 export const MAX_CONTEXT_ID_BYTES = 256
 export const MAX_TIMESTAMP = 4_294_967_295
+
+/** `client_id` is 1–64 characters (SPEC §11.6). */
+export const MAX_CLIENT_ID_BYTES = 64
+
+/**
+ * The plaintext ceiling a blob has to fit under — the only one of five that binds.
+ *
+ * SPEC §12.5 counts them and names this one: no Estiva app holds a key, so every
+ * layer-2 write is encrypted by the identity service, and `POST /nip44/encrypt`
+ * refuses a plaintext over 65,535 bytes of UTF-8. Ciphertext is larger than
+ * plaintext, so the relay's unadvertised 256 KiB ingest cap is never met first,
+ * and §11.6's 32,768 bytes is a figure from the reference client rather than a
+ * limit anything in this suite enforces.
+ *
+ * Restated here rather than imported from `appData.ts`, which reaches
+ * `ESTIVA_ID_ORIGIN` and through it `import.meta.env`; this file stays importable
+ * from a Node probe (see the header). `readState.test.ts` asserts the two agree.
+ */
+export const MAX_BLOB_BYTES = 65_535
+
+/**
+ * How many bytes the `contexts` map may occupy: the ceiling less the envelope,
+ * sized at the **longest legal `client_id`** rather than at this installation's.
+ *
+ * That costs 51 bytes of 65,535 and buys the property the cap needs. Read state
+ * merges by taking a maximum across slots (SPEC §11.4), so a slot that evicts a
+ * context another slot still holds has it handed straight back on the next
+ * merge. Eviction therefore has to be a pure function of the context map and
+ * nothing else — every installation given the same contexts must drop the same
+ * ones — and a budget that varied with the length of `client_id` would break
+ * exactly that.
+ */
+export const MAX_CONTEXTS_BYTES =
+  MAX_BLOB_BYTES -
+  // The envelope is the blob without its `contexts` value, so the `{}` comes
+  // back out: it is the map's, and `capContextsToBytes` counts it as the map's.
+  (new TextEncoder().encode(
+    JSON.stringify({ v: 1, client_id: 'x'.repeat(MAX_CLIENT_ID_BYTES), contexts: {} }),
+  ).length -
+    2)
 
 /** Where this installation's slot identity lives. Must survive a browser restart. */
 export const SLOT_STORAGE_KEY = 'estiva-peek:read-state-slot'
@@ -304,34 +358,105 @@ export function serializeReadStateBlob(blob: ReadStateBlob): string {
   return JSON.stringify({ v: blob.v, client_id: blob.client_id, contexts })
 }
 
+/** A context map trimmed to fit the ceiling, and what fitting it cost. */
+export interface CappedContexts {
+  /** The contexts that fit. */
+  contexts: Record<string, number>
+  /** What `JSON.stringify` of that map costs, in bytes of UTF-8. */
+  bytes: number
+  /** What was dropped to make it fit, newest first — so an empty array is the normal case. */
+  evicted: string[]
+}
+
 /**
- * Apply read markers to a context map, taking the later of the two.
+ * Trim a context map to the byte budget, newest marker first (SHR-4).
+ *
+ * **Why bytes and not a count.** The blob is grow-only and the thing that
+ * refuses it is `/nip44/encrypt`, which counts UTF-8 bytes of plaintext. The
+ * four context kinds cost between ~50 and ~107 bytes each and Peek's mix is not
+ * uniform — on production `thread:` keys are 70 % of the blob — so a count
+ * stands in for the size badly enough that the count cap this file used to
+ * enforce sits thirteen times past the point where publishing breaks
+ * ({@link MAX_CONTEXTS}). Every key is therefore measured as it is serialized:
+ * the quoted key, the colon, the digits, and the comma that joins it to the one
+ * before.
+ *
+ * **Why eviction rather than refusal.** Past the ceiling the publish fails, and
+ * a failed publish means every later read marker stops advancing too — the
+ * whole blob is replaced or none of it is. Dropping the oldest marker costs one
+ * conversation looking unread; refusing the write costs all of them.
+ *
+ * **Why it is deterministic to the tie.** Ordering is by marker descending and
+ * then by key ascending, and the budget does not depend on the installation
+ * (see {@link MAX_CONTEXTS_BYTES}), so two slots holding the same contexts evict
+ * the same ones. Applying it twice changes nothing. Both properties are what
+ * keep an eviction from being undone by the next merge and re-applied forever.
+ */
+export function capContextsToBytes(
+  contexts: Readonly<Record<string, number>>,
+  budget: number = MAX_CONTEXTS_BYTES,
+): CappedContexts {
+  const encoder = new TextEncoder()
+  // Exactly what this entry adds to `JSON.stringify(contexts)`: the quoted key
+  // (escaped, though no well-known context id needs it), the colon and the
+  // integer's digits. `String` and `JSON.stringify` agree on an integer in the
+  // §11.6 range, so this is the serialized cost rather than an estimate.
+  const cost = (key: string, value: number) =>
+    encoder.encode(JSON.stringify(key)).length + 1 + String(value).length
+  const keys = Object.keys(contexts).sort(
+    (a, b) => contexts[b] - contexts[a] || (a < b ? -1 : a > b ? 1 : 0),
+  )
+  const kept: Record<string, number> = {}
+  // `bytes` is `JSON.stringify(contexts).length` exactly, braces included — the
+  // same two bytes `MAX_CONTEXTS_BYTES` hands back — so the two are comparable
+  // and a test can check the accounting against the serializer rather than
+  // against itself.
+  let bytes = 2
+  let held = 0
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]
+    const next = bytes + cost(key, contexts[key]) + (held === 0 ? 0 : 1)
+    if (next > budget) return { contexts: kept, bytes, evicted: keys.slice(i) }
+    kept[key] = contexts[key]
+    bytes = next
+    held += 1
+  }
+  return { contexts: kept, bytes, evicted: [] }
+}
+
+/**
+ * Apply read markers to a context map, taking the later of the two, and report
+ * what the byte cap had to drop.
  *
  * §11.4: a client MUST NOT lower a timestamp. The merge rule is a maximum, so a
  * lower value is not merely ignored — it cannot be expressed. There is no
  * mark-as-unread in NIP-RS, and writing a smaller number is not a way to get one.
  *
- * The cap is applied by **dropping the oldest markers**, not by refusing the
- * write: the alternative is that a person who has read 10,000 things can never
- * mark anything read again, and the oldest marker is the one whose loss matters
- * least.
+ * This is the one funnel every published context passes through — the queue
+ * hydrates through it, records through it and retries through it — which is why
+ * the cap lives here rather than at the publish call. A cap applied only as the
+ * blob went out would leave the queue believing in contexts it had just dropped,
+ * and a marker recorded for one of them would look like a change on every pass.
  */
-export function advanceContexts(
+export function advanceContextsWithCap(
   current: Readonly<Record<string, number>>,
   updates: Readonly<Record<string, number>>,
-): Record<string, number> {
+): CappedContexts {
   const next: Record<string, number> = { ...current }
   for (const [id, seconds] of Object.entries(updates)) {
     if (!isPublishableContextId(id)) continue
     if (!Number.isInteger(seconds) || seconds < 0 || seconds > MAX_TIMESTAMP) continue
     if (next[id] === undefined || seconds > next[id]) next[id] = seconds
   }
-  const keys = Object.keys(next)
-  if (keys.length <= MAX_CONTEXTS) return next
-  const keep = keys.sort((a, b) => next[b] - next[a]).slice(0, MAX_CONTEXTS)
-  const capped: Record<string, number> = {}
-  for (const id of keep) capped[id] = next[id]
-  return capped
+  return capContextsToBytes(next)
+}
+
+/** {@link advanceContextsWithCap}, for the callers that do not report evictions. */
+export function advanceContexts(
+  current: Readonly<Record<string, number>>,
+  updates: Readonly<Record<string, number>>,
+): Record<string, number> {
+  return advanceContextsWithCap(current, updates).contexts
 }
 
 // ---------------------------------------------------------------------------

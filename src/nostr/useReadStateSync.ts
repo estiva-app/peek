@@ -130,6 +130,59 @@ export function useReadFrontier(): ReadFrontier {
   }, [version])
 }
 
+/** What a blob holding these contexts would hand `/nip44/encrypt`, in bytes. */
+function blobBytes(clientId: string, contexts: Record<string, number>): number {
+  return new TextEncoder().encode(serializeReadStateBlob({ v: 1, client_id: clientId, contexts }))
+    .length
+}
+
+/** How close read state is to the ceiling, and what the cap has already cost. */
+export interface ReadStateSize {
+  /** Contexts in the merged frontier — every installation's, not just this one's. */
+  contexts: number
+  /**
+   * The merged frontier serialized as a blob.
+   *
+   * An upper bound on what any one slot publishes rather than the slot itself,
+   * and the number SHR-3 measured on production (24,379 bytes, 37.2 %). It is
+   * the right one to watch: a slot grows toward it as the person keeps reading.
+   */
+  bytes: number
+  /** `bytes` against the 65,535-byte plaintext ceiling, to one decimal place. */
+  pctOfCeiling: number
+  ceilingBytes: number
+  /** This slot's own contexts map, once the queue has hydrated. */
+  slotBytes: number | undefined
+  /** Markers the byte cap has dropped this session. Non-zero means read state was lost. */
+  evicted: number
+}
+
+/**
+ * Read state's size, for the panel that has to make an eviction visible (SHR-4).
+ *
+ * Re-renders on the same store as {@link useReadFrontier} — the merge landing, a
+ * marker being recorded, and an eviction, which `ensureQueue` bumps it for.
+ * Nothing here fetches or measures the relay; it reads what the last merge left.
+ */
+export function useReadStateSize(): ReadStateSize {
+  const version = useSyncExternalStore(subscribeFrontier, frontierVersionNow, frontierVersionNow)
+  return useMemo(() => {
+    const contexts = previousRelayMerge ?? {}
+    const bytes = blobBytes(currentIdentity().clientId, contexts)
+    const q = queue?.diagnostic()
+    return {
+      contexts: Object.keys(contexts).length,
+      bytes,
+      pctOfCeiling: Math.round((bytes / MAX_PLAINTEXT_BYTES) * 1000) / 10,
+      ceilingBytes: MAX_PLAINTEXT_BYTES,
+      slotBytes: q?.hydrated ? q.bytes : undefined,
+      evicted: q?.evicted.total ?? 0,
+    }
+    // Read behind the version the store hands out, exactly as `useReadFrontier`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version])
+}
+
 /** Facts the diagnostic reports that live outside the queue. */
 let readPathRuns = 0
 let lastMergeAt: number | undefined
@@ -187,6 +240,14 @@ function ensureQueue(): ReadStateQueue {
         return false
       }
     },
+    /*
+     * An eviction is a loss of read state, so it goes somewhere a person looks
+     * rather than into the console (SHR-4). Bumping the frontier store is what
+     * re-renders the "Read state" panel in the account menu, which reads the
+     * count through `useReadStateSize`; `window.__readState().queue.evicted`
+     * carries the same facts with the keys attached.
+     */
+    onEvict: () => frontierChanged(),
   })
   return queue
 }
@@ -203,9 +264,11 @@ function ensureQueue(): ReadStateQueue {
  * came up with a slot holding 67 contexts, identical to the first, because
  * Convex is per *deployment* and not per device — so every new Peek install read
  * the shared cache and republished the whole thing as its own. Nothing is lost
- * that way (the merge is a maximum) but every slot grows toward the 32,768-byte
- * plaintext limit together, and `client_id` stops meaning "the installation that
- * read this". Ship had the same shape by a different route, fixed in ship#62.
+ * that way (the merge is a maximum) but every slot grows toward the 65,535-byte
+ * plaintext ceiling together — §11.6's 32,768 is the reference client's figure,
+ * not the one this suite meets (SPEC §12.5) — and `client_id` stops meaning "the
+ * installation that read this". Ship had the same shape by a different route,
+ * fixed in ship#62.
  */
 export function reanchorable(
   cached: readonly { context: string; atSeconds: number }[],
@@ -508,8 +571,12 @@ export function useMergedReadState(): MergedReadStateView {
  * **`blobBytes` is the other field that matters, and it is not a count.** The
  * blob is grow-only and the binding limit is `/nip44/encrypt` refusing
  * plaintext over `MAX_PLAINTEXT_BYTES`, not `MAX_CONTEXTS` — which sits 8–13×
- * beyond it at Peek's key shapes. Past the real ceiling, publishing fails with
- * a `console.warn` and read markers quietly stop advancing (SHR-3/SHR-4).
+ * beyond it at Peek's key shapes. Since SHR-4 the blob cannot get there: the
+ * queue holds its context map inside `MAX_CONTEXTS_BYTES` and drops the oldest
+ * markers to do it, and what that has cost is `queue.evicted` here and a line in
+ * the "Read state" panel in the account menu. `blobBytes` measures the **merged**
+ * frontier, which is the upper bound every slot grows toward; `queue.bytes` is
+ * this slot's own, and reads 0 until the queue has hydrated.
  *
  * `relayContexts` cannot stand in for it: the four context kinds differ by more
  * than 2× in cost — a bare uuid container ~50 bytes, a `thread:`/`msg:` key
@@ -574,9 +641,7 @@ export interface PeekReadStateDiagnostic {
 function snapshot(): PeekReadStateDiagnostic {
   const id = currentIdentity()
   const contexts = previousRelayMerge ?? {}
-  const bytes = new TextEncoder().encode(
-    serializeReadStateBlob({ v: 1, client_id: id.clientId, contexts }),
-  ).length
+  const bytes = blobBytes(id.clientId, contexts)
   return {
     slot: `read-state:${id.slotId}`,
     clientId: id.clientId,

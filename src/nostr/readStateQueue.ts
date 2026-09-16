@@ -19,9 +19,18 @@
  * replaced rather than patched. That is why the queue hydrates from its own slot
  * before its first write and holds the full map in memory afterwards: a partial
  * blob does not fail, it silently drops every context it omitted.
+ *
+ * ## Under the ceiling, always
+ *
+ * The whole-blob rule is also why the byte cap has to be here rather than at the
+ * publish call (SHR-4). `/nip44/encrypt` refuses a plaintext over 65,535 bytes,
+ * and because the blob is replaced or nothing is, one context too many stops
+ * *every* later marker from advancing — not just that one. So `known` is held
+ * inside the budget at every step, and what the cap has cost is on the
+ * diagnostic rather than in a log line: `evicted.total`.
  */
 import type { ReadStateBlob } from './readState'
-import { advanceContexts } from './readState'
+import { MAX_CONTEXTS_BYTES, advanceContexts, advanceContextsWithCap } from './readState'
 
 /** Long enough to batch a burst of navigation, short enough to survive a tab close. */
 export const READ_STATE_DEBOUNCE_MS = 3000
@@ -37,6 +46,15 @@ export interface ReadStateQueueOptions {
   hydrate: () => Promise<{ reachable: boolean; blob?: ReadStateBlob }>
   /** Publish the whole blob. Resolves `false` when the relay did not accept it. */
   publish: (contexts: Record<string, number>) => Promise<boolean>
+  /**
+   * The byte cap dropped markers this queue was holding (SHR-4).
+   *
+   * Called only for a real loss — a context that was in the map and is not any
+   * more — never for a marker that arrived already too old to fit. The hook
+   * exists so the loss can reach a surface a person reads; the same facts are on
+   * {@link ReadStateQueue.diagnostic} for `window.__readState()`.
+   */
+  onEvict?: (evicted: readonly string[], bytes: number) => void
   debounceMs?: number
   /** Injectable for tests; production passes nothing and gets real timers. */
   setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>
@@ -76,6 +94,18 @@ export interface ReadStateQueueDiagnostic {
   published: Record<string, number> | undefined
   hydrated: boolean
   lastAttempt: { at: number; outcome: FlushOutcome; contexts?: number } | undefined
+  /**
+   * What the next publish would cost against what it may spend (SHR-4).
+   *
+   * `bytes` is the serialized `contexts` map, not the whole plaintext: the
+   * envelope is already taken out of `budgetBytes`. Both read 0 until the queue
+   * has hydrated, which is the normal state before the first flush — `known` is
+   * only what this tab has recorded until then, and is not the blob.
+   */
+  bytes: number
+  budgetBytes: number
+  /** Every eviction the cap has made this session. `total` 0 is the normal case. */
+  evicted: { total: number; lastAt: number | undefined; lastKeys: string[] }
 }
 
 export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueue {
@@ -99,6 +129,40 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
     lastAttempt = { at: Date.now(), outcome, ...(contexts !== undefined ? { contexts } : {}) }
   }
 
+  /** What the cap has cost this session, for the diagnostic and the panel. */
+  let bytes = 0
+  let evictedTotal = 0
+  let lastEvictionAt: number | undefined
+  let lastEvictedKeys: string[] = []
+
+  /**
+   * Advance through the cap, reporting only a loss that actually happened.
+   *
+   * `held` is what was believed before this call, and it is not always `current`:
+   * hydration merges the relay's blob with what the tab has recorded, and either
+   * side losing a context is a loss. A marker that arrives already older than
+   * anything the budget has room for, by contrast, comes back in `evicted`
+   * having never been held — reporting that as a loss would fire on every pass
+   * of the re-anchor (CRO-6) rather than once. `record` reads the same
+   * distinction to decide it has nothing to schedule.
+   */
+  function advance(
+    current: Record<string, number>,
+    updates: Record<string, number>,
+    held: Record<string, number>,
+  ): Record<string, number> {
+    const result = advanceContextsWithCap(current, updates)
+    bytes = result.bytes
+    const lost = result.evicted.filter((key) => held[key] !== undefined)
+    if (lost.length > 0) {
+      evictedTotal += lost.length
+      lastEvictionAt = Date.now()
+      lastEvictedKeys = lost
+      opts.onEvict?.(lost, result.bytes)
+    }
+    return result.contexts
+  }
+
   async function hydrate(): Promise<void> {
     if (hydrated) return
     if (!hydrating) {
@@ -110,7 +174,11 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
         // contrast, is the ordinary first run and hydrates to nothing.
         if (result.reachable) {
           const contexts = result.blob?.contexts ?? {}
-          known = advanceContexts(contexts, known)
+          // Both sides count as held: the relay's blob is this slot's history and
+          // `known` is what the tab has recorded since load. A blob already over
+          // budget — one written before SHR-4, or by a reader that never had the
+          // cap — is trimmed here and heals on the next publish.
+          known = advance(contexts, known, { ...contexts, ...known })
           published = contexts
           hydrated = true
         }
@@ -127,10 +195,13 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
   }
 
   function record(contextId: string, seconds: number): void {
-    const advanced = advanceContexts(known, { [contextId]: seconds })
-    // `advanceContexts` drops what it will not publish, so an unchanged map
-    // means the marker was invalid or not newer. Either way there is nothing to
-    // schedule, and scheduling anyway would republish an identical blob.
+    const advanced = advance(known, { [contextId]: seconds }, known)
+    // The advance drops what it will not publish, so an unchanged map means the
+    // marker was invalid, not newer, or older than the byte budget has room for.
+    // Either way there is nothing to schedule, and scheduling anyway would
+    // republish an identical blob — which is what stops the re-anchor (CRO-6)
+    // from re-offering an evicted context on every focus for the rest of the
+    // session.
     if (advanced[contextId] === known[contextId]) return
     known = advanced
     pending = advanceContexts(pending, { [contextId]: seconds })
@@ -198,6 +269,9 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
       published: published ? { ...published } : undefined,
       hydrated,
       lastAttempt,
+      bytes,
+      budgetBytes: MAX_CONTEXTS_BYTES,
+      evicted: { total: evictedTotal, lastAt: lastEvictionAt, lastKeys: [...lastEvictedKeys] },
     }),
     cancel: () => {
       if (timer !== undefined) {
