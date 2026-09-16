@@ -176,26 +176,55 @@ export interface RelaySeam {
 }
 
 /**
- * Read the person's stars off the relay.
+ * What the relay had to say about this person's stars.
  *
- * Returns `undefined` — distinct from an empty blob — when the relay could not
- * be asked or holds nothing. The caller needs that distinction: "you have no
- * stars" and "we could not find out" must not render the same, or a transient
- * failure looks like the person's stars being deleted.
+ * Three answers, and the caller needs all three kept apart. That mattered
+ * mildly while Convex was the set and this was its backup; it decides the
+ * behaviour now that the blob *is* the set (SHR-6), because "you have no
+ * stars" and "we could not find out" have opposite consequences — the first is
+ * an empty set to render and a coordinate to seed, the second is a publish
+ * that must not happen, since last-write-wins would make a set written from a
+ * guess permanent.
+ *
+ * `absent` therefore covers one case beyond "no event": an event that is there
+ * and carries nothing this version can read. There is no usable set either
+ * way, and the caller's fallback rewrites it from Convex, which still holds
+ * every star (`desk.toggleStar` writes both). Reporting it as an empty
+ * `present` would instead render the person's stars as gone and then publish
+ * that.
+ *
+ * A *decrypt* failure is `unreachable`, not `absent`: the blob is there and
+ * intact as far as anyone can tell, and the thing that failed is this tab's
+ * key. Republishing over it is the one move that could destroy something.
  */
-export async function fetchStars(seam: RelaySeam): Promise<StarsBlob | undefined> {
+export type StarsRead =
+  | { state: 'unreachable' }
+  | { state: 'absent' }
+  | { state: 'present'; blob: StarsBlob }
+
+export async function fetchStars(seam: RelaySeam): Promise<StarsRead> {
   const { ok, events } = await queryRelay(
     seam.relayUrl,
     [starsFilter(seam.pubkey)],
     seam.accessToken,
     seam.pubkey,
   )
-  if (!ok) return undefined
+  if (!ok) return { state: 'unreachable' }
   // Parameterized-replaceable, so the relay serves at most one per coordinate.
   // Newest wins if a relay ever hands back more.
   const newest = events.sort((a, b) => b.created_at - a.created_at)[0]
-  if (!newest) return undefined
-  return parseStarsBlob(await decryptBlob(newest.content, seam.accessToken))
+  if (!newest) return { state: 'absent' }
+  const plaintext = await decryptBlob(newest.content, seam.accessToken)
+  if (!plaintext) return { state: 'unreachable' }
+  const blob = parseStarsBlob(plaintext)
+  // `parseStarsBlob` never throws and never reports: bad JSON, a `v` it does
+  // not know, or a non-object all land on the same floor, and `updatedAt: 0`
+  // is the part of that floor no real publish can produce — `starsToPublish`
+  // stamps a clock. So a zero here means the blob decrypted and said nothing
+  // usable, which is `absent`. Pinned by a test, because it is an invariant
+  // between two functions rather than a property of either.
+  if (blob.updatedAt === 0) return { state: 'absent' }
+  return { state: 'present', blob }
 }
 
 /**

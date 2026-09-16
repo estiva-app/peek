@@ -7,8 +7,8 @@
  * deployment they are the full source of truth over the static mocks
  * (tests, Storybook, demo instance); with one they cover only the
  * optimistic window until the reactive queries catch up.
- *   - StarredProvider        (stars)
  *   - TopicStoreProvider     (runtime topics + DM-promoted huddles)
+ *   - StarredProvider        (stars; inside TopicStoreProvider — see below)
  *   - TopicMutationsProvider (the message/reply/huddle override layers)
  *   - DmRuntimeProvider      (DM sent messages — lifted here from
  *     useDmConversationView's hook-local state so DM sends survive
@@ -64,22 +64,28 @@ export function useDmRuntime(): DmRuntimeValue {
 
 export function PeekDataProvider({ children }: { children: ReactNode }) {
   // AvatarRegistryProvider is outermost of the runtime stores: it only needs
-  // the Convex queries above it, and the stores below (Starred) resolve
-  // avatars through it.
+  // the Convex queries above it, and the stores below resolve avatars through
+  // it.
+  //
+  // StarredProvider sits **inside** TopicStoreProvider, and did not used to
+  // (SHR-6). Its set now comes from the relay as bare ids, so it resolves them
+  // to rows through `useTopics()` — and that reads the runtime topic store, for
+  // the optimistic window on a rename or a delete. Mounted above it, the
+  // provider throws on first render.
   const tree = (
     <AvatarRegistryProvider>
       <MentionDirectorySync />
       <ReadStateSync />
-      <StarredProvider>
-        <TopicStoreProvider>
-          <TopicDirectorySync />
+      <TopicStoreProvider>
+        <TopicDirectorySync />
+        <StarredProvider>
           <TopicMutationsProvider>
             <OpenWorkProvider>
               <DmRuntimeProvider>{children}</DmRuntimeProvider>
             </OpenWorkProvider>
           </TopicMutationsProvider>
-        </TopicStoreProvider>
-      </StarredProvider>
+        </StarredProvider>
+      </TopicStoreProvider>
     </AvatarRegistryProvider>
   )
   // Exactly ONE provider owns the client's auth (PEEK-104). Both of these call
