@@ -42,7 +42,7 @@ import {
   type FileThreads,
 } from '@/nostr/foreign'
 import { RelayReadError } from '@/nostr/relayRead'
-import type { StreamMessage } from '@/nostr/channelStreams'
+import { rootOf, type StreamMessage } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import type { SignedEvent } from '@estiva-app/protocol'
 import type {
@@ -414,6 +414,11 @@ export interface MessageHit {
   createdAt: number
   /** The Folder (NIP-29 channel uuid) the message was posted in, if it names one. */
   folder?: string
+  /**
+   * The message that opened its thread, when this one is a reply — so a result
+   * can open that conversation and land on the reply (R13, UIG-29).
+   */
+  root?: string
 }
 
 /**
@@ -471,6 +476,7 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
               pubkey: e.pubkey,
               createdAt: e.created_at,
               folder: e.tags.find((t) => t[0] === 'h')?.[1],
+              ...(rootOf(e) !== e.id ? { root: rootOf(e) } : {}),
             })),
           })
         })

@@ -1,3 +1,5 @@
+import { findMessageByEventId } from './conversationRegistry'
+
 /**
  * Reaching a message in the thread behind the launcher (INT-3).
  *
@@ -77,6 +79,33 @@ export function scrollToMessageWhenReady(id: string, waitMs = WAIT_MS): Promise<
     const deadline = Date.now() + waitMs
     const attempt = () => {
       if (scrollToMessage(id)) {
+        resolve(true)
+        return
+      }
+      if (Date.now() >= deadline) {
+        resolve(false)
+        return
+      }
+      window.setTimeout(attempt, POLL_MS)
+    }
+    attempt()
+  })
+}
+
+/**
+ * Scroll to a message known only by its relay event, once its conversation has
+ * opened — a reply found by the launcher's message search (R13, UIG-29).
+ *
+ * A search hit carries the event, and `data-reply-id` carries Peek's own id, so
+ * the open thread's snapshot is asked for the match on every attempt: a reply
+ * is only in it after the thread has mounted and loaded.
+ */
+export function scrollToEventWhenReady(eventId: string, waitMs = WAIT_MS): Promise<boolean> {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + waitMs
+    const attempt = () => {
+      const message = findMessageByEventId(eventId)
+      if (message && scrollToMessage(message.id)) {
         resolve(true)
         return
       }

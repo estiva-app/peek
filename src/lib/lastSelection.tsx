@@ -1,5 +1,12 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
 
+/** A message to open a topic at: the one that opened the conversation, and a reply in it if that is the target. */
+export interface PendingTopicMessage {
+  folder: string
+  eventId: string
+  reply?: string
+}
+
 interface LastSelectionState {
   topicId: string | null
   dmId: string | null
@@ -11,8 +18,10 @@ interface LastSelectionState {
   /** One-shot: when set, the topic view for this Folder should open the conversation
    *  holding this message and scroll to it, then clear (RIC-16). Set by `ObjectPage`
    *  for a `/message/<id>` link, which knows the event and its Folder but neither
-   *  Peek's topic id nor its conversation id — the topic view resolves those. */
-  pendingTopicMessage: { folder: string; eventId: string } | null
+   *  Peek's topic id nor its conversation id — the topic view resolves those.
+   *  `reply` is a reply inside that conversation to land on instead (the launcher's
+   *  message results, R13). */
+  pendingTopicMessage: PendingTopicMessage | null
 }
 
 interface LastSelectionValue extends LastSelectionState {
@@ -20,7 +29,7 @@ interface LastSelectionValue extends LastSelectionState {
   setLastDmId: (id: string | null) => void
   setPendingDmThreadId: (id: string | null) => void
   setPendingTopicThread: (v: { topicId: string; convId: string } | null) => void
-  setPendingTopicMessage: (v: { folder: string; eventId: string } | null) => void
+  setPendingTopicMessage: (v: PendingTopicMessage | null) => void
 }
 
 const LastSelectionContext = createContext<LastSelectionValue | null>(null)
@@ -30,7 +39,7 @@ export function LastSelectionProvider({ children }: { children: ReactNode }) {
   const [dmId, setLastDmId] = useState<string | null>(null)
   const [pendingDmThreadId, setPendingDmThreadId] = useState<string | null>(null)
   const [pendingTopicThread, setPendingTopicThread] = useState<{ topicId: string; convId: string } | null>(null)
-  const [pendingTopicMessage, setPendingTopicMessage] = useState<{ folder: string; eventId: string } | null>(null)
+  const [pendingTopicMessage, setPendingTopicMessage] = useState<PendingTopicMessage | null>(null)
 
   const value = useMemo<LastSelectionValue>(
     () => ({

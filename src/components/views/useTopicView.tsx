@@ -3,7 +3,7 @@ import { useMarkRead } from '@/lib/useMarkRead'
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { registerTopicConversation, unregisterTopicConversation } from '@/lib/conversationRegistry'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
-import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
+import { scrollToEventWhenReady, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { isNearBottom } from './scrollPolicy'
 import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
@@ -699,7 +699,8 @@ export function useTopicView({
     if (!found) return
     setPendingTopicMessage(null)
     openThread(found.conversationId)
-    void scrollToMessageWhenReady(found.id)
+    // A reply is only in the thread once it has opened, and is known there by its event.
+    void (pendingTopicMessage.reply ? scrollToEventWhenReady(pendingTopicMessage.reply) : scrollToMessageWhenReady(found.id))
   }, [pendingTopicMessage, topicFolderId, topicSnapshot, openThread, setPendingTopicMessage])
 
   /*
