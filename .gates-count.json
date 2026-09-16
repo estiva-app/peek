@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "repo": "peek",
-  "generatedAt": "2026-09-15T20:30:46.329Z",
+  "generatedAt": "2026-09-16T12:15:33.466Z",
   "rules": {
-    "estiva/no-raw-button": {
+    "estiva/no-raw-element": {
       "errors": 0,
       "warnings": 0,
       "escapes": 1
