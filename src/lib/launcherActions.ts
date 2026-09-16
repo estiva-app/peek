@@ -25,9 +25,9 @@
  * **The launcher no longer lists the actions below** (INT-9). It reads each
  * app's manifest and offers what that declares; what is here is the app, its
  * parent kind, its labels, and a proposal for each action the manifest should
- * grow. Storybook draws the proposals — `ActionFormPanel.stories.tsx` is the
- * only consumer — so the design's record of the intended field shapes survives
- * without a person being offered a form that cannot publish.
+ * grow. The proposals are kept here as the design's record of the intended field
+ * shapes, and nothing draws them: the Launcher stories that did were removed with
+ * UIG-29 (Katerina, 16 September — they were not representative of the launcher).
  *
  * The three that stayed inert were `add-project`, `say` and `create-topic`,
  * and Miky found all three the same way: open the form, fill it, submit,
