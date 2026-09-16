@@ -46,7 +46,9 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancelRef.current()
     }
+    // @estiva-escape: the huddle starter sits inside the page, not on top of it; no part closes a panel that does not float on a press outside (UIG-8)
     document.addEventListener('mousedown', handleClick)
+    // @estiva-escape: Escape cancels the huddle starter from anywhere on the page; no part owns that for a panel that does not float (UIG-8)
     document.addEventListener('keydown', handleKey)
     return () => {
       document.removeEventListener('mousedown', handleClick)

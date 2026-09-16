@@ -48,6 +48,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, quer
   useEffect(() => setHighlight(0), [query])
 
   useImperativeHandle(ref, () => ({
+    // @estiva-escape: the editor hands its arrow keys to this list; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
     onKeyDown: ({ event }: { event: KeyboardEvent }) => {
       if (event.key === 'ArrowDown') {
         setHighlight((h) => Math.min(h + 1, shown.length - 1))
@@ -83,6 +84,7 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, quer
    the arrow keys through the editor, never by Tab. `SuggestionPopover` does
    the rest. */
   const row = (item: FilesMenuItem, i: number, leading: React.ReactNode, label: string, key: string) => (
+    // @estiva-escape: a row of a list the editor drives from its caret; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
     <MenuItem
       key={key}
       role="option"

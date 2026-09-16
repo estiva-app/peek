@@ -140,6 +140,7 @@ export function SuggestionPopover({
       ariaLabel={ariaLabel}
     >
       {/* `flex flex-col`, as the content box it sits in, so no row moves. */}
+      {/* @estiva-escape: the list the editor drives from its caret; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31) */}
       <div ref={setList} id={listboxId} role="listbox" aria-label={ariaLabel} className="flex flex-col">
         {children}
       </div>
