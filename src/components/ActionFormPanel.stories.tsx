@@ -1,13 +1,17 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { PeekDataProvider } from '@/api'
+import { CommandPalette, CommandPaletteForm } from '@estiva-app/ui'
 import { TOPICS } from '@/api/fixtures'
-import { LAUNCHER_APPS } from '@/lib/launcherActions'
-import { ActionFormPanel } from './ActionFormPanel'
+import { LAUNCHER_APPS, type LauncherAction, type LauncherApp, type VocabOption } from '@/lib/launcherActions'
+import { ActionFormFields } from './ActionFormPanel'
+import { missingFields, seedDraft } from '@/lib/formDraft'
+import { PeekLogoMark } from './ui/PeekLogo'
+import { ShipLogoMark } from './ui/ShipLogo'
 import { ThreadReplyCard } from './ThreadReplyCard'
 
 /**
- * The launcher's form step: an object-creating action drawn as a form.
+ * The launcher's form level: an object-creating action drawn as a form.
  *
  * Every field here comes from a manifest-shaped declaration
  * (`lib/launcherActions.ts`) — `string` → text input, `text` → textarea,
@@ -16,10 +20,12 @@ import { ThreadReplyCard } from './ThreadReplyCard'
  * §13.4 is the contract: "an action whose `input.type` is `object` declares
  * `properties` and `required`, and a consumer draws a form."
  *
- * There is no error state: the primary action stays disabled until every
- * required field is filled. Submitting reports values upward; nothing
- * publishes until the Intelligence runtime lands (the seam is
- * `CommandLauncher.submitAction`).
+ * Drawn in the package's `CommandPaletteForm`, as the launcher draws it
+ * (UIG-29): the chip, the button, Ctrl+Enter, and a missing field saying what
+ * it needs. Nothing publishes here — the launcher's `submitAction` does that.
+ *
+ * Four of these are the registry's proposals for what a manifest should grow,
+ * which the launcher never offers (INT-9): Storybook is where they are kept.
  */
 const ship = LAUNCHER_APPS.find((a) => a.id === 'ship')!
 const peek = LAUNCHER_APPS.find((a) => a.id === 'peek')!
@@ -35,34 +41,52 @@ const topicOptions = TOPICS.filter((t) => !t.isResolved).map((t) => ({
   label: t.title,
 }))
 
+interface FormStoryArgs {
+  app: LauncherApp
+  action: LauncherAction
+  parentOptions?: Record<string, VocabOption[]>
+  initialValues?: Record<string, string>
+}
+
+function FormStory({ app, action, parentOptions, initialValues }: FormStoryArgs) {
+  const [draft, setDraft] = useState(() => seedDraft(action, initialValues))
+  const [attempted, setAttempted] = useState(false)
+  return (
+    <CommandPalette open onOpenChange={() => {}} label="Launcher" where="Anywhere in Peek">
+      <CommandPaletteForm
+        chip={{ label: `${app.label} · ${action.label}`, onBack: () => {} }}
+        icon={app.id === 'peek' ? <PeekLogoMark height={16} /> : <ShipLogoMark height={16} />}
+        submitLabel={action.submitLabel}
+        onSubmit={() => setAttempted(true)}
+      >
+        <ActionFormFields
+          app={app}
+          action={action}
+          parentOptions={parentOptions}
+          draft={draft}
+          onDraft={setDraft}
+          missing={attempted ? missingFields(action, draft) : undefined}
+        />
+      </CommandPaletteForm>
+    </CommandPalette>
+  )
+}
+
 const meta = {
   title: 'Launcher/Action form',
-  component: ActionFormPanel,
-  parameters: { layout: 'padded' },
-  decorators: [
-    (Story) => (
-      <PeekDataProvider>
-        {/* The launcher shell this panel sits inside (width and chrome). */}
-        <div className="w-[658px] bg-bg-elevated border border-border-default rounded-lg shadow-lg overflow-hidden">
-          <Story />
-        </div>
-      </PeekDataProvider>
-    ),
-  ],
-  args: {
-    app: ship,
-    action: addIssue,
-    onSubmit: () => {},
-  },
-} satisfies Meta<typeof ActionFormPanel>
+  parameters: { layout: 'fullscreen' },
+  render: (args) => <FormStory {...args} />,
+  args: { app: ship, action: addIssue },
+} satisfies Meta<FormStoryArgs>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * Ship → Create issue, the worked example. Title and Project are what Ship's
+ * Ship → Add issue, the worked example. Title and Project are what Ship's
  * manifest declares today; Status and Assignee are this design's proposal for
- * what the declaration should grow.
+ * what the declaration should grow. Ctrl+Enter with nothing filled shows what
+ * each required field needs.
  */
 export const ShipCreateIssue: Story = {}
 
