@@ -67,13 +67,27 @@ export default function define(h) {
         { what: "a real page, full of elements that are not controls, gets no error", run: () => { const expect = "none"; return h.lint({ config: GATES, file: "src/pages/TopicsPage.tsx", code: h.read("src/pages/TopicsPage.tsx"), expect }); } },
       ] },
       { ref: "UIG-8", title: "Lint rule — forbid the reach", owner: false, checks: [
-        { what: "createPortal is an error", run: probe("import { createPortal } from 'react-dom'\nexport const Probe = (to: HTMLElement) => createPortal(<span />, to)\n", "error") },
-        { what: "tabIndex={0} on a div is an error", run: probe(component("<div tabIndex={0} />"), "error") },
-        { what: "tabIndex={-1} on a div is not, while tabIndex={0} is", run: async () => {
-          const zero = await probe(component("<div tabIndex={0} />"), "error")();
+        { what: "a Base UI import is an error naming the part built on it", run: probe("import { Popover } from '@base-ui/react/popover'\nexport const Probe = Popover\n", "error", "`Popover`") },
+        { what: "createPortal is an error naming the floating parts", run: probe("import { createPortal } from 'react-dom'\nexport const Probe = (to: HTMLElement) => createPortal(<span />, to)\n", "error", "`DialogShell`") },
+        { what: "a key listener on the whole page is an error, in a .ts file too", run: probe("export function listen() {\n  window.addEventListener('keydown', () => {})\n}\n", "error", "`DialogShell`", "src/lib/__gates_probe__.ts") },
+        { what: "arrow keys by hand are an error; Enter in a field is not", run: async () => {
+          const arrows = await probe("export const onKeyDown = (e: KeyboardEvent) => e.key === 'ArrowDown'\n", "error", "`Menu`", "src/lib/__gates_probe__.ts")();
+          if (arrows.result !== "pass") return arrows;
+          return probe("export const onKeyDown = (e: KeyboardEvent) => e.key === 'Enter'\n", "none", undefined, "src/lib/__gates_probe__.ts")();
+        } },
+        { what: "a hand-written role=\"option\" is an error naming Select", run: probe(component('<div role="option" />'), "error", "`Select`") },
+        { what: "tabIndex={0} on a div is an error; tabIndex={-1} is not", run: async () => {
+          const zero = await probe(component("<div tabIndex={0} />"), "error", "`Button`")();
           if (zero.result !== "pass") return h.FAIL(`tabIndex={0} is not caught yet, so this proves nothing: ${zero.detail}`);
           return probe(component("<div tabIndex={-1} />"), "none")();
         } },
+        { what: "overflow-y-auto is an error naming ScrollArea", run: probe(component('<div className="h-64 overflow-y-auto" />'), "error", "`ScrollArea`") },
+        { what: "an escaped listener is not an error, while the same listener is", run: async () => {
+          const raw = await probe("export function listen() {\n  document.addEventListener('mousedown', () => {})\n}\n", "error", undefined, "src/lib/__gates_probe__.ts")();
+          if (raw.result !== "pass") return h.FAIL(`a page listener is not caught yet, so this proves nothing: ${raw.detail}`);
+          return probe("export function listen() {\n  // @estiva-escape: a probe that keeps its listener on purpose\n  document.addEventListener('mousedown', () => {})\n}\n", "none", undefined, "src/lib/__gates_probe__.ts")();
+        } },
+        { what: "a real page gets no error", run: () => h.lint({ config: GATES, file: "src/pages/TopicsPage.tsx", code: h.read("src/pages/TopicsPage.tsx"), expect: "none" }) },
       ] },
       { ref: "UIG-9", title: "Lint rule — the className allow-list", owner: false, checks: [
         { what: "a border passed into Button is an error naming Button", run: probe(`import { Button } from '@estiva-app/ui'\n${component('<Button className="border">x</Button>')}`, "error", "Button") },
@@ -142,6 +156,10 @@ export default function define(h) {
       ] },
       { ref: "UIG-30", title: "RichText — one component that draws a message's text, for both apps", owner: false, checks: [
         { what: "the installed package has RichText", run: () => h.contains(installed, /\bRichText\b/, "the installed @estiva-app/ui exports RichText") },
+      ] },
+      // A first guess, from the ticket's text (much later: Katerina, 16 September).
+      { ref: "UIG-31", title: "Editor menus — one shared part for the / @ [ menus", owner: false, checks: [
+        { what: "the / menu keeps no escape naming UIG-31", run: () => h.lacks("src/components/ui/SlashMenu.tsx", /@estiva-escape:[^\n]*UIG-31/, "SlashMenu keeps no escape naming UIG-31") },
       ] },
     ],
   };
