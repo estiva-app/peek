@@ -118,7 +118,8 @@ export default function define(h) {
           if (lint.result !== "pass") return lint;
           return h.lacks(file, /@estiva-escape:[^\n]*UIG-29/, "it passes, and no escape names UIG-29");
         } },
-        { what: "its dialog is the package's DialogShell", run: () => h.contains("src/components/CommandLauncher.tsx", /import\s*\{[^}]*\bDialogShell\b[^}]*\}\s*from\s*['"]@estiva-app\/ui['"]/, "CommandLauncher imports DialogShell from @estiva-app/ui") },
+        // DialogShell did not fit the launcher; UIG-29 built the package's CommandPalette for it instead (Katerina, 15 September).
+        { what: "its window is the package's CommandPalette", run: () => h.contains("src/components/CommandLauncher.tsx", /import\s*\{[^}]*\bCommandPalette\b[^}]*\}\s*from\s*['"]@estiva-app\/ui['"]/, "CommandLauncher imports CommandPalette from @estiva-app/ui") },
       ] },
       { ref: "UIG-30", title: "RichText — one component that draws a message's text, for both apps", owner: false, checks: [
         { what: "the installed package has RichText", run: () => h.contains(installed, /\bRichText\b/, "the installed @estiva-app/ui exports RichText") },

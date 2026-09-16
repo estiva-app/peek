@@ -17,7 +17,7 @@
  *    nothing declared is dropped rather than guessed at.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import type { ResolvedAction } from '@estiva-app/interop'
@@ -25,6 +25,8 @@ import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
 import type { ModelAvailability } from '@/lib/promptApi'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -106,15 +108,23 @@ function open(context: LauncherContext = inThread) {
     <MemoryRouter initialEntries={['/topics/1']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <CommandLauncher context={context} onClose={onClose} />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
   )
 }
 
-const input = () => screen.getByRole('textbox')
-const makeRow = () => screen.findByText(/Make something from this conversation/i)
+const input = () => document.querySelector<HTMLInputElement>('[data-command-palette-field]')!
+const makeRow = () => screen.findByText(/Suggest what to make from this conversation/i)
 
 async function propose(typed = 'kingfisher') {
   open()
@@ -142,14 +152,14 @@ describe('the row', () => {
     await userEvent.type(input(), 'kingfisher')
 
     expect(await makeRow()).toBeInTheDocument()
-    expect(screen.getByText(/Ask about this conversation/i)).toBeInTheDocument()
+    expect(screen.getByText(/^Ask: “/)).toBeInTheDocument()
   })
 
   it('is absent with no conversation to make anything of', async () => {
     open({ composer: { isFocused: true, hasDraft: false } })
     await userEvent.type(input(), 'kingfisher')
 
-    expect(screen.queryByText(/Make something from this conversation/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Suggest what to make from this conversation/i)).not.toBeInTheDocument()
   })
 
   it('is absent where no model could choose', async () => {
@@ -158,17 +168,19 @@ describe('the row', () => {
     open()
     await userEvent.type(input(), 'kingfisher')
 
-    expect(screen.queryByText(/Make something from this conversation/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Suggest what to make from this conversation/i)).not.toBeInTheDocument()
   })
 
-  it('reads no manifest until it is taken', async () => {
+  it('reads no manifest until something is typed or it is taken', async () => {
     // A relay read per app on every Cmd+K would be a second and a half nobody
-    // asked for. Discovery is lazy.
+    // asked for. Discovery is lazy: opening reads nothing. Typing does, since
+    // an action can be found by its name there (C4, UIG-29).
     open()
-    await userEvent.type(input(), 'kingfisher')
     await makeRow()
-
     expect(creatableUnder).not.toHaveBeenCalled()
+
+    await userEvent.click(await makeRow())
+    await waitFor(() => expect(creatableUnder).toHaveBeenCalled())
   })
 })
 
@@ -198,7 +210,8 @@ describe('the proposal is chosen from what apps declare', () => {
     await propose()
 
     expect(await screen.findByTestId('proposal')).toHaveTextContent('A kingfisher seen at the weir')
-    expect(screen.getByText(/Log a sighting/)).toBeInTheDocument()
+    // On the card, and again on the row that opens its form: which app, and which action.
+    expect(screen.getAllByText(/Ship › Log a sighting/).length).toBeGreaterThan(0)
   })
 
   it('says it is working rather than showing an empty panel', async () => {
@@ -262,7 +275,7 @@ describe('the model proposes; a person creates', () => {
     await propose()
     await screen.findByTestId('proposal')
 
-    await userEvent.click(screen.getByRole('button', { name: /Open the form/i }))
+    await userEvent.click(screen.getByRole('option', { name: /Open the form/i }))
     // The field the manifest declared, drawn by the panel that draws any of
     // them — nothing here knows what a species is.
     expect(await screen.findByLabelText(/species/i)).toBeInTheDocument()
@@ -276,7 +289,7 @@ describe('the model proposes; a person creates', () => {
     */
     await propose()
     await screen.findByTestId('proposal')
-    await userEvent.click(screen.getByRole('button', { name: /Open the form/i }))
+    await userEvent.click(screen.getByRole('option', { name: /Open the form/i }))
     await screen.findByLabelText(/species/i)
 
     expect(applyAction).not.toHaveBeenCalled()
@@ -290,11 +303,12 @@ describe('the model proposes; a person creates', () => {
     */
     await propose()
     await screen.findByTestId('proposal')
-    await userEvent.click(screen.getByRole('button', { name: /Open the form/i }))
+    await userEvent.click(screen.getByRole('option', { name: /Open the form/i }))
 
-    // The picker's own noun, whatever the app called it, and the real record
-    // behind it — not the registry's mock list.
-    await userEvent.click(await screen.findByLabelText(/parent/i))
+    // The picker's own noun, whatever the app called it — the first app
+    // declaring it is Ship, whose word is Project, not Parent (R10) — and the
+    // real record behind it, not the registry's mock list.
+    await userEvent.click(await screen.findByLabelText(/project/i))
     expect(await screen.findByText('Weir colony')).toBeInTheDocument()
   })
 
@@ -323,10 +337,10 @@ describe('the model proposes; a person creates', () => {
     */
     await propose()
     await screen.findByTestId('proposal')
-    await userEvent.click(screen.getByRole('button', { name: /Open the form/i }))
+    await userEvent.click(screen.getByRole('option', { name: /Open the form/i }))
 
     await userEvent.type(await screen.findByLabelText(/species/i), 'Kingfisher')
-    await userEvent.click(screen.getByLabelText(/parent/i))
+    await userEvent.click(screen.getByLabelText(/project/i))
     // By role: text also finds the option in the list before it has opened
     // (see `createIssue` in CommandLauncher.live.test.tsx).
     await userEvent.click(await screen.findByRole('option', { name: 'Weir colony' }))

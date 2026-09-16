@@ -19,6 +19,8 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 /*
@@ -49,8 +51,16 @@ function open(onClose = vi.fn()) {
     <MemoryRouter initialEntries={['/desk']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <Where />
           <CommandLauncher context={{}} onClose={onClose} />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
@@ -60,7 +70,7 @@ function open(onClose = vi.fn()) {
 
 async function type(text: string) {
   // The launcher autofocuses its single input.
-  await userEvent.type(screen.getByRole('textbox'), text)
+  await userEvent.type(document.querySelector<HTMLInputElement>('[data-command-palette-field]')!, text)
 }
 
 describe('Cmd+K finds a topic and a person by typing part of them (PEE-4)', () => {

@@ -13,6 +13,7 @@ import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
 import { useTopicPath } from '@/lib/useTopicPath'
+import { rememberRecent } from '@/lib/recents'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
 export function PeoplePage() {
@@ -88,6 +89,8 @@ export function PeoplePage() {
   useEffect(() => {
     if (routeId && DM_IDS.has(routeId)) {
       setLastDmId(routeId)
+      // The launcher's Recent group (UIG-29, C3).
+      rememberRecent({ kind: 'person', id: routeId })
     } else if (!routeId && lastDmId != null) {
       // Returning to /people with no id — restore last selection in URL.
       navigate(`/people/${lastDmId}`, { replace: true })

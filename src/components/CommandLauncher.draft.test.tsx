@@ -24,6 +24,8 @@ import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
 import type { ModelAvailability } from '@/lib/promptApi'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 const { canPrefill, prefillAvailability, promptForText, insertTextIntoActiveComposer } = vi.hoisted(() => ({
@@ -67,14 +69,22 @@ function open(context: LauncherContext = inThread) {
     <MemoryRouter initialEntries={['/topics/1']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <CommandLauncher context={context} onClose={onClose} />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
   )
 }
 
-const input = () => screen.getByRole('textbox')
+const input = () => document.querySelector<HTMLInputElement>('[data-command-palette-field]')!
 const draftRow = () => screen.findByText(/Draft a reply/i)
 
 async function enterDraft(request = 'offer to take a look tomorrow') {
@@ -105,7 +115,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
     await userEvent.type(input(), 'offer to take a look tomorrow')
 
     expect(await draftRow()).toBeInTheDocument()
-    expect(screen.getByText(/Ask about this conversation/i)).toBeInTheDocument()
+    expect(screen.getByText(/^Ask: “/)).toBeInTheDocument()
   })
 
   it('is absent with no composer, because a draft would have nowhere to go', async () => {
@@ -113,7 +123,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
     await userEvent.type(input(), 'offer to take a look tomorrow')
 
     // Ask still stands: reading a conversation needs no composer.
-    expect(await screen.findByText(/Ask about this conversation/i)).toBeInTheDocument()
+    expect(await screen.findByText(/^Ask: “/)).toBeInTheDocument()
     expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
   })
 
@@ -203,14 +213,14 @@ describe('the draft is the person\'s to send (INT-4)', () => {
     await enterDraft()
     await screen.findByTestId('draft')
 
-    await userEvent.click(screen.getByRole('button', { name: /Put it in the composer/i }))
+    await userEvent.click(screen.getByRole('option', { name: /Put it in the composer/i }))
     expect(insertTextIntoActiveComposer).toHaveBeenCalledWith('Happy to take a look tomorrow.')
   })
 
   it('closes the launcher so the composer has the cursor', async () => {
     await enterDraft()
     await screen.findByTestId('draft')
-    await userEvent.click(screen.getByRole('button', { name: /Put it in the composer/i }))
+    await userEvent.click(screen.getByRole('option', { name: /Put it in the composer/i }))
 
     expect(onClose).toHaveBeenCalled()
   })
@@ -241,9 +251,9 @@ describe('the draft is the person\'s to send (INT-4)', () => {
     // Ask in). What separates them is what the panel then offers.
     open()
     await userEvent.type(input(), 'what did we decide')
-    await userEvent.click(await screen.findByText(/Ask about this conversation/i))
+    await userEvent.click(await screen.findByText(/^Ask: “/))
 
-    expect(await screen.findByTestId('sources')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Put it in the composer/i })).not.toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: /^Sources?$/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Put it in the composer/i })).not.toBeInTheDocument()
   })
 })

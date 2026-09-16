@@ -21,6 +21,7 @@ import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
 import { identifierFromRef, topicPath } from '@/lib/objectUrl'
 import { useTopicPath } from '@/lib/useTopicPath'
+import { rememberRecent } from '@/lib/recents'
 
 export function TopicsPage() {
   const { topicHasUnread, topicIsUrgent } = useUnread()
@@ -107,6 +108,8 @@ export function TopicsPage() {
     if (hasRoute) {
       if (!selectedTopic) return
       setLastTopicId(selectedTopic.id)
+      // The launcher's Recent group (UIG-29, C3).
+      rememberRecent({ kind: 'topic', id: selectedTopic.id })
       /*
        * Canonicalise. This is what upgrades a legacy `/topics/<peek-id>` link
        * in place the first time somebody opens one, and what refreshes a slug

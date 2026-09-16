@@ -82,7 +82,7 @@ export function channelStreamFilters(
  * reading `@estiva-app/interop` applies to a file's conversation, so a reply
  * is judged against the same `thread:` marker on both surfaces.
  */
-function rootOf(event: SignedEvent): string {
+export function rootOf(event: SignedEvent): string {
   const upper = event.tags.find((t) => t[0] === 'E' && t[1])?.[1]
   if (upper) return upper
   const lower = event.tags.find((t) => t[0] === 'e' && t[1])?.[1]

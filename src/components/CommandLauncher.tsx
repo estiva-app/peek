@@ -1,108 +1,103 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Kbd } from '@estiva-app/ui'
-import { shortcutLabel } from '@/lib/shortcuts'
-import { createPortal } from 'react-dom'
-import { IconSearch, IconChevronRight, IconPencil, IconMessage, IconUser, IconHash, IconMessageQuestion, IconWriting, IconSparkles, IconDownload } from '@tabler/icons-react'
-import { useNavigate } from 'react-router-dom'
-import { cn } from '@/lib/utils'
-import { EnterHint, InputChip, MenuItem } from '@estiva-app/ui'
-import { Button } from '@/components/ui/Button'
-import { SectionLabel } from '@/components/ui/SectionHeader'
-import { ActionFormPanel } from './ActionFormPanel'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { IconDownload, IconEraser, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
+import {
+  Card,
+  CommandPalette,
+  CommandPaletteAnswer,
+  CommandPaletteForm,
+  CommandPaletteQuote,
+  CommandPaletteSearch,
+  CommandPaletteWorking,
+  FieldLine,
+  type CommandPaletteChip,
+  type CommandPaletteGroup,
+  type CommandPaletteRow,
+} from '@estiva-app/ui'
+import { Avatar } from './ui/Avatar'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
-import { useForeignObjects, useMessageSearch, useTopics, usePeople, useWorkspaceDirectory } from '@/api'
+import { TopicState } from './ui/TopicState'
+import { ActionFormFields } from './ActionFormPanel'
+import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
+import { formatDateLabel, useForeignObjects, useMessageSearch, usePeople, useTopics, useWorkspaceDirectory, type Person } from '@/api'
+import type { Topic } from '@/data/topicData'
 import type { ResolvedAction } from '@estiva-app/interop'
+import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { topicPath } from '@/lib/objectUrl'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
-import {
-  PROPOSAL_SCHEMA,
-  isProposable,
-  probeable,
-  proposalInstruction,
-  readProposal,
-  type CatalogueEntry,
-  type Proposal,
-} from '@/lib/actionCatalogue'
+import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
 import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
 import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission, vocabulariesFrom } from '@/lib/liveAction'
-import { addrToNaddr } from '@estiva-app/protocol'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
 import { bodies } from '@/lib/conversationRegistry'
-import {
-  LAUNCHER_APPS,
-  type LauncherAction,
-  type LauncherApp,
-  type VocabOption,
-} from '@/lib/launcherActions'
+import { useLastSelection } from '@/lib/lastSelection'
+import { clearRecents, forgetRecent, useRecents } from '@/lib/recents'
+import { isApplePlatform } from '@/lib/shortcuts'
+import { previewText } from '@/lib/textParsing'
+import { useToast } from '@/lib/toast'
+import { LAUNCHER_APPS, type LauncherAction, type LauncherApp, type VocabOption } from '@/lib/launcherActions'
 
 /**
- * The kind whose objects a Ship issue hangs under.
+ * The launcher (Cmd/Ctrl+K anywhere, or the top bar's search field) — Peek's
+ * words, rows and levels, drawn in the package's `CommandPalette` (UIG-29).
  *
- * A number rather than a name because NIP-89 discovery *is* by kind: the
- * launcher asks "what can be created under one of these?" and the manifest
- * answers. Naming Ship's project type here would be the launcher knowing what
- * Ship is, which is the thing the projection layer exists to avoid — every
- * other fact about the action comes off the manifest at runtime.
+ * **What moved to the package, and what stayed.** The window, the field, the
+ * rows, the footer and every key are `CommandPalette`'s (Katerina, 16
+ * September, P1 and P2): the arrows, Enter, Tab to go in, Backspace to go back,
+ * Ctrl+Enter, where focus goes. This file keeps what only Peek knows: which
+ * levels there are, which rows exist on each, what the search finds, what the
+ * apps' manifests declare, Ask, Draft and Make, and what a form sends.
+ *
+ * **The levels are a stack**, so every way back puts back what was there:
+ *
+ * - the first level: this conversation, recents and apps before you type;
+ *   apps, Ask, this conversation, topics, people, actions and messages as you do
+ * - inside an app: the actions its manifest declares
+ * - Ask, Draft or Make: the result, then what you can do with it as rows
+ * - a form: creating something, or changing something the thread refers to
+ *
+ * The design is the approved prototype and the key list
+ * (`uig29-review/KEY-LIST.md`), with the UX review's rulings R1–R15 and the
+ * nine bugs F1–F9 it found in the launcher this replaces.
  */
 
-/** One selectable row: what it renders and what selecting it does. */
-interface Row {
-  key: string
-  render: () => React.ReactNode
-  onSelect: () => void
-  /** The row's resting right edge — a chevron, a value. The "↩ Enter" hint is
-   *  not here: it is MenuItem's `hint` slot, revealed by the row's own hover
-   *  so it can never come apart from the highlight. */
-  trailing?: React.ReactNode
-  /** Single line of text, no tile: 36px instead of the 48px two-line row. */
-  compact?: boolean
+type Intent = 'ask' | 'draft' | 'propose'
+
+type Level =
+  | { kind: 'first' }
+  | { kind: 'app'; app: LauncherApp }
+  | { kind: 'ai'; intent: Intent }
+  | {
+      kind: 'form'
+      action: LauncherAction
+      /** The app it was reached through, when it was. */
+      app?: LauncherApp
+      /**
+       * The catalogue entry a proposal opened it from (INT-5). A proposal opens
+       * another app's form directly, so its vocabularies and parent list travel
+       * with it — there is no app scope to read them off, and a form drawn
+       * without either is one the runtime refuses (PEE-1).
+       */
+      entry?: CatalogueEntry
+    }
+
+/** One level, and what was typed on it — kept when you go further in and come back. */
+interface Frame {
+  level: Level
+  query: string
 }
 
-interface CommandLauncherProps {
-  /** Captured at the invoking keystroke/click - see lib/launcherContext. */
-  context: LauncherContext
-  onClose: () => void
-  /** Open pre-drilled into an app (stories only). */
-  initialAppId?: string
-  /** Open with an action's form already up (stories only; needs initialAppId). */
-  initialActionId?: string
-}
-
-/**
- * The global command launcher (Cmd/Ctrl+K anywhere, or click the top-bar
- * search field) — the Intelligence modal's human face. Three levels, one
- * input:
- *  - global: search-default row + drillable app rows (Ship, Peek)
- *  - app scope: a chip in the input; the app's declared actions
- *  - form: an object-creating action drawn as a form (ActionFormPanel)
- * Backspace on an empty input pops one level. Esc always closes. Not a chat:
- * one input, one result set, no history.
- *
- * The apps come from `lib/launcherActions.ts`; **the actions come from the
- * apps' own manifests, read at open time**. The registry's action declarations
- * are drawn by Storybook and are never offered here — a row a person can
- * select is a promise, and the registry's are proposals for manifests that do
- * not declare them yet (INT-9). An agent filling the same forms from context
- * instead of by hand is PEE-5.
- *
- * The third-party mock apps that used to live here (Figma, Linear, GitHub,
- * Zendesk — and the Figma find mode) were removed 2026-08-31 with the design
- * decision to make the launcher list real Estiva apps only.
- */
 /**
  * An answer and the messages it is allowed to have come from (INT-3).
  *
- * `sources` is a subset of what retrieval chose, never a superset — see where
- * it is built. Nothing here is persisted, deliberately: the answer is shown and
- * forgotten. "Save this answer" is the obvious next request and is exactly what
- * the roadmap holds back, because `kind:9802` is append-only and a shape
- * settled while the model is unsettled is permanent.
+ * `sources` is a subset of what retrieval chose, never a superset. Nothing
+ * here is persisted: the answer is shown and forgotten.
  */
 interface AskAnswer {
   text: string
@@ -111,92 +106,100 @@ interface AskAnswer {
   byRecency: boolean
   /** Messages the context budget could not take. */
   omitted: number
-  /**
-   * Replies the snapshot never held (INT-8). Zero for a thread, which has all
-   * of its own; usually large for a topic, which has none of them.
-   */
+  /** Replies the snapshot never held (INT-8). */
   repliesNotRead: number
 }
 
-export function CommandLauncher({
-  context,
-  onClose,
-  initialAppId,
-  initialActionId,
-}: CommandLauncherProps) {
-  const [scope, setScope] = useState<LauncherApp | null>(
-    () => LAUNCHER_APPS.find((a) => a.id === initialAppId) ?? null,
-  )
-  const [formAction, setFormAction] = useState<LauncherAction | null>(() => {
-    const app = LAUNCHER_APPS.find((a) => a.id === initialAppId)
-    return app?.actions.find((a) => a.id === initialActionId) ?? null
-  })
-  /*
-    The catalogue entry a form came from when it was not reached by scoping
-    into an app (INT-5).
+/** What an app's manifest says it can create, read when first needed. */
+type LiveRead =
+  | { state: 'loading' }
+  | { state: 'ready'; actions: LauncherAction[]; parents: VocabOption[] }
+  | { state: 'none' }
+  | { state: 'failed' }
 
-    A proposal opens another app's form directly, so its vocabularies and its
-    parent list have to travel with it — there is no scope to read them off,
-    and a form drawn without either is one the runtime refuses, which closes
-    silently and looks like success (PEE-1).
-  */
-  const [formEntry, setFormEntry] = useState<CatalogueEntry | null>(null)
-  const [query, setQuery] = useState('')
-  const [highlight, setHighlight] = useState(0)
-  const [contextCleared, setContextCleared] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
+interface CommandLauncherProps {
+  /** Captured at the invoking keystroke/click - see lib/launcherContext. */
+  context: LauncherContext
+  onClose: () => void
+  /** Open inside an app (tests only). */
+  initialAppId?: string
+  /** Open with an action's form already up (tests only; needs initialAppId). */
+  initialActionId?: string
+}
 
+const icon = (Glyph: typeof IconPencil) => <Glyph size={16} stroke={1.5} />
+
+const appMark = (app: { id: string }, size = 14) =>
+  app.id === 'peek' ? <PeekLogoMark height={size} /> : <ShipLogoMark height={size} />
+
+/** A stored body as one line of words — markdown and a heading's marker gone. */
+const asWords = (body: string) =>
+  previewText(body.replace(/^#{1,6}\s+/gm, ''))
+    .replace(/\s*\n+\s*/g, ' ')
+    .trim()
+
+const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length
+
+/** The footer's "where": the composer the launcher was opened over, in words. */
+function whereFrom(context: LauncherContext): string {
+  const label = context.composer?.label
+  if (!label) return context.conversation ? 'In this conversation' : 'Anywhere in Peek'
+  if (label.startsWith('Reply to ')) return `In a reply to ${label.slice('Reply to '.length)}`
+  return `In ${label}`
+}
+
+function initialStack(appId?: string, actionId?: string): Frame[] {
+  const first: Frame = { level: { kind: 'first' }, query: '' }
+  const app = LAUNCHER_APPS.find((a) => a.id === appId)
+  if (!app) return [first]
+  const inApp: Frame = { level: { kind: 'app', app }, query: '' }
+  const action = app.actions.find((a) => a.id === actionId)
+  return action ? [first, inApp, { level: { kind: 'form', action, app }, query: '' }] : [first, inApp]
+}
+
+/** A form's draft is kept per action, so leaving and coming back finds it as it was (R1 A). */
+const formKey = (level: Extract<Level, { kind: 'form' }>) =>
+  `${level.action.target ?? level.app?.id ?? level.entry?.appId ?? ''}:${level.action.id}`
+
+export function CommandLauncher({ context, onClose, initialAppId, initialActionId }: CommandLauncherProps) {
+  const [stack, setStack] = useState<Frame[]>(() => initialStack(initialAppId, initialActionId))
+  const frame = stack[stack.length - 1]
+  const level = frame.level
+  const query = frame.query
   const q = query.trim().toLowerCase()
 
-  // The effective context: the X on the context chip widens the launcher back
-  // to the globally-capable action set without re-invoking it.
-  const ctx: LauncherContext = contextCleared ? {} : context
+  const setQuery = (next: string) => setStack((s) => [...s.slice(0, -1), { ...s[s.length - 1], query: next }])
+  const push = (...levels: Level[]) => setStack((s) => [...s, ...levels.map((l) => ({ level: l, query: '' }))])
+  const back = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))
 
-  /*
-   * Peek can list its own topics with no new machinery, so the `say` form's
-   * parent picker is live even while everything else is v1 mock. Ship's
-   * project list stays the registry's mock until the runtime can query
-   * kind:30850 records.
-   */
+  const navigate = useNavigate()
+  const { showToast } = useToast()
+  const { setPendingTopicMessage, topicId: selectedTopicId, dmId: selectedPersonId } = useLastSelection()
+  const { pathname } = useLocation()
+  /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
+  const openTopicId = /^\/topics?\//.test(pathname) ? selectedTopicId : null
+  const openPersonId = pathname.startsWith('/people/') ? selectedPersonId : null
   const topics = useTopics()
-
-  /*
-    PEE-4's three corpora. Topics and people are already in the app and match
-    on any fragment; messages are unbounded and live on the relay, which
-    matches whole tokens only — measured, not assumed. `lib/launcherSearch`
-    carries the reasoning and the empty-state wording that difference forces.
-  */
   const people = usePeople()
   const directory = useWorkspaceDirectory()
-  const navigate = useNavigate()
-  const { state: messageState, hits: messageHits } = useMessageSearch(query)
-
+  const recents = useRecents()
 
   /*
-    Ship's half is live now (PRO-4). `creatableUnder` reads the manifest Ship
-    actually publishes and the projects a new issue could hang under, so the
-    form is drawn from a declaration rather than from the registry's copy of
-    one. `launcherActions.ts` set the bar: swapping the constant for a live read
-    must not reshape any UI — and it does not, because the conversion in
-    `lib/liveAction` produces the same shape `ActionFormPanel` already took.
-
-    Null while loading, and null when signed out or when Ship declares nothing:
-    the registry's entry stays in that case, which is the right degradation for
-    a launcher whose rule is to list only what can succeed.
+    PEE-4's three corpora. Messages live on the relay and match whole tokens
+    only; `lib/launcherSearch` carries the reasoning and the wording that
+    difference forces. Searched on the first level only (F9): inside an app the
+    results were never shown, and the relay was asked anyway on every pause.
   */
+  const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' ? query : '')
+
   const { creatableUnder, applyAction, resolveObject } = useForeignObjects()
 
   /*
     PEE-3's targets: the objects this conversation already refers to, resolved
     for their titles and their declared field-setting actions. Captured at the
-    invoking keystroke (`lib/conversationRegistry`), so the list is the thread
-    the person was actually looking at.
-
-    Resolution is per object and needs the relay, so it happens once when the
-    launcher opens rather than per keystroke. A reference that will not resolve
-    is dropped: the person may not be able to read it, and an action row for an
-    object nobody can fetch is a row that cannot succeed.
+    invoking keystroke, so the list is the thread the person was looking at. A
+    reference that will not resolve, or has no naddr to act on, is dropped: a
+    row for an object nobody can act on is a row that cannot succeed.
   */
   const [targets, setTargets] = useState<{ address: string; label: string; actions: ResolvedAction[] }[]>([])
   const conversationRefs = context.conversation?.references
@@ -207,17 +210,8 @@ export function CommandLauncher({
       conversationRefs.map((ref) =>
         resolveObject(ref)
           .then((object) => {
-            /*
-              `naddr` is absent for a non-addressable object — a regular event
-              like a Peek message has no `d` at all — and the runtime is
-              explicit that *"a consumer that has no naddr correctly offers no
-              actions"*. So those are dropped rather than offered: acting on
-              one is addressed by naddr, and there would be nothing to send.
-            */
             if (!object?.naddr) return null
             return {
-              // The title is a declared SLOT, not a property of the object.
-              // Falling back to the app's name beats an empty row label.
               address: object.naddr,
               label: object.slots?.title?.value ?? object.appName ?? 'Untitled',
               actions: object.actions ?? [],
@@ -234,12 +228,7 @@ export function CommandLauncher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationRefs?.join('|')])
 
-  /*
-    One row per (object, field-setting action) pair, because both halves are
-    chosen in the same gesture — "Set status · PEE-3" is the thing somebody
-    means, and splitting it into two levels would make the launcher ask which
-    object before it can say what it could do to it.
-  */
+  /* One row per (object, field-setting action) pair: "Set status · Billing entry" is the thing somebody means. */
   const changeRows = useMemo(() => {
     const out: { action: LauncherAction; vocabularies: Record<string, VocabOption[]> }[] = []
     for (const target of targets) {
@@ -251,188 +240,63 @@ export function CommandLauncher({
     return out
   }, [targets])
 
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-  const [liveShip, setLiveShip] = useState<{
-    actions: LauncherAction[]
-    parents: VocabOption[]
-  } | null>(null)
-  /**
-   * Where the live read has got to.
-   *
-   * `loading` is a state the launcher must show rather than paper over. The
-   * read takes about a second and a half against production, and for that
-   * second and a half the registry's declaration is the only one available —
-   * so offering it means offering a form whose parent field the runtime will
-   * refuse, which closes silently and looks like success. The launcher's own
-   * rule is to list only what can succeed.
-   */
-  const [liveState, setLiveState] = useState<'idle' | 'loading' | 'ready' | 'none' | 'failed'>('idle')
+  /*
+    What each app declares it can create — INT-9: a row exists only because a
+    manifest, read just now, says the action does.
 
-  useEffect(() => {
-    // Whatever the app says to query, rather than a number this file knows
-    // (INT-5). An app that declares no parent kind is simply not probed.
-    if (!scope?.parentKind) return
-    let cancelled = false
-    setLiveState('loading')
-    creatableUnder(scope.parentKind)
-      .then((found) => {
-        if (cancelled) return
-        if (!found) {
-          // Signed out, or the app declares nothing creatable. Not an error,
-          // and not something to draw a mock in place of.
-          setLiveState('none')
-          return
-        }
-        const actions = found.actions
-          // The app's own noun, not a literal `'project'` — a person starting a
-          // conversation was being asked to choose a Project (INT-9).
-          .map((a) => launcherActionFrom(a, { parentNoun: scope.parentNoun, submitLabel: a.label }))
-          .filter((a): a is LauncherAction => a !== null)
-        setLiveShip({
-          actions,
-          parents: found.parents.map((p) => ({ value: p.address, label: p.title })),
+    Read per app and kept per app, which is F2's fix: the list was one slot,
+    so after visiting Ship, Peek offered Ship's "Add issue". Read when first
+    needed rather than at every open — going into an app, or typing on the
+    first level, where an action can be found by its name (C4).
+  */
+  const [live, setLive] = useState<Record<string, LiveRead>>({})
+  const asked = useRef(new Set<string>())
+  const readLive = useCallback(
+    (app: LauncherApp) => {
+      // An app with no parent kind is never probed: nothing about it is live.
+      if (typeof app.parentKind !== 'number' || asked.current.has(app.id)) return
+      asked.current.add(app.id)
+      setLive((l) => ({ ...l, [app.id]: { state: 'loading' } }))
+      creatableUnder(app.parentKind)
+        .then((found) => {
+          if (!found) {
+            // Signed out, or the app declares nothing creatable. Not an error.
+            setLive((l) => ({ ...l, [app.id]: { state: 'none' } }))
+            return
+          }
+          const actions = found.actions
+            // The app's own noun, not a literal 'project' (INT-9).
+            .map((a) => launcherActionFrom(a, { parentNoun: app.parentNoun, submitLabel: a.label }))
+            .filter((a): a is LauncherAction => a !== null)
+          setLive((l) => ({
+            ...l,
+            [app.id]: { state: 'ready', actions, parents: found.parents.map((p) => ({ value: p.address, label: p.title })) },
+          }))
         })
-        setLiveState('ready')
-      })
-      .catch((error: unknown) => {
-        /*
-          Every other caller of this hook catches, classifies and logs; this one
-          did not, and that is why a failure here took a screenshot and an hour
-          to find rather than saying so. A read that fails must produce a
-          sentence, not silence.
-        */
-        if (cancelled) return
-        console.warn('[nostr] reading another app’s creatable actions failed:', error)
-        setLiveState('failed')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [scope, creatableUnder])
+        .catch((error: unknown) => {
+          // A read that fails must produce a sentence, not silence.
+          console.warn('[nostr] reading another app’s creatable actions failed:', error)
+          setLive((l) => ({ ...l, [app.id]: { state: 'failed' } }))
+        })
+    },
+    [creatableUnder],
+  )
+  useEffect(() => {
+    if (level.kind === 'app') readLive(level.app)
+    if (level.kind === 'first' && q) probeable(LAUNCHER_APPS).forEach(readLive)
+  }, [level, q, readLive])
 
-  /*
-    Only what an app actually declares — INT-9.
-
-    The rule this file already kept for Ship's *replaced* rows now covers every
-    row: a launcher entry exists because some manifest, read just now, says the
-    action exists. The registry contributes the app, its parent kind and the
-    labels; it no longer contributes an action.
-
-    **Before this, three of the four create rows published nothing.** Ship
-    declares no `add-project` and Peek declares no actions at all, so Create
-    project, Create topic and Start a conversation each opened a form,
-    validated it, and closed on submit — `submitAction`'s `!live` branch,
-    reached in silence. Miky hit all three in a row on 2026-09-04 and read it,
-    correctly, as the app being broken.
-
-    Keeping them as proposals was the earlier call, on the argument that they
-    are the design's record of what a manifest should grow. That record is
-    worth having and the launcher is the wrong place for it: a row a person can
-    select is a promise. The declarations stay in `launcherActions.ts`, where
-    Storybook draws them and nothing publishes them, until PRO-18 lets Ship and
-    Peek declare them for real.
-
-    So the empty case is now normal rather than exceptional, and the section
-    note below is what says why — see `liveNote`, which had to grow past Ship
-    for exactly that reason.
-  */
-  const scopeActions = useMemo<LauncherAction[]>(() => {
-    if (!scope) return []
-    // An app with no parent kind is never probed (see the effect above), so
-    // nothing about it is live and there is nothing honest to offer.
-    if (!scope.parentKind) return []
-    // No live declaration, for any reason — still loading, refused, or the app
-    // offers nothing. In every one of those the registry's entry is a mock, and
-    // a mock here is a form whose submission the runtime refuses and which
-    // therefore closes saying nothing. None is better than that.
-    if (!liveShip) return []
-    return liveShip.actions
-  }, [scope, liveShip])
-
-  const liveParents = useMemo<Record<string, VocabOption[]>>(() => {
-    const out: Record<string, VocabOption[]> = {}
-    if (scope?.id === 'peek') {
-      out.topic = (topics ?? [])
-        .filter((t) => !t.isResolved)
-        .map((t) => ({ value: t.id, label: t.title }))
-    }
-    if (scope?.parentKind && liveShip) out[PARENT_FIELD] = liveShip.parents
-    // Same list, carried on the entry: a proposal opens the form without
-    // scoping in, and a parent field with no options is a form the runtime
-    // refuses — which closes silently and looks like success (PEE-1).
-    if (!scope && formEntry) out[PARENT_FIELD] = formEntry.parents
-    return out
-  }, [scope, topics, liveShip, formEntry])
-
-  const enterScope = (app: LauncherApp) => {
-    setScope(app)
-    setFormAction(null)
-    setFormEntry(null)
-    setQuery('')
+  const liveActions = (app: LauncherApp): LauncherAction[] => {
+    const read = live[app.id]
+    return read?.state === 'ready' ? read.actions : []
   }
-  const enterForm = (action: LauncherAction) => {
-    setFormAction(action)
-    setQuery('')
-  }
-
-  /*
-    PEE-5 — the form arrives filled in from the conversation, where the machine
-    to do it is already on the person's own device.
-
-    Nothing here is offered, announced or waited for (PEE-6). The form opens
-    immediately and this either lands values in it or does not; a person on a
-    phone, in Safari, or on a desktop that has never downloaded the model sees
-    exactly the form they saw before this ticket, with no sparkle greyed out
-    and no apology. `canPrefill` reports 'downloadable' as unavailable, so
-    opening a form never starts a multi-gigabyte fetch.
-  */
-  /*
-    INT-2 — asking about the open conversation instead of searching it.
-
-    A third level beside `scope` and `formAction`, holding the question rather
-    than an app or an action. **No model is called here.** This ticket is the
-    surface only: the gesture, the chip, and where an answer will go. INT-3
-    fills it.
-  */
-  const [asking, setAsking] = useState<{ request: string; intent: 'ask' | 'draft' | 'propose' } | null>(null)
-
-  /*
-    INT-4 — the draft itself. `null` while it is being written, so the panel can
-    say it is working rather than looking empty; `false` once the model has been
-    asked and produced nothing.
-  */
-  const [draft, setDraft] = useState<string | null | false>(null)
-
-  /*
-    INT-3 — the answer, and the messages it is allowed to have come from.
-    Same tri-state as the draft: `null` while it is being written, `false` once
-    the model has been asked and produced nothing.
-  */
-  const [answer, setAnswer] = useState<AskAnswer | null | false>(null)
-
-  /** A cited message the thread has not loaded. See the source row's onClick. */
-  const [unreachable, setUnreachable] = useState<string | null>(null)
-
-  /*
-    INT-5 — what the conversation calls for, chosen from what apps declare.
-    Same tri-state again: `null` while looking, `false` once nothing came back
-    or nothing fitted.
-  */
-  const [proposal, setProposal] = useState<Proposal | null | false>(null)
 
   /*
     What the browser says about the model, resolved once per open.
 
-    The launcher's own rule is that an action appears only where it can succeed,
-    so the row is absent rather than disabled where nothing can run — Edge 154
-    gates generative execution outright, and a row that always fails there is
-    worse than no row.
-
-    The raw answer rather than `canPrefill`'s boolean, since INT-10: the two
-    answers `canPrefill` refuses are not one case. 'unavailable' means nothing
-    to offer, while 'downloadable' means the machine can run it and has not
-    been asked — which is a row, not a silence.
+    'unavailable' counts as ready on purpose: it is a browser that answered,
+    and Chrome says it while working, so a session is attempted. 'unanswered'
+    does not — a browser that never answers is how a row hangs for ever.
   */
   const [availability, setAvailability] = useState<PrefillAvailability | null>(null)
   useEffect(() => {
@@ -442,93 +306,75 @@ export function CommandLauncher({
       cancelled = true
     }
   }, [])
-  /*
-    Unresolved counts as not ready, which is why this is `null` until the
-    promise lands rather than a guess: the rows are assembled on the first
-    render and an optimistic default would flash a row that then vanishes.
-
-    'unanswered' counts as not ready too, and is why this names the answers
-    that pass rather than the ones that fail. A browser that will not say
-    whether it has a model is not a browser to open a session against — that is
-    how the Ask row ends up sitting on "Reading the thread…" for ever.
-  */
   const modelReady = availability === 'available' || availability === 'unavailable'
 
   /*
-    INT-10 — the model can be fetched, and until this ticket nothing offered.
-
-    `canPrefill` refuses 'downloadable' so that opening a form never starts a
-    22 GB fetch (PEE-6), and the browser downloads only when a page calls
-    `create()`. Both are right and together they deadlock: Miky's machine could
-    run the model for a week and only got it by pasting `create()` into the
-    console. Every colleague would have reached the same dead end.
-
-    The offer resolves it without touching PEE-6, which forbids a download
-    starting as a *side effect* rather than forbidding one at all. It appears
-    exactly where the Ask rows would have appeared — same conditions, same
-    section — so it reads as the reason they are missing, and it is never a
-    nag: nothing is offered until somebody types a question at a conversation.
+    INT-10 — the model can be fetched, and the launcher offers it, where the Ask
+    rows would have been. Nothing starts a download but choosing the row (PEE-6).
   */
   const modelDownloadable = availability === 'downloadable' || availability === 'downloading'
-  /** Percent while fetching, 'failed' once refused, null when neither. */
   const [download, setDownload] = useState<number | 'failed' | null>(null)
   const startDownload = useCallback(() => {
     if (typeof download === 'number') return
     setDownload(0)
     void downloadModel((fraction) => setDownload(Math.round(fraction * 100))).then((ok) => {
-      /*
-        No cancellation guard, deliberately. The fetch belongs to the browser
-        and survives this launcher closing; if it is still mounted the row
-        should say what happened, and if it is not, React drops the update.
-      */
+      // No cancellation guard: the fetch belongs to the browser and outlives the launcher.
       setDownload(ok ? null : 'failed')
       if (ok) setAvailability('available')
     })
   }, [download])
+
+  const hasThread = (context.conversation?.messages?.length ?? 0) > 0
+
+  // ── Ask, Draft and Make ─────────────────────────────────────────────────────
+
+  /*
+    The question being answered, and what kind of answer. Separate from what is
+    in the field: changing the field does not ask again until you say so, and a
+    changed question puts "Ask: …" at the top for exactly that (the key list).
+  */
+  const [request, setRequest] = useState<{ intent: Intent; text: string } | null>(null)
+  const [draft, setDraft] = useState<string | null | false>(null)
+  const [answer, setAnswer] = useState<AskAnswer | null | false>(null)
+  const [proposal, setProposal] = useState<Proposal | null | false>(null)
+  /** A cited message the thread has not loaded — see the source row. */
+  const [unreachable, setUnreachable] = useState<string | null>(null)
 
   useEffect(() => {
     setDraft(null)
     setAnswer(null)
     setUnreachable(null)
     setProposal(null)
-    if (!asking) return
+    if (!request) return
     const messages = context.conversation?.messages ?? []
     if (messages.length === 0) return
     let cancelled = false
 
     void (async () => {
-      if (asking.intent === 'draft') {
-        // A draft is written from the thread as a whole: the brief is what to
-        // say, and there is no claim to trace back to a message.
+      if (request.intent === 'draft') {
+        // A draft is written from the thread as a whole: the brief is what to say.
         const conversation = threadContext(bodies(context.conversation))
         if (!conversation) return
-        const written = await promptForText(draftInstruction(conversation, asking.request))
+        const written = await promptForText(draftInstruction(conversation, request.text))
         if (!cancelled) setDraft(written ?? false)
         return
       }
 
-      if (asking.intent === 'propose') {
-        // The whole thread, bounded — a proposal is about what the
-        // conversation is, not about one claim in it, so there is nothing to
-        // retrieve against and nothing to cite.
+      if (request.intent === 'propose') {
         const conversation = threadContext(bodies(context.conversation))
         if (!conversation) return
-
         /*
-          INT-5 — every probeable app, not one.
-
-          A label alone means nothing across apps: two of them may declare
-          something plausibly matching, so the catalogue carries which app each
-          action belongs to and so does the proposal. Which apps to ask comes off
-          the registry's `parentKind`; nothing here names one.
+          INT-5 — every probeable app, not one. A label alone means nothing
+          across apps, so the catalogue carries which app each action belongs to.
         */
         const found = await Promise.all(
           probeable(LAUNCHER_APPS).map(async (app) => {
             try {
-              const live = await creatableUnder(app.parentKind as number)
-              if (!live) return []
-              return live.actions.filter(isProposable).flatMap((action) => {
-                const launcher = launcherActionFrom(action, { parentNoun: 'parent', submitLabel: action.label })
+              const read = await creatableUnder(app.parentKind as number)
+              if (!read) return []
+              return read.actions.filter(isProposable).flatMap((action) => {
+                // The app's own word for the parent, not "Parent" (R10).
+                const launcher = launcherActionFrom(action, { parentNoun: app.parentNoun ?? 'parent', submitLabel: action.label })
                 if (!launcher) return []
                 return [
                   {
@@ -537,13 +383,11 @@ export function CommandLauncher({
                     action,
                     launcher,
                     vocabularies: vocabulariesFrom(action),
-                    parents: live.parents.map((p) => ({ value: p.address, label: p.title })),
+                    parents: read.parents.map((p) => ({ value: p.address, label: p.title })),
                   },
                 ]
               })
             } catch (error: unknown) {
-              // A read that fails must produce a sentence, not silence — the
-              // lesson the scoped read above was fixed for.
               console.warn('[nostr] reading an app’s creatable actions failed:', error)
               return []
             }
@@ -557,128 +401,118 @@ export function CommandLauncher({
         }
         const answered = await promptForObject(proposalInstruction(conversation, entries), PROPOSAL_SCHEMA)
         if (cancelled) return
-        /*
-          Validated against the real set. Structured output is refused on some
-          builds, so this answer arrived through the lenient path and can be
-          anything at all — an id nothing declared is dropped rather than guessed
-          at, the discipline `buildCreationEvent` already applies to properties.
-        */
+        // Validated against the real set: an id nothing declared is dropped, never guessed at.
         setProposal(readProposal(answered, entries) ?? false)
         return
       }
+
       /*
-        Retrieval first, generation second (INT-3). Which messages the answer
-        could have come from is decided here, deterministically and without a
-        model — so a citation cannot be invented, only chosen from or ignored.
+        Retrieval first, generation second (INT-3): which messages the answer
+        could have come from is decided here, without a model, so a citation can
+        be chosen from or ignored but never invented.
       */
-      const selection = selectMessages(asking.request, messages)
-      const raw = await promptForText(answerInstruction(asking.request, selection.chosen))
+      const selection = selectMessages(request.text, messages)
+      const raw = await promptForText(answerInstruction(request.text, selection.chosen))
       if (cancelled) return
       if (!raw) {
         setAnswer(false)
         return
       }
       const { text, cited } = parseAnswer(raw, selection.chosen.length)
-      /*
-        Citations narrow the source list; they never widen it. A model that
-        cited nothing gets the whole retrieved set shown instead — those are
-        the only messages it saw, so the claim "the answer came from these" is
-        true either way, and an answer with no sources at all is the one thing
-        this feature exists to prevent.
-      */
+      // Citations narrow the source list; they never widen it.
       const sources = cited.length > 0 ? selection.chosen.filter((c) => cited.includes(c.n)) : selection.chosen
       setAnswer({
         text,
         sources,
         byRecency: selection.byRecency,
         omitted: selection.omitted,
-        // Counted over what was *read*, not over the topic: a reply under a
-        // conversation the budget dropped is already inside `omitted`.
         repliesNotRead: selection.chosen.reduce((n, c) => n + (c.message.repliesNotRead ?? 0), 0),
-      })    })()
+      })
+    })()
 
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asking, bodies(context.conversation).join('\u0000'), creatableUnder])
+  }, [request, bodies(context.conversation).join('\u0000'), creatableUnder])
 
-  const [prefill, setPrefill] = useState<Record<string, string> | undefined>()
+  /** Go into Ask, Draft or Make with what was typed on the first level (R8: leaving keeps it). */
+  const openIntent = (intent: Intent) => {
+    const text = query.trim()
+    setStack((s) => [...s, { level: { kind: 'ai', intent }, query: text }])
+    // Make reads the conversation, not the words, so it starts at once.
+    setRequest(intent === 'propose' || text ? { intent, text } : null)
+  }
+
+  // ── Forms ───────────────────────────────────────────────────────────────────
+
+  const [drafts, setDrafts] = useState<Record<string, FormDraft>>({})
+  const [attempted, setAttempted] = useState<Record<string, boolean>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const formLevel = level.kind === 'form' ? level : null
+  const formDraft = formLevel ? (drafts[formKey(formLevel)] ?? seedDraft(formLevel.action)) : null
+  const setFormDraft = (next: FormDraft) => formLevel && setDrafts((d) => ({ ...d, [formKey(formLevel)]: next }))
+
+  // A form's error belongs to that visit to it.
+  useEffect(() => setSubmitError(null), [level])
+
+  /*
+    PEE-5 — the form arrives filled in from the conversation, where the model
+    is already on the person's own device. Nothing is offered or waited for
+    (PEE-6): the form opens at once, and this lands values in the fields
+    nobody has touched, or does not.
+  */
+  const prefillFor = formLevel && !formLevel.action.target ? formKey(formLevel) : null
   useEffect(() => {
-    setPrefill(undefined)
-    // A change acts on an object that already exists; there is nothing to
-    // suggest. Only a creation has empty fields worth filling.
-    if (!formAction || formAction.target) return
+    if (!formLevel || !prefillFor) return
     const conversation = threadContext(bodies(context.conversation))
     if (!conversation) return
-    // A proposed form was never scoped into, so its vocabularies come off the
-    // entry the proposal carried (INT-5) — otherwise the prefill constraint
-    // would offer a free string where the manifest declared an enum.
-    const built = formSchema(formAction.fields, scope?.vocabularies ?? formEntry?.vocabularies ?? {})
+    const built = formSchema(formLevel.action.fields, formLevel.app?.vocabularies ?? formLevel.entry?.vocabularies ?? {})
     if (!built) return
     let cancelled = false
     void (async () => {
       if (!(await canPrefill())) return
-      const answer = await promptForObject(prefillInstruction(formAction.label, conversation), built.schema)
+      const suggested = await promptForObject(prefillInstruction(formLevel.action.label, conversation), built.schema)
       if (cancelled) return
-      const usable = usablePrefill(answer, built.keys)
-      // An empty answer is left as undefined rather than as `{}`, so the form's
-      // prefill effect has nothing to react to.
-      if (Object.keys(usable).length) setPrefill(usable)
+      const usable = usablePrefill(suggested, built.keys)
+      if (Object.keys(usable).length === 0) return
+      setDrafts((d) => ({ ...d, [prefillFor]: applyPrefill(d[prefillFor] ?? seedDraft(formLevel.action), usable) }))
     })()
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formAction, scope, formEntry, bodies(context.conversation).join('\u0000')])
-  const popLevel = () => {
-    /*
-      Leaving Ask keeps what was typed. The text is sovereign in this design
-      (INT-2): changing how a sentence is interpreted must never cost somebody
-      the sentence, in either direction.
-    */
-    if (asking !== null) {
-      setAsking(null)
-      return
+  }, [prefillFor, bodies(context.conversation).join('\u0000')])
+
+  const parentOptionsFor = (form: Extract<Level, { kind: 'form' }>): Record<string, VocabOption[]> => {
+    const out: Record<string, VocabOption[]> = {}
+    if (form.app?.id === 'peek') {
+      out.topic = (topics ?? []).filter((t) => !t.isResolved).map((t) => ({ value: t.id, label: t.title }))
     }
-    if (formAction) {
-      setFormAction(null)
-      // Or the next form drawn would inherit a proposal's vocabularies.
-      setFormEntry(null)
-    } else if (scope) setScope(null)
-    setQuery('')
+    const read = form.app ? live[form.app.id] : undefined
+    if (read?.state === 'ready') out[PARENT_FIELD] = read.parents
+    if (!form.app && form.entry) out[PARENT_FIELD] = form.entry.parents
+    return out
   }
 
   /**
-   * A validated form arrives here as `{ fieldKey: value }` plus the
-   * manifest-shaped action that produced it. `applyAction` turns it into the
-   * event the declaration's `emits` describes, signs and publishes it (PEE-1),
-   * and the new object's `nostr:naddr…` reference goes into the active
-   * composer so the reply renders it as a widget (PEE-2).
+   * A validated form arrives here as `{ fieldKey: value }`. `applyAction` turns
+   * it into the event the declaration describes, signs and publishes it
+   * (PEE-1), and the new object's reference goes into the active composer
+   * (PEE-2).
    */
-  const submitAction = async (action: LauncherAction, values: Record<string, string>) => {
+  const submitAction = async (form: Extract<Level, { kind: 'form' }>, values: Record<string, string>) => {
+    const { action } = form
     /*
-      Only Ship's live actions publish. Everything else in the registry is a
-      proposal for a manifest that does not declare it yet, and publishing a
-      guess at another app's object is exactly what the honour system forbids —
-      so those still close, as they always did.
-    */
-    /*
-      Two shapes, and they are not interchangeable (PEE-3).
-
-      A CHANGE carries a target chosen when the row was, and the runtime takes
-      a scalar for it — `applyActionAsViewer` branches on exactly that: a
-      string is a change, a property bag is a creation with a parent. It is
-      also already known to be declared, because the action came off the
-      object's own resolved manifest rather than off the registry, so the
-      liveShip check below does not apply to it.
+      A CHANGE carries a target chosen with the row, and the runtime takes a
+      scalar for it (PEE-3). It is declared by the object's own manifest, so
+      the live-read check below does not apply to it.
     */
     if (action.target) {
       const value = values[action.fields[0]?.key ?? '']
-      if (!value) {
-        onClose()
-        return
-      }
+      if (!value) return
       setSubmitting(true)
       setSubmitError(null)
       const result = await applyAction({ naddr: action.target, actionId: action.id, value })
@@ -687,66 +521,35 @@ export function CommandLauncher({
         setSubmitError(result.reason ?? 'The relay rejected the change.')
         return
       }
-      // Nothing to leave in the thread: the object was already referenced
-      // there, which is how it came to be a target at all.
+      showToast({ label: `${action.label} · ${action.targetLabel ?? 'saved'}`, type: 'success' })
       onClose()
       return
     }
 
     /*
-      Declared means "a manifest read just now says this exists", and a form
-      reaches here by **two** routes — INT-9.
-
-      Scoping into an app is the one this checked: `liveShip`. Accepting a
-      proposal is the other, and it has no scope at all, so `liveShip` is null
-      and every proposal's form took the silent close below. INT-5's own
-      safety tests pass either way — they assert `applyAction` is *not* called
-      before a person submits — so the half that publishes was never exercised
-      and Make could not create anything.
-
-      `formEntry` is the proposal's catalogue entry, built from the same live
-      manifests, which is why it counts as a declaration and the registry's
-      rows do not.
+      Declared means "a manifest read just now says this exists", reached by
+      going into the app or by accepting a proposal — INT-9. A submission that
+      closes saying nothing is indistinguishable from one that worked, which is
+      how three dead rows survived being used.
     */
+    const appLabel = form.app?.label ?? form.entry?.appLabel ?? 'That app'
     const declared =
-      liveShip?.actions.some((a) => a.id === action.id) === true ||
-      formEntry?.launcher.id === action.id
-    const { parent, properties } = splitSubmission(values)
-    /*
-      Both branches used to be one silent `onClose()`. That is the bug this
-      ticket is named for: a submit that closes is indistinguishable from a
-      submit that worked, and it is how three dead rows survived being used.
-
-      Unreachable from the list now — `scopeActions` offers only declared
-      actions — and kept because unreachable is a claim about this file, not
-      about the app: a story passing `initialActionId`, a proposal, or the next
-      registry entry all arrive here.
-    */
+      (form.app ? liveActions(form.app).some((a) => a.id === action.id) : false) || form.entry?.launcher.id === action.id
     if (!declared) {
-      setSubmitError(`${scope?.label ?? 'That app'} has not published this action, so there is nothing to send.`)
+      setSubmitError(`${appLabel} has not published this action, so there is nothing to send.`)
       return
     }
+    const { parent, properties } = splitSubmission(values)
     if (!parent) {
       setSubmitError('Choose where this should go before creating it.')
       return
     }
     setSubmitting(true)
     setSubmitError(null)
-    /*
-      Wrapped because the caller is `void submitAction(…)`, so anything thrown
-      here goes nowhere at all — the form would simply sit there. `addrToNaddr`
-      throws on an author that is not 32 bytes, which is exactly the sort of
-      thing a bad parent list would produce.
-    */
     let result: Awaited<ReturnType<typeof applyAction>>
     try {
-      // The parent is addressed, not named: `applyAction` resolves the manifest
-      // from the object being acted on, which keeps this ignorant of Ship.
-      result = await applyAction({
-        naddr: addrToNaddr(parent, []),
-        actionId: action.id,
-        value: properties,
-      })
+      // The parent is addressed, not named: `applyAction` resolves the manifest from the object.
+      result = await applyAction({ naddr: addrToNaddr(parent, []), actionId: action.id, value: properties })
     } catch (error) {
       setSubmitting(false)
       setSubmitError(error instanceof Error ? error.message : String(error))
@@ -754,220 +557,82 @@ export function CommandLauncher({
     }
     setSubmitting(false)
     if (!result.ok) {
-      // The runtime's own words — "title is required", "urgent is not one of
-      // …" — rather than a generic failure. It is the only participant that
-      // knows what the manifest allowed.
+      // The runtime's own words: it is the only participant that knows what the manifest allowed.
       setSubmitError(result.reason ?? 'The relay rejected it.')
       return
     }
-    /*
-      The trace, which is the half that changes behaviour (PEE-2).
-
-      > Katerina, 2026-08-19 — *"Now I have no clue this whole conversation has
-      > an issue assigned, as I have to open the thread first."*
-
-      The address comes off the runtime rather than being recomposed here, and
-      only a creation returns one — a change is a statement about an object
-      that already had an address, so there is nothing new to point at.
-    */
     if (result.created) {
       let placed: boolean
       try {
         placed = insertReferenceIntoActiveComposer(addrToNaddr(result.created, []))
       } catch (error) {
-        /*
-          The object WAS created, so "failed" would be a lie about the half
-          that worked. Only a malformed address out of the runtime reaches
-          here, which is a bug rather than anything a person did.
-        */
-        setSubmitError(
-          `Created, but its reference could not be encoded: ${error instanceof Error ? error.message : String(error)}`,
-        )
+        // The object WAS created, so "failed" would be a lie about the half that worked.
+        setSubmitError(`Created, but its reference could not be encoded: ${error instanceof Error ? error.message : String(error)}`)
         return
       }
-      /*
-        No composer is usually legitimate — the launcher is global, so creating
-        an object with nothing open is a normal thing to do and there is simply
-        nowhere to leave a reference. But the context captured at the invoking
-        keystroke says whether a conversation surface WAS open, and if it was,
-        this is the trace going missing rather than being unnecessary.
-      */
+      // No composer is legitimate; a composer that was open and is gone is the trace going missing.
       if (!placed && context.composer) {
         setSubmitError('Created, but its reference could not be placed — the composer is gone.')
         return
       }
     }
+    const title = properties.title?.trim()
+    // C5: say it worked, where the person is looking.
+    showToast({ label: title ? `“${title}” created in ${appLabel}` : `Created in ${appLabel}`, type: 'success' })
     onClose()
   }
 
-  const appIcon = (app: LauncherApp, size = 14) =>
-    app.id === 'peek' ? <PeekLogoMark height={size} /> : <ShipLogoMark height={size} />
+  // ── Rows ────────────────────────────────────────────────────────────────────
 
-  /**
-   * The app's tile: its mark, small, on a wash of its own brand colour —
-   * minimal and discreet (Katerina 2026-08-31). Peek's is the accent-muted
-   * badge the app already uses; Ship has no token here, so its wash and
-   * letter come from `estiva-ui/tokens.css` `[data-theme='ship']`
-   * (--accent-primary #4b58d4 / --accent-hover #5c69dc), stated inline
-   * because Peek's palette deliberately does not carry another app's brand.
-   */
-  const appTile = (app: LauncherApp) => (
-    <div
-      className={cn(
-        'flex items-center justify-center size-8 rounded-sm shrink-0',
-        // eslint-disable-next-line better-tailwindcss/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written Ship colour waits for that
-        app.id === 'peek' ? 'bg-accent-muted' : 'bg-[rgba(75,88,212,0.14)]',
-      )}
-    >
-      {app.id === 'peek' ? (
-        <PeekLogoMark height={14} />
-      ) : (
-        // eslint-disable-next-line better-tailwindcss/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written Ship colour waits for that
-        <ShipLogoMark height={14} className="text-[#5c69dc]" />
-      )}
-    </div>
-  )
+  const close = (then: () => void) => () => {
+    then()
+    onClose()
+  }
 
-  /**
-   * The shared hint now (2026-09-05). This was the launcher's own
-   * caption-sized copy, restored deliberately on 2026-09-01 because the
-   * shared `EnterHint` was then the pickers' smaller 9px voice and this
-   * surface wanted caption.
-   *
-   * That difference is gone: `EnterHint` is the `Kbd` chip, at the same 10px
-   * mono the launcher's own footer uses two rows below it. Keeping a private
-   * copy now would mean a row saying `↩ Enter` in plain text directly above a
-   * footer saying it in a chip — the split Katerina asked to close.
-   */
-  const enterHint = <EnterHint />
+  const topicRow = (t: Topic, forget?: () => void): CommandPaletteRow => ({
+    id: `topic-${t.id}`,
+    label: t.title,
+    description: t.isResolved ? 'Resolved' : undefined,
+    // The topic's own icon, not a hash: a dashed circle, or the tick once resolved.
+    leading: <TopicState type="topic" status={t.isResolved ? 'resolved' : 'unresolved'} />,
+    onSelect: close(() => navigate(topicPath(t))),
+    onForget: forget,
+  })
 
-  /**
-   * Every key the footer names, drawn as the shared chip — not a fourth copy
-   * of it: `SearchInput`, `MenuItem` and `Tooltip` all render the same `Kbd`.
-   *
-   * Labels are words (Katerina, 2026-09-05). `↩` and `⌫` are not in Geist
-   * Mono, so the browser borrowed each from another face — measured at 10px,
-   * a character the font owns advances 6px, `↩` came back 8.63px and `⌫`
-   * 12.81px, which is why those two chips sat wider than `↑` and `↓` beside
-   * them. `↑` and `↓` stay: the font has them, on the grid, and an arrow is
-   * what the key itself says.
-   */
-  const keyBadge = (label: string) => <Kbd>{label}</Kbd>
+  const personRow = (p: Person, forget?: () => void): CommandPaletteRow => ({
+    id: `person-${p.id}`,
+    label: p.name,
+    description: p.role,
+    leading: <Avatar src={p.avatarSrc} name={p.name} size={24} />,
+    onSelect: close(() => navigate(`/people/${encodeURIComponent(p.id)}`)),
+    onForget: forget,
+  })
 
-  const iconTile = (content: React.ReactNode) => (
-    <div className="flex items-center justify-center size-8 rounded-sm bg-bg-inset shrink-0">{content}</div>
-  )
+  const appRow = (app: LauncherApp): CommandPaletteRow => ({
+    id: `app-${app.id}`,
+    label: app.label,
+    // No count: it counted the registry's proposals, not what the app offers (R12).
+    description: app.description,
+    icon: appMark(app),
+    onSelect: () => push({ kind: 'app', app }),
+    onGoIn: () => push({ kind: 'app', app }),
+  })
 
-  const sectionHeader = (label: string) => (
-    <div key={`hdr-${label}`} className="flex items-center h-7 px-3">
-      <SectionLabel className="text-text-secondary">{label}</SectionLabel>
-    </div>
-  )
+  const changeRowsFor = (list: typeof changeRows): CommandPaletteRow[] =>
+    list.map(({ action }) => ({
+      id: `change-${action.target}-${action.id}`,
+      label: action.label,
+      description: action.targetLabel,
+      icon: icon(IconPencil),
+      onSelect: () => push({ kind: 'form', action }),
+    }))
 
-  // ── Assemble the rows for the current level ──
-
-  const { rows, headers } = useMemo(() => {
-    const rows: Row[] = []
-    // headers[i] renders BEFORE row index i
-    const headers = new Map<number, React.ReactNode>()
-
-    const simpleRow = (
-      key: string,
-      icon: React.ReactNode | null,
-      title: React.ReactNode,
-      subtitle: string | undefined,
-      onSelect: () => void,
-      trailing?: React.ReactNode
-    ): Row => ({
-      key,
-      onSelect,
-      // The hint is NOT rendered here: it rides MenuItem's `hint` slot, which
-      // reveals it from the row's own :hover on the same transition as the
-      // fill. Rendering it from `isHl` mounted it, and a mount is instant
-      // while the fill is a 150ms fade — the flicker Katerina caught.
-      trailing,
-      render: () => (
-        <>
-          {icon != null && iconTile(icon)}
-          <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
-            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-            <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{title}</div>
-            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-            {subtitle && <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{subtitle}</div>}
-          </div>
-        </>
-      ),
-    })
-
-    // The form step renders ActionFormPanel instead of rows.
-    if (formAction) return { rows, headers }
-    // Asking replaces the list with the answer panel, so there are no rows.
-    if (asking !== null) return { rows, headers }
-
-    if (scope) {
-      const actions = q
-        ? scopeActions.filter((a) => a.label.toLowerCase().includes(q))
-        : scopeActions
-      /*
-        Say what is happening rather than showing an empty section. A blank
-        list reads as "this app offers nothing", which is a different and wrong
-        statement — and the one thing worse than a slow answer is a confident
-        wrong one.
-
-        **Every app, not only Ship** (INT-9). It was Ship-only because Ship was
-        the only app whose rows could be empty; now that a row exists only
-        where a manifest declares one, Peek's list is empty too and an
-        unexplained blank there is the same wrong statement.
-
-        Keyed off `scopeActions` rather than the filtered `actions`, because an
-        app that offers three things none of which match what was typed has not
-        stopped offering them. That case draws no rows and no note, which is
-        how every other section of the launcher already reports a miss.
-      */
-      const liveNote =
-        scopeActions.length > 0
-          ? null
-          : liveState === 'failed'
-            ? `Could not read ${scope.label}’s manifest — its actions are unavailable.`
-            : // Never probed, or probed and finished: either way this is the
-              // whole answer. Only an app with a parent kind can still be
-              // mid-flight, and `idle` is the tick before the effect runs.
-              scope.parentKind && (liveState === 'idle' || liveState === 'loading')
-              ? `Reading ${scope.label}’s manifest…`
-              : `${scope.label} has not published anything to create here yet.`
-      if (liveNote) {
-        headers.set(0, sectionHeader(`${scope.label} actions`))
-        rows.push({
-          key: 'live-note',
-          compact: true,
-          onSelect: () => {},
-          render: () => (
-            // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-            <div className="px-3 py-2 text-[13px] leading-[1.2] text-text-secondary">{liveNote}</div>
-          ),
-        })
-        return { rows, headers }
-      }
-      if (actions.length > 0) headers.set(0, sectionHeader(`${scope.label} actions`))
-      for (const action of actions) {
-        // No tile and no app name: the scope chip above already says both
-        // (Katerina 2026-08-31 — they were redundant on every row).
-        rows.push({ ...simpleRow(action.id, null, action.label, undefined, () => enterForm(action)), compact: true })
-      }
-      return { rows, headers }
-    }
-
-    // ── Global level ──
-    /*
-      INT-10 — where a model could answer but has not been fetched, offer it.
-
-      Above the INT-2 block and gated on the same three conditions, so it
-      occupies exactly the space the Ask rows would have and reads as the
-      reason they are absent. Selecting it is the only thing in Peek that
-      starts the download, and the label says what it costs beforehand.
-    */
-    if (q && context.conversation?.messages?.length && modelDownloadable) {
-      headers.set(rows.length, sectionHeader('Ask'))
+  /** Ask, Draft and Make as rows — or, where the model could run but is not here yet, the offer to fetch it. */
+  const intentRows = (typed: string): CommandPaletteRow[] => {
+    if (!hasThread) return []
+    if (modelDownloadable) {
+      // INT-10: offered only once something is typed, so it is never a nag.
+      if (!typed) return []
       const label =
         download === 'failed'
           ? 'This browser refused the model — asking is unavailable here'
@@ -976,792 +641,435 @@ export function CommandLauncher({
             : availability === 'downloading'
               ? 'The on-device model is downloading — show progress'
               : 'Download the on-device model to ask about conversations'
-      const subtitle =
-        download === 'failed'
-          ? undefined
-          : typeof download === 'number'
-            ? 'Keep working — this continues if you close the launcher.'
-            : 'Several gigabytes, once per browser. It runs on this device; nothing is sent anywhere.'
-      rows.push({
-        ...simpleRow(
-          'model-download',
-          <IconDownload size={16} stroke={1.5} className="text-text-secondary" />,
+      return [
+        {
+          id: 'model-download',
           label,
-          subtitle,
-          () => {
-            // Not `closeAll()`: the progress is on this row, and a person who
-            // asked for the download is owed sight of it.
-            if (download !== 'failed') startDownload()
-          },
-        ),
-      })
+          description:
+            download === 'failed'
+              ? undefined
+              : typeof download === 'number'
+                ? 'Keep working — this continues if you close the launcher.'
+                : 'Several gigabytes, once per browser. It runs on this device; nothing is sent anywhere.',
+          icon: icon(IconDownload),
+          // The progress is on this row, and a person who asked for the download is owed sight of it.
+          onSelect: () => download !== 'failed' && startDownload(),
+        },
+      ]
     }
+    if (!modelReady) return []
+    return [
+      {
+        id: 'ask',
+        label: typed ? `Ask: “${typed}”` : 'Ask about this conversation',
+        icon: icon(IconMessageQuestion),
+        onSelect: () => openIntent('ask'),
+      },
+      // A draft needs somewhere to go.
+      ...(context.composer
+        ? [{ id: 'draft', label: typed ? `Draft a reply: “${typed}”` : 'Draft a reply', icon: icon(IconWriting), onSelect: () => openIntent('draft') }]
+        : []),
+      { id: 'propose', label: 'Suggest what to make from this conversation', icon: icon(IconSparkles), onSelect: () => openIntent('propose') },
+    ]
+  }
+
+  const firstLevel = (): { groups: CommandPaletteGroup[]; pending?: string; notes: string[]; empty?: string } => {
+    const typed = query.trim()
+
+    if (!q) {
+      const recentTopics = recents
+        .filter((r) => r.kind === 'topic' && r.id !== openTopicId)
+        .flatMap((r) => (topics ?? []).filter((t) => t.id === r.id))
+        .slice(0, 3)
+      const recentPeople = recents
+        .filter((r) => r.kind === 'person' && r.id !== openPersonId)
+        .flatMap((r) => (people ?? []).filter((p) => p.id === r.id))
+        .slice(0, 2)
+      const recentRows = [
+        ...recentTopics.map((t) => topicRow(t, () => forgetRecent({ kind: 'topic', id: t.id }))),
+        ...recentPeople.map((p) => personRow(p, () => forgetRecent({ kind: 'person', id: p.id }))),
+      ]
+      return {
+        groups: [
+          { label: 'This conversation', rows: [...intentRows(''), ...changeRowsFor(changeRows)] },
+          {
+            label: 'Recent',
+            rows: recentRows.length
+              ? [...recentRows, { id: 'clear-recent', label: 'Clear recent', icon: icon(IconEraser), onSelect: clearRecents }]
+              : [],
+          },
+          { label: 'Apps', rows: LAUNCHER_APPS.map(appRow) },
+        ],
+        notes: [],
+      }
+    }
+
+    // An app whose name starts with what was typed goes first (R6).
+    const apps = LAUNCHER_APPS.filter((a) => a.label.toLowerCase().startsWith(q)).map(appRow)
+    // A word is a search, a sentence is a question (R5 C, C2).
+    const sentence = wordCount(typed) >= 2
+    const ask: CommandPaletteGroup = { label: 'Ask', rows: intentRows(typed) }
+    const changes = changeRowsFor(
+      changeRows.filter(({ action }) => action.label.toLowerCase().includes(q) || (action.targetLabel ?? '').toLowerCase().includes(q)),
+    )
+    const topicHits = matchTopics(topics ?? [], query).map((t) => topicRow(t))
+    const peopleHits = matchPeople(people ?? [], query).map((p) => personRow(p))
+    // An app's action by its name: "add" finds "Add issue · Ship", and Enter opens its form (C4).
+    const actionHits = probeable(LAUNCHER_APPS).flatMap((app) =>
+      liveActions(app)
+        .filter((a) => a.label.toLowerCase().includes(q))
+        .map((action) => ({
+          id: `action-${app.id}-${action.id}`,
+          label: action.label,
+          description: app.label,
+          icon: icon(IconPencil),
+          onSelect: () => push({ kind: 'app', app }, { kind: 'form', action, app }),
+        })),
+    )
 
     /*
-      INT-2 — interpret what was typed as a question about this conversation.
-
-      Above the results and above the actions, because it is what a person
-      typing a sentence rather than a term is most likely to have meant. It
-      appears only with something typed, only with a conversation open (there
-      is nothing to ask about otherwise), and only where a model could answer.
+      A message names its Folder on the `h` tag, and a Topic carries the same
+      uuid — the join, and the reason a hit can be unroutable: a message in a
+      channel this person has no topic row for has nowhere to go. Those are not
+      rows; how many there were is said, because a silent cap reads as "that is
+      all there was".
     */
-    if (q && context.conversation?.messages?.length && modelReady) {
-      headers.set(rows.length, sectionHeader('Ask'))
-      rows.push({
-        ...simpleRow(
-          'ask',
-          <IconMessageQuestion size={16} stroke={1.5} className="text-text-secondary" />,
-          <>
-            Ask about this conversation: "<span className="font-medium">{query.trim()}</span>"
-          </>,
-          undefined,
-          () => {
-            // The query is deliberately NOT cleared — see popLevel.
-            setAsking({ request: query.trim(), intent: 'ask' })
-          },
-        ),
-        compact: true,
-      })
-
-      /*
-        INT-4 — the same sentence, read as a brief rather than a question.
-
-        A second row rather than a model deciding which was meant. Asking and
-        drafting fail in opposite directions: a question answered as a draft
-        wastes a read, a draft answered as a question wastes the request, and
-        the launcher already refused that guess once when PEE-4 ruled out
-        "no search hits means they meant something else". Two rows cost one
-        arrow key and are never wrong.
-
-        It needs a composer as well as a conversation — with nowhere to put a
-        draft there is no point writing one.
-      */
-      /*
-        INT-5 — the same sentence read as "make something of this".
-
-        A third row for the same reason there is a second one: asking, drafting
-        and making are three things a typed sentence could mean, and the
-        launcher does not guess which. What it needs is a conversation and a
-        model; whether any app declares anything usable is not known until it
-        looks, and the panel says so rather than the row pretending to know.
-      */
-      rows.push({
-        ...simpleRow(
-          'propose',
-          <IconSparkles size={16} stroke={1.5} className="text-text-secondary" />,
-          <>Make something from this conversation</>,
-          undefined,
-          () => {
-            setAsking({ request: query.trim(), intent: 'propose' })
-          },
-        ),
-        compact: true,
-      })
-
-      if (context.composer) {
-        rows.push({
-          ...simpleRow(
-            'draft',
-            <IconWriting size={16} stroke={1.5} className="text-text-secondary" />,
-            <>
-              Draft a reply: "<span className="font-medium">{query.trim()}</span>"
-            </>,
-            undefined,
-            () => {
-              setAsking({ request: query.trim(), intent: 'draft' })
-            },
-          ),
-          compact: true,
-        })
+    const byFolder = new Map((topics ?? []).filter((t) => t.folderId).map((t) => [t.folderId as string, t]))
+    const routable = messageHits.filter((h) => h.folder && byFolder.has(h.folder))
+    const unroutable = messageHits.length - routable.length
+    const messageRows = routable.slice(0, 5).map((hit): CommandPaletteRow => {
+      const topic = byFolder.get(hit.folder as string)!
+      const who = directory?.[hit.pubkey]
+      return {
+        id: `message-${hit.id}`,
+        // Words, never markdown; the match in context, not the first 80 characters.
+        label: snippetAround(asWords(hit.content), typed),
+        description: [who?.displayName, topic.title, formatDateLabel(hit.createdAt * 1000)].filter(Boolean).join(' · '),
+        leading: <Avatar src={who?.picture} name={who?.displayName} size={24} />,
+        // The topic, at that message (R13) — the one-shot `ObjectPage` already uses.
+        onSelect: close(() => {
+          // A reply opens the conversation it is in, then lands on the reply.
+          if (hit.folder) setPendingTopicMessage({ folder: hit.folder, eventId: hit.root ?? hit.id, ...(hit.root ? { reply: hit.id } : {}) })
+          navigate(topicPath(topic))
+        }),
       }
-    }
+    })
 
-    /*
-      PEE-3 — changing an object the thread already refers to. Above the
-      found things, because these are actions rather than results: they
-      change the shared record, and burying them under search results would
-      put the destructive half of the launcher last.
-    */
-    const changeHits = q
-      ? changeRows.filter(
-          ({ action }) =>
-            action.label.toLowerCase().includes(q) || (action.targetLabel ?? '').toLowerCase().includes(q),
-        )
-      : changeRows
-    if (changeHits.length > 0) headers.set(rows.length, sectionHeader('In this conversation'))
-    for (const { action } of changeHits) {
-      rows.push({
-        ...simpleRow(
-          `change-${action.target}-${action.id}`,
-          <IconPencil size={16} stroke={1.5} className="text-text-secondary" />,
-          action.label,
-          action.targetLabel,
-          () => enterForm(action),
-        ),
-        compact: true,
-      })
-    }
-
-
-    /*
-      Finding things, which used to be one inert row reading "Search Peek for
-      …" (PEE-4). The launcher is the one surface where "do a thing" and "find
-      a thing" are the same gesture, so results sit above the apps rather than
-      behind a separate mode.
-    */
-    if (q) {
-      const go = (path: string) => () => {
-        navigate(path)
-        onClose()
-      }
-
-      const topicHits = matchTopics(topics ?? [], query)
-      if (topicHits.length > 0) {
-        headers.set(rows.length, sectionHeader('Topics'))
-        for (const t of topicHits) {
-          rows.push({
-            ...simpleRow(
-              `topic-${t.id}`,
-              <IconHash size={16} stroke={1.5} className="text-text-secondary" />,
-              t.title,
-              t.isResolved ? 'Resolved' : undefined,
-              go(topicPath(t)),
-            ),
-            compact: true,
-          })
-        }
-      }
-
-      const peopleHits = matchPeople(people ?? [], query)
-      if (peopleHits.length > 0) {
-        headers.set(rows.length, sectionHeader('People'))
-        for (const person of peopleHits) {
-          rows.push({
-            ...simpleRow(
-              `person-${person.id}`,
-              <IconUser size={16} stroke={1.5} className="text-text-secondary" />,
-              person.name,
-              person.role,
-              go(`/people/${encodeURIComponent(person.id)}`),
-            ),
-            compact: true,
-          })
-        }
-      }
-
-      /*
-        A message names its Folder on the `h` tag, and a Topic carries the same
-        uuid as `folderId` — so that is the join, and it is also the reason a
-        hit can be unroutable: a message in a channel this person has no topic
-        row for has nowhere to go. Those are dropped rather than rendered as a
-        row that cannot succeed, and the count of what was dropped is shown,
-        because a silent cap reads as "that is all there was".
-      */
-      const byFolder = new Map((topics ?? []).filter((t) => t.folderId).map((t) => [t.folderId as string, t]))
-      const routable = messageHits.filter((h) => h.folder && byFolder.has(h.folder))
-      const unroutable = messageHits.length - routable.length
-      const emptyNote = messageEmptyState(messageState, query)
-
-      if (routable.length > 0 || emptyNote || unroutable > 0) {
-        headers.set(rows.length, sectionHeader('Messages'))
-      }
-      for (const hit of routable) {
-        const topic = byFolder.get(hit.folder as string)!
-        const who = directory?.[hit.pubkey]?.displayName
-        rows.push({
-          ...simpleRow(
-            `message-${hit.id}`,
-            <IconMessage size={16} stroke={1.5} className="text-text-secondary" />,
-            // The match in context, not the first 80 characters — a hit whose
-            // term is late in a long message would otherwise show none of it.
-            snippetAround(hit.content, query.trim()),
-            [who, topic.title].filter(Boolean).join(' · '),
-            go(topicPath(topic)),
-          ),
-          compact: true,
-        })
-      }
-      /*
-        Said rather than shown as rows: the honest empty state PEE-4's done-when
-        asks for, which has to tell "nothing matched" from "nothing you can
-        read". `messageEmptyState` owns the wording; this only has to render it.
-      */
-      const notes = [
-        emptyNote,
-        unroutable > 0
-          ? `${unroutable} more in conversations not in your sidebar.`
-          : null,
-      ].filter(Boolean) as string[]
-      for (const [i, note] of notes.entries()) {
-        rows.push({
-          key: `message-note-${i}`,
-          compact: true,
-          onSelect: () => {},
-          render: () => (
-            // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-            <div className="px-3 py-2 text-[13px] leading-[1.2] text-text-secondary">{note}</div>
-          ),
-        })
-      }
-    }
-
-    const apps = q
-      ? LAUNCHER_APPS.filter((a) => a.label.toLowerCase().includes(q) || a.description.toLowerCase().includes(q))
-      : LAUNCHER_APPS
-    if (apps.length > 0) headers.set(rows.length, sectionHeader('Apps'))
-    for (const a of apps) {
-      rows.push({
-        key: a.id,
-        onSelect: () => enterScope(a),
-        trailing: <IconChevronRight size={16} stroke={1.5} className="text-text-secondary shrink-0" />,
-        render: () => (
-          <>
-            {appTile(a)}
-            <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
-              {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-              <div className="text-[14px] font-normal leading-[1.4] text-text-primary truncate">{a.label}</div>
-              {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-              <div className="text-[12px] leading-[1.2] text-text-secondary truncate">{`${a.description} · ${a.actions.length} actions`}</div>
-            </div>
-          </>
-        ),
-      })
-    }
-    return { rows, headers }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, query, scope, scopeActions, liveState, formAction, contextCleared, topics, people, directory, messageState, messageHits, navigate, changeRows, modelReady, modelDownloadable, availability, download, startDownload, context.conversation?.messages?.length])
-
-  // Reset the highlight on every level/query change.
-  const didInitHighlight = useRef(false)
-  useEffect(() => {
-    if (!didInitHighlight.current) {
-      didInitHighlight.current = true
-      return
-    }
-    setHighlight(0)
-  }, [query, scope, formAction])
-
-  useEffect(() => {
-    const el = listRef.current?.querySelector('[data-highlighted="true"]')
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [highlight])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // A child that consumed the key keeps it: an open Select preventDefaults
-    // its own Escape, and that press must close the menu, not pop the level.
-    if (e.defaultPrevented) return
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      // Escape ONLY closes; Backspace is the way back (Katerina 2026-08-31 —
-      // two meanings on one key was a duplicate command).
-      onClose()
-      return
-    }
-    if (formAction) {
-      /*
-       * The form owns its keyboard, with one exception: Backspace with
-       * nothing to delete steps back to the action list — the same gesture
-       * the list levels use. A field that consumed it (text being edited,
-       * a chip being removed) preventDefaults and never reaches here.
-       */
-      if (e.key === 'Backspace') {
-        const t = e.target as HTMLElement
-        const editable = t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement
-        if (!editable || (t as HTMLInputElement | HTMLTextAreaElement).value === '') {
-          e.preventDefault()
-          popLevel()
-        }
-      }
-      return
-    }
-    if (e.key === 'Backspace' && query === '' && (scope || asking !== null)) {
-      e.preventDefault()
-      popLevel()
-      return
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setHighlight((h) => Math.min(h + 1, Math.max(0, rows.length - 1)))
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setHighlight((h) => Math.max(h - 1, 0))
-      return
-    }
-    // Tab or ArrowRight on an app row scopes into it (drill-in)
-    if ((e.key === 'Tab' || e.key === 'ArrowRight') && !scope) {
-      const row = rows[highlight]
-      const app = LAUNCHER_APPS.find((a) => a.id === row?.key)
-      if (app) {
-        e.preventDefault()
-        enterScope(app)
-        return
-      }
-      if (e.key === 'Tab') e.preventDefault()
-      return
-    }
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      return
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      /*
-        In the Ask panel there is no list, but `rows` is still computed and
-        `highlight` still points into it — so Enter used to fire a row nobody
-        could see (shipped in INT-2, fixed here). Asking again is what Enter
-        means on this level, and it is how a question gets refined: edit the
-        box, press Enter, same sources machinery, new answer.
-      */
-      if (asking !== null) {
-        const request = query.trim()
-        if (request) setAsking({ request, intent: asking.intent })
-        return
-      }
-      rows[highlight]?.onSelect()
+    const searching = messageState.kind === 'searching'
+    const messageNote = searching ? null : messageEmptyState(messageState, query)
+    const groups: CommandPaletteGroup[] = [
+      { label: 'Apps', rows: apps },
+      ...(sentence ? [ask] : []),
+      { label: 'This conversation', rows: changes },
+      { label: 'Topics', rows: topicHits },
+      { label: 'People', rows: peopleHits },
+      { label: 'Actions', rows: actionHits },
+      { label: 'Messages', rows: messageRows },
+      ...(!sentence ? [ask] : []),
+    ]
+    const anyRows = groups.some((g) => g.rows.length > 0)
+    return {
+      groups,
+      pending: searching ? 'Searching messages…' : undefined,
+      notes: [
+        // A plain "No messages matched" says nothing new beside rows that did match;
+        // the whole-word hint does, mid-word, where a flat "none" would be wrong.
+        ...(messageNote && !(anyRows && messageNote === 'No messages matched.') ? [messageNote] : []),
+        ...(unroutable > 0 ? [`${unroutable} more in conversations not in your sidebar.`] : []),
+      ],
+      empty: !anyRows && !searching ? `Nothing is called “${typed}”. Try a topic, a person or an app.` : undefined,
     }
   }
 
-  const placeholder = scope ? scope.placeholder : 'Search Peek or choose an action...'
+  const appLevel = (app: LauncherApp): { groups: CommandPaletteGroup[]; pending?: string; empty?: string } => {
+    const read = live[app.id]
+    const actions = liveActions(app)
+    const rows = actions
+      .filter((a) => !q || a.label.toLowerCase().includes(q))
+      .map((action) => ({ id: action.id, label: action.label, icon: icon(IconPencil), onSelect: () => push({ kind: 'form', action, app }) }))
+    const loading = typeof app.parentKind === 'number' && (!read || read.state === 'loading')
+    return {
+      groups: [{ label: `${app.label} actions`, rows }],
+      // Say what is happening rather than showing an empty section: a blank list
+      // reads as "this app offers nothing", which is a different and wrong statement.
+      pending: loading ? `Reading ${app.label}’s manifest…` : undefined,
+      empty: loading
+        ? undefined
+        : read?.state === 'failed'
+          ? `Could not read ${app.label}’s manifest — its actions are unavailable.`
+          : actions.length === 0
+            ? `${app.label} has not published anything to create here yet.`
+            : `${app.label} has no action called “${query.trim()}”.`,
+    }
+  }
 
-  // The chip names the level: "Ship" while listing, "Ship · Create issue"
-  // in the form.
-  const chipLabel = formAction
-    ? // A targeted change names the OBJECT, not an app scope it was not reached through.
-      `${formAction.targetLabel ?? scope?.label} · ${formAction.label}`
-    : scope?.label
+  const intentLevel = (intent: Intent): { groups: CommandPaletteGroup[]; body: React.ReactNode } => {
+    const typed = query.trim()
+    const changed = intent !== 'propose' && typed !== '' && typed !== request?.text
+    const askAgain: CommandPaletteRow[] = changed
+      ? [
+          {
+            id: 'again',
+            label: intent === 'ask' ? `Ask: “${typed}”` : `Write a draft: “${typed}”`,
+            icon: icon(request ? IconRefresh : intent === 'ask' ? IconMessageQuestion : IconWriting),
+            onSelect: () => setRequest({ intent, text: typed }),
+          },
+        ]
+      : []
+    const againLabel = intent === 'ask' ? (request ? 'Ask again' : 'Ask') : request ? 'Write again' : 'Draft'
 
-  return createPortal(
-    <>
-      {/* Backdrop */}
-      {/* eslint-disable-next-line better-tailwindcss/no-restricted-classes -- the
-          launcher becomes a Base UI Dialog at D8 and takes that component's
-          backdrop with it; a token minted for a scrim about to be deleted would
-          be a token nothing ends up using. */}
-      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
-
-      {/* Launcher - anchored high like a launcher, not centered like a dialog */}
-      <div className="fixed inset-x-0 top-[18%] z-50 flex justify-center pointer-events-none">
-        <div
-          className="w-[658px] bg-bg-elevated border border-border-default rounded-lg shadow-lg pointer-events-auto flex flex-col overflow-hidden"
-          onKeyDown={handleKeyDown}
-        >
-          {/* Input row */}
-          <div className="flex items-center gap-3 h-12 px-4 border-b border-border-subtle shrink-0">
-            <IconSearch size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-
-            {/* The three chips are the package's InputChip (UIG-3, Katerina's pick
-                of 15 September): one shape for all three, the Ask chip without its
-                own tint, 16px icons. Each ✕ keeps its name, and a long label is
-                cut where it was. */}
-
-            {/* Scope chip - the state made visible. Click the X (or Backspace on
-                an empty input) to pop one level back out. */}
-            {/* Ask chip — a mode, not an application: its icon is the mode's. */}
-            {asking !== null && (
-              <InputChip
-                label={asking.intent === 'propose' && !asking.request ? 'Make something' : asking.request}
-                leading={
-                  asking.intent === 'draft' ? (
-                    <IconWriting size={16} stroke={1.5} className="text-text-secondary" />
-                  ) : asking.intent === 'propose' ? (
-                    <IconSparkles size={16} stroke={1.5} className="text-text-secondary" />
-                  ) : (
-                    <IconMessageQuestion size={16} stroke={1.5} className="text-text-secondary" />
-                  )
+    if (intent === 'ask') {
+      const body =
+        !request ? (
+          <FieldLine>Type a question, then press Enter.</FieldLine>
+        ) : answer === null ? (
+          <CommandPaletteWorking>Reading the thread…</CommandPaletteWorking>
+        ) : answer === false ? (
+          <FieldLine>No answer came back. Edit the question and press Enter to try again.</FieldLine>
+        ) : (
+          <div data-testid="answer">
+          <CommandPaletteAnswer
+            note={
+              [
+                changed ? 'You changed the question. Press Enter to ask again.' : null,
+                answer.byRecency
+                  ? 'Nothing here matched the question, so the most recent messages were read instead.'
+                  : answer.omitted > 0
+                    ? `${answer.omitted} earlier ${answer.omitted === 1 ? 'message' : 'messages'} did not fit and ${answer.omitted === 1 ? 'was' : 'were'} not read.`
+                    : null,
+                answer.repliesNotRead > 0
+                  ? `${answer.repliesNotRead} ${answer.repliesNotRead === 1 ? 'reply was' : 'replies were'} not read — open a conversation to ask about its replies.`
+                  : null,
+                unreachable ? 'That message is not loaded in the thread — scroll up to load earlier messages.' : null,
+              ]
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
+          >
+            {answer.text}
+          </CommandPaletteAnswer>
+          </div>
+        )
+      const sources: CommandPaletteRow[] =
+        answer && request
+          ? answer.sources.map(({ n, message }) => ({
+              id: `source-${message.id}`,
+              label: asWords(message.body),
+              description: `[${n}] ${message.author} · ${message.timestamp}`,
+              leading: <Avatar name={message.author} size={24} />,
+              onSelect: () => {
+                // Scroll first, close second: a cited message can sit above the loaded window.
+                if (scrollToMessage(message.id)) {
+                  onClose()
+                  return
                 }
-                onRemove={popLevel}
-                removeLabel={asking.intent === 'draft' ? 'Leave Draft' : asking.intent === 'propose' ? 'Leave Make' : 'Leave Ask'}
-                truncate
-                // The label's 220px, as before, plus the chip around it: 1+2 edge,
-                // 16 icon, 6 gap, 6 gap, 16 ✕, 4+1 edge.
-                className="shrink-0 max-w-[272px]"
-              />
-            )}
-
-            {scope && (
-              <InputChip
-                label={chipLabel ?? scope.label}
-                leading={appIcon(scope, 16)}
-                onRemove={popLevel}
-                removeLabel={formAction ? `Leave ${formAction.label}` : `Leave ${scope.label}`}
-                className="shrink-0"
-              />
-            )}
-
-            {/* Context chip - what the launcher is acting on (the composer
-                target an insert would land in). X widens back to the
-                globally-capable set. Kept in form mode on purpose: it is where
-                the created object's reference will land (see submitAction). */}
-            {!contextCleared && ctx.composer && (
-              <InputChip
-                label={ctx.composer?.label ?? 'Compose box'}
-                leading={<IconPencil size={16} stroke={1.5} className="text-text-secondary" />}
-                onRemove={() => setContextCleared(true)}
-                removeLabel="Clear context"
-                truncate
-                className="shrink-0 max-w-[220px]"
-              />
-            )}
-
-            {/* A form is not searched: the input yields to the chips there. */}
-            {formAction ? (
-              <div className="flex-1" />
-            ) : (
-              <input
-                ref={inputRef}
-                autoFocus
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={placeholder}
-                className="flex-1 min-w-0 bg-transparent text-input-value text-text-primary placeholder:text-text-muted outline-none"
-              />
-            )}
-          </div>
-
-          {/* Body: the answer panel while asking, the action's form in form
-              mode, rows otherwise */}
-          {asking !== null ? (
-            /*
-              One panel, three modes, and the sentence at the top of each.
-
-              INT-2 shipped this surface empty on purpose — the gesture, the
-              chip and the place an answer goes could all be judged before a
-              prompt existed. What fills it now are three readings of the same
-              typed sentence, and the launcher never guesses which was meant:
-
-              - **Ask** (INT-3) answers it from retrieved messages, and cites
-                them.
-              - **Draft** (INT-4) treats it as a brief and writes a reply.
-              - **Make** (INT-5) ignores the words and asks what the
-                *conversation* calls for, over what any app declares.
-
-              All three have the same three states — working, a result, and
-              nothing came back — because all three have a model behind them
-              and a person who pressed Enter is owed an answer or a reason.
-            */
-            <div className="px-4 py-6 flex flex-col gap-3" data-surface="ask">
-              {/* Make is about the conversation rather than the words, so it
-                  has nothing to echo back. */}
-              {asking.intent !== 'propose' && (
-                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                <p className="text-[14px] leading-[1.4] text-text-primary">{asking.request}</p>
-              )}
-
-              {asking.intent === 'propose' ? (
-                proposal === null ? (
-                  // Two waits behind this one: a relay read for the manifests
-                  // and then the model. Saying so beats a blank panel.
-                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                  <p className="text-[13px] leading-[1.4] text-text-secondary">Reading the conversation…</p>
-                ) : proposal === false ? (
-                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                  <p className="text-[13px] leading-[1.4] text-text-secondary">
-                    Nothing here matches what any app offers to make. Leave Make to go back to searching.
-                  </p>
-                ) : (
-                  <>
-                    {/*
-                      Which app, always. A label alone means nothing across
-                      apps — two of them may declare something plausibly
-                      matching, and this names the one about to be written to.
-                    */}
-                    {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                    <p className="text-[12px] leading-[1.2] text-text-secondary">
-                      {proposal.entry.appLabel} · {proposal.entry.launcher.label}
-                    </p>
-                    {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                    <p data-testid="proposal" className="text-[14px] leading-[1.5] text-text-primary">
-                      {proposal.preview}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="primary"
-                        size="small"
-                        onClick={() => {
-                          /*
-                            Opens the form; it does not publish. The model
-                            proposed and a person submits — PEE-5's "nothing
-                            submits without a person", reached here through a
-                            declared field rather than a rule invented in Peek.
-                          */
-                          setFormEntry(proposal.entry)
-                          setAsking(null)
-                          enterForm(proposal.entry.launcher)
-                        }}
-                      >
-                        Open the form
-                      </Button>
-                      {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                      <span className="text-[12px] leading-[1.2] text-text-secondary">
-                        Nothing is created until you submit it.
-                      </span>
-                    </div>
-                  </>
-                )
-              ) : asking.intent === 'ask' ? (
-                answer === null ? (
-                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                  <p className="text-[13px] leading-[1.4] text-text-secondary">Reading the thread…</p>
-                ) : answer === false ? (
-                  /*
-                    Silence inverts here. PEE-6's "say nothing rather than
-                    apologise" was written for prefill nobody asked for; a
-                    person who typed a question and pressed Enter is owed an
-                    answer or a reason, never nothing.
-                  */
-                  // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                  <p className="text-[13px] leading-[1.4] text-text-secondary">
-                    No answer came back. Edit the question and press Enter to try again.
-                  </p>
-                ) : (
-                  <>
-                    <p
-                      data-testid="answer"
-                      // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                      className="text-[14px] leading-[1.5] text-text-primary whitespace-pre-wrap"
-                    >
-                      {answer.text}
-                    </p>
-
-                    {/*
-                      The sources are the frame, which is why there is no
-                      apologetic "AI may be wrong" badge — that would fight
-                      PEE-6's stance and say less. A wrong answer with three
-                      citations is recoverable in seconds.
-                    */}
-                    <SectionLabel>{answer.sources.length === 1 ? 'Source' : 'Sources'}</SectionLabel>
-                    <div data-testid="sources" className="flex flex-col">
-                      {answer.sources.map(({ n, message }) => (
-                        // The package's MenuItem with this row's own inset (UIG-3,
-                        // Katerina's pick of 15 September): the same 12px/8px
-                        // padding and words, a hover fill with 8px corners.
-                        <MenuItem
-                          key={message.id}
-                          onClick={() => {
-                            /*
-                              Scroll first, close second. A thread paginates, so
-                              a cited message can sit above the loaded window —
-                              closing first would leave a click that appeared to
-                              work and did nothing, which is worse than a row
-                              that was never offered.
-                            */
-                            if (scrollToMessage(message.id)) {
-                              onClose()
-                              return
-                            }
-                            /*
-                              Not on screen. A topic-wide answer (INT-8) cites
-                              across conversations, and all but the open one are
-                              unmounted — so ask the topic view to open it and
-                              scroll once it has rendered.
-
-                              Closing here is deliberate even though the scroll
-                              may still miss: the conversation *did* open, so the
-                              person is looking at the right thread either way.
-                              That is a smaller failure than staying put.
-                            */
-                            if (message.conversationId && openConversation(message.conversationId)) {
-                              onClose()
-                              void scrollToMessageWhenReady(message.id)
-                              return
-                            }
-                            setUnreachable(message.id)
-                          }}
-                          className="px-3 py-2"
-                        >
-                          <span className="flex flex-col gap-0.5 min-w-0">
-                            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                            <span className="text-[12px] leading-[1.2] text-text-secondary">
-                              [{n}] {message.author} · {message.timestamp}
-                            </span>
-                            {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                            <span className="text-[13px] leading-[1.4] text-text-primary line-clamp-2">
-                              {message.body}
-                            </span>
-                            {unreachable === message.id && (
-                              // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                              <span className="text-[12px] leading-[1.2] text-text-secondary">
-                                Not loaded in the thread — scroll up to load earlier messages.
-                              </span>
-                            )}
-                          </span>
-                        </MenuItem>
-                      ))}
-                    </div>
-
-                    {/*
-                      What retrieval did, when it did something other than
-                      retrieve. A silent cap reads as "that is all there was" —
-                      the failure PEE-4 named for unroutable hits, and the one
-                      `threadContext` still has.
-                    */}
-                    {(answer.byRecency || answer.omitted > 0 || answer.repliesNotRead > 0) && (
-                      // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                      <p className="text-[12px] leading-[1.4] text-text-secondary">
-                        {[
-                          answer.byRecency
-                            ? 'Nothing here matched the question, so the most recent messages were read instead.'
-                            : answer.omitted > 0
-                              ? `${answer.omitted} earlier ${answer.omitted === 1 ? 'message' : 'messages'} did not fit and ${answer.omitted === 1 ? 'was' : 'were'} not read.`
-                              : null,
-                          /*
-                            INT-8. Asking about a whole topic reads its
-                            conversations' opening messages; replies are fetched
-                            per thread and are not in memory. At topic scale that
-                            is usually most of what was said, so it is stated
-                            rather than left to be assumed away.
-                          */
-                          answer.repliesNotRead > 0
-                            ? `${answer.repliesNotRead} ${answer.repliesNotRead === 1 ? 'reply was' : 'replies were'} not read — open a conversation to ask about its replies.`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                      </p>
-                    )}
-                  </>
-                )
-              ) : draft === null ? (
-                // Saying it is working, because a blank panel for several
-                // seconds reads as a broken one. Measured: 8000 characters of
-                // thread costs about 2.3s before a word is generated (INT-1).
-                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                <p className="text-[13px] leading-[1.4] text-text-secondary">Writing a draft…</p>
-              ) : draft === false ? (
-                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                <p className="text-[13px] leading-[1.4] text-text-secondary">
-                  No draft came back. Leave Draft to go back to searching — what you typed is still there.
-                </p>
-              ) : (
-                <>
-                  {/* The draft is shown BEFORE it goes anywhere. An unwanted
-                      draft in the composer costs a selection and a delete;
-                      seeing it first costs nothing. */}
-                  <p
-                    data-testid="draft"
-                    // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                    className="text-[14px] leading-[1.5] text-text-primary whitespace-pre-wrap border-l-2 border-border-default pl-3"
-                  >
-                    {draft}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="primary"
-                      size="small"
-                      onClick={() => {
-                        // At the cursor, never replacing, and never sending.
-                        insertTextIntoActiveComposer(draft)
-                        onClose()
-                      }}
-                    >
-                      Put it in the composer
-                    </Button>
-                    {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                    <span className="text-[12px] leading-[1.2] text-text-secondary">
-                      It will not send — edit it first.
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-          ) : formAction && (scope || formAction.target || formEntry) ? (
-            <div>
-              <ActionFormPanel
-                app={scope ?? undefined}
-                action={formAction}
-                parentOptions={liveParents}
-                /* A change's vocabulary comes off the resolved action, not off
-                   an app scope there is none of here (PEE-3). */
-                vocabularies={
-                  formAction.target
-                    ? changeRows.find((r) => r.action.target === formAction.target && r.action.id === formAction.id)
-                        ?.vocabularies
-                    : // A proposed action was never scoped into, so its own
-                      // declaration is the only place its vocabularies are
-                      // (INT-5).
-                      formEntry?.vocabularies
+                // Not on screen: a topic-wide answer cites across conversations (INT-8).
+                if (message.conversationId && openConversation(message.conversationId)) {
+                  onClose()
+                  void scrollToMessageWhenReady(message.id)
+                  return
                 }
-                prefill={prefill}
-                onSubmit={(values) => void submitAction(formAction, values)}
-              />
-              {/* The runtime's own words — "title is required by Add issue",
-                  "urgent is not one of todo, …". It is the only participant
-                  that knows what the manifest allowed, and a generic failure
-                  here would throw that away. */}
-              {submitError && (
-                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                <p role="alert" className="px-4 pb-3 -mt-1 text-[12px] leading-[1.4] text-error-default">
-                  {submitError}
-                </p>
-              )}
-              {submitting && (
-                // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that
-                <p className="px-4 pb-3 -mt-1 text-[12px] leading-[1.4] text-text-secondary">Creating…</p>
-              )}
-            </div>
-          ) : (
-          <div ref={listRef} className="max-h-[400px] overflow-y-auto p-1">
-            {rows.map((row, i) => (
-              <div key={row.key}>
-                {headers.get(i)}
-                <MenuItem
-                  data-highlighted={highlight === i}
-                  size={row.compact ? 'default' : 'tall'}
-                  // The launcher keeps its shipped geometry exactly: 36px compact
-                  // rows, 48px full rows (Katerina, 2026-09-01 — the rows shrank in
-                  // the first conversion, and she caught it).
-                  className={row.compact ? 'h-9 gap-3 px-3' : 'min-h-12'}
-                  selected={highlight === i}
-                  trailing={row.trailing}
-                  hint={enterHint}
-                  onMouseEnter={() => setHighlight(i)}
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    row.onSelect()
-                  }}
-                >
-                  {row.render()}
-                </MenuItem>
-              </div>
-            ))}
-            {rows.length === 0 && headers.get(0)}
-            {rows.length === 0 && !headers.get(0) && (
-              <div className="flex items-center h-12 px-3">
-                {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-                <span className="text-[14px] text-text-secondary">Nothing for that here.</span>
-              </div>
-            )}
-          </div>
-          )}
+                setUnreachable(message.id)
+              },
+            }))
+          : []
+      const next: CommandPaletteRow[] =
+        answer && request && context.composer
+          ? [
+              {
+                id: 'answer-to-composer',
+                label: 'Put the answer in the composer',
+                description: 'It will not send. Edit it first.',
+                icon: icon(IconCornerDownLeft),
+                onSelect: close(() => insertTextIntoActiveComposer(answer.text.replace(/\s*\[\d+\]/g, ''))),
+              },
+            ]
+          : []
+      return {
+        body,
+        groups: [
+          { label: againLabel, rows: askAgain },
+          { label: sources.length === 1 ? 'Source' : 'Sources', rows: sources },
+          { label: 'Next', rows: next },
+        ],
+      }
+    }
 
-          {/* The footer carries the shortcuts in every theme — the input row
-              stopped duplicating esc (Katerina 2026-08-31). */}
-          {/* eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: UIG-29 rewrites CommandLauncher; its hand-written type waits for that */}
-          <div className="flex items-center gap-4 h-9 px-4 border-t border-border-subtle shrink-0 select-none text-caption text-text-secondary signal:font-mono signal:text-[10px] signal:text-text-muted">
-            {formAction ? (
-              <>
-                <span className="flex items-center gap-1.5">
-                  {keyBadge(shortcutLabel('Mod-Enter'))} {formAction.submitLabel.toLowerCase()}
-                </span>
-                <span className="flex items-center gap-1.5">{keyBadge('Backspace')} back</span>
-              </>
-            ) : (
-              <>
-                <span className="flex items-center gap-1.5">
-                  {keyBadge('↑')}
-                  {keyBadge('↓')} navigate
-                </span>
-                <span className="flex items-center gap-1.5">{keyBadge('Enter')} open</span>
-              </>
-            )}
-            <span className="flex items-center gap-1.5">{keyBadge('Esc')} close</span>
-          </div>
+    if (intent === 'draft') {
+      const body = !request ? (
+        <FieldLine>Say what the reply should say, then press Enter.</FieldLine>
+      ) : draft === null ? (
+        <CommandPaletteWorking>Writing a draft…</CommandPaletteWorking>
+      ) : draft === false ? (
+        <FieldLine>No draft came back. Edit what it should say and press Enter to try again.</FieldLine>
+      ) : (
+        // Shown before it goes anywhere: seeing it first costs nothing.
+        <div data-testid="draft">
+          <CommandPaletteQuote>{draft}</CommandPaletteQuote>
         </div>
-      </div>
-    </>,
-    document.body
+      )
+      const next: CommandPaletteRow[] =
+        typeof draft === 'string' && request
+          ? [
+              {
+                id: 'draft-to-composer',
+                label: 'Put it in the composer',
+                description: 'It will not send. Edit it first.',
+                icon: icon(IconCornerDownLeft),
+                // At the cursor, never replacing, and never sending.
+                onSelect: close(() => insertTextIntoActiveComposer(draft)),
+              },
+              { id: 'draft-again', label: 'Write it again', icon: icon(IconRefresh), onSelect: () => setRequest({ ...request }) },
+            ]
+          : []
+      return { body, groups: [{ label: againLabel, rows: askAgain }, { label: 'Next', rows: next }] }
+    }
+
+    // Make — about the conversation rather than the words.
+    const body =
+      proposal === null ? (
+        <CommandPaletteWorking>Reading the conversation and what apps can create…</CommandPaletteWorking>
+      ) : proposal === false ? (
+        <FieldLine>Nothing here matches what any app offers to make.</FieldLine>
+      ) : (
+        <Card fill="surface" className="flex flex-col gap-1 p-3">
+          {/* Which app, always: two apps may declare something plausibly matching. */}
+          <span className="flex items-center gap-2 text-caption text-text-secondary">
+            {appMark({ id: proposal.entry.appId }, 10)} {proposal.entry.appLabel} › {proposal.entry.launcher.label}
+          </span>
+          <span data-testid="proposal" className="text-body-2 text-text-primary">
+            {proposal.preview}
+          </span>
+        </Card>
+      )
+    const next: CommandPaletteRow[] = [
+      ...(proposal
+        ? [
+            {
+              id: 'make-open',
+              label: 'Open the form',
+              description: `${proposal.entry.appLabel} › ${proposal.entry.launcher.label} · nothing is created until you submit`,
+              icon: icon(IconPencil),
+              // Opens the form; it does not publish. The model proposed and a person submits.
+              onSelect: () => push({ kind: 'form', action: proposal.entry.launcher, entry: proposal.entry }),
+            },
+          ]
+        : []),
+      ...(proposal !== null
+        ? [{ id: 'make-again', label: 'Suggest something else', icon: icon(IconRefresh), onSelect: () => setRequest({ intent: 'propose', text: '' }) }]
+        : []),
+    ]
+    return { body, groups: [{ label: 'Next', rows: next }] }
+  }
+
+  // ── The level on screen ─────────────────────────────────────────────────────
+
+  const modKey = isApplePlatform() ? 'Cmd' : 'Ctrl'
+  const where = whereFrom(context)
+
+  const content = (() => {
+    if (level.kind === 'form' && formDraft) {
+      const { action, app, entry } = level
+      const vocabularies = action.target
+        ? changeRows.find((r) => r.action.target === action.target && r.action.id === action.id)?.vocabularies
+        : entry?.vocabularies
+      const owner = app?.label ?? entry?.appLabel
+      const chip: CommandPaletteChip = { label: `${action.targetLabel ?? owner ?? ''} · ${action.label}`, onBack: back }
+      /*
+        A change that changes nothing waits, and says why (F4). The field holds
+        the value the object has now until somebody picks another.
+      */
+      const field = action.target ? action.fields[0] : undefined
+      const unchanged = field && draftValues(action, formDraft)[field.key] === (field.defaultValue ?? '')
+      const key = formKey(level)
+      return (
+        <CommandPaletteForm
+          chip={chip}
+          icon={action.target ? icon(IconPencil) : appMark({ id: app?.id ?? entry?.appId ?? '' }, 16)}
+          submitLabel={action.submitLabel}
+          onSubmit={() => {
+            setAttempted((a) => ({ ...a, [key]: true }))
+            if (Object.keys(missingFields(action, formDraft)).length > 0) return
+            void submitAction(level, draftValues(action, formDraft))
+          }}
+          submitWaits={unchanged && field ? `Choose a different ${field.label.toLowerCase()} first` : undefined}
+          working={
+            submitting
+              ? action.target
+                ? { button: 'Saving…', line: `Saving to ${action.targetLabel ?? 'it'}…` }
+                : { button: 'Creating…', line: `Creating it in ${owner ?? 'the app'}…` }
+              : undefined
+          }
+          error={submitError ?? undefined}
+        >
+          <ActionFormFields
+            app={app}
+            action={action}
+            vocabularies={vocabularies}
+            parentOptions={parentOptionsFor(level)}
+            draft={formDraft}
+            onDraft={setFormDraft}
+            missing={attempted[key] ? missingFields(action, formDraft) : undefined}
+          />
+        </CommandPaletteForm>
+      )
+    }
+
+    if (level.kind === 'app') {
+      const { groups, pending, empty } = appLevel(level.app)
+      return (
+        <CommandPaletteSearch
+          query={query}
+          onQueryChange={setQuery}
+          placeholder={level.app.placeholder}
+          groups={groups}
+          chip={{ label: level.app.label, leading: appMark(level.app, 16), onBack: back }}
+          pending={pending}
+          empty={empty}
+        />
+      )
+    }
+
+    if (level.kind === 'ai') {
+      const { groups, body } = intentLevel(level.intent)
+      const Glyph = level.intent === 'ask' ? IconMessageQuestion : level.intent === 'draft' ? IconWriting : IconSparkles
+      return (
+        <CommandPaletteSearch
+          query={query}
+          onQueryChange={setQuery}
+          placeholder={
+            level.intent === 'ask'
+              ? `Ask anything about ${context.composer?.label ?? 'this conversation'}`
+              : level.intent === 'draft'
+                ? 'What should the reply say?'
+                : 'Looking at the conversation'
+          }
+          groups={groups}
+          // The mode only; the field keeps the sentence (R9).
+          chip={{ label: level.intent === 'ask' ? 'Ask' : level.intent === 'draft' ? 'Draft' : 'Make', leading: <Glyph size={16} stroke={1.5} />, onBack: back }}
+        >
+          {body}
+        </CommandPaletteSearch>
+      )
+    }
+
+    const { groups, pending, notes, empty } = firstLevel()
+    return (
+      <CommandPaletteSearch
+        query={query}
+        onQueryChange={setQuery}
+        placeholder={hasThread ? 'Search, or ask about this conversation' : 'Search Peek, or choose an app'}
+        groups={groups}
+        pending={pending}
+        notes={notes}
+        empty={empty}
+      />
+    )
+  })()
+
+  return (
+    <CommandPalette open onOpenChange={(open) => !open && onClose()} label="Launcher" where={where} modKey={modKey}>
+      {content}
+    </CommandPalette>
   )
 }

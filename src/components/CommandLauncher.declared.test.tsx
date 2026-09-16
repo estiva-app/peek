@@ -31,6 +31,8 @@ import userEvent from '@testing-library/user-event'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 Element.prototype.scrollIntoView = vi.fn()
@@ -127,12 +129,20 @@ function open(initialAppId: string, initialActionId?: string) {
     <MemoryRouter initialEntries={['/desk']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <CommandLauncher
             context={{}}
             onClose={onClose}
             initialAppId={initialAppId}
             initialActionId={initialActionId}
           />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
