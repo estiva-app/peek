@@ -2,6 +2,7 @@ import { Checkbox, Popover, SectionLabel } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 import { useDebug } from '@/lib/debug'
 import { needsAttention } from '@/nostr/readStateDiff'
+import { useReadStateSize, type ReadStateSize } from '@/nostr/useReadStateSync'
 
 /**
  * The dual-run read-state comparison (Jan, CRO-7 step 1, 2026-09-01).
@@ -47,8 +48,56 @@ export function ReadStatePanel({ anchor, onClose }: { anchor: HTMLElement | null
         />
         <span className="text-body-2 text-text-primary">Compare with the relay on every sync</span>
       </label>
+      <Size />
       <Report />
     </Popover>
+  )
+}
+
+/** The size readout, wired to the tab's merged frontier. */
+function Size() {
+  return <SizeReadout {...useReadStateSize()} />
+}
+
+/**
+ * How close read state is to the ceiling, and whether anything has been dropped
+ * to keep it there (SHR-4).
+ *
+ * **This is the visible half of the cap, and the reason it is not a `console.warn`.**
+ * The blob is replaced whole or not at all, so one context past the 65,535-byte
+ * plaintext limit stops *every* later read marker from advancing, not just that
+ * one. SHR-4 made that impossible by dropping the oldest markers instead — which
+ * trades a silent, total failure for a small, local loss, and a loss nobody can
+ * see is how the first failure would have gone unnoticed too.
+ *
+ * Shown whether or not the dual run is on: it is a fact about this person's read
+ * state rather than about the comparison. Unlike `Report` below it needs no relay
+ * fetch of its own — it reads what the last merge left behind.
+ *
+ * Pure, and takes what {@link useReadStateSize} returns, so the three states a
+ * person can be in are a story rather than a thing to wait for.
+ */
+export function SizeReadout({ contexts, bytes, pctOfCeiling, ceilingBytes, slotBytes, evicted }: ReadStateSize) {
+  // 80 % is the point worth saying something at: the measured production slot
+  // sits at 37 %, and the gap between them is hundreds of `thread:` keys.
+  const pressured = pctOfCeiling >= 80
+  return (
+    <div className="flex flex-col gap-0.5">
+      <p className="text-caption text-text-secondary">
+        {contexts.toLocaleString()} contexts · {bytes.toLocaleString()} of{' '}
+        {ceilingBytes.toLocaleString()} bytes
+        {slotBytes === undefined ? '' : ` · this slot ${slotBytes.toLocaleString()}`}
+      </p>
+      <p
+        className={cn('text-caption', evicted > 0 || pressured ? 'text-warning-default' : 'text-text-muted')}
+      >
+        {evicted > 0
+          ? `${pctOfCeiling}% of the ceiling · ${evicted} oldest marker${evicted === 1 ? '' : 's'} dropped to stay under it`
+          : pressured
+            ? `${pctOfCeiling}% of the ceiling · the oldest markers will start dropping`
+            : `${pctOfCeiling}% of the ceiling`}
+      </p>
+    </div>
   )
 }
 

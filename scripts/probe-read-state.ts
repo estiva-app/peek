@@ -17,7 +17,10 @@
  *      an ordinary event rather than refused, which is why the negative control
  *      below exists;
  *   4. **advancing a thread leaves the container marker where it was**, read
- *      off the relay rather than out of a local object.
+ *      off the relay rather than out of a local object;
+ *   5. **the ceiling is where the code believes it is** (SHR-4) — a blob at the
+ *      byte cap is accepted by `/nip44/encrypt` and one context more is refused.
+ *      That leg is not kind-gated and writes nothing, so it runs first.
  *
  * It writes to production. What it writes is one NIP-RS slot for whichever
  * identity the credentials name, self-encrypted, at a random slot id — private
@@ -26,8 +29,12 @@
 import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import {
+  MAX_BLOB_BYTES,
+  MAX_CLIENT_ID_BYTES,
+  MAX_CONTEXTS_BYTES,
   advanceContexts,
   buildReadStateEvent,
+  capContextsToBytes,
   parseReadStateBlob,
   readStateDTag,
   readStateSlotFilter,
@@ -123,6 +130,75 @@ async function bridge(path: string, payload: unknown, t: { accessToken: string; 
   return { status: res.status, text: await res.text() }
 }
 
+/**
+ * Ask `/nip44/encrypt` about a plaintext without throwing on a refusal (SHR-4).
+ *
+ * The ordinary helper above throws, which is right for every other leg and
+ * wrong for this one: whether the seam refuses is the answer being measured.
+ */
+async function encryptStatus(
+  plaintext: string,
+  accessToken: string,
+): Promise<{ accepted: boolean; status: number; detail: string }> {
+  const res = await fetch(`${ID_ORIGIN}/nip44/encrypt`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ plaintext }),
+  })
+  const text = await res.text()
+  return { accepted: res.ok, status: res.status, detail: text.slice(0, 120) }
+}
+
+/**
+ * The byte cap, against the seam that enforces it (SHR-4).
+ *
+ * Not checkable from a unit suite, and the reason this leg exists: 65,535 is a
+ * number in a document until `/nip44/encrypt` is asked, and SPEC §12.5 counts
+ * four other candidates that look like the answer and are not. So the blob at
+ * the cap is offered, and then **the same blob with one more context** — the
+ * negative control, without which "accepted" is equally consistent with the
+ * endpoint having no limit at all.
+ *
+ * Sized at the longest legal `client_id`, which is what the cap budgets for, so
+ * an acceptance here covers every installation and not just this one. Two
+ * encryptions against a budget of 120 a minute, and nothing is published.
+ */
+async function checkCeiling(t: { accessToken: string }): Promise<void> {
+  console.log('\n— SHR-4: the byte cap, asked of the seam that enforces it —')
+  const tooMany: Record<string, number> = {}
+  for (let i = 0; i < 2_000; i++) tooMany[`thread:${i.toString(16).padStart(64, '0')}`] = 1_700_000_000 + i
+  const capped = capContextsToBytes(tooMany)
+  const clientId = 'x'.repeat(MAX_CLIENT_ID_BYTES)
+  const atCap = serializeReadStateBlob({ v: 1, client_id: clientId, contexts: capped.contexts })
+  const atCapBytes = new TextEncoder().encode(atCap).length
+  check(
+    `the cap leaves a blob inside the ceiling: ${atCapBytes} of ${MAX_BLOB_BYTES} bytes, ${Object.keys(capped.contexts).length} contexts`,
+    atCapBytes <= MAX_BLOB_BYTES && capped.bytes <= MAX_CONTEXTS_BYTES,
+  )
+
+  const accepted = await encryptStatus(atCap, t.accessToken)
+  check(
+    'a blob at the cap is accepted by /nip44/encrypt',
+    accepted.accepted,
+    `${accepted.status} ${accepted.accepted ? '' : accepted.detail}`,
+  )
+
+  // One context past it — the control. Built by hand, because every path through
+  // `readState.ts` would cap it back down, which is the point.
+  const overflowing = serializeReadStateBlob({
+    v: 1,
+    client_id: clientId,
+    contexts: { ...capped.contexts, [`thread:${'f'.repeat(64)}`]: 1_800_000_000 },
+  })
+  const overBytes = new TextEncoder().encode(overflowing).length
+  const refused = await encryptStatus(overflowing, t.accessToken)
+  check(
+    `and one context more is refused: ${overBytes} bytes → ${refused.status}`,
+    !refused.accepted,
+    refused.accepted ? 'ACCEPTED — the ceiling is not where the code believes it is' : refused.detail,
+  )
+}
+
 /** Publish one blob, returning what the relay actually said about it. */
 async function publish(
   contexts: Record<string, number>,
@@ -199,6 +275,11 @@ async function main() {
 
   const t = await token()
   console.log(`signing as ${t.pubkey}\n`)
+
+  // First, and regardless of the kind ceiling: `/nip44/encrypt` is not
+  // kind-gated, so this leg answers even with a credential that cannot sign
+  // kind:30078 — and it publishes nothing.
+  await checkCeiling(t)
 
   /*
    * The ceiling refuses before anything else is attempted, so say which leg is

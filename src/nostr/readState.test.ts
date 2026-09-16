@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_CONTEXTS,
+  MAX_CONTEXTS_BYTES,
   MAX_TIMESTAMP,
   READ_STATE_TAG,
   advanceContexts,
@@ -220,13 +221,23 @@ describe('advanceContexts — the write discipline (SPEC §11.2, §11.4)', () =>
     expect(after[ISSUE]).toBe(2000)
   })
 
-  it('caps at 10,000 contexts by dropping the oldest markers', () => {
+  /**
+   * What the old version of this test asserted — a cap at `MAX_CONTEXTS` — can
+   * never happen: 10,000 contexts do not fit in 65,535 bytes at any legal key
+   * shape, so the count was reached only in a test. The cap that binds is
+   * {@link MAX_CONTEXTS_BYTES}, and the rest of it is in `readStateCap.test.ts`.
+   */
+  it('caps by bytes rather than by count, dropping the oldest markers', () => {
     const current: Record<string, number> = {}
     for (let i = 0; i < MAX_CONTEXTS; i++) {
       current[`msg:${i.toString(16).padStart(64, '0')}`] = i + 1
     }
     const after = advanceContexts(current, { [UUID]: MAX_TIMESTAMP })
-    expect(Object.keys(after)).toHaveLength(MAX_CONTEXTS)
+    // Well under the count cap, and exactly at the byte budget.
+    expect(Object.keys(after).length).toBeLessThan(MAX_CONTEXTS)
+    expect(new TextEncoder().encode(JSON.stringify(after)).length).toBeLessThanOrEqual(
+      MAX_CONTEXTS_BYTES,
+    )
     // The newest marker is kept and the oldest is the one that went.
     expect(after[UUID]).toBe(MAX_TIMESTAMP)
     expect(after[`msg:${(0).toString(16).padStart(64, '0')}`]).toBeUndefined()

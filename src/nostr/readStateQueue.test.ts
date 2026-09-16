@@ -225,3 +225,105 @@ describe('createReadStateQueue', () => {
     expect(queue.snapshot()).toEqual({ [UUID]: 1000 })
   })
 })
+
+/**
+ * The byte cap, at the one place it has to hold: what actually gets published
+ * (SHR-4).
+ *
+ * The blob is replaced whole or not at all, so a map one context past the
+ * 65,535-byte plaintext limit does not lose that context — it stops every later
+ * marker from advancing, for as long as the map stays over. These tests are on
+ * the queue rather than on `capContextsToBytes` because the guarantee the ticket
+ * asks for is about the blob that leaves, and the queue is what assembles it.
+ */
+describe('the blob cannot exceed the ceiling', () => {
+  const thread = (n: number) => `thread:${n.toString(16).padStart(64, '0')}`
+
+  /** More contexts than fit, oldest first. */
+  function overfull(count: number): Record<string, number> {
+    const contexts: Record<string, number> = {}
+    for (let i = 0; i < count; i++) contexts[thread(i)] = 1_700_000_000 + i
+    return contexts
+  }
+
+  it('publishes a map inside the budget even when hydration brings back too much', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const evictions: string[][] = []
+    const timers = fakeTimers()
+    // A slot written before the cap existed: 1,500 thread keys, well over.
+    const queue = createReadStateQueue({
+      hydrate: async () => blob(overfull(1_500)),
+      publish,
+      onEvict: (evicted) => evictions.push([...evicted]),
+      ...timers,
+    })
+
+    queue.record(UUID, 1_800_000_000)
+    await queue.flush()
+
+    const sent = publish.mock.calls[0][0]
+    expect(new TextEncoder().encode(JSON.stringify(sent)).length).toBeLessThanOrEqual(
+      queue.diagnostic().budgetBytes,
+    )
+    // The marker just recorded is the newest, so it is in; the oldest are not.
+    expect(sent[UUID]).toBe(1_800_000_000)
+    expect(sent[thread(0)]).toBeUndefined()
+    // And the loss was reported rather than logged.
+    expect(evictions).toHaveLength(1)
+    expect(queue.diagnostic().evicted.total).toBeGreaterThan(600)
+    expect(queue.diagnostic().bytes).toBe(
+      new TextEncoder().encode(JSON.stringify(sent)).length,
+    )
+  })
+
+  it('reports nothing when nothing was dropped', async () => {
+    const onEvict = vi.fn()
+    const queue = createReadStateQueue({
+      hydrate: async () => blob({ [OTHER_UUID]: 900 }),
+      publish: async () => true,
+      onEvict,
+      ...fakeTimers(),
+    })
+
+    queue.record(UUID, 1000)
+    await queue.flush()
+
+    expect(onEvict).not.toHaveBeenCalled()
+    expect(queue.diagnostic().evicted).toEqual({ total: 0, lastAt: undefined, lastKeys: [] })
+  })
+
+  /**
+   * The thrash SHR-4 warns about, at the shape it would actually take in Peek:
+   * the horizon cache re-offers a marker the cap dropped (`useCacheReanchor`
+   * runs on every focus and visibility change), and it must not look like a
+   * change each time — one timer and one `unchanged` publish per focus, for
+   * ever, on a map that cannot hold it.
+   */
+  it('a re-offered eviction schedules nothing and reports no second loss', async () => {
+    const publish = vi.fn<Publish>(async () => true)
+    const onEvict = vi.fn()
+    const timers = fakeTimers()
+    const queue = createReadStateQueue({
+      hydrate: async () => blob(overfull(1_500)),
+      publish,
+      onEvict,
+      ...timers,
+    })
+
+    queue.record(UUID, 1_800_000_000)
+    await queue.flush()
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(onEvict).toHaveBeenCalledTimes(1)
+
+    // What the re-anchor does: hand back the oldest markers, which the relay no
+    // longer holds because this slot just dropped them.
+    queue.record(thread(0), 1_700_000_000)
+    queue.record(thread(1), 1_700_000_001)
+    expect(timers.count()).toBe(0)
+    expect(onEvict).toHaveBeenCalledTimes(1)
+
+    await queue.flush()
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(queue.diagnostic().lastAttempt?.outcome).toBe('nothing-pending')
+  })
+})
