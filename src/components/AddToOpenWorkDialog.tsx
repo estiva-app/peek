@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { Form } from '@estiva-app/ui'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { Checkbox } from './ui/Checkbox'
@@ -22,6 +23,7 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
   const isTopicResolved = useIsTopicResolved()
   const inOpenWork = useOpenWorkTopicIds()
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const formId = useId()
 
   const candidates = (topics ?? [])
     .filter((t) => !inOpenWork.has(t.id))
@@ -52,7 +54,7 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
       footer={
         <>
           <Button variant="muted" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={selected.size === 0} onClick={handleAdd}>
+          <Button variant="primary" type="submit" form={formId} disabled={selected.size === 0}>
             {selected.size > 1 ? `Add ${selected.size} topics` : 'Add topic'}
           </Button>
         </>
@@ -63,7 +65,9 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
           Every topic is already in your Open work.
         </p>
       ) : (
-        candidates.map((t) => {
+        // The package Form (UIG-7), the body's own column inside it; Add sends it.
+        <Form id={formId} onSubmit={() => { if (selected.size > 0) handleAdd() }} className="flex flex-col gap-0.5">
+        {candidates.map((t) => {
           const checked = selected.has(t.id)
           return (
             <div
@@ -88,7 +92,8 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
               <Checkbox checked={checked} />
             </div>
           )
-        })
+        })}
+        </Form>
       )}
     </DialogShell>
   )

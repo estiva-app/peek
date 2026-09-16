@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { IconLock } from '@tabler/icons-react'
+import { Form } from '@estiva-app/ui'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { Field } from './ui/Field'
@@ -35,25 +36,23 @@ export function CreateTopicDialog({
   const [invitees, setInvitees] = useState<Person[]>(defaultInvitees)
 
   const canConfirm = title.trim().length > 0
+  const formId = useId()
 
   return (
     <DialogShell
       title="Start topic"
       onClose={onCancel}
-      bodyClassName="flex flex-col gap-6"
       footer={
         <>
           <Button variant="muted" onClick={onCancel}>Cancel</Button>
-          <Button
-            variant="primary"
-            disabled={!canConfirm}
-            onClick={() => canConfirm && onConfirm({ title, invitees })}
-          >
+          <Button variant="primary" type="submit" form={formId} disabled={!canConfirm}>
             {confirmLabel}
           </Button>
         </>
       }
     >
+      {/* The package Form (UIG-7): Enter in the title, Ctrl+Enter anywhere, or the footer's button. */}
+      <Form id={formId} onSubmit={() => { if (canConfirm) onConfirm({ title, invitees }) }} className="flex flex-col gap-6">
       <Field label="Title" required>
         <TextInput
           autoFocus
@@ -79,6 +78,7 @@ export function CreateTopicDialog({
           </p>
         </div>
       )}
+      </Form>
     </DialogShell>
   )
 }

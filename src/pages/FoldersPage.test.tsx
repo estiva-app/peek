@@ -59,6 +59,11 @@ const peekTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; 
 */
 const teamUnread = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
 /*
+  Making a Folder — UIG-7. The row is the package Form: Enter in the name sends
+  it. Refused here, so the page stays put and the test reads only the call.
+*/
+const created = vi.hoisted(() => ({ folder: vi.fn(async (_name: string) => ({ ok: false as const, reason: 'Refused.' })) }))
+/*
   The read-state writers, spied — FOL-16. What the page must do is mark the
   open file's own stream after a dwell, and what it must never do is mark the
   Folder's channel, so both are recorded and one is asserted absent.
@@ -90,7 +95,7 @@ vi.mock('@/api', async () => ({
     state: { id: FOLDER, name: 'Folders', hasState: true, source: 'state', files: relay.files },
     reload: async () => {},
   }),
-  useForeignObjects: () => ({}),
+  useForeignObjects: () => ({ createFolder: created.folder }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useTeamUnread: () => ({ unread: teamUnread.unread }),
@@ -241,5 +246,19 @@ describe('FoldersPage draws the union dot on a Folder row', () => {
     teamUnread.unread = {}
     const { container } = mount(`/folders/${FOLDER}`)
     expect(container.querySelectorAll('[data-unread]')).toHaveLength(0)
+  })
+})
+
+describe('FoldersPage makes a Folder from its name', () => {
+  beforeEach(() => created.folder.mockClear())
+
+  it('sends on Enter in the name, and not on Shift+Enter', async () => {
+    const user = userEvent.setup()
+    mount(`/folders/${FOLDER}`)
+    const name = screen.getByRole('textbox', { name: 'New folder name' })
+    await user.type(name, 'Launch notes{Shift>}{Enter}{/Shift}')
+    expect(created.folder).not.toHaveBeenCalled()
+    await user.type(name, '{Enter}')
+    expect(created.folder).toHaveBeenCalledWith('Launch notes')
   })
 })

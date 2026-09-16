@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { Form } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
@@ -44,6 +45,7 @@ export function MoveFileDialog({
   const candidates = folders.filter((folder) => folder.id !== from)
   const [to, setTo] = useState(candidates[0]?.id ?? '')
   const [moving, setMoving] = useState(false)
+  const formId = useId()
 
   const title = file.slots.title?.value ?? 'this file'
 
@@ -64,7 +66,7 @@ export function MoveFileDialog({
           <Button variant="muted" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={!to || moving} onClick={() => void move()}>
+          <Button variant="primary" type="submit" form={formId} disabled={!to || moving}>
             {moving ? 'Moving…' : 'Move'}
           </Button>
         </>
@@ -75,7 +77,8 @@ export function MoveFileDialog({
           There is nowhere else to move it — this is your only folder.
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        // The package Form (UIG-7): Ctrl+Enter or Move sends; the list picks with Enter.
+        <Form id={formId} busy={moving} onSubmit={move} className="flex flex-col gap-2">
           {/*
             The title on its own line. Inline, a long one ran into the sentence
             around it — "Moving Folders: navigation for the whole suite files it
@@ -100,7 +103,7 @@ export function MoveFileDialog({
               ariaLabel="Destination folder"
             />
           </Field>
-        </div>
+        </Form>
       )}
     </DialogShell>
   )

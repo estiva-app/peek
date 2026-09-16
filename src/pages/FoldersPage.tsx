@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ScrollArea } from '@estiva-app/ui'
+import { Form, ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { ContainerHeader } from '@/components/ContainerHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -139,7 +139,8 @@ export function FoldersPage() {
         <div className="flex h-full flex-col">
           <ContainerHeader title="Folders" />
           {!signedOut && (
-            <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+            // The package Form (UIG-7): Enter or Create makes the folder; the row locks while it does.
+            <Form busy={creating} onSubmit={create} className="flex items-center gap-2 px-3 pt-3 pb-1">
               {/* min-w-0 + shrink-0: the column is 290px and the field has no
                   width of its own, so "Create" was pushed past the right edge
                   and clipped (Katerina, 2026-09-11). */}
@@ -147,18 +148,13 @@ export function FoldersPage() {
                 className="min-w-0 flex-1"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                onKeyDown={(event) => {
-                  // The one key handler here, and it is the package's input's
-                  // own submit affordance rather than a hand-rolled shortcut.
-                  if (event.key === 'Enter') void create()
-                }}
                 placeholder="New folder name"
                 aria-label="New folder name"
               />
-              <Button className="shrink-0" onClick={() => void create()} disabled={!name.trim() || creating}>
+              <Button className="shrink-0" type="submit" disabled={!name.trim() || creating}>
                 {creating ? 'Creating…' : 'Create'}
               </Button>
-            </div>
+            </Form>
           )}
           {/*
             Three states, not two. "Not signed in", "still loading" and "there
