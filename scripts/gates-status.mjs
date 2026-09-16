@@ -117,6 +117,29 @@ const h = {
     return FAIL(`no workflow runs npm run ${script}`);
   },
 
+  /**
+   * A workflow job, by its id, with a step that runs `npm run <script>`. Branch
+   * protection requires a whole job by its name, so a required check needs the
+   * job, not the step somewhere (UIG-6). A job is a key two spaces in under
+   * `jobs:`, and ends at the next line that is not indented further; a comment
+   * line does not count.
+   */
+  ciJob(job, script) {
+    const files = listFiles(".github/workflows", (n) => /\.ya?ml$/.test(n));
+    const header = new RegExp(`^  ${job.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*(#.*)?$`);
+    const step = new RegExp(`^(?!\\s*#).*npm run ${script.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w:-])`, "m");
+    for (const f of files) {
+      const lines = read(f).split(/\r?\n/);
+      const from = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+      const start = from === -1 ? -1 : lines.findIndex((l, i) => i > from && header.test(l));
+      if (start === -1) continue;
+      const end = lines.findIndex((l, i) => i > start && /^ {0,2}\S/.test(l));
+      const body = lines.slice(start + 1, end === -1 ? undefined : end).join("\n");
+      return step.test(body) ? PASS(`${f}: the job ${job} runs npm run ${script}`) : FAIL(`${f}: the job ${job} does not run npm run ${script}`);
+    }
+    return FAIL(`no workflow has a job ${job}`);
+  },
+
   hook(settingsRel, needle) {
     if (!exists(settingsRel)) return FAIL(`${settingsRel} does not exist`);
     let s;
@@ -170,24 +193,36 @@ const h = {
       : FAIL(`${file} gets no ${kind}${mentions ? ` naming ${mentions}` : ""}`);
   },
 
-  /** A GitHub setting, not a file, so it is asked of GitHub. */
+  /**
+   * A GitHub setting, not a file, so it is asked of GitHub: the checks a merge
+   * into the default branch must pass, from the rulesets in force on it
+   * (`rules/branches/<branch>`, which anyone who can read the repository may
+   * see) and from classic protection as `branches/<branch>` reports it. Not
+   * `branches/<branch>/protection`: GitHub answers "Not Found" there to anyone
+   * who is not an admin, and it knows nothing of rulesets (UIG-6).
+   */
   protectedBranch(pattern) {
     const url = git("remote", "get-url", "origin");
     const slug = url?.match(/github\.com[:/](.+?)(?:\.git)?$/)?.[1];
     if (!slug) return UNKNOWN("no GitHub remote");
     const branch = (git("symbolic-ref", "--short", "refs/remotes/origin/HEAD") ?? "origin/main").replace(/^origin\//, "");
-    let out;
+    const ask = (path) => JSON.parse(execFileSync("gh", ["api", path], { stdio: ["ignore", "pipe", "pipe"], timeout: 20000 }).toString());
+    let rules, classic;
     try {
-      out = execFileSync("gh", ["api", `repos/${slug}/branches/${branch}/protection`], { stdio: ["ignore", "pipe", "pipe"], timeout: 20000 }).toString();
+      rules = ask(`repos/${slug}/rules/branches/${branch}`);
+      classic = ask(`repos/${slug}/branches/${branch}`).protection?.required_status_checks;
     } catch (e) {
       const said = `${e.stdout ?? ""}${e.stderr ?? ""}`;
-      if (/not protected|HTTP 404/i.test(said)) return FAIL(`${slug} ${branch} is not protected`);
       return UNKNOWN(`could not ask GitHub (${e.code === "ENOENT" ? "gh is not installed" : said.split("\n")[0] || e.message})`);
     }
-    const p = JSON.parse(out);
-    const names = [...(p.required_status_checks?.contexts ?? []), ...(p.required_status_checks?.checks ?? []).map((c) => c.context)];
+    const names = [
+      ...rules.filter((r) => r.type === "required_status_checks").flatMap((r) => r.parameters?.required_status_checks ?? []).map((c) => c.context),
+      ...(classic?.contexts ?? []),
+      ...(classic?.checks ?? []).map((c) => c.context),
+    ];
     const hit = names.find((n) => pattern.test(n));
-    return hit ? PASS(`${slug} ${branch} requires "${hit}"`) : FAIL(`${slug} ${branch} is protected, but no required check matches ${pattern}`);
+    if (hit) return PASS(`${slug} ${branch} requires "${hit}"`);
+    return FAIL(names.length ? `${slug} ${branch} requires ${names.map((n) => `"${n}"`).join(", ")}, none matching ${pattern}` : `${slug} ${branch} requires no check to merge`);
   },
 
   gh(args, label) {
