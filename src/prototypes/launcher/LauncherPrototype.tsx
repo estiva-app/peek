@@ -30,7 +30,7 @@ import {
   IconRefresh,
   IconEraser,
 } from '@tabler/icons-react'
-import { EmptyState, EnterHint, FieldLine, InputChip, Kbd, MenuItem, ScrollArea } from '@estiva-app/ui'
+import { Card, EmptyState, EnterHint, FieldLine, InputChip, Kbd, MenuItem, ScrollArea, SkeletonBar } from '@estiva-app/ui'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
@@ -693,8 +693,8 @@ function AIBody({ mode, asked, question }: { mode: Mode; asked: { mode: Mode; qu
           <IconLoader2 size={14} stroke={1.5} className="animate-spin" />
           {mode === 'make' ? 'Reading the conversation and what apps can create…' : `Reading ${THREAD.length} messages…`}
         </span>
-        <span className="h-3 w-4/5 animate-pulse rounded-sm bg-bg-inset" />
-        <span className="h-3 w-3/5 animate-pulse rounded-sm bg-bg-inset" />
+        <SkeletonBar className="h-3 w-4/5" />
+        <SkeletonBar className="h-3 w-3/5" />
       </div>
     )
   }
@@ -725,12 +725,12 @@ function AIBody({ mode, asked, question }: { mode: Mode; asked: { mode: Mode; qu
   }
   return (
     <div className="px-3 pb-2 pt-3">
-      <div className="flex flex-col gap-1 rounded-lg border border-border-default bg-bg-surface p-3">
+      <Card fill="surface" className="flex flex-col gap-1 p-3">
         <span className="flex items-center gap-2 text-caption text-text-secondary">
           <ShipLogoMark height={10} /> {ANSWERS.make.app} › {ANSWERS.make.action}
         </span>
         <p className="text-body-2 text-text-primary">{ANSWERS.make.preview}</p>
-      </div>
+      </Card>
     </div>
   )
 }
