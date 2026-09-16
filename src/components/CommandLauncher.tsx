@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { IconDownload, IconEraser, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
 import {
   Card,
@@ -121,9 +121,9 @@ interface CommandLauncherProps {
   /** Captured at the invoking keystroke/click - see lib/launcherContext. */
   context: LauncherContext
   onClose: () => void
-  /** Open inside an app (stories only). */
+  /** Open inside an app (tests only). */
   initialAppId?: string
-  /** Open with an action's form already up (stories only; needs initialAppId). */
+  /** Open with an action's form already up (tests only; needs initialAppId). */
   initialActionId?: string
 }
 
@@ -174,7 +174,11 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
   const navigate = useNavigate()
   const { showToast } = useToast()
-  const { setPendingTopicMessage } = useLastSelection()
+  const { setPendingTopicMessage, topicId: selectedTopicId, dmId: selectedPersonId } = useLastSelection()
+  const { pathname } = useLocation()
+  /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
+  const openTopicId = /^\/topics?\//.test(pathname) ? selectedTopicId : null
+  const openPersonId = pathname.startsWith('/people/') ? selectedPersonId : null
   const topics = useTopics()
   const people = usePeople()
   const directory = useWorkspaceDirectory()
@@ -674,11 +678,11 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
     if (!q) {
       const recentTopics = recents
-        .filter((r) => r.kind === 'topic')
+        .filter((r) => r.kind === 'topic' && r.id !== openTopicId)
         .flatMap((r) => (topics ?? []).filter((t) => t.id === r.id))
         .slice(0, 3)
       const recentPeople = recents
-        .filter((r) => r.kind === 'person')
+        .filter((r) => r.kind === 'person' && r.id !== openPersonId)
         .flatMap((r) => (people ?? []).filter((p) => p.id === r.id))
         .slice(0, 2)
       const recentRows = [

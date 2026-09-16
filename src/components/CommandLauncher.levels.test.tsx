@@ -6,6 +6,7 @@
  * here: which rows exist where, in which order, and where they lead — the
  * design's C2, C3, C4, R6, R12, R13 and the bugs F2 and F9.
  */
+import { useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -70,14 +71,22 @@ function Probe() {
   )
 }
 
-function open(context: LauncherContext = {}, props: { initialAppId?: string } = {}) {
+/** The page a topic view marks as open, the way TopicsPage does. */
+function OnTopic({ id }: { id: string }) {
+  const { setLastTopicId } = useLastSelection()
+  useEffect(() => setLastTopicId(id), [id, setLastTopicId])
+  return null
+}
+
+function open(context: LauncherContext = {}, props: { initialAppId?: string } = {}, route = '/desk') {
   render(
-    <MemoryRouter initialEntries={['/desk']}>
+    <MemoryRouter initialEntries={[route]}>
       <DebugProvider>
         <PeekDataProvider>
           <LastSelectionProvider>
             <ToastProvider>
               <Probe />
+              {route.startsWith('/topics/') && <OnTopic id={route.slice('/topics/'.length)} />}
               <CommandLauncher context={context} onClose={vi.fn()} {...props} />
             </ToastProvider>
           </LastSelectionProvider>
@@ -151,6 +160,13 @@ describe('recents (C3)', () => {
     expect(recent).toHaveTextContent('CI/CD pipeline stuck during build stage')
     expect(recent).toHaveTextContent('Amie Miles')
     expect(recent).toHaveTextContent('Clear recent')
+  })
+
+  it('leaves out the topic you are already in', async () => {
+    open({}, {}, '/topics/1')
+    const recent = await screen.findByRole('group', { name: 'Recent' })
+    await waitFor(() => expect(recent).not.toHaveTextContent('CI/CD pipeline stuck during build stage'))
+    expect(recent).toHaveTextContent('Amie Miles')
   })
 
   it('forgets the one you are on with Ctrl+Backspace', async () => {
