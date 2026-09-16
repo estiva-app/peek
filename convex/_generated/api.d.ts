@@ -14,7 +14,6 @@ import type * as dev_bulk from "../dev/bulk.js";
 import type * as dev_seedDates from "../dev/seedDates.js";
 import type * as dev_seedDemo from "../dev/seedDemo.js";
 import type * as huddles from "../huddles.js";
-import type * as identityProbe from "../identityProbe.js";
 import type * as messages from "../messages.js";
 import type * as nostr_config from "../nostr/config.js";
 import type * as nostr_data from "../nostr/data.js";
@@ -43,7 +42,6 @@ declare const fullApi: ApiFromModules<{
   "dev/seedDates": typeof dev_seedDates;
   "dev/seedDemo": typeof dev_seedDemo;
   huddles: typeof huddles;
-  identityProbe: typeof identityProbe;
   messages: typeof messages;
   "nostr/config": typeof nostr_config;
   "nostr/data": typeof nostr_data;
