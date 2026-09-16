@@ -28,6 +28,7 @@ import {
   IconArrowBackUp,
   IconCornerDownLeft,
   IconRefresh,
+  IconEraser,
 } from '@tabler/icons-react'
 import { EmptyState, EnterHint, FieldLine, InputChip, Kbd, MenuItem, ScrollArea } from '@estiva-app/ui'
 import { Avatar } from '@/components/ui/Avatar'
@@ -86,6 +87,8 @@ interface Row {
   trailing?: ReactNode
   /** Tab or → (at the end of the text) goes in. */
   into?: () => void
+  /** Ctrl+Backspace forgets this one — a recent (Katerina, C3). */
+  forget?: () => void
   run: () => void
 }
 
@@ -218,6 +221,12 @@ export function LauncherPrototype({
     })
     return () => cancelAnimationFrame(frameId)
   }, [stack, asked, level.kind])
+
+  // ── Recents are the person's, and can be forgotten (Katerina, C3) ─────────
+  const [recent, setRecent] = useState<{ topics: string[]; people: string[] }>(RECENT)
+  useEffect(() => {
+    if (open) setRecent(RECENT)
+  }, [open])
 
   // ── Forms keep what was typed until the launcher closes (R1 A) ────────────
   const [drafts, setDrafts] = useState<Record<string, IssueDraft>>({})
@@ -369,14 +378,31 @@ export function LauncherPrototype({
     })
 
     if (!q) {
+      const recentRows = [
+        ...recent.topics.map((id) => ({
+          ...topicRow(TOPICS.find((t) => t.id === id)!),
+          forget: () => setRecent((r) => ({ ...r, topics: r.topics.filter((t) => t !== id) })),
+        })),
+        ...recent.people.map((id) => ({
+          ...personRow(PEOPLE.find((p) => p.id === id)!),
+          forget: () => setRecent((r) => ({ ...r, people: r.people.filter((p) => p !== id) })),
+        })),
+      ]
       return [
         { value: 'This conversation', items: hasThread ? [...threadRows, changeRow] : [] },
         {
           value: 'Recent',
-          items: [
-            ...RECENT.topics.map((id) => topicRow(TOPICS.find((t) => t.id === id)!)),
-            ...RECENT.people.map((id) => personRow(PEOPLE.find((p) => p.id === id)!)),
-          ],
+          items: recentRows.length
+            ? [
+                ...recentRows,
+                {
+                  id: 'clear-recent',
+                  label: 'Clear recent',
+                  leading: icon(IconEraser),
+                  run: () => setRecent({ topics: [], people: [] }),
+                },
+              ]
+            : [],
         },
         { value: 'Apps', items: APPS.map(appRow) },
       ].filter((g) => g.items.length > 0)
@@ -425,7 +451,7 @@ export function LauncherPrototype({
       ...(!sentence ? [ask] : []),
     ].filter((g) => g.items.length > 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frame, level, asked, searching, hasThread, canReply])
+  }, [frame, level, asked, searching, hasThread, canReply, recent])
 
   const rowCount = groups.reduce((n, g) => n + g.items.length, 0)
 
@@ -433,6 +459,12 @@ export function LauncherPrototype({
   const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     const el = e.currentTarget
     const atStart = el.selectionStart === 0 && el.selectionEnd === 0
+    if (e.key === 'Backspace' && (e.ctrlKey || e.metaKey) && highlighted?.forget) {
+      // A recent is the person's own list: forget one without opening it.
+      e.preventDefault()
+      highlighted.forget()
+      return
+    }
     const atEnd = el.selectionStart === el.value.length
     if (e.key === 'Backspace' && atStart && stack.length > 1) {
       // R8: at the very start, Backspace steps back and keeps the text.
@@ -489,6 +521,7 @@ export function LauncherPrototype({
       : [
           ['↑↓', 'move'],
           [highlighted?.into ? 'Tab' : 'Enter', highlighted?.into ? 'go in' : 'open'],
+          ...(highlighted?.forget ? ([['Ctrl+Backspace', 'forget']] as [string, string][]) : []),
           ...(stack.length > 1 && !escGoesBack ? ([['Backspace', 'back']] as [string, string][]) : []),
           ['Esc', escGoesBack && stack.length > 1 ? 'back' : 'close'],
         ]
