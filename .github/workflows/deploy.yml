@@ -58,19 +58,38 @@ jobs:
       - name: Token lint
         run: npm run lint:tokens
 
-      # The UI Guardrails' rules, on their own (UIG-3): a raw element the
-      # package already has fails here, with a message naming the component.
-      # `npm run lint:rules` also writes .gates-count.json and fails on an
-      # eslint-disable that switches one of these rules off. Zero errors on the
-      # day this landed, so it stays zero.
-      - name: Gate lint
-        run: npm run lint:rules
-
       - name: Test
         run: npm run test:run
 
+  # The UI Guardrails' rules, on their own (UIG-3): a raw element the package
+  # already has fails here, with a message naming the component. `npm run
+  # lint:rules` also writes .gates-count.json and fails on an eslint-disable
+  # that switches one of these rules off. Zero errors on the day this landed, so
+  # it stays zero.
+  #
+  # A job of its own, not a step in `check`, because GitHub can require only a
+  # whole job, by its name (UIG-6): branch protection on main requires `gate`.
+  # Renaming this job leaves every pull request waiting for a check that never
+  # reports.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Gate lint
+        run: npm run lint:rules
+
   publish:
-    needs: check
+    # `gate` too: the rules stopped a deploy while they were a step in `check`,
+    # and moving them into a job of their own must not change that.
+    needs: [check, gate]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
