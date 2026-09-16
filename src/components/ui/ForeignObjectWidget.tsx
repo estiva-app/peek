@@ -13,7 +13,7 @@ import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
-import { Card, FieldLine, Link, SectionLabel } from '@estiva-app/ui'
+import { Card, FieldLine, Form, Link, SectionLabel } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -198,10 +198,11 @@ export function ActionControl({
   }
 
   return (
-    <form
+    <Form
       className={cn('flex flex-1 gap-1', className)}
-      onSubmit={(e) => {
-        e.preventDefault()
+      // Switches the field off while the object is being written, and keeps focus for it.
+      busy={busy}
+      onSubmit={() => {
         if (!draft.trim()) return
         onAct(action.id, draft.trim())
         setDraft('')
@@ -212,10 +213,9 @@ export function ActionControl({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder={`${action.label}…`}
-        disabled={busy}
         className="min-w-0 flex-1"
       />
-    </form>
+    </Form>
   )
 }
 

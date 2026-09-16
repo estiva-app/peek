@@ -465,3 +465,38 @@ describe('a person-titled object', () => {
     expect(container.textContent).toContain('—')
   })
 })
+
+/**
+ * A text action is a one-line form (UIG-7: the package's Form, where it was a
+ * hand-written <form>). Enter sends the trimmed words and clears the field; an
+ * empty field sends nothing; while the object is being written the field is
+ * switched off and focus waits on the form instead of falling to the page.
+ */
+describe('ActionControl, a text action', () => {
+  const comment = { id: 'comment', label: 'Comment', control: 'text' } as unknown as import('@estiva-app/interop').ResolvedAction
+
+  it('sends the trimmed words on Enter and clears the field; sends nothing when empty', async () => {
+    const { ActionControl } = await import('./ForeignObjectWidget')
+    const onAct = vi.fn()
+    render(<ActionControl action={comment} onAct={onAct} />)
+    const field = screen.getByPlaceholderText('Comment…')
+    await userEvent.type(field, '{Enter}')
+    expect(onAct).not.toHaveBeenCalled()
+    await userEvent.type(field, '  looks good  {Enter}')
+    expect(onAct).toHaveBeenCalledWith('comment', 'looks good')
+    expect(field).toHaveValue('')
+  })
+
+  it('switches the field off while busy, and holds focus on the form', async () => {
+    const { ActionControl } = await import('./ForeignObjectWidget')
+    const { rerender, container } = render(<ActionControl action={comment} onAct={() => {}} />)
+    const field = screen.getByPlaceholderText('Comment…')
+    await userEvent.click(field)
+    rerender(<ActionControl action={comment} onAct={() => {}} busy />)
+    expect(field).toBeDisabled()
+    expect(document.activeElement).toBe(container.querySelector('form'))
+    rerender(<ActionControl action={comment} onAct={() => {}} />)
+    expect(field).not.toBeDisabled()
+    expect(document.activeElement).toBe(field)
+  })
+})

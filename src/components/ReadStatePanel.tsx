@@ -38,16 +38,12 @@ export function ReadStatePanel({ anchor, onClose }: { anchor: HTMLElement | null
       className="w-[300px] gap-2"
     >
       <SectionLabel>Read state</SectionLabel>
-      {/* The box carries the switch, the label names it, and the `<label>` makes
-          the words part of the target — the package's Checkbox draws the box and
-          nothing else, by design (her "checkbox in a row" ruling). */}
-      <label className="flex cursor-pointer items-center gap-2">
-        <Checkbox
-          checked={state.readState.dualRun}
-          onChange={(next) => setReadState('dualRun', next)}
-        />
-        <span className="text-body-2 text-text-primary">Compare with the relay on every sync</span>
-      </label>
+      {/* The words are the Checkbox's own `label` (UIG-7): part of the target, and its name. */}
+      <Checkbox
+        checked={state.readState.dualRun}
+        onChange={(next) => setReadState('dualRun', next)}
+        label="Compare with the relay on every sync"
+      />
       <Size />
       <Report />
     </Popover>
