@@ -44,10 +44,12 @@ import {
   fileContext,
   loadSlotIdentity,
   rotateSlotId,
+  serializeReadStateBlob,
   threadContext,
   toContextSeconds,
   type SlotIdentity,
 } from './readState'
+import { MAX_PLAINTEXT_BYTES } from './appData'
 import { fetchOwnSlot, loadMergedReadState, publishReadState } from './readStateRelay'
 import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
 import { buildDiffReport } from './readStateDiff'
@@ -503,8 +505,48 @@ export function useMergedReadState(): MergedReadStateView {
  * __readState.marker('<context>')  one context's merged value, as a date
  * ```
  *
+ * **`blobBytes` is the other field that matters, and it is not a count.** The
+ * blob is grow-only and the binding limit is `/nip44/encrypt` refusing
+ * plaintext over `MAX_PLAINTEXT_BYTES`, not `MAX_CONTEXTS` — which sits 8–13×
+ * beyond it at Peek's key shapes. Past the real ceiling, publishing fails with
+ * a `console.warn` and read markers quietly stop advancing (SHR-3/SHR-4).
+ *
+ * `relayContexts` cannot stand in for it: the four context kinds differ by more
+ * than 2× in cost — a bare uuid container ~50 bytes, a `thread:`/`msg:` key
+ * ~82–85, and a **file address ~107**, which is why `keySplit` reports them
+ * separately rather than giving one total.
+ *
  * Read-only apart from `flush()`, which does only what the debounce would.
  */
+/**
+ * Counts of the four context kinds `readState.ts` constructs, plus anything
+ * that matches none of them — which is a defect, not a category.
+ */
+export interface ReadStateKeySplit {
+  /** Bare channel uuid (`containerContext`). */
+  container: number
+  /** Bare `<kind>:<pubkey>:<d>` address (`fileContext`) — the most expensive. */
+  file: number
+  thread: number
+  msg: number
+  other: number
+}
+
+const UUID_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const ADDRESS_KEY = /^\d+:[0-9a-f]{64}:/
+
+export function splitReadStateKeys(contexts: Record<string, number>): ReadStateKeySplit {
+  const split: ReadStateKeySplit = { container: 0, file: 0, thread: 0, msg: 0, other: 0 }
+  for (const key of Object.keys(contexts)) {
+    if (key.startsWith('thread:')) split.thread += 1
+    else if (key.startsWith('msg:')) split.msg += 1
+    else if (UUID_KEY.test(key)) split.container += 1
+    else if (ADDRESS_KEY.test(key)) split.file += 1
+    else split.other += 1
+  }
+  return split
+}
+
 export interface PeekReadStateDiagnostic {
   slot: string
   clientId: string
@@ -515,6 +557,15 @@ export interface PeekReadStateDiagnostic {
   /** Contexts in the merged frontier, and in Convex's horizon cache. */
   relayContexts: number
   cacheContexts: number | undefined
+  /**
+   * The merged frontier serialized exactly as it would be published — what
+   * `/nip44/encrypt` would be handed, in bytes — and that as a percentage of
+   * the limit it refuses above. Not an estimate from `relayContexts`.
+   */
+  blobBytes: number
+  blobPctOfCeiling: number
+  /** The frontier's keys by kind, because they differ by more than 2× in cost. */
+  keySplit: ReadStateKeySplit
   /** The dual-run, without needing the debug menu. */
   diff: typeof lastDiffSummary
   queue: ReturnType<ReadStateQueue['diagnostic']> | 'queue not created yet'
@@ -522,14 +573,21 @@ export interface PeekReadStateDiagnostic {
 
 function snapshot(): PeekReadStateDiagnostic {
   const id = currentIdentity()
+  const contexts = previousRelayMerge ?? {}
+  const bytes = new TextEncoder().encode(
+    serializeReadStateBlob({ v: 1, client_id: id.clientId, contexts }),
+  ).length
   return {
     slot: `read-state:${id.slotId}`,
     clientId: id.clientId,
     hasRun: readPathRuns > 0,
     mergeRuns: readPathRuns,
     lastMergeAt: lastMergeAt === undefined ? undefined : new Date(lastMergeAt).toISOString(),
-    relayContexts: Object.keys(previousRelayMerge ?? {}).length,
+    relayContexts: Object.keys(contexts).length,
     cacheContexts: lastCacheSize,
+    blobBytes: bytes,
+    blobPctOfCeiling: Math.round((bytes / MAX_PLAINTEXT_BYTES) * 1000) / 10,
+    keySplit: splitReadStateKeys(contexts),
     diff: lastDiffSummary,
     queue: queue ? queue.diagnostic() : 'queue not created yet',
   }
