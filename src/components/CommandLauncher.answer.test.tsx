@@ -16,6 +16,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 const { canPrefill, promptForText, scrollToMessage, scrollToMessageWhenReady, openConversation } = vi.hoisted(() => ({
@@ -56,22 +58,31 @@ function open(context: LauncherContext = inThread) {
     <MemoryRouter initialEntries={['/topics/1']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <CommandLauncher context={context} onClose={onClose} />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
   )
 }
 
-const input = () => screen.getByRole('textbox')
+const input = () => document.querySelector<HTMLInputElement>('[data-command-palette-field]')!
 
 async function ask(question = 'what did we decide about the migration') {
   open()
   await userEvent.type(input(), question)
-  await userEvent.click(await screen.findByText(/Ask about this conversation/i))
+  await userEvent.click(await screen.findByText(/^Ask: “/))
 }
 
-const sources = () => screen.getByTestId('sources')
+/** The Sources group: one row per cited message (R7 — they are rows now, reachable by the arrows). */
+const sources = () => screen.getByRole('group', { name: /^Sources?$/ })
 
 beforeEach(() => {
   canPrefill.mockResolvedValue(true)
@@ -110,7 +121,10 @@ describe('the answer is drawn from selected messages (INT-3)', () => {
   it('shows the answer with the message it cited', async () => {
     await ask()
 
-    expect(await screen.findByTestId('answer')).toHaveTextContent('Postponed until Thursday [3].')
+    // The [3] is drawn as a small mark on the word before it.
+    const answer = await screen.findByTestId('answer')
+    expect(answer).toHaveTextContent('Postponed until Thursday3.')
+    expect(answer.querySelector('sup')).toHaveTextContent('3')
     expect(sources()).toHaveTextContent('Katerina')
     expect(sources()).toHaveTextContent('we decided to postpone the migration until Thursday')
   })
@@ -145,7 +159,7 @@ describe('the answer is drawn from selected messages (INT-3)', () => {
     await ask()
 
     expect(await screen.findByTestId('answer')).toHaveTextContent('Postponed until Thursday.')
-    expect(sources().querySelectorAll('button')).toHaveLength(thread.length)
+    expect(sources().querySelectorAll('[role="option"]')).toHaveLength(thread.length)
   })
 
   it('says so when no answer comes back', async () => {
@@ -167,7 +181,7 @@ describe('a citation reaches the message (INT-3)', () => {
     await ask()
     await screen.findByTestId('answer')
 
-    await userEvent.click(sources().querySelectorAll('button')[0])
+    await userEvent.click(sources().querySelectorAll('[role="option"]')[0])
     expect(scrollToMessage).toHaveBeenCalledWith('r3')
     expect(onClose).toHaveBeenCalled()
   })
@@ -182,7 +196,7 @@ describe('a citation reaches the message (INT-3)', () => {
     await ask()
     await screen.findByTestId('answer')
 
-    await userEvent.click(sources().querySelectorAll('button')[0])
+    await userEvent.click(sources().querySelectorAll('[role="option"]')[0])
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByText(/Not loaded in the thread/i)).toBeInTheDocument()
   })
@@ -263,7 +277,7 @@ describe('asking about a whole topic (INT-8)', () => {
   async function askTopic(question = 'what did we decide about the migration') {
     open(acrossConversations)
     await userEvent.type(input(), question)
-    await userEvent.click(await screen.findByText(/Ask about this conversation/i))
+    await userEvent.click(await screen.findByText(/^Ask: “/))
   }
 
   it('offers to answer with no thread open and no composer', async () => {
@@ -271,7 +285,7 @@ describe('asking about a whole topic (INT-8)', () => {
     open(acrossConversations)
     await userEvent.type(input(), 'what did we decide')
 
-    expect(await screen.findByText(/Ask about this conversation/i)).toBeInTheDocument()
+    expect(await screen.findByText(/^Ask: “/)).toBeInTheDocument()
     // Draft still needs somewhere to put a reply, and correctly stays away.
     expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
   })
@@ -296,7 +310,7 @@ describe('asking about a whole topic (INT-8)', () => {
     await askTopic()
     await screen.findByTestId('answer')
 
-    await userEvent.click(sources().querySelectorAll('button')[0])
+    await userEvent.click(sources().querySelectorAll('[role="option"]')[0])
     expect(openConversation).toHaveBeenCalledWith('c3')
     expect(onClose).toHaveBeenCalled()
   })
@@ -332,7 +346,7 @@ describe('asking about a whole topic (INT-8)', () => {
       },
     })
     await userEvent.type(input(), 'migration')
-    await userEvent.click(await screen.findByText(/Ask about this conversation/i))
+    await userEvent.click(await screen.findByText(/^Ask: “/))
     await screen.findByTestId('answer')
 
     expect(screen.getByText(/did not fit/i)).toBeInTheDocument()

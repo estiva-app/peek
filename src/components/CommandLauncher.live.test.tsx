@@ -21,6 +21,8 @@ import { addrToNaddr } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 /*
@@ -113,7 +115,15 @@ function open(context: LauncherContext = {}, onClose = vi.fn()) {
     <MemoryRouter initialEntries={['/desk']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <CommandLauncher context={context} onClose={onClose} initialAppId="ship" />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,

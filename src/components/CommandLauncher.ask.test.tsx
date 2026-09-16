@@ -20,6 +20,8 @@ import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
 import type { ModelAvailability } from '@/lib/promptApi'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 const { canPrefill, prefillAvailability, downloadModel } = vi.hoisted(() => ({
@@ -55,15 +57,25 @@ function open(context: LauncherContext = inThread) {
     <MemoryRouter initialEntries={['/topics/1']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <CommandLauncher context={context} onClose={vi.fn()} />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
   )
 }
 
-const input = () => screen.getByRole('textbox')
-const askRow = () => screen.findByText(/Ask about this conversation/i)
+const input = () => document.querySelector<HTMLInputElement>('[data-command-palette-field]')!
+/** The Ask row: 'Ask about this conversation' before anything is typed, 'Ask: “…”' after (UIG-29). */
+const askRow = () => screen.findByText(/^Ask about this conversation$|^Ask: “/)
+const askRowNow = () => screen.queryByText(/^Ask about this conversation$|^Ask: “/)
 
 beforeEach(() => {
   canPrefill.mockResolvedValue(true)
@@ -73,9 +85,10 @@ beforeEach(() => {
 })
 
 describe('the Ask row is offered, not triggered (INT-2)', () => {
-  it('appears once something is typed', async () => {
+  it('is offered from a thread before anything is typed, and stays once something is', async () => {
+    // The approved design (UIG-29): a thread's own rows come first, before typing.
     open()
-    expect(screen.queryByText(/Ask about this conversation/i)).not.toBeInTheDocument()
+    expect(await screen.findByText('Ask about this conversation')).toBeInTheDocument()
     await userEvent.type(input(), 'what did we decide')
     expect(await askRow()).toBeInTheDocument()
   })
@@ -85,7 +98,7 @@ describe('the Ask row is offered, not triggered (INT-2)', () => {
     await userEvent.type(input(), 'what did we decide')
     // Scoped to the row: INT-4 added a second row that quotes the same
     // sentence back, read as a brief rather than a question.
-    expect(await askRow()).toHaveTextContent('Ask about this conversation: "what did we decide"')
+    expect(await askRow()).toHaveTextContent('Ask: “what did we decide”')
   })
 
   it('is absent where no model could answer', async () => {
@@ -104,13 +117,13 @@ describe('the Ask row is offered, not triggered (INT-2)', () => {
     // settled by here. "Apps" is not a sync point: a typed sentence matches no
     // app, so that section is filtered away.
     await userEvent.type(input(), 'what did we decide')
-    expect(screen.queryByText(/Ask about this conversation/i)).not.toBeInTheDocument()
+    expect(askRowNow()).not.toBeInTheDocument()
   })
 
   it('is absent with no conversation open, because there is nothing to ask about', async () => {
     open({ composer: { isFocused: true, hasDraft: false } })
     await userEvent.type(input(), 'what did we decide')
-    expect(screen.queryByText(/Ask about this conversation/i)).not.toBeInTheDocument()
+    expect(askRowNow()).not.toBeInTheDocument()
   })
 })
 
@@ -135,18 +148,18 @@ describe('the query is sovereign (INT-2)', () => {
     expect(await askRow()).toBeInTheDocument()
   })
 
-  it('leaves on Backspace once the box is empty, the rule a scope already follows', async () => {
+  it('leaves on Backspace at the start of the box, keeping the sentence (R8)', async () => {
     /*
-      Backspace edits the text while there is text — the same behaviour the
-      scope chip has. Emptying the box and pressing it again pops the level,
-      rather than Backspace meaning two things at once.
+      Backspace edits the text everywhere but at its very start, where it
+      leaves — so leaving Ask no longer costs deleting the whole question.
     */
     open()
     await userEvent.type(input(), 'what did we decide')
     await userEvent.click(await askRow())
 
-    await userEvent.clear(input())
+    input().setSelectionRange(0, 0)
     await userEvent.keyboard('{Backspace}')
+    expect(input()).toHaveValue('what did we decide')
     // The chip is the marker for "in Ask", not the panel copy — INT-3 replaced
     // the placeholder that used to be asserted here.
     expect(screen.queryByRole('button', { name: /Leave Ask/i })).not.toBeInTheDocument()
@@ -154,14 +167,16 @@ describe('the query is sovereign (INT-2)', () => {
 })
 
 describe('the Ask surface (INT-2)', () => {
-  it('names the question in the chip and in the panel', async () => {
-    // Deliberately both: the chip is the state, and the panel is the question
-    // the answer is about.
+  it('names the mode in the chip, and keeps the sentence in the field (R9)', async () => {
+    // The sentence showed twice, in the chip and in the field. The chip is the
+    // mode now; the field is the question.
     open()
     await userEvent.type(input(), 'what did we decide')
     await userEvent.click(await askRow())
 
-    expect(screen.getAllByText('what did we decide')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Leave Ask' })).toBeInTheDocument()
+    expect(input()).toHaveValue('what did we decide')
+    expect(screen.queryByText('what did we decide')).not.toBeInTheDocument()
   })
 
   it('replaces the result list rather than sitting under it', async () => {
@@ -275,7 +290,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
     prefillAvailability.mockResolvedValue('downloadable')
     open()
     await userEvent.type(input(), 'what did we decide')
-    expect(screen.queryByText(/Ask about this conversation/i)).not.toBeInTheDocument()
+    expect(askRowNow()).not.toBeInTheDocument()
     await userEvent.click(await offer())
 
     expect(await askRow()).toBeInTheDocument()

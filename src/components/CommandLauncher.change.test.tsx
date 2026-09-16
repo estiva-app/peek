@@ -23,6 +23,8 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
+import { LastSelectionProvider } from '@/lib/lastSelection'
+import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
 
 const SHIP_AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -99,12 +101,26 @@ function open(context: LauncherContext = inThread, onClose = vi.fn()) {
     <MemoryRouter initialEntries={['/topics/1']}>
       <DebugProvider>
         <PeekDataProvider>
+
+        <LastSelectionProvider>
+
+        <ToastProvider>
           <CommandLauncher context={context} onClose={onClose} />
+        </ToastProvider>
+
+        </LastSelectionProvider>
+
         </PeekDataProvider>
       </DebugProvider>
     </MemoryRouter>,
   )
   return { onClose }
+}
+
+/** Pick a status other than the one the issue has. */
+async function chooseDone() {
+  await userEvent.click(await screen.findByRole('combobox', { name: 'Status' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'Done' }))
 }
 
 describe('changing an object the conversation already refers to (PEE-3)', () => {
@@ -116,16 +132,25 @@ describe('changing an object the conversation already refers to (PEE-3)', () => 
 
   it('offers the object’s declared actions, named by the object', async () => {
     open()
-    expect(await screen.findByText('In this conversation')).toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: 'This conversation' })).toBeInTheDocument()
     expect(screen.getByText('Set status')).toBeInTheDocument()
     // The row says WHICH object, because a launcher that publishes to a shared
     // record must never leave the target implicit.
     expect(screen.getByText('Billing entry')).toBeInTheDocument()
   })
 
+  it('waits until the status differs, and publishes nothing before (F4)', async () => {
+    // Publishing todo over todo changed nothing and still wrote to the record.
+    open()
+    await userEvent.click(await screen.findByText('Set status'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Set status' }))
+    expect(applyAction).not.toHaveBeenCalled()
+  })
+
   it('publishes a scalar to the target, not a property bag', async () => {
     open()
     await userEvent.click(await screen.findByText('Set status'))
+    await chooseDone()
     await userEvent.click(await screen.findByRole('button', { name: 'Set status' }))
 
     expect(applyAction).toHaveBeenCalledTimes(1)
@@ -150,7 +175,7 @@ describe('changing an object the conversation already refers to (PEE-3)', () => 
     // the person is not looking at is the failure PEE-1 was careful to avoid.
     open({ composer: { isFocused: true, hasDraft: false } })
     await screen.findByText('Apps')
-    expect(screen.queryByText('In this conversation')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'This conversation' })).not.toBeInTheDocument()
   })
 
   it('drops a reference that will not resolve rather than offering a dead row', async () => {
@@ -159,7 +184,7 @@ describe('changing an object the conversation already refers to (PEE-3)', () => 
     resolveObject.mockResolvedValue(null)
     open()
     await screen.findByText('Apps')
-    expect(screen.queryByText('In this conversation')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'This conversation' })).not.toBeInTheDocument()
   })
 
   it('drops a non-addressable object, which has nothing to act on', async () => {
@@ -172,13 +197,14 @@ describe('changing an object the conversation already refers to (PEE-3)', () => 
     resolveObject.mockResolvedValue({ ...ISSUE, naddr: undefined } as unknown as ForeignObject)
     open()
     await screen.findByText('Apps')
-    expect(screen.queryByText('In this conversation')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'This conversation' })).not.toBeInTheDocument()
   })
 
   it('surfaces the relay’s refusal instead of closing on it', async () => {
     applyAction.mockResolvedValueOnce({ ok: false, reason: 'done is not one of todo, in_progress' })
     const { onClose } = open()
     await userEvent.click(await screen.findByText('Set status'))
+    await chooseDone()
     await userEvent.click(await screen.findByRole('button', { name: 'Set status' }))
 
     expect(await screen.findByText(/not one of todo/i)).toBeInTheDocument()
