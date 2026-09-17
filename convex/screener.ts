@@ -246,14 +246,23 @@ export async function screenReply(ctx: MutationCtx, reply: Doc<'replies'>) {
  * conversation's most recent messages. Own rows are labelled by the client.
  */
 export const preview = query({
-  args: { itemId: v.string() },
-  handler: async (ctx: QueryCtx, { itemId }) => {
+  args: { itemId: v.optional(v.string()), topicKey: v.optional(v.string()) },
+  handler: async (ctx: QueryCtx, { itemId, topicKey }) => {
     const me = await viewerId(ctx)
     if (!me) return null
-    const id = ctx.db.normalizeId('screenerItems', itemId)
-    const item = id ? await ctx.db.get(id) : null
-    if (!item || item.userId !== me) return null // never leak someone else's inbox
 
+    /*
+     * A folded topic row has no `screenerItems` id to normalize (SHR-10), so it
+     * asks by topic instead. Without this branch the hover preview opened on an
+     * empty card for every topic row — `normalizeId` returns null for
+     * `sc_topic_…`, which lands on the same `return null` as "not your inbox".
+     *
+     * It takes the same path the table-backed row takes when its `messageId` no
+     * longer resolves: the conversation's most recent messages. There is no
+     * ownership check to make and none is skipped — the row is derived from what
+     * this viewer can already read, and `messages.list` has no membership gate
+     * either (`convex/messages.ts:383`).
+     */
     const users = await ctx.db.query('users').collect()
     const nameOf = new Map(users.map((u) => [u._id, u.name]))
     const row = (
@@ -268,6 +277,30 @@ export const preview = query({
       body,
       kind,
     })
+
+    /** The conversation's most recent messages — the shared fallback. */
+    const recentIn = async (kind: 'topic' | 'dm', targetId: string) => {
+      const msgs = await ctx.db
+        .query('messages')
+        .withIndex('by_parent', (q) => q.eq('parentKind', kind).eq('parentId', targetId))
+        .collect()
+      msgs.sort((a, b) => a.createdAt - b.createdAt)
+      return msgs.slice(-3).map((m) => row(m.authorId, m.createdAt, m.body, 'message'))
+    }
+
+    if (topicKey !== undefined) {
+      const normalized = ctx.db.normalizeId('topics', topicKey)
+      const topic =
+        (normalized ? await ctx.db.get(normalized) : null) ??
+        (await ctx.db.query('topics').collect()).find((t) => t.seedKey === topicKey) ??
+        null
+      return topic ? await recentIn('topic', topic._id as string) : []
+    }
+    if (itemId === undefined) return null
+
+    const id = ctx.db.normalizeId('screenerItems', itemId)
+    const item = id ? await ctx.db.get(id) : null
+    if (!item || item.userId !== me) return null // never leak someone else's inbox
 
     const out: ReturnType<typeof row>[] = []
 
@@ -284,14 +317,7 @@ export const preview = query({
       }
     }
 
-    if (out.length === 0) {
-      const msgs = await ctx.db
-        .query('messages')
-        .withIndex('by_parent', (q) => q.eq('parentKind', item.kind).eq('parentId', item.targetId))
-        .collect()
-      msgs.sort((a, b) => a.createdAt - b.createdAt)
-      for (const m of msgs.slice(-3)) out.push(row(m.authorId, m.createdAt, m.body, 'message'))
-    }
+    if (out.length === 0) out.push(...(await recentIn(item.kind, item.targetId)))
 
     return out
   },

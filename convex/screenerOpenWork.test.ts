@@ -209,3 +209,37 @@ describe('the topic half no longer writes rows (SHR-10)', () => {
     expect(rows.map((r) => r.kind)).toEqual(['dm'])
   })
 })
+
+describe('the hover preview answers a folded row (SHR-10)', () => {
+  it('returns the conversation by topic, where a row id would resolve to nothing', async () => {
+    const t = convexTest(schema, modules)
+    const { bob, topics } = await seed(t)
+    await t.run(async (ctx) => {
+      // Explicit instants: the preview takes the newest three, and deriving a
+      // timestamp from the body made 'third' older than 'second'.
+      for (const [i, body] of ['first', 'second', 'third', 'fourth'].entries()) {
+        await ctx.db.insert('messages', {
+          parentKind: 'topic',
+          parentId: topics[0] as string,
+          authorId: bob,
+          body,
+          createdAt: 1_000 + i,
+        })
+      }
+    })
+
+    const byTopic = await t
+      .withIdentity(asUser(PUBKEY))
+      .query(api.screener.preview, { topicKey: topics[0] as string })
+    expect(byTopic?.map((r) => r.body)).toEqual(['second', 'third', 'fourth'])
+
+    // The control, and the reason this test exists: the folded row's own id is
+    // not a `screenerItems` id, so the old single-argument path answers null —
+    // which the card renders as an empty box, indistinguishable from a
+    // conversation with nothing in it.
+    const byRowId = await t
+      .withIdentity(asUser(PUBKEY))
+      .query(api.screener.preview, { itemId: `sc_topic_${topics[0] as string}` })
+    expect(byRowId).toBeNull()
+  })
+})
