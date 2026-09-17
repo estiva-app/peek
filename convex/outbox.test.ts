@@ -359,6 +359,85 @@ describe('a DM message', () => {
     expect(built.unsigned.tags).toContainEqual(['e', EVENT_ID])
     expect(built.unsigned.tags).toContainEqual(['h', DM_CHANNEL])
   })
+
+  /*
+    DMS-11. The last builder that read `parentKind !== 'topic'`, and the reason
+    it stopped: a topic's resolution has been a kind:9101 on the relay since
+    PEEK-128, so a DM's staying in Convex was an inconsistency rather than a
+    decision. The assertion is as private as what it is about — a DM channel is
+    private, so only the two participants can read either.
+  */
+  it('publishes a resolution of one, in the DM’s channel', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId, authorId } = await seedDm(t)
+    const assertionId = await t.run(async (ctx) => {
+      await ctx.db.patch(messageId, { nostrEventId: EVENT_ID })
+      return ctx.db.insert('resolutionAssertions', {
+        messageId,
+        authorId,
+        action: 'resolved',
+        trusted: true,
+        createdAt: Date.now(),
+      })
+    })
+
+    const built = await t
+      .withIdentity(asUser(PUBKEY))
+      .query(api.nostr.outbox.unsignedResolution, { assertionId })
+
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.unsigned.kind).toBe(KIND.ASSERTION)
+    expect(built.unsigned.tags).toContainEqual(['e', EVENT_ID])
+    expect(built.unsigned.tags).toContainEqual(['h', DM_CHANNEL])
+  })
+
+  it('refuses a resolution of a huddle message, which has no channel', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId, authorId } = await seedDm(t, { parentKind: 'huddle' })
+    const assertionId = await t.run(async (ctx) => {
+      await ctx.db.patch(messageId, { nostrEventId: EVENT_ID })
+      return ctx.db.insert('resolutionAssertions', {
+        messageId,
+        authorId,
+        action: 'resolved',
+        trusted: true,
+        createdAt: Date.now(),
+      })
+    })
+
+    const built = await t
+      .withIdentity(asUser(PUBKEY))
+      .query(api.nostr.outbox.unsignedResolution, { assertionId })
+
+    expect(built).toEqual({ ok: false, reason: 'a huddle has no channel on the relay', expected: true })
+  })
+
+  /*
+    The rule this keeps: an assertion about an event nobody can resolve would be
+    a dangling claim on the channel. It is also the state every DM resolution
+    taken before DMS-11 is in — the row exists, the target has no event id, and
+    the refusal is the right answer rather than a backlog to flush.
+  */
+  it('still refuses while the message being resolved is not on the relay', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId, authorId } = await seedDm(t)
+    const assertionId = await t.run(async (ctx) =>
+      ctx.db.insert('resolutionAssertions', {
+        messageId,
+        authorId,
+        action: 'resolved',
+        trusted: true,
+        createdAt: Date.now(),
+      }),
+    )
+
+    const built = await t
+      .withIdentity(asUser(PUBKEY))
+      .query(api.nostr.outbox.unsignedResolution, { assertionId })
+
+    expect(built).toEqual({ ok: false, reason: 'the message being resolved is not on the relay yet' })
+  })
 })
 
 describe('unsignedReaction', () => {

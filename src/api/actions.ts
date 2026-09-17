@@ -266,8 +266,9 @@ export function usePeekActions(
       if (!token) return
       const built = await convex.query(api.nostr.outbox.unsignedResolution, { assertionId })
       if (!built.ok) {
-        // Ordinary cases live here too — an unpublished target, a topic with no
-        // channel yet — so this is a debug line, not a failure.
+        // Ordinary cases live here too — an unpublished target, a container
+        // with no channel yet, a huddle — so this is a debug line, not a
+        // failure.
         console.warn('[nostr] resolution not published:', built.reason)
         return
       }
