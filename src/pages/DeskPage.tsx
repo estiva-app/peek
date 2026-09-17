@@ -100,16 +100,13 @@ export function DeskPage() {
         : selected.kind === 'topic' && selected.topicId === item.topicId)
     if (wasSelected) setSelected(null)
     setDismissedOpenWorkIds((prev) => new Set([...prev, id]))
-    if (item && item.kind !== 'dm') {
-      // Topic rows go through the overlay-aware action: it marks the topic
-      // removed in the session overlay — so the "+" picker offers it again
-      // immediately and the overlay can't resurrect the row under its
-      // synthetic id while the reactive query catches up — and deletes the
-      // server row by topic key (row ids don't exist for overlay rows).
-      actions.removeTopicFromOpenWork(item.topicId)
-    } else {
-      actions.removeOpenWorkItem(id)
-    }
+    // Both kinds remove by the key the blob holds, never by a row id: since
+    // SHR-9 the list comes from the relay and the rows carry synthetic ids. The
+    // action marks the removal in the session overlay — so the "+" picker offers
+    // a topic again immediately — and deletes the Convex row the Screener's
+    // de-duplication still reads.
+    if (item && item.kind === 'dm') actions.removeDmFromOpenWork(item.dmId)
+    else if (item) actions.removeTopicFromOpenWork(item.topicId)
   }
 
   // Starred mixes DMs and topics. Sort each entry's unreadness based on its kind's toggle.
@@ -134,8 +131,13 @@ export function DeskPage() {
 
   /** "Open" → move the item into Open work. */
   const openScreener = (id: string) => {
+    const item = screenerItems.find((i) => i.id === id)
+    if (!item) return
     setDismissedScreenerIds((prev) => new Set([...prev, id]))
-    actions.addScreenerToOpenWork(id)
+    actions.addScreenerToOpenWork(
+      id,
+      item.kind === 'dm' ? { kind: 'dm', dmId: item.dmId } : { kind: 'topic', topicId: item.topicId },
+    )
   }
 
   /** "Later" hides the item now; it reappears after the chosen reminder time. */

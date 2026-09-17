@@ -11,10 +11,9 @@
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { SCREENER_ITEMS } from '@/data/screenerData'
-import { OPEN_WORK_ITEMS, URGENT_ITEMS } from '@/data/deskData'
+import { URGENT_ITEMS } from '@/data/deskData'
 import { useAvatarSrc } from './avatars'
-import { useOpenWorkOverrides } from './internal/openWork'
-import { useTopicLookup, useIsTopicResolved } from './topics'
+import { useOpenWork } from './internal/openWork'
 import { hasConvex } from './store'
 import type { ScreenerItem, OpenWorkItem, UrgentItem } from './types'
 
@@ -27,58 +26,42 @@ export function useScreenerItems(): ScreenerItem[] {
   )
 }
 
+/**
+ * Open work comes from the relay blob and Urgent from Convex (SHR-9).
+ *
+ * The asymmetry is ADR 0001 working rather than an inconsistency. Open work is
+ * four fields a person authored, so it is layer 2 and `OpenWorkProvider` owns it
+ * — rows, order, the optimistic window and the publish. Urgent is derived
+ * server-side from every message in a container against the readState watermark
+ * (§4.4): that is aggregation over data the viewer does not hold, which is
+ * exactly what layer 3 is for.
+ */
 export function useDeskItems(): { openWork: OpenWorkItem[]; urgent: UrgentItem[] } {
   const avatarSrcFor = useAvatarSrc()
-  const o = useOpenWorkOverrides()
-  const findTopic = useTopicLookup()
-  const isTopicResolved = useIsTopicResolved()
-  const openWork = useQuery(api.desk.openWorkList, hasConvex ? {} : 'skip')
+  const openWork = useOpenWork()
   const urgent = useQuery(api.desk.urgentList, hasConvex ? {} : 'skip')
 
-  const base: OpenWorkItem[] = !hasConvex
-    ? OPEN_WORK_ITEMS
-    : (openWork ?? []).map((w) => (w.kind === 'dm' ? { ...w, avatarSrc: avatarSrcFor(w.name) } : w))
-
-  // Session overlay (Desk "+" picker + the topic menus): removals hide rows,
-  // additions prepend. In mock mode this IS the state; with Convex it covers
-  // the optimistic window — rows the reactive query already returns are
-  // skipped so nothing doubles up when it catches up.
-  const kept = base.filter((w) => w.kind === 'dm' || !o.removedTopicIds.has(w.topicId))
-  const presentTopicIds = new Set(kept.filter((w) => w.kind !== 'dm').map((w) => (w as { topicId: string }).topicId))
-  const added: OpenWorkItem[] = [...o.addedTopicIds]
-    .reverse() // newest addition first, matching the server's addedAt sort
-    .filter((id) => !presentTopicIds.has(id) && !o.removedTopicIds.has(id))
-    .flatMap((id) => {
-      const topic = findTopic(id)
-      if (!topic) return []
-      return [{
-        id: `ow_rt_${id}`,
-        kind: 'topic' as const,
-        topicId: id,
-        title: topic.title,
-        topicStatus: isTopicResolved(id) ? ('resolved' as const) : ('unresolved' as const),
-      }]
-    })
-  const merged = [...added, ...kept]
-
-  if (!hasConvex) return { openWork: merged, urgent: URGENT_ITEMS }
+  if (!hasConvex) return { openWork: openWork.items, urgent: URGENT_ITEMS }
   return {
-    openWork: merged,
+    openWork: openWork.items,
     urgent: (urgent ?? []).map((u) => (u.kind === 'dm' ? { ...u, avatarSrc: avatarSrcFor(u.name) } : u)),
   }
 }
 
 /** Topic ids currently in Open work — drives the Add/Remove advertising in
- *  the topic menus and excludes already-added topics from the Desk picker. */
+ *  the topic menus and excludes already-added topics from the Desk picker.
+ *
+ *  Read off the *list*, not the rendered rows: a topic the workspace index has
+ *  not delivered yet is still in Open work, and answering "no" for it would let
+ *  the picker offer it again and add a second copy. */
 export function useOpenWorkTopicIds(): Set<string> {
-  const { openWork } = useDeskItems()
-  return new Set(openWork.filter((w) => w.kind !== 'dm').map((w) => (w as { topicId: string }).topicId))
+  return useOpenWork().topicIds
 }
 
-/** True while any Desk list query is in flight (drives the sidebar skeleton). */
+/** True while any Desk list is still unsettled (drives the sidebar skeleton). */
 export function useDeskLoading(): boolean {
   const screener = useQuery(api.desk.screenerList, hasConvex ? {} : 'skip')
-  const openWork = useQuery(api.desk.openWorkList, hasConvex ? {} : 'skip')
   const urgent = useQuery(api.desk.urgentList, hasConvex ? {} : 'skip')
-  return hasConvex && (screener === undefined || openWork === undefined || urgent === undefined)
+  const openWorkLoading = useOpenWork().isLoading
+  return hasConvex && (screener === undefined || urgent === undefined || openWorkLoading)
 }

@@ -9,7 +9,7 @@
 import { useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
-import { useOpenWorkOverrides } from '@/api/internal/openWork'
+import { useOpenWork } from '@/api/internal/openWork'
 import { hasConvex, useDmRuntime } from './store'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '@estiva-app/protocol'
@@ -107,7 +107,7 @@ export function usePeekActions(
   options: { onMirrorRefused?: (refusal: MirrorRefusal) => void } = {},
 ) {
   const m = useTopicMutations()
-  const openWork = useOpenWorkOverrides()
+  const openWork = useOpenWork()
   // One-shot reads. `useQuery` is reactive and cannot be called mid-action.
   const convex = useConvex()
   const { setSentDmMessages } = useDmRuntime()
@@ -135,9 +135,9 @@ export function usePeekActions(
   const dismissScreenerRemote = useMutation(api.desk.dismissScreenerItem)
   const snoozeScreenerRemote = useMutation(api.desk.snoozeScreenerItem)
   const addToOpenWorkRemote = useMutation(api.desk.addToOpenWork)
-  const removeOpenWorkRemote = useMutation(api.desk.removeOpenWorkItem)
   const addTopicsToOpenWorkRemote = useMutation(api.desk.addTopicsToOpenWork)
   const removeTopicFromOpenWorkRemote = useMutation(api.desk.removeTopicFromOpenWork)
+  const removeDmFromOpenWorkRemote = useMutation(api.desk.removeDmFromOpenWork)
 
   /**
    * The token every relay write needs, or null with the reason said out loud.
@@ -859,8 +859,17 @@ export function usePeekActions(
     dismissScreenerItem(id: string) {
       if (hasConvex) void dismissScreenerRemote({ id })
     },
-    /** "Open" → move the item into Open work. */
-    addScreenerToOpenWork(id: string) {
+    /**
+     * "Open" → move the item into Open work.
+     *
+     * Takes the target as well as the row id since SHR-9: the Convex mutation
+     * resolves the screener row to its target server-side, but the blob is the
+     * list now and the client has to know what it is appending. The Screener row
+     * already carries it (`desk.screenerList`), so nothing has to be looked up.
+     */
+    addScreenerToOpenWork(id: string, target: { kind: 'topic'; topicId: string } | { kind: 'dm'; dmId: string }) {
+      if (target.kind === 'dm') openWork.addDm(target.dmId)
+      else openWork.addTopics([target.topicId])
       if (hasConvex) void addToOpenWorkRemote({ screenerItemId: id })
     },
     /** "Later" — the item reappears after `untilMs` (an absolute timestamp);
@@ -868,17 +877,23 @@ export function usePeekActions(
     snoozeScreenerItem(id: string, untilMs?: number) {
       if (hasConvex) void snoozeScreenerRemote({ id, until: untilMs })
     },
-    removeOpenWorkItem(id: string) {
-      if (hasConvex) void removeOpenWorkRemote({ id })
+    /** Remove a DM from Open work. By the partner's person key since SHR-9 —
+     *  the rows the blob renders carry synthetic ids, so there is no Convex row
+     *  id on this side to pass. */
+    removeDmFromOpenWork(dmId: string) {
+      openWork.removeDm(dmId)
+      if (hasConvex) void removeDmFromOpenWorkRemote({ dmKey: dmId })
     },
     /** Desk "+" picker + the topic menus: put topics straight into Open work.
-     *  The local overlay renders instantly; the Convex row follows. */
+     *  The session overlay renders instantly and is what gets published; the
+     *  Convex row follows, and is still what `watchableChannels` and the
+     *  Screener's de-duplication read. */
     addTopicsToOpenWork(topicIds: string[]) {
       if (topicIds.length === 0) return
       openWork.addTopics(topicIds)
       if (hasConvex) void addTopicsToOpenWorkRemote({ topicKeys: topicIds })
     },
-    /** The topic-side menus remove by topic id (Desk rows remove by row id). */
+    /** The topic-side menus and the Desk rows both remove a topic by id. */
     removeTopicFromOpenWork(topicId: string) {
       openWork.removeTopic(topicId)
       if (hasConvex) void removeTopicFromOpenWorkRemote({ topicKey: topicId })
