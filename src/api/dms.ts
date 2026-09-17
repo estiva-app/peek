@@ -26,7 +26,7 @@ import { publishDmChannel } from '@/nostr/dms'
  *
  * ## Why it is safe to fire in two tabs at once
  *
- * The relay derives a DM's channel id from its participants, so both tabs are
+ * The relay looks a DM's channel up by its participant set, so both tabs are
  * told the same uuid and `recordDmChannel` keeps the first write. The one case
  * that needs handling is both tabs sending *byte-identical* events in the same
  * second, and `publishDmChannel` owns that.
