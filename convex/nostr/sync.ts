@@ -524,10 +524,13 @@ export const syncPlan = query({
  * far below it because the useful set is "what a person is looking at", and a
  * workspace can grow topics indefinitely while a Desk cannot grow attention.
  *
- * DMs are deliberately absent. `dmConversations` has no `channelUuid` — DMs
- * live entirely in Convex today and have no relay representation at all, so
- * there is nothing to subscribe to until track C gives them one (DMS-3). This
- * was checked rather than assumed, as PEE-11 asks.
+ * DMs are deliberately absent, and the reason has changed. They now have a
+ * `channelUuid` (DMS-3) and their messages are on the relay (DMS-4), so there
+ * *is* something to subscribe to — but both participants read the same Convex
+ * rows, so nothing on a Peek screen depends on the relay copy arriving. Adding
+ * them would spend the bound above on a stream Peek does not render from. The
+ * day another app writes into a DM channel, that changes; it is a ticket, not
+ * an oversight.
  */
 export const WATCHABLE_LIMIT = 32
 

@@ -128,9 +128,10 @@ export const toggleStar = mutation({
  *
  * SHR-10 moved topics to `src/api/internal/screener.tsx`, which computes their
  * rows from `screener.candidates` and the person's own decisions blob. DMs stay
- * here because there is nothing to fold from: `dmConversations` has no channel
- * uuid, so a DM has no relay representation and no client-side message stream
- * (`convex/nostr/sync.ts:527`, DMS-3). The seam is `kind`, which the table
+ * here because there is nothing to fold from: a DM's messages are on the relay
+ * now (DMS-3 gave it a channel, DMS-4 the messages), but Peek does not
+ * subscribe to that channel and so has no client-side message stream to fold
+ * (`convex/nostr/sync.ts`, which says why). The seam is `kind`, which the table
  * already carries, and this query is the `kind: 'dm'` side of it.
  *
  * Two consequences worth stating, because both are easy to read as bugs:

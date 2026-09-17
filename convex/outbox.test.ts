@@ -221,6 +221,146 @@ describe('unsignedReply', () => {
   })
 })
 
+/**
+ * DMS-4 — a DM message is a `kind:9` like any other, on the DM's own channel.
+ *
+ * These are the tests for the guard that used to read `parentKind !== 'topic'`.
+ * The one that matters most is the refusal: a DM whose channel has not been
+ * opened yet must produce **no event at all**, because an `h`-less `kind:9` is
+ * not a private message with a tag missing — it is a message on nothing, which
+ * the relay hands to whoever asks.
+ */
+describe('a DM message', () => {
+  const DM_CHANNEL = '7f3a1e2b-5c4d-4e6f-8a9b-0c1d2e3f4a5b'
+
+  /** Two people, their conversation, and one message from Ada in it. */
+  async function seedDm(
+    t: ReturnType<typeof convexTest>,
+    opts: { channelUuid?: string | null; parentKind?: 'dm' | 'huddle' } = {},
+  ) {
+    return await t.run(async (ctx) => {
+      const authorId = await ctx.db.insert('users', { name: 'Ada', nostrPubkey: PUBKEY })
+      const partnerId = await ctx.db.insert('users', { name: 'Bo', nostrPubkey: OTHER_PUBKEY })
+      const [userLowId, userHighId] =
+        (authorId as string) < (partnerId as string) ? [authorId, partnerId] : [partnerId, authorId]
+      const dmId = await ctx.db.insert('dmConversations', {
+        userLowId,
+        userHighId,
+        createdAt: Date.now(),
+        ...(opts.channelUuid === null ? {} : { channelUuid: opts.channelUuid ?? DM_CHANNEL }),
+      })
+      const messageId = await ctx.db.insert('messages', {
+        parentKind: opts.parentKind ?? 'dm',
+        parentId: dmId as string,
+        authorId,
+        body: 'just between us',
+        createdAt: Date.now(),
+      })
+      return { authorId, partnerId, dmId, messageId }
+    })
+  }
+
+  it('builds a kind:9 against the DM’s channel', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seedDm(t)
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.unsigned.kind).toBe(KIND.STREAM_MESSAGE)
+    expect(built.unsigned.content).toBe('just between us')
+    expect(built.unsigned.tags).toContainEqual(['h', DM_CHANNEL])
+  })
+
+  it('refuses rather than publishing one with no channel to be in', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seedDm(t, { channelUuid: null })
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built).toEqual({ ok: false, reason: 'the DM has no channel on the relay yet' })
+  })
+
+  it('still refuses a huddle, which has no container on the relay at all', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seedDm(t, { parentKind: 'huddle' })
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built).toEqual({ ok: false, reason: 'a huddle has no channel on the relay', expected: true })
+  })
+
+  it('keeps the author gate — the partner may not publish it as Ada', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seedDm(t)
+
+    const built = await t
+      .withIdentity(asUser(OTHER_PUBKEY))
+      .query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built).toEqual({ ok: false, reason: 'only the author may publish their message' })
+  })
+
+  it('keeps first-publish-wins', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seedDm(t)
+    await t.run(async (ctx) => ctx.db.patch(messageId, { nostrEventId: EVENT_ID }))
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built).toEqual({ ok: false, reason: 'already published' })
+  })
+
+  it('keeps the drift window', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seedDm(t)
+    await t.run(async (ctx) => ctx.db.patch(messageId, { createdAt: Date.now() - 60 * 60 * 1000 }))
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedMessage, { messageId })
+
+    expect(built).toEqual({ ok: false, reason: 'outside the relay drift window' })
+  })
+
+  it('threads a reply onto the same channel', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId, authorId } = await seedDm(t)
+    const replyId = await t.run(async (ctx) => {
+      await ctx.db.patch(messageId, { nostrEventId: EVENT_ID })
+      return ctx.db.insert('replies', { messageId, authorId, body: 'and back', createdAt: Date.now() })
+    })
+
+    const built = await t.withIdentity(asUser(PUBKEY)).query(api.nostr.outbox.unsignedReply, { replyId })
+
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.unsigned.tags).toContainEqual(['h', DM_CHANNEL])
+    expect(built.unsigned.tags.filter((tag) => tag[0] === 'e')).toEqual([['e', EVENT_ID, '', 'reply']])
+  })
+
+  /*
+    An edit of a DM message publishes too, and it has to: the body of a `kind:9`
+    is the relay's to own (ADR 0001 §5), so patching Convex alone would leave
+    every other reader of that channel on the old text — the divergence CON-8
+    removed for topics. Before DMS-4 this branch was unreachable, because a DM
+    message never had an event id to edit.
+  */
+  it('publishes an edit of one, in the DM’s channel', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seedDm(t)
+    await t.run(async (ctx) => ctx.db.patch(messageId, { nostrEventId: EVENT_ID }))
+
+    const built = await t
+      .withIdentity(asUser(PUBKEY))
+      .query(api.nostr.outbox.unsignedEdit, { key: messageId, body: 'corrected' })
+
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.unsigned.tags).toContainEqual(['e', EVENT_ID])
+    expect(built.unsigned.tags).toContainEqual(['h', DM_CHANNEL])
+  })
+})
+
 describe('unsignedReaction', () => {
   it('builds a kind:7 pointing at the target event', async () => {
     const t = convexTest(schema, modules)

@@ -17,6 +17,7 @@ import { buildDeletion } from '@estiva-app/protocol'
 import type { UnsignedEvent } from '@estiva-app/protocol'
 import type { Id } from '../../convex/_generated/dataModel'
 import { publishSigned, signViaEstivaId } from '@/nostr/bridge'
+import { publishDmChannel } from '@/nostr/dms'
 import { CURRENT_USER_NAME } from './currentUser'
 import type { UploadedFile } from './uploads'
 import type { ConversationData, FileAttachment, HighlightType, Huddle, ReactionData, ReplyData } from './types'
@@ -69,9 +70,10 @@ const nowTimestamp = (now = Date.now()) =>
  * three branches that could decline, all three `console.warn`, nothing on
  * screen.
  *
- * `published: true` also covers "there was nothing to publish" — a DM, a
+ * `published: true` also covers "there was nothing to publish" — a huddle, a
  * message that never reached the relay. Those are not failures and must not be
- * reported as any: a warning people learn to dismiss is worse than none.
+ * reported as any: a warning people learn to dismiss is worse than none. A DM
+ * left that list with DMS-4: its messages travel, so its edits must too.
  */
 export type EditOutcome = { published: true } | { published: false; reason: string }
 
@@ -84,8 +86,10 @@ export type EditOutcome = { published: true } | { published: false; reason: stri
  * why — the same silence PEEK-170 removed for topics.
  *
  * `kept: false` covers "the relay accepted it" *and* "there was nothing to
- * ask" — a DM, a message that never reached the relay, mock mode. Neither is a
- * failure, and neither may be reported as one.
+ * ask" — a huddle, a message that never reached the relay, mock mode. Neither
+ * is a failure, and neither may be reported as one. A DM message deleted since
+ * DMS-4 is the first case: it has an event id, so a tombstone goes out for it
+ * like any other, the `kind:5` taking its channel from its target.
  */
 export type DeleteOutcome = { kept: boolean }
 
@@ -273,6 +277,39 @@ export function usePeekActions(
   }
 
   /**
+   * Give this DM its channel before a message tries to hang off one — DMS-4.
+   *
+   * The first message to somebody new is the case: `messages.send` creates the
+   * `dmConversations` row, and only then does `useEnsureDmChannel`'s reactive
+   * query flip to `ok` and open the channel. The mirror below starts in the
+   * same tick, so it would ask for an unsigned event while the row still has no
+   * `channelUuid`, be refused — correctly, since an `h`-less `kind:9` is a
+   * private message on nothing — and never be retried. The message would sit in
+   * Convex, visible in Peek and nowhere else, for ever.
+   *
+   * So the order is made explicit here rather than left to two reactive things
+   * racing. Every later message pays one query for it, which answers
+   * `already has a channel` and publishes nothing: opening is keyed by the
+   * participant set at the relay, so asking twice is not a second channel
+   * (DMS-3). The hook stays as it is — it is what opens a channel for a
+   * conversation nobody has spoken in yet.
+   */
+  const ensureDmChannel = async (dmKey: string): Promise<void> => {
+    const relay = relayConfig?.relayUrl
+    if (!relay) return
+    // At call time, never a snapshot — `tokenForPublish` says why.
+    const token = validToken()
+    if (!token) return
+    const result = await publishDmChannel(dmKey, relay, token, {
+      unsignedDmOpen: (args) => convex.query(api.nostr.outbox.unsignedDmOpen, args as never),
+      recordDmChannel: async (args) => {
+        await convex.mutation(api.nostr.outbox.recordDmChannel, args as never)
+      },
+    })
+    if (!result.ok && !result.expected) console.warn('[nostr] DM channel not opened:', result.reason)
+  }
+
+  /**
    * Write the message, then mirror it to the relay.
    *
    * **Returns whether CONVEX took it** — CON-10. That is the seam the draft
@@ -330,10 +367,13 @@ export function usePeekActions(
       void (async () => {
         const token = tokenForPublish('message')
         if (!token) return
+        // Before the event is built, because a DM with no channel yet has no
+        // `h` to be built against (DMS-4).
+        if (parentKind === 'dm') await ensureDmChannel(parentKey)
         const built = await convex.query(api.nostr.outbox.unsignedMessage, { messageId })
         if (!built.ok) {
-          // Includes the ordinary cases — already published, a DM, outside the
-          // relay's window — so this is a debug line, not a failure.
+          // Includes the ordinary cases — already published, a huddle, outside
+          // the relay's window — so this is a debug line, not a failure.
           console.warn('[nostr] message not published:', built.reason)
           return
         }
