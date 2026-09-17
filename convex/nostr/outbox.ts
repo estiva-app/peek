@@ -490,9 +490,9 @@ export const recordChannel = mutation({
  * ## Why this is shaped unlike `channelPlan`
  *
  * A topic's channel uuid is minted here and the browser is told what to create.
- * A DM's cannot be: the relay derives it from `compute_participant_hash` over
- * the participant set, so there is exactly one id for a given pair of people
- * and no client gets to choose it. The only way to learn it is to publish the
+ * A DM's cannot be: the relay mints it and keys it by a hash of the participant
+ * set, so there is exactly one channel for a given pair of people and no client
+ * gets to choose — or compute — its id. The only way to learn it is to publish the
  * `41010` and read what comes back, which is why this query hands over an event
  * and `recordDmChannel` takes the answer.
  *
