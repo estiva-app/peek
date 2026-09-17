@@ -3,6 +3,7 @@ import type { SignedEvent } from '@estiva-app/protocol'
 import {
   CHANNEL_STREAM_LIMIT,
   channelStreamFilters,
+  isUrgentContent,
   readChannelStreams,
   streamMessagesByFolder,
 } from './channelStreams'
@@ -74,6 +75,32 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
   it('drops a duplicate the relay answered twice', () => {
     const twice = event('1', [['h', FOLDER_A]])
     expect(streamMessagesByFolder([twice, twice], [FOLDER_A])[FOLDER_A]).toHaveLength(1)
+  })
+
+  it('reads the urgent marker off the content, the twin of what Convex stamps (SHR-5)', () => {
+    const events = [
+      event('1', [['h', FOLDER_A]], { content: 'need a hand here' }),
+      event('2', [['h', FOLDER_A]], { content: '!@Ada the build is down' }),
+      // `!` is only the urgent form immediately before an `@` — the grammar
+      // `textParsing.ts` documents, and the reason this is not `startsWith`.
+      event('3', [['h', FOLDER_A]], { content: 'wow! @Ada look at this' }),
+    ]
+    expect(streamMessagesByFolder(events, [FOLDER_A])[FOLDER_A].map((m) => m.urgent)).toEqual([
+      false,
+      true,
+      false,
+    ])
+  })
+})
+
+describe('isUrgentContent', () => {
+  it('agrees with `convex/screener.ts`’s isUrgentBody on the cases that decide a sidebar row', () => {
+    expect(isUrgentContent('!@Ada')).toBe(true)
+    expect(isUrgentContent('mid-sentence !@Ada still counts')).toBe(true)
+    expect(isUrgentContent('@Ada')).toBe(false)
+    expect(isUrgentContent('wow! @Ada')).toBe(false)
+    expect(isUrgentContent('')).toBe(false)
+    expect(isUrgentContent(undefined)).toBe(false)
   })
 })
 

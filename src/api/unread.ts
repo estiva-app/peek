@@ -15,7 +15,8 @@ import { topicHasUnread as mockTopicHasUnread } from '@/data/topicData'
 import { dmHasUnread as mockDmHasUnread } from '@/data/dmData'
 import { mockConvIdFor } from './directory'
 import { hasConvex } from './store'
-import { useTopicLookup } from './topics'
+import { useTopicLookup, useTopics } from './topics'
+import { useTopicUnread } from './useTopicUnread'
 import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/useReadStateSync'
 
 /**
@@ -24,6 +25,20 @@ import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/u
  *   `*IsUrgent`  → the warning indicator; an unread URGENT message shows this
  *                  instead of the dot (issue #11). Mock mode has no urgent
  *                  derivation, so it's always false there.
+ *
+ * ## Two answers, one union (SHR-5)
+ *
+ * A topic's indicator is the union of its own channel and any huddle under
+ * it, and the two halves now come from different places: the channel is
+ * folded from the relay (`useTopicUnread`), and the huddle rollup stays in
+ * `unread.summary` because a huddle is not a channel. DMs stay there too.
+ * A topic lights if **either** says so, which is the same `unread || f.unread`
+ * the Convex loop used to do internally.
+ *
+ * The relay half undercounts by whatever has never been published: SHR-8
+ * counted 202 non-DM messages on production with no relay event. A fold's
+ * worst case is a dot that fails to light, not content that is lost, and the
+ * huddle and DM halves are unaffected.
  */
 export function useUnread(): {
   topicHasUnread: (topicId: string) => boolean
@@ -32,13 +47,15 @@ export function useUnread(): {
   dmIsUrgent: (dmId: string) => boolean
 } {
   const remote = useQuery(api.unread.summary, hasConvex ? {} : 'skip')
+  const topics = useTopics()
+  const fold = useTopicUnread(hasConvex ? topics : undefined, remote?.topicMarks)
 
   const topicHasUnread = useCallback(
     (topicId: string) => {
       if (!hasConvex) return mockTopicHasUnread(topicId)
-      return remote?.topics.includes(topicId) ?? false
+      return (fold.unread[topicId] ?? false) || (remote?.huddleTopics.includes(topicId) ?? false)
     },
-    [remote],
+    [remote, fold],
   )
 
   const dmHasUnread = useCallback(
@@ -53,8 +70,11 @@ export function useUnread(): {
   )
 
   const topicIsUrgent = useCallback(
-    (topicId: string) => (hasConvex ? (remote?.urgentTopics.includes(topicId) ?? false) : false),
-    [remote],
+    (topicId: string) =>
+      hasConvex
+        ? (fold.urgent[topicId] ?? false) || (remote?.urgentHuddleTopics.includes(topicId) ?? false)
+        : false,
+    [remote, fold],
   )
   const dmIsUrgent = useCallback(
     (dmId: string) => (hasConvex ? (remote?.urgentDms.includes(dmId) ?? false) : false),

@@ -72,7 +72,7 @@ beforeEach(() => {
   frontier.markers = {}
   relay.channelStreams.mockResolvedValue({
     // A: a sibling file nobody read, said an hour ago. B: nothing.
-    [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18] }],
+    [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false }],
     [FOLDER_B]: [],
   })
 })
@@ -109,7 +109,7 @@ describe('useTeamUnread', () => {
       [FOLDER_A]: [],
       [FOLDER_B]: [],
       // The topic's own channel: a plain message, no `about`, said an hour ago.
-      [TOPIC]: [{ id: 't', at: NOW - 3600, by: THEM, root: 't', about: [] }],
+      [TOPIC]: [{ id: 't', at: NOW - 3600, by: THEM, root: 't', about: [], urgent: false }],
     })
     const { result } = renderHook(() =>
       useTeamUnread([...folders, { id: TOPIC, name: 'A topic', hasState: false, listedIn: [FOLDER_B] }]),

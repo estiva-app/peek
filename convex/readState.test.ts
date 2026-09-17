@@ -296,6 +296,12 @@ describe('the sidebar dot, which is what a person actually sees', () => {
    * The done-when, checked through `unread.summary` — the query the sidebar
    * reads — rather than through the cache table it happens to be built on.
    *
+   * Since SHR-5 a topic's dot is folded from its channel in the client, so the
+   * half of that answer this query still owns is `topicMarks`: the cached
+   * watermark the fold raises the relay's marker to. These assert it, and
+   * `src/api/topicUnread.test.ts` asserts that the fold then draws the dot the
+   * old assertions here were making — the two together are the done-when.
+   *
    * Messages here are authored by somebody else: your own writing is never new
    * to you, so a self-authored fixture would report "read" for the wrong reason
    * and pass whatever the cache did.
@@ -336,7 +342,7 @@ describe('the sidebar dot, which is what a person actually sees', () => {
 
   it('keeps a long-quiet topic read, and a never-opened one unread, after the horizon forgets both', async () => {
     const t = convexTest(schema, modules)
-    const { quietTopicId, freshTopicId } = await seedWithOtherAuthor(t)
+    await seedWithOtherAuthor(t)
     const viewer = t.withIdentity(asUser(PUBKEY))
 
     // Read 39 days ago — inside no plausible NIP-RS horizon, cached here.
@@ -349,20 +355,44 @@ describe('the sidebar dot, which is what a person actually sees', () => {
 
     const summary = await viewer.query(api.unread.summary, {})
 
-    // The half the horizon alone gets wrong: still read, no sidebar dot.
-    expect(summary.topics).not.toContain(quietTopicId as string)
-    // The half it must not break: genuinely never opened, so still unread.
-    expect(summary.topics).toContain(freshTopicId as string)
+    // The half the horizon alone gets wrong: the cache still knows when this
+    // channel was read, so the fold has a marker to raise the relay's to and
+    // draws no dot. In seconds, and roughly 39 days back.
+    const mark = summary.topicMarks[QUIET_CHANNEL]
+    expect(mark).toBeDefined()
+    expect(Math.round((Date.now() / 1000 - mark) / (24 * 60 * 60))).toBe(39)
+    // The half it must not break: genuinely never opened, so no cached mark
+    // either, and the fold judges it by the message's age alone.
+    expect(summary.topicMarks[CHANNEL]).toBeUndefined()
   })
 
-  it('without the cache, the same topic would light up — the control for the test above', async () => {
+  it('without the cache, the same topic has no mark at all — the control for the test above', async () => {
     const t = convexTest(schema, modules)
-    const { quietTopicId } = await seedWithOtherAuthor(t)
+    await seedWithOtherAuthor(t)
     const viewer = t.withIdentity(asUser(PUBKEY))
 
-    // Same fixture, nothing cached. This is what the horizon alone produces,
-    // and it is the regression the cache exists to prevent.
+    // Same fixture, nothing cached. This is what the horizon alone leaves the
+    // fold with, and it is the regression the cache exists to prevent: with no
+    // mark and no relay marker, a message 40 days old is inside the 90-day
+    // horizon and lights the topic.
     const summary = await viewer.query(api.unread.summary, {})
-    expect(summary.topics).toContain(quietTopicId as string)
+    expect(summary.topicMarks).toEqual({})
+  })
+
+  it('a topic read in this deployment and never published still marks, so the dot clears', async () => {
+    const t = convexTest(schema, modules)
+    const { freshTopicId } = await seedWithOtherAuthor(t)
+    const viewer = t.withIdentity(asUser(PUBKEY))
+
+    // The other direction the cache covers, and the one that is not about the
+    // horizon at all: the read happened here and the relay publish never
+    // landed, so the frontier has nothing and only this mark clears the dot.
+    await viewer.mutation(api.readState.markContainerRead, {
+      parentKind: 'topic',
+      parentKey: freshTopicId as string,
+    })
+
+    const summary = await viewer.query(api.unread.summary, {})
+    expect(summary.topicMarks[CHANNEL]).toBeDefined()
   })
 })
