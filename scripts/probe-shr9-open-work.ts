@@ -28,7 +28,7 @@
  * coordinate — private to that identity, replaceable, attached to no channel.
  * It ends by restoring whatever was there when it started.
  */
-import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
+import { buildUnsignedAuthEvent, authorizationHeaderFor, parsePublishResponse } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import {
   OPEN_WORK_D_TAG,
@@ -133,11 +133,17 @@ async function publish(blob: OpenWorkBlob, t: Token): Promise<{ ok: boolean; det
     t.accessToken,
   )
   const signed = await sign(buildOpenWorkEvent(t.pubkey, blob.updatedAt, ciphertext), t.accessToken)
-  const { status, text } = await bridge('/publish', { event: signed }, t)
-  // The relay reports a refusal in the body as well as the status; SHR-4 found
-  // an `accepted:false` behind a 200.
-  const accepted = status === 200 && !/"accepted"\s*:\s*false/.test(text)
-  return { ok: accepted, detail: `${status} ${text.slice(0, 160)}` }
+  // `/events`, with the event as the **bare body** — not `/publish`, and not
+  // wrapped in `{event}`. Both of those were wrong in the first run of this
+  // probe and both answered 404, which reads exactly like the relay refusing
+  // the coordinate. `src/nostr/bridge.ts` is the contract; the only reason this
+  // file re-types the POST at all is the browser token `publishSigned` wants.
+  const { status, text } = await bridge('/events', signed, t)
+  // HTTP 200 does not mean accepted — the relay reports a refusal in the body.
+  // `parsePublishResponse` is the protocol package's own reader of that, and a
+  // hand-rolled check of it is the other half of the same mistake.
+  const result = parsePublishResponse(status, text)
+  return { ok: result.ok, detail: result.ok ? `event ${result.eventId}` : `${status} ${result.reason ?? text.slice(0, 160)}` }
 }
 
 const ENTRIES: OpenWorkRef[] = [
