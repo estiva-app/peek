@@ -44,7 +44,7 @@ import {
   type FolderActivity,
   type LiveClient,
 } from '@estiva-app/platform'
-import type { RelayState } from '@estiva-app/protocol'
+import { KIND, type RelayState } from '@estiva-app/protocol'
 import {
   createLiveProjection,
   type LiveProjection,
@@ -80,6 +80,33 @@ export interface LiveTopics {
    * workspace reader with no projection — Ship — uses the other path.
    */
   onForeignActivity(folder: string, listener: () => void): () => void
+  /**
+   * Watch many channels for *anything said in them*, in one REQ per 128
+   * (SHR-5). `stop()` closes the REQs and forgets the listener.
+   *
+   * The half `onForeignActivity` cannot cover, and the reason both exist. That
+   * one is fed by the projection and reports only what it did **not** take,
+   * which is right for another app's records and useless for a topic's own
+   * `kind:9` — precisely what the projection does take. And {@link watch} is
+   * per channel and refcounted, so a sidebar's worth of topics would be a REQ
+   * each: `REQ` is metered on `LimitType::WsEvents` and 50 unpaced ones are
+   * refused (LIV-1).
+   *
+   * So this is the client's own `watchFolders`: a wide filter, one frame, told
+   * which channel changed rather than what changed. Nothing is projected for
+   * the channels watched this way — the listener is a "re-read now" signal
+   * carrying no event, which is all an unread dot needs.
+   *
+   * **It depends on the deployed relay, not on this code.** The plural
+   * `extract_channel_ids_from_filters` is what makes a wide filter fan out;
+   * against a build with the singular version the same REQ is accepted and
+   * silently delivers nothing — EOSE, `live`, no error. Every caller must
+   * therefore keep whatever fallback it had.
+   */
+  watchChannels(
+    channelUuids: readonly string[],
+    listener: (channelUuid: string) => void,
+  ): { stop(): void }
 }
 
 /**
@@ -146,6 +173,12 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
       state: () => client.state(),
       onState: (listener) => client.onState(listener),
       onForeignActivity: (folder, listener) => activity.watch(folder, listener),
+      // `kinds` rather than kindless on purpose: a kindless wide filter is
+      // refused outright on some builds with `restricted: p-gated events
+      // require #p matching your pubkey`. Both message kinds, because a
+      // comment written before Ship flipped stays `kind:9` for ever.
+      watchChannels: (channelUuids, listener) =>
+        client.watchFolders([...channelUuids], listener, { kinds: [KIND.STREAM_MESSAGE, KIND.COMMENT] }),
     },
   }
 }

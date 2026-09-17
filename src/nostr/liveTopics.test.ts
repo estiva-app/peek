@@ -119,6 +119,46 @@ describe('watching topics', () => {
   })
 })
 
+describe('watchChannels — the sidebar’s wide filter (SHR-5)', () => {
+  it('takes a whole sidebar of channels on the one connection, and stops idempotently', () => {
+    const live = getLiveTopics('https://relay.test', api)
+    const many = Array.from(
+      { length: 26 },
+      (_, i) => `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`,
+    )
+    const watch = live.watchChannels(many, () => {})
+    expect(sockets).toHaveLength(1)
+    watch.stop()
+    expect(() => watch.stop()).not.toThrow()
+  })
+
+  it('does not disturb the per-channel path a watched topic uses', () => {
+    // The two paths coexist: the open topic still projects through `watch`
+    // while the sidebar watches every channel through the wide filter.
+    const live = getLiveTopics('https://relay.test', api)
+    const watch = live.watchChannels([CHANNEL, CHANNEL_B], () => {})
+    const handle = live.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
+    expect(sockets).toHaveLength(1)
+    watch.stop()
+    expect(() => handle.stop()).not.toThrow()
+  })
+
+  /*
+    What is deliberately not asserted here: the REQ's filters. No frame is sent
+    until the socket has connected and AUTHed, which this stub does not drive,
+    and the frame's shape is `@estiva-app/platform`'s contract rather than
+    Peek's — `watchFolders` chunks at `MAX_FOLDERS_PER_SUBSCRIPTION` and is
+    tested there. That the hook hands over every channel it lists is pinned in
+    `api/useTopicUnread.test.tsx`.
+
+    And the half neither repository can assert: whether the relay fans a wide
+    filter out at all. A build with the singular
+    `extract_channel_ids_from_filters` accepts the identical frame and delivers
+    nothing — EOSE, `live`, silence. It needs a signed-in person against
+    production, which is why the interval fallback stays armed.
+  */
+})
+
 describe('the state seam', () => {
   it('reports a state and notifies listeners', () => {
     const live = getLiveTopics('https://relay.test', api)

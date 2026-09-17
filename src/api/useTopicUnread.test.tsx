@@ -19,6 +19,30 @@ const frontier = vi.hoisted(() => ({
   listeners: new Set<() => void>(),
 }))
 vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ channelStreams: relay.channelStreams }) }))
+/** The socket, present or absent — both are real states for this hook. */
+const live = vi.hoisted(() => ({
+  present: true,
+  watched: [] as string[][],
+  stops: 0,
+  fire: undefined as ((channelUuid: string) => void) | undefined,
+}))
+vi.mock('@/nostr/liveTopics', () => ({
+  peekLiveTopics: () =>
+    live.present
+      ? {
+          watchChannels: (ids: readonly string[], listener: (id: string) => void) => {
+            live.watched.push([...ids])
+            live.fire = listener
+            return {
+              stop: () => {
+                live.stops++
+                live.fire = undefined
+              },
+            }
+          },
+        }
+      : null,
+}))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 /** Captured so a test can fire the hook's only re-read path by hand. */
 const refresh = vi.hoisted(() => ({ fire: undefined as (() => void) | undefined }))
@@ -50,7 +74,7 @@ vi.mock('@/nostr/useReadStateSync', async () => {
   }
 })
 
-import { useTopicUnread } from './useTopicUnread'
+import { TOPIC_UNREAD_SETTLE_MS, useTopicUnread } from './useTopicUnread'
 
 const CHANNEL_A = '11111111-1111-4111-8111-111111111111'
 const CHANNEL_B = '22222222-2222-4222-8222-222222222222'
@@ -83,6 +107,10 @@ function advance(markers: Record<string, number>, ready = true) {
 beforeEach(() => {
   frontier.ready = false
   frontier.markers = {}
+  live.present = true
+  live.watched = []
+  live.stops = 0
+  live.fire = undefined
   relay.channelStreams.mockResolvedValue({
     // A: an ordinary message an hour ago, nobody has read it. B: nothing.
     [CHANNEL_A]: [said('m', NOW - 3600)],
@@ -187,9 +215,66 @@ describe('useTopicUnread', () => {
     await waitFor(() => expect(result.current.unread.t_b).toBe(true))
   })
 
-  it('asks for nothing when no topic has a channel, and arms no refresh either', () => {
+  it('asks for nothing when no topic has a channel, and arms no refresh or watch either', () => {
     renderHook(() => useTopicUnread([{ id: 't_local', folderId: null }]))
     expect(relay.channelStreams).not.toHaveBeenCalled()
     expect(refresh.fire).toBeUndefined()
+    expect(live.watched).toEqual([])
+  })
+})
+
+describe('the socket path', () => {
+  it('watches every listed channel in one call, and stops on unmount', async () => {
+    const { unmount } = renderHook(() => useTopicUnread(topics))
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    expect(live.watched[0]).toEqual([CHANNEL_A, CHANNEL_B])
+    unmount()
+    expect(live.stops).toBe(1)
+  })
+
+  it('a burst in one channel is one re-read, not one each', async () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => useTopicUnread(topics))
+      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+      advance({ [CHANNEL_A]: NOW - 60, [CHANNEL_B]: NOW - 60 })
+      await vi.waitFor(() => expect(result.current.unread.t_b).toBe(false))
+
+      relay.channelStreams.mockResolvedValue({
+        [CHANNEL_A]: [],
+        [CHANNEL_B]: [said('n', NOW - 1), said('o', NOW), said('p', NOW)],
+      })
+      act(() => {
+        live.fire?.(CHANNEL_B)
+        live.fire?.(CHANNEL_B)
+        live.fire?.(CHANNEL_B)
+      })
+      // Nothing yet: the settle window is still open.
+      expect(relay.channelStreams).toHaveBeenCalledTimes(1)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TOPIC_UNREAD_SETTLE_MS)
+      })
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+      await vi.waitFor(() => expect(result.current.unread.t_b).toBe(true))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the interval fallback stays armed, because a wide filter may silently not fan out', async () => {
+    renderHook(() => useTopicUnread(topics))
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    // Both paths, on purpose: a relay build with the singular
+    // `extract_channel_ids_from_filters` accepts the REQ and delivers nothing.
+    expect(refresh.fire).toBeDefined()
+  })
+
+  it('works with no socket at all — the refresh triggers still drive it', async () => {
+    live.present = false
+    const { result } = renderHook(() => useTopicUnread(topics))
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    expect(live.watched).toEqual([])
+    advance({})
+    await waitFor(() => expect(result.current.unread.t_a).toBe(true))
   })
 })
