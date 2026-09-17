@@ -24,10 +24,11 @@
 import { v } from 'convex/values'
 import { mutation, query, type QueryCtx } from '../_generated/server'
 import type { Doc } from '../_generated/dataModel'
-import { buildEdit, buildMessage, buildReaction, buildResolution, imetaTag } from '@estiva-app/protocol'
+import { buildDmOpen, buildEdit, buildMessage, buildReaction, buildResolution, imetaTag } from '@estiva-app/protocol'
 import type { NostrTag } from '@estiva-app/protocol'
 import { mentionedPubkeys, referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
+import { findDmForPair, resolveUserKey } from '../messages'
 import type { UnsignedEvent } from '@estiva-app/protocol'
 
 /**
@@ -480,5 +481,89 @@ export const recordChannel = mutation({
     const me = await viewerId(ctx)
     if (!me || me !== topic.creatorId) return
     await ctx.db.patch(topicId, { channelUuid })
+  },
+})
+
+/**
+ * Everything needed to open a DM's channel on the relay (DMS-3).
+ *
+ * ## Why this is shaped unlike `channelPlan`
+ *
+ * A topic's channel uuid is minted here and the browser is told what to create.
+ * A DM's cannot be: the relay derives it from `compute_participant_hash` over
+ * the participant set, so there is exactly one id for a given pair of people
+ * and no client gets to choose it. The only way to learn it is to publish the
+ * `41010` and read what comes back, which is why this query hands over an event
+ * and `recordDmChannel` takes the answer.
+ *
+ * That same derivation is what makes this safe to call on every open. Opening
+ * is idempotent at the relay — the same participants always name the same
+ * channel — so there is no "does a DM already exist" question to ask first, and
+ * `find_dm_by_participants` is the relay asking itself the same one.
+ *
+ * ## It does not create the conversation
+ *
+ * `ok: false` with `expected` when the pair has no row yet. Peek creates one on
+ * the first message (`messages.send`) or on starring somebody, and making a
+ * *viewing* a DM mint one would put empty conversations into Desk's listings
+ * for anyone who clicked a name. The caller is reactive, so the row appearing
+ * is what triggers the publish.
+ *
+ * `dmKey` is the partner's person key — the DM's stable id everywhere in the
+ * app (§2.4), never a `dmConversations` id.
+ */
+export const unsignedDmOpen = query({
+  args: { dmKey: v.string() },
+  handler: async (
+    ctx,
+    { dmKey },
+  ): Promise<
+    | { ok: true; unsigned: UnsignedEvent; dmId: string }
+    | { ok: false; reason: string; expected?: boolean }
+  > => {
+    const me = await viewerId(ctx)
+    if (!me) return { ok: false, reason: 'not signed in', expected: true }
+    const you = await ctx.db.get(me)
+    if (!you?.nostrPubkey) return { ok: false, reason: 'no Estiva ID pubkey to sign with', expected: true }
+
+    const partner = await resolveUserKey(ctx, dmKey)
+    if (!partner) return { ok: false, reason: `unknown person '${dmKey}'` }
+    if (partner._id === me) return { ok: false, reason: 'a DM needs somebody else', expected: true }
+    // A seeded demo person has no Estiva ID, so there is nobody to open a
+    // channel *with*. Expected: the app is usable against the mock fixture.
+    if (!partner.nostrPubkey) return { ok: false, reason: 'that person has no Estiva ID pubkey', expected: true }
+
+    const dm = await findDmForPair(ctx, me, partner._id)
+    if (!dm) return { ok: false, reason: 'no conversation with that person yet', expected: true }
+    if (dm.channelUuid) return { ok: false, reason: 'already has a channel', expected: true }
+
+    return {
+      ok: true,
+      dmId: dm._id,
+      unsigned: buildDmOpen(you.nostrPubkey, Date.now(), { otherPubkeys: [partner.nostrPubkey] }),
+    }
+  },
+})
+
+/**
+ * Record the uuid the relay answered with. First write wins (DMS-3).
+ *
+ * The same rule as `storeChannelUuid` and for a sharper reason: two tabs open
+ * the same DM, both publish, and both are told the same uuid — the relay's
+ * derivation guarantees it. So the loser of the race is not wrong and must not
+ * be treated as an error; it simply has nothing left to write.
+ *
+ * Only a participant may write it, which is not ceremony: `dmKey` is a person
+ * key and a mistaken one would otherwise let somebody staple a channel to a
+ * conversation they are not in.
+ */
+export const recordDmChannel = mutation({
+  args: { dmId: v.id('dmConversations'), channelUuid: v.string() },
+  handler: async (ctx, { dmId, channelUuid }) => {
+    const dm = await ctx.db.get(dmId)
+    if (!dm || dm.channelUuid) return
+    const me = await viewerId(ctx)
+    if (!me || (me !== dm.userLowId && me !== dm.userHighId)) return
+    await ctx.db.patch(dmId, { channelUuid })
   },
 })
