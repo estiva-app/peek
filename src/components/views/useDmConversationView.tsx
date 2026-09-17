@@ -70,9 +70,9 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
    * The same wrapper the topic view has, and for the same reason: Peek patches
    * its own row before publishing, so a failed publish leaves this app looking
    * right while every other reader shows the old text. Both views need it
-   * because both let somebody edit; a DM's edit is the one case that
-   * legitimately never publishes, and `EditOutcome` already reports that as
-   * success so this stays quiet for it.
+   * because both let somebody edit. A DM's edit used to be the one that
+   * legitimately never published; since DMS-4 it does, against the DM's own
+   * channel, so this toast now means the same thing here as there.
    */
   const editBody = (id: string, body: string) => {
     void actions.editBody(id, body).then((outcome) => {

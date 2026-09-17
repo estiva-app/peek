@@ -43,8 +43,12 @@ export type UnsignedMessage =
   | { ok: true; unsigned: UnsignedEvent; alreadyPublished?: undefined }
   /**
    * `expected: true` means **this was never going to travel, and that is
-   * fine** — a DM, a huddle, a row that never reached the relay. A caller
-   * telling somebody about one of those would be crying wolf.
+   * fine** — a huddle, a row that never reached the relay. A caller telling
+   * somebody about one of those would be crying wolf.
+   *
+   * A DM used to be on that list and no longer is (DMS-4): a DM message is an
+   * ordinary `kind:9` against the DM's channel, so a refusal to publish one is
+   * a refusal worth hearing.
    *
    * Everything else is a refusal worth saying out loud. The flag is here
    * rather than at the caller because only this file knows which reasons are
@@ -84,14 +88,52 @@ function imetaTagsFor(files: Doc<'messages'>['fileAttachments']): NostrTag[] {
   return out
 }
 
+/**
+ * The relay channel a message hangs off, or why it has none — DMS-4.
+ *
+ * Both parents that publish resolve from here, because a `kind:9` is the same
+ * event either way: only the container differs. A topic's channel is minted by
+ * its creator (`channelPlan`) and a DM's by the relay when the conversation is
+ * opened (`unsignedDmOpen`, DMS-3) — neither is derivable from the row, so both
+ * are a lookup and both can legitimately be missing for a moment.
+ *
+ * A huddle is the one parent that never travels: there is no Buzz container for
+ * one, so `expected` says so rather than leaving a caller to warn about it.
+ */
+type ParentChannel = { ok: true; channelUuid: string } | { ok: false; reason: string; expected?: boolean }
+
+async function parentChannel(ctx: QueryCtx, parentKind: string, parentId: string): Promise<ParentChannel> {
+  if (parentKind === 'topic') {
+    const topicId = ctx.db.normalizeId('topics', parentId)
+    const topic = topicId ? await ctx.db.get(topicId) : null
+    if (!topic) return { ok: false, reason: 'unknown topic' }
+    // The happy path assumes the channel exists. It is created by
+    // `publishTopicAsCreator` when the topic is made, and deliberately by the
+    // topic's *creator* — publishing it as whoever spoke first would make the
+    // wrong person its owner.
+    if (!topic.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+    return { ok: true, channelUuid: topic.channelUuid }
+  }
+  if (parentKind === 'dm') {
+    const dmId = ctx.db.normalizeId('dmConversations', parentId)
+    const dm = dmId ? await ctx.db.get(dmId) : null
+    if (!dm) return { ok: false, reason: 'unknown conversation' }
+    // Refused rather than published `h`-less: an event with no channel is not a
+    // private message with a missing tag, it is a message on nothing — visible
+    // to whoever asks the relay for it. The conversation is opened on the DM's
+    // first render and on its first message (`useEnsureDmChannel`), so this is
+    // a wait, not a dead end.
+    if (!dm.channelUuid) return { ok: false, reason: 'the DM has no channel on the relay yet' }
+    return { ok: true, channelUuid: dm.channelUuid }
+  }
+  return { ok: false, reason: 'a huddle has no channel on the relay', expected: true }
+}
+
 export const unsignedMessage = query({
   args: { messageId: v.id('messages') },
   handler: async (ctx, { messageId }): Promise<UnsignedMessage> => {
     const m = await ctx.db.get(messageId)
     if (!m) return { ok: false, reason: 'unknown message' }
-    // Only topic messages publish: DMs need NIP-17 gift wrap and huddles have
-    // no Buzz container.
-    if (m.parentKind !== 'topic') return { ok: false, reason: 'not a topic message' }
     // Idempotent — never publish the same row twice.
     if (m.nostrEventId) return { ok: false, reason: 'already published' }
 
@@ -104,14 +146,8 @@ export const unsignedMessage = query({
       return { ok: false, reason: 'outside the relay drift window' }
     }
 
-    const topicId = ctx.db.normalizeId('topics', m.parentId)
-    const topic = topicId ? await ctx.db.get(topicId) : null
-    if (!topic) return { ok: false, reason: 'unknown topic' }
-    // The happy path assumes the channel exists. It is created by
-    // `publishTopicAsCreator` when the topic is made, and deliberately by the
-    // topic's *creator* — publishing it as whoever spoke first would make the
-    // wrong person its owner.
-    if (!topic.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+    const channel = await parentChannel(ctx, m.parentKind, m.parentId)
+    if (!channel.ok) return channel
 
     const author = await ctx.db.get(m.authorId)
     if (!author?.nostrPubkey) return { ok: false, reason: 'author has no Estiva ID pubkey' }
@@ -119,7 +155,7 @@ export const unsignedMessage = query({
     return {
       ok: true,
       unsigned: buildMessage(author.nostrPubkey, m.createdAt, {
-        channelUuid: topic.channelUuid,
+        channelUuid: channel.channelUuid,
         content: m.body,
         about: referencedAddresses(m.body),
         mentions: mentionedPubkeys(m.body),
@@ -151,13 +187,12 @@ export const unsignedReply = query({
     if (!withinDriftWindow(r.createdAt)) return { ok: false, reason: 'outside the relay drift window' }
 
     const parent = await ctx.db.get(r.messageId)
-    if (!parent || parent.parentKind !== 'topic') return { ok: false, reason: 'not a topic reply' }
+    if (!parent) return { ok: false, reason: 'unknown message' }
     if (!parent.nostrEventId) {
       return { ok: false, reason: 'the message being replied to is not on the relay yet' }
     }
-    const topicId = ctx.db.normalizeId('topics', parent.parentId)
-    const topic = topicId ? await ctx.db.get(topicId) : null
-    if (!topic?.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+    const channel = await parentChannel(ctx, parent.parentKind, parent.parentId)
+    if (!channel.ok) return channel
 
     const author = await ctx.db.get(r.authorId)
     if (!author?.nostrPubkey) return { ok: false, reason: 'author has no Estiva ID pubkey' }
@@ -165,7 +200,7 @@ export const unsignedReply = query({
     return {
       ok: true,
       unsigned: buildMessage(author.nostrPubkey, r.createdAt, {
-        channelUuid: topic.channelUuid,
+        channelUuid: channel.channelUuid,
         content: r.body,
         threadRef: { rootId: parent.nostrEventId, parentId: parent.nostrEventId },
         mentions: mentionedPubkeys(r.body),
@@ -221,12 +256,12 @@ export const unsignedEdit = query({
     if (!target) return { ok: false, reason: 'unknown message' }
     if (!target.nostrEventId) {
       // Nothing on the relay to edit, and nothing wrong: the message is
-      // Peek-only (a DM, or one that never published), so the Convex patch is
-      // the whole of its record and no reader is left with stale text.
+      // Peek-only (a huddle, or one that never published), so the Convex patch
+      // is the whole of its record and no reader is left with stale text.
       return { ok: false, reason: 'the message being edited is not on the relay', expected: true }
     }
     if (!target.channelUuid) {
-      return { ok: false, reason: 'the topic has no channel on the relay yet', expected: true }
+      return { ok: false, reason: 'its channel is not on the relay yet', expected: true }
     }
 
     return {
@@ -253,10 +288,8 @@ async function editTarget(
   key: string,
 ): Promise<{ nostrEventId?: string; channelUuid?: string } | null> {
   const channelOf = async (parentKind: string, parentId: string) => {
-    if (parentKind !== 'topic') return undefined
-    const topicId = ctx.db.normalizeId('topics', parentId)
-    const topic = topicId ? await ctx.db.get(topicId) : null
-    return topic?.channelUuid
+    const channel = await parentChannel(ctx, parentKind, parentId)
+    return channel.ok ? channel.channelUuid : undefined
   }
 
   const bySeed = await ctx.db
