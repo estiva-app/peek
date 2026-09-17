@@ -173,6 +173,15 @@ export default defineSchema({
     createdAt: v.number(),
     /** Stable client key — mock numeric DM id as a string (see topics). */
     seedKey: v.optional(v.string()),
+    /**
+     * The DM's channel on the relay (DMS-3), mirroring `topics.channelUuid`.
+     *
+     * Unlike a topic's, this is **not minted here**: the relay derives it from
+     * a hash of the participant set, so the only way to learn it is to publish
+     * a `kind:41010` and read the answer. Written by `recordDmChannel` once the
+     * relay has said so, first write wins.
+     */
+    channelUuid: v.optional(v.string()),
   })
     .index('by_pair', ['userLowId', 'userHighId'])
     .index('by_low', ['userLowId'])

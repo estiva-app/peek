@@ -24,6 +24,7 @@ import {
   useIsTopicResolved,
   usePeekActions,
   useStarred,
+  useEnsureDmChannel,
 } from '@/api'
 import { useLastSelection } from '@/lib/lastSelection'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
@@ -50,6 +51,9 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   // Opening the DM clears new-message state; opening a thread clears that
   // thread's new-reply state (§4.3).
   useMarkRead('dm', dmId, threadConvId)
+  // Opening the DM also gives it a channel on the relay, if it has a row and
+  // does not have one yet (DMS-3).
+  useEnsureDmChannel(dmId)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { isDmStarred, toggleDm } = useStarred()
   const findTopic = useTopicLookup()
