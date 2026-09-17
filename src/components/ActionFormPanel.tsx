@@ -88,7 +88,7 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
             onChange={(e) => set(field.key, e.target.value)}
             placeholder={field.placeholder}
             rows={3}
-            className="w-full resize-none"
+            className="w-full"
           />
         )
       case 'enum':

@@ -49,16 +49,12 @@ import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protoc
  */
 function BodyLink({ href, breakAll, children }: { href: string; breakAll?: boolean; children: ReactNode }) {
   return (
-    <Link
-      href={href}
-      variant="text"
-      external
-      data-interactive
-      className={breakAll ? 'break-all' : 'break-words'}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {children}
-    </Link>
+    // Where a long link breaks is set on a box around it, which the link takes it from (UIG-9; Katerina kept today's breaking, 17 September).
+    <span className={breakAll ? 'break-all' : 'break-words'}>
+      <Link href={href} variant="text" external data-interactive onClick={(e) => e.stopPropagation()}>
+        {children}
+      </Link>
+    </span>
   )
 }
 

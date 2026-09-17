@@ -5,7 +5,6 @@ import { IconBold, IconItalic, IconLink, IconUnderline } from '@tabler/icons-rea
 // (`./IconButton`, `@/lib/utils`), which exist only to keep older import paths
 // working — a new file should name where the component actually lives.
 import { Form, Popover, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { cn } from '@/lib/utils'
 import { TextInput } from './TextInput'
 import { MARKS, toggleMark, shortcutLabel, currentLink, applyLink, type MarkId } from '@/lib/composerFormats'
 import { keepSelection, releaseSelection } from '@/extensions/keptSelection'
@@ -309,10 +308,9 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
               <ToolbarButton
                 key={mark.id}
                 aria-label={mark.label}
-                aria-pressed={active}
+                pressed={active}
                 tooltip={mark.label}
                 tooltipShortcut={shortcutLabel(mark.keys)}
-                className={cn(active && 'bg-bg-active text-text-primary')}
                 // Keep the selection: focus must not leave the editor on press.
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => toggleMark(editor, mark.id)}

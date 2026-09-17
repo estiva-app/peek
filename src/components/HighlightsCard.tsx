@@ -159,7 +159,7 @@ export function HighlightsCard({ data, defaultExpanded = false, className }: Hig
           <span className="size-4 rounded-sm bg-bg-inset flex items-center justify-center shrink-0 overflow-hidden">
             <img src={highlightsIcon} alt="" width={11} height={11} className="size-[11px]" />
           </span>
-          <SectionLabel className="whitespace-nowrap">Highlights</SectionLabel>
+          <SectionLabel>Highlights</SectionLabel>
           {types.length > 0 && (
             <span className="flex items-center gap-[2px]">
               {types.map((t) => (

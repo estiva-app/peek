@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repo": "peek",
-  "generatedAt": "2026-09-16T17:06:03.150Z",
+  "generatedAt": "2026-09-17T12:05:27.876Z",
   "rules": {
     "estiva/no-raw-element": {
       "errors": 0,
@@ -12,6 +12,11 @@
       "errors": 0,
       "warnings": 0,
       "escapes": 13
+    },
+    "estiva/no-restyled-part": {
+      "errors": 0,
+      "warnings": 0,
+      "escapes": 2
     }
   }
 }

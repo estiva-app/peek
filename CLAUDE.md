@@ -10,11 +10,15 @@ feature spec.
 `npm run gates:status` here shows Peek's part of it, read from the code.
 
 **The gate lint, and a session opened above this folder.** A raw interactive
-element (a `<button>`, an `<input>`, a `<form>`, a link…), and behaviour a
+element (a `<button>`, an `<input>`, a `<form>`, a link…), behaviour a
 package part already owns written by hand (a Base UI import, `createPortal`, a
 click or key listener on the whole page, arrow keys compared by hand, a
 hand-written `role` such as `option` or `alert`, `tabIndex` 0 on a box,
-`overflow-auto`), are refused — the message names the package part to use, or
+`overflow-auto`), and a look passed into a package part through `className`
+or an inner box's class prop (a colour, a text size, a border, a corner, a
+shadow — only space, size, flex and grid, and position pass in; `EmptyState`
+takes no padding; a look for what is around a part goes on your own element
+around it) are refused — the message names the package part to use, or
 says there is none yet — by `npm run lint:rules`, by CI's "Gate lint", and
 before the write by `.claude/hooks/gates.mjs` — but that hook runs only in a
 Claude session started in this folder. A session started in a folder above it

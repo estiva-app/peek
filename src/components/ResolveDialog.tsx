@@ -21,13 +21,8 @@ export function ResolveDialog({ onResolve, onCancel }: ResolveDialogProps) {
       footer={
         <>
           <Button variant="muted" onClick={onCancel}>Cancel</Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form={formId}
-            // Signal: the v3 resolve button — outlined at rest, green on hover.
-            className="signal:bg-transparent signal:border signal:border-border-default signal:text-text-primary signal:shadow-none signal:hover:bg-success-muted signal:hover:border-success-outline signal:hover:text-success-default signal:transition-colors"
-          >
+          {/* Signal: the v3 resolve button — outlined at rest, green on hover; the package's `resolve` look (UIG-9). */}
+          <Button variant="resolve" type="submit" form={formId}>
             Resolve
           </Button>
         </>

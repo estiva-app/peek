@@ -494,14 +494,12 @@ export function ThreadReplyCard({
                 */}
                 {messageLink ? (
                   <WithTooltip label="Link to this message" wrapperClassName="shrink-0">
-                    <Link
-                      href={messageLink}
-                      variant="quiet"
-                      data-interactive
-                      className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums"
-                    >
-                      {timestamp}
-                    </Link>
+                    {/* The time's look on a box around the link, which takes it from there (UIG-9). */}
+                    <span className="contents whitespace-nowrap text-caption text-text-muted signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
+                      <Link href={messageLink} variant="quiet" data-interactive>
+                        {timestamp}
+                      </Link>
+                    </span>
                   </WithTooltip>
                 ) : (
                   <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>

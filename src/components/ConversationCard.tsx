@@ -565,15 +565,18 @@ export function ConversationCard({
             </div>
             <div className="flex-1 min-w-0 flex items-center gap-1.5 h-4">
               <span className="text-h5 text-text-secondary shrink-0">Huddle in</span>
-              <RouterLink
-                href={pathForTopic(huddleContext.topicId)}
-                variant="quiet"
-                data-interactive
-                onClick={(e) => e.stopPropagation()}
-                className="text-h5 text-text-primary truncate"
-              >
-                {huddleContext.topicTitle}
-              </RouterLink>
+              {/* The title's size and colour on a box around the link, which takes them from it (UIG-9). */}
+              <span className="contents text-h5 text-text-primary">
+                <RouterLink
+                  href={pathForTopic(huddleContext.topicId)}
+                  variant="quiet"
+                  truncate
+                  data-interactive
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {huddleContext.topicTitle}
+                </RouterLink>
+              </span>
             </div>
           </div>
         )}

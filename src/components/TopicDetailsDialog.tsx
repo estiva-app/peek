@@ -129,7 +129,7 @@ export function TopicDetailsDialogView({
       onClose={onClose}
       width={560}
       bodyMaxHeight="max-h-[70vh]"
-      bodyClassName="flex flex-col gap-6 [&>*]:shrink-0"
+      bodyClassName="flex flex-col gap-6"
       footer={
         <div className="flex justify-end">
           <Button variant="outlined" onClick={onClose}>
