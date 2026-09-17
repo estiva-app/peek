@@ -20,8 +20,8 @@ shadow — only space, size, flex and grid, and position pass in; `EmptyState`
 takes no padding; a look for what is around a part goes on your own element
 around it) are refused — the message names the package part to use, or
 says there is none yet — by `npm run lint:rules`, by CI's "Gate lint", and
-before the write by `.claude/hooks/gates.mjs` — but that hook runs only in a
-Claude session started in this folder. A session started in a folder above it
+before the write by the package's editor hook, which `.claude/settings.json`
+runs — but that hook runs only in a Claude session started in this folder. A session started in a folder above it
 (a workspace holding several repositories) does not get the hook, so: after
 changing any `.ts` or `.tsx` under `src/`, run `npm run lint:rules` in this
 repository and fix everything it reports before you finish. Keep one only with
