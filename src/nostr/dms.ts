@@ -5,11 +5,12 @@
  * unsigned event, the browser signs and sends it, Convex records the fact — but
  * with the arrow reversed at the last step. A topic's channel uuid travels
  * *out*: Convex mints it and tells the browser what to create. A DM's travels
- * *back*: the relay derives it from `compute_participant_hash` over the
- * participant set, so nobody else gets to choose it and the answer to the
- * publish is the only place it exists.
+ * *back*: the relay mints it — `Uuid::new_v4()` in `create_dm` — and keys it by
+ * a hash of the participant set, so nobody else gets to choose it, it cannot be
+ * computed from the participants, and the answer to the publish is the only
+ * place it exists.
  *
- * That derivation is also why this needs no bookkeeping. Opening the same DM
+ * That keying is also why this needs no bookkeeping. Opening the same DM
  * twice always names the same channel, so "have these two people got a channel
  * already" is not a question worth asking — publish, and use what comes back.
  *

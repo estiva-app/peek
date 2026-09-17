@@ -14,7 +14,7 @@
  * | Leg | Measured against | What the number is |
  * |---|---|---|
  * | `desk:screenerList` | production Convex | a real round trip; an **empty** result |
- * | `screener:candidates` | — | **not deployed yet.** Unmeasurable from here |
+ * | `screener:candidates` | production Convex | the same — deployed 2026-09-17, still empty |
  * | the decisions blob | production relay | a real, authenticated round trip |
  * | the fold itself | in process | real, over a synthetic workspace |
  *
@@ -23,9 +23,16 @@
  * whose `aud` is `estiva-peek` (`convex/auth.config.ts`), which the agent
  * identity's is not. So the Convex numbers here are the request count and the
  * round-trip floor — the network, the dispatch, the websocket — and **not** the
- * per-row work. That half is honest only once `candidates` is on
- * `honorable-guineapig-592`, and it is the number to take after the deploy
- * rather than infer now. A deploy log is not a measurement either.
+ * per-row work.
+ *
+ * `candidates` is deployed now (2026-09-17), so this runs it rather than
+ * printing that it cannot. **The gap that remains is the identity, not the
+ * deploy**, and no amount of re-running this closes it: the per-row cost is
+ * what the query does over one viewer's topics, messages and replies, and
+ * nothing this script can authenticate as has any. That number lives in the
+ * Convex dashboard's function log for `honorable-guineapig-592`, where a real
+ * signed-in viewer's call is already timed and its row count already recorded.
+ * Read it there rather than approximating it here.
  *
  * The relay leg is authenticated, because the blob is this identity's own. What
  * it is *not* is representative of a full blob: the agent identity has no
@@ -185,7 +192,8 @@ async function main() {
   console.log('── AFTER: two Convex queries + one relay read ──────────')
   const listAfter = await timeConvexQuery('desk:screenerList')
   console.log(`  desk:screenerList (DMs)    ${fmt(listAfter)}`)
-  console.log('  screener:candidates        not deployed — unmeasurable from here (see the header)')
+  const candidatesAfter = await timeConvexQuery('screener:candidates')
+  console.log(`  screener:candidates        ${fmt(candidatesAfter)}`)
   const t = await token()
   const relay = await timeRelayRead(t)
   console.log(
