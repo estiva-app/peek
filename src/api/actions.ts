@@ -887,10 +887,20 @@ export function usePeekActions(
     addScreenerToOpenWork(id: string, target: { kind: 'topic'; topicId: string } | { kind: 'dm'; dmId: string }) {
       if (target.kind === 'dm') openWork.addDm(target.dmId)
       else openWork.addTopics([target.topicId])
-      // A folded topic row names no Convex screener item, and does not need to:
-      // PEE-6 takes it out of the Screener the moment it is in the open-work
-      // list, which the line above has already done for this session.
-      if (hasConvex && !topicIdFromScreenerRowId(id)) void addToOpenWorkRemote({ screenerItemId: id })
+      if (!hasConvex) return
+      const foldedTopic = topicIdFromScreenerRowId(id)
+      if (foldedTopic) {
+        // A folded row names no Convex screener item, so `addToOpenWork` — which
+        // resolves the target *from* that row — has nothing to resolve. It still
+        // has to write `deskOpenWork`: SHR-9 kept that table dual-written on
+        // purpose, and it is what `watchableChannels` and the DM half's PEE-6
+        // check still read. Dropping the write here would have left the row in
+        // the blob and nowhere else, which looks exactly like a working Open
+        // button until something reads Convex.
+        void addTopicsToOpenWorkRemote({ topicKeys: [foldedTopic] })
+        return
+      }
+      void addToOpenWorkRemote({ screenerItemId: id })
     },
     /** "Later" — the item reappears after `untilMs` (an absolute timestamp);
      *  defaults to +24h server-side when omitted. */
