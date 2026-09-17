@@ -489,24 +489,27 @@ export function ThreadPanel({
                       "Promoted to" prefix and the date suffix always stay. */}
                   <span className="flex items-center gap-1 min-w-0 whitespace-nowrap">
                     <span className="shrink-0">Promoted to</span>
-                    <RouterLink
-                      href={pathForTopic(promotionDivider.topicId)}
-                      variant="quiet"
-                      data-interactive
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        // When the parent provides an override (e.g. we're already on the
-                        // topic page and just need to switch tabs + close the thread),
-                        // suppress the no-op navigation and run the callback instead.
-                        if (promotionDivider.onTopicClick) {
-                          e.preventDefault()
-                          promotionDivider.onTopicClick()
-                        }
-                      }}
-                      className="text-text-primary min-w-0 truncate"
-                    >
-                      {promotionDivider.topicTitle}
-                    </RouterLink>
+                    {/* The title's colour on a box around the link, which takes it from there (UIG-9). */}
+                    <span className="contents text-text-primary">
+                      <RouterLink
+                        href={pathForTopic(promotionDivider.topicId)}
+                        variant="quiet"
+                        truncate
+                        data-interactive
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          // When the parent provides an override (e.g. we're already on the
+                          // topic page and just need to switch tabs + close the thread),
+                          // suppress the no-op navigation and run the callback instead.
+                          if (promotionDivider.onTopicClick) {
+                            e.preventDefault()
+                            promotionDivider.onTopicClick()
+                          }
+                        }}
+                      >
+                        {promotionDivider.topicTitle}
+                      </RouterLink>
+                    </span>
                     <span className="shrink-0">· {promotionDivider.dateLabel}</span>
                   </span>
                 </span>

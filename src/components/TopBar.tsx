@@ -53,6 +53,7 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
               onSearchClick?.()
             }}
           >
+            {/* @estiva-escape: a picture of the search field that opens the launcher; no part is a button that looks like a search field yet (UIG-9, Katerina 17 September) */}
             <SearchInput shortcut={shortcutLabel('Mod-K')} className="w-[290px] pointer-events-none" />
           </div>
         }

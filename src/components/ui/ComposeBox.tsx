@@ -398,10 +398,10 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                 Enter to send · Shift+Enter new line
               </span>
               {/* The shared IconButton's `primary`, which this button was a
-                  hand-written copy of, class for class. Only the Signal glow
-                  is Peek's, and it rides in on className — a disabled send
-                  button does not glow. Focus must not leave the editor, so
-                  the press is onMouseDown with the default prevented. */}
+                  hand-written copy of, class for class, with the package's
+                  Signal `glow` (UIG-9) — a disabled send button does not glow.
+                  Focus must not leave the editor, so the press is onMouseDown
+                  with the default prevented. */}
               <IconButton
                 variant="primary"
                 onMouseDown={(e) => {
@@ -410,7 +410,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                 }}
                 disabled={!canSend}
                 aria-label="Send"
-                className={cn(canSend && 'signal:shadow-glow-accent')}
+                glow={canSend}
               >
                 <IconArrowUp size={16} stroke={1.5} />
               </IconButton>

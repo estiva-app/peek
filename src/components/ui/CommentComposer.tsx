@@ -40,16 +40,19 @@ export function CommentComposer({
 
   return (
     // The package Form (UIG-7): Enter sends, and the row locks while it does.
-    <Form busy={sending} onSubmit={send} className="flex items-center gap-2 border-t border-border-subtle px-3 py-2">
-      <TextInput
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        placeholder={placeholder}
-        aria-label={placeholder}
-      />
-      <IconButton tooltip="Send" aria-label="Send comment" type="submit" disabled={!draft.trim() || sending}>
-        <IconSend size={16} stroke={1.5} />
-      </IconButton>
-    </Form>
+    // The line above it is on a box of our own: a form draws nothing (UIG-9).
+    <div className="border-t border-border-subtle">
+      <Form busy={sending} onSubmit={send} className="flex items-center gap-2 px-3 py-2">
+        <TextInput
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder={placeholder}
+          aria-label={placeholder}
+        />
+        <IconButton tooltip="Send" aria-label="Send comment" type="submit" disabled={!draft.trim() || sending}>
+          <IconSend size={16} stroke={1.5} />
+        </IconButton>
+      </Form>
+    </div>
   )
 }

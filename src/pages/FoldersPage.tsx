@@ -224,18 +224,17 @@ export function FoldersPage() {
                   */
                   topic.title
                 ) : (
-                <div className="-ml-2 min-w-0">
+                <div className="-ml-2 min-w-0 text-body-2-strong">
                 <EditableText
                   /*
                     A pane title is `text-body-2-strong` everywhere else in
-                    Peek, and `EditableText` takes its size from the caller —
+                    Peek, and `EditableText` takes its size from where it sits (the box above, UIG-9) —
                     so with nothing passed the folder name rendered at the
                     base font, larger than every other header (Katerina,
                     2026-09-11). `-ml-2` cancels the component's own `px-2`
                     so the text starts on the header's 20px inset, while the
                     hover border keeps its padding.
                   */
-                  className="text-body-2-strong"
                   value={selected?.name ?? ''}
                   placeholder={id}
                   label="Folder name"

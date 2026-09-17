@@ -89,7 +89,10 @@ function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
   // the value to body text beside the `PAY-1`s it sits with.
   if (slot.isPubkey) {
     return (
-      <Person pubkey={slot.value} people={people} className="text-caption text-text-secondary" />
+      // A name takes the size and tone of where it sits (UIG-9).
+      <span className="contents text-caption text-text-secondary">
+        <Person pubkey={slot.value} people={people} />
+      </span>
     )
   }
 
@@ -277,7 +280,8 @@ function OpenInApp({ object }: { object: ForeignObject }) {
   if (!object.openUrl) return null
   return (
     // Solid, not dotted: one look for "open it elsewhere" in both apps (Katerina, 2026-09-13).
-    <Link href={object.openUrl} variant="underlined" external className="text-caption text-text-secondary">
+    // Its size and tone are the words' around it, in the card that could not be read (UIG-9).
+    <Link href={object.openUrl} variant="underlined" external>
       Open in {object.appName ?? 'app'} ↗
     </Link>
   )
@@ -327,7 +331,8 @@ export function ForeignObjectCard({
     the title draws the face and the name, or the em dash for a stranger.
   */
   const title = slots.title?.isPubkey ? (
-    <Person pubkey={slots.title.value} people={object.people} className="font-semibold text-text-primary" />
+    // Weight and colour come from the title's box, below, whichever way it is drawn (UIG-9).
+    <Person pubkey={slots.title.value} people={object.people} />
   ) : (
     slots.title?.value
   )
@@ -392,9 +397,11 @@ export function ForeignObjectCard({
             {/* The title is the way into the owning app. A reference you cannot
                 follow is a screenshot. */}
             {object.openUrl ? (
-              <Link href={object.openUrl} variant="quiet" external className="truncate text-body-2 font-semibold text-text-primary">
-                {title}
-              </Link>
+              <span className="contents text-body-2 font-semibold text-text-primary">
+                <Link href={object.openUrl} variant="quiet" external truncate>
+                  {title}
+                </Link>
+              </span>
             ) : (
               <span className="truncate text-body-2 font-semibold text-text-primary">
                 {title}
@@ -594,9 +601,11 @@ export function ForeignObjectWidget({
   if (object.unreachable) {
     return (
       // A card that cannot be read: dashed, in both apps (Katerina, 2026-09-14).
-      <Card fill="none" unreadable className="mt-1 px-3 py-2 text-caption text-text-secondary">
-        {object.appName ?? 'Another app'} object — you may not have access to this Folder.{' '}
-        {object.openUrl && <OpenInApp object={object} />}
+      <Card fill="none" unreadable className="mt-1 px-3 py-2">
+        <div className="text-caption text-text-secondary">
+          {object.appName ?? 'Another app'} object — you may not have access to this Folder.{' '}
+          {object.openUrl && <OpenInApp object={object} />}
+        </div>
       </Card>
     )
   }

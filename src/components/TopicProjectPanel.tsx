@@ -248,14 +248,11 @@ export function TopicProjectPanelView({
             {/* Full width, and the only way into Linear-lite from here — a
                 separate "open in app" link was the same destination twice. */}
             {project.openUrl ? (
-              <Link
-                href={project.openUrl}
-                variant="quiet"
-                external
-                className="block truncate text-body-2 font-semibold text-text-primary"
-              >
-                {project.slots.title?.value ?? 'Untitled project'}
-              </Link>
+              <div className="text-body-2 font-semibold text-text-primary">
+                <Link href={project.openUrl} variant="quiet" external truncate className="block">
+                  {project.slots.title?.value ?? 'Untitled project'}
+                </Link>
+              </div>
             ) : (
               <span className="block truncate text-body-2 font-semibold text-text-primary">
                 {project.slots.title?.value ?? 'Untitled project'}

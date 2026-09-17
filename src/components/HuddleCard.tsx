@@ -8,7 +8,7 @@ import {
   IconChecks,
   IconArrowNarrowRight,
 } from '@tabler/icons-react'
-import { Card, Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
+import { AvatarGroup, Card, Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
 import { Avatar } from './ui/Avatar'
@@ -17,7 +17,7 @@ import { Divider } from './ui/Divider'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
-import { useReplyCount, useReplyMeta, type Huddle } from '@/api'
+import { useAvatarSrc, useReplyCount, useReplyMeta, type Huddle } from '@/api'
 
 interface HuddleCardProps {
   huddle: Huddle
@@ -113,6 +113,7 @@ export function HuddleCard({
   const replyMeta = replyMetaOf(threadId)
   const replyAuthors = replyMeta.replyAuthors ?? huddle.conversation?.replyAuthors
   const lastReplyTime = replyMeta.lastReplyTime ?? huddle.conversation?.lastReplyTime
+  const avatarSrcFor = useAvatarSrc()
 
   // Delete asks first (D56).
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -140,7 +141,8 @@ export function HuddleCard({
         hovered={isHovered}
         selected={isSelected}
         attention={inStream && (hasNewMessage || hasNewReply) ? (isUrgent ? 'warning' : 'accent') : undefined}
-        className={cn('relative flex flex-col overflow-hidden', inStream ? '' : 'h-[130px]', className)}
+        clip
+        className={cn('relative flex flex-col', inStream ? '' : 'h-[130px]', className)}
         onClick={(e) => {
           if (menuOpen) return
           const target = e.target as HTMLElement
@@ -155,7 +157,7 @@ export function HuddleCard({
       >
         {/* "Huddle" top banner — V3 inStream only. A neutral elevated-grey strip
             (lighter than the body's bg-private), edge-to-edge so the parent's
-            rounded-lg + overflow-hidden give it rounded top corners. Differentiates
+            rounded-lg and `clip` give it rounded top corners. Differentiates
             the card in V3's mixed stream where huddles and conversation cards appear
             side by side. */}
         {inStream && (
@@ -260,15 +262,10 @@ export function HuddleCard({
             <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-accent-outline signal:hover:bg-accent-wash signal:transition-colors">
               {replyAuthors && replyAuthors.length > 0 && (
                 <div className="hidden signal:flex items-center shrink-0">
-                  {replyAuthors.slice(0, 4).map((a, i) => (
-                    <Avatar
-                      key={a.name}
-                      size={18}
-                      src={a.avatarSrc}
-                      alt={a.name}
-                      className={cn('ring-[1.5px] ring-bg-surface', i > 0 && '-ml-1.5')}
-                    />
-                  ))}
+                  <AvatarGroup
+                    size={18}
+                    members={replyAuthors.map((a) => ({ name: a.name, picture: a.avatarSrc ?? avatarSrcFor(a.name) }))}
+                  />
                 </div>
               )}
               <IconMessage2
