@@ -44,6 +44,17 @@ import type { Doc, Id } from './_generated/dataModel'
 const PREVIEW_MAX = 240
 const snippet = (body: string) => body.replace(/\s+/g, ' ').trim().slice(0, PREVIEW_MAX)
 
+/**
+ * How many events per container {@link candidates} hands the device.
+ *
+ * The payload is the reason there is a number here at all: every event carries a
+ * `PREVIEW_MAX` snippet, so an uncapped answer grows with the workspace's whole
+ * history on every Desk load. Production holds 175 topic messages today, which
+ * is small enough that this cap never binds — it is here so that the query has a
+ * known ceiling before it does. See where it is applied for what it costs.
+ */
+const EVENTS_PER_CONTAINER = 50
+
 /** `@Name` — also true for the urgent form `!@Name`. */
 export function mentionsUser(body: string, name: string): boolean {
   return body.includes(`@${name}`)
@@ -329,6 +340,21 @@ export const preview = query({
  * exchange. Bodies come back snippeted to `PREVIEW_MAX`, so the wire cost is
  * the preview the row was always going to draw.
  *
+ * ## Why non-member topics are in the answer
+ *
+ * Rule 3 reaches you whether or not you are a member — being named is the point
+ * — so a topic you are not in still has to be offered to the fold. That ships
+ * its previews to a non-member, and it is worth saying why that is not a new
+ * disclosure: **Peek's topics are not membership-gated today.** `topics.list`
+ * returns every topic and `messages.list` has no membership check at all
+ * (`convex/messages.ts:383`), so anyone signed in can already read any topic's
+ * messages by key. Membership gates *notification*, not visibility. Huddles are
+ * the private thing, and they are included only for a member — checked above.
+ *
+ * If topics ever become member-gated, this query is one of the places that has
+ * to learn it, and rule 3 for non-members becomes a question for whoever makes
+ * that change rather than something this can answer on its own.
+ *
  * `mentionsMe` is the one predicate evaluated here rather than on the device,
  * and it is a fact about the viewer's *own* name — never another person's
  * state, which is the read this ticket exists to remove. It is here because the
@@ -473,6 +499,18 @@ export const candidates = query({
       }
       if (events.length === 0) continue
       events.sort((a, b) => b.createdAt - a.createdAt)
+      // Bounded per container, newest first. The fold walks this list until it
+      // finds an event that screens above the dismissal watermark, so the cap
+      // costs exactly one thing: a container whose newest `EVENTS_PER_CONTAINER`
+      // events all fail to screen while an older one would have — an @mention
+      // fifty messages back in a topic that has been busy and quiet-for-you
+      // since. Rule 2 is unaffected (its first event always screens), and so is
+      // a conversation with any recent screening traffic.
+      //
+      // The alternative was filtering server-side to events that *could* screen,
+      // which is a second copy of the fold's predicate in a second language, and
+      // two copies that drift is a worse failure than one stale row.
+      events.splice(EVENTS_PER_CONTAINER)
 
       containers.push({
         kind: 'topic' as const,
