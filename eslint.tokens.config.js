@@ -1,9 +1,15 @@
+import { TOKEN_LINT_IGNORES, tokenLint, tokenValues } from '@estiva-app/ui/gates'
 import reactHooks from 'eslint-plugin-react-hooks'
 import { defineConfig, globalIgnores } from 'eslint/config'
-import { tokenLint, tokenValues, TOKEN_LINT_IGNORES } from './eslint.tokens.js'
 
 /**
  * The token rules on their own — `npm run lint:tokens`, and the CI gate (D55).
+ *
+ * The settings are the package's own piece, `tokenLint` and `tokenValues` in
+ * `@estiva-app/ui/gates`, imported (UIG-32, estiva-ui docs/GATES.md §23). They
+ * were the same block, character for character, in Peek and in Ship; now there
+ * is one. UIG-28's hand-written sizes, corners, shadows and inline colours are
+ * `tokenValues`.
  *
  * `npm run lint` runs everything, token rules included, and reports the 79
  * pre-existing errors Peek already carries. This config runs the token contract
@@ -16,7 +22,7 @@ import { tokenLint, tokenValues, TOKEN_LINT_IGNORES } from './eslint.tokens.js'
  * full lint is where it runs.
  */
 export default defineConfig([
-  globalIgnores(TOKEN_LINT_IGNORES),
+  globalIgnores([...TOKEN_LINT_IGNORES, 'demo-scenarios', 'convex/_generated']),
   {
     plugins: { 'react-hooks': reactHooks },
     rules: { 'react-hooks/exhaustive-deps': 'off' },
@@ -25,7 +31,6 @@ export default defineConfig([
     // complaining about the other one's business.
     linterOptions: { reportUnusedDisableDirectives: 'off' },
   },
-  tokenLint,
-  // UIG-28: hand-written sizes, corners, shadows and inline colours.
-  tokenValues,
+  tokenLint(),
+  tokenValues(),
 ])
