@@ -250,13 +250,13 @@ export const addToOpenWork = mutation({
   },
 })
 
-export const removeOpenWorkItem = mutation({
-  args: { id: v.string() },
-  handler: async (ctx, { id }) => {
-    const normalized = ctx.db.normalizeId('deskOpenWork', id)
-    if (normalized) await ctx.db.delete(normalized)
-  },
-})
+/*
+  `removeOpenWorkItem`, which deleted a row by its Convex id, is gone (SHR-9).
+  The rows the Desk draws come from the relay blob now and carry synthetic ids,
+  so no client can produce the argument it took. `removeDmFromOpenWork` and
+  `removeTopicFromOpenWork` remove by the key the blob holds, which is what both
+  callers had anyway.
+*/
 
 /** Desk "+" picker and the topic menus: put topics straight into Open work —
  *  no screener row involved (§2.13). Duplicates are skipped. */
@@ -294,6 +294,36 @@ export const addTopicsToOpenWork = mutation({
         targetId: topic._id as string,
         addedAt: addedAt++,
       })
+    }
+  },
+})
+
+/**
+ * Remove a DM from Open work by the partner's person key (§2.4).
+ *
+ * The Desk used to remove a DM row by its Convex row id, because the row id was
+ * what rendered it. Since SHR-9 the list comes from the relay blob and the rows
+ * carry synthetic ids, so there is no Convex id on the client to pass. The key
+ * is what the blob holds, and it is what `toggleStar` already resolves a DM by.
+ *
+ * Still a Convex write, with the read gone: `screenerList` de-duplicates against
+ * these rows, so a DM removed from the blob and left in the table would stay
+ * hidden from the Screener for ever.
+ */
+export const removeDmFromOpenWork = mutation({
+  args: { dmKey: v.string() },
+  handler: async (ctx, { dmKey }) => {
+    const you = await viewerOrThrow(ctx)
+    const partner = await resolveUserKey(ctx, dmKey)
+    if (!partner) return
+    const dm = await findDmForPair(ctx, you._id, partner._id)
+    if (!dm) return
+    const rows = await ctx.db
+      .query('deskOpenWork')
+      .withIndex('by_user', (q) => q.eq('userId', you._id))
+      .collect()
+    for (const w of rows) {
+      if (w.kind === 'dm' && w.targetId === (dm._id as string)) await ctx.db.delete(w._id)
     }
   },
 })

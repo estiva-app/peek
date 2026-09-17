@@ -207,9 +207,23 @@ export const remove = mutation({
     for (const s of await ctx.db.query('screenerItems').collect()) {
       if (s.kind === 'topic' && s.targetId === topicId) await ctx.db.delete(s._id)
     }
-    for (const w of await ctx.db.query('deskOpenWork').collect()) {
-      if (w.kind === 'topic' && w.targetId === topicId) await ctx.db.delete(w._id)
-    }
+    /*
+      `deskOpenWork` is deliberately *not* swept here any more (SHR-9).
+
+      This loop walked every row in the table and deleted other people's, which
+      layer 2 forbids: since the relay blob is the list, a person's open work is
+      theirs and this mutation has no write access to it — it could only ever
+      have cleared the mirror, leaving the blob holding an id the topic no longer
+      backs. It is also not needed. An entry whose target no longer resolves
+      simply does not render (`api/internal/openWork.tsx`), which is the
+      read-time healing PEE-6 relies on, and `watchableChannels` skips a key with
+      no topic row for the same reason.
+
+      The cost, paid knowingly and stated in `stars.ts`'s terms: an id whose
+      topic is deleted for good stays in the blob. Pruning it would mean deciding
+      that an id the index cannot resolve is gone rather than late, and that is
+      the judgement the read path refuses to make.
+    */
     for (const s of await ctx.db.query('stars').collect()) {
       if (s.kind === 'topic' && s.targetId === topicId) await ctx.db.delete(s._id)
     }
