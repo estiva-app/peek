@@ -10,20 +10,20 @@
  */
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { SCREENER_ITEMS } from '@/data/screenerData'
 import { URGENT_ITEMS } from '@/data/deskData'
 import { useAvatarSrc } from './avatars'
 import { useOpenWork } from './internal/openWork'
+import { useScreener } from './internal/screener'
 import { hasConvex } from './store'
 import type { ScreenerItem, OpenWorkItem, UrgentItem } from './types'
 
+/**
+ * The Screener's rows. The topic half is folded on the device (SHR-10), the DM
+ * half still comes from Convex, and `ScreenerProvider` merges the two — see its
+ * header for why rule 1 cannot be folded until DMS-3.
+ */
 export function useScreenerItems(): ScreenerItem[] {
-  const avatarSrcFor = useAvatarSrc()
-  const remote = useQuery(api.desk.screenerList, hasConvex ? {} : 'skip')
-  if (!hasConvex) return SCREENER_ITEMS
-  return (remote ?? []).map((i) =>
-    i.kind === 'dm' ? { ...i, authorAvatarSrc: avatarSrcFor(i.authorName) } : i,
-  )
+  return useScreener().items
 }
 
 /**
@@ -60,8 +60,11 @@ export function useOpenWorkTopicIds(): Set<string> {
 
 /** True while any Desk list is still unsettled (drives the sidebar skeleton). */
 export function useDeskLoading(): boolean {
-  const screener = useQuery(api.desk.screenerList, hasConvex ? {} : 'skip')
   const urgent = useQuery(api.desk.urgentList, hasConvex ? {} : 'skip')
   const openWorkLoading = useOpenWork().isLoading
-  return hasConvex && (screener === undefined || urgent === undefined || openWorkLoading)
+  // The Screener's own loading now covers the relay's answer as well as the two
+  // Convex reads: the decisions blob is subtractive, so rendering before it
+  // arrives shows rows the person has already dismissed.
+  const screenerLoading = useScreener().isLoading
+  return hasConvex && (screenerLoading || urgent === undefined || openWorkLoading)
 }

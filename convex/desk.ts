@@ -123,6 +123,27 @@ export const toggleStar = mutation({
   },
 })
 
+/**
+ * The **DM half** of the Screener (rule 1). The topic half is a fold now.
+ *
+ * SHR-10 moved topics to `src/api/internal/screener.tsx`, which computes their
+ * rows from `screener.candidates` and the person's own decisions blob. DMs stay
+ * here because there is nothing to fold from: `dmConversations` has no channel
+ * uuid, so a DM has no relay representation and no client-side message stream
+ * (`convex/nostr/sync.ts:527`, DMS-3). The seam is `kind`, which the table
+ * already carries, and this query is the `kind: 'dm'` side of it.
+ *
+ * Two consequences worth stating, because both are easy to read as bugs:
+ *
+ * - A `kind: 'topic'` row may still exist in `screenerItems` — written before
+ *   SHR-10 shipped — and is skipped rather than swept. Nothing creates one any
+ *   more, the fold never sees it, and a cross-user sweep is what layer 2
+ *   forbids. It costs a dead row until the table goes.
+ * - PEE-6's de-duplication still runs here against `deskOpenWork`, which SHR-9
+ *   deliberately keeps dual-writing. The topic half now does the same
+ *   intersection on the device against the open-work *list*, which is the
+ *   `Set` intersection over two in-memory arrays SHR-7 §2 predicted.
+ */
 export const screenerList = query({
   args: {},
   handler: async (ctx) => {
@@ -145,31 +166,53 @@ export const screenerList = query({
     const inOpenWork = new Set(openWork.map((w) => `${w.kind}:${w.targetId}`))
     const out = []
     for (const item of rows.sort((a, b) => b.createdAt - a.createdAt)) {
+      if (item.kind !== 'dm') continue // the topic half is a fold (SHR-10)
       if (item.snoozedUntil !== undefined && item.snoozedUntil > now) continue
       if (inOpenWork.has(`${item.kind}:${item.targetId}`)) continue
-      if (item.kind === 'topic') {
-        const topic = (await resolveTarget(ctx, 'topic', item.targetId)) as Doc<'topics'> | null
-        if (!topic) continue
-        out.push({
-          id: item._id as string,
-          kind: 'topic' as const,
-          topicId: topic.seedKey ?? (topic._id as string),
-          topicTitle: topic.title,
-          preview: item.preview,
-        })
-      } else {
-        const dm = (await resolveTarget(ctx, 'dm', item.targetId)) as Doc<'dmConversations'> | null
-        if (!dm) continue
-        const partner = await dmPartner(ctx, dm, you._id)
-        if (!partner) continue
-        out.push({
-          id: item._id as string,
-          kind: 'dm' as const,
-          dmId: personKey(partner),
-          authorName: partner.name,
-          preview: item.preview,
-        })
-      }
+      const dm = (await resolveTarget(ctx, 'dm', item.targetId)) as Doc<'dmConversations'> | null
+      if (!dm) continue
+      const partner = await dmPartner(ctx, dm, you._id)
+      if (!partner) continue
+      out.push({
+        id: item._id as string,
+        kind: 'dm' as const,
+        dmId: personKey(partner),
+        authorName: partner.name,
+        preview: item.preview,
+      })
+    }
+    return out
+  },
+})
+
+/**
+ * Every topic snooze this person had before SHR-10, so the blob can be seeded.
+ *
+ * The one read that exists purely for the migration. `useScreenerSync`'s
+ * `absent` branch calls it once — a person whose snoozes predate the blob keeps
+ * them — and nothing reads it after the first publish. **Dismissals cannot be
+ * seeded**: a dismissal was a row *deletion*, so what it left behind is
+ * indistinguishable from a conversation that never screened, and there is
+ * nothing to read. That asymmetry is why this returns snoozes only, and it
+ * means a previously-dismissed topic with no traffic since screens once more
+ * after this ships. Stated rather than worked around: the alternative is
+ * inventing watermarks for conversations nobody dismissed.
+ */
+export const topicSnoozes = query({
+  args: {},
+  handler: async (ctx) => {
+    const you = await viewer(ctx)
+    if (!you) return []
+    const rows = await ctx.db
+      .query('screenerItems')
+      .withIndex('by_user', (q) => q.eq('userId', you._id))
+      .collect()
+    const out: { topicId: string; snoozedUntil: number }[] = []
+    for (const item of rows) {
+      if (item.kind !== 'topic' || item.snoozedUntil === undefined) continue
+      const topic = (await resolveTarget(ctx, 'topic', item.targetId)) as Doc<'topics'> | null
+      if (!topic) continue
+      out.push({ topicId: topic.seedKey ?? (topic._id as string), snoozedUntil: item.snoozedUntil })
     }
     return out
   },

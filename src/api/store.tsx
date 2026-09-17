@@ -24,6 +24,7 @@ import { ReadStateSync } from '@/nostr/useReadStateSync'
 import { TopicStoreProvider } from '@/api/internal/topicStore'
 import { TopicMutationsProvider } from '@/api/internal/topicMutations'
 import { OpenWorkProvider } from '@/api/internal/openWork'
+import { ScreenerProvider } from '@/api/internal/screener'
 import { AvatarRegistryProvider } from './avatars'
 import { MentionDirectorySync, TopicDirectorySync } from './mentions'
 import type { ConversationData } from './types'
@@ -80,8 +81,12 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
         <TopicDirectorySync />
         <StarredProvider>
           <TopicMutationsProvider>
+            {/* Inside OpenWorkProvider: the Screener's PEE-6 de-duplication
+                reads the open-work list, so open work has to be above it. */}
             <OpenWorkProvider>
-              <DmRuntimeProvider>{children}</DmRuntimeProvider>
+              <ScreenerProvider>
+                <DmRuntimeProvider>{children}</DmRuntimeProvider>
+              </ScreenerProvider>
             </OpenWorkProvider>
           </TopicMutationsProvider>
         </StarredProvider>

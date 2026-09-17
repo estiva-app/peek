@@ -15,8 +15,26 @@
  * URGENT overrides everything: an urgent message (written with `!@`) goes to
  * the Desk *Urgent* section and never to the Screener.
  *
- * "Later" (snoozedUntil) survives a refresh — new activity does not un-snooze
- * something you deliberately put off.
+ * ## The topic half is a fold now, and this file is half its old self (SHR-10)
+ *
+ * Rules 2 and 3 used to be evaluated **here, on write, for every user in the
+ * workspace**. `screenMessage` collected `users` whole and, for each one, read
+ * *their* `readState` to decide whether they had ever opened the container —
+ * a cross-user read of private state, and the single thing ADR 0001 §3's
+ * "server-side compute" candidate turned on when SHR-7 examined it. It also
+ * cost O(users × their containers) per message sent, and again per reply.
+ *
+ * None of that survives. {@link candidates} hands the viewer the facts about
+ * **their own** containers and `src/api/internal/screener.tsx` applies the
+ * rules on the device, once, for one person. What is left of the fan-out is
+ * the DM half (rule 1), which has no relay stream to fold from until DMS-3
+ * gives `dmConversations` a channel uuid — `convex/nostr/sync.ts:527` states
+ * that flatly. The seam is `kind`, which `screenerItems` already carries.
+ *
+ * "Later" and Dismiss are no longer here either for topics: they are the two
+ * authored fields, and they live in the person's own `estiva-peek:screener:v1`
+ * blob (`src/nostr/screener.ts`). `snoozedUntil` on a `screenerItems` row now
+ * means a snoozed **DM** and nothing else.
  */
 import { v } from 'convex/values'
 import { query, type MutationCtx, type QueryCtx } from './_generated/server'
@@ -123,39 +141,44 @@ async function upsert(
   }
 }
 
-/** Fan a newly-sent message out to the Screeners that should show it. */
+/**
+ * Fan a newly-sent **DM** out to the Screener that should show it (rule 1).
+ *
+ * Topics and huddles return here without writing anything. They are folded on
+ * the device from {@link candidates} — see the header. This is the whole of
+ * what SHR-10 left behind, and it is temporary in the same way `dmConversations`
+ * is: once DMS-3 gives a DM a channel uuid, a DM *is* a channel, rule 1 is
+ * answered by the same `kind:44100` the topic rules use, and this goes too.
+ *
+ * Deliberately unchanged in every other respect, because SHR-10's done-when is
+ * that the DM half is untouched and still correct. That includes a behaviour
+ * worth writing down rather than quietly fixing here: `users` is still
+ * collected whole, so someone @mentioned inside a DM they are not part of gets
+ * a row for a conversation they cannot open. The list of every user is what
+ * makes that reachable. It is a pre-existing defect of rule 3 in DMs, it is not
+ * what this ticket is about, and fixing it under cover of a migration is how a
+ * regression gets attributed to the wrong change.
+ */
 export async function screenMessage(ctx: MutationCtx, m: Doc<'messages'>) {
   if (m.urgent) return // → Desk Urgent instead
+  if (m.parentKind !== 'dm') return // topics and huddles are a fold (SHR-10)
   const target = await screenTarget(ctx, m.parentKind, m.parentId)
   if (!target) return
 
   const members = new Set(await recipients(ctx, m.parentKind, m.parentId, m.authorId))
   // A MENTION reaches you whether or not you're a member of the container —
-  // being named is the point. Membership only gates the other two rules.
+  // being named is the point. Membership only gates the other rule.
   const candidates = await ctx.db.query('users').collect()
 
   for (const user of candidates) {
     if (user._id === m.authorId) continue
-
-    let screen = false
-    if (mentionsUser(m.body, user.name)) {
-      screen = true // you were @mentioned
-    } else if (!members.has(user._id)) {
-      continue
-    } else if (m.parentKind === 'dm') {
-      screen = true // every DM to you
-    } else {
-      // "added to a topic and it has a new message" — i.e. you've never
-      // opened it. Once you have, its ordinary traffic stops screening.
-      const seen = await ctx.db
-        .query('readState')
-        .withIndex('by_user_container', (q) => q.eq('userId', user._id).eq('containerId', target.targetId))
-        .unique()
-      screen = seen === null
-    }
+    // Every DM to you screens; or you were @mentioned in one. The
+    // never-opened branch that read another person's `readState` was the topic
+    // rule and is gone with it.
+    if (!mentionsUser(m.body, user.name) && !members.has(user._id)) continue
     // Checked only for someone about to be screened: `candidates` is every
     // user, and most of them are not (PEE-6).
-    if (screen && !(await inOpenWork(ctx, user._id, target.kind, target.targetId))) {
+    if (!(await inOpenWork(ctx, user._id, target.kind, target.targetId))) {
       await upsert(ctx, user._id, target.kind, target.targetId, snippet(m.body), m._id)
     }
   }
@@ -176,6 +199,7 @@ export async function screenReply(ctx: MutationCtx, reply: Doc<'replies'>) {
   if (reply.urgent) return
   const parent = await ctx.db.get(reply.messageId)
   if (!parent) return
+  if (parent.parentKind !== 'dm') return // topics and huddles are a fold (SHR-10)
   const target = await screenTarget(ctx, parent.parentKind, parent.parentId)
   if (!target) return
 
@@ -259,5 +283,208 @@ export const preview = query({
     }
 
     return out
+  },
+})
+
+/**
+ * The facts the viewer's own device needs to fold its Screener (SHR-10).
+ *
+ * ## What this is, and what it deliberately is not
+ *
+ * It is **not** the Screener, and it does not decide a single row. It answers
+ * questions about the viewer's own containers — have I opened this, am I a
+ * member, what arrived that I did not write, did I write in this thread — and
+ * `src/api/internal/screener.tsx` applies §2.12's rules to the answers. That
+ * split is the ticket: the five derived fields of `screenerItems` are computed
+ * where they are used, and the two authored ones live in the person's blob.
+ *
+ * ## Why this is legitimate layer 3, stated the way the PR template asks
+ *
+ * ADR 0001 §3's third question is "does it need a query, an index, aggregation,
+ * server-side compute or size". This adds **no state at all** — no table, no
+ * field — so §3 does not apply to it in the first place; §5's rule is about
+ * where truth lives, and the truth here is `messages`, `replies`, `topicMembers`
+ * and the viewer's own `readState`, all of which are already layer 3 and stay
+ * there. What moved to layer 2 is the pair of decisions, which is the whole of
+ * what the person authored.
+ *
+ * The one thing that could have gone the other way is folding from the relay
+ * instead — SHR-10's table of four relay-native inputs. Probed against
+ * production rather than read out of buzz's source
+ * (`scripts/probe-shr10-screener-inputs.ts`), one of the four is usable today:
+ * `kind:44100` answers `#p:[self]` and refuses another pubkey's, 403. The
+ * mention index cannot answer rule 3, because it is `p`-tag based and Peek
+ * writes a mention as `@FullName` text — `mentionedPubkeys` only tags a
+ * `nostr:npub1…` URI, which the composer never produces. `kind:39005` could not
+ * be decided at all: fifteen readable channels held two top-level messages and
+ * no thread with a reply. And a relay-sourced fold of *traffic* cannot see the
+ * 41 topic messages that were never published (SHR-8). So the relay path is a
+ * follow-up with a dependency, and this is the ungated shape of the same move.
+ *
+ * ## Cost, and the precedent for it
+ *
+ * One pass over `topics`, `messages` and `replies` for one viewer, which is the
+ * shape `unread.summary` already has and the same order of work — with the
+ * O(users × containers) fan-out that ran on **every message sent** deleted in
+ * exchange. Bodies come back snippeted to `PREVIEW_MAX`, so the wire cost is
+ * the preview the row was always going to draw.
+ *
+ * `mentionsMe` is the one predicate evaluated here rather than on the device,
+ * and it is a fact about the viewer's *own* name — never another person's
+ * state, which is the read this ticket exists to remove. It is here because the
+ * alternative is worse in both directions: matching against the snippet would
+ * silently miss a mention past the 240th character, and shipping every full
+ * body so the client can match properly is exactly the payload the snippet
+ * exists to avoid.
+ */
+export const candidates = query({
+  args: {},
+  handler: async (ctx: QueryCtx) => {
+    const me = await viewerId(ctx)
+    const empty: {
+      containers: {
+        kind: 'topic'
+        targetId: string
+        isMember: boolean
+        everOpened: boolean
+        events: {
+          id: string
+          preview: string
+          createdAt: number
+          isReply: boolean
+          mentionsMe: boolean
+          iWroteInThread: boolean
+        }[]
+      }[]
+    } = { containers: [] }
+    if (!me) return empty
+
+    const meDoc = await ctx.db.get(me)
+    if (!meDoc) return empty
+
+    // My memberships and my read state. Both `by_user`, both mine — the two
+    // reads that used to be done for everybody.
+    const memberOf = new Set(
+      (await ctx.db.query('topicMembers').withIndex('by_user', (q) => q.eq('userId', me)).collect()).map(
+        (r) => r.topicId as string,
+      ),
+    )
+    // `by_user_container` on its first key — there is no `by_user` on
+    // `readState`, and a prefix of the compound index is the same scan.
+    const opened = new Set(
+      (
+        await ctx.db
+          .query('readState')
+          .withIndex('by_user_container', (q) => q.eq('userId', me))
+          .collect()
+      ).map((r) => r.containerId),
+    )
+
+    // Replies grouped by thread, once. `iWroteInThread` is the refresh rule's
+    // input (ruling 2026-07-16) and it is a fact about my own authorship over a
+    // thread's authors, which every member of the container can already see.
+    const repliesByMessage = new Map<string, Doc<'replies'>[]>()
+    for (const r of await ctx.db.query('replies').collect()) {
+      const key = r.messageId as string
+      const list = repliesByMessage.get(key)
+      if (list) list.push(r)
+      else repliesByMessage.set(key, [r])
+    }
+
+    const messagesByContainer = new Map<string, Doc<'messages'>[]>()
+    for (const m of await ctx.db.query('messages').collect()) {
+      const key = `${m.parentKind}:${m.parentId}`
+      const list = messagesByContainer.get(key)
+      if (list) list.push(m)
+      else messagesByContainer.set(key, [m])
+    }
+
+    // Huddle activity screens to the parent topic (`screenTarget`), and huddles
+    // are private — so a huddle's messages are folded in only for a member.
+    const huddleParent = new Map<string, Id<'topics'>>()
+    for (const h of await ctx.db.query('huddles').collect()) {
+      const members = await ctx.db
+        .query('huddleMembers')
+        .withIndex('by_huddle', (q) => q.eq('huddleId', h._id))
+        .collect()
+      if (members.some((r) => r.userId === me)) huddleParent.set(h._id as string, h.topicId)
+    }
+
+    const containers = []
+    for (const topic of await ctx.db.query('topics').collect()) {
+      const internalId = topic._id as string
+      const sources = [`topic:${internalId}`]
+      for (const [huddleId, parent] of huddleParent) {
+        if ((parent as string) === internalId) sources.push(`huddle:${huddleId}`)
+      }
+
+      const events = []
+      for (const source of sources) {
+        for (const m of messagesByContainer.get(source) ?? []) {
+          // Urgent never screens — it goes to Desk Urgent (§4.4). Dropped here
+          // rather than on the device so an urgent body is not shipped to draw
+          // a row that cannot exist.
+          if (m.urgent) continue
+          const threadReplies = repliesByMessage.get(m._id as string) ?? []
+          /*
+           * When I first spoke in this thread, or `undefined` if I never did.
+           *
+           * An instant rather than a boolean, because the rule is "you wrote
+           * the parent message or an **earlier** reply in it" — the old code
+           * spelled that `priorReplies.filter(r => r._id !== reply._id)`,
+           * evaluated at write time when there was no later reply to confuse
+           * it. A fold sees the whole thread at once, so a flat "did I ever
+           * write here" would make replies that landed *before* mine screen
+           * retroactively, and the Screener would fill up with conversations I
+           * have since joined and read.
+           */
+          const myFirst = [
+            ...(m.authorId === me ? [m.createdAt] : []),
+            ...threadReplies.filter((r) => r.authorId === me).map((r) => r.createdAt),
+          ].sort((a, b) => a - b)[0]
+          if (m.authorId !== me) {
+            events.push({
+              id: m._id as string,
+              preview: snippet(m.body),
+              createdAt: m.createdAt,
+              // `isReply` is what keeps the refresh rule off a top-level
+              // message. Participation refreshes a *reply* (ruling 2026-07-16);
+              // a new message in a topic you have opened and happen to have
+              // replied in once still does not screen, and collapsing the two
+              // here would make the Screener loud in exactly the busy topics
+              // §2.12 is trying to keep out of it.
+              isReply: false,
+              mentionsMe: mentionsUser(m.body, meDoc.name),
+              iWroteInThread: false,
+            })
+          }
+          for (const r of threadReplies) {
+            if (r.urgent || r.authorId === me) continue
+            events.push({
+              id: m._id as string, // the *message* the preview opens onto, as `screenerItems.messageId` was
+              preview: snippet(r.body),
+              createdAt: r.createdAt,
+              isReply: true,
+              mentionsMe: mentionsUser(r.body, meDoc.name),
+              iWroteInThread: myFirst !== undefined && myFirst < r.createdAt,
+            })
+          }
+        }
+      }
+      if (events.length === 0) continue
+      events.sort((a, b) => b.createdAt - a.createdAt)
+
+      containers.push({
+        kind: 'topic' as const,
+        targetId: topic.seedKey ?? internalId,
+        isMember: memberOf.has(internalId),
+        // Read state is keyed by the container the person opened, and the
+        // Screener's rule 2 is about the topic — a huddle read does not count
+        // as having opened its parent, exactly as before.
+        everOpened: opened.has(internalId),
+        events,
+      })
+    }
+    return { containers }
   },
 })

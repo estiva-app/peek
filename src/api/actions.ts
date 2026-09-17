@@ -10,6 +10,7 @@ import { useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { useOpenWork } from '@/api/internal/openWork'
+import { topicIdFromScreenerRowId, useScreener } from '@/api/internal/screener'
 import { hasConvex, useDmRuntime } from './store'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '@estiva-app/protocol'
@@ -108,6 +109,7 @@ export function usePeekActions(
 ) {
   const m = useTopicMutations()
   const openWork = useOpenWork()
+  const screener = useScreener()
   // One-shot reads. `useQuery` is reactive and cannot be called mid-action.
   const convex = useConvex()
   const { setSentDmMessages } = useDmRuntime()
@@ -856,7 +858,22 @@ export function usePeekActions(
     },
 
     // ── Desk (pages keep their instant local hide; these persist it) ──
-    dismissScreenerItem(id: string) {
+    /**
+     * Dismiss — a watermark for a folded topic row, a deletion for a DM.
+     *
+     * The two halves keep different records because they keep different truths
+     * (SHR-10). A folded row has no Convex id to delete: what "dismissed" means
+     * is *ignore this conversation up to now*, which is exactly what the
+     * deletion meant, since later traffic used to re-create the row. So it goes
+     * into the person's decisions blob as an instant. DMs still have a row, and
+     * still lose it.
+     */
+    dismissScreenerItem(id: string, nowMs: number = Date.now()) {
+      const topicId = topicIdFromScreenerRowId(id)
+      if (topicId) {
+        screener.dismissTopic(topicId, nowMs)
+        return
+      }
       if (hasConvex) void dismissScreenerRemote({ id })
     },
     /**
@@ -870,11 +887,22 @@ export function usePeekActions(
     addScreenerToOpenWork(id: string, target: { kind: 'topic'; topicId: string } | { kind: 'dm'; dmId: string }) {
       if (target.kind === 'dm') openWork.addDm(target.dmId)
       else openWork.addTopics([target.topicId])
-      if (hasConvex) void addToOpenWorkRemote({ screenerItemId: id })
+      // A folded topic row names no Convex screener item, and does not need to:
+      // PEE-6 takes it out of the Screener the moment it is in the open-work
+      // list, which the line above has already done for this session.
+      if (hasConvex && !topicIdFromScreenerRowId(id)) void addToOpenWorkRemote({ screenerItemId: id })
     },
     /** "Later" — the item reappears after `untilMs` (an absolute timestamp);
      *  defaults to +24h server-side when omitted. */
     snoozeScreenerItem(id: string, untilMs?: number) {
+      const topicId = topicIdFromScreenerRowId(id)
+      if (topicId) {
+        // The +24h default is server-side for DMs (`desk.snoozeScreenerItem`).
+        // A folded row has no server to default it, so it is spelled here — the
+        // same 24 hours, in the one place the blob is written from.
+        screener.snoozeTopic(topicId, untilMs ?? Date.now() + 24 * 60 * 60 * 1000)
+        return
+      }
       if (hasConvex) void snoozeScreenerRemote({ id, until: untilMs })
     },
     /** Remove a DM from Open work. By the partner's person key since SHR-9 —
