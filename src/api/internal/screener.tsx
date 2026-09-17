@@ -133,6 +133,12 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
       for (const row of legacySnoozes) snoozed[screenerKey('topic', row.topicId)] = Math.floor(row.snoozedUntil / 1000)
       return { snoozed, dismissed: {} }
     }
+    // The relay was asked and the answer is not coming. Render without the
+    // decisions rather than hold the Desk under a skeleton for the rest of the
+    // load — a Screener that never appears is a worse failure than one showing
+    // a row the person dismissed, and `useScreenerSync` refuses to publish in
+    // this state, so the decisions on the relay are not at risk.
+    if (sync.state === 'unreachable') return NO_PENDING
     // `unknown`. Not asked at all is an empty pair the person can still act on;
     // asked and unanswered renders nothing yet, because pulling a dismissed row
     // back a second later is a flicker on every load.

@@ -17,7 +17,15 @@
  * `useDeskLoading`.
  *
  * - `unknown` — not asked (no relay origin, no token in this tab yet) or asked
- *   and not answered. **Nothing may be published and nothing may be rendered.**
+ *   and not answered **yet**. Nothing may be published, and nothing may be
+ *   rendered while a read is genuinely in flight.
+ * - `unreachable` — asked, and the answer is not coming: the read failed, or
+ *   the blob would not decrypt. Terminal, and that is its whole purpose. Left
+ *   as `unknown` it would hold the Desk under a skeleton **for ever** any time
+ *   the relay was down, which is a worse failure than the one the skeleton is
+ *   there to prevent. So the caller renders without subtractions, and nothing
+ *   is published — the decisions are intact on the relay and a blob assembled
+ *   without them would erase every one on the next successful write.
  * - `absent` — answered, and holds nothing this version can read. The caller
  *   seeds it from the Convex rows that still carry every snooze, and a person
  *   with no decisions yet simply publishes their first one.
@@ -38,7 +46,7 @@ import type { RelaySeam } from './openWork'
 import { type InstantMap, type ScreenerBlob, fetchScreener, publishScreener, screenerToPublish } from './screener'
 
 /** Whether the relay has answered what decisions it holds, and what it said. */
-export type ScreenerState = 'unknown' | 'absent' | 'present'
+export type ScreenerState = 'unknown' | 'unreachable' | 'absent' | 'present'
 
 export interface ScreenerSync {
   /** The decisions the relay holds. Defined exactly when `state` is `present`. */
@@ -97,12 +105,18 @@ export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSy
         } else if (read.state === 'absent') {
           setState('absent')
         } else {
-          // A relay that did not answer and one that has not been asked license
-          // exactly the same thing, which is nothing.
-          console.warn('[screener] the relay did not say what screener decisions it holds')
+          // Terminal, not "still waiting": this read is the only one this load
+          // makes, so the Screener must stop waiting on it and render.
+          setState('unreachable')
+          console.warn(
+            '[screener] the relay did not say what screener decisions it holds — dismissed and snoozed rows will appear until it does',
+          )
         }
       } catch (error) {
-        if (!cancelled) console.warn('[screener] could not read screener decisions from the relay:', error)
+        if (!cancelled) {
+          setState('unreachable')
+          console.warn('[screener] could not read screener decisions from the relay:', error)
+        }
       }
     })()
     return () => {
@@ -120,10 +134,16 @@ export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSy
       // The load-bearing guard. `screenerToPublish` compares against
       // `relayBlob`, and an undefined one means "publish whatever you were
       // given" — right for a first publish and catastrophic for maps assembled
-      // while the relay's answer is still unknown, because last-write-wins would
-      // make an empty `dismissed` permanent and every dismissed row would return.
-      if (state === 'unknown') {
-        console.warn('[screener] not published: the relay has not said what decisions it holds')
+      // before the relay answered, because last-write-wins would make an empty
+      // `dismissed` permanent and every dismissed row would return.
+      //
+      // Allow-list, not a check for `unknown`: `unreachable` renders — that is
+      // the whole reason it exists — and a render is what produces the maps this
+      // is handed. Spelled as `!== 'unknown'` it would publish exactly the maps
+      // assembled *without* the decisions the relay is still holding, which is
+      // the one write that destroys them. A new state added later fails closed.
+      if (state !== 'absent' && state !== 'present') {
+        console.warn(`[screener] not published: the relay has not said what decisions it holds (${state})`)
         return
       }
       if (publishing.current) return

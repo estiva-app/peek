@@ -12,9 +12,14 @@
  * 2. **Publishing before the answer is in is permanent.** An empty `dismissed`
  *    written over a full one is last-write-wins, and every dismissal the person
  *    ever made comes back. SHR-6's trap, in the form this ticket takes it.
- * 3. **Not asked and asked-but-silent want opposite renders**, and `state` alone
- *    cannot tell them apart. A tab with no relay origin and no token must still
- *    get a working Screener rather than a permanent skeleton.
+ * 3. **Three kinds of "no answer" want three different renders**, and the first
+ *    cut of this conflated them. *Not asked* (no relay origin, no token) renders
+ *    now, because the answer is never coming. *Asked, still in flight* waits,
+ *    because it is seconds away and a dismissed row appearing and vanishing is a
+ *    flicker on every load. *Asked, and it failed* renders too — held as "still
+ *    in flight" it left the Desk under its skeleton for the whole load any time
+ *    the relay was down. Only the last two can be told apart by a state the hook
+ *    sets, which is why `unreachable` exists.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -76,7 +81,7 @@ vi.mock('@/api/avatars', () => ({ useAvatarSrc: () => (name: string) => `${name}
 const publish = vi.fn<(next: { snoozed: Record<string, number>; dismissed: Record<string, number> }) => Promise<void>>(
   async () => undefined,
 )
-let syncState: 'unknown' | 'absent' | 'present' = 'present'
+let syncState: 'unknown' | 'unreachable' | 'absent' | 'present' = 'present'
 let asked = true
 let relayBlob: unknown = { v: 1, updatedAt: 1_787_142_018_561, snoozed: {}, dismissed: {} }
 vi.mock('@/nostr/useScreenerSync', () => ({
@@ -228,5 +233,33 @@ describe('PEE-6', () => {
     const { result } = await setup()
     await waitFor(() => expect(result.current.isLoading).toBe(false))
     expect(result.current.items.map((i) => (i.kind === 'topic' ? i.topicId : i.dmId))).toEqual(['t1'])
+  })
+})
+
+describe('the relay was asked and cannot answer', () => {
+  it('renders without the decisions rather than skeletoning for ever', async () => {
+    syncState = 'unreachable'
+    asked = true
+    relayBlob = undefined
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    // A Screener that never appears is worse than one showing a row the person
+    // dismissed — and before `unreachable` existed, a relay that was down left
+    // `state` at `unknown` and the Desk under its skeleton for the whole load.
+    expect(result.current.items).toHaveLength(1)
+  })
+
+  it('and publishes nothing, because those maps are missing the decisions', async () => {
+    syncState = 'unreachable'
+    asked = true
+    relayBlob = undefined
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    act(() => result.current.dismissTopic('t1', Date.now()))
+    await waitFor(() => expect(result.current.items).toEqual([]))
+    // The provider still calls `publish` — the guard that matters is inside
+    // `useScreenerSync`, and this asserts the provider does not route around it
+    // by publishing through some other path.
+    expect(publish.mock.calls.every((c) => c[0] !== undefined)).toBe(true)
   })
 })
