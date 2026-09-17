@@ -2,30 +2,38 @@
  * DMS-4: a message sent in a Peek DM is on the relay, and only its
  * participants can read it.
  *
- * Read-only, against **production**, as the agent's own service identity
- * (`~/.estiva-agent.env`). It publishes nothing: the message this looks for is
- * one a person sent from Peek, because no agent can be a signed-in Peek viewer
- * and a message written by this script would prove the relay accepts a kind:9,
- * not that Peek sends one.
+ * Read-only, against **production**. It publishes nothing: the message it looks
+ * for is one a person sent from Peek, because no agent can be a signed-in Peek
+ * viewer and a message written by this script would prove that the relay
+ * accepts a kind:9, not that Peek sends one.
  *
- * ## The two legs, and why the second one needs a channel this identity is NOT in
+ * ## Two identities, because one cannot show both halves
  *
  * A DM channel is `channel_type='dm'`, `visibility='private'`, with the
- * participants as its members — so the privacy boundary is the relay's ordinary
- * private-channel access filter, and the way to show it holds is to ask for a
- * conversation somebody else is having. An *empty* answer from a channel that
- * has messages is the evidence; an empty answer from an empty channel is not,
- * which is why this asks for both and reports them together.
+ * participants as its members, so the privacy boundary is the relay's ordinary
+ * private-channel access filter. Showing it holds therefore takes two readers:
+ * a **participant**, who must see the message, and somebody **else**, who must
+ * see nothing *in a channel that provably has messages*. An empty answer from
+ * an empty channel is not evidence of anything.
+ *
+ * `--as <file>` is the participant half. The file is the token JSON out of a
+ * signed-in Peek tab — `sessionStorage.getItem('peek.estivaId.token')`, which
+ * carries `pubkey` and `accessToken`. No secret key is involved and none may be
+ * put here: the token is a bearer credential with an hour on it, `/sign` does
+ * the signing, and this reads and publishes nothing either way.
+ *
+ * Without `--as` it reads as the agent's own service identity
+ * (`~/.estiva-agent.env`), which is in neither DM — the control.
  *
  *   cd ~/estiva-agent && set -a && . ~/.estiva-agent.env && set +a && cd -
- *   npx tsx scripts/dms4-live-check.ts --author <the sender's pubkey>
- *   npx tsx scripts/dms4-live-check.ts --mine <uuid> --theirs <uuid>
+ *   npx tsx scripts/dms4-live-check.ts --as /path/to/token.json          # what a participant reads
+ *   npx tsx scripts/dms4-live-check.ts --theirs <uuid>                   # what a third identity reads
  *
- * `--author` is the discovery pass: every kind:9 by that person this identity
- * can read, with the channel each is in. A DM sent *to this identity* shows up
- * there and its `h` is the uuid for `--mine`. `--theirs` is a DM channel of
- * theirs with somebody else — the control.
+ * With no `--mine`/`--theirs`, it lists every kind:9 the identity can read and
+ * the channel each is in. On a fresh account that is a short list and the DM is
+ * in it, which is how the channel uuid is found without touching the database.
  */
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -64,23 +72,38 @@ const arg = (name: string) => {
 const tag = (event: SignedEvent, name: string) => event.tags.find((t: string[]) => t[0] === name)?.[1]
 const when = (event: SignedEvent) => new Date(event.created_at * 1000).toISOString().slice(0, 19)
 
+/** The token JSON a signed-in Peek tab keeps, as this script needs it. */
+function personToken(path: string): { pubkey: string; access_token: string } {
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as { pubkey?: string; accessToken?: string }
+  if (!raw.pubkey || !raw.accessToken) {
+    throw new Error(`${path} is not a Peek token: expected {"pubkey":…,"accessToken":…}`)
+  }
+  return { pubkey: raw.pubkey, access_token: raw.accessToken }
+}
+
 async function main() {
   const { loadCredentials, clientCredentialsToken, estivaIdSigner, Relay } = await agentClient()
   const credentials = loadCredentials()
-  const token = await clientCredentialsToken(credentials)
+  const as = arg('as')
+  const token = as ? personToken(as) : await clientCredentialsToken(credentials)
   const relay = new Relay(
     RELAY_URL,
     estivaIdSigner({ base: credentials.base, pubkey: token.pubkey, token: token.access_token }),
   )
   const query = (filters: Record<string, unknown>[]) => relay.query(filters)
-  console.log(`relay ${RELAY_URL}, reading as ${token.pubkey}\n`)
+  console.log(`relay ${RELAY_URL}, reading as ${token.pubkey}${as ? ' (a person’s token)' : ' (the agent)'}\n`)
 
   const author = arg('author')
-  if (author) {
-    const events = await query([{ kinds: [KIND_MESSAGE], authors: [author], limit: 20 }])
-    console.log(`kind:9 by ${author.slice(0, 8)}… this identity can read: ${events.length}`)
+  if (author || (!arg('mine') && !arg('theirs'))) {
+    const filter = author
+      ? { kinds: [KIND_MESSAGE], authors: [author], limit: 20 }
+      : { kinds: [KIND_MESSAGE], limit: 20 }
+    const events = await query([filter])
+    console.log(`kind:9 this identity can read${author ? ` by ${author.slice(0, 8)}…` : ''}: ${events.length}`)
     for (const e of events) {
-      console.log(`  ${when(e)}  h=${tag(e, 'h') ?? '(none)'}  ${JSON.stringify(e.content.slice(0, 60))}`)
+      console.log(
+        `  ${when(e)}  h=${tag(e, 'h') ?? '(none)'}  by ${e.pubkey.slice(0, 8)}…  ${JSON.stringify(e.content.slice(0, 60))}`,
+      )
     }
     console.log()
   }
@@ -111,8 +134,6 @@ async function main() {
     )
     console.log()
   }
-
-  if (!author && !mine && !theirs) console.log('nothing asked for: pass --author, --mine or --theirs')
 }
 
 main().catch((error) => {
