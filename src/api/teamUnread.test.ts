@@ -18,6 +18,7 @@ const said = (id: string, at: number, about: string[] = [], by = THEM): StreamMe
   by,
   root: id,
   about,
+  urgent: false,
 })
 const replied = (id: string, at: number, inThread: string, about: string[] = [], by = THEM): StreamMessage => ({
   id,
@@ -25,6 +26,7 @@ const replied = (id: string, at: number, inThread: string, about: string[] = [],
   by,
   root: inThread,
   about,
+  urgent: false,
 })
 
 const frontier = (markers: Record<string, number> = {}, me = ME) => ({
