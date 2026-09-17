@@ -35,6 +35,10 @@ docs/*
 # Exception: the Buzz/Nostr interop work is tracked — it holds working code
 # (publish-to-relay.ts) and the interop evidence, not just prose.
 !docs/buzz-compat/
+# Exception: the debt list is a promise about this repository's code, and a
+# promise nobody else can read is not one. Ship has carried its own since
+# UIG-4; the gate checks every app runs name it (UIG-32).
+!docs/GATES-DEBT.md
 
 # Editor directories and files
 .vscode/*
