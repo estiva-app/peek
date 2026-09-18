@@ -53,3 +53,13 @@ docs/*
 
 # The manifest signing key (PRO-6). A secret; never committed.
 .manifest-key
+
+# A signed-in tab's Estiva ID token, as `scripts/dms5-live-check.ts --as` wants
+# it. It carries a refresh credential, not just the hour-long access token, so
+# it is a secret with a long tail. One was committed and merged to main before
+# this rule existed — `git add -A` in a tree somebody had just been told to
+# write a credential into. Keep the file outside the repo as well; this is the
+# backstop, not the plan.
+token.json
+*token.json
+*.token.json
