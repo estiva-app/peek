@@ -151,7 +151,7 @@ export function ProjectTickets({
                       </span>
                     )}
                     {ticket.openUrl ? (
-                      // @estiva-escape: the whole row is one link, drawn by a layer over it; no part makes a row that is a link yet, and these rows are not cards (UIG-9, Katerina 17 September)
+                      // @estiva-escape: the package Link, stretched over its row by an after: layer and brightened by the row's hover; Link has no variant for a link that is a whole row, and these rows are not cards (UIG-9, Katerina 17 September; reason corrected UIG-14)
                       <Link
                         href={ticket.openUrl}
                         variant="plain"
