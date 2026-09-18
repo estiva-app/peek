@@ -91,6 +91,8 @@ const RELAY_URL = (process.env.RELAY_URL ?? 'https://estiva.estiva.app').replace
 const AGENT_DIR = process.env.ESTIVA_AGENT_DIR ?? join(homedir(), 'estiva-agent')
 interface RelayClient {
   query(filters: Record<string, unknown>[]): Promise<SignedEvent[]>
+  /** Paged. The discovery leg needs it — see there for what a single page hides. */
+  queryAll(filters: Record<string, unknown>[]): Promise<SignedEvent[]>
   publish(event: SignedEvent): Promise<{ ok: boolean; reason?: string; duplicate?: boolean }>
 }
 interface AgentClient {
@@ -150,9 +152,21 @@ async function main() {
   console.log(`relay ${RELAY_URL}, reading as ${who}\n`)
 
   if (!dm) {
-    // Discovery. On an identity that is in few channels this is a short list and
-    // the DM is in it, which finds the uuid without touching the database.
-    const events = await relay.query([{ kinds: [KIND_MESSAGE], limit: 200 }])
+    /*
+      Discovery, and it must be `queryAll` rather than one capped page.
+
+      A single `limit: 200` page is not "the 200 newest per channel", it is the
+      200 newest **events**, so the channels it omits are precisely the quiet
+      ones — and a DM is usually quiet. Measured as the agent on production
+      2026-09-18: one page showed 200 events across 23 channels; paging showed
+      412 across **35**. Twelve channels were invisible, and the list gave no
+      sign of it: the counts summed to exactly 200, which is the only tell.
+
+      That is a worked example of the cap this repo keeps re-learning (SPEC
+      §6.6, `shareTargetBudget`): an unreported cap is indistinguishable from
+      "that is all of them".
+    */
+    const events = await relay.queryAll([{ kinds: [KIND_MESSAGE] }])
     const byChannel = new Map<string, { count: number; authors: Set<string> }>()
     for (const e of events) {
       const h = tag(e, 'h') ?? '(no h)'
@@ -176,6 +190,14 @@ async function main() {
       )
     }
     console.log('\nPass one as --dm to look inside it.')
+    if (!asFile) {
+      // Said here rather than only in the header, because the two listings look
+      // alike and the agent's cannot contain what you are looking for.
+      console.log(
+        '\nNote: this is the AGENT, which is in no DM at all — a DM can never appear\n' +
+          'in this list. Re-run with --as <token.json> to see your own.',
+      )
+    }
     return
   }
 
