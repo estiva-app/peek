@@ -1,3 +1,4 @@
+import { Divider } from '@estiva-app/ui'
 import type { People } from '@estiva-app/interop'
 import type { FileThreadsState } from '@/api'
 import type { FileComment } from '@/nostr/foreign'
@@ -44,9 +45,10 @@ export function FileThreadView({
         A rule under the root, because the two halves are not the same thing:
         above is what is being answered, below are the answers. Without it a
         thread reads as a flat list whose first item happens to be highlighted
-        in the pane to the left.
+        in the pane to the left. The package's rule, edge to edge (`mx-0`).
       */}
-      <div className="mt-3 border-t border-border-subtle pt-3">
+      <Divider className="mx-0 mt-3" />
+      <div className="pt-3">
         {state === 'loading' ? (
           <div data-loading="thread">
             <SkeletonSidebarList />
