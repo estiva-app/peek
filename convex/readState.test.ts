@@ -396,3 +396,94 @@ describe('the sidebar dot, which is what a person actually sees', () => {
     expect(summary.topicMarks[CHANNEL]).toBeDefined()
   })
 })
+
+describe('a DM is a container too (DMS-8)', () => {
+  /**
+   * The context is the DM's **bare** channel uuid — the one the relay answered
+   * `kind:41010` with — exactly as a topic's. The ticket's title said
+   * `h:<uuid>`; there is no such prefix (SPEC §11.1), and because the blob is
+   * grow-only a prefixed key would be a second permanent key for the same
+   * conversation that no other app would read.
+   */
+  const DM_CHANNEL = '2f3e4d5c-6b7a-4899-8c1d-3e4f5a6b7c8d'
+
+  async function seedDm(t: ReturnType<typeof convexTest>, channelUuid?: string) {
+    return await t.run(async (ctx) => {
+      const me = await ctx.db.insert('users', { name: 'Ada', nostrPubkey: PUBKEY })
+      const them = await ctx.db.insert('users', { name: 'Bob', nostrPubkey: 'b'.repeat(64) })
+      const [userLowId, userHighId] = (me as string) < (them as string) ? [me, them] : [them, me]
+      const dmId = await ctx.db.insert('dmConversations', {
+        userLowId,
+        userHighId,
+        createdAt: Date.now() - DAY_MS,
+        ...(channelUuid ? { channelUuid } : {}),
+      })
+      await ctx.db.insert('messages', {
+        parentKind: 'dm',
+        parentId: dmId as string,
+        authorId: them,
+        body: 'said an hour ago',
+        createdAt: Date.now() - 60 * 60 * 1000,
+      })
+      return { me, them, dmId }
+    })
+  }
+
+  it('resolves a bare channel uuid to the DM and caches it', async () => {
+    const t = convexTest(schema, modules)
+    const { me, dmId } = await seedDm(t, DM_CHANNEL)
+
+    const result = await t.withIdentity(asUser(PUBKEY)).mutation(api.readState.applyRelayReadState, {
+      contexts: [{ context: DM_CHANNEL, atSeconds: 1_700_000_000 }],
+    })
+
+    expect(result).toEqual({ applied: 1, unresolved: 0 })
+    const rows = await t.run(async (ctx) =>
+      ctx.db
+        .query('readState')
+        .withIndex('by_user_container', (q) => q.eq('userId', me))
+        .collect(),
+    )
+    // The same key `markContainerRead('dm', …)` writes, so a marker from another
+    // installation lands where this one's click would have.
+    expect(rows).toEqual([
+      expect.objectContaining({ containerId: dmId as string, lastReadAt: 1_700_000_000_000 }),
+    ])
+  })
+
+  it('returns a DM watermark as its bare channel uuid, and omits one with no channel yet', async () => {
+    const t = convexTest(schema, modules)
+    const { me, dmId } = await seedDm(t)
+    await t.run(async (ctx) => {
+      await ctx.db.insert('readState', { userId: me, containerId: dmId as string, lastReadAt: 1_700_000_000_000 })
+    })
+    const viewer = t.withIdentity(asUser(PUBKEY))
+
+    // Read before the relay had answered: a Convex watermark and no context —
+    // the decision for "no channel yet" is silence, never `undefined` as a key.
+    expect(await viewer.query(api.readState.cachedReadContexts, {})).toEqual([])
+
+    // Once the relay has said what the channel is, the same row is a context
+    // and the re-anchor publishes it — how the early read reaches the relay.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(dmId, { channelUuid: DM_CHANNEL })
+    })
+    expect(await viewer.query(api.readState.cachedReadContexts, {})).toEqual([
+      { context: DM_CHANNEL, atSeconds: 1_700_000_000 },
+    ])
+  })
+
+  it('a marker that arrived from the relay clears the DM dot', async () => {
+    const t = convexTest(schema, modules)
+    const { them } = await seedDm(t, DM_CHANNEL)
+    const viewer = t.withIdentity(asUser(PUBKEY))
+
+    // `unread.summary` is what the sidebar reads, keyed by the partner's key.
+    expect((await viewer.query(api.unread.summary, {})).dms).toEqual([them as string])
+
+    await viewer.mutation(api.readState.applyRelayReadState, {
+      contexts: [{ context: DM_CHANNEL, atSeconds: Math.floor(Date.now() / 1000) }],
+    })
+    expect((await viewer.query(api.unread.summary, {})).dms).toEqual([])
+  })
+})

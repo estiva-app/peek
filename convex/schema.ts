@@ -197,7 +197,9 @@ export default defineSchema({
   })
     .index('by_pair', ['userLowId', 'userHighId'])
     .index('by_low', ['userLowId'])
-    .index('by_high', ['userHighId']),
+    .index('by_high', ['userHighId'])
+    // A read-state context arrives as the bare uuid (SPEC §11.1) — DMS-8.
+    .index('by_channelUuid', ['channelUuid']),
 
   // §2.5 — ONE table, polymorphic parent {parentKind, parentId} (§3).
   // parentId is the parent's _id as a string: a union of three Id types

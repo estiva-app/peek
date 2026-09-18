@@ -23,11 +23,16 @@
  *
  *   - a **topic** contributes its channel uuid, which exists once the topic has
  *     been published to the relay;
+ *   - a **DM** contributes its channel uuid too (DMS-8), the one the relay
+ *     answered `kind:41010` with and `dmConversations.channelUuid` keeps —
+ *     bare, like a topic's, never the Convex id and never with a prefix (the
+ *     blob is grow-only, so a prefixed variant would be a second permanent key
+ *     for the same conversation). Until the relay has answered, the DM has no
+ *     context and only its Convex watermark moves;
  *   - a **thread** contributes its root's event id, which for relay-synced
  *     messages is the Peek message key itself (`convex/nostr/data.ts` writes
  *     `seedKey: nostrEventId` on import);
- *   - **DMs and huddles contribute nothing.** A DM lives only in Convex until
- *     the DMs-on-Nostr work lands, and a huddle is not a channel. SPEC §11.5
+ *   - a **huddle** contributes nothing: it is not a channel, and SPEC §11.5
  *     standardises no huddle context and reserves nothing for one.
  *
  * Anything without one is skipped rather than published under a Peek-private
@@ -326,9 +331,9 @@ export function useReadStateSync(): void {
 /**
  * Record that a container was read, at `atMs`.
  *
- * `channelUuid` is the topic's Folder id. Anything that is not a uuid — a Peek
- * topic id, a DM key, `undefined` — is dropped by {@link containerContext}
- * rather than published.
+ * `channelUuid` is the topic's Folder id or the DM's channel uuid. Anything
+ * that is not a uuid — a Peek topic id, a DM's partner key, `undefined` — is
+ * dropped by {@link containerContext} rather than published.
  */
 export function recordContainerRead(channelUuid: string | null | undefined, atMs: number): void {
   const context = containerContext(channelUuid)
