@@ -110,7 +110,7 @@ export function FoldersPage() {
     const result = await createFolder(trimmed)
     setCreating(false)
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'neutral' })
+      showToast({ label: result.reason, type: 'error' })
       return
     }
     setName('')
@@ -250,7 +250,7 @@ export function FoldersPage() {
                     const hasState = typeof state === 'object' && 'hasState' in state && state.hasState
                     const result = await renameFolder(id, trimmed, hasState)
                     if (!result.ok) {
-                      showToast({ label: result.reason, type: 'neutral' })
+                      showToast({ label: result.reason, type: 'error' })
                       return false
                     }
                     await reload()
@@ -349,7 +349,7 @@ export function FoldersPage() {
                   hasState,
                 })
                 if (!result.ok) {
-                  showToast({ label: result.reason, type: 'neutral' })
+                  showToast({ label: result.reason, type: 'error' })
                   return false
                 }
                 await reloadContents()
@@ -368,7 +368,7 @@ export function FoldersPage() {
                 if (!address || !id) return false
                 const result = await moveFile(address, id, to)
                 if (!result.ok) {
-                  showToast({ label: result.reason, type: 'neutral' })
+                  showToast({ label: result.reason, type: 'error' })
                   return false
                 }
                 // The file left this Folder, so this Folder's read is stale.
@@ -386,7 +386,7 @@ export function FoldersPage() {
               onConfirm={async () => {
                 const result = await deleteFolder(id)
                 if (!result.ok) {
-                  showToast({ label: result.reason, type: 'neutral' })
+                  showToast({ label: result.reason, type: 'error' })
                   return false
                 }
                 await reload()

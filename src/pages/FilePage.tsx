@@ -154,7 +154,7 @@ export function FilePage() {
     if (!file?.naddr) return false
     const result = await applyAction({ naddr: file.naddr, actionId: 'comment', value: body })
     if (!result.ok) {
-      showToast({ label: result.reason ?? 'The relay refused the comment.', type: 'neutral' })
+      showToast({ label: result.reason ?? 'The relay refused the comment.', type: 'error' })
       return false
     }
     // The relay has it; the pane re-reads rather than appending a copy, so what
@@ -167,7 +167,7 @@ export function FilePage() {
     if (!file?.address || !replyParent) return false
     const result = await replyToComment({ reference: file.address, parent: replyParent, body })
     if (!result.ok) {
-      showToast({ label: result.reason ?? 'The relay refused the reply.', type: 'neutral' })
+      showToast({ label: result.reason ?? 'The relay refused the reply.', type: 'error' })
       return false
     }
     await reloadThreads()
