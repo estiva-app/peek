@@ -10,9 +10,10 @@
  */
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, query } from '../_generated/server'
+import type { QueryCtx } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
-import { fileAttachment } from '../schema'
-import { applyResolutionProjection, deleteAttachmentBlobs } from '../messages'
+import { containerKind as containerKindArg, fileAttachment } from '../schema'
+import { applyResolutionProjection, deleteAttachmentBlobs, resolveParentId } from '../messages'
 
 /** Topic plus the creator's id — the publish action needs both. */
 export const getTopic = internalQuery({
@@ -91,25 +92,71 @@ export const listSyncableTopics = internalQuery({
   },
 })
 
-/** One syncable topic by client-facing key — the viewer-driven sync entry point. */
-export const syncableTopicByKey = internalQuery({
-  args: { topicKey: v.string() },
-  handler: async (ctx, { topicKey }) => {
-    const normalized = ctx.db.normalizeId('topics', topicKey)
-    const rows = await ctx.db.query('topics').collect()
-    const t = normalized
-      ? rows.find((r) => (r._id as string) === (normalized as string))
-      : rows.find((r) => r.seedKey === topicKey)
-    if (!t?.channelUuid) return null
-    return {
-      topicId: t._id,
-      channelUuid: t.channelUuid,
-      since: t.nostrSyncedAt ?? null,
-      // What the last run recorded, so `importChannel` writes only on change.
-      // Absent reads as 0: a never-synced topic omitted nothing.
-      reactionTargetsOmitted: t.reactionTargetsOmitted ?? 0,
-    }
-  },
+/**
+ * What a container is, to everything that reads a channel off the relay.
+ *
+ * `parentKind`/`parentId` is the pair `messages` is already keyed by
+ * (`convex/schema.ts` §2.5), so every query below addresses a DM's messages
+ * with the index it already uses for a topic's. Nothing downstream of this
+ * needs to know which kind it got.
+ */
+export interface SyncableContainer {
+  parentKind: 'topic' | 'dm'
+  parentId: string
+  channelUuid: string
+  since: number | null
+  /** What the last run recorded, so `importChannel` writes only on change. */
+  reactionTargetsOmitted: number
+}
+
+/**
+ * One syncable container by client-facing key — the viewer-driven sync entry
+ * point, for a topic or a DM (DMS-5).
+ *
+ * A plain function rather than only an `internalQuery`, because both the public
+ * `syncPlan` and the internal lookup the import actions use must answer
+ * identically: two implementations of "which channel is this" is exactly how a
+ * backfill and a live flush end up projecting into different containers.
+ *
+ * **`viewer` is the privacy gate, not a convenience.** `resolveParentId` looks a
+ * DM up by the *pair* — the viewer and the partner the key names — so a signed-in
+ * person can only ever name a conversation they are in. Passing the key straight
+ * to `ctx.db.get` would let anyone who could guess a `dmConversations` id learn
+ * its channel uuid, which is the one thing needed to ask the relay for it.
+ *
+ * A topic resolves by seedKey-or-`_id` exactly as before; `resolveParentId`
+ * scans, because `topics` has no seedKey index.
+ */
+export async function syncableContainer(
+  ctx: QueryCtx,
+  parentKind: 'topic' | 'dm',
+  containerKey: string,
+  viewer: Id<'users'> | null,
+): Promise<SyncableContainer | null> {
+  const parentId = await resolveParentId(ctx, parentKind, containerKey, viewer)
+  if (!parentId) return null
+  const row =
+    parentKind === 'topic'
+      ? await ctx.db.get(parentId as Id<'topics'>)
+      : await ctx.db.get(parentId as Id<'dmConversations'>)
+  // No channel on the relay yet. A topic predating Nostr emission never gets
+  // one; a DM gets one on its first render or first message (DMS-3), so this is
+  // a wait rather than a dead end. Absent `reactionTargetsOmitted` reads as 0 —
+  // a never-synced container omitted nothing.
+  if (!row?.channelUuid) return null
+  return {
+    parentKind,
+    parentId,
+    channelUuid: row.channelUuid,
+    since: row.nostrSyncedAt ?? null,
+    reactionTargetsOmitted: row.reactionTargetsOmitted ?? 0,
+  }
+}
+
+export const syncableContainerByKey = internalQuery({
+  args: { containerKind: containerKindArg, containerKey: v.string(), viewerId: v.id('users') },
+  handler: async (ctx, { containerKind, containerKey, viewerId }) =>
+    syncableContainer(ctx, containerKind, containerKey, viewerId),
 })
 
 /**
@@ -203,7 +250,13 @@ export const resolveExternalUser = internalMutation({
  */
 export const importMessage = internalMutation({
   args: {
-    topicId: v.id('topics'),
+    /**
+     * The container, as `messages` is keyed — a topic or a DM (DMS-5). The row
+     * written is identical either way; only this pair differs, which is the
+     * whole of what "one projection, two container types" means here.
+     */
+    parentKind: containerKindArg,
+    parentId: v.string(),
     authorId: v.id('users'),
     body: v.string(),
     createdAt: v.number(),
@@ -213,15 +266,15 @@ export const importMessage = internalMutation({
     /** The sender's `imeta`, as rows — CON-12. No Convex blob behind them. */
     files: v.optional(v.array(fileAttachment)),
   },
-  handler: async (ctx, { topicId, authorId, body, createdAt, nostrEventId, nostrReferences, nostrBlockId, files }) => {
+  handler: async (ctx, { parentKind, parentId, authorId, body, createdAt, nostrEventId, nostrReferences, nostrBlockId, files }) => {
     const existing = await ctx.db
       .query('messages')
       .withIndex('by_nostrEventId', (q) => q.eq('nostrEventId', nostrEventId))
       .unique()
     if (existing) return { inserted: false }
     await ctx.db.insert('messages', {
-      parentKind: 'topic',
-      parentId: topicId as string,
+      parentKind,
+      parentId,
       authorId,
       body,
       createdAt,
@@ -308,8 +361,8 @@ export const importReply = internalMutation({
 })
 
 /**
- * Event ids of a topic's published messages — the targets to look for reactions
- * on.
+ * Event ids of a container's published messages — the targets to look for
+ * reactions on. A topic and a DM answer through the same `by_parent` index.
  *
  * Reactions cannot be found the way messages are: kind:7 has no `h` tag, and it
  * has no `created_at` relationship to the message it targets, so a `since`
@@ -322,12 +375,12 @@ export const importReply = internalMutation({
  * are all read anyway, and the caller reports what the horizon left out
  * (PEE-21), which the capped list alone cannot say.
  */
-export const listMessageEventIdsForTopic = internalQuery({
-  args: { topicId: v.id('topics'), limit: v.number() },
-  handler: async (ctx, { topicId, limit }): Promise<{ ids: string[]; total: number }> => {
+export const listMessageEventIdsForContainer = internalQuery({
+  args: { parentKind: containerKindArg, parentId: v.string(), limit: v.number() },
+  handler: async (ctx, { parentKind, parentId, limit }): Promise<{ ids: string[]; total: number }> => {
     const rows = await ctx.db
       .query('messages')
-      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .withIndex('by_parent', (q) => q.eq('parentKind', parentKind).eq('parentId', parentId))
       .collect()
     const published = rows.filter((m) => m.nostrEventId).sort((a, b) => b.createdAt - a.createdAt)
     return { ids: published.slice(0, limit).map((m) => m.nostrEventId!), total: published.length }
@@ -335,19 +388,19 @@ export const listMessageEventIdsForTopic = internalQuery({
 })
 
 /**
- * Event ids of reactions Peek has already imported for a topic.
+ * Event ids of reactions Peek has already imported for a container.
  *
  * Needed to spot **retractions**. A kind:5 targets the reaction event, and once
  * the relay has that deletion it stops returning the reaction itself — so asking
  * "are any of the reactions I just fetched deleted?" can never find one. The
  * question has to be "are any of the reactions I already hold deleted?".
  */
-export const listReactionEventIdsForTopic = internalQuery({
-  args: { topicId: v.id('topics'), limit: v.number() },
-  handler: async (ctx, { topicId, limit }) => {
+export const listReactionEventIdsForContainer = internalQuery({
+  args: { parentKind: containerKindArg, parentId: v.string(), limit: v.number() },
+  handler: async (ctx, { parentKind, parentId, limit }) => {
     const messages = await ctx.db
       .query('messages')
-      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .withIndex('by_parent', (q) => q.eq('parentKind', parentKind).eq('parentId', parentId))
       .collect()
     const out: string[] = []
     for (const m of messages) {
@@ -365,7 +418,7 @@ export const listReactionEventIdsForTopic = internalQuery({
 })
 
 /**
- * Event ids of the messages and replies Peek holds for a topic.
+ * Event ids of the messages and replies Peek holds for a container.
  *
  * The set to ask "have any of these been deleted?" about. Same reasoning as
  * `listReactionEventIdsForTopic`, and the same trap: once the relay holds a
@@ -378,12 +431,12 @@ export const listReactionEventIdsForTopic = internalQuery({
  * deletion published from another device by the same person is not, and
  * filtering by author would drop exactly that case.
  */
-export const listDeletableEventIdsForTopic = internalQuery({
-  args: { topicId: v.id('topics'), limit: v.number() },
-  handler: async (ctx, { topicId, limit }) => {
+export const listDeletableEventIdsForContainer = internalQuery({
+  args: { parentKind: containerKindArg, parentId: v.string(), limit: v.number() },
+  handler: async (ctx, { parentKind, parentId, limit }) => {
     const messages = await ctx.db
       .query('messages')
-      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .withIndex('by_parent', (q) => q.eq('parentKind', parentKind).eq('parentId', parentId))
       .collect()
     const out: string[] = []
     for (const m of messages.sort((a, b) => b.createdAt - a.createdAt)) {
@@ -454,15 +507,15 @@ export const removeByNostrEventId = internalMutation({
 })
 
 /**
- * Newest reply event ids in a topic — reaction targets too (PEE-12). Same
- * shape as `listMessageEventIdsForTopic`: capped ids plus the true total.
+ * Newest reply event ids in a container — reaction targets too (PEE-12). Same
+ * shape as `listMessageEventIdsForContainer`: capped ids plus the true total.
  */
-export const listReplyEventIdsForTopic = internalQuery({
-  args: { topicId: v.id('topics'), limit: v.number() },
-  handler: async (ctx, { topicId, limit }): Promise<{ ids: string[]; total: number }> => {
+export const listReplyEventIdsForContainer = internalQuery({
+  args: { parentKind: containerKindArg, parentId: v.string(), limit: v.number() },
+  handler: async (ctx, { parentKind, parentId, limit }): Promise<{ ids: string[]; total: number }> => {
     const messages = await ctx.db
       .query('messages')
-      .withIndex('by_parent', (q) => q.eq('parentKind', 'topic').eq('parentId', topicId as string))
+      .withIndex('by_parent', (q) => q.eq('parentKind', parentKind).eq('parentId', parentId))
       .collect()
     const out: { createdAt: number; id: string }[] = []
     for (const m of messages) {
@@ -644,32 +697,42 @@ export const removeReactionByNostrEventId = internalMutation({
   },
 })
 
-export const setTopicSyncCursor = internalMutation({
-  args: { topicId: v.id('topics'), nostrSyncedAt: v.number() },
-  handler: async (ctx, { topicId, nostrSyncedAt }) => {
-    const t = await ctx.db.get(topicId)
+/**
+ * The container row a sync writes its bookkeeping back to.
+ *
+ * One line, so that "which table" is decided in exactly one place. A `dm` and a
+ * `topic` carry the same two fields for the same reason (`convex/schema.ts`),
+ * and the mutations below do not branch on anything else.
+ */
+const containerRow = (ctx: { db: { get: (id: any) => any } }, parentKind: 'topic' | 'dm', parentId: string) =>
+  ctx.db.get(parentKind === 'topic' ? (parentId as Id<'topics'>) : (parentId as Id<'dmConversations'>))
+
+export const setContainerSyncCursor = internalMutation({
+  args: { parentKind: containerKindArg, parentId: v.string(), nostrSyncedAt: v.number() },
+  handler: async (ctx, { parentKind, parentId, nostrSyncedAt }) => {
+    const row = await containerRow(ctx, parentKind, parentId)
     // Only ever move forward, so an out-of-order run cannot rewind the cursor
     // and re-import everything.
-    if (t && (t.nostrSyncedAt ?? 0) < nostrSyncedAt) {
-      await ctx.db.patch(topicId, { nostrSyncedAt })
+    if (row && (row.nostrSyncedAt ?? 0) < nostrSyncedAt) {
+      await ctx.db.patch(row._id, { nostrSyncedAt })
     }
   },
 })
 
 /**
  * Record how many reaction targets the last sync left past the horizon
- * (PEE-21), so the topic view can say so — see `topics.reactionTargetsOmitted`
- * in the schema.
+ * (PEE-21), so the view can say so — see `reactionTargetsOmitted` on `topics`
+ * and, since DMS-5, on `dmConversations`.
  *
  * Unlike the cursor above this may go down: a deleted message brings the
  * count back under the cap, and the caption should go with it.
  */
 export const setReactionTargetsOmitted = internalMutation({
-  args: { topicId: v.id('topics'), omitted: v.number() },
-  handler: async (ctx, { topicId, omitted }) => {
-    const t = await ctx.db.get(topicId)
-    if (t && (t.reactionTargetsOmitted ?? 0) !== omitted) {
-      await ctx.db.patch(topicId, { reactionTargetsOmitted: omitted })
+  args: { parentKind: containerKindArg, parentId: v.string(), omitted: v.number() },
+  handler: async (ctx, { parentKind, parentId, omitted }) => {
+    const row = await containerRow(ctx, parentKind, parentId)
+    if (row && (row.reactionTargetsOmitted ?? 0) !== omitted) {
+      await ctx.db.patch(row._id, { reactionTargetsOmitted: omitted })
     }
   },
 })

@@ -16,17 +16,29 @@ import { REACTION_TARGET_LIMIT } from '@/nostr/reactionHorizon'
  * issue's thread with the same two tokens, so a person using both apps reads
  * one explanation.
  *
- * `omitted` is what the last sync recorded on the topic (`importChannel`
- * counts it; `topics.list` carries it). "Older" is true whichever way the
- * shared budget split — each side keeps its newest — and the caption does not
- * say how the split went, because that is the sync's business.
+ * `omitted` is what the last sync recorded on the container (`importChannel`
+ * counts it; `topics.list` carries a topic's and `syncPlan` a DM's). "Older" is
+ * true whichever way the shared budget split — each side keeps its newest — and
+ * the caption does not say how the split went, because that is the sync's
+ * business.
+ *
+ * `container` names what the reader is looking at. The cap is per container and
+ * a DM has one too since DMS-5, so the line has to be able to say which — "in
+ * this topic" under a DM would be wrong in the one place the reader is relying
+ * on it to be exact.
  */
-export function ReactionHorizon({ omitted }: { omitted: number }) {
+export function ReactionHorizon({
+  omitted,
+  container = 'topic',
+}: {
+  omitted: number
+  container?: 'topic' | 'conversation'
+}) {
   if (omitted <= 0) return null
   return (
     <p className="text-caption text-text-muted">
-      Reactions are shown for {REACTION_TARGET_LIMIT} messages and replies in this topic. {omitted} older{' '}
-      {omitted === 1 ? 'one was' : 'ones were'} not checked.
+      Reactions are shown for {REACTION_TARGET_LIMIT} messages and replies in this {container}.{' '}
+      {omitted} older {omitted === 1 ? 'one was' : 'ones were'} not checked.
     </p>
   )
 }

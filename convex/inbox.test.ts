@@ -115,19 +115,20 @@ describe('removeByNostrEventId', () => {
   })
 })
 
-describe('listDeletableEventIdsForTopic', () => {
+describe('listDeletableEventIdsForContainer', () => {
   it('lists messages and replies, so a kind:5 for either can be found', async () => {
     const t = convexTest(schema, modules)
     const { topicId } = await seed(t)
 
-    const ids = await t.query(internal.nostr.data.listDeletableEventIdsForTopic, {
-      topicId,
+    const ids = await t.query(internal.nostr.data.listDeletableEventIdsForContainer, {
+      parentKind: 'topic',
+      parentId: topicId as string,
       limit: 100,
     })
 
     expect(ids).toContain(MESSAGE_EVENT)
     expect(ids).toContain(REPLY_EVENT)
-    // Reactions are tracked separately — `listReactionEventIdsForTopic` — and a
+    // Reactions are tracked separately — `listReactionEventIdsForContainer` — and a
     // reaction id here would send its kind:5 down the message-removal path.
     expect(ids).not.toContain(REACTION_EVENT)
   })
@@ -145,8 +146,9 @@ describe('listDeletableEventIdsForTopic', () => {
       })
     })
 
-    const ids = await t.query(internal.nostr.data.listDeletableEventIdsForTopic, {
-      topicId,
+    const ids = await t.query(internal.nostr.data.listDeletableEventIdsForContainer, {
+      parentKind: 'topic',
+      parentId: topicId as string,
       limit: 100,
     })
 

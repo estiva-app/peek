@@ -77,7 +77,11 @@ describe('what gets watched', () => {
     })
 
     expect(await watchable(t)).toEqual([
-      { topicKey: topics[1]!.topicId, channelUuid: topics[1]!.channelUuid },
+      {
+        containerKind: 'topic',
+        containerKey: topics[1]!.topicId,
+        channelUuid: topics[1]!.channelUuid,
+      },
     ])
   })
 
@@ -126,20 +130,83 @@ describe('what gets watched', () => {
     expect(await watchable(t)).toHaveLength(1)
   })
 
-  it('ignores DMs, which have no channel to subscribe to', async () => {
-    // `dmConversations` carries no `channelUuid`: DMs live entirely in Convex
-    // and have no relay representation until track C gives them one (DMS-3).
-    // Checked rather than assumed, as the ticket asks.
+  it('watches a DM in the inbox, keyed by the partner', async () => {
+    /*
+      DMS-5. This test used to assert the opposite — "ignores DMs, which have no
+      channel to subscribe to" — and it was right at the time: `dmConversations`
+      had no `channelUuid` at all. DMS-3 gave it one and DMS-4 put the messages
+      on it, so there is now a stream, and something other than this deployment
+      can write into it.
+
+      The key is the **partner's person key**, not the `dmConversations` id the
+      row stores: that is how a DM is addressed everywhere client-side (§2.4),
+      and it is what `syncableContainer` re-resolves through the pair.
+    */
     const t = convexTest(schema, modules)
-    const { userId } = await seed(t, 1)
-    await t.run(async (ctx) => {
+    const { userId } = await seed(t, 0)
+    const { dmId, channelUuid } = await t.run(async (ctx) => {
+      const partner = await ctx.db.insert('users', { name: 'Bo', seedKey: 'bo' })
+      const [low, high] = (userId as string) < (partner as string) ? [userId, partner] : [partner, userId]
+      const channelUuid = '00000009-1111-4111-8111-111111111119'
+      const dmId = await ctx.db.insert('dmConversations', {
+        userLowId: low,
+        userHighId: high,
+        createdAt: 0,
+        channelUuid,
+      })
       await ctx.db.insert('screenerItems', {
         userId,
         kind: 'dm',
-        targetId: 'some-dm',
+        targetId: dmId as string,
         preview: 'hi',
         createdAt: 1,
       })
+      return { dmId, channelUuid }
+    })
+
+    expect(await watchable(t)).toEqual([
+      { containerKind: 'dm', containerKey: 'bo', channelUuid },
+    ])
+    // And never the raw row id, which nothing downstream would resolve.
+    expect((await watchable(t))[0]!.containerKey).not.toBe(dmId as string)
+  })
+
+  it('skips a DM nobody has opened on the relay yet', async () => {
+    // No `kind:41010` has landed, so there is no channel. A wait, not an error
+    // — `useEnsureDmChannel` opens one on the DM's first render.
+    const t = convexTest(schema, modules)
+    const { userId } = await seed(t, 0)
+    await t.run(async (ctx) => {
+      const partner = await ctx.db.insert('users', { name: 'Bo', seedKey: 'bo' })
+      const [low, high] = (userId as string) < (partner as string) ? [userId, partner] : [partner, userId]
+      const dmId = await ctx.db.insert('dmConversations', {
+        userLowId: low,
+        userHighId: high,
+        createdAt: 0,
+      })
+      await ctx.db.insert('stars', { userId, kind: 'dm', targetId: dmId as string, createdAt: 1 })
+    })
+
+    expect(await watchable(t)).toEqual([])
+  })
+
+  it('skips a DM the viewer is not a participant in', async () => {
+    // The membership check, not decoration: a subscription is what turns a
+    // channel uuid into readable messages, and a uuid is the only thing needed
+    // to ask the relay for one.
+    const t = convexTest(schema, modules)
+    const { userId } = await seed(t, 0)
+    await t.run(async (ctx) => {
+      const bo = await ctx.db.insert('users', { name: 'Bo', seedKey: 'bo' })
+      const cy = await ctx.db.insert('users', { name: 'Cy', seedKey: 'cy' })
+      const [low, high] = (bo as string) < (cy as string) ? [bo, cy] : [cy, bo]
+      const dmId = await ctx.db.insert('dmConversations', {
+        userLowId: low,
+        userHighId: high,
+        createdAt: 0,
+        channelUuid: '00000008-1111-4111-8111-111111111118',
+      })
+      await ctx.db.insert('stars', { userId, kind: 'dm', targetId: dmId as string, createdAt: 1 })
     })
 
     expect(await watchable(t)).toEqual([])

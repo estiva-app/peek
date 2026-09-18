@@ -77,7 +77,7 @@ function harness(apiOverrides: Partial<LiveProjectionApi> = {}) {
     log: (message) => logs.push(message),
     onForeignActivity: (channelUuid) => foreign.push(channelUuid),
   })
-  const handle = projection.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
+  const handle = projection.watch({ containerKind: 'topic', containerKey: TOPIC, channelUuid: CHANNEL })
   return {
     projection,
     handle,
@@ -103,7 +103,7 @@ describe('routing by kind', () => {
     await h.tick()
 
     expect(h.api.importChannel).toHaveBeenCalledWith({
-      topicKey: TOPIC,
+      containerKind: 'topic', containerKey: TOPIC,
       events: [expect.objectContaining({ id: 'm1' })],
       profiles: [],
     })
@@ -145,7 +145,7 @@ describe('routing by kind', () => {
     h.emit(event('a1', KIND.ASSERTION))
     await h.tick()
     expect(h.api.importResolutions).toHaveBeenCalledWith({
-      topicKey: TOPIC,
+      containerKind: 'topic', containerKey: TOPIC,
       assertions: [expect.objectContaining({ id: 'a1' })],
     })
   })
@@ -199,7 +199,7 @@ describe('the order within a flush', () => {
     h.emit(event('r1', KIND.REACTION))
     await h.tick()
 
-    expect(h.api.importChannel).toHaveBeenCalledWith({ topicKey: TOPIC, events: [], profiles: [] })
+    expect(h.api.importChannel).toHaveBeenCalledWith({ containerKind: 'topic', containerKey: TOPIC, events: [], profiles: [] })
   })
 
   it('does not call the later actions when importChannel fails', async () => {
@@ -297,7 +297,7 @@ describe('batching', () => {
 })
 
 describe('the two keys', () => {
-  it('subscribes by channel uuid and imports by topicKey', async () => {
+  it('subscribes by channel uuid and imports by container key', async () => {
     // The pair RFC 0.3 asks not to be confused: the subscription is scoped by
     // the channel, the projection is keyed by the topic, and neither
     // substitutes for the other.
@@ -311,14 +311,14 @@ describe('the two keys', () => {
       setTimer: (fn) => timers.push(fn),
       clearTimer: () => {},
     })
-    projection.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
+    projection.watch({ containerKind: 'topic', containerKey: TOPIC, channelUuid: CHANNEL })
 
     expect(subscribe).toHaveBeenCalledWith(CHANNEL, expect.any(Function))
     subs.emit(event('m1', KIND.STREAM_MESSAGE))
     timers.shift()?.()
     await projection.flushNow()
     expect(api.importChannel).toHaveBeenCalledWith(
-      expect.objectContaining({ topicKey: TOPIC }),
+      expect.objectContaining({ containerKind: 'topic', containerKey: TOPIC }),
     )
   })
 })
@@ -372,7 +372,7 @@ describe('another app’s records', () => {
 
     expect(h.foreign).toEqual([CHANNEL])
     expect(h.api.importChannel).toHaveBeenCalledWith({
-      topicKey: TOPIC,
+      containerKind: 'topic', containerKey: TOPIC,
       events: [expect.objectContaining({ id: 'm1' })],
       profiles: [],
     })

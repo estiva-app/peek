@@ -1,6 +1,6 @@
 /**
  * Keep a live subscription on the channels the Desk and inbox are showing
- * (PEE-11).
+ * (PEE-11) — topics, and since DMS-5 DMs on the same terms.
  *
  * Before this, only the **open topic** had a relay read path. Nothing else had
  * one at all — so a Ship-side change to a topic you were not looking at had no
@@ -51,7 +51,8 @@ export function LiveWorkingSet() {
   // hands back a new array identity on every update and the effect would
   // otherwise tear down and rebuild every subscription each time — closing and
   // reopening REQs the relay was perfectly happy with.
-  const key = channels?.map((c) => `${c.topicKey}:${c.channelUuid}`).join(',') ?? ''
+  const key =
+    channels?.map((c) => `${c.containerKind}:${c.containerKey}:${c.channelUuid}`).join(',') ?? ''
 
   useEffect(() => {
     if (!hasConvex || !relayUrl || !channels || channels.length === 0) return

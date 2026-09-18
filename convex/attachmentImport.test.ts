@@ -115,7 +115,8 @@ describe('an imported file survives into what the browser reads', () => {
     const { ada, topicId } = await seed(t)
     await t.run(async (ctx) => {
       await ctx.runMutation(internal.nostr.data.importMessage, {
-        topicId,
+        parentKind: 'topic',
+        parentId: topicId as string,
         authorId: ada,
         body: 'here it is',
         createdAt: Date.now(),
@@ -151,7 +152,8 @@ describe('an imported file survives into what the browser reads', () => {
     const { ada, topicId } = await seed(t)
     await t.run(async (ctx) => {
       await ctx.runMutation(internal.nostr.data.importMessage, {
-        topicId,
+        parentKind: 'topic',
+        parentId: topicId as string,
         authorId: ada,
         body: 'here it is',
         createdAt: Date.now(),
@@ -178,7 +180,8 @@ describe('an imported file survives into what the browser reads', () => {
     const dropped = { ...relayRow, name: 'other.png', sha256: OTHER, mediaUrl: `${RELAY}/media/${OTHER}.png` }
     await t.run(async (ctx) => {
       await ctx.runMutation(internal.nostr.data.importMessage, {
-        topicId,
+        parentKind: 'topic',
+        parentId: topicId as string,
         authorId: ada,
         body: 'two files',
         createdAt: Date.now(),

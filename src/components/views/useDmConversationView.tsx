@@ -8,6 +8,7 @@ import { ScrollArea } from '@estiva-app/ui'
 import { ConversationHeader } from '@/components/ConversationHeader'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { ConversationCard } from '@/components/ConversationCard'
+import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { ThreadPanel, ThreadPanelLoading } from '@/components/ThreadPanel'
 import { DateDivider } from '@/components/ui/DateDivider'
 import { Button } from '@/components/ui/Button'
@@ -26,6 +27,7 @@ import {
   useStarred,
   useEnsureDmChannel,
 } from '@/api'
+import { useChannelSync } from '@/nostr/useChannelSync'
 import { useLastSelection } from '@/lib/lastSelection'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
@@ -54,6 +56,20 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   // Opening the DM also gives it a channel on the relay, if it has a row and
   // does not have one yet (DMS-3).
   useEnsureDmChannel(dmId)
+  /*
+    And reads that channel back, through the same projection a topic uses —
+    DMS-5.
+
+    Ordered after `useEnsureDmChannel` for a reason that is not cosmetic: until
+    the `kind:41010` lands there is no `channelUuid`, `syncPlan` answers null and
+    this does nothing. The hook is keyed on the channel, so it starts on its own
+    the moment the row gains one; no retry lives here.
+
+    **`dmId` is the partner's person key, not a `dmConversations` id** (§2.4),
+    which is what the whole read path resolves through — so a viewer can only
+    ever name a conversation they are in.
+  */
+  const { reactionTargetsOmitted } = useChannelSync('dm', dmId)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { isDmStarred, toggleDm } = useStarred()
   const findTopic = useTopicLookup()
@@ -350,6 +366,14 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
               ))}
             </div>
           )}
+
+          {/*
+            The reaction horizon, said out loud — SPEC §6.6, PEE-21. A DM's cap
+            is counted on its own row since DMS-5, and an unreported cap reads
+            as "nobody reacted". Under the stream, where the reader is when the
+            conversation opens, exactly as the topic view draws it.
+          */}
+          {!isLoading && <ReactionHorizon omitted={reactionTargetsOmitted} container="conversation" />}
         </div>
       </ScrollArea>
       {!isLoading && dmGroups.length === 0 && currentSent.length === 0 && (

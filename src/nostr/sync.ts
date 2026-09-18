@@ -8,6 +8,11 @@
  *
  * So a sync run is: ask Convex what to fetch, fetch it, hand the events back.
  *
+ * **A topic and a DM run this same function** (DMS-5). Nothing below branches on
+ * the container: the relay scopes both by `#h`, and Convex is the only side that
+ * knows what a key names. A second copy of this for DMs is the failure mode the
+ * ticket names by hand, because two self-consistent readers diverge silently.
+ *
  * **Two round trips, not one, and the order is load-bearing.** Reactions are
  * addressed by target rather than by channel or cursor — kind:7 carries no `h`
  * tag — so the browser cannot know which events to ask about until the messages
@@ -33,10 +38,25 @@ import { KIND } from '@estiva-app/protocol'
  *  `PAGE_LIMIT`; the relay applies it, so it has to match to page identically. */
 const PAGE_LIMIT = 200
 
+/**
+ * Which container is being read — a topic or a DM (DMS-5).
+ *
+ * Carried as a pair through every call below rather than resolved here: the
+ * relay read is identical for both (`#h` is `#h`), and Convex is the only side
+ * that knows what a key names. `key` is the client-facing id — a topic's
+ * seedKey-or-`_id`, and for a DM the **partner's person key**, which is how a
+ * DM is addressed everywhere in the app (§2.4).
+ */
+export type SyncContainer = { kind: 'topic' | 'dm'; key: string }
+
 type SyncApi = {
-  syncPlan: (args: { topicKey: string }) => Promise<{ channelUuid: string; since: number | null } | null>
+  syncPlan: (args: {
+    containerKind: 'topic' | 'dm'
+    containerKey: string
+  }) => Promise<{ channelUuid: string; since: number | null } | null>
   importChannel: (args: {
-    topicKey: string
+    containerKind: 'topic' | 'dm'
+    containerKey: string
     events: unknown[]
     profiles: unknown[]
   }) => Promise<{
@@ -47,25 +67,28 @@ type SyncApi = {
     reason?: string
   }>
   importReactions: (args: {
-    topicKey: string
+    containerKind: 'topic' | 'dm'
+    containerKey: string
     reactions: unknown[]
     deletions: unknown[]
     known: string[]
     deletable: string[]
   }) => Promise<{ ok: boolean; reason?: string }>
   importResolutions: (args: {
-    topicKey: string
+    containerKind: 'topic' | 'dm'
+    containerKey: string
     assertions: unknown[]
   }) => Promise<{ ok: boolean; imported?: number; reason?: string }>
 }
 
-export async function syncTopicFromRelay(
-  topicKey: string,
+export async function syncContainerFromRelay(
+  container: SyncContainer,
   relayUrl: string,
   token: StoredToken,
   api: SyncApi,
 ): Promise<boolean> {
-  const plan = await api.syncPlan({ topicKey })
+  const where = { containerKind: container.kind, containerKey: container.key }
+  const plan = await api.syncPlan(where)
   // No channel on the relay yet, or not signed in. Not a sync, and not a
   // failure worth ageing the timestamp over either — there was nothing to read.
   if (!plan) return false
@@ -120,7 +143,7 @@ export async function syncTopicFromRelay(
       : { ok: true as const, events: [] }
 
   const imported = await api.importChannel({
-    topicKey,
+    ...where,
     events: messages.events,
     profiles: profiles.ok ? profiles.events : [],
   })
@@ -165,7 +188,7 @@ export async function syncTopicFromRelay(
   if (!reactions.ok && !deletions.ok) return false
 
   await api.importReactions({
-    topicKey,
+    ...where,
     reactions: reactions.ok ? reactions.events : [],
     deletions: deletions.ok ? deletions.events : [],
     known,
@@ -188,7 +211,7 @@ export async function syncTopicFromRelay(
     token.pubkey,
   )
   if (assertions.ok && assertions.events.length > 0) {
-    await api.importResolutions({ topicKey, assertions: assertions.events })
+    await api.importResolutions({ ...where, assertions: assertions.events })
   }
   return true
 }

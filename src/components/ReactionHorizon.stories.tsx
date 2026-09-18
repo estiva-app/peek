@@ -31,3 +31,9 @@ export const One: Story = { args: { omitted: 1 } }
 
 /** Under the cap there is nothing to explain, so nothing is drawn — not an empty line. */
 export const Nothing: Story = { args: { omitted: 0 } }
+
+/**
+ * The same line under a DM (DMS-5). The cap is per container and a DM now has
+ * one, so the noun changes and nothing else does.
+ */
+export const InAConversation: Story = { args: { omitted: 14, container: 'conversation' } }

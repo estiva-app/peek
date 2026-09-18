@@ -17,11 +17,15 @@
  *
  * A subscription is keyed by **channel uuid** — that is what Buzz scopes a REQ
  * by, and RFC 0.3 asks that a topic id never become a subscription key. The
- * import actions are keyed by **topicKey**, the client-facing topic id. Both are
- * required and they are not interchangeable, so {@link LiveProjection.watch}
- * takes both rather than looking either one up: the caller (PEE-8's
- * `useTopicView`) already holds both, and a lookup here would put a Convex
- * query in the middle of an event handler.
+ * import actions are keyed by the **container**: a kind and a client-facing key,
+ * a topic or a DM (DMS-5). Both are required and they are not interchangeable,
+ * so {@link LiveProjection.watch} takes both rather than looking either one up:
+ * the caller (`useChannelSync`) already holds both, and a lookup here would put
+ * a Convex query in the middle of an event handler.
+ *
+ * Nothing below branches on the kind. A DM channel is an ordinary private
+ * channel carrying ordinary `kind:9`s, so the batching, the partition and the
+ * three calls are the same code — which is the point of DMS-5.
  *
  * ## Messages are kinds 9 **and** 1111
  *
@@ -76,21 +80,28 @@ import type { ChannelSubscriptions } from '@estiva-app/protocol'
 /** The window a burst is coalesced into, in milliseconds. */
 export const FLUSH_WINDOW_MS = 250
 
+/**
+ * Which container a subscription's events are projected into — the pair the
+ * import actions take (DMS-5). Flat rather than nested because it is spread
+ * straight into each call.
+ */
+export interface ContainerRef {
+  containerKind: 'topic' | 'dm'
+  containerKey: string
+}
+
 export interface LiveProjectionApi {
-  importChannel(args: {
-    topicKey: string
+  importChannel(args: ContainerRef & {
     events: SignedEvent[]
     profiles: SignedEvent[]
   }): Promise<{ ok: boolean; known?: string[]; deletable?: string[]; reason?: string }>
-  importReactions(args: {
-    topicKey: string
+  importReactions(args: ContainerRef & {
     reactions: SignedEvent[]
     deletions: SignedEvent[]
     known: string[]
     deletable: string[]
   }): Promise<{ ok: boolean; reason?: string }>
-  importResolutions(args: {
-    topicKey: string
+  importResolutions(args: ContainerRef & {
     assertions: SignedEvent[]
   }): Promise<{ ok: boolean; imported?: number; reason?: string }>
 }
@@ -102,19 +113,20 @@ export interface WatchHandle {
 
 export interface LiveProjection {
   /**
-   * Project everything arriving in `channelUuid` into the topic `topicKey`.
+   * Project everything arriving in `channelUuid` into the container the
+   * `containerKind`/`containerKey` pair names.
    *
    * Both keys are required and neither substitutes for the other — see the
    * header.
    */
-  watch(args: { topicKey: string; channelUuid: string }): WatchHandle
+  watch(args: ContainerRef & { channelUuid: string }): WatchHandle
   /** Flush any pending batch now. Test seam, and useful on unmount. */
   flushNow(): Promise<void>
   stopAll(): void
 }
 
 interface Batch {
-  topicKey: string
+  container: ContainerRef
   events: SignedEvent[]
   timer: unknown
 }
@@ -190,7 +202,7 @@ export function createLiveProjection(options: {
     return { messages, reactions, deletions, assertions, unprojected }
   }
 
-  async function runFlush(channelUuid: string, topicKey: string, events: SignedEvent[]) {
+  async function runFlush(channelUuid: string, container: ContainerRef, events: SignedEvent[]) {
     const { messages, reactions, deletions, assertions, unprojected } = partition(events)
 
     /*
@@ -217,7 +229,7 @@ export function createLiveProjection(options: {
     try {
       // Always first, even with no messages: `known` and `deletable` come from
       // here and the reactions below need them.
-      const imported = await api.importChannel({ topicKey, events: messages, profiles: [] })
+      const imported = await api.importChannel({ ...container, events: messages, profiles: [] })
       if (!imported.ok) {
         log('importChannel failed', { reason: imported.reason })
         return
@@ -225,7 +237,7 @@ export function createLiveProjection(options: {
 
       if (reactions.length > 0 || deletions.length > 0) {
         const result = await api.importReactions({
-          topicKey,
+          ...container,
           reactions,
           deletions,
           known: imported.known ?? [],
@@ -237,7 +249,7 @@ export function createLiveProjection(options: {
       // Last: an assertion whose target arrived in this same batch has nothing
       // to attach to until the messages are in.
       if (assertions.length > 0) {
-        const result = await api.importResolutions({ topicKey, assertions })
+        const result = await api.importResolutions({ ...container, assertions })
         if (!result.ok) log('importResolutions failed', { reason: result.reason })
       }
     } catch (error) {
@@ -266,7 +278,7 @@ export function createLiveProjection(options: {
     const previous = inFlight.get(channelUuid) ?? Promise.resolve()
     const next = previous
       .catch(() => {})
-      .then(() => runFlush(channelUuid, batch.topicKey, events))
+      .then(() => runFlush(channelUuid, batch.container, events))
       .finally(() => {
         if (inFlight.get(channelUuid) === next) inFlight.delete(channelUuid)
       })
@@ -275,11 +287,11 @@ export function createLiveProjection(options: {
   }
 
   return {
-    watch({ topicKey, channelUuid }) {
+    watch({ containerKind, containerKey, channelUuid }) {
       const subscription = subscriptions.subscribe(channelUuid, (event) => {
         let batch = batches.get(channelUuid)
         if (!batch) {
-          batch = { topicKey, events: [], timer: null }
+          batch = { container: { containerKind, containerKey }, events: [], timer: null }
           batches.set(channelUuid, batch)
         }
         batch.events.push(event)
