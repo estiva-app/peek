@@ -27,7 +27,7 @@ import { REACTION_TARGET_LIMIT } from '@/nostr/reactionHorizon'
  * a DM has one too since DMS-5, so the line has to be able to say which — "in
  * this topic" under a DM would be wrong in the one place the reader is relying
  * on it to be exact.
- * @registry reusable: Peek's own words for a limit of Estiva's relay
+ * @registry reusable: stays in Peek (Katerina, 18 September): Peek's words for a limit of Estiva's relay
  */
 export function ReactionHorizon({
   omitted,

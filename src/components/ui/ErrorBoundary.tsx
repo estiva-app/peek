@@ -24,6 +24,7 @@ interface ErrorBoundaryState {
  * inline fallback instead of white-screening the app. One boundary wraps
  * each AppShell slot, so every page is covered at the panel level; "Try
  * again" re-mounts just that subtree.
+ * @registry reusable: stays in Peek (Katerina, 18 September); its message becomes estiva-ui's EmptyState with a button
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false }

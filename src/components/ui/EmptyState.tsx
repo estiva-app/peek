@@ -10,7 +10,7 @@ export type EmptyStateProps = Omit<UiEmptyStateProps, 'message'> & { message?: s
 /**
  * The package's empty state, with Peek's default words when none are given:
  * "No conversation selected".
- * @registry reusable: Peek's default words over the package's EmptyState, which is the shared part
+ * @registry reusable: stays in Peek (Katerina, 18 September): estiva-ui's EmptyState with Peek's default words
  */
 export function EmptyState({ message = 'No conversation selected', ...rest }: EmptyStateProps) {
   return <UiEmptyState message={message} {...rest} />

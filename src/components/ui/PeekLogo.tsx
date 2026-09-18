@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 /**
  * The Peek logo mark on its own, in brand purple on light and white on dark, at
  * any height.
- * @registry reusable: Peek's own logo
+ * @registry reusable: stays in Peek (Katerina, 18 September): Peek's logo
  */
 export function PeekLogoMark({ height = 24, className }: { height?: number; className?: string }) {
   return (

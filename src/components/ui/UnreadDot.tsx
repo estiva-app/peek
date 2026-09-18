@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
  *
  * Purely visual: the row that draws it says "unread" in its own accessible
  * name, because a coloured disc reads as nothing to a screen reader.
+ * @registry reusable: stays in Peek (Katerina, 18 September)
  */
 export function UnreadDot({ className }: { className?: string }) {
   return (

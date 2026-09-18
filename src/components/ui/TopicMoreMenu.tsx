@@ -20,7 +20,7 @@ import { Menu, MenuItem } from '@estiva-app/ui'
  * Deliberately short. Star and the Folder link are icons in the header
  * already, and repeating them here would make the menu longer without making
  * either easier to reach (Katerina, 2026-08-19).
- * @registry reusable: Peek's own topic actions
+ * @registry reusable: stays in Peek (Katerina, 18 September): Peek's topic actions on estiva-ui's Menu
  */
 export interface TopicMoreMenuProps {
   /** The control that opens the menu. The menu owns it. */

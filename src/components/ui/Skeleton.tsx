@@ -36,7 +36,7 @@ export function SkeletonConversationCard({ secondLineWidth = 380 }: { secondLine
 
 /**
  * Conversation-area placeholder: a few cards, revealed after the delay.
- * @registry reusable: the loading shape of Peek's own conversation cards
+ * @registry reusable: stays in Peek until it is removed (Katerina, 18 September): the loading shape of Peek's conversation cards
  */
 export function SkeletonConversationList({ className }: { className?: string }) {
   return (
