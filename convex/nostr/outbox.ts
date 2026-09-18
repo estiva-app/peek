@@ -398,6 +398,20 @@ export const recordMessagePublished = mutation({
  * nobody can resolve would put a dangling claim on the channel, which is worse
  * than waiting — the message publishes first, and a resolution of an
  * unpublished message simply stays local.
+ *
+ * ## A DM's resolution travels too (DMS-11)
+ *
+ * This was the last builder still reading `parentKind !== 'topic'`, left that
+ * way by DMS-4 because whether a DM message is *resolvable to other apps* is a
+ * product question rather than a mechanical widening. It was answered by
+ * measuring what already happens: a topic's resolution has been a `kind:9101`
+ * on the relay since PEEK-128, so a DM's staying in Convex was an inconsistency
+ * rather than a decision. Both now resolve their channel the same way, and the
+ * assertion is readable by exactly the people who can read the message it is
+ * about — a DM channel is private, so its `9101` is too.
+ *
+ * Huddles are still refused, by `parentChannel` and for its reason: there is no
+ * Buzz container to put one in.
  */
 export const unsignedResolution = query({
   args: { assertionId: v.id('resolutionAssertions') },
@@ -413,14 +427,12 @@ export const unsignedResolution = query({
 
     const target = await ctx.db.get(a.messageId)
     if (!target) return { ok: false, reason: 'unknown message' }
-    if (target.parentKind !== 'topic') return { ok: false, reason: 'not a topic message' }
     if (!target.nostrEventId) {
       return { ok: false, reason: 'the message being resolved is not on the relay yet' }
     }
 
-    const topicId = ctx.db.normalizeId('topics', target.parentId)
-    const topic = topicId ? await ctx.db.get(topicId) : null
-    if (!topic?.channelUuid) return { ok: false, reason: 'the topic has no channel on the relay yet' }
+    const channel = await parentChannel(ctx, target.parentKind, target.parentId)
+    if (!channel.ok) return channel
 
     const author = await ctx.db.get(a.authorId)
     if (!author?.nostrPubkey) return { ok: false, reason: 'asserter has no Estiva ID pubkey' }
@@ -432,7 +444,7 @@ export const unsignedResolution = query({
     return {
       ok: true,
       unsigned: buildResolution(author.nostrPubkey, a.createdAt, {
-        channelUuid: topic.channelUuid,
+        channelUuid: channel.channelUuid,
         targetEventId: target.nostrEventId,
         action: a.action,
         supportingEventId: supporting?.nostrEventId ?? undefined,
