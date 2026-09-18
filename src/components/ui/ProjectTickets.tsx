@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, ProgressBar } from '@estiva-app/ui'
+import { Divider, Link, ProgressBar } from '@estiva-app/ui'
 import { Button } from './Button'
 import { EmptyState } from './EmptyState'
 import { IconChevronRight } from '@tabler/icons-react'
@@ -73,7 +73,10 @@ export function ProjectTickets({
 
   return (
     <div className={className}>
-      <div className="flex items-center gap-3 border-t border-border-subtle px-3 py-2">
+      {/* The package's rule, edge to edge (`mx-0`), over the count and over
+          what opens under it: each was the block's own `border-t` (UIG-14). */}
+      <Divider className="mx-0" />
+      <div className="flex items-center gap-3 px-3 py-2">
         {/* The package's Button (UIG-3, Katerina's pick of 15 September): 24px tall,
             brighter words, a fill on hover. */}
         <Button
@@ -108,16 +111,17 @@ export function ProjectTickets({
         <Progress done={doneCount} open={openCount} />
       </div>
 
+      {expanded && <Divider className="mx-0" />}
       {expanded &&
         (tickets.length === 0 ? (
           /* A hand-made empty line until 2026-09-10 (PEEK-ADOPTION.md 13.1). Level
              with the rows' words (Katerina, 2026-09-14): each row's cell pads
              itself, so the line takes that inset here, never on EmptyState. */
-          <div className="border-t border-border-subtle px-3 py-2">
+          <div className="px-3 py-2">
             <EmptyState scope="section" message="No tickets in this project yet." />
           </div>
         ) : (
-          <table className="w-full table-fixed border-t border-border-subtle text-caption">
+          <table className="w-full table-fixed text-caption">
             <tbody>
               {tickets.map((ticket) => (
                 /*

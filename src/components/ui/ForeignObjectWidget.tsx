@@ -13,7 +13,7 @@ import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
-import { Card, FieldLine, Form, Link, SectionLabel } from '@estiva-app/ui'
+import { Card, Divider, FieldLine, Form, Link, SectionLabel } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -244,8 +244,11 @@ function Actions({
   if (!actions.length) return null
 
   return (
-    <div className="mt-2 border-t border-border-subtle pt-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="mt-2">
+      {/* The package's rule, edge to edge (`mx-0`): it was this block's own
+          `border-t` (UIG-14). */}
+      <Divider className="mx-0" />
+      <div className="flex flex-wrap items-center gap-2 pt-2">
         {actions.map((action) => (
           <ActionControl
             key={action.id}
