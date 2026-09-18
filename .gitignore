@@ -53,3 +53,7 @@ docs/*
 
 # The manifest signing key (PRO-6). A secret; never committed.
 .manifest-key
+
+# The catalogue of Peek's parts (UIG-13): built from the code every time it is read,
+# written to a file only by `npm run registry`, and never committed.
+/registry.json

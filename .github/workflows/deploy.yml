@@ -86,6 +86,11 @@ jobs:
       - name: Gate lint
         run: npm run lint:rules
 
+      # Every part says in one line what it is for, so `npm run ui:find` can offer
+      # it before someone builds it again (UIG-13). Built from the code; nothing kept.
+      - name: Every part is described
+        run: npm run registry:check
+
   publish:
     # `gate` too: the rules stopped a deploy while they were a step in `check`,
     # and moving them into a job of their own must not change that.
