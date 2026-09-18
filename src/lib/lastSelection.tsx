@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
 
-/** A message to open a topic at: the one that opened the conversation, and a reply in it if that is the target. */
+/**
+ * A message to open a topic at: the one that opened the conversation, and a reply in it if that is the target.
+ * @registry reusable: it remembers Peek's own topics and messages
+ */
 export interface PendingTopicMessage {
   folder: string
   eventId: string

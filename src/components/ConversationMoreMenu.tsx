@@ -56,6 +56,11 @@ interface ConversationMoreMenuProps {
   className?: string
 }
 
+/**
+ * The ⋯ menu on a message or a topic: highlight, resolve or reopen, make or
+ * undo a topic, add to Open work, edit, see details and delete — only what the
+ * card offers.
+ */
 export function ConversationMoreMenu({
   isTopic = false,
   isResolved = false,

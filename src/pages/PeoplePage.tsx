@@ -16,6 +16,10 @@ import { useTopicPath } from '@/lib/useTopicPath'
 import { rememberRecent } from '@/lib/recents'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
+/**
+ * The People page: starred people and everyone in the workspace on the left,
+ * and the direct message with the chosen person beside them.
+ */
 export function PeoplePage() {
   const { dmHasUnread, dmIsUrgent } = useUnread()
   const navigate = useNavigate()

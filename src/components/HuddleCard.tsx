@@ -36,6 +36,10 @@ interface HuddleCardProps {
   className?: string
 }
 
+/**
+ * A row of up to four overlapping member photos, showing who is in a huddle on
+ * its card.
+ */
 export function MemberAvatars({
   members,
   count,
@@ -66,6 +70,10 @@ export function MemberAvatars({
   )
 }
 
+/**
+ * The card for one private huddle in a topic: its members, first message, reply
+ * count and resolution, with a hover menu to reply or delete.
+ */
 export function HuddleCard({
   huddle,
   isSelected = false,

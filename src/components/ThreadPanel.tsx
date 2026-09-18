@@ -243,6 +243,10 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
   )
 }
 
+/**
+ * The replies panel beside a conversation: the first message at the top, the
+ * replies and resolve history below it, and a box to write a reply.
+ */
 export function ThreadPanel({
   conversation,
   replies,

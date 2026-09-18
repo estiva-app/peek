@@ -141,6 +141,10 @@ function Block({ block }: { block: HighlightBlock }) {
   )
 }
 
+/**
+ * A card among a topic's messages with highlights from outside the app, such as
+ * a call: one bar that expands to show notes, highlights and to-dos.
+ */
 export function HighlightsCard({ data, defaultExpanded = false, className }: HighlightsCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const types = swatchTypes(data.blocks)

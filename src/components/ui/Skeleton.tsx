@@ -8,8 +8,16 @@ import { cn } from '@/lib/utils'
  * like, and stays here.
  */
 export { SkeletonBar, SkeletonRow }
+/**
+ * Grey placeholder rows, each a small square and a bar, shown in a list while
+ * its topics, people or folders are still loading.
+ */
 export const SkeletonSidebarList = SkeletonList
 
+/**
+ * A grey placeholder in the shape of a message card, with a photo, a name, a
+ * time and two lines, shown while messages load.
+ */
 export function SkeletonConversationCard({ secondLineWidth = 380 }: { secondLineWidth?: number }) {
   return (
     <div className="rounded-lg pt-2 px-2">
@@ -26,7 +34,10 @@ export function SkeletonConversationCard({ secondLineWidth = 380 }: { secondLine
   )
 }
 
-/** Conversation-area placeholder: a few cards, revealed after the delay. */
+/**
+ * Conversation-area placeholder: a few cards, revealed after the delay.
+ * @registry reusable: the loading shape of Peek's own conversation cards
+ */
 export function SkeletonConversationList({ className }: { className?: string }) {
   return (
     <div className={cn('flex flex-col gap-2 animate-skeleton-in', className)} aria-hidden>

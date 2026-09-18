@@ -16,6 +16,10 @@ export interface PinnedMessageProps {
   highlightType?: HighlightType
 }
 
+/**
+ * The first message of a conversation pinned at the top of the replies panel:
+ * its author, time and one shortened line of text.
+ */
 export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, highlightType }: PinnedMessageProps) {
   // Strip newlines AND formatting markers — previews are plain snippets.
   const flatBody = previewText(body).replace(/\n/g, ' ')

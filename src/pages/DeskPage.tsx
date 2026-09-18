@@ -42,6 +42,10 @@ type Selected =
   | { kind: 'dm'; dmId: string; dmName: string; section: SectionKey }
   | { kind: 'topic'; topicId: string; topicTitle: string; topicResolved: boolean; section: SectionKey }
 
+/**
+ * The Desk page: the Screener, Urgent, Open work and Starred lists on the left,
+ * and the chosen topic or direct message beside them.
+ */
 export function DeskPage() {
   const { topicHasUnread, dmHasUnread, topicIsUrgent, dmIsUrgent } = useUnread()
   const navigate = useNavigate()

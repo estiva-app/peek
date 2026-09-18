@@ -40,6 +40,7 @@ interface ConversationQuickMenuProps {
  * arrow keys walk the buttons, and the package draws the one box every
  * floating strip shares — this file used to draw its own, and two cards
  * re-typed that class string (Peek scan F7).
+ * @registry reusable: Peek's own message actions, built from the package's Toolbar
  */
 export function ConversationQuickMenu({
   isResolved = false,

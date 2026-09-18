@@ -24,6 +24,10 @@ interface CreateTopicDialogProps {
   onCancel: () => void
 }
 
+/**
+ * The Start topic dialog: a title and people to invite, with a privacy note
+ * when a direct message is being turned into a private huddle.
+ */
 export function CreateTopicDialog({
   defaultTitle = '',
   defaultInvitees = [],

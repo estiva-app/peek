@@ -40,6 +40,10 @@ interface ContainerHeaderProps {
   className?: string
 }
 
+/**
+ * The bar across the top of a column: its title, with an optional icon and
+ * chevron, and up to three buttons on the right.
+ */
 export function ContainerHeader({
   title,
   chevron = false,

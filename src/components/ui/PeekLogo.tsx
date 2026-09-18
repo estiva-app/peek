@@ -5,6 +5,11 @@ import { cn } from '@/lib/utils'
  * currentColor fills) — color from the `text-logo` token: brand purple on
  * light, white on dark. Size via the `height` prop (native 19×24).
  */
+/**
+ * The Peek logo mark on its own, in brand purple on light and white on dark, at
+ * any height.
+ * @registry reusable: Peek's own logo
+ */
 export function PeekLogoMark({ height = 24, className }: { height?: number; className?: string }) {
   return (
     <svg

@@ -30,6 +30,11 @@ const ThemeContext = createContext<{ theme: Theme; resolved: Theme }>({
 
 const VALUE = { theme: 'signal', resolved: 'signal' } as const
 
+/**
+ * Puts Peek's one theme, Signal, on the page and tells the parts below it
+ * which theme is on. In Storybook it leaves the toolbar's theme alone.
+ * @registry reusable: Peek's own theme
+ */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     /**

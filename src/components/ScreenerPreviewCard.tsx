@@ -11,6 +11,10 @@ import { SkeletonBar } from './ui/Skeleton'
  * cap and the scrollbar are the package's `PreviewCard`, which was built from
  * this file (P27) and carries its numbers.
  */
+/**
+ * What the hover preview of a Screener item shows: the message that brought it
+ * in and its latest replies, or grey bars while they load.
+ */
 export function ScreenerPreviewCardView({
   rows,
   isTopicResolved,

@@ -67,6 +67,10 @@ import { useFolderPath } from '@/lib/useFolderPath'
  * it is a row in the team's section, and a `39000:` row opens the topic page
  * (`FilePage` sends it there). A Folder nothing lists is a section of its own.
  */
+/**
+ * The Folders column: every folder the person is in as a folding section of its
+ * files and topics, with a dot where something is new.
+ */
 export function FolderTree({
   currentFolder,
   selectedRef,

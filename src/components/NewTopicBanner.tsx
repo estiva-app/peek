@@ -12,7 +12,8 @@ interface NewTopicBannerProps {
 /** Empty-state banner above the composer of a conversation with no messages yet:
  *  topics get "…your conversations in <Topic>" + Invite members; DMs get
  *  "…your conversation with <Name>" without the invite action. The strip is
- *  `ComposerBanner`. */
+ *  `ComposerBanner`.
+ *  @registry reusable: Peek's own words for a new topic or direct message */
 export function NewTopicBanner({ title, kind = 'topic', onInviteMembers }: NewTopicBannerProps) {
   return (
     <ComposerBanner

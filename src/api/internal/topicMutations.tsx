@@ -74,6 +74,10 @@ interface TopicMutationsValue {
 
 const TopicMutationsContext = createContext<TopicMutationsValue | null>(null)
 
+/**
+ * Gives every part below it the changes made to topics in this session, such as
+ * sent messages, replies, edits and resolutions, so they survive a page change.
+ */
 export function TopicMutationsProvider({ children }: { children: ReactNode }) {
   const [sentMessages, setSentMessages] = useState<Record<string, ConversationData[]>>({})
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())

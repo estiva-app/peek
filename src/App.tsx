@@ -22,6 +22,10 @@ function TopicOrFile() {
   return ref && addressFromRef(ref) ? <FilePage /> : <TopicsPage />
 }
 
+/**
+ * Peek's pages by address: the Desk, Topics, one topic or file, an object or a
+ * message, Folders and People — and the old topic addresses still work.
+ */
 function App() {
   return (
     <Routes>

@@ -7,6 +7,11 @@ import { EmptyState as UiEmptyState, type EmptyStateProps as UiEmptyStateProps }
  */
 export type EmptyStateProps = Omit<UiEmptyStateProps, 'message'> & { message?: string }
 
+/**
+ * The package's empty state, with Peek's default words when none are given:
+ * "No conversation selected".
+ * @registry reusable: Peek's default words over the package's EmptyState, which is the shared part
+ */
 export function EmptyState({ message = 'No conversation selected', ...rest }: EmptyStateProps) {
   return <UiEmptyState message={message} {...rest} />
 }

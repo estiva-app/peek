@@ -10,6 +10,10 @@ interface ResolveDialogProps {
   onCancel: () => void
 }
 
+/**
+ * The Resolve dialog, where a person can write an optional message summing up
+ * the outcome when marking a conversation resolved.
+ */
 export function ResolveDialog({ onResolve, onCancel }: ResolveDialogProps) {
   const [message, setMessage] = useState('')
   const formId = useId()

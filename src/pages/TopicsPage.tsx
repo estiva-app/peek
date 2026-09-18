@@ -23,6 +23,10 @@ import { identifierFromRef, topicPath } from '@/lib/objectUrl'
 import { useTopicPath } from '@/lib/useTopicPath'
 import { rememberRecent } from '@/lib/recents'
 
+/**
+ * The Topics page: all topics on the left, split into yours and others, and the
+ * chosen topic beside them with its replies or Files panel.
+ */
 export function TopicsPage() {
   const { topicHasUnread, topicIsUrgent } = useUnread()
   const navigate = useNavigate()

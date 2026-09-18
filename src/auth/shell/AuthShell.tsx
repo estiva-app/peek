@@ -21,6 +21,10 @@ export interface AuthShellProps {
   onContinue: () => void
 }
 
+/**
+ * What shows while nobody is signed in: Peek's badge, one line saying why, and
+ * at most one button, which starts the passkey sign-in.
+ */
 export function AuthShell({ state, onContinue }: AuthShellProps) {
   /**
    * Waiting states show the badge and nothing else.

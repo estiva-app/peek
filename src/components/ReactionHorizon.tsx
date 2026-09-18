@@ -1,7 +1,8 @@
 import { REACTION_TARGET_LIMIT } from '@/nostr/reactionHorizon'
 
 /**
- * The reaction horizon, said out loud — SPEC §6.6, PEE-21.
+ * A quiet line under a conversation saying how many older messages' reactions
+ * were not checked: the reaction horizon, said out loud — SPEC §6.6, PEE-21.
  *
  * A reaction is fetched addressed by target, and Peek asks about at most
  * `REACTION_TARGET_LIMIT` messages and replies per topic. Past that, a message
@@ -26,6 +27,7 @@ import { REACTION_TARGET_LIMIT } from '@/nostr/reactionHorizon'
  * a DM has one too since DMS-5, so the line has to be able to say which — "in
  * this topic" under a DM would be wrong in the one place the reader is relying
  * on it to be exact.
+ * @registry reusable: Peek's own words for a limit of Estiva's relay
  */
 export function ReactionHorizon({
   omitted,

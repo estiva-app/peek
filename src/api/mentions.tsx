@@ -169,8 +169,11 @@ export function mentionMessages(): ConversationMessage[] {
   return (getActiveConversation()?.messages ?? []).filter((m) => !!m.eventId)
 }
 
-/** Seam-internal: mounted by PeekDataProvider inside TopicStoreProvider
- *  (useTopics needs the store). Renders nothing. */
+/**
+ * Keeps the topics a message can reference in step with the topic store.
+ * Draws nothing; mounted by PeekDataProvider inside TopicStoreProvider
+ * (useTopics needs the store).
+ */
 export function TopicDirectorySync() {
   const topics = useTopics()
   const viewer = useRelayViewer()
@@ -203,7 +206,10 @@ export function TopicDirectorySync() {
   return null
 }
 
-/** Seam-internal: mounted by PeekDataProvider. Renders nothing. */
+/**
+ * Keeps the people a message can @-mention in step with the workspace's
+ * people and their names. Draws nothing; mounted by PeekDataProvider.
+ */
 export function MentionDirectorySync() {
   const people = usePeople()
   const knownNames = useMentionNames()
