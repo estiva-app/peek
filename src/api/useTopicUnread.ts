@@ -2,10 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForeignObjects } from '@/api/foreign'
 import { validToken } from '@/auth/estivaId'
 import type { StreamMessage } from '@/nostr/channelStreams'
+import { peekLiveTopics } from '@/nostr/liveTopics'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { topicChannelFlags } from './topicUnread'
+
+/** How long the socket's activity is gathered before one re-read pays for all of it. */
+export const TOPIC_UNREAD_SETTLE_MS = 1_000
 
 /** What the fold needs of a topic: the sidebar's key, and the channel to read. */
 export interface TopicChannel {
@@ -41,12 +45,23 @@ export interface TopicChannel {
  *
  * ## When it re-reads
  *
- * On the set of topics changing, and on the refresh triggers — focus,
- * visibility, and a 30 s interval. The socket path `useTeamUnread` uses does
- * not help here: `onForeignActivity` fires for events the projection did *not*
- * take, and a topic's own `kind:9` is exactly what it takes. So a message
- * arriving in a topic you are not looking at lights its dot within the
- * interval rather than instantly, which is slower than the Convex query was.
+ * On the set of topics changing, on the socket reporting something said in any
+ * of them — gathered for a moment, so a burst of messages is one read rather
+ * than one each — and on the refresh triggers as the fallback.
+ *
+ * The socket path is `watchChannels`, **not** the `onForeignActivity` one
+ * `useTeamUnread` uses: that fires for events the projection did *not* take,
+ * and a topic's own `kind:9` is exactly what it takes, so it never fires for
+ * this question. `watchChannels` is the client's wide filter — one REQ for the
+ * whole sidebar, told which channel changed.
+ *
+ * **The interval stays on underneath it**, which is not belt-and-braces. A
+ * wide filter fans out only on a relay build carrying the plural
+ * `extract_channel_ids_from_filters`; against the singular one the REQ is
+ * accepted and delivers nothing, with no error to notice. So the socket makes
+ * this instant where it works and the 30 s fallback is what it degrades to,
+ * rather than the dots going quiet on a relay nobody thought to check.
+ *
  * Judging is separate and free: it re-runs on every frontier change without a
  * read, which is what turns a dot off the moment this tab records a read.
  */
@@ -120,6 +135,24 @@ export function useTopicUnread(
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    const live = peekLiveTopics()
+    if (!live || channels.length === 0) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const settle = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = undefined
+        load()
+      }, TOPIC_UNREAD_SETTLE_MS)
+    }
+    const watch = live.watchChannels(channels, settle)
+    return () => {
+      if (timer) clearTimeout(timer)
+      watch.stop()
+    }
+  }, [channels, load])
 
   useRefreshTriggers(load, { enabled: channels.length > 0 })
 
