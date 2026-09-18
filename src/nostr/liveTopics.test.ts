@@ -87,8 +87,8 @@ describe('watching topics', () => {
     // channel share a REQ through PEE-6's refcount; the first release must not
     // take the second's subscription with it.
     const live = getLiveTopics('https://relay.test', api)
-    const first = live.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
-    const second = live.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
+    const first = live.watch({ containerKind: 'topic', containerKey: TOPIC, channelUuid: CHANNEL })
+    const second = live.watch({ containerKind: 'topic', containerKey: TOPIC, channelUuid: CHANNEL })
 
     first.stop()
     expect(() => second.stop()).not.toThrow()
@@ -99,21 +99,21 @@ describe('watching topics', () => {
     // PEE-6's guard, reachable from here: a topic id would register globally
     // and then never deliver.
     const live = getLiveTopics('https://relay.test', api)
-    expect(() => live.watch({ topicKey: TOPIC, channelUuid: TOPIC })).toThrow(
+    expect(() => live.watch({ containerKind: 'topic', containerKey: TOPIC, channelUuid: TOPIC })).toThrow(
       /not a channel uuid/,
     )
   })
 
   it('watches several topics on the one connection', () => {
     const live = getLiveTopics('https://relay.test', api)
-    live.watch({ topicKey: 'a', channelUuid: CHANNEL })
-    live.watch({ topicKey: 'b', channelUuid: CHANNEL_B })
+    live.watch({ containerKind: 'topic', containerKey: 'a', channelUuid: CHANNEL })
+    live.watch({ containerKind: 'topic', containerKey: 'b', channelUuid: CHANNEL_B })
     expect(sockets).toHaveLength(1)
   })
 
   it('treats a repeated stop as a no-op', () => {
     const live = getLiveTopics('https://relay.test', api)
-    const handle = live.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
+    const handle = live.watch({ containerKind: 'topic', containerKey: TOPIC, channelUuid: CHANNEL })
     handle.stop()
     expect(() => handle.stop()).not.toThrow()
   })
@@ -137,7 +137,7 @@ describe('watchChannels — the sidebar’s wide filter (SHR-5)', () => {
     // while the sidebar watches every channel through the wide filter.
     const live = getLiveTopics('https://relay.test', api)
     const watch = live.watchChannels([CHANNEL, CHANNEL_B], () => {})
-    const handle = live.watch({ topicKey: TOPIC, channelUuid: CHANNEL })
+    const handle = live.watch({ containerKind: 'topic', containerKey: TOPIC, channelUuid: CHANNEL })
     expect(sockets).toHaveLength(1)
     watch.stop()
     expect(() => handle.stop()).not.toThrow()

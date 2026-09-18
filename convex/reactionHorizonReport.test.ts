@@ -76,7 +76,12 @@ async function seed(
 const sync = (t: ReturnType<typeof convexTest>, topicId: Id<'topics'>) =>
   t
     .withIdentity(asUser(PUBKEY))
-    .action(api.nostr.sync.importChannel, { topicKey: topicId as string, events: [], profiles: [] })
+    .action(api.nostr.sync.importChannel, {
+      containerKind: 'topic',
+      containerKey: topicId as string,
+      events: [],
+      profiles: [],
+    })
 
 const listed = async (t: ReturnType<typeof convexTest>, topicId: Id<'topics'>) => {
   const topics = await t.withIdentity(asUser(PUBKEY)).query(api.topics.list, {})

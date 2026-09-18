@@ -47,6 +47,7 @@ import {
 import { KIND, type RelayState } from '@estiva-app/protocol'
 import {
   createLiveProjection,
+  type ContainerRef,
   type LiveProjection,
   type LiveProjectionApi,
   type WatchHandle,
@@ -61,8 +62,11 @@ import {
 } from './freshness'
 
 export interface LiveTopics {
-  /** Watch one topic's channel. Refcounted — safe to call twice for one topic. */
-  watch(args: { topicKey: string; channelUuid: string }): WatchHandle
+  /**
+   * Watch one container's channel — a topic or a DM (DMS-5). Refcounted, so it
+   * is safe to call twice for one container.
+   */
+  watch(args: ContainerRef & { channelUuid: string }): WatchHandle
   state(): RelayState
   /** Subscribe to connection-state changes. Returns an unsubscribe. PEE-9 consumes this. */
   onState(listener: (state: RelayState) => void): () => void

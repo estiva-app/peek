@@ -40,14 +40,10 @@ import {
   type ConversationData,
   type Huddle,
 } from '@/api'
-import { useConvex, useQuery } from 'convex/react'
+import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { hasConvex } from '@/api'
-import { validToken } from '@/auth/estivaId'
-import { syncTopicFromRelay } from '@/nostr/sync'
-import { getLiveTopics } from '@/nostr/liveTopics'
-import { recordBackfillEnd, recordBackfillStart } from '@/nostr/freshness'
-import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { useChannelSync } from '@/nostr/useChannelSync'
 import type { RelayState } from '@estiva-app/protocol'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useToast } from '@/lib/toast'
@@ -197,164 +193,18 @@ export function useTopicView({
   )
   const topicFolderId = (topic as any)?.folderId ?? topicFolderIdQuery
 
-  // Pull this channel as the viewer whenever the topic is opened.
-  //
-  // The cron cannot: it reads with a custodied key, and Buzz answers a
-  // non-member with `403 relay_membership_required`, so every channel an Estiva
-  // ID identity created was invisible to it — which is why nothing written in
-  // Ship ever reached Peek. The person looking at a topic is a member of it by
-  // definition, so their token is the one identity guaranteed to see it.
-  //
-  // Cheap to repeat: the `since` cursor makes an already-synced channel fetch
-  // almost nothing, and imports are idempotent by event id regardless.
-  //
-  // The relay reads happen here rather than in a Convex action (PEEK-106): the
-  // token is the credential, and this is the only place it exists. Convex still
-  // does the projection — see `convex/nostr/sync.ts`.
-  const convex = useConvex()
-  const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
-  const relayUrl = relayConfig?.relayUrl
+  /*
+    Pull this channel as the viewer whenever the topic is opened, and keep it
+    live — `useChannelSync`, which a DM now uses on exactly the same terms
+    (DMS-5).
 
-  /**
-   * The channel this topic lives in, for the live subscription (PEE-8).
-   *
-   * `syncPlan` already answers it for the viewer and is the same query the HTTP
-   * backfill uses, so the two paths cannot disagree about which channel a topic
-   * is. Null until the topic has a channel on the relay — topics created before
-   * Nostr emission was wired up never get one, and those stay HTTP-only.
-   */
-  const syncPlan = useQuery(
-    api.nostr.sync.syncPlan,
-    hasConvex && topicId != null ? { topicKey: topicId } : 'skip',
-  )
-  const channelUuid = syncPlan?.channelUuid ?? null
-
-  /**
-   * Backfill over HTTP: on open, and again whenever the socket becomes live.
-   *
-   * **The mount-time run is unconditional and stays that way.** A subscription
-   * only delivers what arrives *after* it is registered, so opening a topic
-   * must still read history — the socket cannot do it, and should not try. The
-   * HTTP path owns the `since` cursor, the `PAGE_LIMIT` paging, and the
-   * resolution read that is deliberately *not* cursored, because an assertion
-   * about an old message can be made at any time.
-   *
-   * **The re-run on reconnect is the half the socket cannot cover.** While the
-   * connection is down, events are simply missed; the restored subscription
-   * then delivers only what is new. Without a backfill at that moment the gap
-   * would be invisible and permanent — a topic quietly missing whatever was
-   * said during the outage. `since` makes the repeat almost free.
-   *
-   * A run that lands after `topicId` has changed is harmless rather than
-   * cancelled: every import is keyed by `topicKey`, so a late backfill writes
-   * the previous topic's history to the previous topic. Nothing here is applied
-   * to component state, which is what makes that true.
-   */
-  const [relayState, setRelayState] = useState<RelayState>('connecting')
-  const backfill = useRef<() => void>(() => {})
-  backfill.current = () => {
-    if (!hasConvex || topicId == null || !relayUrl) return
-    // `validToken()` rather than the `usesEstivaId` snapshot: that constant is
-    // fixed at module load, so a page opened while the stored token had expired
-    // disables this sync for the whole session even after the token is renewed.
-    const token = validToken()
-    if (!token) return
-    // Observed rather than inferred: PEE-9 shows "catching up" while this is in
-    // flight, and "last synced" from when it succeeded. A failure records the
-    // end without moving the timestamp, so the age on screen keeps growing —
-    // which is the whole point of showing it.
-    recordBackfillStart()
-    void syncTopicFromRelay(topicId, relayUrl, token, {
-      syncPlan: (args) => convex.query(api.nostr.sync.syncPlan, args),
-      importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
-      importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
-      importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
-    })
-      .then((synced) => recordBackfillEnd(synced))
-      .catch((error) => {
-        recordBackfillEnd(false)
-        console.warn('[nostr] viewer sync failed:', error)
-      })
-  }
-
-  useEffect(() => {
-    if (!hasConvex || topicId == null || !topicFolderId || !relayUrl) return
-    backfill.current()
-  }, [topicId, topicFolderId, relayUrl, convex])
-
-  /**
-   * Re-sync on focus, on becoming visible, and on a slow interval (PEE-1).
-   *
-   * The effect above is keyed on ids that do not change while a topic is open,
-   * so before this it ran once per mount and never again — which is why a
-   * reload "fixed" a reply that had been sitting on the relay for ten minutes.
-   *
-   * **The interval idles while the socket is live**, and that is the whole
-   * adaptation this ticket needed: PEE-1 was written when the socket did not
-   * exist and it was the only relief available. Polling underneath a working
-   * live connection would undo M3. `relayState` comes from PEE-8 for exactly
-   * this — deriving it from a second socket would double the AUTH round trips
-   * for nothing.
-   *
-   * Focus and visibility still fire regardless. They happen at human frequency,
-   * the `since` cursor makes a repeat almost free, and returning to a tab is
-   * the one moment somebody actively wants certainty — including when the
-   * socket believes it is connected and is not.
-   */
-  useRefreshTriggers(() => backfill.current(), {
-    enabled: hasConvex && topicId != null && !!relayUrl,
-    interval: relayState !== 'live',
-  })
-
-  /**
-   * Subscribe this topic's channel to the tab's live socket.
-   *
-   * Additive by construction: everything above still runs, so a socket that
-   * never connects degrades to exactly today's behaviour rather than to
-   * nothing. The relay reads stay in the browser — the token is the credential
-   * and Convex surfaces action arguments in its dashboard logs, which is why
-   * PEEK-106 moved them here in the first place.
-   */
-  useEffect(() => {
-    if (!hasConvex || topicId == null || !relayUrl || !channelUuid) return
-
-    // Everything here is inside a try: this effect is additive, and a failure
-    // in it must cost the live path and nothing else. `watch()` throws on a
-    // channel key that is not a uuid — correct at that boundary, because such a
-    // subscription would register globally and never deliver — but an
-    // uncaught throw in an effect takes the whole topic view down with it. The
-    // guarantee this ticket is making is that a WS failure degrades to today's
-    // behaviour, and the HTTP backfill above has already run by this point.
-    let unsubscribe: (() => void) | undefined
-    let handle: { stop(): void } | undefined
-    try {
-      const live = getLiveTopics(relayUrl, {
-        importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
-        importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
-        importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
-      })
-
-      setRelayState(live.state())
-      let wasLive = live.state() === 'live'
-      unsubscribe = live.onState((next) => {
-        setRelayState(next)
-        // Only on the transition *into* live, and not for the first connect —
-        // the mount effect above has already backfilled that one.
-        if (next === 'live' && !wasLive) backfill.current()
-        wasLive = next === 'live'
-      })
-
-      // Refcounted: StrictMode's double mount shares one REQ, and the channel
-      // closes when the second release lands.
-      handle = live.watch({ topicKey: topicId, channelUuid })
-    } catch (error) {
-      console.warn('[nostr] live topic subscription unavailable:', error)
-    }
-    return () => {
-      unsubscribe?.()
-      handle?.stop()
-    }
-  }, [topicId, relayUrl, channelUuid, convex])
+    The cron cannot do this: it reads with a custodied key, and Buzz answers a
+    non-member with `403 relay_membership_required`, so every channel an Estiva
+    ID identity created was invisible to it — which is why nothing written in
+    Ship ever reached Peek. The person looking at a topic is a member of it by
+    definition, so their token is the one identity guaranteed to see it.
+  */
+  const { relayState } = useChannelSync('topic', topicId ?? null)
 
   // Derived: a topic is "resolved" iff every non-deleted conv in it is resolved.
   // Single source of truth for the dashed-circle vs checkmark icon everywhere.

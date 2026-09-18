@@ -182,6 +182,18 @@ export default defineSchema({
      * relay has said so, first write wins.
      */
     channelUuid: v.optional(v.string()),
+    /**
+     * How far the relay read has got in this DM's channel — DMS-5.
+     *
+     * The same field `topics` carries, for the same reason and written by the
+     * same mutation: one projection, two container types. It is not a mirror of
+     * anything on the relay — the relay has no notion of how much of a channel
+     * Peek has already projected — and it is what makes a repeated backfill
+     * almost free.
+     */
+    nostrSyncedAt: v.optional(v.number()),
+    /** Reaction targets past the §6.6 horizon, as `topics` records them. */
+    reactionTargetsOmitted: v.optional(v.number()),
   })
     .index('by_pair', ['userLowId', 'userHighId'])
     .index('by_low', ['userLowId'])

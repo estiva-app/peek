@@ -24,6 +24,8 @@ import { blockAnchorOf, imetaOf } from '@estiva-app/protocol'
 import { action, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
+import { containerKind } from '../schema'
+import { syncableContainer, type SyncableContainer } from './data'
 import { ASSERTION_SUBTYPE, KIND, parseProfile } from '@estiva-app/protocol'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { viewerId } from '../users'
@@ -305,11 +307,11 @@ async function applyDeletions(
  * non-member with `403 relay_membership_required`, so the identity here decides
  * whether anything is visible at all — it is not a formality.
  */
-async function syncTopic(
+async function syncChannel(
   ctx: { runQuery: any; runMutation: any },
   incoming: SignedEvent[],
   profileEvents: SignedEvent[],
-  topic: { topicId: Id<'topics'>; channelUuid: string; since: number | null },
+  container: SyncableContainer,
 ): Promise<void> {
     try {
       // Ship and Peek now share an Estiva ID pubkey. Filtering by author
@@ -372,12 +374,12 @@ async function syncTopic(
             continue
           }
 
-          // Deliberately no `h`-tag learning here. Topics reach this loop from
-          // `listSyncableTopics`, which filters on `channelUuid`, so
-          // `topic.channelUuid` is set by construction and a branch guarded on
-          // its absence can never run. These events were fetched *by*
-          // `'#h': [topic.channelUuid]` in the first place, so the tag could
-          // only ever confirm what we already queried with.
+          // Deliberately no `h`-tag learning here. Containers reach this loop
+          // from `syncableContainer`, which returns null without a
+          // `channelUuid`, so `container.channelUuid` is set by construction and
+          // a branch guarded on its absence can never run. These events were
+          // fetched *by* `'#h': [container.channelUuid]` in the first place, so
+          // the tag could only ever confirm what we already queried with.
 
           // Addresses this message references — NIP-27 `a` tags, and NIP-22's
           // uppercase `A` for a comment's thread root.
@@ -397,7 +399,8 @@ async function syncTopic(
           const files = attachmentsOf(e)
 
           await ctx.runMutation(internal.nostr.data.importMessage, {
-            topicId: topic.topicId,
+            parentKind: container.parentKind,
+            parentId: container.parentId,
             authorId,
             body: e.content,
             // Nostr seconds → Peek milliseconds.
@@ -442,13 +445,14 @@ async function syncTopic(
       // channel containing only Peek's own messages would re-read them
       // forever.
       if (incoming.length > 0) {
-        await ctx.runMutation(internal.nostr.data.setTopicSyncCursor, {
-          topicId: topic.topicId,
+        await ctx.runMutation(internal.nostr.data.setContainerSyncCursor, {
+          parentKind: container.parentKind,
+          parentId: container.parentId,
           nostrSyncedAt: Math.max(...incoming.map((e) => e.created_at)),
         })
       }
     } catch (e) {
-      console.warn(`[nostr] sync failed for channel ${topic.channelUuid}:`, e)
+      console.warn(`[nostr] sync failed for channel ${container.channelUuid}:`, e)
     }
 }
 
@@ -476,23 +480,40 @@ const signedEvent = v.object({
  * A query, so it costs no token. The relay reads themselves happen in the
  * browser — the only place the viewer's Estiva ID token exists — and the events
  * come back to `importChannel` below.
+ *
+ * Answers for a topic or a DM (DMS-5), and for a DM the answer is **viewer
+ * relative**: `containerKey` is the partner's person key, so the same key names
+ * a different conversation to a different viewer and names none at all to
+ * somebody who has no conversation with that person. That is the membership
+ * check — see `syncableContainer`.
  */
 export const syncPlan = query({
-  args: { topicKey: v.string() },
+  args: { containerKind, containerKey: v.string() },
   handler: async (
     ctx,
-    { topicKey },
-  ): Promise<{ channelUuid: string; since: number | null } | null> => {
+    { containerKind, containerKey },
+  ): Promise<{
+    channelUuid: string
+    since: number | null
+    /**
+     * What the last sync left past the §6.6 horizon.
+     *
+     * Carried here because a DM has no equivalent of `topics.list` to hang it
+     * on, and an unreported cap is indistinguishable from "nobody reacted"
+     * (PEE-21). A topic still reads its own from `topics.list`; this is the
+     * same number from the same write.
+     */
+    reactionTargetsOmitted: number
+  } | null> => {
     const me = await viewerId(ctx)
     if (!me) return null
-    // `topics` has no seedKey index — same lookup shape as `syncableTopicByKey`.
-    const normalized = ctx.db.normalizeId('topics', topicKey)
-    const rows = await ctx.db.query('topics').collect()
-    const topic = normalized
-      ? rows.find((r) => (r._id as string) === (normalized as string))
-      : rows.find((r) => r.seedKey === topicKey)
-    if (!topic?.channelUuid) return null
-    return { channelUuid: topic.channelUuid, since: topic.nostrSyncedAt ?? null }
+    const container = await syncableContainer(ctx, containerKind, containerKey, me)
+    if (!container) return null
+    return {
+      channelUuid: container.channelUuid,
+      since: container.since,
+      reactionTargetsOmitted: container.reactionTargetsOmitted,
+    }
   },
 })
 
@@ -524,19 +545,47 @@ export const syncPlan = query({
  * far below it because the useful set is "what a person is looking at", and a
  * workspace can grow topics indefinitely while a Desk cannot grow attention.
  *
- * DMs are deliberately absent, and the reason has changed. They now have a
- * `channelUuid` (DMS-3) and their messages are on the relay (DMS-4), so there
- * *is* something to subscribe to — but both participants read the same Convex
- * rows, so nothing on a Peek screen depends on the relay copy arriving. Adding
- * them would spend the bound above on a stream Peek does not render from. The
- * day another app writes into a DM channel, that changes; it is a ticket, not
- * an oversight.
+ * ## DMs are here now, and what changed is who can write one
+ *
+ * This said DMs were deliberately absent: they had a `channelUuid` (DMS-3) and
+ * their messages were on the relay (DMS-4), but *both participants read the
+ * same Convex rows*, so nothing on screen depended on the relay copy arriving,
+ * and a subscription would have spent the bound above on a stream Peek does not
+ * render from. It ended "the day another app writes into a DM channel, that
+ * changes; it is a ticket, not an oversight." **DMS-5 is that ticket.**
+ *
+ * The premise it rested on is what expired, and it is worth being exact about
+ * why, because the argument is otherwise still good:
+ *
+ *   - **Both participants read the same Convex rows only while both are in this
+ *     deployment.** A DM channel's members are relay identities, not Peek
+ *     accounts. Anything else holding those keys — Ship, a second Peek, the
+ *     relay itself, which opens DMs to deliver moderation notices — writes a
+ *     `kind:9` that has no Convex row anywhere, and the projection is the only
+ *     route it has. That is the case that pays for the budget.
+ *   - **Convex is no longer the thing that has to be true.** DMS-7 owns
+ *     republishing the Convex-only DMs, and SHR-7 queues the screener's DM half
+ *     on this stream existing. Both read the relay copy as the real one.
+ *
+ * What does *not* pay for it: a DM between two people in this deployment, which
+ * already arrives by Convex reactivity and would show a green result whether
+ * this code ran or not. Anything claiming to verify DMS-5 has to rule that case
+ * out — see `scripts/dms5-live-check.ts`.
+ *
+ * A DM costs the same one subscription a topic does and is ranked by the same
+ * three lists, so the bound is unchanged. A person whose inbox is all DMs
+ * subscribes to 32 of them, which is the bound doing its job.
  */
 export const WATCHABLE_LIMIT = 32
 
+/** How a person is named to the client — the DM key everywhere in the app. */
+const personKey = (u: { seedKey?: string; _id: Id<'users'> }) => u.seedKey ?? (u._id as string)
+
 export const watchableChannels = query({
   args: {},
-  handler: async (ctx): Promise<{ topicKey: string; channelUuid: string }[]> => {
+  handler: async (
+    ctx,
+  ): Promise<{ containerKind: 'topic' | 'dm'; containerKey: string; channelUuid: string }[]> => {
     const me = await viewerId(ctx)
     if (!me) return []
 
@@ -557,33 +606,56 @@ export const watchableChannels = query({
 
     // Order is priority, and duplicates collapse to their first appearance —
     // a topic in the inbox *and* starred is one subscription, ranked by the
-    // more urgent of the two.
-    const wanted: string[] = []
+    // more urgent of the two. A topic and a DM cannot collide: the pair is the
+    // key, not the id.
+    const wanted: { kind: 'topic' | 'dm'; targetId: string }[] = []
     for (const row of [...screener, ...openWork, ...starred]) {
-      if (row.kind !== 'topic') continue
-      if (!wanted.includes(row.targetId)) wanted.push(row.targetId)
+      if (wanted.some((w) => w.kind === row.kind && w.targetId === row.targetId)) continue
+      wanted.push({ kind: row.kind, targetId: row.targetId })
     }
     if (wanted.length === 0) return []
 
-    // One read of `topics`, same shape as `syncableTopicByKey`: the table has no
+    // One read of `topics`, same shape as `syncableContainer`: the table has no
     // seedKey index, and a targetId may be either an id or a seedKey.
     const rows = await ctx.db.query('topics').collect()
-    const byKey = new Map<string, string>()
+    const topicByKey = new Map<string, string>()
     for (const topic of rows) {
       if (!topic.channelUuid) continue
-      byKey.set(topic._id as string, topic.channelUuid)
-      if (topic.seedKey) byKey.set(topic.seedKey, topic.channelUuid)
+      topicByKey.set(topic._id as string, topic.channelUuid)
+      if (topic.seedKey) topicByKey.set(topic.seedKey, topic.channelUuid)
     }
 
-    const channels: { topicKey: string; channelUuid: string }[] = []
+    const channels: { containerKind: 'topic' | 'dm'; containerKey: string; channelUuid: string }[] = []
     const seen = new Set<string>()
-    for (const topicKey of wanted) {
-      const channelUuid = byKey.get(topicKey)
-      // A topic with no channel was created before Nostr emission was wired up.
-      // Nothing to subscribe to, and not an error.
+    for (const { kind, targetId } of wanted) {
+      let containerKey = targetId
+      let channelUuid: string | undefined
+      if (kind === 'topic') {
+        channelUuid = topicByKey.get(targetId)
+      } else {
+        /*
+          A DM's `targetId` is the `dmConversations` id — that is what
+          `screenTarget` stores. The client names a DM by the *partner's* person
+          key instead (§2.4), and everything downstream of here re-resolves the
+          key through `syncableContainer`, so the translation happens once,
+          here, rather than teaching the resolver a second spelling.
+
+          The participant check is not decoration: it is what makes a row that
+          somehow names a conversation this viewer is not in produce nothing.
+        */
+        const dmId = ctx.db.normalizeId('dmConversations', targetId)
+        const dm = dmId ? await ctx.db.get(dmId) : null
+        if (!dm || (dm.userLowId !== me && dm.userHighId !== me)) continue
+        const partner = await ctx.db.get(dm.userLowId === me ? dm.userHighId : dm.userLowId)
+        if (!partner) continue
+        containerKey = personKey(partner)
+        channelUuid = dm.channelUuid
+      }
+      // No channel: a topic created before Nostr emission was wired up, or a DM
+      // nobody has opened yet. Nothing to subscribe to, and not an error.
       if (!channelUuid || seen.has(channelUuid)) continue
       seen.add(channelUuid)
-      channels.push({ topicKey, channelUuid })
+      channels.push({ containerKind: kind, containerKey, channelUuid })
       if (channels.length >= WATCHABLE_LIMIT) break
     }
     return channels
@@ -602,22 +674,27 @@ export const watchableChannels = query({
  * message that arrived in this same run can still receive its reactions.
  *
  * Also returns `omitted` — how many messages and replies were past the horizon
- * and not asked about — and **records it on the topic row** (PEE-21). The
+ * and not asked about — and **records it on the container row** (PEE-21). The
  * number is computed here and nowhere else, and the surface that draws the
- * container is a reactive `topics.list`, not this action's caller: the two
- * sync paths (HTTP backfill, live socket) both end here, and neither feeds
- * component state — a late result for a topic the reader has left would land
- * on the wrong one. The row is keyed by the topic, so it cannot.
+ * container is a reactive query (`topics.list` for a topic, `syncPlan` for a
+ * DM), not this action's caller: the two sync paths (HTTP backfill, live
+ * socket) both end here, and neither feeds component state — a late result for
+ * a container the reader has left would land on the wrong one. The row is keyed
+ * by the container, so it cannot.
+ *
+ * **A topic and a DM take the same path through here** (DMS-5). Only the
+ * `containerKind`/`containerKey` pair differs; nothing below branches on it.
  */
 export const importChannel = action({
   args: {
-    topicKey: v.string(),
+    containerKind,
+    containerKey: v.string(),
     events: v.array(signedEvent),
     profiles: v.array(signedEvent),
   },
   handler: async (
     ctx,
-    { topicKey, events, profiles },
+    { containerKind, containerKey, events, profiles },
   ): Promise<{
     ok: boolean
     targets?: string[]
@@ -630,10 +707,13 @@ export const importChannel = action({
     const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!viewer) return { ok: false, reason: 'not signed in' }
 
-    const topic = await ctx.runQuery(internal.nostr.data.syncableTopicByKey, { topicKey })
-    if (!topic) return { ok: false, reason: 'topic has no channel on the relay yet' }
+    const container: SyncableContainer | null = await ctx.runQuery(
+      internal.nostr.data.syncableContainerByKey,
+      { containerKind, containerKey, viewerId: viewer },
+    )
+    if (!container) return { ok: false, reason: `the ${containerKind} has no channel on the relay yet` }
 
-    await syncTopic(ctx, events, profiles, topic)
+    await syncChannel(ctx, events, profiles, container)
 
     // Reactions are addressed by TARGET, not by channel or cursor: kind:7 has
     // no `h` tag, and its `created_at` bears no relation to the message it
@@ -643,13 +723,14 @@ export const importChannel = action({
     // the events from this sync window meant a reaction on any older message
     // was silently never imported (found by testing, not by reading).
     // Replies are reaction targets too (PEE-12); the cap covers the union.
+    const where = { parentKind: container.parentKind, parentId: container.parentId }
     const messages: { ids: string[]; total: number } = await ctx.runQuery(
-      internal.nostr.data.listMessageEventIdsForTopic,
-      { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
+      internal.nostr.data.listMessageEventIdsForContainer,
+      { ...where, limit: REACTION_TARGET_LIMIT },
     )
     const replies: { ids: string[]; total: number } = await ctx.runQuery(
-      internal.nostr.data.listReplyEventIdsForTopic,
-      { topicId: topic.topicId, limit: REACTION_TARGET_LIMIT },
+      internal.nostr.data.listReplyEventIdsForContainer,
+      { ...where, limit: REACTION_TARGET_LIMIT },
     )
     const targets = shareTargetBudget(messages.ids, replies.ids, REACTION_TARGET_LIMIT)
     // What the horizon left out, from the true totals rather than the capped
@@ -658,22 +739,22 @@ export const importChannel = action({
     const omitted = messages.total + replies.total - targets.length
     // Written only when it changes: every flush of the live socket runs this,
     // and the number moves once per message, not once per flush.
-    if (omitted !== topic.reactionTargetsOmitted) {
+    if (omitted !== container.reactionTargetsOmitted) {
       await ctx.runMutation(internal.nostr.data.setReactionTargetsOmitted, {
-        topicId: topic.topicId,
+        ...where,
         omitted,
       })
     }
     const known: string[] = await ctx.runQuery(
-      internal.nostr.data.listReactionEventIdsForTopic,
-      { topicId: topic.topicId, limit: PAGE_LIMIT },
+      internal.nostr.data.listReactionEventIdsForContainer,
+      { ...where, limit: PAGE_LIMIT },
     )
     // What a kind:5 could be retracting (PEEK-113): messages and replies, not
     // just reactions. Computed after the import for the same reason as
     // `targets` — an event imported in this run can be deleted in it too.
     const deletable: string[] = await ctx.runQuery(
-      internal.nostr.data.listDeletableEventIdsForTopic,
-      { topicId: topic.topicId, limit: PAGE_LIMIT },
+      internal.nostr.data.listDeletableEventIdsForContainer,
+      { ...where, limit: PAGE_LIMIT },
     )
     return { ok: true, targets, known, deletable, omitted }
   },
@@ -688,7 +769,8 @@ export const importChannel = action({
  */
 export const importReactions = action({
   args: {
-    topicKey: v.string(),
+    containerKind,
+    containerKey: v.string(),
     reactions: v.array(signedEvent),
     deletions: v.array(signedEvent),
     known: v.array(v.string()),
@@ -696,18 +778,25 @@ export const importReactions = action({
   },
   handler: async (
     ctx,
-    { topicKey, reactions, deletions, known, deletable },
+    { containerKind, containerKey, reactions, deletions, known, deletable },
   ): Promise<{ ok: boolean; reason?: string }> => {
     const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!viewer) return { ok: false, reason: 'not signed in' }
-    const topic = await ctx.runQuery(internal.nostr.data.syncableTopicByKey, { topicKey })
-    if (!topic) return { ok: false, reason: 'topic has no channel on the relay yet' }
+    // Resolved but not otherwise used: it is the membership check. `known` and
+    // `deletable` are ids the caller was handed by `importChannel`, and this is
+    // what stops somebody replaying them against a container they cannot name.
+    const container = await ctx.runQuery(internal.nostr.data.syncableContainerByKey, {
+      containerKind,
+      containerKey,
+      viewerId: viewer,
+    })
+    if (!container) return { ok: false, reason: `the ${containerKind} has no channel on the relay yet` }
 
     try {
       await syncReactions(ctx, reactions, deletions, known, deletable)
       return { ok: true }
     } catch (e) {
-      console.warn(`[nostr] importReactions(${topicKey}) failed:`, e)
+      console.warn(`[nostr] importReactions(${containerKind}:${containerKey}) failed:`, e)
       return { ok: false, reason: e instanceof Error ? e.message : 'import failed' }
     }
   },
@@ -747,12 +836,16 @@ export const importReactions = action({
  * history without letting it move Peek's own state.
  */
 export const importResolutions = action({
-  args: { topicKey: v.string(), assertions: v.array(signedEvent) },
-  handler: async (ctx, { topicKey, assertions }): Promise<{ ok: boolean; imported?: number; reason?: string }> => {
+  args: { containerKind, containerKey: v.string(), assertions: v.array(signedEvent) },
+  handler: async (ctx, { containerKind, containerKey, assertions }): Promise<{ ok: boolean; imported?: number; reason?: string }> => {
     const viewer = await ctx.runQuery(internal.users.viewerIdForAction, {})
     if (!viewer) return { ok: false, reason: 'not signed in' }
-    const topic = await ctx.runQuery(internal.nostr.data.syncableTopicByKey, { topicKey })
-    if (!topic) return { ok: false, reason: 'topic has no channel on the relay yet' }
+    const container = await ctx.runQuery(internal.nostr.data.syncableContainerByKey, {
+      containerKind,
+      containerKey,
+      viewerId: viewer,
+    })
+    if (!container) return { ok: false, reason: `the ${containerKind} has no channel on the relay yet` }
 
     const touched = new Set<string>()
     let imported = 0
