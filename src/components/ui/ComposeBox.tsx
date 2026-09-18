@@ -73,6 +73,10 @@ const serializeToText = serializeTiptapToText
 
 const DEFAULT_DRAFTS = browserDrafts()
 
+/**
+ * The box for writing a new message or reply, with text formatting, files,
+ * highlights and a send button; unsent text is kept for later.
+ */
 export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draftKey, drafts = DEFAULT_DRAFTS, className }: ComposeBoxProps) {
   const [isEmpty, setIsEmpty] = useState(true)
   const [hasUrgent, setHasUrgent] = useState(false)

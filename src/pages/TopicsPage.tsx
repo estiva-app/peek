@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
-import { IconMessagePlus, IconLinkOff } from '@tabler/icons-react'
+import { IconMessagePlus, IconLinkOff, IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
-import { ContainerHeader } from '@/components/ContainerHeader'
 import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTopicDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
+import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
-import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
-import { Button } from '@/components/ui/Button'
+import { CollapsibleSection, ContainerHeader, ScrollArea } from '@estiva-app/ui'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
@@ -23,6 +22,10 @@ import { identifierFromRef, topicPath } from '@/lib/objectUrl'
 import { useTopicPath } from '@/lib/useTopicPath'
 import { rememberRecent } from '@/lib/recents'
 
+/**
+ * The Topics page: all topics on the left, split into yours and others, and the
+ * chosen topic beside them with its replies or Files panel.
+ */
 export function TopicsPage() {
   const { topicHasUnread, topicIsUrgent } = useUnread()
   const navigate = useNavigate()
@@ -198,32 +201,22 @@ export function TopicsPage() {
   // here; offer to create the first topic instead (issue #3).
   const isEmptyWorkspace = TOPICS !== undefined && TOPICS.length === 0
   const rightPanel = isEmptyWorkspace ? (
-    <div className="flex-1 h-full flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <EmptyState
-          icon={<IconMessagePlus size={20} stroke={1.5} />}
-          message="No topics yet."
-        />
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>New topic</Button>
-      </div>
-    </div>
+    <EmptyState
+      icon={<IconMessagePlus size={16} stroke={1.5} />}
+      message="No topics yet."
+      action={{ label: 'New topic', onClick: () => setCreateOpen(true) }}
+    />
   ) : TOPICS === undefined ? (
     <div className="flex-1 h-full" />
   ) : isDeadLink ? (
     // A URL that named a topic and did not find one. Said plainly rather than
     // silently falling back to a default conversation, which would leave
     // somebody believing they were looking at what the link pointed to.
-    <div className="flex-1 h-full flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <EmptyState
-          icon={<IconLinkOff size={20} stroke={1.5} />}
-          message="This link doesn't lead to a topic you can open. It may have been deleted, or you may not be a member."
-        />
-        <Button variant="outlined" onClick={() => navigate('/topics', { replace: true })}>
-          Back to topics
-        </Button>
-      </div>
-    </div>
+    <EmptyState
+      icon={<IconLinkOff size={16} stroke={1.5} />}
+      message="This link doesn't lead to a topic you can open. It may have been deleted, or you may not be a member."
+      action={{ label: 'Back to topics', onClick: () => navigate('/topics', { replace: true }) }}
+    />
   ) : (
     view.rightPanel
   )
@@ -261,11 +254,16 @@ export function TopicsPage() {
           <ContainerHeader
             title="All topics"
             chevron
-            prop2ndAction
-            prop2ndActionTooltip="Sort by"
-            prop1stAction
-            prop1stActionTooltip="New topic"
-            onProp1stAction={() => setCreateOpen(true)}
+            actions={
+              <>
+                <IconButton tooltip="Sort by" aria-label="Sort by">
+                <IconSortDescending size={16} stroke={1.5} />
+              </IconButton>
+                <IconButton tooltip="New topic" aria-label="New topic" onClick={() => setCreateOpen(true)}>
+                <IconEdit size={16} stroke={1.5} />
+              </IconButton>
+              </>
+            }
           />
           <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
             {TOPICS === undefined && <SkeletonSidebarList rows={9} />}

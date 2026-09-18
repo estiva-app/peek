@@ -45,6 +45,10 @@ export interface TopicDetails {
   members: { name: string; role: string; avatarUrl?: string; isCreator: boolean }[]
 }
 
+/**
+ * The topic details dialog: the topic's name, which its creator can rename, who
+ * is in it, the project it is linked to, and what has happened to it.
+ */
 export function TopicDetailsDialogView({
   details,
   activity = [],
@@ -314,7 +318,7 @@ function Section({
 }
 
 /**
- * The dialog, wired to Peek's data.
+ * The topic details dialog, wired to Peek's data.
  *
  * The project section resolves the same way the Files panel does — a relay read
  * rather than a Convex query, so it reflects the moment it was opened and does

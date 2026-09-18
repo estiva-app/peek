@@ -23,6 +23,10 @@ import { useReadStateSize, type ReadStateSize } from '@/nostr/useReadStateSync'
  * is a list of verbs you choose one of (P26, the same reason the selection
  * toolbar stopped being one).
  */
+/**
+ * The Read state panel from the account menu: a switch to compare read state
+ * with the relay, how full read state is, and what the last comparison found.
+ */
 export function ReadStatePanel({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }) {
   const { state, setReadState } = useDebug()
   return (

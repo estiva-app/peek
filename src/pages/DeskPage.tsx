@@ -1,10 +1,9 @@
 ﻿import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { IconPlus, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
+import { CollapsibleSection, ContainerHeader, ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
-import { ContainerHeader } from '@/components/ContainerHeader'
 import { Divider } from '@/components/ui/Divider'
 import { SectionLabel } from '@/components/ui/SectionHeader'
 import { IconButton } from '@/components/ui/IconButton'
@@ -42,6 +41,10 @@ type Selected =
   | { kind: 'dm'; dmId: string; dmName: string; section: SectionKey }
   | { kind: 'topic'; topicId: string; topicTitle: string; topicResolved: boolean; section: SectionKey }
 
+/**
+ * The Desk page: the Screener, Urgent, Open work and Starred lists on the left,
+ * and the chosen topic or direct message beside them.
+ */
 export function DeskPage() {
   const { topicHasUnread, dmHasUnread, topicIsUrgent, dmIsUrgent } = useUnread()
   const navigate = useNavigate()

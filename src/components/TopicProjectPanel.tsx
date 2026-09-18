@@ -144,6 +144,10 @@ function Properties({
   )
 }
 
+/**
+ * The Files panel beside a topic: the project linked to its folder, with its
+ * properties, tickets and their activity, or a line saying why there is none.
+ */
 export function TopicProjectPanelView({
   folderProject,
   onAct,
@@ -313,6 +317,10 @@ export function TopicProjectPanelView({
   )
 }
 
+/**
+ * The Files panel beside a topic, wired up so changes to the linked project's
+ * properties are saved and shown; hidden when the app has no data behind it.
+ */
 export function TopicProjectPanel({
   topicKey,
   folderProject,

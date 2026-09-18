@@ -1,8 +1,9 @@
+import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ScrollArea } from '@estiva-app/ui'
+import { ContainerHeader, ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
-import { ContainerHeader } from '@/components/ContainerHeader'
+import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
@@ -16,6 +17,10 @@ import { useTopicPath } from '@/lib/useTopicPath'
 import { rememberRecent } from '@/lib/recents'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
+/**
+ * The People page: starred people and everyone in the workspace on the left,
+ * and the direct message with the chosen person beside them.
+ */
 export function PeoplePage() {
   const { dmHasUnread, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
@@ -131,10 +136,16 @@ export function PeoplePage() {
         <div className="flex flex-col h-full">
           <ContainerHeader
             title="People"
-            prop1stAction
-            prop1stActionTooltip="New conversation"
-            prop2ndAction
-            prop2ndActionTooltip="Sort by"
+            actions={
+              <>
+                <IconButton tooltip="Sort by" aria-label="Sort by">
+                <IconSortDescending size={16} stroke={1.5} />
+              </IconButton>
+                <IconButton tooltip="New conversation" aria-label="New conversation">
+                <IconEdit size={16} stroke={1.5} />
+              </IconButton>
+              </>
+            }
           />
           <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-1">
             {DMS === undefined || starredLoading ? (

@@ -21,6 +21,7 @@ import { WithTooltip } from './WithTooltip'
  * the emoji is decorative and the count is the only visible text, so an
  * unnamed control is announced as a bare number. Peek has the names, so Peek
  * supplies it.
+ * @registry reusable: stays in Peek (Katerina, 18 September): estiva-ui's Reaction with Peek's reaction words
  */
 
 /** Canonical meaning of each pickable reaction emoji (picker tooltips +

@@ -20,7 +20,10 @@ export type AvatarLookup = (name: string | undefined) => string | undefined
 /** No provider (Storybook, tests) → the static name-keyed mock portraits. */
 const AvatarContext = createContext<AvatarLookup>(avatarFor)
 
-/** Seam-internal: mounted by PeekDataProvider. */
+/**
+ * Gives every part below it each person's picture, by name: the one they
+ * uploaded, else a sample portrait. Mounted by PeekDataProvider.
+ */
 export function AvatarRegistryProvider({ children }: { children: ReactNode }) {
   const me = useCurrentUser()
   const people = usePeople()

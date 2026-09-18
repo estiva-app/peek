@@ -67,6 +67,11 @@ interface DebugContextValue {
 
 const DebugContext = createContext<DebugContextValue | null>(null)
 
+/**
+ * Gives every part below it the test switches for unread dots and the
+ * read-state comparison with the relay, and what the last comparison found.
+ * @registry reusable: stays in Peek (Katerina, 18 September): Peek's test switches
+ */
 export function DebugProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DebugState>(DEFAULT_DEBUG)
   const [readStateDiff, setReadStateDiff] = useState<ReadStateDiffReport | null>(null)

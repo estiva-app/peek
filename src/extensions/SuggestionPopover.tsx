@@ -43,6 +43,7 @@ import { Popover } from '@estiva-app/ui'
  * Base UI wanted to act on would close a panel the plugin still believed was
  * open. Escape is already handled one level up, where it also has to decide
  * whether it is closing the menu or cancelling the edit.
+ * @registry reusable: stays in Peek (Katerina, 18 September): it places estiva-ui's Popover where the typing is
  */
 export function SuggestionPopover({
   rect,

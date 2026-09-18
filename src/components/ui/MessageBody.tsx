@@ -326,6 +326,10 @@ function Block({
   }
 }
 
+/**
+ * Formatted text laid out as paragraphs, lists, headings, quotes and code, for
+ * a message or for another app's item shown inside one.
+ */
 export function RenderBlocks({
   value,
   format,
@@ -360,6 +364,10 @@ export function RenderBlocks({
   )
 }
 
+/**
+ * The text of a message or reply, formatted, with its mentions and links, and a
+ * card below for each item from another app it mentions.
+ */
 export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlockId, resolvedObjects }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject> }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a

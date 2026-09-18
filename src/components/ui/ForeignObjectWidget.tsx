@@ -58,6 +58,10 @@ const COLOUR: Record<string, string> = {
   muted: 'text-text-muted',
 }
 
+/**
+ * The status of an item from another app, such as In Progress or Done, shown as
+ * coloured words.
+ */
 export function StatusPill({ slot, className }: { slot: ResolvedSlot; className?: string }) {
   return (
     <span
@@ -497,6 +501,10 @@ export function ForeignObjectSkeleton({ className }: { className?: string }) {
   )
 }
 
+/**
+ * The card a message shows for an item from another app that it mentions, such
+ * as an issue: its title, status and people, with controls to change it.
+ */
 export function ForeignObjectWidget({
   naddr,
   resolved,

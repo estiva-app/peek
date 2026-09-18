@@ -20,6 +20,10 @@ interface TopicStateProps {
   iconClassName?: string
 }
 
+/**
+ * The small icon before a name that says what it is: a topic, open or resolved,
+ * a person's photo, a huddle, a folder or a file.
+ */
 export function TopicState({
   type,
   status = 'default',

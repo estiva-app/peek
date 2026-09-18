@@ -38,6 +38,10 @@ interface PersonRowProps {
   className?: string
 }
 
+/**
+ * One row in a side list, such as a topic, person, group, huddle or folder,
+ * with its icon or photo, name, unread mark and a hover menu.
+ */
 export function PersonRow({
   name,
   type = 'topic',

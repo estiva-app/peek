@@ -92,6 +92,10 @@ interface ConversationCardProps {
   className?: string
 }
 
+/**
+ * One message in a topic or direct message, with its author, text, files,
+ * reactions and replies, and a hover menu to react, reply, resolve or edit.
+ */
 export function ConversationCard({
   authorName,
   authorAvatarSrc,

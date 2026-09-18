@@ -14,6 +14,9 @@ import { hasConvex } from '@/api'
 import type { EditAttachmentChip } from '@/lib/useEditAttachments'
 
 /**
+ * The paperclip button that opens the file picker to attach files to a message
+ * or reply; hidden when the app has nowhere to store files.
+ *
  * The paperclip, with the file picker it needs to mean anything.
  *
  * Uploads need storage, so it renders only against a live backend — the demo

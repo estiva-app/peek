@@ -6,6 +6,11 @@ interface DateDividerProps {
   className?: string
 }
 
+/**
+ * A thin line across a list with a label in the middle, such as a date or
+ * "Replies", that separates one stretch of messages from the next.
+ * @registry reusable: stays in Peek (Katerina, 18 September)
+ */
 export function DateDivider({ label, className }: DateDividerProps) {
   return (
     <div className={cn('flex items-center gap-2 px-2 py-1.5', className)}>

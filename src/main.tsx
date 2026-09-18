@@ -21,7 +21,7 @@ createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
     {/* Root boundary: the last line of defense — providers or a whole page
         crashing degrades to the fallback instead of a white screen. */}
-    <ErrorBoundary label="app" fallbackClassName="h-screen flex items-center justify-center bg-bg-base">
+    <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col bg-bg-base">
       <ThemeProvider>
         <DebugProvider>
           <Routes>

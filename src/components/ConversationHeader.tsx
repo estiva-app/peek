@@ -73,6 +73,10 @@ interface ConversationHeaderProps {
   className?: string
 }
 
+/**
+ * The bar above an open topic, huddle or direct message: its name, open and
+ * resolved counts, members, a star and a more-actions menu, with tabs below.
+ */
 export function ConversationHeader({
   avatarSrc,
   name,

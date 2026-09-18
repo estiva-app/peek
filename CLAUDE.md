@@ -28,6 +28,13 @@ repository and fix everything it reports before you finish. Keep one only with
 its reason on the line above, `// @estiva-escape: <reason>` or
 `{/* @estiva-escape: <reason> */}`, never with `eslint-disable`.
 
+**Look before you build, and say what you built.** `npm run ui:find <what it
+does>` searches the package's parts, Peek's own, and Ship's when Ship's checkout
+sits beside this one. Use what it finds. Every part — a component a `.tsx` file
+exports — has a one-line `/** … */` comment directly above it saying what it is
+for; `npm run registry:check` and CI's "Every part is described" refuse a part
+without one. The catalogue is built from the code each time and never committed.
+
 ## UI: the shared package, and the rules every session follows
 
 @UI-RULES.md

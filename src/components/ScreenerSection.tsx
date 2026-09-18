@@ -11,6 +11,10 @@ interface ScreenerSectionProps {
   className?: string
 }
 
+/**
+ * The Screener on the Desk: a folding list of incoming topics and messages,
+ * each with Open, Later and Dismiss, and a count beside the title.
+ */
 export function ScreenerSection({ items, onOpen, onLater, onDismiss, className }: ScreenerSectionProps) {
   if (items.length === 0) return null
 

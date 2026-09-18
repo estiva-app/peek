@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@estiva-app/ui'
  * The words are plain and true to what happens (CON-3): Peek asks the relay
  * to delete, the relay decides, and copies held by other apps are untouched.
  * Escape and ✕ cancel; a press on the backdrop does not (D20).
+ * @registry reusable: stays in Peek (Katerina, 18 September): estiva-ui's ConfirmDialog with Peek's words
  */
 export function ConfirmDelete({
   what,

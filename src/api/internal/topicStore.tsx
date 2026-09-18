@@ -99,6 +99,10 @@ function findDmMessageById(dmId: string, messageId: string): ConversationData | 
   return undefined
 }
 
+/**
+ * Gives every part below it the list of topics and their huddles, including
+ * topics created, renamed or deleted in this session.
+ */
 export function TopicStoreProvider({ children }: { children: ReactNode }) {
   const [extraTopics, setExtraTopics] = useState<Topic[]>([])
   const [extraHuddles, setExtraHuddles] = useState<Record<string, Huddle[]>>({})

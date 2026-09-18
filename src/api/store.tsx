@@ -64,6 +64,10 @@ export function useDmRuntime(): DmRuntimeValue {
   return ctx
 }
 
+/**
+ * Mounts every store Peek's pages read from — people's pictures, topics,
+ * starred, read state and the rest — once, in the order they depend on each other.
+ */
 export function PeekDataProvider({ children }: { children: ReactNode }) {
   // AvatarRegistryProvider is outermost of the runtime stores: it only needs
   // the Convex queries above it, and the stores below resolve avatars through

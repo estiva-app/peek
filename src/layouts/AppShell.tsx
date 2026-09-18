@@ -12,6 +12,10 @@ interface AppShellProps {
   threadPanel?: ReactNode
 }
 
+/**
+ * The frame of every page: the top bar, the side navigation, and the list, main
+ * and replies columns, with Cmd/Ctrl+K opening the command launcher.
+ */
 export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
   // The launcher's context is captured ONCE at the invoking keystroke/click

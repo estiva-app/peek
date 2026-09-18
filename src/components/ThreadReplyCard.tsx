@@ -139,6 +139,10 @@ interface ThreadReplyCardProps {
   className?: string
 }
 
+/**
+ * One reply in a conversation's thread: its author, time, text, files and
+ * reactions, with a hover menu to react, edit, highlight or delete it.
+ */
 export function ThreadReplyCard({
   authorName,
   authorAvatarSrc,

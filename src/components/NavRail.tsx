@@ -12,6 +12,10 @@ import { FreshnessIndicator } from './FreshnessIndicator'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useTopicPath } from '@/lib/useTopicPath'
 
+/**
+ * The narrow bar down the left edge that moves between Desk, Topics, Folders
+ * and People, with a small dot saying whether what is shown is current.
+ */
 export function NavRail() {
   const { topicId, dmId } = useLastSelection()
   const pathForTopic = useTopicPath()
