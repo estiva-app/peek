@@ -115,7 +115,10 @@ export function TopBar({ onMenuToggle, onSearchClick }: TopBarProps) {
         }
       />
 
-      {readStateOpen && <ReadStatePanel anchor={cluster} onClose={() => setReadStateOpen(false)} />}
+      {/* Always there on the real app, opened by `open` — not mounted only while
+          open (the package's Popover page; UIG-14). Only the real app has the
+          row that opens it. */}
+      {hasConvex && <ReadStatePanel anchor={cluster} open={readStateOpen} onClose={() => setReadStateOpen(false)} />}
     </>
   )
 }

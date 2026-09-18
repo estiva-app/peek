@@ -37,12 +37,15 @@ import { Popover } from '@estiva-app/ui'
  * The rows are reached with the arrow keys through each menu's own ref, as
  * before.
  *
- * **`open` is always true and there is no `onOpenChange`**, deliberately: the
- * plugin owns this popup's life. It mounts the renderer when the query starts
- * and destroys it when the query ends, so an outside press or an Escape that
- * Base UI wanted to act on would close a panel the plugin still believed was
- * open. Escape is already handled one level up, where it also has to decide
- * whether it is closing the menu or cancelling the edit.
+ * **`open` follows the caret's rect and there is no `onOpenChange`**,
+ * deliberately: the plugin owns this popup's life. It mounts the renderer
+ * when the query starts and destroys it when the query ends, so an outside
+ * press or an Escape that Base UI wanted to act on would close a panel the
+ * plugin still believed was open. Escape is already handled one level up, where it also has to decide
+ * whether it is closing the menu or cancelling the edit. The `Popover` is
+ * rendered whenever this is, and a missing rect closes it rather than
+ * unmounting it — the package's Popover page: mounted only while open, Base
+ * UI's exits go with it (UIG-14).
  * @registry reusable: stays in Peek (Katerina, 18 September): it places estiva-ui's Popover where the typing is
  */
 export function SuggestionPopover({
@@ -129,11 +132,10 @@ export function SuggestionPopover({
     }
   }, [editorElement, list, listboxId])
 
-  if (!rect) return null
   return (
     <Popover
       anchor={rect}
-      open
+      open={rect !== null}
       side="top"
       align="left"
       className={width}
