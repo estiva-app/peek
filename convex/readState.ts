@@ -130,13 +130,21 @@ export const markThreadRead = mutation({
 
 /** A context id resolved to this deployment's `readState.containerId`, or null. */
 async function resolveContextId(ctx: QueryCtx | MutationCtx, context: string): Promise<string | null> {
-  // SPEC §11.1: the container context is the bare channel uuid.
+  // SPEC §11.1: the container context is the bare channel uuid. A topic's or a
+  // DM's (DMS-8) — the uuid says nothing about which, so both tables are asked.
+  // The two rows are what `markContainerRead` keys on, so a marker that arrived
+  // from another installation lands where the viewer's own click would have.
   if (!context.includes(':')) {
     const topic = await ctx.db
       .query('topics')
       .withIndex('by_channelUuid', (q) => q.eq('channelUuid', context))
       .unique()
-    return topic ? (topic._id as string) : null
+    if (topic) return topic._id as string
+    const dm = await ctx.db
+      .query('dmConversations')
+      .withIndex('by_channelUuid', (q) => q.eq('channelUuid', context))
+      .unique()
+    return dm ? (dm._id as string) : null
   }
   if (context.startsWith('thread:')) {
     const eventId = context.slice('thread:'.length)
@@ -222,12 +230,27 @@ export const cachedReadContexts = query({
       .collect()
     const out: { context: string; atSeconds: number }[] = []
     for (const row of rows) {
-      // `containerId` is a topic id or a message id; the id itself says which.
+      // `containerId` is a topic, DM or message id; the id itself says which.
       const topicId = ctx.db.normalizeId('topics', row.containerId)
       if (topicId) {
         const topic = await ctx.db.get(topicId)
         if (topic?.channelUuid) {
           out.push({ context: topic.channelUuid, atSeconds: Math.floor(row.lastReadAt / 1000) })
+        }
+        continue
+      }
+      /*
+       * A DM's context is its channel uuid, bare, exactly as a topic's (DMS-8).
+       * This is also how a DM read *before* it had a channel reaches the relay:
+       * the click recorded only the Convex watermark, and once `recordDmChannel`
+       * has written the uuid this returns it, and `useCacheReanchor` publishes
+       * what the relay does not yet hold.
+       */
+      const dmId = ctx.db.normalizeId('dmConversations', row.containerId)
+      if (dmId) {
+        const dm = await ctx.db.get(dmId)
+        if (dm?.channelUuid) {
+          out.push({ context: dm.channelUuid, atSeconds: Math.floor(row.lastReadAt / 1000) })
         }
         continue
       }
