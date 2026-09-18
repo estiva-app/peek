@@ -414,6 +414,9 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                 }}
                 disabled={!canSend}
                 aria-label="Send"
+                // Icon-only, so it says its word, and the key that does the same.
+                tooltip="Send"
+                tooltipShortcut="Enter"
                 glow={canSend}
               >
                 <IconArrowUp size={16} stroke={1.5} />
