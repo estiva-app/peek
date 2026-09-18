@@ -8,7 +8,7 @@
  * fixture's seeded flags so the demo renders identically. (The fixture is
  * still keyed by legacy DM conversation numbers — bridged here.)
  */
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { topicHasUnread as mockTopicHasUnread } from '@/data/topicData'
@@ -101,15 +101,32 @@ export function useReadActions() {
   const markContainerRemote = useMutation(api.readState.markContainerRead)
   const markThreadRemote = useMutation(api.readState.markThreadRead)
   const findTopic = useTopicLookup()
+  /*
+   * A DM's channel uuid, by the partner key the page marks read with (DMS-8).
+   * The same query `DmVisibilityProvider` holds open, so this costs no second
+   * subscription. Read through a ref rather than the closure: `useMarkRead`
+   * captures `markContainerRead` once per target and fires it 1.5 s later, and
+   * `useEnsureDmChannel` may mint the channel inside that window.
+   */
+  const dmChannels = useQuery(api.nostr.outbox.dmChannels, hasConvex ? {} : 'skip')
+  const dmChannelByKey = useRef<ReadonlyMap<string, string>>(new Map())
+  useEffect(() => {
+    dmChannelByKey.current = new Map((dmChannels ?? []).map((c) => [c.dmKey, c.channelUuid]))
+  }, [dmChannels])
 
   return {
     markContainerRead(parentKind: 'topic' | 'dm' | 'huddle', parentKey: string) {
       if (!hasConvex) return
       void markContainerRemote({ parentKind, parentKey })
-      // Only a topic has a channel today. A DM lives in Convex until the
-      // DMs-on-Nostr work lands, and a huddle is not a channel at all.
+      // A topic's context is its Folder id and a DM's is its channel uuid —
+      // the bare uuid either way (SPEC §11.1), never the Convex id. A huddle is
+      // not a channel at all. A DM with no channel yet records only the Convex
+      // watermark here; `cachedReadContexts` hands it to the relay once the
+      // uuid exists, so nothing is lost by waiting.
       if (parentKind === 'topic') {
         recordContainerRead(findTopic(parentKey)?.folderId, Date.now())
+      } else if (parentKind === 'dm') {
+        recordContainerRead(dmChannelByKey.current.get(parentKey), Date.now())
       }
     },
     markThreadRead(messageKey: string) {

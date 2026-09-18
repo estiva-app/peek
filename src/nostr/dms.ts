@@ -39,11 +39,18 @@ export async function publishDmChannel(
   relayUrl: string,
   token: StoredToken,
   api: {
-    unsignedDmOpen: (args: { dmKey: string }) => Promise<DmOpenPlan>
+    unsignedDmOpen: (args: { dmKey: string; reopen?: boolean }) => Promise<DmOpenPlan>
     recordDmChannel: (args: { dmId: string; channelUuid: string }) => Promise<void>
   },
+  /**
+   * `reopen` publishes the `41010` even when the row already has a channel.
+   * That is the unhide (DMS-6): there is no unhide kind, and `open_dm` clears
+   * the caller's `hidden_at` on an existing DM. The answer names the same uuid
+   * and `recordDmChannel` has nothing left to write.
+   */
+  options: { reopen?: boolean } = {},
 ): Promise<DmChannelResult> {
-  const plan = await api.unsignedDmOpen({ dmKey })
+  const plan = await api.unsignedDmOpen(options.reopen ? { dmKey, reopen: true } : { dmKey })
   if (!plan.ok) return { ok: false, reason: plan.reason, expected: plan.expected }
 
   const first = await publish(plan.unsigned, relayUrl, token)

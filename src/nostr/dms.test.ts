@@ -142,4 +142,25 @@ describe('opening a DM channel', () => {
     expect(result).toEqual({ ok: false, reason: 'already has a channel', expected: true })
     expect(publishSigned).not.toHaveBeenCalled()
   })
+
+  it('asks for the event even when the channel exists when told to reopen — the unhide (DMS-6)', async () => {
+    // A re-open of an existing DM: the relay answers the same uuid, `created:false`.
+    publishSigned.mockResolvedValue(opened(false))
+    const plan = api(okPlan)
+
+    const result = await publishDmChannel('alice', RELAY, token, plan, { reopen: true })
+
+    expect(plan.unsignedDmOpen).toHaveBeenCalledWith({ dmKey: 'alice', reopen: true })
+    expect(result).toEqual({ ok: true, channelUuid: CHANNEL })
+    expect(sent()[0].kind).toBe(41010)
+  })
+
+  it('does not pass reopen unless asked, so the plain call keeps its refusal', async () => {
+    publishSigned.mockResolvedValue(opened(true))
+    const plan = api(okPlan)
+
+    await publishDmChannel('alice', RELAY, token, plan)
+
+    expect(plan.unsignedDmOpen).toHaveBeenCalledWith({ dmKey: 'alice' })
+  })
 })

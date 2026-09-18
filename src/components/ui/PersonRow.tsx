@@ -32,6 +32,9 @@ interface PersonRowProps {
    *  more-menu — the label advertises which direction will succeed. */
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
+  /** Adds "Hide conversation" to the more-menu (DMS-6) — DM rows whose hide
+   *  can succeed. The same item the conversation header offers. */
+  onHideDm?: () => void
   className?: string
 }
 
@@ -54,9 +57,10 @@ export function PersonRow({
   onOpenDetails,
   openWorkAction,
   onToggleOpenWork,
+  onHideDm,
   className,
 }: PersonRowProps) {
-  const hasMenu = !!onDeleteTopic || !!onOpenDetails || !!(openWorkAction && onToggleOpenWork)
+  const hasMenu = !!onDeleteTopic || !!onOpenDetails || !!onHideDm || !!(openWorkAction && onToggleOpenWork)
   const [isHovered, setIsHovered] = useState(false)
   /* The menu owns its button since `@estiva-app/ui` 0.10.0, so what this file
      keeps is not a position any more — it is only whether the menu is open,
@@ -133,6 +137,7 @@ export function PersonRow({
               openWorkAction={openWorkAction}
               onToggleOpenWork={onToggleOpenWork}
               onDeleteTopic={onDeleteTopic}
+              onHideDm={onHideDm}
             />
           ) : (
             moreButton

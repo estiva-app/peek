@@ -67,6 +67,8 @@ interface ConversationHeaderProps {
    *  be deleted from the list but not from inside itself. One menu, both
    *  places (PEE-2). */
   onDeleteTopic?: () => void
+  /** Hide this DM from the viewer's sidebar (DMS-6) — see `TopicMoreMenu`. */
+  onHideDm?: () => void
   tabs?: ReactNode
   className?: string
 }
@@ -94,6 +96,7 @@ export function ConversationHeader({
   onOpenDetails,
   topicLink,
   onDeleteTopic,
+  onHideDm,
   tabs,
   className,
   folderId,
@@ -116,7 +119,7 @@ export function ConversationHeader({
     : undefined
 
   const hasMoreMenu =
-    !!onOpenDetails || !!onDeleteTopic || !!copyTopicLink || !!(openWorkAction && onToggleOpenWork)
+    !!onOpenDetails || !!onDeleteTopic || !!onHideDm || !!copyTopicLink || !!(openWorkAction && onToggleOpenWork)
 
   /* The menu owns this button since `@estiva-app/ui` 0.10.0, so the open
      state, the rect measurement and the toggle are all gone from this file.
@@ -229,6 +232,7 @@ export function ConversationHeader({
                 openWorkAction={openWorkAction}
                 onToggleOpenWork={onToggleOpenWork}
                 onDeleteTopic={onDeleteTopic}
+                onHideDm={onHideDm}
               />
             ) : (
               moreButton

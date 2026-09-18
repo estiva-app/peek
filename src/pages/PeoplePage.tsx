@@ -8,7 +8,7 @@ import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
-import { useUnread, useCreateTopicFromDm, usePeople, useStarred } from '@/api'
+import { useUnread, useCreateTopicFromDm, usePeople, useStarred, useDmVisibility } from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -31,6 +31,7 @@ export function PeoplePage() {
   const { dmId: lastDmId, setLastDmId } = useLastSelection()
   const { id: routeId } = useParams<{ id: string }>()
   const { entries: starredEntries, isLoading: starredLoading } = useStarred()
+  const { isDmHidden, canHideDm, hideDm: hideDmRemote } = useDmVisibility()
   const { state: debug } = useDebug()
   const showUnreads = debug.unreads.people
 
@@ -85,11 +86,27 @@ export function PeoplePage() {
     .sort((a, b) => Number(b.isUnread) - Number(a.isUnread))
 
   const starredDmIds = new Set(starredDmItems.map((s) => s.id))
-  // Sort: unread first when toggle on, otherwise input order. Then drop starred DMs.
+  // Sort: unread first when toggle on, otherwise input order. Then drop starred
+  // DMs, and the ones the viewer has hidden (DMS-6). Hidden is the relay's
+  // per-viewer set, so it never touches the Starred section: a star is an
+  // explicit ask to keep something in front of you, and the two lists are
+  // curated separately. A hidden DM comes back by being opened — from the
+  // launcher, the Desk or a star — so nothing here is a way to lose one.
   const sortedDms = showUnreads
     ? [...(DMS ?? [])].sort((a, b) => Number(dmHasUnread(b.id)) - Number(dmHasUnread(a.id)))
     : DMS ?? []
-  const visibleDms = sortedDms.filter((dm) => !starredDmIds.has(dm.id))
+  const visibleDms = sortedDms.filter((dm) => !starredDmIds.has(dm.id) && !isDmHidden(dm.id))
+
+  const hideDm = (dmId: string) => {
+    void hideDmRemote(dmId)
+    // Hiding what you're looking at → back to the bare list, no stale URL
+    // (also drop the remembered selection or the redirect brings it back —
+    // and reopening it would undo the hide).
+    if (selectedId === dmId) {
+      setLastDmId(null)
+      navigate('/people', { replace: true })
+    }
+  }
 
   useEffect(() => {
     if (routeId && DM_IDS.has(routeId)) {
@@ -110,6 +127,7 @@ export function PeoplePage() {
     dmName: isDm ? selectedItem?.name : undefined,
     showUnreads,
     onStartTopicFromDm: handleStartTopicFromDm,
+    onHideDm: isDm && canHideDm(selectedId) ? () => hideDm(selectedId) : undefined,
   })
 
   return (
@@ -155,6 +173,7 @@ export function PeoplePage() {
                       isUrgent={urgent}
                       isSelected={selectedId === dm.id}
                       onClick={() => handleSelect(dm.id)}
+                      onHideDm={canHideDm(dm.id) ? () => hideDm(dm.id) : undefined}
                     />
                   )
                 })}
