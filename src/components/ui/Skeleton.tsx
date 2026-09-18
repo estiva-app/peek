@@ -47,35 +47,3 @@ export function SkeletonConversationList({ className }: { className?: string }) 
     </div>
   )
 }
-
-/** Huddle-card placeholder — mirrors HuddleCard grid (h-130, p-2, member avatars, 2 caption lines). */
-export function SkeletonHuddleCard() {
-  return (
-    <div className="flex flex-col h-[130px] rounded-lg border border-border-subtle bg-bg-surface p-2">
-      <div className="flex items-center gap-2 w-full">
-        <div className="flex">
-          <SkeletonBar className="w-6 h-6 shrink-0" />
-          <SkeletonBar className="w-6 h-6 shrink-0 -ml-2" />
-        </div>
-        <SkeletonBar className="h-3.5 flex-1" />
-        <SkeletonBar className="h-3 w-8" />
-      </div>
-      <div className="pt-2 flex flex-col gap-1.5">
-        <SkeletonBar className="h-3 w-full" />
-        <SkeletonBar className="h-3 w-[70%]" />
-      </div>
-    </div>
-  )
-}
-
-/** Huddles-tab grid placeholder (2×2), revealed after the delay. */
-export function SkeletonHuddleGrid({ className }: { className?: string }) {
-  return (
-    <div className={cn('grid grid-cols-2 gap-3 animate-skeleton-in', className)} aria-hidden>
-      <SkeletonHuddleCard />
-      <SkeletonHuddleCard />
-      <SkeletonHuddleCard />
-      <SkeletonHuddleCard />
-    </div>
-  )
-}
