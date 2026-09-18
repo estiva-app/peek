@@ -65,6 +65,11 @@ export const WithRemove: Story = {
   args: { name: 'Launch checklist for v2', type: 'topic', onRemove: () => {} },
 }
 
+/** A DM row with a channel on the relay (DMS-6): hover shows the 3-dot, and its menu offers "Hide conversation". */
+export const DmHideable: Story = {
+  args: { name: 'Amie Miles', type: 'DM', onHideDm: () => {} },
+}
+
 /** All row states side by side. */
 export const AllStates: Story = {
   parameters: { controls: { disable: true } },

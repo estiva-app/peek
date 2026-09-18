@@ -74,6 +74,14 @@ export const DmStarred: Story = {
   },
 }
 
+/** A DM whose hide can succeed (DMS-6): the 3-dot opens a one-item menu, "Hide conversation". */
+export const DmHideable: Story = {
+  args: {
+    name: 'Amie Miles',
+    onHideDm: () => {},
+  },
+}
+
 /** Huddle header (V2 main view): lock icon + member names + members pill. */
 export const Huddle: Story = {
   args: {

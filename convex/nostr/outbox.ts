@@ -24,7 +24,7 @@
 import { v } from 'convex/values'
 import { mutation, query, type QueryCtx } from '../_generated/server'
 import type { Doc } from '../_generated/dataModel'
-import { buildDmOpen, buildEdit, buildMessage, buildReaction, buildResolution, imetaTag } from '@estiva-app/protocol'
+import { buildDmHide, buildDmOpen, buildEdit, buildMessage, buildReaction, buildResolution, imetaTag } from '@estiva-app/protocol'
 import type { NostrTag } from '@estiva-app/protocol'
 import { mentionedPubkeys, referencedAddresses, withinDriftWindow } from './refs'
 import { viewerId } from '../users'
@@ -556,12 +556,22 @@ export const recordChannel = mutation({
  *
  * `dmKey` is the partner's person key — the DM's stable id everywhere in the
  * app (§2.4), never a `dmConversations` id.
+ *
+ * ## `reopen` is the unhide (DMS-6)
+ *
+ * There is no unhide command on the relay. `open_dm` clears the caller's own
+ * `hidden_at` when the DM already exists (`buzz-db/src/dm.rs`) and republishes
+ * their `kind:30622` snapshot on that path, so publishing the same `41010`
+ * again is how a hidden DM comes back. `reopen` asks for the event even when
+ * the row already has a channel — the one case the plain call refuses, because
+ * for the plain call "already has a channel" means there is nothing to learn.
+ * The answer names the same uuid and `recordDmChannel` has nothing to write.
  */
 export const unsignedDmOpen = query({
-  args: { dmKey: v.string() },
+  args: { dmKey: v.string(), reopen: v.optional(v.boolean()) },
   handler: async (
     ctx,
-    { dmKey },
+    { dmKey, reopen },
   ): Promise<
     | { ok: true; unsigned: UnsignedEvent; dmId: string }
     | { ok: false; reason: string; expected?: boolean }
@@ -580,13 +590,87 @@ export const unsignedDmOpen = query({
 
     const dm = await findDmForPair(ctx, me, partner._id)
     if (!dm) return { ok: false, reason: 'no conversation with that person yet', expected: true }
-    if (dm.channelUuid) return { ok: false, reason: 'already has a channel', expected: true }
+    if (dm.channelUuid && !reopen) return { ok: false, reason: 'already has a channel', expected: true }
 
     return {
       ok: true,
       dmId: dm._id,
       unsigned: buildDmOpen(you.nostrPubkey, Date.now(), { otherPubkeys: [partner.nostrPubkey] }),
     }
+  },
+})
+
+/**
+ * Everything needed to hide a DM from the viewer's own sidebar (DMS-6).
+ *
+ * A `kind:41012` naming the DM's channel. The relay sets the caller's own
+ * `hidden_at` and nothing else — the conversation, its participants and its
+ * history all survive, the partner is not told — and then republishes the
+ * caller's `kind:30622` snapshot, which is what the sidebar reads. Nothing is
+ * written here: Convex holds no hidden flag, because the relay owns that state
+ * and the newest snapshot is the whole of it (`fetchHiddenDms`).
+ *
+ * A DM with no channel cannot be hidden, and the refusal is expected: the
+ * channel is opened on the DM's first render (`useEnsureDmChannel`), so this is
+ * a wait rather than a dead end, and the UI offers the action only once
+ * `dmChannels` lists the row.
+ */
+export const unsignedDmHide = query({
+  args: { dmKey: v.string() },
+  handler: async (
+    ctx,
+    { dmKey },
+  ): Promise<
+    | { ok: true; unsigned: UnsignedEvent; channelUuid: string }
+    | { ok: false; reason: string; expected?: boolean }
+  > => {
+    const me = await viewerId(ctx)
+    if (!me) return { ok: false, reason: 'not signed in', expected: true }
+    const you = await ctx.db.get(me)
+    if (!you?.nostrPubkey) return { ok: false, reason: 'no Estiva ID pubkey to sign with', expected: true }
+
+    const partner = await resolveUserKey(ctx, dmKey)
+    if (!partner) return { ok: false, reason: `unknown person '${dmKey}'` }
+    if (partner._id === me) return { ok: false, reason: 'a DM needs somebody else', expected: true }
+
+    const dm = await findDmForPair(ctx, me, partner._id)
+    if (!dm) return { ok: false, reason: 'no conversation with that person yet', expected: true }
+    if (!dm.channelUuid) return { ok: false, reason: 'the DM has no channel on the relay yet', expected: true }
+
+    return {
+      ok: true,
+      channelUuid: dm.channelUuid,
+      unsigned: buildDmHide(you.nostrPubkey, Date.now(), { channelUuid: dm.channelUuid }),
+    }
+  },
+})
+
+/**
+ * The viewer's DMs that have a channel on the relay, as `dmKey → channelUuid`.
+ *
+ * The relay's hidden set (`kind:30622`) names channels; the app names DMs by
+ * the partner's person key (§2.4). This is the join, and it is the only thing
+ * Convex contributes to the hidden set — which row a uuid is — not whether it
+ * is hidden. A DM without a channel is left out because nothing on the relay
+ * can name it, so it can be neither hidden nor listed there.
+ */
+export const dmChannels = query({
+  args: {},
+  handler: async (ctx): Promise<{ dmKey: string; channelUuid: string }[]> => {
+    const me = await viewerId(ctx)
+    if (!me) return []
+    const [asLow, asHigh] = await Promise.all([
+      ctx.db.query('dmConversations').withIndex('by_low', (q) => q.eq('userLowId', me)).collect(),
+      ctx.db.query('dmConversations').withIndex('by_high', (q) => q.eq('userHighId', me)).collect(),
+    ])
+    const out: { dmKey: string; channelUuid: string }[] = []
+    for (const dm of [...asLow, ...asHigh]) {
+      if (!dm.channelUuid) continue
+      const partner = await ctx.db.get(dm.userLowId === me ? dm.userHighId : dm.userLowId)
+      if (!partner) continue
+      out.push({ dmKey: partner.seedKey ?? (partner._id as string), channelUuid: dm.channelUuid })
+    }
+    return out
   },
 })
 

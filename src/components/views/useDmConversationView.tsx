@@ -26,6 +26,7 @@ import {
   usePeekActions,
   useStarred,
   useEnsureDmChannel,
+  useDmVisibility,
 } from '@/api'
 import { useChannelSync } from '@/nostr/useChannelSync'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -40,6 +41,12 @@ interface UseDmConversationViewArgs {
   showUnreads?: boolean
   /** Promote the current DM into the first huddle of a new topic. */
   onStartTopicFromDm?: (dmId: string, dmName: string, seedMessageId: string, data: StartTopicResult) => void
+  /**
+   * Hide this DM from the viewer's sidebar (DMS-6). The page owns it because
+   * hiding what you are looking at is followed by leaving it, and only the
+   * page knows where to go. Absent on pages whose list this does not affect.
+   */
+  onHideDm?: () => void
 }
 
 interface ViewSlots {
@@ -47,7 +54,14 @@ interface ViewSlots {
   threadPanel: ReactNode | undefined
 }
 
-export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnreads = false, onStartTopicFromDm }: UseDmConversationViewArgs): ViewSlots {
+export function useDmConversationView({
+  dmId,
+  dmName,
+  onToggleStarred,
+  showUnreads = false,
+  onStartTopicFromDm,
+  onHideDm,
+}: UseDmConversationViewArgs): ViewSlots {
   const [threadConvId, setThreadConvId] = useState<string | null>(null)
 
   // Opening the DM clears new-message state; opening a thread clears that
@@ -56,6 +70,25 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
   // Opening the DM also gives it a channel on the relay, if it has a row and
   // does not have one yet (DMS-3).
   useEnsureDmChannel(dmId)
+  /*
+    And brings it back if the viewer had hidden it — DMS-6.
+
+    Opening a hidden DM is the unhide, because the relay has no other one:
+    `open_dm` clears the caller's `hidden_at` on re-open, so `reopenDm`
+    publishes the same `41010` again. Once per *selection*, not once per
+    change of the hidden set: a DM hidden from its own header stays open for
+    a moment while the set updates, and reacting to that would undo the hide
+    the person just asked for. So a selection is "considered" once the relay
+    has answered, and only a fresh selection of a hidden DM re-opens it.
+  */
+  const { state: visibilityState, isDmHidden, reopenDm } = useDmVisibility()
+  const considered = useRef<string | null>(null)
+  useEffect(() => {
+    if (visibilityState !== 'present') return
+    if (considered.current === dmId) return
+    considered.current = dmId
+    if (dmId && isDmHidden(dmId)) void reopenDm(dmId)
+  }, [dmId, visibilityState, isDmHidden, reopenDm])
   /*
     And reads that channel back, through the same projection a topic uses —
     DMS-5.
@@ -276,6 +309,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, showUnrea
           onToggleStarred ??
           (dmId != null && dmName ? () => toggleDm({ dmId, name: dmName }) : undefined)
         }
+        onHideDm={onHideDm}
       />
       <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
         <div className="flex-1 min-h-0" />
