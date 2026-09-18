@@ -17,46 +17,59 @@
  * arrived through the projection DMS-5 wired up, because there was no other
  * copy of it to render.
  *
- * ## Why a person still has to finish it
+ * ## Who publishes it, and why it is not the agent
  *
- * No agent can be a signed-in Peek viewer, so this proves the relay half and
- * hands over the half that needs a browser. It also means the agent's identity
- * has to be one of the DM's participants — a DM channel's membership is the
- * relay's ordinary private-channel access filter, and a non-participant is
- * refused with `403 relay_membership_required`, which is also this script's
- * control.
+ * The obvious idea is for the agent to send the message. It cannot: a DM
+ * channel's membership is the relay's ordinary private-channel access filter,
+ * so the publisher has to be a participant — and **Peek only lets a person
+ * start a DM with another person**, so the agent can never be one. The agent's
+ * identity is therefore the *control* here and nothing else: a non-participant
+ * must see nothing in a channel that provably has messages.
+ *
+ * So the participant publishes it, **as themselves, from here instead of from
+ * Peek**. One person can do the whole check alone, and it is stronger than the
+ * two-identity version rather than weaker:
+ *
+ *   - the message never touches Convex, because Peek is not in the path;
+ *   - it arrives on the live subscription as a genuinely new event, which the
+ *     delete-a-row variant cannot test;
+ *   - it renders as the reader's own message appearing in a conversation they
+ *     did not type it into, which is unmistakable.
+ *
+ * Word it so it cannot be confused with something typed in Peek — the time, and
+ * "from outside Peek".
  *
  * ## The order, because the channel is minted by the relay
  *
  * A DM channel's uuid is `Uuid::new_v4()` keyed by a hash of the participant
  * set (`buzz-db/src/dm.rs`), so it cannot be computed and the publish's answer
- * is the only place it appears. Peek reads it with `commandPayload`; the agent's
- * `Relay.publish()` drops the accepted branch's payload, so this script does not
- * try to open a DM at all. The person opens it, which is the realistic direction
- * anyway:
+ * is the only place it appears. This script never opens a DM — `Relay.publish()`
+ * drops the accepted branch's payload, where the uuid is — so the uuid comes
+ * from a DM that already exists:
  *
- *   1. In Peek, send one DM to the agent's identity. That creates the
- *      `dmConversations` row, publishes the `kind:41010`, and records the
- *      channel uuid — and that message *is* the Convex-reactivity case, so it
- *      proves nothing on its own.
- *   2. Read the channel uuid back (`npx convex run nostr/data:listChannels`
- *      lists topics only, so take it from the `dmConversations` row in the
- *      dashboard) and pass it here.
- *   3. Leave the DM open in Peek. Run this with `--say`.
- *   4. Watch. The message must appear **without a reload**, attributed to the
- *      agent, within the flush window.
+ *   1. Run with `--as` and no `--dm`. That lists every channel the identity can
+ *      read a `kind:9` in; an existing DM with a colleague is one of them. (The
+ *      `dmConversations` row in the Convex dashboard says the same thing.)
+ *   2. Leave that DM open in Peek, on screen, and do not reload it.
+ *   3. Run with `--as`, `--dm` and `--say`.
+ *   4. Watch. The message must appear within the flush window, attributed to
+ *      you, without a reload. Convex has no row for it, so the projection is
+ *      the only thing that could have put it there.
+ *   5. Then run with `--dm` and **no** `--as`: the agent must see nothing in
+ *      the same channel. An empty answer from an empty channel is not evidence.
  *
- *   npx tsx scripts/dms5-live-check.ts --dm <uuid>                  # read it as the agent
- *   npx tsx scripts/dms5-live-check.ts --dm <uuid> --as token.json  # read it as the person
- *   npx tsx scripts/dms5-live-check.ts --dm <uuid> --say "hello from outside Peek"
- *   npx tsx scripts/dms5-live-check.ts                              # every channel this identity can read
+ *   npx tsx scripts/dms5-live-check.ts --as token.json                       # find the uuid
+ *   npx tsx scripts/dms5-live-check.ts --as token.json --dm <uuid>           # read it
+ *   npx tsx scripts/dms5-live-check.ts --as token.json --dm <uuid> --say "…" # the check
+ *   npx tsx scripts/dms5-live-check.ts --dm <uuid>                           # the control
  *
  * `--say` is the only leg that writes, and it writes a real message into a real
  * conversation. Everything else is read-only.
  *
  * `--as <file>` is the token JSON out of a signed-in Peek tab —
  * `sessionStorage.getItem('peek.estivaId.token')`, which carries `pubkey` and
- * `accessToken`. No secret key is involved and none may be put here.
+ * `accessToken`. No secret key is involved and none may be put here: the token
+ * is a bearer credential with an hour on it and `/sign` does the signing.
  *
  *   cd ~/estiva-agent && set -a && . ~/.estiva-agent.env && set +a && cd -
  */
@@ -140,18 +153,27 @@ async function main() {
     // Discovery. On an identity that is in few channels this is a short list and
     // the DM is in it, which finds the uuid without touching the database.
     const events = await relay.query([{ kinds: [KIND_MESSAGE], limit: 200 }])
-    const byChannel = new Map<string, number>()
+    const byChannel = new Map<string, { count: number; authors: Set<string> }>()
     for (const e of events) {
       const h = tag(e, 'h') ?? '(no h)'
-      byChannel.set(h, (byChannel.get(h) ?? 0) + 1)
+      const row = byChannel.get(h) ?? { count: 0, authors: new Set<string>() }
+      row.count += 1
+      row.authors.add(e.pubkey)
+      byChannel.set(h, row)
     }
     if (byChannel.size === 0) {
       console.log('no kind:9 is readable by this identity in any channel.')
       return
     }
-    console.log('channels this identity can read a kind:9 in:')
-    for (const [h, n] of [...byChannel].sort((a, b) => b[1] - a[1])) {
-      console.log(`  ${h}  ${n} message${n === 1 ? '' : 's'}`)
+    // The author count is a hint, not a test: nothing in a `kind:9` says which
+    // kind of channel it is in, and a quiet topic has few authors too. It is
+    // enough to narrow a list to the two or three worth checking against the
+    // `dmConversations` rows.
+    console.log('channels this identity can read a kind:9 in (authors is a hint at DMs):')
+    for (const [h, row] of [...byChannel].sort((a, b) => b[1].count - a[1].count)) {
+      console.log(
+        `  ${h}  ${String(row.count).padStart(3)} message${row.count === 1 ? ' ' : 's'}  ${row.authors.size} author${row.authors.size === 1 ? '' : 's'}`,
+      )
     }
     console.log('\nPass one as --dm to look inside it.')
     return
@@ -160,11 +182,18 @@ async function main() {
   const say = arg('say')
   if (has('say')) {
     if (!say) throw new Error('--say needs the message text')
-    if (asFile) throw new Error('--say publishes as the agent; drop --as')
+    if (!asFile) {
+      throw new Error(
+        '--say needs --as: only a participant may publish into a DM channel, and Peek\n' +
+          'lets a person start a DM only with another person, so the agent can never be one.\n' +
+          'Publish as yourself — the point is that the message bypasses Peek, not that\n' +
+          'somebody else wrote it.',
+      )
+    }
     /*
       The whole point of the check: this event has no Convex row and never will
-      until the projection makes one. A message sent from a second Peek tab
-      would arrive by Convex reactivity and prove nothing.
+      until the projection makes one. The same words typed into Peek would write
+      a Convex row first and arrive by reactivity, proving nothing.
     */
     const unsigned: UnsignedEvent = buildMessage(signer.pubkey, Date.now(), {
       channelUuid: dm,
@@ -175,17 +204,18 @@ async function main() {
     console.log(result.ok ? `published ${signed.id}` : `REFUSED: ${result.reason}`)
     if (!result.ok) {
       console.log(
-        '\n`relay_membership_required` here means this identity is not a participant —\n' +
-          'the DM has to be one the person opened *with the agent*, not with somebody else.',
+        '\n`relay_membership_required` here means this token is not a participant in that\n' +
+          'channel — check the uuid against the DMs this identity can read (no --dm).',
       )
       process.exitCode = 1
       return
     }
     console.log(
       '\nNow look at that DM in Peek, already open, without reloading.\n' +
-        `  - the message "${say}" must appear, attributed to the agent\n` +
-        '  - it has no Convex row of its own, so the projection is the only way it could\n' +
-        '  - if it needs a reload, the live subscription is not covering DMs\n',
+        `  - "${say}" must appear, attributed to you, within a second or two\n` +
+        '  - Convex has no row for it, so the projection is the only way it could\n' +
+        '  - if it only appears after a reload, the live subscription is not covering DMs\n' +
+        '  - if it never appears, the projection is not either\n',
     )
   }
 
