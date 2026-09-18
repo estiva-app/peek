@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ContainerHeader, Form, ScrollArea } from '@estiva-app/ui'
+import { ContainerHeader, Form, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
@@ -18,7 +18,6 @@ import {
 import type { ForeignObject } from '@estiva-app/interop'
 import { Button } from '@/components/ui/Button'
 import { TextInput } from '@/components/ui/TextInput'
-import { IconButton } from '@/components/ui/IconButton'
 import { EditableText } from '@/components/ui/EditableText'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
@@ -261,14 +260,15 @@ export function FoldersPage() {
                 )
               }
               actions={
-                <>
-                  <IconButton
+                // One strip: one Tab stop, arrows along it (UIG-14).
+                <Toolbar aria-label="Folder actions" surface={false}>
+                  <ToolbarButton
                     tooltip="Start a topic"
                     aria-label="Start a topic in this folder"
                     onClick={() => setStartingTopic({})}
                   >
                     <IconMessagePlus size={16} stroke={1.5} />
-                  </IconButton>
+                  </ToolbarButton>
                   {topic ? (
                     /*
                       Not a delete. Deleting a topic is the topic's own action,
@@ -277,23 +277,23 @@ export function FoldersPage() {
                       with its relay half gone. The way to that action is the
                       only thing offered.
                     */
-                    <IconButton
+                    <ToolbarButton
                       tooltip="Open topic"
                       aria-label="Open this folder's topic"
                       onClick={() => navigate(topicPath(topic))}
                     >
                       <IconArrowUpRight size={16} stroke={1.5} />
-                    </IconButton>
+                    </ToolbarButton>
                   ) : (
-                    <IconButton
+                    <ToolbarButton
                       tooltip="Delete folder"
                       aria-label="Delete folder"
                       onClick={() => setConfirmingDelete(true)}
                     >
                       <IconTrash size={16} stroke={1.5} />
-                    </IconButton>
+                    </ToolbarButton>
                   )}
-                </>
+                </Toolbar>
               }
             />
             {/* The package's bar, not the browser's (D40). */}

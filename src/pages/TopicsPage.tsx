@@ -5,10 +5,9 @@ import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTopicDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
-import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
-import { CollapsibleSection, ContainerHeader, ScrollArea } from '@estiva-app/ui'
+import { CollapsibleSection, ContainerHeader, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
@@ -255,14 +254,15 @@ export function TopicsPage() {
             title="All topics"
             chevron
             actions={
-              <>
-                <IconButton tooltip="Sort by" aria-label="Sort by">
-                <IconSortDescending size={16} stroke={1.5} />
-              </IconButton>
-                <IconButton tooltip="New topic" aria-label="New topic" onClick={() => setCreateOpen(true)}>
-                <IconEdit size={16} stroke={1.5} />
-              </IconButton>
-              </>
+              // One strip: one Tab stop, arrows along it (UIG-14).
+              <Toolbar aria-label="Topic list actions" surface={false}>
+                <ToolbarButton tooltip="Sort by" aria-label="Sort by">
+                  <IconSortDescending size={16} stroke={1.5} />
+                </ToolbarButton>
+                <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={() => setCreateOpen(true)}>
+                  <IconEdit size={16} stroke={1.5} />
+                </ToolbarButton>
+              </Toolbar>
             }
           />
           <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">

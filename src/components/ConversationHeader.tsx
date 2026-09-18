@@ -6,6 +6,7 @@ import { TopicMoreMenu } from './ui/TopicMoreMenu'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
+import { Toolbar, ToolbarButton } from '@estiva-app/ui'
 
 interface ConversationHeaderProps {
   avatarSrc?: string
@@ -127,9 +128,9 @@ export function ConversationHeader({
      nothing, exactly as before — an inert control, COMPONENTS-PEEK F3, not
      something to change while porting. */
   const moreButton = (
-    <IconButton tooltip="More actions" aria-label="More actions">
+    <ToolbarButton tooltip="More actions" aria-label="More actions">
       <IconDotsVertical size={16} stroke={1.5} />
-    </IconButton>
+    </ToolbarButton>
   )
 
   return (
@@ -189,9 +190,10 @@ export function ConversationHeader({
             </IconButton>
           )}
 
-          {/* Action buttons */}
-          <div className="flex gap-1 items-center">
-            <IconButton
+          {/* Action buttons — one strip: one Tab stop, arrows along it (the
+              package Toolbar, no box of its own; UIG-14). */}
+          <Toolbar aria-label="Conversation actions" surface={false}>
+            <ToolbarButton
               tooltip={isStarred ? 'Remove from starred' : 'Add to starred'}
               aria-label={isStarred ? 'Remove from starred' : 'Add to starred'}
               onClick={onToggleStarred}
@@ -201,18 +203,18 @@ export function ConversationHeader({
               ) : (
                 <IconStar size={16} stroke={1.5} />
               )}
-            </IconButton>
+            </ToolbarButton>
             {folderId && (
-              <IconButton
+              <ToolbarButton
                 tooltip="Copy Folder link — paste into another app to share this container"
                 aria-label="Copy Folder link"
                 onClick={copyFolderLink}
               >
                 <IconFolderShare size={16} stroke={1.5} />
-              </IconButton>
+              </ToolbarButton>
             )}
             {onToggleFolderPanel && (
-              <IconButton
+              <ToolbarButton
                 tooltip={folderPanelOpen ? 'Hide Folder panel' : 'Show Folder panel'}
                 aria-label={folderPanelOpen ? 'Hide Folder panel' : 'Show Folder panel'}
                 onClick={onToggleFolderPanel}
@@ -222,7 +224,7 @@ export function ConversationHeader({
                 ) : (
                   <IconLayoutSidebarRight size={16} stroke={1.5} />
                 )}
-              </IconButton>
+              </ToolbarButton>
             )}
             {hasMoreMenu ? (
               <TopicMoreMenu
@@ -237,7 +239,7 @@ export function ConversationHeader({
             ) : (
               moreButton
             )}
-          </div>
+          </Toolbar>
         </div>
       </div>
 
