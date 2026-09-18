@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconArrowUpRight } from '@tabler/icons-react'
-import { CollapsibleSection, ScrollArea } from '@estiva-app/ui'
+import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
+import { CollapsibleSection, ContainerHeader, ScrollArea } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { topLevelFolders, useFolderContents, useFolders, useTeamUnread } from '@/api'
-import { ContainerHeader } from '@/components/ContainerHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 import { FileTreeView } from '@/components/views/FileTreeView'
@@ -109,9 +109,13 @@ export function FolderTree({
     <div className="flex h-full flex-col">
       <ContainerHeader
         title="Folders"
-        prop1stAction={!!onNewTopic}
-        prop1stActionTooltip="New topic"
-        onProp1stAction={onNewTopic}
+        actions={
+          onNewTopic && (
+            <IconButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
+              <IconEdit size={16} stroke={1.5} />
+            </IconButton>
+          )
+        }
       />
       {/*
         The list scrolls, and it is the package's bar (D40). Same column and
