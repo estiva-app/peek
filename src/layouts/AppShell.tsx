@@ -41,9 +41,8 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
   }, [])
 
   return (
-    /* eslint-disable-next-line better-tailwindcss/no-unknown-classes --
-       `signal-canvas` is a plain CSS hook, not a utility: index.css draws the
-       control-room dot grid on `.signal .signal-canvas` and nowhere else. */
+    /* `signal-canvas`: the control-room dot grid, which the package's preset
+       knows by name since 0.24.0 (so the class lint does too). */
     <div className="h-screen overflow-hidden bg-bg-base relative signal-canvas">
       <TopBar onMenuToggle={() => setCollapsed((c) => !c)} onSearchClick={() => openLauncher()} />
 
