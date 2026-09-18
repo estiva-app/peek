@@ -36,6 +36,7 @@ export { formatDateLabel, formatReplyTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionTopics } from './mentions'
 export { useStarred } from '@/api/internal/starred'
+export { useDmVisibility } from '@/api/internal/dmVisibility'
 export { PeekDataProvider, hasConvex } from './store'
 export { topLevelFolders, useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
 export {

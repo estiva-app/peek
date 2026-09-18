@@ -38,6 +38,13 @@ export interface TopicMoreMenuProps {
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
   onDeleteTopic?: () => void
+  /**
+   * Hide a DM from this viewer's sidebar (DMS-6). The label says "hide", not
+   * "close" or "delete", because that is all it does: the conversation, its
+   * history and the other person's view of it all survive, and opening it
+   * again brings it back. Offered only when the hide can succeed.
+   */
+  onHideDm?: () => void
 }
 
 export function TopicMoreMenu({
@@ -48,6 +55,7 @@ export function TopicMoreMenu({
   openWorkAction,
   onToggleOpenWork,
   onDeleteTopic,
+  onHideDm,
 }: TopicMoreMenuProps) {
   return (
     /* No `run(action)` wrapper any more: a `MenuItem` closes the menu itself,
@@ -61,6 +69,7 @@ export function TopicMoreMenu({
           onClick={onToggleOpenWork}
         />
       )}
+      {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
       {onDeleteTopic && <MenuItem label="Delete topic" destructive onClick={onDeleteTopic} />}
     </Menu>
   )

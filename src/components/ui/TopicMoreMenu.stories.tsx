@@ -72,3 +72,20 @@ export const OnOpenWork: Story = {
 export const WithoutDelete: Story = {
   args: { onDeleteTopic: undefined },
 }
+
+/**
+ * A DM's menu (DMS-6).
+ *
+ * One item, and it says "hide": the conversation and its history survive, and
+ * opening it again brings it back. Nothing a topic has applies to a DM — no
+ * details, no link, no delete — so nothing else is offered.
+ */
+export const Dm: Story = {
+  args: {
+    onOpenDetails: undefined,
+    onToggleOpenWork: undefined,
+    openWorkAction: undefined,
+    onDeleteTopic: undefined,
+    onHideDm: () => {},
+  },
+}

@@ -25,6 +25,7 @@ import { TopicStoreProvider } from '@/api/internal/topicStore'
 import { TopicMutationsProvider } from '@/api/internal/topicMutations'
 import { OpenWorkProvider } from '@/api/internal/openWork'
 import { ScreenerProvider } from '@/api/internal/screener'
+import { DmVisibilityProvider } from '@/api/internal/dmVisibility'
 import { AvatarRegistryProvider } from './avatars'
 import { MentionDirectorySync, TopicDirectorySync } from './mentions'
 import type { ConversationData } from './types'
@@ -85,7 +86,11 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
                 reads the open-work list, so open work has to be above it. */}
             <OpenWorkProvider>
               <ScreenerProvider>
-                <DmRuntimeProvider>{children}</DmRuntimeProvider>
+                <DmRuntimeProvider>
+                  {/* Hidden DMs (DMS-6): the relay's set, joined to rows through Convex.
+                      It reads nothing from the stores above, so it sits innermost. */}
+                  <DmVisibilityProvider>{children}</DmVisibilityProvider>
+                </DmRuntimeProvider>
               </ScreenerProvider>
             </OpenWorkProvider>
           </TopicMutationsProvider>
