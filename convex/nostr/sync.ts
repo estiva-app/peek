@@ -559,10 +559,13 @@ export const syncPlan = query({
  *
  *   - **Both participants read the same Convex rows only while both are in this
  *     deployment.** A DM channel's members are relay identities, not Peek
- *     accounts. Anything else holding those keys — Ship, a second Peek, the
- *     relay itself, which opens DMs to deliver moderation notices — writes a
- *     `kind:9` that has no Convex row anywhere, and the projection is the only
- *     route it has. That is the case that pays for the budget.
+ *     accounts, and a participant is free to write from somewhere that is not
+ *     Peek — another client, a script, the relay itself, which opens DMs to
+ *     deliver moderation notices. That `kind:9` has no Convex row anywhere and
+ *     the projection is the only route it has. It is the case that pays for the
+ *     budget, and it is not hypothetical: `scripts/dms5-live-check.ts` is such a
+ *     writer, and it is the only way to check this at all — a message typed into
+ *     Peek arrives by Convex reactivity and proves nothing either way.
  *   - **Convex is no longer the thing that has to be true.** DMS-7 owns
  *     republishing the Convex-only DMs, and SHR-7 queues the screener's DM half
  *     on this stream existing. Both read the relay copy as the real one.
