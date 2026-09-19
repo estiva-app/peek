@@ -8,7 +8,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { referenceLink, type ReferenceLink } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
-import { InlineChip, type InlineChipTone } from '@estiva-app/ui'
+import { InlineChip, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
 import { StatusPill } from './ForeignObjectWidget'
 
 /**
@@ -122,6 +122,8 @@ export function Reference({
   const short = `${uri.replace(/^nostr:/, '').slice(0, 12)}…`
   // Every chip below is the package's InlineChip (D67, moved into the package by
   // UIG-27): the same shape as a `[Topic]` in the reader and in the editor.
+  // What a chip cuts short — a long title, an address — is on hover in the
+  // package's tooltip, not a `title` (UIG-14).
 
   if (/^nostr:npub1/i.test(uri)) {
     let pubkey: string | null = null
@@ -131,14 +133,13 @@ export function Reference({
       pubkey = null
     }
     const person = pubkey ? personByPubkey(pubkey) : undefined
-    return (
+    const chip = (
       <Chip
         // A person opens their DM — `/people/<id>` is the DM with them (§2.4).
         link={person ? { place: 'person', href: `/people/${encodeURIComponent(person.id)}` } : null}
         data-reference="person"
         data-mention={pubkey ?? undefined}
         data-resolved={person ? 'true' : 'false'}
-        title={person ? undefined : uri}
         // An unresolved key is still a mention, just an anonymous one. Muted
         // rather than absent, so nobody reads a stranger's key as an error.
         tone={person ? 'person' : 'quiet'}
@@ -147,45 +148,72 @@ export function Reference({
         {person ? `@${person.name}` : short}
       </Chip>
     )
+    // A name says itself; a key nobody could name shows its whole address.
+    return person ? chip : <Tip label={uri}>{chip}</Tip>
   }
 
   if (object && !object.unreachable) {
     const title = objectLabel(object) ?? short
     return (
-      <Chip
-        link={referenceLink(uri, object)}
-        data-reference="object"
-        data-object={object.address}
-        data-resolved="true"
-        // The full title on hover, because the visible one is truncated.
-        title={title}
-        tone="neutral"
-        className={className}
-        /*
-          The same box a `[Topic]` chip gets: one line high, aligned to the text
-          baseline it sits on. A chip that grows to two lines pushes the line
-          apart and drags its status pill to the middle of the gap — which is
-          what an 84-character issue title did on the first run of
-          `ric10-live-check.ts`, and the screenshot is why this is not left to
-          the natural width.
+      // The full title on hover, because the visible one is truncated.
+      <Tip label={title}>
+        <Chip
+          link={referenceLink(uri, object)}
+          data-reference="object"
+          data-object={object.address}
+          data-resolved="true"
+          tone="neutral"
+          className={className}
+          /*
+            The same box a `[Topic]` chip gets: one line high, aligned to the text
+            baseline it sits on. A chip that grows to two lines pushes the line
+            apart and drags its status pill to the middle of the gap — which is
+            what an 84-character issue title did on the first run of
+            `ric10-live-check.ts`, and the screenshot is why this is not left to
+            the natural width.
 
-          Truncated rather than wrapped, and `ch` rather than pixels so it
-          scales with the type: a mention is a word in a sentence, and the whole
-          title is a sentence of its own. Ship's inline reference truncates for
-          the same reason.
-        */
-        style={{ maxWidth: '24ch' }}
-      >
-        <span className="truncate">{title}</span>
-        {object.slots.status && <StatusPill slot={object.slots.status} className="shrink-0" />}
-      </Chip>
+            Truncated rather than wrapped, and `ch` rather than pixels so it
+            scales with the type: a mention is a word in a sentence, and the whole
+            title is a sentence of its own. Ship's inline reference truncates for
+            the same reason.
+          */
+          style={{ maxWidth: '24ch' }}
+        >
+          <span className="truncate">{title}</span>
+          {object.slots.status && <StatusPill slot={object.slots.status} className="shrink-0" />}
+        </Chip>
+      </Tip>
     )
   }
 
   return (
-    <InlineChip tone="quiet" data-reference={object === null ? 'unresolved' : 'pending'} title={uri} className={className}>
-      {short}
-    </InlineChip>
+    <Tip label={uri}>
+      <InlineChip tone="quiet" data-reference={object === null ? 'unresolved' : 'pending'} className={className}>
+        {short}
+      </InlineChip>
+    </Tip>
+  )
+}
+
+/**
+ * The package's tooltip around a chip in a line of text. `inline`, so the
+ * wrapper is a `<span>`: a reference sits in a `<p>`, a heading or a list
+ * item, where a `<div>` is not allowed. A long label wraps in the tooltip at
+ * 320px (0.24.0).
+ *
+ * The outer span is how it sits in the line, which is ours to say rather than
+ * the tooltip's: the chip's own `vertical-align: top` stops applying once it is
+ * a flex item inside the wrapper, and at the default `baseline` the chip's
+ * words would ride off the sentence's. `align-top` on a box of our own around
+ * it keeps the chip where it was.
+ */
+function Tip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="inline-flex align-top">
+      <WithTooltip inline label={label}>
+        {children}
+      </WithTooltip>
+    </span>
   )
 }
 

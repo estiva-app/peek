@@ -14,7 +14,8 @@
  * way.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { addrToNaddr, encodeNevent, encodeNpub } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -105,10 +106,14 @@ describe('Reference, for a person', () => {
     expect(c.querySelector(`[data-mention="${KNOWN}"]`)).not.toBeNull()
   })
 
-  it('shows the whole URI on hover when it could not name anyone', () => {
+  it('shows the whole URI on hover when it could not name anyone', async () => {
+    // In the package's tooltip, not a native `title` (UIG-14): one hover, one tip.
+    const user = userEvent.setup()
     const uri = `nostr:${encodeNpub(STRANGER)}`
     const c = render(<Reference uri={uri} />).container
-    expect(c.querySelector('[title]')?.getAttribute('title')).toBe(uri)
+    expect(c.querySelector('[title]')).toBeNull()
+    await user.hover(c.querySelector('[data-resolved="false"]')!)
+    expect((await screen.findByRole('tooltip')).textContent).toBe(uri)
   })
 
   it('resolves when the directory arrives, without anything else re-rendering', () => {
@@ -182,6 +187,28 @@ describe('Reference, for an object', () => {
     const c = render(<Reference uri="nostr:naddr1abc" object={object()} />).container
     expect(c.querySelector('[data-object="30851:abc:i1"]')).not.toBeNull()
   })
+
+  it('puts no block inside the sentence it sits in', () => {
+    // The tooltip's wrapper is a <span> (`inline`): a <div> inside a <p> is
+    // invalid HTML, and React says so for every message holding a reference.
+    const c = render(
+      <p>
+        See <Reference uri="nostr:naddr1abc" object={object()} /> and{' '}
+        <Reference uri={`nostr:naddr1${'q'.repeat(60)}`} />.
+      </p>,
+    ).container
+    expect(c.querySelectorAll('[data-reference]')).toHaveLength(2)
+    expect(c.querySelector('p div')).toBeNull()
+  })
+
+  it('shows the whole title on hover, because the chip cuts it short', async () => {
+    // In the package's tooltip, not a native `title` (UIG-14).
+    const user = userEvent.setup()
+    const c = render(<Reference uri="nostr:naddr1abc" object={object()} />).container
+    expect(c.querySelector('[title]')).toBeNull()
+    await user.hover(c.querySelector('[data-object]')!)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Ship the block model')
+  })
 })
 
 /**
@@ -232,7 +259,7 @@ describe('Reference, for a message', () => {
 })
 
 describe('Reference, unresolved', () => {
-  it('never shows a raw pointer, however long it was', () => {
+  it('never shows a raw pointer, however long it was', async () => {
     /*
       The case that changed. `MentionChip` returned this URI as text, which was
       survivable while every `naddr` had already been cut out of the prose
@@ -243,7 +270,10 @@ describe('Reference, unresolved', () => {
     const c = render(<Reference uri={uri} />).container
     expect(c.textContent).not.toBe('')
     expect(c.textContent!.length).toBeLessThan(20)
-    expect(c.querySelector('[title]')?.getAttribute('title')).toBe(uri)
+    // The whole of it is on hover, in the package's tooltip (UIG-14).
+    expect(c.querySelector('[title]')).toBeNull()
+    await userEvent.setup().hover(c.querySelector('[data-reference]')!)
+    expect((await screen.findByRole('tooltip')).textContent).toBe(uri)
   })
 
   it('tells "still resolving" from "resolved to nothing"', () => {
