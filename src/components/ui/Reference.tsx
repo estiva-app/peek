@@ -201,19 +201,17 @@ export function Reference({
  * item, where a `<div>` is not allowed. A long label wraps in the tooltip at
  * 320px (0.24.0).
  *
- * The outer span is how it sits in the line, which is ours to say rather than
- * the tooltip's: the chip's own `vertical-align: top` stops applying once it is
- * a flex item inside the wrapper, and at the default `baseline` the chip's
- * words would ride off the sentence's. `align-top` on a box of our own around
- * it keeps the chip where it was.
+ * The inline wrapper sits on the line's top (`align-top`, 0.24.1): the chip's
+ * own `vertical-align: top` stops applying once it is a flex item inside the
+ * wrapper, and at the default `baseline` the chip's words would ride off the
+ * sentence's. Peek drew a span of its own around it for that until the
+ * package's wrapper carried it (UIG-14, F1).
  */
 function Tip({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <span className="inline-flex align-top">
-      <WithTooltip inline label={label}>
-        {children}
-      </WithTooltip>
-    </span>
+    <WithTooltip inline label={label}>
+      {children}
+    </WithTooltip>
   )
 }
 
