@@ -1,9 +1,9 @@
 ﻿import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { IconPlus, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection } from '@estiva-app/ui'
+import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
-import { PageListColumn } from '@/layouts/PageListColumn'
+import { useRailClosed } from '@/layouts/railClosed'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { Divider } from '@/components/ui/Divider'
 import { SectionHeader, SectionLabel } from '@/components/ui/SectionHeader'
@@ -46,6 +46,7 @@ type Selected =
  * and the chosen topic or direct message beside them.
  */
 export function DeskPage() {
+  const railClosed = useRailClosed()
   const { topicHasUnread, dmHasUnread, topicIsUrgent, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
   const pathForTopic = useTopicPath()
@@ -281,8 +282,7 @@ export function DeskPage() {
     )}
     <AppShell
       leftPanel={
-        // Screener, Urgent, Open work, Starred: groups, so the room between them is 4px.
-        <PageListColumn title="Desk" spacing="sections">
+        <ListColumn title="Desk" collapsed={railClosed}>
           {(deskLoading || starredLoading) ? (
           <SkeletonSidebarList rows={8} />
           ) : (
@@ -456,7 +456,7 @@ export function DeskPage() {
           <Divider className="my-2" />
           </>
           )}
-        </PageListColumn>
+        </ListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={threadPanel}

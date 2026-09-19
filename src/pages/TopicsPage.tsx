@@ -7,8 +7,8 @@ import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTop
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
-import { CollapsibleSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { PageListColumn } from '@/layouts/PageListColumn'
+import { CollapsibleSection, ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { useRailClosed } from '@/layouts/railClosed'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
@@ -27,6 +27,7 @@ import { rememberRecent } from '@/lib/recents'
  * chosen topic beside them with its replies or Files panel.
  */
 export function TopicsPage() {
+  const railClosed = useRailClosed()
   const { topicHasUnread, topicIsUrgent } = useUnread()
   const navigate = useNavigate()
   const location = useLocation()
@@ -250,9 +251,10 @@ export function TopicsPage() {
           list stays until then, and the tree is where a Folder is navigated:
           the Folders rail item (`FoldersPage`, peek#214) and the file page.
         */
-        <PageListColumn
+        <ListColumn
           title="All topics"
           chevron
+          collapsed={railClosed}
           actions={
             // One strip: one Tab stop, arrows along it (UIG-14).
             <Toolbar aria-label="Topic list actions" surface={false}>
@@ -267,7 +269,7 @@ export function TopicsPage() {
         >
           {TOPICS === undefined && <SkeletonSidebarList rows={9} />}
           {renderTopicList()}
-        </PageListColumn>
+        </ListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={

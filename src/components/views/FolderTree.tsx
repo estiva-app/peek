@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
-import { CollapsibleSection } from '@estiva-app/ui'
+import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { topLevelFolders, useFolderContents, useFolders, useTeamUnread } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -9,7 +9,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 import { FileTreeView } from '@/components/views/FileTreeView'
-import { PageListColumn } from '@/layouts/PageListColumn'
+import { useRailClosed } from '@/layouts/railClosed'
 import { filePath } from '@/lib/objectUrl'
 import { useRememberedOpen } from '@/lib/rememberedOpen'
 import { useFolderPath } from '@/lib/useFolderPath'
@@ -91,6 +91,7 @@ export function FolderTree({
   /** Offered in the header when the page can start a topic. */
   onNewTopic?: () => void
 }) {
+  const railClosed = useRailClosed()
   const navigate = useNavigate()
   const { folders, signedOut } = useFolders()
   /*
@@ -107,8 +108,9 @@ export function FolderTree({
   const folderPath = useFolderPath()
 
   return (
-    <PageListColumn
+    <ListColumn
       title="Folders"
+      collapsed={railClosed}
       actions={
         onNewTopic && (
           <IconButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
@@ -136,7 +138,7 @@ export function FolderTree({
         }}
         onOpenFolder={(id) => navigate(folderPath(id))}
       />
-    </PageListColumn>
+    </ListColumn>
   )
 }
 

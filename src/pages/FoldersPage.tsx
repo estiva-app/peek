@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ContainerHeader, Form, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
+import { ContainerHeader, Form, ListColumn, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
-import { PageListColumn } from '@/layouts/PageListColumn'
+import { useRailClosed } from '@/layouts/railClosed'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
 import { FolderTreeView } from '@/components/views/FolderTree'
@@ -41,6 +41,7 @@ import { useFolderPath } from '@/lib/useFolderPath'
  * whichever apps own them.
  */
 export function FoldersPage() {
+  const railClosed = useRailClosed()
   const { folders, signedOut, reload } = useFolders()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -136,8 +137,9 @@ export function FoldersPage() {
     <>
     <AppShell
       leftPanel={
-        <PageListColumn
+        <ListColumn
           title="Folders"
+          collapsed={railClosed}
           above={
             !signedOut && (
               // The package Form (UIG-7): Enter or Create makes the folder; the row locks while it does.
@@ -196,7 +198,7 @@ export function FoldersPage() {
             onSelect={(file) => file.address && navigate(filePath(file.address))}
             onOpenFolder={(folder) => navigate(folderPath(folder))}
           />
-        </PageListColumn>
+        </ListColumn>
       }
       rightPanel={
         id ? (
