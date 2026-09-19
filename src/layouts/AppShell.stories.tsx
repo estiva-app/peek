@@ -5,6 +5,7 @@ import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { AppShell } from './AppShell'
+import { PageListColumn } from './PageListColumn'
 
 function Placeholder({ label }: { label: string }) {
   return (
@@ -34,7 +35,12 @@ const meta = {
     ),
   ],
   args: {
-    leftPanel: <Placeholder label="Left panel (list)" />,
+    // A page hands the frame its list column, which draws itself (UIG-14, N9).
+    leftPanel: (
+      <PageListColumn title="List">
+        <Placeholder label="Left panel (list)" />
+      </PageListColumn>
+    ),
     rightPanel: <Placeholder label="Conversation area" />,
   },
 } satisfies Meta<typeof AppShell>

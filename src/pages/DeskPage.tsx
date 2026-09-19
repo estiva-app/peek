@@ -1,8 +1,9 @@
 ﻿import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { IconPlus, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection, ContainerHeader, ScrollArea } from '@estiva-app/ui'
+import { CollapsibleSection } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
+import { PageListColumn } from '@/layouts/PageListColumn'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { Divider } from '@/components/ui/Divider'
 import { SectionHeader, SectionLabel } from '@/components/ui/SectionHeader'
@@ -280,109 +281,48 @@ export function DeskPage() {
     )}
     <AppShell
       leftPanel={
-        <div className="flex flex-col h-full">
-          <ContainerHeader title="Desk" />
-          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-1">
-            {(deskLoading || starredLoading) ? (
-            <SkeletonSidebarList rows={8} />
-            ) : (
+        // Screener, Urgent, Open work, Starred: groups, so the room between them is 4px.
+        <PageListColumn title="Desk" spacing="sections">
+          {(deskLoading || starredLoading) ? (
+          <SkeletonSidebarList rows={8} />
+          ) : (
+          <>
+          {/* Screener - only shows when toggled on AND has items */}
+          {debug.desk.showScreener && screenerItems.length > 0 && (
             <>
-            {/* Screener - only shows when toggled on AND has items */}
-            {debug.desk.showScreener && screenerItems.length > 0 && (
-              <>
-                <ScreenerSection
-                  items={screenerItems}
-                  onOpen={openScreener}
-                  onDismiss={dismissScreener}
-                  onLater={laterScreener}
-                />
-                <Divider className="my-2" />
-              </>
-            )}
-
-            {/* Urgent - only shows when toggled on AND has items */}
-            {urgentItems.length > 0 && (
-              <>
-                <div className="flex flex-col">
-                  <div className="flex h-[32px] items-center px-2">
-                    <SectionLabel>Urgent</SectionLabel>
-                  </div>
-                  <div className="flex flex-col gap-0.5 mt-1">
-                    {urgentItems.map((item) =>
-                      item.kind === 'dm' ? (
-                        <PersonRow
-                          key={item.id}
-                          name={item.name}
-                          type="DM"
-                          avatarSrc={item.avatarSrc}
-                          isUnread
-                          isUrgent
-                          isSelected={
-                            selectionAnchor === 'urgent' &&
-                            selected?.kind === 'dm' &&
-                            selected.dmId === item.dmId
-                          }
-                          onClick={() => selectDm(item.dmId, item.name, 'urgent')}
-                        />
-                      ) : (
-                        <PersonRow
-                          key={item.id}
-                          name={item.title}
-                          type="topic"
-                          topicStatus={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'}
-                          isUnread
-                          isUrgent
-                          isSelected={
-                            selectionAnchor === 'urgent' &&
-                            selected?.kind === 'topic' &&
-                            selected.topicId === item.topicId
-                          }
-                          onClick={() => selectTopic(item.topicId, 'urgent')}
-                        />
-                      )
-                    )}
-                  </div>
-                </div>
-                <Divider className="my-2" />
-              </>
-            )}
-
-            {/* Open work */}
-            <div className="flex flex-col">
-              {/* The package's section row (UIG-14, 10.2): its actions always
-                  shown, and the row itself still under the pointer — the
-                  buttons light up on their own (Katerina, 19 September). */}
-              <SectionHeader
-                title="Open work"
-                showActions="always"
-                hover="none"
-                actions={[
-                  // Sort does nothing yet, as before.
-                  { icon: <IconSortDescending size={16} stroke={1.5} />, tooltip: 'Sort by', onClick: () => {} },
-                  { icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add to Open work', onClick: () => setShowAddToOpenWork(true) },
-                ]}
+              <ScreenerSection
+                items={screenerItems}
+                onOpen={openScreener}
+                onDismiss={dismissScreener}
+                onLater={laterScreener}
               />
-              {openWorkItems.length === 0 ? (
-                <p className="px-2 py-1 text-caption leading-snug text-text-muted">
-                  Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.
-                </p>
-              ) : (
+              <Divider className="my-2" />
+            </>
+          )}
+
+          {/* Urgent - only shows when toggled on AND has items */}
+          {urgentItems.length > 0 && (
+            <>
+              <div className="flex flex-col">
+                <div className="flex h-[32px] items-center px-2">
+                  <SectionLabel>Urgent</SectionLabel>
+                </div>
                 <div className="flex flex-col gap-0.5 mt-1">
-                  {openWorkItems.map((item) =>
+                  {urgentItems.map((item) =>
                     item.kind === 'dm' ? (
                       <PersonRow
                         key={item.id}
                         name={item.name}
                         type="DM"
                         avatarSrc={item.avatarSrc}
-                        isUnread={(showPeopleUnreads && dmHasUnread(item.dmId)) || item.isUnread}
+                        isUnread
+                        isUrgent
                         isSelected={
-                          selectionAnchor === 'openWork' &&
+                          selectionAnchor === 'urgent' &&
                           selected?.kind === 'dm' &&
                           selected.dmId === item.dmId
                         }
-                        onClick={() => selectDm(item.dmId, item.name, 'openWork')}
-                        onRemove={() => dismissOpenWork(item.id)}
+                        onClick={() => selectDm(item.dmId, item.name, 'urgent')}
                       />
                     ) : (
                       <PersonRow
@@ -390,74 +330,133 @@ export function DeskPage() {
                         name={item.title}
                         type="topic"
                         topicStatus={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'}
-                        isUnread={(showTopicUnreads && topicHasUnread(item.topicId)) || item.isUnread}
+                        isUnread
+                        isUrgent
                         isSelected={
-                          selectionAnchor === 'openWork' &&
+                          selectionAnchor === 'urgent' &&
                           selected?.kind === 'topic' &&
                           selected.topicId === item.topicId
                         }
-                        onClick={() => selectTopic(item.topicId, 'openWork')}
-                        onRemove={() => dismissOpenWork(item.id)}
+                        onClick={() => selectTopic(item.topicId, 'urgent')}
                       />
                     )
                   )}
                 </div>
-              )}
-            </div>
-
-            <Divider className="my-2" />
-
-            {/* Starred — the package's CollapsibleSection (§4.8, D42): the same
-                32px row, but the title is a button, the rows slide, and this
-                browser remembers the fold. It was a hand-drawn copy of
-                ui/StarredSection until 2026-09-10 (Peek scan F10). */}
-            <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
-              {starredEntries.length === 0 ? (
-                // Level with the rows (Katerina, 2026-09-14): each PersonRow pads itself,
-                // so the line takes a row's inset here, never on EmptyState.
-                <div className="px-2 py-1">
-                  <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
-                </div>
-              ) : (
-                    starredEntries.map((entry) =>
-                      entry.kind === 'dm' ? (
-                        <PersonRow
-                          key={entry.id}
-                          name={entry.name}
-                          type="DM"
-                          avatarSrc={entry.avatarSrc}
-                          isUnread={(showPeopleUnreads && dmHasUnread(entry.dmId)) || entry.isUnread}
-                          isSelected={
-                            selectionAnchor === 'starred' &&
-                            selected?.kind === 'dm' &&
-                            selected.dmId === entry.dmId
-                          }
-                          onClick={() => selectDm(entry.dmId, entry.name, 'starred')}
-                        />
-                      ) : (
-                        <PersonRow
-                          key={entry.id}
-                          name={entry.title}
-                          type="topic"
-                          topicStatus={isTopicResolved(entry.topicId) ? 'resolved' : 'unresolved'}
-                          isUnread={(showTopicUnreads && topicHasUnread(entry.topicId)) || entry.isUnread}
-                          isSelected={
-                            selectionAnchor === 'starred' &&
-                            selected?.kind === 'topic' &&
-                            selected.topicId === entry.topicId
-                          }
-                          onClick={() => selectTopic(entry.topicId, 'starred')}
-                        />
-                      )
-                    )
-              )}
-            </CollapsibleSection>
-
-            <Divider className="my-2" />
+              </div>
+              <Divider className="my-2" />
             </>
+          )}
+
+          {/* Open work */}
+          <div className="flex flex-col">
+            {/* The package's section row (UIG-14, 10.2): its actions always
+                shown, and the row itself still under the pointer — the
+                buttons light up on their own (Katerina, 19 September). */}
+            <SectionHeader
+              title="Open work"
+              showActions="always"
+              hover="none"
+              actions={[
+                // Sort does nothing yet, as before.
+                { icon: <IconSortDescending size={16} stroke={1.5} />, tooltip: 'Sort by', onClick: () => {} },
+                { icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add to Open work', onClick: () => setShowAddToOpenWork(true) },
+              ]}
+            />
+            {openWorkItems.length === 0 ? (
+              <p className="px-2 py-1 text-caption leading-snug text-text-muted">
+                Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-0.5 mt-1">
+                {openWorkItems.map((item) =>
+                  item.kind === 'dm' ? (
+                    <PersonRow
+                      key={item.id}
+                      name={item.name}
+                      type="DM"
+                      avatarSrc={item.avatarSrc}
+                      isUnread={(showPeopleUnreads && dmHasUnread(item.dmId)) || item.isUnread}
+                      isSelected={
+                        selectionAnchor === 'openWork' &&
+                        selected?.kind === 'dm' &&
+                        selected.dmId === item.dmId
+                      }
+                      onClick={() => selectDm(item.dmId, item.name, 'openWork')}
+                      onRemove={() => dismissOpenWork(item.id)}
+                    />
+                  ) : (
+                    <PersonRow
+                      key={item.id}
+                      name={item.title}
+                      type="topic"
+                      topicStatus={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'}
+                      isUnread={(showTopicUnreads && topicHasUnread(item.topicId)) || item.isUnread}
+                      isSelected={
+                        selectionAnchor === 'openWork' &&
+                        selected?.kind === 'topic' &&
+                        selected.topicId === item.topicId
+                      }
+                      onClick={() => selectTopic(item.topicId, 'openWork')}
+                      onRemove={() => dismissOpenWork(item.id)}
+                    />
+                  )
+                )}
+              </div>
             )}
-          </ScrollArea>
-        </div>
+          </div>
+
+          <Divider className="my-2" />
+
+          {/* Starred — the package's CollapsibleSection (§4.8, D42): the same
+              32px row, but the title is a button, the rows slide, and this
+              browser remembers the fold. It was a hand-drawn copy of
+              ui/StarredSection until 2026-09-10 (Peek scan F10). */}
+          <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
+            {starredEntries.length === 0 ? (
+              // Level with the rows (Katerina, 2026-09-14): each PersonRow pads itself,
+              // so the line takes a row's inset here, never on EmptyState.
+              <div className="px-2 py-1">
+                <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
+              </div>
+            ) : (
+                  starredEntries.map((entry) =>
+                    entry.kind === 'dm' ? (
+                      <PersonRow
+                        key={entry.id}
+                        name={entry.name}
+                        type="DM"
+                        avatarSrc={entry.avatarSrc}
+                        isUnread={(showPeopleUnreads && dmHasUnread(entry.dmId)) || entry.isUnread}
+                        isSelected={
+                          selectionAnchor === 'starred' &&
+                          selected?.kind === 'dm' &&
+                          selected.dmId === entry.dmId
+                        }
+                        onClick={() => selectDm(entry.dmId, entry.name, 'starred')}
+                      />
+                    ) : (
+                      <PersonRow
+                        key={entry.id}
+                        name={entry.title}
+                        type="topic"
+                        topicStatus={isTopicResolved(entry.topicId) ? 'resolved' : 'unresolved'}
+                        isUnread={(showTopicUnreads && topicHasUnread(entry.topicId)) || entry.isUnread}
+                        isSelected={
+                          selectionAnchor === 'starred' &&
+                          selected?.kind === 'topic' &&
+                          selected.topicId === entry.topicId
+                        }
+                        onClick={() => selectTopic(entry.topicId, 'starred')}
+                      />
+                    )
+                  )
+            )}
+          </CollapsibleSection>
+
+          <Divider className="my-2" />
+          </>
+          )}
+        </PageListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={threadPanel}
