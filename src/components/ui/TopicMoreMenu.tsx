@@ -32,6 +32,13 @@ export interface TopicMoreMenuProps {
    */
   onOpenChange?: (open: boolean) => void
   onOpenDetails?: () => void
+  /**
+   * Rename, as its own item (FOL-33). A channel topic renames from inside its
+   * details, where a refusal has somewhere to land; a bare-file topic's rename
+   * is a change event its manifest declares, offered only when it does, and
+   * it opens the same details dialog with the name already editable.
+   */
+  onRename?: () => void
   /** Absent when the topic has no shareable URL — see `shareableTopicUrl`. */
   onCopyLink?: () => void
   /** The label states the direction that will work, so the menu never offers
@@ -52,6 +59,7 @@ export function TopicMoreMenu({
   trigger,
   onOpenChange,
   onOpenDetails,
+  onRename,
   onCopyLink,
   openWorkAction,
   onToggleOpenWork,
@@ -63,6 +71,7 @@ export function TopicMoreMenu({
        so an action no longer has to close it first. */
     <Menu trigger={trigger} align="right" onOpenChange={onOpenChange}>
       {onOpenDetails && <MenuItem label="Topic details" onClick={onOpenDetails} />}
+      {onRename && <MenuItem label="Rename" onClick={onRename} />}
       {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
       {openWorkAction && onToggleOpenWork && (
         <MenuItem

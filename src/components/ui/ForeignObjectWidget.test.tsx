@@ -309,6 +309,26 @@ describe('ForeignObjectWidget', () => {
       expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     })
 
+    it('never draws a rename box either — the title is the heading, and the page renames (FOL-33)', async () => {
+      resolveObject.mockResolvedValue(
+        object({
+          // What interop 0.25.0 resolves for a bare file: a text action on the
+          // title's own field, and a deletion with no field at all.
+          kind: 30840,
+          actions: [
+            { id: 'comment', label: 'Comment', control: 'text' },
+            { id: 'rename', label: 'Rename', control: 'text', field: 'title' },
+            { id: 'delete', label: 'Delete', control: 'confirm', effect: 'destructive' },
+          ],
+        }),
+      )
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      await screen.findByText('Billing entry + add payment method')
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
+    })
+
     it('keeps the labels on a card with no controls to defer to', async () => {
       // The topic sidebar renders read-only. With no picker on screen the status
       // pill is the only thing saying what the status is, so it stays.

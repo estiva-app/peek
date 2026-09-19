@@ -28,6 +28,9 @@ interface PersonRowProps {
   /** Adds "Topic details" to the more-menu (PEE-2). The same item the
    *  conversation header offers — one menu, two places to open it. */
   onOpenDetails?: () => void
+  /** Adds "Rename" to the more-menu (FOL-33) — a bare-file row whose manifest
+   *  declares one. See `TopicMoreMenu`. */
+  onRename?: () => void
   /** Adds an "Add to Open work" / "Remove from Open work" item to the
    *  more-menu — the label advertises which direction will succeed. */
   openWorkAction?: 'add' | 'remove'
@@ -55,12 +58,14 @@ export function PersonRow({
   onRemove,
   onDeleteTopic,
   onOpenDetails,
+  onRename,
   openWorkAction,
   onToggleOpenWork,
   onHideDm,
   className,
 }: PersonRowProps) {
-  const hasMenu = !!onDeleteTopic || !!onOpenDetails || !!onHideDm || !!(openWorkAction && onToggleOpenWork)
+  const hasMenu =
+    !!onDeleteTopic || !!onOpenDetails || !!onRename || !!onHideDm || !!(openWorkAction && onToggleOpenWork)
   const [isHovered, setIsHovered] = useState(false)
   /* The menu owns its button since `@estiva-app/ui` 0.10.0, so what this file
      keeps is not a position any more — it is only whether the menu is open,
@@ -134,6 +139,7 @@ export function PersonRow({
               trigger={moreButton}
               onOpenChange={setMenuOpen}
               onOpenDetails={onOpenDetails}
+              onRename={onRename}
               openWorkAction={openWorkAction}
               onToggleOpenWork={onToggleOpenWork}
               onDeleteTopic={onDeleteTopic}

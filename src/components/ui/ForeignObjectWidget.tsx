@@ -355,8 +355,17 @@ export function ForeignObjectCard({
    * `emits.field` is a property of the declaration rather than knowledge of the
    * app — Peek is choosing which *kind* of control it renders, not which app it
    * is talking to.
+   *
+   * Nor the action that sets the **title's** field (FOL-33). The title is the
+   * card's heading and its link, not a property row, and a rename box under
+   * every card of a file whose manifest declares one — the bare file's does,
+   * since interop 0.25.0 — is a control for the page the card points at, which
+   * is where Peek offers it. Matched on the field, as `covered` is below: the
+   * slot and the action name the same fact, whatever the manifest called it.
    */
-  const actions = object.actions.filter((action) => action.field)
+  const actions = object.actions.filter(
+    (action) => action.field && action.field !== object.slots.title?.field,
+  )
 
   /**
    * Fields an action already puts on screen.

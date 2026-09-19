@@ -1086,6 +1086,68 @@ export async function applyActionAsViewer(
 }
 
 /**
+ * Rename a file — the owner's `rename` action, exactly as declared (FOL-33).
+ *
+ * Nothing here knows the file is a `30840`: `applyActionAsViewer` reads the
+ * manifest and builds whatever that manifest says a rename is. For the bare
+ * file that is a `kind:1851` change to `title`, which every reader folds — so
+ * the tree, the header, Ship's listing and another person's page all show the
+ * new name from the same event, and a non-author may rename because the
+ * manifest says a change is how it is done. A manifest that declares no
+ * `rename` refuses here with the runtime's sentence, which is the same gate
+ * the page uses to decide whether to draw the control at all.
+ */
+export async function renameFileAsViewer(
+  /** `actionId` is the rename the manifest declared — `fileControlsOf(file).rename.id`. */
+  args: { naddr: string; actionId: string; title: string },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const result = await applyActionAsViewer({ naddr: args.naddr, actionId: args.actionId, value: args.title }, relayUrl, token)
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason ?? 'The relay refused the rename.' }
+}
+
+/**
+ * Delete a file — the owner's `delete` action, then unlist it (FOL-33).
+ *
+ * **Two writes when the Folder has state, one when it does not, and the
+ * caller says which** — `createTopicAsViewer`'s rule in reverse. The `delete`
+ * action is NIP-09's `kind:5` naming the address; the relay adjudicates it,
+ * and a non-author's is refused with the relay's own words, which are returned
+ * rather than pre-judged (SPEC §6.5 — the client cannot evaluate the
+ * agent-owner half of the rule, so it must not guess at the first half
+ * either). A Folder with a `kind:30890` lists what its state names, deleted or
+ * not (FOL-28), so it also takes a `kind:1852` `remove` — or the row stays,
+ * pointing at nothing. A Folder read by containment stops listing the file the
+ * moment the relay hides it, and a `1852` against it would emit state listing
+ * nothing (peek#192), so `hasState` is required rather than guessed.
+ *
+ * The deletion goes first. A refused `remove` after an accepted delete leaves
+ * a listed row for a file that is gone, reported as partial — visible, and
+ * fixable by reloading the Folder, where the person can see what happened.
+ * The other order would unlist a file the relay then kept, which looks exactly
+ * like a file that was never there.
+ */
+export async function deleteFileAsViewer(
+  /** `actionId` is the deletion the manifest declared — `fileControlsOf(file).delete.id`. */
+  args: { naddr: string; actionId: string; address: string; folder: string; hasState: boolean },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const deleted = await applyActionAsViewer({ naddr: args.naddr, actionId: args.actionId, value: '' }, relayUrl, token)
+  if (!deleted.ok) return { ok: false, reason: deleted.reason ?? 'The relay refused to delete the topic.' }
+  if (!args.hasState) return { ok: true }
+  const removed = await folderCommand({ folder: args.folder, op: 'remove', addresses: [args.address] }, relayUrl, token)
+  if (!removed.ok) {
+    return {
+      ok: false,
+      reason: 'The topic was deleted but is still listed in this folder. Reload and remove it from the folder again.',
+    }
+  }
+  return { ok: true }
+}
+
+/**
  * Messages matching a term, over NIP-50 (PEE-4).
  *
  * **Whole tokens only**, measured against production rather than assumed —

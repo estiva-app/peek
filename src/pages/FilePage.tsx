@@ -1,14 +1,17 @@
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { IconArrowUpRight, IconX } from '@tabler/icons-react'
-import { ContainerHeader, ScrollArea } from '@estiva-app/ui'
+import { IconArrowUpRight, IconDotsVertical, IconX } from '@tabler/icons-react'
+import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
+import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { FolderTree } from '@/components/views/FolderTree'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
+import { useFileControls } from '@/components/views/useFileControls'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { useFileThreads, useForeignConversation, useWorkspaceDirectory } from '@/api'
+import { fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
 import { useMarkFileRead } from '@/lib/useMarkRead'
@@ -130,6 +133,25 @@ export function FilePage() {
         )
   const openThread = openThreadId ? comments.find((c) => c.id === openThreadId) : undefined
 
+  /*
+    Rename and Delete, from the manifest and not from the kind (FOL-33) — the
+    same gate as `canComment` a few lines up. A bare file's built-in manifest
+    declares both; Ship's declares neither for an issue, so an issue's header
+    keeps only "Open folder", which is the ticket's test. The dialogs are the
+    page's, shared with the tree's row menu so both ends open the same ones
+    (PEE-2). A rename re-reads the file, whose title the header draws (the
+    tree re-reads on the change event's own signal); deleting the open file
+    lands on the team it was in, since this page no longer resolves. A row's
+    delete of some other file stays here — the person was not looking at it.
+  */
+  const controls = fileControlsOf(file)
+  const fileControls = useFileControls({
+    onRenamed: () => void reloadConversation(),
+    onDeleted: (deleted) => {
+      if (deleted.folder && deleted.address === file?.address) navigate(`/folders/${deleted.folder}`, { replace: true })
+    },
+  })
+
   if (topicIdentifier) return <Navigate to={`/topic/${topicIdentifier}`} replace />
 
   if (!address) {
@@ -141,6 +163,8 @@ export function FilePage() {
   }
 
   return (
+    <>
+    {fileControls.dialogs}
     <AppShell
       leftPanel={
         /*
@@ -158,6 +182,7 @@ export function FilePage() {
           currentFolder={file?.folder}
           selectedRef={file?.ref}
           selectedParent={file?.parentRef}
+          onControl={fileControls.open}
         />
       }
       rightPanel={
@@ -179,15 +204,36 @@ export function FilePage() {
             }
             actions={
               file?.folder ? (
-                // A link that looks like the button (UIG-14, 4.13): a new tab works.
-                <IconButton
-                  tooltip="Open folder"
-                  aria-label="Open folder"
-                  href={`/folders/${file.folder}`}
-                  onClick={(event) => followInApp(event, () => navigate(`/folders/${file.folder}`))}
-                >
-                  <IconArrowUpRight size={16} stroke={1.5} />
-                </IconButton>
+                // One strip: one Tab stop, arrows along it (UIG-14).
+                <Toolbar aria-label="File actions" surface={false}>
+                  {/* A link that looks like the button (UIG-14, 4.13): a new tab works. */}
+                  <ToolbarLink
+                    tooltip="Open folder"
+                    aria-label="Open folder"
+                    href={`/folders/${file.folder}`}
+                    onClick={(event) => followInApp(event, () => navigate(`/folders/${file.folder}`))}
+                  >
+                    <IconArrowUpRight size={16} stroke={1.5} />
+                  </ToolbarLink>
+                  {/*
+                    The topic's menu, when the manifest offers anything for it
+                    to hold (FOL-33) — and absent, not inert, when it does not:
+                    a Ship issue's header has nothing to put here, and a button
+                    that opens nothing would say otherwise.
+                  */}
+                  {hasFileControls(controls) && (
+                    <TopicMoreMenu
+                      trigger={
+                        <ToolbarButton tooltip="More actions" aria-label="More actions">
+                          <IconDotsVertical size={16} stroke={1.5} />
+                        </ToolbarButton>
+                      }
+                      onOpenDetails={() => fileControls.open('details', file)}
+                      onRename={controls.rename ? () => fileControls.open('rename', file) : undefined}
+                      onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
+                    />
+                  )}
+                </Toolbar>
               ) : undefined
             }
           />
@@ -231,5 +277,6 @@ export function FilePage() {
         ) : undefined
       }
     />
+    </>
   )
 }

@@ -9,6 +9,8 @@ import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
+import type { FileControl } from '@/components/views/useFileControls'
+import { fileControlsOf } from '@/lib/fileControls'
 
 /**
  * A line where the tree's rows would be: empty, or unreadable. Level with the
@@ -47,6 +49,7 @@ export function FileTreeView({
   selectedRef,
   expand,
   onSelect,
+  onControl,
 }: {
   state: FolderContentsState
   /** `ref` of the file this page is showing. */
@@ -57,6 +60,13 @@ export function FileTreeView({
    */
   expand?: readonly string[]
   onSelect: (file: ForeignObject) => void
+  /**
+   * A row's more-menu asked for its details, a rename or a deletion (FOL-33).
+   * The menu is drawn only on a row whose manifest declares the control —
+   * `fileControlsOf` — and only when there is somebody to tell: a tree drawn
+   * without this has no menus, exactly as before.
+   */
+  onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
@@ -88,6 +98,7 @@ export function FileTreeView({
           selectedRef={selectedRef}
           expand={expand}
           onSelect={onSelect}
+          onControl={onControl}
         />
       ))}
     </div>
@@ -109,6 +120,7 @@ function TreeRow({
   selectedRef,
   expand,
   onSelect,
+  onControl,
   nested = false,
 }: {
   file: ForeignObject
@@ -117,6 +129,7 @@ function TreeRow({
   selectedRef?: string
   expand?: readonly string[]
   onSelect: (file: ForeignObject) => void
+  onControl?: (control: FileControl, file: ForeignObject) => void
   nested?: boolean
 }) {
   // `expand` decides until the person does — see `FileRow` for why this is
@@ -126,6 +139,11 @@ function TreeRow({
   const title = file.slots.title?.value ?? 'Untitled'
   const listedChildren = listedChildrenOf(file, listed)
   const expandable = (!nested && file.listsChildren) || listedChildren.length > 0
+  // The row's menu, from the manifest and not from the kind (FOL-33): a bare
+  // file's declares rename and delete, a Ship issue's declares neither, and
+  // the glyph below is the one place this file asks what kind a row is.
+  const controls = onControl ? fileControlsOf(file) : {}
+  const offers = !!controls.rename || !!controls.delete
 
   return (
     <div data-file={file.ref}>
@@ -154,6 +172,9 @@ function TreeRow({
           isUnread={unread?.[file.ref] === true}
           isSelected={file.ref === selectedRef}
           onClick={() => onSelect(file)}
+          onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
+          onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
+          onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
         />
       </div>
       {open && (
@@ -165,6 +186,7 @@ function TreeRow({
               selectedRef={selectedRef}
               expand={expand}
               onSelect={onSelect}
+              onControl={onControl}
             />
           )}
           {listedChildren.map((child) => (
@@ -176,6 +198,7 @@ function TreeRow({
               selectedRef={selectedRef}
               expand={expand}
               onSelect={onSelect}
+              onControl={onControl}
               nested
             />
           ))}
@@ -192,12 +215,14 @@ function FetchedRows({
   selectedRef,
   expand,
   onSelect,
+  onControl,
 }: {
   naddr: string
   exclude?: ForeignObject[]
   selectedRef?: string
   expand?: readonly string[]
   onSelect: (file: ForeignObject) => void
+  onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { state } = useForeignChildren(naddr)
   const drawn = new Set(exclude.map((file) => file.ref))
@@ -221,6 +246,7 @@ function FetchedRows({
           selectedRef={selectedRef}
           expand={expand}
           onSelect={onSelect}
+          onControl={onControl}
           nested
         />
       ))}
