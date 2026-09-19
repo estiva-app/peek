@@ -9,6 +9,12 @@ interface ErrorBoundaryProps {
   label?: string
   /** The whole screen the fallback fills, where no flex column holds it (the app's own boundary). */
   fallbackClassName?: string
+  /**
+   * The column the message is drawn in, where the boundary sits around a
+   * column rather than inside one: a page's list column draws the message in
+   * a column of its own, in the same place (`PageListColumn`).
+   */
+  frame?: (message: ReactNode) => ReactNode
 }
 
 interface ErrorBoundaryState {
@@ -21,8 +27,9 @@ interface ErrorBoundaryState {
  *
  * Production hardening (Phase 5): a crashing subtree degrades to a quiet
  * inline fallback instead of white-screening the app. One boundary wraps
- * each AppShell slot, so every page is covered at the panel level; "Try
- * again" re-mounts just that subtree.
+ * each of AppShell's panels, and each page's list column (`PageListColumn`),
+ * so every page is covered at the panel level; "Try again" re-mounts just
+ * that subtree.
  * @registry reusable: stays in Peek (Katerina, 18 September); its message becomes estiva-ui's EmptyState with a button
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -47,6 +54,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         action={{ label: 'Try again', onClick: () => this.setState({ hasError: false }) }}
       />
     )
+    // A boundary around a column draws the column again, with the message in it.
+    if (this.props.frame) return this.props.frame(message)
     // The whole app's boundary has no column around it, and names its own screen.
     return this.props.fallbackClassName ? <div className={this.props.fallbackClassName}>{message}</div> : message
   }
