@@ -281,24 +281,6 @@
   .signal .animate-pulse::after { animation: none; }
 }
 
-/* control-room dot grid on the app's dark canvas (AppShell adds .signal-canvas).
-   isolation + z-index:-1 keep the grid above the canvas background but below
-   every child — it can never paint over the app card, dialogs, or menus. */
-.signal .signal-canvas {
-  isolation: isolate;
-}
-.signal .signal-canvas::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
-  background-size: 26px 26px;
-  mask-image: radial-gradient(1100px 700px at 50% 45%, transparent 25%, #000 100%);
-  -webkit-mask-image: radial-gradient(1100px 700px at 50% 45%, transparent 25%, #000 100%);
-}
-
 /* ─── Scrollbar ─── */
 
 /* Firefox */
