@@ -430,6 +430,7 @@ export function ThreadPanel({
               authorAvatarSrc={conversation.authorAvatarSrc}
               timestamp={rootTimestamp}
               body={conversation.body}
+              editedAt={conversation.editedAt}
               files={conversation.files}
               reactions={initialReactions}
               highlightType={initialHighlightType}
@@ -471,6 +472,7 @@ export function ThreadPanel({
                     authorAvatarSrc={reply.authorAvatarSrc}
                     timestamp={reply.timestamp}
                     body={reply.body}
+                    editedAt={reply.editedAt}
                     files={reply.files}
                     highlightType={reply.highlightType}
                     reactions={reply.reactions}

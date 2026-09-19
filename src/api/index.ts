@@ -32,7 +32,7 @@ export * from './profile'
 export * from './uploads'
 export * from './screener'
 export { useForeignObjects, useResolvedReferences, useWorkspaceDirectory, useMessageSearch, type MessageHit } from './foreign'
-export { formatDateLabel, formatReplyTimestamp } from './format'
+export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionTopics } from './mentions'
 export { useStarred } from '@/api/internal/starred'
@@ -47,5 +47,15 @@ export {
   type ForeignChildrenState,
   type FileThreadsState,
 } from './useForeignConversation'
+export {
+  useFileConversation,
+  type FileConversationState,
+  type FileConversationActions,
+  type ConversationContainer,
+  type ConversationEvent,
+  type FileConversation,
+  type OutgoingAttachment,
+  type WriteResult,
+} from './useFileConversation'
 export { useConversationBadges } from './useConversationBadges'
 export { useTeamUnread } from './useTeamUnread'

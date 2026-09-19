@@ -41,7 +41,9 @@ const foreign = (over: Partial<ForeignObject>): ForeignObject =>
     slots: {},
     meta: [],
     comments: [],
-    actions: [{ id: 'comment', label: 'Comment' }],
+    // No `comment` in the manifest: the viewer may look and not write, which
+    // is the read-only page. The fixtures that offer it are further down.
+    actions: [],
     viaRecommendation: false,
     folder: FOLDER,
     ...over,
@@ -92,6 +94,22 @@ const threads = vi.hoisted(() => ({
 const writes = vi.hoisted(() => ({
   replyToComment: vi.fn(async () => ({ ok: true })),
   applyAction: vi.fn(async () => ({ ok: true })),
+}))
+/** What the page handed Peek's own view, per mount. */
+const peekView = vi.hoisted(() => ({ args: [] as Record<string, unknown>[] }))
+vi.mock('@/components/views/useFileConversationView', () => ({
+  useFileConversationView: (args: Record<string, unknown>) => {
+    peekView.args.push(args)
+    const container = args.container as { address: string; h: string } | null
+    return {
+      conversation: container ? (
+        <div data-testid="peek-view" data-address={container.address} data-h={container.h}>
+          <textarea aria-label="Peek composer" />
+        </div>
+      ) : null,
+      threadPanel: container && args.openThreadId ? <div data-testid="peek-thread">{String(args.openThreadId)}</div> : undefined,
+    }
+  },
 }))
 const marks = vi.hoisted(() => ({
   file: vi.fn<(address: string | null | undefined) => void>(),
@@ -193,6 +211,7 @@ beforeEach(() => {
   marks.container.mockClear()
   marks.thread.mockClear()
   writes.replyToComment.mockClear()
+  peekView.args = []
 })
 
 describe('FilePage opens a file by address, not against the listing', () => {
@@ -231,7 +250,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
   it('a Ship issue and a Peek bare file get identical panes', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const ship = shape()
-    // Both have comments and both may be commented on; the numbers differ
+    // Both have comments and neither may be commented on; the numbers differ
     // by fixture, the shape must not.
     expect(ship).toEqual({
       foldersHeading: true,
@@ -239,7 +258,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
       listingOpen: true,
       comments: 2,
       threadButtons: 2,
-      composer: true,
+      composer: false,
       openFolder: true,
     })
   })
@@ -252,7 +271,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
       listingOpen: true,
       comments: 1,
       threadButtons: 1,
-      composer: true,
+      composer: false,
       openFolder: true,
     })
   })
@@ -333,29 +352,10 @@ describe('FilePage opens a thread beside the conversation', () => {
     expect(middle.querySelectorAll('[data-replies]')).toHaveLength(1)
   })
 
-  it('replies name the root comment as the parent, with its kind', async () => {
-    const root = { ...issue.comments[0], kind: 1111 }
-    threads.state = { roots: { [rootId]: root }, replies: {} }
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
-    const thread = screen.getByTestId('thread')
-    const box = within(thread).getByRole('textbox')
-    fireEvent.change(box, { target: { value: 'Agreed.' } })
-    await act(async () => {
-      fireEvent.keyDown(box, { key: 'Enter' })
-    })
-    expect(writes.replyToComment).toHaveBeenCalledWith({
-      reference: ISSUE_ADDRESS,
-      parent: root,
-      body: 'Agreed.',
-    })
-    // The relay has it; the thread re-reads rather than appending a copy.
-    expect(threads.reload).toHaveBeenCalled()
-  })
-
-  it('offers no reply until the root’s kind is known — a guessed k is wrong for ever', () => {
-    threads.state = 'loading'
+  it('offers no composer at all: the manifest declared no comment', () => {
     mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     expect(within(screen.getByTestId('thread')).queryByRole('textbox')).toBeNull()
+    expect(within(screen.getByTestId('middle')).queryByRole('textbox')).toBeNull()
   })
 
   it('closing the thread drops the parameter', () => {
@@ -363,6 +363,57 @@ describe('FilePage opens a thread beside the conversation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close thread' }))
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+  })
+})
+
+/*
+  A file the viewer may comment on gets Peek's own conversation view — FOL-31.
+  The choice is the manifest's `comment` action and nothing about the kind:
+  the Ship issue and the Peek bare file below differ only in their address,
+  and the page hands the view the same container shape for both.
+*/
+describe('FilePage gives a file the viewer may comment on Peek’s own view', () => {
+  const commentable = (object: ForeignObject) => ({ ...object, actions: [{ id: 'comment', label: 'Comment' }] })
+
+  it('a Ship issue: the container is the file’s address and its Folder', () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    const view = within(middle).getByTestId('peek-view')
+    expect(view.getAttribute('data-address')).toBe(ISSUE_ADDRESS)
+    expect(view.getAttribute('data-h')).toBe(FOLDER)
+    expect(within(middle).getByRole('textbox', { name: 'Peek composer' })).toBeInTheDocument()
+    // The read-only panes are not drawn beside it.
+    expect(middle.querySelectorAll('[data-comment]')).toHaveLength(0)
+    // The roots come off the object's read, in order.
+    const last = peekView.args.at(-1)!
+    expect(last.rootIds).toEqual(issue.comments.map((c) => c.id))
+    expect(last.title).toBe('The file route')
+  })
+
+  it('…and a Peek bare file, identically', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const view = within(screen.getByTestId('middle')).getByTestId('peek-view')
+    expect(view.getAttribute('data-address')).toBe(TOPIC_ADDRESS)
+    expect(view.getAttribute('data-h')).toBe(FOLDER)
+  })
+
+  it('the open thread is still the URL’s, and closing it drops the parameter', () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
+    const rootId = issue.comments[0].id
+    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
+    expect(screen.getByTestId('peek-thread').textContent).toBe(rootId)
+    const last = peekView.args.at(-1)! as { onOpenThread: (id: string | null) => void }
+    act(() => last.onOpenThread(null))
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+  })
+
+  it('a signed-out or unresolved file hands the view no container', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(peekView.args.every((a) => a.container === null)).toBe(true)
+    expect(screen.queryByTestId('peek-view')).toBeNull()
   })
 })
 
