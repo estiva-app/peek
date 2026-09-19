@@ -9,6 +9,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 import { FileTreeView } from '@/components/views/FileTreeView'
+import type { FileControl } from '@/components/views/useFileControls'
 import { useRailClosed } from '@/layouts/railClosed'
 import { filePath } from '@/lib/objectUrl'
 import { useRememberedOpen } from '@/lib/rememberedOpen'
@@ -77,6 +78,7 @@ export function FolderTree({
   selectedRef,
   selectedParent,
   onNewTopic,
+  onControl,
 }: {
   /** The Folder holding the open page. Its section starts open. */
   currentFolder?: string | null
@@ -90,6 +92,8 @@ export function FolderTree({
   selectedParent?: string | null
   /** Offered in the header when the page can start a topic. */
   onNewTopic?: () => void
+  /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
+  onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const railClosed = useRailClosed()
   const navigate = useNavigate()
@@ -137,6 +141,7 @@ export function FolderTree({
           if (file.address) navigate(filePath(file.address))
         }}
         onOpenFolder={(id) => navigate(folderPath(id))}
+        onControl={onControl}
       />
     </ListColumn>
   )
@@ -152,6 +157,7 @@ export function FolderTreeView({
   selectedParent,
   onSelect,
   onOpenFolder,
+  onControl,
 }: {
   /** `null` while the first read is in flight, or when signed out. */
   folders: FolderSummary[] | null
@@ -163,6 +169,7 @@ export function FolderTreeView({
   selectedParent?: string | null
   onSelect: (file: ForeignObject) => void
   onOpenFolder: (folderId: string) => void
+  onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   /*
     Three states, not two: "not signed in", "still loading" and "there are
@@ -191,6 +198,7 @@ export function FolderTreeView({
           selectedParent={selectedParent}
           onSelect={onSelect}
           onOpen={() => onOpenFolder(folder.id)}
+          onControl={onControl}
         />
       ))}
     </>
@@ -206,6 +214,7 @@ function FolderSection({
   selectedParent,
   onSelect,
   onOpen,
+  onControl,
 }: {
   folder: FolderSummary
   unread: boolean
@@ -214,6 +223,7 @@ function FolderSection({
   selectedParent?: string | null
   onSelect: (file: ForeignObject) => void
   onOpen: () => void
+  onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const [open, setOpen] = useRememberedOpen(`peek.tree.folder.${folder.id}`, current)
   /*
@@ -265,6 +275,7 @@ function FolderSection({
             selectedRef={selectedRef}
             expand={parentRow ? [parentRow.ref] : undefined}
             onSelect={onSelect}
+            onControl={onControl}
           />
         )}
       </CollapsibleSection>

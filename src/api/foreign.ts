@@ -27,8 +27,10 @@ import {
   channelStreamsAsViewer,
   createFolderAsViewer,
   createTopicAsViewer,
+  deleteFileAsViewer,
   deleteFolderAsViewer,
   moveFileAsViewer,
+  renameFileAsViewer,
   renameFolderAsViewer,
   resolveFolderContentsAsViewer,
   listFoldersAsViewer,
@@ -199,6 +201,34 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * Rename a file through its manifest's `rename` action (FOL-33). Offered by
+   * a page only when the resolved file's `actions` declare one; refused here
+   * with the runtime's sentence when they do not.
+   */
+  const renameFile = useCallback(
+    async (args: { naddr: string; actionId: string; title: string }) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to rename a topic.' }
+      return renameFileAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /**
+   * Delete a file through its manifest's `delete` action, then unlist it from
+   * a Folder that has state (FOL-33). `hasState` comes from the Folder read on
+   * the page, never from a guess; see `deleteFileAsViewer`.
+   */
+  const deleteFile = useCallback(
+    async (args: { naddr: string; actionId: string; address: string; folder: string; hasState: boolean }) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to delete a topic.' }
+      return deleteFileAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
   /** Create a Folder. Refuses rather than pretending when signed out. */
   const createFolder = useCallback(
     async (name: string) => {
@@ -275,6 +305,8 @@ export function useForeignObjects() {
     listFolders,
     createFolder,
     createTopic,
+    renameFile,
+    deleteFile,
     renameFolder,
     deleteFolder,
     moveFile,

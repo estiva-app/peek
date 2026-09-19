@@ -11,7 +11,7 @@
  * hold. `FoldersPage.test.tsx` used to pin that such a file "opens nothing",
  * which was true of the pane and is the gap this route closes.
  */
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -94,7 +94,12 @@ const threads = vi.hoisted(() => ({
 const writes = vi.hoisted(() => ({
   replyToComment: vi.fn(async () => ({ ok: true })),
   applyAction: vi.fn(async () => ({ ok: true })),
+  renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
+  deleteFile: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
+  // The delete flow reads the Folder for `hasState` seconds before the write.
+  resolveFolderContents: vi.fn(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] })),
 }))
+const toasts = vi.hoisted(() => ({ shown: [] as { label: string; type?: string }[] }))
 /** What the page handed Peek's own view, per mount. */
 const peekView = vi.hoisted(() => ({ args: [] as Record<string, unknown>[] }))
 vi.mock('@/components/views/useFileConversationView', () => ({
@@ -152,7 +157,9 @@ vi.mock('@/api', async () => ({
   useIsTopicResolved: () => () => false,
   useResolvedReferences: () => ({}),
 }))
-vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: () => {} }) }))
+vi.mock('@/lib/toast', () => ({
+  useToast: () => ({ showToast: (toast: { label: string; type?: string }) => toasts.shown.push(toast) }),
+}))
 vi.mock('@/layouts/AppShell', () => ({
   AppShell: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
     <div>
@@ -211,6 +218,10 @@ beforeEach(() => {
   marks.container.mockClear()
   marks.thread.mockClear()
   writes.replyToComment.mockClear()
+  writes.renameFile.mockClear()
+  writes.deleteFile.mockClear()
+  writes.resolveFolderContents.mockClear()
+  toasts.shown = []
   peekView.args = []
 })
 
@@ -471,5 +482,159 @@ describe('FilePage marks the file read, and only the file', () => {
       vi.advanceTimersByTime(READ_DWELL_MS * 2)
     })
     expect(marks.file).not.toHaveBeenCalled()
+  })
+})
+
+describe('FilePage offers Rename and Delete when the manifest does, and never by kind (FOL-33)', () => {
+  /*
+    What interop 0.25.0 resolves for a bare file: `comment`, a `rename` that
+    sets the field the title slot reads, and a `delete` resolved as `confirm`.
+    Ship's issue resolves a status change and a comment. The page must tell the
+    two apart by *this* and by nothing else — the fixtures below keep the kinds
+    the production objects have, so a kind check would pass the wrong test.
+  */
+  const bareFile = {
+    ...topic,
+    slots: { title: { value: 'FOL-15 test topic 2', field: 'title' } },
+    actions: [
+      { id: 'comment', label: 'Comment', control: 'text', effect: 'writes' },
+      { id: 'rename', label: 'Rename', control: 'text', effect: 'writes', field: 'title' },
+      { id: 'delete', label: 'Delete', control: 'confirm', effect: 'destructive' },
+    ],
+  } as unknown as ForeignObject
+  const shipIssue = {
+    ...issue,
+    slots: { title: { value: 'The file route', field: 'title' } },
+    actions: [
+      { id: 'set-issue-status', label: 'Set status', control: 'select', field: 'status', options: [] },
+      { id: 'comment', label: 'Comment', control: 'text' },
+    ],
+  } as unknown as ForeignObject
+
+  const openHeaderMenu = () => {
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    return screen.getAllByRole('menuitem').map((item) => item.textContent)
+  }
+  const hover = (row: HTMLElement) => fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
+
+  it('the header of a bare file has the menu: details, rename, delete', () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(openHeaderMenu()).toEqual(['Topic details', 'Rename', 'Delete topic'])
+  })
+
+  it('the header of a Ship issue has no menu at all — only Open folder', () => {
+    objects.byAddress[ISSUE_ADDRESS] = shipIssue
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    expect(within(middle).queryByRole('button', { name: 'More actions' })).toBeNull()
+    expect(within(middle).getByRole('link', { name: 'Open folder' })).toBeInTheDocument()
+  })
+
+  it('the tree row of a bare file has the same menu, and an issue’s row has none', () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    // The issue as a peer rather than under its collapsed project, so its row is drawn.
+    relay.files = [project, bareFile, { ...shipIssue, parentRef: undefined }]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const left = screen.getByTestId('left')
+    const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
+    hover(topicRow)
+    fireEvent.click(within(topicRow).getByRole('button', { name: 'More options' }))
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Topic details', 'Rename', 'Delete topic'])
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+
+    const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
+    hover(issueRow)
+    const inert = within(issueRow).queryByRole('button', { name: 'More options' })
+    // An inert 3-dot may be drawn on hover (F3); what must not exist is a menu behind it.
+    if (inert) fireEvent.click(inert)
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0)
+  })
+
+  it('Rename opens the details dialog on the field, and saves through the manifest’s action', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    const field = await screen.findByRole('textbox', { name: 'Topic name' })
+    fireEvent.change(field, { target: { value: 'FOL-15 test topic, renamed' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(writes.renameFile).toHaveBeenCalledTimes(1))
+    expect(writes.renameFile).toHaveBeenCalledWith({
+      naddr: bareFile.naddr,
+      actionId: 'rename',
+      title: 'FOL-15 test topic, renamed',
+    })
+    // The relay accepted it: the dialog shows the new name, no field open.
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Topic name' })).toBeNull())
+    expect(screen.getByText('FOL-15 test topic, renamed')).toBeInTheDocument()
+  })
+
+  it('a refused rename stays in the dialog, with the relay’s reason under the field', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    writes.renameFile.mockResolvedValueOnce({ ok: false, reason: 'relay_membership_required' })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Topic name' }), { target: { value: 'Nope' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('relay_membership_required')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Topic name' })).toBeInTheDocument()
+  })
+
+  it('Delete asks first, reads the Folder for hasState, deletes, and lands on the team', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
+    // Nothing is written by the menu item itself (D56).
+    expect(writes.deleteFile).not.toHaveBeenCalled()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    await waitFor(() => expect(writes.deleteFile).toHaveBeenCalledTimes(1))
+    expect(writes.resolveFolderContents).toHaveBeenCalledWith(FOLDER)
+    expect(writes.deleteFile).toHaveBeenCalledWith({
+      naddr: bareFile.naddr,
+      actionId: 'delete',
+      address: TOPIC_ADDRESS,
+      folder: FOLDER,
+      hasState: true,
+    })
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/folders/${FOLDER}`))
+    expect(toasts.shown).toHaveLength(0)
+  })
+
+  it('a Folder without state gets the one write, and the page still lands on the team', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    writes.resolveFolderContents.mockResolvedValueOnce({ id: FOLDER, name: 'Folders', hasState: false, source: 'containment', files: [] })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    await waitFor(() => expect(writes.deleteFile).toHaveBeenCalledTimes(1))
+    expect(writes.deleteFile.mock.calls[0][0]).toMatchObject({ hasState: false })
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/folders/${FOLDER}`))
+  })
+
+  it('a non-author’s delete says the relay refused it, in the relay’s words, and stays', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    writes.deleteFile.mockResolvedValueOnce({ ok: false, reason: 'invalid: must be event author' })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    await waitFor(() => expect(toasts.shown).toHaveLength(1))
+    expect(toasts.shown[0]).toMatchObject({ label: 'invalid: must be event author', type: 'warning' })
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/${TOPIC_ADDRESS}`)
+  })
+
+  it('an unreadable Folder means no delete at all — hasState is never guessed', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    writes.resolveFolderContents.mockRejectedValueOnce(new Error('relay_membership_required'))
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    await waitFor(() => expect(toasts.shown).toHaveLength(1))
+    expect(writes.deleteFile).not.toHaveBeenCalled()
   })
 })
