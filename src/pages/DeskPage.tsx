@@ -6,7 +6,7 @@ import { AppShell } from '@/layouts/AppShell'
 import { useRailClosed } from '@/layouts/railClosed'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { Divider } from '@/components/ui/Divider'
-import { SectionHeader, SectionLabel } from '@/components/ui/SectionHeader'
+import { SectionHeader } from '@/components/ui/SectionHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
 import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
@@ -304,9 +304,7 @@ export function DeskPage() {
           {urgentItems.length > 0 && (
             <>
               <div className="flex flex-col">
-                <div className="flex h-[32px] items-center px-2">
-                  <SectionLabel>Urgent</SectionLabel>
-                </div>
+                <SectionHeader title="Urgent" hover="none" />
                 <div className="flex flex-col gap-0.5 mt-1">
                   {urgentItems.map((item) =>
                     item.kind === 'dm' ? (
