@@ -84,6 +84,13 @@ interface ViewSlots {
  * card is told (`editedAt`) so it draws "(edited)" — the reader's half of
  * CON-8's newest-wins rule, without which a reply written against the old
  * text reads as a non sequitur.
+ *
+ * ## Live, the way a topic is (FOL-32)
+ *
+ * The read watches the file's Folder on the tab's one socket. A new root is
+ * not in `rootIds` until the object is re-resolved, which is `onCommented`'s
+ * job already — so it is handed down as what to do when the socket says
+ * something was said about the file.
  */
 export function useFileConversationView({
   container,
@@ -93,7 +100,9 @@ export function useFileConversationView({
   title,
   onCommented,
 }: UseFileConversationViewArgs): ViewSlots {
-  const { state, actions, viewerPubkey } = useFileConversation(container, rootIds)
+  const { state, actions, viewerPubkey } = useFileConversation(container, rootIds, {
+    onActivity: () => void onCommented(),
+  })
   const people = useWorkspaceDirectory()
   const { showToast } = useToast()
   const scrollRef = useRef<HTMLDivElement>(null)

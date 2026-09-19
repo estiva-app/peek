@@ -21,6 +21,7 @@ import {
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { useLiveFile } from '@/nostr/useLiveFile'
 
 export type { ConversationContainer, ConversationEvent, FileConversation, OutgoingAttachment, WriteResult }
 
@@ -80,10 +81,27 @@ const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this c
  * failure kept apart from an empty conversation — an unreadable conversation
  * is not one nobody has written in. Refreshed on focus and reconnect through
  * `useRefreshTriggers`, the fallback for a read Convex cannot make reactive.
+ *
+ * ## Live, the way a topic is (FOL-32)
+ *
+ * `useLiveFile` watches the container's Folder for `kind:1111` on the tab's
+ * one socket, and the interval idles while that socket is live. The signal
+ * carries no event, so it cannot say whether a new root or a reply landed and
+ * both reads run: the caller's `onActivity` — the object's own read, which is
+ * where the roots come from; a new one is not in `rootIds` until then, and
+ * the changed key re-reads here — and this hook's `reload`, for a reply, an
+ * edit or a reaction on a root already listed. When the root set did change
+ * the second read is one too many, at the frequency of a new comment.
  */
 export function useFileConversation(
   container: ConversationContainer | null | undefined,
   rootIds: readonly string[],
+  {
+    onActivity,
+  }: {
+    /** Something was said about the file on the relay: re-resolve the object. */
+    onActivity?: () => void
+  } = {},
 ): {
   state: FileConversationState
   reload: () => Promise<void>
@@ -133,11 +151,16 @@ export function useFileConversation(
     }
   }, [key, load])
 
+  const live = useLiveFile(container?.h, () => {
+    onActivity?.()
+    if (key) void reload()
+  })
+
   useRefreshTriggers(
     () => {
       if (key) void reload()
     },
-    { enabled: !!key },
+    { enabled: !!key, interval: live.relayState !== 'live' },
   )
 
   /*
