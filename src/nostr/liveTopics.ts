@@ -106,10 +106,16 @@ export interface LiveTopics {
    * against a build with the singular version the same REQ is accepted and
    * silently delivers nothing — EOSE, `live`, no error. Every caller must
    * therefore keep whatever fallback it had.
+   *
+   * `kinds` narrows the filter; the default is both message kinds. A file page
+   * passes `[KIND.COMMENT]` alone (FOL-32), because a Folder's `h` also carries
+   * its own `kind:9` chat and a re-read of a file for every line said in the
+   * Folder would be the wide filter's cost with none of its point.
    */
   watchChannels(
     channelUuids: readonly string[],
     listener: (channelUuid: string) => void,
+    options?: { kinds?: readonly number[] },
   ): { stop(): void }
 }
 
@@ -181,8 +187,10 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
       // refused outright on some builds with `restricted: p-gated events
       // require #p matching your pubkey`. Both message kinds, because a
       // comment written before Ship flipped stays `kind:9` for ever.
-      watchChannels: (channelUuids, listener) =>
-        client.watchFolders([...channelUuids], listener, { kinds: [KIND.STREAM_MESSAGE, KIND.COMMENT] }),
+      watchChannels: (channelUuids, listener, options) =>
+        client.watchFolders([...channelUuids], listener, {
+          kinds: [...(options?.kinds ?? [KIND.STREAM_MESSAGE, KIND.COMMENT])],
+        }),
     },
   }
 }
