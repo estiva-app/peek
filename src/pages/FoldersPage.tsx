@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ContainerHeader, Form, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { ContainerHeader, Form, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
@@ -24,6 +24,7 @@ import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { useToast } from '@/lib/toast'
 import { filePath, topicPath } from '@/lib/objectUrl'
+import { followInApp } from '@/lib/followInApp'
 import { useFolderPath } from '@/lib/useFolderPath'
 
 /**
@@ -276,14 +277,18 @@ export function FoldersPage() {
                       delete from here would leave the topic standing in Peek
                       with its relay half gone. The way to that action is the
                       only thing offered.
+
+                      A link that looks like the strip's buttons (UIG-14, F3):
+                      a new tab works, and the arrow keys still reach it.
                     */
-                    <ToolbarButton
+                    <ToolbarLink
                       tooltip="Open topic"
                       aria-label="Open this folder's topic"
-                      onClick={() => navigate(topicPath(topic))}
+                      href={topicPath(topic)}
+                      onClick={(event) => followInApp(event, () => navigate(topicPath(topic)))}
                     >
                       <IconArrowUpRight size={16} stroke={1.5} />
-                    </ToolbarButton>
+                    </ToolbarLink>
                   ) : (
                     <ToolbarButton
                       tooltip="Delete folder"
