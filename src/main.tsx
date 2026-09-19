@@ -19,8 +19,10 @@ import App from './App.tsx'
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
     {/* Root boundary: the last line of defense — providers or a whole page
-        crashing degrades to the fallback instead of a white screen. */}
-    <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col bg-bg-base">
+        crashing degrades to the fallback instead of a white screen. The
+        fallback's colour is the page's own (`body`, --bg-base in index.css):
+        the package's part takes only its room from here. */}
+    <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col">
       <ThemeProvider>
         <DebugProvider>
           <Routes>
