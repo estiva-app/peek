@@ -14,6 +14,7 @@ import { ForeignObjectCard } from '@/components/ui/ForeignObjectWidget'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { IconButton } from '@/components/ui/IconButton'
+import { Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 
 /** The box the rows live in, written once: the rows, or the line that says why there are none. */
@@ -292,6 +293,7 @@ function FileRow({
     already in hand, and hiding it would be the same defect one level down.
   */
   const expandable = (!nested && file.listsChildren) || listedChildren.length > 0
+  const hasActions = !!((onSelect && file.naddr) || (onStartTopic && file.address) || (onMove && !nested && file.address))
 
   return (
     <div data-file={file.ref}>
@@ -337,6 +339,13 @@ function FileRow({
         {unread?.[file.ref] && <UnreadDot />}
         <ConversationCount count={counts?.[file.ref]} />
         {/*
+          The row's controls are one strip: one Tab stop, arrows along it (the
+          package Toolbar, no box; UIG-14). Drawn only when there is a control,
+          so a row without one gains no gap.
+        */}
+        {hasActions && (
+        <Toolbar aria-label={`Actions for ${title}`} surface={false}>
+        {/*
           Peek's aspect of this file, on request — RFC 0.5 §10.2.
 
           **Beside the card, not inside it.** The card's one link opens the
@@ -351,7 +360,7 @@ function FileRow({
           button that cannot succeed.
         */}
         {onSelect && file.naddr && (
-          <IconButton
+          <ToolbarButton
             aria-label={[
               counts?.[file.ref]
                 ? `Conversation about ${title}, ${counts[file.ref]} messages`
@@ -365,7 +374,7 @@ function FileRow({
             onClick={() => onSelect(file)}
           >
             <IconMessage size={16} stroke={1.5} />
-          </IconButton>
+          </ToolbarButton>
         )}
         {/*
           Re-filing, which only a top-level row can offer.
@@ -387,22 +396,24 @@ function FileRow({
           declares nothing and needs to know nothing.
         */}
         {onStartTopic && file.address && (
-          <IconButton
+          <ToolbarButton
             aria-label={`Start a topic under ${title}`}
             tooltip="Start a topic here"
             onClick={() => onStartTopic(file)}
           >
             <IconMessagePlus size={16} stroke={1.5} />
-          </IconButton>
+          </ToolbarButton>
         )}
         {onMove && !nested && file.address && (
-          <IconButton
+          <ToolbarButton
             aria-label={`Move ${title} to another folder`}
             tooltip="Move"
             onClick={() => onMove(file)}
           >
             <IconFolderShare size={16} stroke={1.5} />
-          </IconButton>
+          </ToolbarButton>
+        )}
+        </Toolbar>
         )}
         </div>
       </div>

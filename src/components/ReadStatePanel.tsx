@@ -26,13 +26,17 @@ import { useReadStateSize, type ReadStateSize } from '@/nostr/useReadStateSync'
 /**
  * The Read state panel from the account menu: a switch to compare read state
  * with the relay, how full read state is, and what the last comparison found.
+ *
+ * Rendered always and opened with `open`, as the package's Popover page asks
+ * (UIG-14): mounted only while open, Base UI's exits go with it, and Escape
+ * and re-opening become intermittent. What it reads is read inside, so a
+ * closed panel reads nothing.
  */
-export function ReadStatePanel({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }) {
-  const { state, setReadState } = useDebug()
+export function ReadStatePanel({ anchor, open, onClose }: { anchor: HTMLElement | null; open: boolean; onClose: () => void }) {
   return (
     <Popover
       anchor={anchor}
-      open={anchor !== null}
+      open={open && anchor !== null}
       onOpenChange={(next) => { if (!next) onClose() }}
       side="bottom"
       align="right"
@@ -42,15 +46,23 @@ export function ReadStatePanel({ anchor, onClose }: { anchor: HTMLElement | null
       className="w-[300px] gap-2"
     >
       <SectionLabel>Read state</SectionLabel>
-      {/* The words are the Checkbox's own `label` (UIG-7): part of the target, and its name. */}
-      <Checkbox
-        checked={state.readState.dualRun}
-        onChange={(next) => setReadState('dualRun', next)}
-        label="Compare with the relay on every sync"
-      />
+      <DualRun />
       <Size />
       <Report />
     </Popover>
+  )
+}
+
+/** The switch for the dual run, wired to the debug settings. */
+function DualRun() {
+  const { state, setReadState } = useDebug()
+  return (
+    /* The words are the Checkbox's own `label` (UIG-7): part of the target, and its name. */
+    <Checkbox
+      checked={state.readState.dualRun}
+      onChange={(next) => setReadState('dualRun', next)}
+      label="Compare with the relay on every sync"
+    />
   )
 }
 

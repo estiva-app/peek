@@ -5,8 +5,7 @@ import { CollapsibleSection, ContainerHeader, ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { Divider } from '@/components/ui/Divider'
-import { SectionLabel } from '@/components/ui/SectionHeader'
-import { IconButton } from '@/components/ui/IconButton'
+import { SectionHeader, SectionLabel } from '@/components/ui/SectionHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
 import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
@@ -350,17 +349,19 @@ export function DeskPage() {
 
             {/* Open work */}
             <div className="flex flex-col">
-              <div className="flex h-[32px] items-center justify-between px-2">
-                <SectionLabel>Open work</SectionLabel>
-                <div className="flex items-center gap-1">
-                  <IconButton aria-label="Sort" tooltip="Sort by">
-                    <IconSortDescending size={16} stroke={1.5} />
-                  </IconButton>
-                  <IconButton aria-label="Add" tooltip="Add to Open work" onClick={() => setShowAddToOpenWork(true)}>
-                    <IconPlus size={16} stroke={1.5} />
-                  </IconButton>
-                </div>
-              </div>
+              {/* The package's section row (UIG-14, 10.2): its actions always
+                  shown, and the row itself still under the pointer — the
+                  buttons light up on their own (Katerina, 19 September). */}
+              <SectionHeader
+                title="Open work"
+                showActions="always"
+                hover="none"
+                actions={[
+                  // Sort does nothing yet, as before.
+                  { icon: <IconSortDescending size={16} stroke={1.5} />, tooltip: 'Sort by', onClick: () => {} },
+                  { icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add to Open work', onClick: () => setShowAddToOpenWork(true) },
+                ]}
+              />
               {openWorkItems.length === 0 ? (
                 <p className="px-2 py-1 text-caption leading-snug text-text-muted">
                   Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.

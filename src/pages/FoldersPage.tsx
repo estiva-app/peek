@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ContainerHeader, Form, ScrollArea } from '@estiva-app/ui'
+import { ContainerHeader, Form, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
@@ -18,7 +18,6 @@ import {
 import type { ForeignObject } from '@estiva-app/interop'
 import { Button } from '@/components/ui/Button'
 import { TextInput } from '@/components/ui/TextInput'
-import { IconButton } from '@/components/ui/IconButton'
 import { EditableText } from '@/components/ui/EditableText'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
@@ -110,7 +109,7 @@ export function FoldersPage() {
     const result = await createFolder(trimmed)
     setCreating(false)
     if (!result.ok) {
-      showToast({ label: result.reason, type: 'neutral' })
+      showToast({ label: result.reason, type: 'error' })
       return
     }
     setName('')
@@ -250,7 +249,7 @@ export function FoldersPage() {
                     const hasState = typeof state === 'object' && 'hasState' in state && state.hasState
                     const result = await renameFolder(id, trimmed, hasState)
                     if (!result.ok) {
-                      showToast({ label: result.reason, type: 'neutral' })
+                      showToast({ label: result.reason, type: 'error' })
                       return false
                     }
                     await reload()
@@ -261,14 +260,15 @@ export function FoldersPage() {
                 )
               }
               actions={
-                <>
-                  <IconButton
+                // One strip: one Tab stop, arrows along it (UIG-14).
+                <Toolbar aria-label="Folder actions" surface={false}>
+                  <ToolbarButton
                     tooltip="Start a topic"
                     aria-label="Start a topic in this folder"
                     onClick={() => setStartingTopic({})}
                   >
                     <IconMessagePlus size={16} stroke={1.5} />
-                  </IconButton>
+                  </ToolbarButton>
                   {topic ? (
                     /*
                       Not a delete. Deleting a topic is the topic's own action,
@@ -277,23 +277,23 @@ export function FoldersPage() {
                       with its relay half gone. The way to that action is the
                       only thing offered.
                     */
-                    <IconButton
+                    <ToolbarButton
                       tooltip="Open topic"
                       aria-label="Open this folder's topic"
                       onClick={() => navigate(topicPath(topic))}
                     >
                       <IconArrowUpRight size={16} stroke={1.5} />
-                    </IconButton>
+                    </ToolbarButton>
                   ) : (
-                    <IconButton
+                    <ToolbarButton
                       tooltip="Delete folder"
                       aria-label="Delete folder"
                       onClick={() => setConfirmingDelete(true)}
                     >
                       <IconTrash size={16} stroke={1.5} />
-                    </IconButton>
+                    </ToolbarButton>
                   )}
-                </>
+                </Toolbar>
               }
             />
             {/* The package's bar, not the browser's (D40). */}
@@ -349,7 +349,7 @@ export function FoldersPage() {
                   hasState,
                 })
                 if (!result.ok) {
-                  showToast({ label: result.reason, type: 'neutral' })
+                  showToast({ label: result.reason, type: 'error' })
                   return false
                 }
                 await reloadContents()
@@ -368,7 +368,7 @@ export function FoldersPage() {
                 if (!address || !id) return false
                 const result = await moveFile(address, id, to)
                 if (!result.ok) {
-                  showToast({ label: result.reason, type: 'neutral' })
+                  showToast({ label: result.reason, type: 'error' })
                   return false
                 }
                 // The file left this Folder, so this Folder's read is stale.
@@ -386,7 +386,7 @@ export function FoldersPage() {
               onConfirm={async () => {
                 const result = await deleteFolder(id)
                 if (!result.ok) {
-                  showToast({ label: result.reason, type: 'neutral' })
+                  showToast({ label: result.reason, type: 'error' })
                   return false
                 }
                 await reload()

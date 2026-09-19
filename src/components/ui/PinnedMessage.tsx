@@ -1,3 +1,4 @@
+import { Card } from '@estiva-app/ui'
 import { Avatar } from './Avatar'
 import { HighlightPill } from './HighlightPill'
 import { previewText } from '@/lib/textParsing'
@@ -25,7 +26,8 @@ export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, hi
   const flatBody = previewText(body).replace(/\n/g, ' ')
 
   return (
-    <div className="bg-bg-elevated border border-border-default rounded-lg overflow-hidden">
+    // The package's Card, elevated and clipped: the box this drew by hand (UIG-14).
+    <Card fill="elevated" clip>
       <div className="flex flex-col p-2">
         {/* Header */}
         <div className="flex items-center gap-2">
@@ -41,6 +43,6 @@ export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, hi
           </p>
         </div>
       </div>
-    </div>
+    </Card>
   )
 }

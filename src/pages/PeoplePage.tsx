@@ -1,9 +1,8 @@
 import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ContainerHeader, ScrollArea } from '@estiva-app/ui'
+import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
-import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
@@ -137,14 +136,15 @@ export function PeoplePage() {
           <ContainerHeader
             title="People"
             actions={
-              <>
-                <IconButton tooltip="Sort by" aria-label="Sort by">
-                <IconSortDescending size={16} stroke={1.5} />
-              </IconButton>
-                <IconButton tooltip="New conversation" aria-label="New conversation">
-                <IconEdit size={16} stroke={1.5} />
-              </IconButton>
-              </>
+              // One strip: one Tab stop, arrows along it (UIG-14).
+              <Toolbar aria-label="People actions" surface={false}>
+                <ToolbarButton tooltip="Sort by" aria-label="Sort by">
+                  <IconSortDescending size={16} stroke={1.5} />
+                </ToolbarButton>
+                <ToolbarButton tooltip="New conversation" aria-label="New conversation">
+                  <IconEdit size={16} stroke={1.5} />
+                </ToolbarButton>
+              </Toolbar>
             }
           />
           <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-1">

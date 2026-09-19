@@ -16,6 +16,7 @@ import {
 } from '@/api'
 import { useToast } from '@/lib/toast'
 import { addressFromRef } from '@/lib/objectUrl'
+import { followInApp } from '@/lib/followInApp'
 import { useMarkFileRead } from '@/lib/useMarkRead'
 import { KIND_TOPIC } from '@/nostr/foreign'
 
@@ -154,7 +155,7 @@ export function FilePage() {
     if (!file?.naddr) return false
     const result = await applyAction({ naddr: file.naddr, actionId: 'comment', value: body })
     if (!result.ok) {
-      showToast({ label: result.reason ?? 'The relay refused the comment.', type: 'neutral' })
+      showToast({ label: result.reason ?? 'The relay refused the comment.', type: 'error' })
       return false
     }
     // The relay has it; the pane re-reads rather than appending a copy, so what
@@ -167,7 +168,7 @@ export function FilePage() {
     if (!file?.address || !replyParent) return false
     const result = await replyToComment({ reference: file.address, parent: replyParent, body })
     if (!result.ok) {
-      showToast({ label: result.reason ?? 'The relay refused the reply.', type: 'neutral' })
+      showToast({ label: result.reason ?? 'The relay refused the reply.', type: 'error' })
       return false
     }
     await reloadThreads()
@@ -213,10 +214,12 @@ export function FilePage() {
             }
             actions={
               file?.folder ? (
+                // A link that looks like the button (UIG-14, 4.13): a new tab works.
                 <IconButton
                   tooltip="Open folder"
                   aria-label="Open folder"
-                  onClick={() => navigate(`/folders/${file.folder}`)}
+                  href={`/folders/${file.folder}`}
+                  onClick={(event) => followInApp(event, () => navigate(`/folders/${file.folder}`))}
                 >
                   <IconArrowUpRight size={16} stroke={1.5} />
                 </IconButton>

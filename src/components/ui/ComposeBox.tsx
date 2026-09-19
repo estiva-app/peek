@@ -405,15 +405,27 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                   hand-written copy of, class for class, with the package's
                   Signal `glow` (UIG-9) — a disabled send button does not glow.
                   Focus must not leave the editor, so the press is onMouseDown
-                  with the default prevented. */}
+                  with the default prevented.
+
+                  The keyboard's press is the click (UIG-14, C5): Enter or Space
+                  on the focused button fires a click with no pointer behind it
+                  (`detail` 0), and that sends. A mouse press has already sent
+                  on its way down, so its click (`detail` 1 or more) does
+                  nothing — a click never sends twice. */}
               <IconButton
                 variant="primary"
                 onMouseDown={(e) => {
                   e.preventDefault()
                   handleSend()
                 }}
+                onClick={(e) => {
+                  if (e.detail === 0) handleSend()
+                }}
                 disabled={!canSend}
                 aria-label="Send"
+                // Icon-only, so it says its word, and the key that does the same.
+                tooltip="Send"
+                tooltipShortcut="Enter"
                 glow={canSend}
               >
                 <IconArrowUp size={16} stroke={1.5} />

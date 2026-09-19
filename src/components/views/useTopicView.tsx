@@ -897,6 +897,11 @@ export function useTopicView({
             }
           : undefined
       }
+      openInDmHref={
+        promotedHuddleForThread && promotedHuddleForThread.originDmId !== undefined && threadConvId
+          ? `/people/${promotedHuddleForThread.originDmId}`
+          : undefined
+      }
       onClose={closeThread}
       onSendReply={handleSendReply}
       onDeleteReply={handleDeleteReply}

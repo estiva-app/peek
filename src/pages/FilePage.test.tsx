@@ -180,7 +180,8 @@ function shape() {
     comments: middle.querySelectorAll('[data-comment]').length,
     threadButtons: within(middle).queryAllByRole('button', { name: THREAD_CONTROL }).length,
     composer: within(middle).queryByRole('textbox') !== null,
-    openFolder: within(middle).queryByRole('button', { name: 'Open folder' }) !== null,
+    // A link since UIG-14 (4.13): the address is real, so a new tab works.
+    openFolder: within(middle).queryByRole('link', { name: 'Open folder' })?.getAttribute('href') === `/folders/${FOLDER}`,
   }
 }
 

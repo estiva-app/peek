@@ -11,7 +11,6 @@ import {
 import { AvatarGroup, Card, Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
-import { Avatar } from './ui/Avatar'
 import { Chip } from './ui/Chip'
 import { Divider } from './ui/Divider'
 import { UnreadDot } from './ui/UnreadDot'
@@ -34,40 +33,6 @@ interface HuddleCardProps {
   onReply?: () => void
   onDelete?: () => void
   className?: string
-}
-
-/**
- * A row of up to four overlapping member photos, showing who is in a huddle on
- * its card.
- */
-export function MemberAvatars({
-  members,
-  count,
-  borderClass,
-}: {
-  members?: string[]
-  count?: number
-  borderClass?: string
-}) {
-  // If names are provided, render up to 4 of them with photo lookup; otherwise
-  // fall back to count-based placeholders for legacy callers.
-  const slots = members ? members.slice(0, 4) : Array.from({ length: Math.min(count ?? 0, 4) }, () => undefined)
-  return (
-    <div className="flex items-center">
-      {slots.map((name, i) => (
-        <div
-          key={i}
-          className={cn(
-            'relative shrink-0 size-6 rounded-sm overflow-hidden border-2',
-            i > 0 && '-ml-2',
-            borderClass ?? 'border-bg-surface'
-          )}
-        >
-          <Avatar size={24} name={name} alt={name} />
-        </div>
-      ))}
-    </div>
-  )
 }
 
 /**
@@ -194,12 +159,9 @@ export function HuddleCard({
               <IconLock size={16} stroke={1.5} className="text-text-primary" />
             </div>
           ) : (
-            <MemberAvatars
-              members={huddle.members}
-              borderClass={
-                isSelected ? 'border-bg-selected' : isHovered ? 'border-bg-hover' : 'border-bg-surface'
-              }
-            />
+            /* The package's stack (UIG-14), as the members pill draws it: it
+               was a hand-made one here, four faces clipped inside a 2px border. */
+            <AvatarGroup members={huddle.members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} />
           )}
           {/* tw-merge silently drops `text-body-2-strong` when followed by `text-text-primary`
               inside a cn() call (both share the `text-` prefix). Explicit arbitrary values

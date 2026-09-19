@@ -1,6 +1,7 @@
 import { LiveWorkingSet } from '@/components/LiveWorkingSet'
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
-import { TopBar } from '@/components/TopBar'
+import { AppShell as Frame } from '@estiva-app/ui'
+import { useTopBarSlots } from '@/components/useTopBarSlots'
 import { NavRail } from '@/components/NavRail'
 import { CommandLauncher } from '@/components/CommandLauncher'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
@@ -15,6 +16,12 @@ interface AppShellProps {
 /**
  * The frame of every page: the top bar, the side navigation, and the list, main
  * and replies columns, with Cmd/Ctrl+K opening the command launcher.
+ *
+ * The frame is the package's floating `AppShell` (UIG-14, 9.3): the bar over
+ * the top edge, the rail on the ground, the rounded card, and the Signal dot
+ * grid on the ground, which the package's preset draws now. What is Peek's:
+ * the bar's slots, the rail's entries, the three columns inside the card, the
+ * launcher, and the collapsing.
  */
 export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
@@ -40,32 +47,40 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
+  const bar = useTopBarSlots({ onMenuToggle: () => setCollapsed((c) => !c), onSearchClick: () => openLauncher() })
+
   return (
-    /* eslint-disable-next-line better-tailwindcss/no-unknown-classes --
-       `signal-canvas` is a plain CSS hook, not a utility: index.css draws the
-       control-room dot grid on `.signal .signal-canvas` and nowhere else. */
-    <div className="h-screen overflow-hidden bg-bg-base relative signal-canvas">
-      <TopBar onMenuToggle={() => setCollapsed((c) => !c)} onSearchClick={() => openLauncher()} />
-
-      {/* Main area - offset below TopBar */}
-      <div className="flex h-full pt-[52px] pb-4 pr-4 transition-[padding] duration-300 ease-in-out"
-        style={{ paddingLeft: collapsed ? 16 : 0 }}
+    // The package's frame fills its parent (`h-full`); the page is the window's height.
+    <div className="h-screen">
+      <Frame
+        variant="floating"
+        menu={bar.menu}
+        search={bar.search}
+        identity={bar.identity}
+        nav={
+          /*
+            The rail collapses, which is Peek's (the package's page says so).
+            The column narrows from 64px to 16px and the rail fades: the 16px
+            is the gap the card keeps from the window's edge when the rail is
+            gone, which the row's left padding used to give it.
+          */
+          <div
+            className="shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+            style={{ width: collapsed ? 16 : 64 }}
+          >
+            <div className="transition-opacity duration-300 ease-in-out" style={{ opacity: collapsed ? 0 : 1 }}>
+              <NavRail />
+              {/* Renders nothing. Holds the live subscriptions for the channels the
+                  Desk and inbox are showing — see LiveWorkingSet. Here rather than
+                  on a page because the working set belongs to the person, and
+                  navigating between pages must not tear it down. */}
+              <LiveWorkingSet />
+            </div>
+          </div>
+        }
       >
-        {/* NavRail - collapses to 0 width */}
-        <div
-          className="shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-in-out"
-          style={{ width: collapsed ? 0 : 64, opacity: collapsed ? 0 : 1 }}
-        >
-          <NavRail />
-          {/* Renders nothing. Holds the live subscriptions for the channels the
-              Desk and inbox are showing — see LiveWorkingSet. Here rather than
-              on a page because the working set belongs to the person, and
-              navigating between pages must not tear it down. */}
-          <LiveWorkingSet />
-        </div>
-
-        {/* App card */}
-        <div className="flex flex-1 min-w-0 bg-bg-surface rounded-2xl overflow-hidden signal:border signal:border-border-subtle signal:shadow-highlight-inset">
+        {/* The card's columns, side by side. */}
+        <div className="flex min-h-0 min-w-0 flex-1">
           {/* Left panel - collapses to 0 width */}
           {leftPanel && (
             <div
@@ -88,7 +103,8 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
             </div>
           )}
         </div>
-      </div>
+      </Frame>
+      {bar.panel}
 
       {launcher && (
         <CommandLauncher

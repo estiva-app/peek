@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState } from 'react'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { ScrollArea } from '@estiva-app/ui'
+import { Chip, ScrollArea } from '@estiva-app/ui'
 import { RouterLink } from './RouterLink'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
@@ -16,6 +16,7 @@ import { partitionRepliesAroundPromotion } from '@/lib/threadPartition'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
 import { findNaddrs } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
+import { followInApp } from '@/lib/followInApp'
 import { useTopicPath } from '@/lib/useTopicPath'
 
 // ── Thread Panel ──
@@ -179,6 +180,12 @@ interface ThreadPanelProps {
   promotionDivider?: { topicId: string; topicTitle: string; topicResolved?: boolean; dateLabel: string; promotedAtMs?: number; onTopicClick?: () => void }
   /** When set, renders a header button that jumps to the matching DM thread. Used from the huddle side only. */
   onOpenInDm?: () => void
+  /**
+   * Where that button leads — the DM — so it is a real link (UIG-14, 4.13): a
+   * modified click opens the DM in a new tab, a plain one runs `onOpenInDm`,
+   * which also lands on the thread.
+   */
+  openInDmHref?: string
   onClose: () => void
   /**
    * Send the reply. Resolve `false` when nothing was written — CON-10.
@@ -266,6 +273,7 @@ export function ThreadPanel({
   resolutionEvents = [],
   onResolutionChange,
   onOpenInDm,
+  openInDmHref,
   onClose,
   onSendReply,
   onDeleteReply,
@@ -376,9 +384,9 @@ export function ThreadPanel({
           <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-small signal:font-medium signal:uppercase signal:tracking-widest signal:text-text-interactive">Replies</span>
         </div>
         <div className="flex items-center gap-2">
-          {isResolved && (
-            <span className="text-caption text-success-default signal:font-mono signal:text-small signal:font-semibold signal:uppercase signal:tracking-widest signal:bg-success-wash signal:border signal:border-success-outline signal:rounded-full signal:px-2 signal:py-[3px]">Resolved</span>
-          )}
+          {/* The package's Chip, success: it was a hand-made pill under Signal
+              and bare green words elsewhere (UIG-14). */}
+          {isResolved && <Chip type="success" label="Resolved" />}
           {(() => {
             // Show member pill for huddle threads OR DM threads. Both display
             // up to 3 avatars with the total count beside them.
@@ -395,7 +403,12 @@ export function ThreadPanel({
             return <MembersPill members={members} count={total} />
           })()}
           {onOpenInDm && (
-            <IconButton tooltip="Open original" aria-label="Open original" onClick={onOpenInDm}>
+            <IconButton
+              tooltip="Open original"
+              aria-label="Open original"
+              href={openInDmHref}
+              onClick={(event) => followInApp(event, onOpenInDm)}
+            >
               <IconExternalLink size={16} stroke={1.5} />
             </IconButton>
           )}

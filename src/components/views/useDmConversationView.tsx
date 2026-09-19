@@ -128,7 +128,8 @@ export function useDmConversationView({
       if (outcome.published) return
       showToast({
         label: `Edited here, but not published — ${outcome.reason}. Other apps still show the old text.`,
-        type: 'neutral',
+        // `warning`, as its twin in useTopicView: the app and the world disagree.
+        type: 'warning',
         leadingIcon: false,
         durationMs: 0,
       })
