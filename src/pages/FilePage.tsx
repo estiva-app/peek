@@ -4,17 +4,11 @@ import { ContainerHeader, ScrollArea } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
-import { CommentComposer } from '@/components/ui/CommentComposer'
 import { FolderTree } from '@/components/views/FolderTree'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
-import {
-  useFileThreads,
-  useForeignConversation,
-  useForeignObjects,
-  useWorkspaceDirectory,
-} from '@/api'
-import { useToast } from '@/lib/toast'
+import { useFileConversationView } from '@/components/views/useFileConversationView'
+import { useFileThreads, useForeignConversation, useWorkspaceDirectory } from '@/api'
 import { addressFromRef } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
 import { useMarkFileRead } from '@/lib/useMarkRead'
@@ -74,9 +68,7 @@ export function FilePage() {
   const fileAddress = topicIdentifier ? null : address
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { showToast } = useToast()
   const people = useWorkspaceDirectory()
-  const { replyToComment, applyAction } = useForeignObjects()
 
   /*
     The address is the reference. `resolveObject` takes an naddr, an nevent or a
@@ -109,10 +101,27 @@ export function FilePage() {
     setSearchParams(next, { replace: true })
   }
   const comments = file?.comments ?? []
-  const { state: threads, reload: reloadThreads } = useFileThreads(
-    file?.address,
-    comments.map((comment) => comment.id),
-  )
+  const rootIds = comments.map((comment) => comment.id)
+  /*
+    Which view, decided by the manifest and not by the kind (FOL-31). A file
+    the viewer may comment on — a bare file's built-in manifest declares
+    `comment`, and so does Ship's for a project and an issue — gets Peek's own
+    conversation view: the Topics cards, composer and thread pane over
+    `kind:1111`. A file the viewer may only look at keeps the read-only panes.
+    The two reads are exclusive, so a page pays for one of them and never both.
+  */
+  const canComment = !!file?.naddr && (file.actions ?? []).some((a) => a.id === 'comment')
+  const title = file?.slots.title?.value ?? 'File'
+  const peek = useFileConversationView({
+    container:
+      canComment && file?.address && file.folder ? { kind: 'file', address: file.address, h: file.folder } : null,
+    rootIds,
+    openThreadId,
+    onOpenThread: setOpenThread,
+    title,
+    onCommented: reloadConversation,
+  })
+  const { state: threads } = useFileThreads(canComment ? null : file?.address, rootIds)
   const replyCounts =
     threads === 'loading' || 'failed' in threads
       ? undefined
@@ -120,17 +129,6 @@ export function FilePage() {
           Object.entries(threads.replies).map(([id, replies]) => [id, replies.length]),
         )
   const openThread = openThreadId ? comments.find((c) => c.id === openThreadId) : undefined
-  /*
-    The parent a reply names (NIP-22 §6.4's lowercase trio). Its *kind* is the
-    part no projection reports — `comments` carries id, author, body and time —
-    so it comes from the thread read, which fetched the roots by id for exactly
-    this. Until it arrives the composer is absent rather than broken: a reply
-    built on a guessed kind would publish a wrong `k` for ever.
-  */
-  const replyParent =
-    openThreadId && threads !== 'loading' && !('failed' in threads)
-      ? threads.roots[openThreadId]
-      : undefined
 
   if (topicIdentifier) return <Navigate to={`/topic/${topicIdentifier}`} replace />
 
@@ -140,39 +138,6 @@ export function FilePage() {
         <EmptyState message="That link does not point at anything Peek can open." />
       </div>
     )
-  }
-
-  /*
-    The composer follows the manifest, not the kind. A bare file's built-in
-    manifest declares `comment`; so does Ship's for a project and an issue. The
-    control appears wherever the owner says a comment may be written, and
-    nowhere else.
-  */
-  const canComment = !!file?.naddr && (file.actions ?? []).some((a) => a.id === 'comment')
-  const title = file?.slots.title?.value ?? 'File'
-
-  async function comment(body: string): Promise<boolean> {
-    if (!file?.naddr) return false
-    const result = await applyAction({ naddr: file.naddr, actionId: 'comment', value: body })
-    if (!result.ok) {
-      showToast({ label: result.reason ?? 'The relay refused the comment.', type: 'error' })
-      return false
-    }
-    // The relay has it; the pane re-reads rather than appending a copy, so what
-    // is shown is what every other reader sees.
-    await reloadConversation()
-    return true
-  }
-
-  async function reply(body: string): Promise<boolean> {
-    if (!file?.address || !replyParent) return false
-    const result = await replyToComment({ reference: file.address, parent: replyParent, body })
-    if (!result.ok) {
-      showToast({ label: result.reason ?? 'The relay refused the reply.', type: 'error' })
-      return false
-    }
-    await reloadThreads()
-    return true
   }
 
   return (
@@ -226,25 +191,26 @@ export function FilePage() {
               ) : undefined
             }
           />
-          {/* The package's bar, not the browser's (D40). */}
-          <ScrollArea className="min-h-0 flex-1">
-            <ForeignConversationView
-              state={conversation}
-              people={people}
-              onOpenThread={setOpenThread}
-              openThreadId={openThreadId}
-              replyCounts={replyCounts}
-            />
-          </ScrollArea>
-          {canComment && (
-            // Keyed on the file: a draft belongs to the conversation it was
-            // typed in, and a new key is a new composer with an empty one.
-            <CommentComposer key={file.ref} placeholder={`Comment on ${title}`} onSend={comment} />
+          {canComment ? (
+            peek.conversation
+          ) : (
+            /* The package's bar, not the browser's (D40). */
+            <ScrollArea className="min-h-0 flex-1">
+              <ForeignConversationView
+                state={conversation}
+                people={people}
+                onOpenThread={setOpenThread}
+                openThreadId={openThreadId}
+                replyCounts={replyCounts}
+              />
+            </ScrollArea>
           )}
         </div>
       }
       threadPanel={
-        openThread ? (
+        canComment ? (
+          peek.threadPanel
+        ) : openThread ? (
           <div className="flex h-full flex-col">
             <ContainerHeader
               title="Thread"
@@ -261,13 +227,6 @@ export function FilePage() {
             <ScrollArea className="min-h-0 flex-1">
               <FileThreadView root={openThread} state={threads} people={people} />
             </ScrollArea>
-            {canComment && replyParent && (
-              <CommentComposer
-                key={openThread.id}
-                placeholder="Reply in thread"
-                onSend={reply}
-              />
-            )}
           </div>
         ) : undefined
       }

@@ -125,6 +125,12 @@ export interface ConversationData {
   /** Numeric send time (ms). Convex rows + runtime sends carry it; static
    *  mocks don't — consumers must treat it as a sort hint, not a given. */
   createdAtMs?: number
+  /**
+   * When the body was last edited, ms — the reader is told (RFC 0.4 §7.2.1).
+   * Absent for a message never edited. Set from the newest `kind:40003` on a
+   * relay-read conversation (FOL-31); Peek's own rows do not carry it yet.
+   */
+  editedAt?: number
   /** Distinct reply authors in first-reply order — the reply row's facepile
    *  (signal theme). Server rows carry it; mock rows derive it from REPLIES. */
   replyAuthors?: { name: string; avatarSrc?: string }[]

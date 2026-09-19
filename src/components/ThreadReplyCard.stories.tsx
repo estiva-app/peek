@@ -41,6 +41,14 @@ export const Highlight: Story = {
 }
 
 /** New (unread) reply — soft blue border + blue dot by the author's name. */
+/**
+ * **Edited.** "(edited)" beside the time, with when in its tooltip — the
+ * reader's half of the newest-wins edit rule (CON-8, RFC 0.4 §7.2.1).
+ */
+export const Edited: Story = {
+  args: { editedAt: Date.now() - 5 * 60_000 },
+}
+
 export const New: Story = {
   args: { isNew: true },
 }

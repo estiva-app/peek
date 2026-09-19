@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
 import { pastedImages } from '@/lib/fileAttachments'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
+import { EditedMarker } from './ui/EditedMarker'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -103,6 +104,8 @@ interface ThreadReplyCardProps {
   authorAvatarSrc?: string
   timestamp: string
   body: string
+  /** When the body was last edited, ms — draws the marker (CON-8). */
+  editedAt?: number
   reactions?: ReactionData[]
   highlightType?: HighlightType
   /** Figma frame ids attached to the reply (rendered as preview cards). */
@@ -147,6 +150,7 @@ export function ThreadReplyCard({
   authorAvatarSrc,
   timestamp,
   body,
+  editedAt,
   reactions,
   highlightType,
   files,
@@ -507,6 +511,7 @@ export function ThreadReplyCard({
                 ) : (
                   <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
                 )}
+                <EditedMarker editedAt={editedAt} />
                 {highlightState && <HighlightPill type={highlightState} />}
               </div>
               {isNew && !isUrgent && <UnreadDot />}

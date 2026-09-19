@@ -952,7 +952,7 @@ export async function applyActionAsViewer(
    * because NIP-22 does.
    */
   transform?: (event: UnsignedActionEvent) => UnsignedActionEvent,
-): Promise<ActResult & { created?: string }> {
+): Promise<ActResult & { created?: string; id?: string }> {
   let pointer
   try {
     // Same tolerance as reading: a widget rendered from an `a` tag address must
@@ -1080,7 +1080,9 @@ export async function applyActionAsViewer(
   */
   const identifier = built.tags.find((t) => t[0] === 'd')?.[1]
   const created = identifier ? `${built.kind}:${token.pubkey}:${identifier}` : undefined
-  return { ok: true, ...(created ? { created } : {}) }
+  // The event's own id as well: a comment that carries a resolution is named
+  // by the `kind:9101` that follows it (FOL-31), and nothing else reports it.
+  return { ok: true, id: signed.id, ...(created ? { created } : {}) }
 }
 
 /**

@@ -34,6 +34,7 @@ import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
 import { HighlightPill } from './ui/HighlightPill'
+import { EditedMarker } from './ui/EditedMarker'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
@@ -48,6 +49,8 @@ interface ConversationCardProps {
   authorAvatarSrc?: string
   timestamp: string
   body: string
+  /** When the body was last edited, ms — draws the marker (CON-8). */
+  editedAt?: number
   reactions?: ReactionData[]
   replyCount?: number
   /** Reply-author names for the signal theme's facepile reply row (ignored elsewhere). */
@@ -101,6 +104,7 @@ export function ConversationCard({
   authorAvatarSrc,
   timestamp,
   body,
+  editedAt,
   reactions,
   replyCount,
   replyAuthors,
@@ -649,6 +653,7 @@ export function ConversationCard({
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
               <span className="text-body-2-strong text-text-primary whitespace-nowrap">{authorName}</span>
               <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
+              <EditedMarker editedAt={editedAt} />
               {highlightState && <HighlightPill type={highlightState} />}
             </div>
             {hasNewMessage && !isUrgent && <UnreadDot />}
