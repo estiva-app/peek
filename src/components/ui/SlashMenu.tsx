@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useState } from 'react'
-import { EnterHint, MenuItem, MenuSection, Divider } from '@estiva-app/ui'
+import { EnterHint, MenuItem, MenuSection, MenuSeparator } from '@estiva-app/ui'
 import { HighlightSwatch } from './HighlightPill'
 import { FORMATS, type FormatId } from '@/lib/composerFormats'
 import type { HighlightType } from '@/api'
@@ -132,7 +132,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col">
       {formats.length > 0 && (
         <div role="group" aria-label="Format">
         <MenuSection label="Format">
@@ -140,7 +140,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
         </MenuSection>
         </div>
       )}
-      {formats.length > 0 && shortcuts.length > 0 && <Divider className="mx-0" />}
+      {formats.length > 0 && shortcuts.length > 0 && <MenuSeparator />}
       {shortcuts.length > 0 && (
         <div role="group" aria-label="Shortcuts">
         <MenuSection label="Shortcuts">
@@ -148,7 +148,7 @@ export const SlashMenu = forwardRef<SlashMenuRef, {
         </MenuSection>
         </div>
       )}
-      {shortcuts.length > 0 && highlights.length > 0 && <Divider className="mx-0" />}
+      {shortcuts.length > 0 && highlights.length > 0 && <MenuSeparator />}
       {highlights.length > 0 && (
         <div role="group" aria-label="Highlights">
         <MenuSection label="Highlights">

@@ -207,7 +207,10 @@ describe('FoldersPage manages a topic’s Folder from the topic', () => {
     expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
     // The title is drawn, and drawn once: the list row and the header share it.
     expect(screen.getAllByText('For testing').length).toBeGreaterThan(0)
-    await userEvent.click(screen.getByRole('button', { name: "Open this folder's topic" }))
+    // A real link (UIG-14, F3): the address is on it, and a plain click routes in place.
+    const open = screen.getByRole('link', { name: "Open this folder's topic" })
+    expect(open.getAttribute('href')).toBe(`/topic/for-testing-${TOPIC_CHANNEL}`)
+    await userEvent.click(open)
     expect(screen.getByTestId('url').textContent).toBe(`/topic/for-testing-${TOPIC_CHANNEL}`)
   })
 
@@ -215,7 +218,7 @@ describe('FoldersPage manages a topic’s Folder from the topic', () => {
     mount(`/folders/${FOLDER}`)
     expect(screen.getByRole('button', { name: 'Delete folder' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: "Open this folder's topic" })).toBeNull()
+    expect(screen.queryByRole('link', { name: "Open this folder's topic" })).toBeNull()
   })
 })
 

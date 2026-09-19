@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ContainerHeader, Form, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { ContainerHeader, Form, ListColumn, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
+import { useRailClosed } from '@/layouts/railClosed'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderContentsView, peersOf } from '@/components/views/FolderContentsView'
 import { FolderTreeView } from '@/components/views/FolderTree'
@@ -24,6 +25,7 @@ import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { useToast } from '@/lib/toast'
 import { filePath, topicPath } from '@/lib/objectUrl'
+import { followInApp } from '@/lib/followInApp'
 import { useFolderPath } from '@/lib/useFolderPath'
 
 /**
@@ -39,6 +41,7 @@ import { useFolderPath } from '@/lib/useFolderPath'
  * whichever apps own them.
  */
 export function FoldersPage() {
+  const railClosed = useRailClosed()
   const { folders, signedOut, reload } = useFolders()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
@@ -134,26 +137,30 @@ export function FoldersPage() {
     <>
     <AppShell
       leftPanel={
-        <div className="flex h-full flex-col">
-          <ContainerHeader title="Folders" />
-          {!signedOut && (
-            // The package Form (UIG-7): Enter or Create makes the folder; the row locks while it does.
-            <Form busy={creating} onSubmit={create} className="flex items-center gap-2 px-3 pt-3 pb-1">
-              {/* min-w-0 + shrink-0: the column is 290px and the field has no
-                  width of its own, so "Create" was pushed past the right edge
-                  and clipped (Katerina, 2026-09-11). */}
-              <TextInput
-                className="min-w-0 flex-1"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="New folder name"
-                aria-label="New folder name"
-              />
-              <Button className="shrink-0" type="submit" disabled={!name.trim() || creating}>
-                {creating ? 'Creating…' : 'Create'}
-              </Button>
-            </Form>
-          )}
+        <ListColumn
+          title="Folders"
+          collapsed={railClosed}
+          above={
+            !signedOut && (
+              // The package Form (UIG-7): Enter or Create makes the folder; the row locks while it does.
+              <Form busy={creating} onSubmit={create} className="flex items-center gap-2 px-3 pt-3 pb-1">
+                {/* min-w-0 + shrink-0: the column is 290px and the field has no
+                    width of its own, so "Create" was pushed past the right edge
+                    and clipped (Katerina, 2026-09-11). */}
+                <TextInput
+                  className="min-w-0 flex-1"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="New folder name"
+                  aria-label="New folder name"
+                />
+                <Button className="shrink-0" type="submit" disabled={!name.trim() || creating}>
+                  {creating ? 'Creating…' : 'Create'}
+                </Button>
+              </Form>
+            )
+          }
+        >
           {/*
             Three states, not two. "Not signed in", "still loading" and "there
             are genuinely none" are different sentences, and the first version
@@ -162,41 +169,36 @@ export function FoldersPage() {
           */}
           {/*
             The list scrolls, and it is the package's bar (D40). It had none at
-            all: `AppShell`'s list panel is `overflow-hidden`, so a workspace of
-            eighty-one Folders simply had the ones past the fold clipped away,
-            with nothing to scroll (Katerina, 2026-09-11). Step 6 could not have
-            caught it — that sweep converted regions that already had a native
-            bar, and a column that should scroll and never did has none to find.
-
-            `contentClassName` is the same one every other list column in Peek
-            passes (`PeoplePage`, `TopicsPage`, `DeskPage`), which is also what
-            gives the rows their 12px inset: they were flush against the panel
-            edge while the header above them sat at 20px.
+            all: `AppShell`'s list panel was `overflow-hidden`, so a workspace
+            of eighty-one Folders simply had the ones past the fold clipped
+            away, with nothing to scroll (Katerina, 2026-09-11). Step 6 could
+            not have caught it — that sweep converted regions that already had
+            a native bar, and a column that should scroll and never did has
+            none to find. The package's `ListColumn` scrolls its rows itself
+            now, with the insets every list column in Peek shares (UIG-14, N9).
 
             The list column of a two-column page, so its empties are sections
             (D51): the line alone, left, no icon. Loading is a skeleton, not a
             sentence (§4.7).
           */}
-          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
-            {/*
-              The same tree the Topics column draws (FOL-21), so the two rail
-              items navigate the same way: a Folder is a fold over its first
-              level, the one open on the right starts open, and a row opens
-              its file in three panes. The body rather than `FolderTree`
-              because this page already holds the Folder list — it re-reads
-              it after a create, a rename and a delete — and the create form
-              sits between the header and the list.
-            */}
-            <FolderTreeView
-              folders={topLevel}
-              signedOut={signedOut}
-              unread={teamUnread}
-              currentFolder={id}
-              onSelect={(file) => file.address && navigate(filePath(file.address))}
-              onOpenFolder={(folder) => navigate(folderPath(folder))}
-            />
-          </ScrollArea>
-        </div>
+          {/*
+            The same tree the Topics column draws (FOL-21), so the two rail
+            items navigate the same way: a Folder is a fold over its first
+            level, the one open on the right starts open, and a row opens its
+            file in three panes. The body rather than `FolderTree` because this
+            page already holds the Folder list — it re-reads it after a
+            create, a rename and a delete — and the create form sits between
+            the header and the list.
+          */}
+          <FolderTreeView
+            folders={topLevel}
+            signedOut={signedOut}
+            unread={teamUnread}
+            currentFolder={id}
+            onSelect={(file) => file.address && navigate(filePath(file.address))}
+            onOpenFolder={(folder) => navigate(folderPath(folder))}
+          />
+        </ListColumn>
       }
       rightPanel={
         id ? (
@@ -276,14 +278,18 @@ export function FoldersPage() {
                       delete from here would leave the topic standing in Peek
                       with its relay half gone. The way to that action is the
                       only thing offered.
+
+                      A link that looks like the strip's buttons (UIG-14, F3):
+                      a new tab works, and the arrow keys still reach it.
                     */
-                    <ToolbarButton
+                    <ToolbarLink
                       tooltip="Open topic"
                       aria-label="Open this folder's topic"
-                      onClick={() => navigate(topicPath(topic))}
+                      href={topicPath(topic)}
+                      onClick={(event) => followInApp(event, () => navigate(topicPath(topic)))}
                     >
                       <IconArrowUpRight size={16} stroke={1.5} />
-                    </ToolbarButton>
+                    </ToolbarLink>
                   ) : (
                     <ToolbarButton
                       tooltip="Delete folder"

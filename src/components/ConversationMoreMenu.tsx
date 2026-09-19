@@ -8,9 +8,8 @@ import {
   IconDotsVertical,
 } from '@tabler/icons-react'
 import type { ReactElement } from 'react'
-import { Menu, MenuItem, MenuSection, MenuSub } from '@estiva-app/ui'
+import { Menu, MenuItem, MenuSection, MenuSeparator, MenuSub } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
-import { Divider } from './ui/Divider'
 import { HighlightSwatch } from './ui/HighlightPill'
 import { cn } from '@/lib/utils'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
@@ -146,7 +145,7 @@ export function ConversationMoreMenu({
             ))}
             {currentHighlight && (
               <>
-                <Divider className="mx-1 my-1" />
+                <MenuSeparator />
                 <MenuItem
                   leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
                   label="Remove"
@@ -158,7 +157,7 @@ export function ConversationMoreMenu({
         )}
       </MenuSection>
 
-      <Divider className="mx-0" />
+      <MenuSeparator />
 
       <div className="flex flex-col">
         {/*
@@ -190,7 +189,7 @@ export function ConversationMoreMenu({
         gate against the old mutation would have handed everybody the ability to
         drop anybody's message from Peek while the relay kept it.
       */}
-      <Divider className="mx-0" />
+      <MenuSeparator />
       <MenuItem label="Delete" destructive onClick={onDelete} />
     </Menu>
   )

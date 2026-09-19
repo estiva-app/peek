@@ -12,16 +12,17 @@ import { ToastProvider } from './lib/toast'
 /* One TooltipProvider for the whole app (PEEK-ADOPTION.md §2.5): neighbouring
    tooltips share one 300ms wait, so the second and third open at once while
    the group is warm, instead of each button waiting on its own. */
-import { TooltipProvider } from '@estiva-app/ui'
-import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { ErrorBoundary, TooltipProvider } from '@estiva-app/ui'
 import './index.css'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
     {/* Root boundary: the last line of defense — providers or a whole page
-        crashing degrades to the fallback instead of a white screen. */}
-    <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col bg-bg-base">
+        crashing degrades to the fallback instead of a white screen. The
+        fallback's colour is the page's own (`body`, --bg-base in index.css):
+        the package's part takes only its room from here. */}
+    <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col">
       <ThemeProvider>
         <DebugProvider>
           <Routes>

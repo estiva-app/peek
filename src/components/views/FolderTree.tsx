@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
-import { CollapsibleSection, ContainerHeader, ScrollArea } from '@estiva-app/ui'
+import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { topLevelFolders, useFolderContents, useFolders, useTeamUnread } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -9,6 +9,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 import { FileTreeView } from '@/components/views/FileTreeView'
+import { useRailClosed } from '@/layouts/railClosed'
 import { filePath } from '@/lib/objectUrl'
 import { useRememberedOpen } from '@/lib/rememberedOpen'
 import { useFolderPath } from '@/lib/useFolderPath'
@@ -90,6 +91,7 @@ export function FolderTree({
   /** Offered in the header when the page can start a topic. */
   onNewTopic?: () => void
 }) {
+  const railClosed = useRailClosed()
   const navigate = useNavigate()
   const { folders, signedOut } = useFolders()
   /*
@@ -106,38 +108,37 @@ export function FolderTree({
   const folderPath = useFolderPath()
 
   return (
-    <div className="flex h-full flex-col">
-      <ContainerHeader
-        title="Folders"
-        actions={
-          onNewTopic && (
-            <IconButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
-              <IconEdit size={16} stroke={1.5} />
-            </IconButton>
-          )
-        }
-      />
+    <ListColumn
+      title="Folders"
+      collapsed={railClosed}
+      actions={
+        onNewTopic && (
+          <IconButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
+            <IconEdit size={16} stroke={1.5} />
+          </IconButton>
+        )
+      }
+    >
       {/*
-        The list scrolls, and it is the package's bar (D40). Same column and
-        same insets as every other list column in Peek. The list column of a
-        three-column page, so its empties are sections (D51): the line alone,
-        left, no icon. Loading is a skeleton (§4.7).
+        The list scrolls, and it is the package's bar (D40): the package's
+        `ListColumn`, the same column and insets as every other list column in
+        Peek (UIG-14, N9). The list column of a three-column page, so its
+        empties are sections (D51): the line alone, left, no icon. Loading is a
+        skeleton (§4.7).
       */}
-      <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
-        <FolderTreeView
-          folders={topLevel}
-          signedOut={signedOut}
-          unread={unread}
-          currentFolder={currentFolder}
-          selectedRef={selectedRef}
-          selectedParent={selectedParent}
-          onSelect={(file) => {
-            if (file.address) navigate(filePath(file.address))
-          }}
-          onOpenFolder={(id) => navigate(folderPath(id))}
-        />
-      </ScrollArea>
-    </div>
+      <FolderTreeView
+        folders={topLevel}
+        signedOut={signedOut}
+        unread={unread}
+        currentFolder={currentFolder}
+        selectedRef={selectedRef}
+        selectedParent={selectedParent}
+        onSelect={(file) => {
+          if (file.address) navigate(filePath(file.address))
+        }}
+        onOpenFolder={(id) => navigate(folderPath(id))}
+      />
+    </ListColumn>
   )
 }
 

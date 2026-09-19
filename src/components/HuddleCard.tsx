@@ -8,11 +8,10 @@ import {
   IconChecks,
   IconArrowNarrowRight,
 } from '@tabler/icons-react'
-import { AvatarGroup, Card, Menu, MenuItem, ToolbarButton } from '@estiva-app/ui'
+import { AvatarGroup, Card, Menu, MenuItem, MenuSeparator, ToolbarButton } from '@estiva-app/ui'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
 import { Chip } from './ui/Chip'
-import { Divider } from './ui/Divider'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
@@ -321,7 +320,7 @@ export function HuddleCard({
                     control, COMPONENTS-PEEK F3, not something to change while
                     porting. */}
                 <MenuItem label="View details" />
-                <Divider className="mx-0" />
+                <MenuSeparator />
                 <MenuItem label="Delete" destructive onClick={handleDelete} />
               </Menu>
               }

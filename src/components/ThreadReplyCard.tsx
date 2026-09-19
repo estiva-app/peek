@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
-import { Card, Link, Menu, MenuItem, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
@@ -16,7 +16,6 @@ import { Avatar } from './ui/Avatar'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
 import { Reaction as ReactionPill } from './ui/Reaction'
-import { Divider } from './ui/Divider'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { useIsTopicResolved, hasConvex } from '@/api'
@@ -80,7 +79,7 @@ function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, currentHighlig
             ))}
             {currentHighlight && (
               <>
-                <Divider className="mx-1 my-1" />
+                <MenuSeparator />
                 <MenuItem
                   leading={<IconX size={16} stroke={1.5} className="text-text-secondary" />}
                   label="Remove"
@@ -91,7 +90,7 @@ function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, currentHighlig
           </MenuSub>
         )}
       </div>
-      <Divider className="mx-0" />
+      <MenuSeparator />
       <MenuItem label="Delete" destructive onClick={onDelete} />
     </Menu>
   )

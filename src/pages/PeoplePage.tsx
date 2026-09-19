@@ -1,8 +1,9 @@
 import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
+import { useRailClosed } from '@/layouts/railClosed'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
@@ -21,6 +22,7 @@ import type { StartTopicResult } from '@/components/CreateTopicDialog'
  * and the direct message with the chosen person beside them.
  */
 export function PeoplePage() {
+  const railClosed = useRailClosed()
   const { dmHasUnread, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
   const pathForTopic = useTopicPath()
@@ -132,55 +134,53 @@ export function PeoplePage() {
   return (
     <AppShell
       leftPanel={
-        <div className="flex flex-col h-full">
-          <ContainerHeader
-            title="People"
-            actions={
-              // One strip: one Tab stop, arrows along it (UIG-14).
-              <Toolbar aria-label="People actions" surface={false}>
-                <ToolbarButton tooltip="Sort by" aria-label="Sort by">
-                  <IconSortDescending size={16} stroke={1.5} />
-                </ToolbarButton>
-                <ToolbarButton tooltip="New conversation" aria-label="New conversation">
-                  <IconEdit size={16} stroke={1.5} />
-                </ToolbarButton>
-              </Toolbar>
-            }
-          />
-          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-1">
-            {DMS === undefined || starredLoading ? (
-              <SkeletonSidebarList rows={8} />
-            ) : (
-              <>
-                <StarredSection
-                  items={starredDmItems}
-                  selectedId={selectedId}
-                  onSelect={handleSelect}
-                />
+        <ListColumn
+          title="People"
+          collapsed={railClosed}
+          actions={
+            // One strip: one Tab stop, arrows along it (UIG-14).
+            <Toolbar aria-label="People actions" surface={false}>
+              <ToolbarButton tooltip="Sort by" aria-label="Sort by">
+                <IconSortDescending size={16} stroke={1.5} />
+              </ToolbarButton>
+              <ToolbarButton tooltip="New conversation" aria-label="New conversation">
+                <IconEdit size={16} stroke={1.5} />
+              </ToolbarButton>
+            </Toolbar>
+          }
+        >
+          {DMS === undefined || starredLoading ? (
+            <SkeletonSidebarList rows={8} />
+          ) : (
+            <>
+              <StarredSection
+                items={starredDmItems}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+              />
 
-                {/* Divider only when there are people below it — no dangling
-                    line when the workspace has no one else yet (issue #2). */}
-                {visibleDms.length > 0 && <Divider className="my-2" />}
+              {/* Divider only when there are people below it — no dangling
+                  line when the workspace has no one else yet (issue #2). */}
+              {visibleDms.length > 0 && <Divider className="my-2" />}
 
-                {visibleDms.map((dm) => {
-                  const urgent = showUnreads && dmIsUrgent(dm.id)
-                  return (
-                    <PersonRow
-                      key={dm.id}
-                      name={dm.name}
-                      type="DM"
-                      isUnread={(showUnreads && dmHasUnread(dm.id)) || urgent}
-                      isUrgent={urgent}
-                      isSelected={selectedId === dm.id}
-                      onClick={() => handleSelect(dm.id)}
-                      onHideDm={canHideDm(dm.id) ? () => hideDm(dm.id) : undefined}
-                    />
-                  )
-                })}
-              </>
-            )}
-          </ScrollArea>
-        </div>
+              {visibleDms.map((dm) => {
+                const urgent = showUnreads && dmIsUrgent(dm.id)
+                return (
+                  <PersonRow
+                    key={dm.id}
+                    name={dm.name}
+                    type="DM"
+                    isUnread={(showUnreads && dmHasUnread(dm.id)) || urgent}
+                    isUrgent={urgent}
+                    isSelected={selectedId === dm.id}
+                    onClick={() => handleSelect(dm.id)}
+                    onHideDm={canHideDm(dm.id) ? () => hideDm(dm.id) : undefined}
+                  />
+                )
+              })}
+            </>
+          )}
+        </ListColumn>
       }
       rightPanel={DMS === undefined ? <div className="flex-1 h-full" /> : dmView.rightPanel}
       threadPanel={dmView.threadPanel}

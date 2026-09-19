@@ -7,7 +7,8 @@ import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTop
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
-import { CollapsibleSection, ContainerHeader, ScrollArea, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { CollapsibleSection, ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { useRailClosed } from '@/layouts/railClosed'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { TopicProjectPanel } from '@/components/TopicProjectPanel'
@@ -26,6 +27,7 @@ import { rememberRecent } from '@/lib/recents'
  * chosen topic beside them with its replies or Files panel.
  */
 export function TopicsPage() {
+  const railClosed = useRailClosed()
   const { topicHasUnread, topicIsUrgent } = useUnread()
   const navigate = useNavigate()
   const location = useLocation()
@@ -249,27 +251,25 @@ export function TopicsPage() {
           list stays until then, and the tree is where a Folder is navigated:
           the Folders rail item (`FoldersPage`, peek#214) and the file page.
         */
-        <div className="flex flex-col h-full">
-          <ContainerHeader
-            title="All topics"
-            chevron
-            actions={
-              // One strip: one Tab stop, arrows along it (UIG-14).
-              <Toolbar aria-label="Topic list actions" surface={false}>
-                <ToolbarButton tooltip="Sort by" aria-label="Sort by">
-                  <IconSortDescending size={16} stroke={1.5} />
-                </ToolbarButton>
-                <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={() => setCreateOpen(true)}>
-                  <IconEdit size={16} stroke={1.5} />
-                </ToolbarButton>
-              </Toolbar>
-            }
-          />
-          <ScrollArea className="flex-1" contentClassName="pt-4 pb-3 px-3 flex flex-col gap-0.5">
-            {TOPICS === undefined && <SkeletonSidebarList rows={9} />}
-            {renderTopicList()}
-          </ScrollArea>
-        </div>
+        <ListColumn
+          title="All topics"
+          chevron
+          collapsed={railClosed}
+          actions={
+            // One strip: one Tab stop, arrows along it (UIG-14).
+            <Toolbar aria-label="Topic list actions" surface={false}>
+              <ToolbarButton tooltip="Sort by" aria-label="Sort by">
+                <IconSortDescending size={16} stroke={1.5} />
+              </ToolbarButton>
+              <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={() => setCreateOpen(true)}>
+                <IconEdit size={16} stroke={1.5} />
+              </ToolbarButton>
+            </Toolbar>
+          }
+        >
+          {TOPICS === undefined && <SkeletonSidebarList rows={9} />}
+          {renderTopicList()}
+        </ListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={

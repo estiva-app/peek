@@ -1,13 +1,14 @@
 import { LiveWorkingSet } from '@/components/LiveWorkingSet'
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
-import { AppShell as Frame } from '@estiva-app/ui'
+import { AppShell as Frame, ErrorBoundary } from '@estiva-app/ui'
 import { useTopBarSlots } from '@/components/useTopBarSlots'
 import { NavRail } from '@/components/NavRail'
 import { CommandLauncher } from '@/components/CommandLauncher'
-import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { captureLauncherContext, type LauncherContext } from '@/lib/launcherContext'
+import { RailClosed } from './railClosed'
 
 interface AppShellProps {
+  /** The page's list column: the package's `ListColumn`, which closes with the rail (`useRailClosed`). */
   leftPanel?: ReactNode
   rightPanel?: ReactNode
   threadPanel?: ReactNode
@@ -22,6 +23,9 @@ interface AppShellProps {
  * grid on the ground, which the package's preset draws now. What is Peek's:
  * the bar's slots, the rail's entries, the three columns inside the card, the
  * launcher, and the collapsing.
+ *
+ * The list column is the page's own: the package's `ListColumn` (UIG-14, N9),
+ * with its own error boundary. The frame only tells it when the rail is closed.
  */
 export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
@@ -81,15 +85,13 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
       >
         {/* The card's columns, side by side. */}
         <div className="flex min-h-0 min-w-0 flex-1">
-          {/* Left panel - collapses to 0 width */}
-          {leftPanel && (
-            <div
-              className="shrink-0 border-r border-border-subtle flex flex-col overflow-hidden transition-[width,opacity] duration-300 ease-in-out"
-              style={{ width: collapsed ? 0 : 290, opacity: collapsed ? 0 : 1, borderRightWidth: collapsed ? 0 : 1 }}
-            >
-              <ErrorBoundary label="list panel">{leftPanel}</ErrorBoundary>
-            </div>
-          )}
+          {/*
+            The page's list column draws itself: the package's `ListColumn`
+            with its 290px, its line, its own error boundary, and the
+            narrowing and fade that follow the menu button. Only whether the
+            rail is closed comes from here.
+          */}
+          <RailClosed value={collapsed}>{leftPanel}</RailClosed>
 
           {/* Right panel (conversation area) */}
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
