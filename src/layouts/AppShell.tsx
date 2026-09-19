@@ -1,10 +1,9 @@
 import { LiveWorkingSet } from '@/components/LiveWorkingSet'
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
-import { AppShell as Frame } from '@estiva-app/ui'
+import { AppShell as Frame, ErrorBoundary } from '@estiva-app/ui'
 import { useTopBarSlots } from '@/components/useTopBarSlots'
 import { NavRail } from '@/components/NavRail'
 import { CommandLauncher } from '@/components/CommandLauncher'
-import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { captureLauncherContext, type LauncherContext } from '@/lib/launcherContext'
 import { RailClosed } from './railClosed'
 
