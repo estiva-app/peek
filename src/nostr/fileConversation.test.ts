@@ -10,7 +10,7 @@
  * wrong tag publishes for ever.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { encodeNpub } from '@estiva-app/protocol'
+import { encodeNaddr, encodeNpub } from '@estiva-app/protocol'
 
 const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
@@ -25,7 +25,9 @@ import {
   deleteEventAsViewer,
   editCommentAsViewer,
   fileConversationAsViewer,
+  isCommentOn,
   mentionTagsFor,
+  referenceTagsFor,
   reactAsViewer,
   resolveAsViewer,
   type ConversationContainer,
@@ -38,6 +40,11 @@ const BARE_FILE = 30840
 const COMMENT = 1111
 const ADDRESS = `${BARE_FILE}:${CATH}:estiva-suits-updates`
 const container: ConversationContainer = { kind: 'file', address: ADDRESS, h: FOLDER }
+/** Another bare file, in another Folder — what a comment here can name (CON-11). */
+const OTHER_FOLDER = '7a1c2d3e-4f05-4bebd-5b1b-6e4f479d3e6b'
+const OTHER = `${BARE_FILE}:${CATH}:roadmap`
+const OTHER_NADDR = `nostr:${encodeNaddr({ kind: BARE_FILE, pubkey: CATH, identifier: 'roadmap', relays: [] })}`
+const OWN_NADDR = `nostr:${encodeNaddr({ kind: BARE_FILE, pubkey: CATH, identifier: 'estiva-suits-updates', relays: [] })}`
 const token = { accessToken: 't', pubkey: MIKY } as never
 
 interface TestEvent {
@@ -96,6 +103,12 @@ const withPicture = event({
     ['a', `30851:${CATH}:some-issue`],
   ],
 })
+/** A root on the other file whose body names this one: this file's `#a` returns it, and it is not a comment here. */
+const mentionFromElsewhere = event({
+  kind: COMMENT,
+  content: `Compare with ${OWN_NADDR}`,
+  tags: [['A', OTHER], ['K', String(BARE_FILE)], ['P', CATH], ['a', OTHER], ['k', String(BARE_FILE)], ['p', CATH], ['h', OTHER_FOLDER], ['a', ADDRESS]],
+})
 const reply = event({
   kind: COMMENT,
   content: 'Agreed',
@@ -134,7 +147,7 @@ const signed = () => signViaEstivaId.mock.calls[0][0] as { kind: number; tags: s
 beforeEach(() => {
   publishSigned.mockClear()
   signViaEstivaId.mockClear()
-  queryRelay.mockImplementation(relayOver([manifest, file, root, withPicture, reply, edit, reaction, resolved]))
+  queryRelay.mockImplementation(relayOver([manifest, file, root, withPicture, mentionFromElsewhere, reply, edit, reaction, resolved]))
 })
 
 describe('fileConversationAsViewer reads the whole conversation below the roots', () => {
@@ -167,6 +180,11 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     // A reply is a target too, so a reaction on it would be found.
     expect(found.decorations.byId[reply.id]).toEqual({ reactions: [], resolutions: [] })
     expect(found.decorations.reactionTargetsOmitted).toBe(0)
+  })
+
+  it('drops a root that is a comment on another file naming this one — that is Activity, not the conversation', async () => {
+    const found = await fileConversationAsViewer(container, [root.id, mentionFromElsewhere.id], 'https://relay.test', token)
+    expect(found.roots.map((r) => r.id)).toEqual([root.id])
   })
 
   it('drops a root the relay no longer returns — a deleted comment is gone, not blank', async () => {
@@ -205,6 +223,20 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     expect(imeta).toContain('url https://relay.test/media/abc')
     expect(imeta).toContain('x abc123')
     expect(imeta).toContain('filename shot.png')
+  })
+
+  it('a root that names another file carries its address as a, and never its own file twice (CON-11)', async () => {
+    await commentAsViewer({ container, body: `See ${OTHER_NADDR}, unlike ${OWN_NADDR}` }, 'https://relay.test', token)
+    expect(signed().tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', OTHER]])
+  })
+
+  it('a reply that names another file carries its address as a, beside the parent trio', async () => {
+    const parent = { id: root.id, author: CATH, body: 'First', createdAt: root.created_at, kind: COMMENT }
+    await commentAsViewer({ container, body: `Also ${OTHER_NADDR}`, parent }, 'https://relay.test', token)
+    const tags = signed().tags
+    expect(tags).toContainEqual(['A', ADDRESS])
+    expect(tags).toContainEqual(['e', root.id])
+    expect(tags.filter((t) => t[0] === 'a')).toEqual([['a', OTHER]])
   })
 
   it('a file the relay does not hold is not named — an imeta at no blob is refused with the event', async () => {
@@ -274,6 +306,21 @@ describe('the decorations are written as the suite agrees them', () => {
     const published = signed()
     expect(published.kind).toBe(5)
     expect(published.tags).toContainEqual(['e', reaction.id])
+  })
+})
+
+describe('referenceTagsFor', () => {
+  it('names each file once, skips the file the comment is on, and ignores a broken pointer', () => {
+    expect(referenceTagsFor(`${OTHER_NADDR} and ${OTHER_NADDR} and nostr:naddr1broken`, ADDRESS)).toEqual([['a', OTHER]])
+    expect(referenceTagsFor(OWN_NADDR, ADDRESS)).toEqual([])
+  })
+})
+
+describe('isCommentOn', () => {
+  it('is what the A names; a root without one is kept', () => {
+    expect(isCommentOn(root, ADDRESS)).toBe(true)
+    expect(isCommentOn(withPicture, ADDRESS)).toBe(true)
+    expect(isCommentOn(mentionFromElsewhere, ADDRESS)).toBe(false)
   })
 })
 
