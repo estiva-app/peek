@@ -1,8 +1,37 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import type { FolderProject, ForeignObject } from '@estiva-app/interop'
+import { PeekDataProvider } from '@/api'
+import { DebugProvider } from '@/lib/debug'
 import { TopicProjectPanelView } from './TopicProjectPanel'
+import type { TopicActivityItem } from './TopicActivity'
+
+/** A mention row, which is a card — and a card needs the router and the data seam behind it. */
+const MENTION: TopicActivityItem = {
+  relation: 'mention',
+  about: '39000:bb:other',
+  href: '/topic/other',
+  conv: { id: 'm1', authorName: 'Miky', timestamp: 'Wed', body: 'see this one' },
+}
+
+function renderWithActivity(folderProject: null | { failed: 'unreachable' }) {
+  return render(
+    <MemoryRouter>
+      <DebugProvider>
+        <PeekDataProvider>
+          <TopicProjectPanelView
+            folderProject={folderProject}
+            onOpenThread={() => {}}
+            activity={[MENTION]}
+            subFileLabels={new Map([['39000:bb:other', 'Planning and sequencing']])}
+          />
+        </PeekDataProvider>
+      </DebugProvider>
+    </MemoryRouter>,
+  )
+}
 
 /**
  * PEEK-24's acceptance criteria, as assertions: a project widget headed Files,
@@ -269,11 +298,33 @@ describe('TopicProjectPanelView', () => {
     expect(screen.getByText('No tickets in this project yet.')).toBeInTheDocument()
   })
 
-  it('renders a clean empty state for a topic with no linked project', () => {
+  it('renders a clean empty state for a topic whose Folder holds no Ship project', () => {
     render(<TopicProjectPanelView folderProject={null} />)
 
-    expect(screen.getByText('No project linked to this topic.')).toBeInTheDocument()
+    expect(screen.getByText('No Ship project in this Folder.')).toBeInTheDocument()
     expect(screen.queryByText(/Tickets/)).not.toBeInTheDocument()
+  })
+
+  /*
+    CON-11. A mention needs no Ship project — any topic can be named from
+    another — so Activity is drawn under the empty line rather than being
+    something only a project unlocks. This is the case production hit first:
+    two topics with a mention each, neither with a project, and no Activity.
+  */
+  it('still draws Activity when the Folder holds no Ship project', () => {
+    renderWithActivity(null)
+
+    expect(screen.getByText('No Ship project in this Folder.')).toBeInTheDocument()
+    expect(screen.getByText('Activity')).toBeInTheDocument()
+    expect(screen.getByText('Mentioned in')).toBeInTheDocument()
+    expect(screen.getByText('Planning and sequencing')).toBeInTheDocument()
+  })
+
+  it('still draws Activity when the project read failed', () => {
+    renderWithActivity({ failed: 'unreachable' })
+
+    expect(screen.getByText(/could not reach the relay/i)).toBeInTheDocument()
+    expect(screen.getByText('Mentioned in')).toBeInTheDocument()
   })
 
   it('does not claim there is no project when the read failed (PEE-10)', () => {
@@ -282,7 +333,7 @@ describe('TopicProjectPanelView', () => {
     // mean two opposite things.
     render(<TopicProjectPanelView folderProject={{ failed: 'unreachable' }} />)
 
-    expect(screen.queryByText('No project linked to this topic.')).not.toBeInTheDocument()
+    expect(screen.queryByText('No Ship project in this Folder.')).not.toBeInTheDocument()
     expect(screen.getByText(/could not reach the relay/i)).toBeInTheDocument()
     expect(screen.getByText(/showing what was already saved/i)).toBeInTheDocument()
   })

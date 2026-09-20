@@ -46,7 +46,7 @@ export default async function main() {
     const mentions = await topicMentionsAsViewer(address, uuid, RELAY_URL, token)
     if (mentions.length === 0) continue
     mentioned += 1
-    console.log(`\n"${nameOf(t)}" (${uuid.slice(0, 8)}…) — Activity would carry ${mentions.length} mention(s):`)
+    console.log(`\n"${nameOf(t)}" (${uuid}) — Activity would carry ${mentions.length} mention(s):`)
     for (const m of mentions) {
       const from = topics.events.find((x) => x.tags.some((y) => y[0] === 'd' && y[1] === m.folder))
       console.log(
