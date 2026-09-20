@@ -153,4 +153,33 @@ describe('partitionByRelation', () => {
     expect(own).toHaveLength(1)
     expect(activity).toEqual([])
   })
+
+  /*
+    CON-11. A mention is said in another channel, so it is never among the
+    messages being partitioned; it arrives already known and joins the one
+    list, labelled as what it is, in time order with the sub-file rows rather
+    than after them.
+  */
+  it('merges mentions into Activity as the second relation, in one time order', () => {
+    const { own, activity } = partitionByRelation(
+      [msg('comment', ['30851:aa:pay-1'], 500), msg('talk', [], 700)],
+      subFiles,
+      [
+        { message: msg('mentioned-late', ['39000:rr:this-topic'], 900), about: '39000:rr:other-topic' },
+        { message: msg('mentioned-early', ['39000:rr:this-topic'], 100), about: '39000:rr:other-topic' },
+      ],
+    )
+    expect(own.map((m) => m.id)).toEqual(['talk'])
+    expect(activity.map((a) => [a.message.id, a.relation])).toEqual([
+      ['mentioned-late', 'mention'],
+      ['comment', 'sub-file'],
+      ['mentioned-early', 'mention'],
+    ])
+    expect(activity[0].about).toBe('39000:rr:other-topic')
+  })
+
+  it('reports every partitioned row as a sub-file', () => {
+    const { activity } = partitionByRelation([msg('comment', ['30851:aa:pay-1'], 1)], subFiles)
+    expect(activity[0].relation).toBe('sub-file')
+  })
 })

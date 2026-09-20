@@ -231,20 +231,32 @@ export function subFileLabels(state: FolderProjectState): Map<string, string> {
  * twenty-message discussion under a ticket because somebody linked it once,
  * which is the merge SPEC §5.1 calls indefensible — the same rule, one level up.
  *
+ * **Mentions are the second relation — CON-11.** They come from *other*
+ * channels, read by `#a` off the relay (`useTopicMentions`), so they are not
+ * among `messages` and cannot be found by partitioning; they are handed in
+ * already known and merged into the one list. `about` for a mention is the
+ * topic it was said in, so the row can say where, exactly as a sub-file's row
+ * says which ticket. One time-ordered list rather than a section per relation
+ * (SPEC §6.4), which is what lets a relation nobody has named yet slot in.
+ *
  * A pure function rather than three `useMemo`s in the view, because this is the
  * claim the whole change rests on and a hook is a bad place to prove one.
  */
+export type ActivityRelation = 'sub-file' | 'mention'
+
 export function partitionByRelation<T extends { nostrReferences?: string[]; createdAtMs?: number }>(
   messages: readonly T[],
   subFiles: ReadonlySet<string>,
-): { own: T[]; activity: { message: T; about: string }[] } {
+  mentions: readonly { message: T; about: string }[] = [],
+): { own: T[]; activity: { message: T; about: string; relation: ActivityRelation }[] } {
   const own: T[] = []
-  const activity: { message: T; about: string }[] = []
+  const activity: { message: T; about: string; relation: ActivityRelation }[] = []
   for (const message of messages) {
     const about = (message.nostrReferences ?? []).find((address) => subFiles.has(address))
-    if (about) activity.push({ message, about })
+    if (about) activity.push({ message, about, relation: 'sub-file' })
     else own.push(message)
   }
+  for (const { message, about } of mentions) activity.push({ message, about, relation: 'mention' })
   // Newest first: Activity is a roll-up you scan, not a conversation you read
   // from the top. Undated entries sort last rather than first, so a message with
   // no timestamp cannot claim the most-recent slot.

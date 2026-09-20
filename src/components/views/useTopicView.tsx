@@ -1,4 +1,4 @@
-import { shareableTopicUrl } from '@/lib/objectUrl'
+import { shareableTopicUrl, topicPath } from '@/lib/objectUrl'
 import { useMarkRead } from '@/lib/useMarkRead'
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { registerTopicConversation, unregisterTopicConversation } from '@/lib/conversationRegistry'
@@ -37,9 +37,13 @@ import {
   useOpenWorkTopicIds,
   usePeekActions,
   useStarred,
+  useTopics,
+  useWorkspaceDirectory,
+  formatTimestamp,
   type ConversationData,
   type Huddle,
 } from '@/api'
+import { useTopicMentions } from '@/api/useTopicMentions'
 import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { hasConvex } from '@/api'
@@ -260,14 +264,68 @@ export function useTopicView({
   const subFileLabel = useMemo(() => subFileLabels(folderProject), [folderProject])
 
   /*
+    The other relation — CON-11. A topic is `39000:<relay>:<uuid>`, and a
+    message in any *other* channel that names it carries the address as an
+    `a` tag; `useTopicMentions` reads those off the relay by `#a`. They are not
+    among this channel's messages, so they arrive separately and are handed to
+    the partition already known.
+
+    Each becomes a `ConversationData` so the row is the same card the stream
+    draws. `about` is the topic it was said in — its `h`, spelt as that topic's
+    address — so the label map can name it beside the chip the way a sub-file
+    row names its ticket, and `href` is where the row opens: that topic, since
+    this page holds none of its threads.
+  */
+  const { mentions } = useTopicMentions(topic)
+  const people = useWorkspaceDirectory()
+  const topics = useTopics()
+  const mentionItems = useMemo(
+    () =>
+      mentions.map((m) => {
+        const author = people?.[m.author]
+        const said = topics?.find((t) => t.folderId === m.folder)
+        const message: ConversationData = {
+          id: m.id,
+          authorName: author?.displayName ?? `${m.author.slice(0, 8)}…`,
+          authorAvatarSrc: author?.picture,
+          timestamp: formatTimestamp(m.createdAt * 1000),
+          body: m.body,
+          createdAtMs: m.createdAt * 1000,
+          files: m.files.map((f) => ({
+            name: f.name,
+            contentType: f.contentType,
+            size: f.size,
+            sha256: f.sha256,
+            mediaUrl: f.mediaUrl,
+            thumbUrl: f.thumbUrl,
+          })),
+          nostrReferences: m.references,
+          nostrEventId: m.id,
+        }
+        return { message, about: m.saidIn, href: said ? topicPath(said) : undefined }
+      }),
+    [mentions, people, topics],
+  )
+
+  /** Sub-file address → ticket title, and the topic a mention was said in → its title. */
+  const activityLabels = useMemo(() => {
+    const labels = new Map(subFileLabel)
+    for (const m of mentions) {
+      const said = topics?.find((t) => t.folderId === m.folder)
+      if (said) labels.set(m.saidIn, said.title)
+    }
+    return labels
+  }, [subFileLabel, mentions, topics])
+
+  /*
     The partition itself is a pure function — `partitionByRelation`. It is the
     claim this whole change rests on, and a `useMemo` is a bad place to prove
     one; the rule that a message must be *tagged* rather than merely naming a
     ticket is asserted there.
   */
   const split = useMemo(
-    () => partitionByRelation(allGroups.flatMap((g) => g.convs), subFiles),
-    [allGroups, subFiles],
+    () => partitionByRelation(allGroups.flatMap((g) => g.convs), subFiles, mentionItems),
+    [allGroups, subFiles, mentionItems],
   )
   const inStream = useMemo(() => new Set(split.own.map((c) => c.id)), [split])
 
@@ -280,18 +338,20 @@ export function useTopicView({
   )
 
   /**
-   * Activity: the conversations of files related to this one, newest first.
-   *
-   * Sub-files today. Mentions are the other half and are not here yet — a Peek
-   * topic is not an addressable object until files nest, so "conversations that
-   * mention this topic" is not a question the relay can answer about it. The
-   * project in its Folder *is* addressable, and that is the shape the mentions
-   * half will take.
+   * Activity: the conversations of files related to this one, newest first —
+   * sub-files and mentions in one order, each row saying which (CON-9, CON-11).
+   * A mention's row opens the topic it was said in; the `href` rides along from
+   * `mentionItems`, keyed by the event id.
    */
-  const activityItems = useMemo(
-    () => split.activity.map(({ message, about }) => ({ conv: message, about })),
-    [split],
-  )
+  const activityItems = useMemo<TopicActivityItem[]>(() => {
+    const hrefOf = new Map(mentionItems.map((m) => [m.message.id, m.href]))
+    return split.activity.map(({ message, about, relation }) => ({
+      conv: message,
+      about,
+      relation,
+      href: relation === 'mention' ? hrefOf.get(message.id) : undefined,
+    }))
+  }, [split, mentionItems])
 
   const currentHuddles = topicId != null ? huddleLookup(topicId) : []
 
@@ -939,7 +999,7 @@ export function useTopicView({
       draws. Computing it here is what keeps one partition rather than two.
     */
     activity: activityItems,
-    subFileLabels: subFileLabel,
+    subFileLabels: activityLabels,
     /* So the Folder panel's Activity rows open a thread in the same column and
        mark the open one selected — the same `openThread` the stream uses, not a
        second way in. */
