@@ -19,6 +19,7 @@ import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { hasConvex } from './store'
 import {
   applyActionAsViewer,
+  commentedFileOf,
   creatableUnderAsViewer,
   placeForReferenceAsViewer,
   type ReferencePlace,
@@ -46,7 +47,8 @@ import {
 import { RelayReadError } from '@/nostr/relayRead'
 import { rootOf, type StreamMessage } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import type { StoredToken } from '@/auth/estivaId'
 import type {
   ConversationMessage,
   FolderContents,
@@ -451,6 +453,58 @@ export interface MessageHit {
    * can open that conversation and land on the reply (R13, UIG-29).
    */
   root?: string
+  /**
+   * The file this is a comment on, as an address, when the hit is a `kind:1111`
+   * (FOL-36) — what decides that the result opens the file's page rather than
+   * a topic. A `kind:9` has none.
+   */
+  file?: string
+  /**
+   * The file's title, resolved off its owner's manifest so the row can say
+   * where the comment is. Absent when the resolve failed; the row still opens.
+   */
+  fileTitle?: string
+}
+
+/** How many distinct files a search answer resolves titles for — the rows the launcher draws, and no more. */
+const FILE_TITLES_PER_SEARCH = 5
+
+/**
+ * The events as hits, the file comments among them named by their file.
+ *
+ * A comment says which file it is on but not what the file is called, and a
+ * row reading "a comment · somewhere" is not a result anybody can pick. The
+ * title comes off the owner's projection, one resolve per distinct file and
+ * capped at what the launcher shows, in parallel — a failed resolve loses the
+ * title, never the hit.
+ */
+async function hitsOf(events: SignedEvent[], relayUrl: string, token: StoredToken): Promise<MessageHit[]> {
+  const hits: MessageHit[] = events.map((e) => {
+    const file = e.kind === KIND.COMMENT ? commentedFileOf(e) : null
+    return {
+      id: e.id,
+      content: e.content,
+      pubkey: e.pubkey,
+      createdAt: e.created_at,
+      folder: e.tags.find((t) => t[0] === 'h')?.[1],
+      ...(rootOf(e) !== e.id ? { root: rootOf(e) } : {}),
+      ...(file ? { file } : {}),
+    }
+  })
+  const files = [...new Set(hits.flatMap((h) => (h.file ? [h.file] : [])))].slice(0, FILE_TITLES_PER_SEARCH)
+  if (files.length === 0) return hits
+  const titles = new Map<string, string>()
+  await Promise.all(
+    files.map((address) =>
+      resolveObjectAsViewer(address, relayUrl, token)
+        .then((object) => {
+          const title = object?.slots?.title?.value
+          if (title) titles.set(address, title)
+        })
+        .catch(() => {}),
+    ),
+  )
+  return hits.map((h) => (h.file && titles.has(h.file) ? { ...h, fileTitle: titles.get(h.file) } : h))
 }
 
 /**
@@ -497,20 +551,10 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
         return
       }
       searchMessagesAsViewer(term, v.relayUrl, v.token)
-        .then((events: SignedEvent[]) => {
+        .then((events: SignedEvent[]) => hitsOf(events, v.relayUrl, v.token))
+        .then((hits) => {
           if (cancelled) return
-          setAnswer({
-            term,
-            state: { kind: 'done', count: events.length },
-            hits: events.map((e) => ({
-              id: e.id,
-              content: e.content,
-              pubkey: e.pubkey,
-              createdAt: e.created_at,
-              folder: e.tags.find((t) => t[0] === 'h')?.[1],
-              ...(rootOf(e) !== e.id ? { root: rootOf(e) } : {}),
-            })),
-          })
+          setAnswer({ term, state: { kind: 'done', count: hits.length }, hits })
         })
         .catch((error: unknown) => {
           if (cancelled) return

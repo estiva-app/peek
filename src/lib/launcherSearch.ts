@@ -14,6 +14,10 @@
  * | people | already in the app (`usePeople`) | any substring, live per keystroke |
  * | messages | the relay, over NIP-50 | **whole tokens only** |
  *
+ * The message corpus is both kinds a conversation is written in — `kind:9`
+ * in a topic and `kind:1111` on a file — since FOL-36; a hit's own tags say
+ * which page it opens on (`MessageHit.file`).
+ *
  * `"Cla"` returns nothing from the relay while `"Claude"` returns two. That is
  * not a bug to work around, it is what a tokenised index does — so the split
  * above is the honest one: the two corpora Peek already holds are small (69

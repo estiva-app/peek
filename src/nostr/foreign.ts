@@ -20,7 +20,7 @@
  * keys, and a service credential would be a member of nothing.
  */
 import type { StoredToken } from '@/auth/estivaId'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { KIND, type SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
 export const KIND_TOPIC = 39000
@@ -28,7 +28,7 @@ export const KIND_TOPIC = 39000
 const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
-import { readChannelStreams, type StreamMessage } from './channelStreams'
+import { readChannelStreams, rootOf, type StreamMessage } from './channelStreams'
 import { PEEK_HORIZON_DAYS } from './readState'
 import {
   buildBareFile,
@@ -783,6 +783,12 @@ export type ReferencePlace = {
   file?: string
   /** The event id of the message the reference named, so the topic can land on it (RIC-16). */
   message?: string
+  /**
+   * The root of the thread `message` is in, when the message is a comment on
+   * `file` (FOL-36): the file page opens that thread from `?thread=`, and
+   * the comment is then on screen to scroll to.
+   */
+  thread?: string
 }
 
 /**
@@ -808,6 +814,13 @@ export type ReferencePlace = {
  * - **A Message is an `nevent`,** because a `kind:9` has no `d` at all, so
  *   nothing but its event id can name it. Its Folder is the `h` tag, which
  *   means fetching it.
+ * - **A comment on a file is an `nevent` too** (FOL-36), and its `h` is the
+ *   *team's* channel — the Folder the file sits in, not a container that has
+ *   a page of its own. Landing by `h` put a link to a file comment on the
+ *   team's general chat, where the comment is not. The file it is on is the
+ *   NIP-22 scope tag — `A`, or `a` on a root written before the uppercase
+ *   trio — and the thread it is in is `rootOf`, so the place is the file with
+ *   that thread open and the comment to land on.
  *
  * Returns null for anything else — a Ship project's `naddr` is a perfectly good
  * reference that Peek has nowhere to open, and saying so beats redirecting
@@ -852,7 +865,20 @@ export async function placeForReferenceAsViewer(
 
   const [event] = await viewerQuery(relayUrl, token)([{ ids: [id], limit: 1 }])
   const folder = event?.tags.find((t) => t[0] === 'h')?.[1]
-  return folder ? { folder, message: id } : null
+  if (!event || !folder) return null
+  const file = event.kind === KIND.COMMENT ? commentedFileOf(event) : null
+  return file ? { folder, file, message: id, thread: rootOf(event) } : { folder, message: id }
+}
+
+/**
+ * The file a `kind:1111` is a comment on, as an address — `A` (the NIP-22 root
+ * scope, which a reply keeps and a root repeats as `a`), else `a`. Null for a
+ * comment scoped to an event rather than an addressable object, which is not
+ * a file's conversation and has no page here.
+ */
+export function commentedFileOf(event: SignedEvent): string | null {
+  const scope = event.tags.find((t) => t[0] === 'A' && t[1])?.[1] ?? event.tags.find((t) => t[0] === 'a' && t[1])?.[1]
+  return scope && /^\d+:[0-9a-f]{64}:/i.test(scope) ? scope : null
 }
 
 /**
@@ -1163,6 +1189,12 @@ export async function deleteFileAsViewer(
  * Throws `RelayReadError` on a failed read, like every other read in this file
  * — the whole point for PEE-4 is that a refused search and an empty one must
  * not arrive as the same empty array (PEE-10).
+ *
+ * **Two kinds, one filter** (FOL-36). A topic's messages are `kind:9`; a
+ * file's conversation — a bare-file topic's, a Ship issue's — is `kind:1111`,
+ * and searching the first alone made 137 comments on production unfindable.
+ * The hit's own tags say which it is: a comment carries the file it is on
+ * (`commentedFileOf`), and that is what decides where the launcher opens it.
  */
 export async function searchMessagesAsViewer(
   term: string,
@@ -1171,7 +1203,7 @@ export async function searchMessagesAsViewer(
   limit = 20,
 ): Promise<SignedEvent[]> {
   const query = viewerQuery(relayUrl, token)
-  return query([{ kinds: [KIND_MESSAGE], search: term, limit }])
+  return query([{ kinds: [KIND_MESSAGE, KIND.COMMENT], search: term, limit }])
 }
 
 /**

@@ -23,7 +23,9 @@ interface LastSelectionState {
    *  for a `/message/<id>` link, which knows the event and its Folder but neither
    *  Peek's topic id nor its conversation id — the topic view resolves those.
    *  `reply` is a reply inside that conversation to land on instead (the launcher's
-   *  message results, R13). */
+   *  message results, R13). A file's page answers the same one-shot for a comment
+   *  whose thread is the file's (FOL-36): `eventId` is the thread's root, `reply`
+   *  the comment when it is not the root. */
   pendingTopicMessage: PendingTopicMessage | null
 }
 

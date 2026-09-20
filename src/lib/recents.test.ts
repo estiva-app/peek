@@ -49,4 +49,25 @@ describe('recents', () => {
     const { result } = renderHook(() => useRecents())
     expect(result.current).toEqual([])
   })
+
+  /*
+    A file carries its title (FOL-36): there is no live list to read one from,
+    and the alternative is a resolve per recent file every time the launcher
+    opens. Opening the file again is the only refresh the title gets.
+  */
+  it('keeps a file with its title, and refreshes the title when it is opened again', () => {
+    const address = '30840:' + 'a'.repeat(64) + ':0f7d2c1e'
+    rememberRecent({ kind: 'file', id: address, title: 'Before' })
+    rememberRecent({ kind: 'file', id: address, title: 'After the rename' })
+    const { result } = renderHook(() => useRecents())
+    expect(result.current).toEqual([{ kind: 'file', id: address, title: 'After the rename' }])
+    act(() => forgetRecent({ kind: 'file', id: address }))
+    expect(result.current).toEqual([])
+  })
+
+  it('drops a stored file without a title, which nothing could draw', () => {
+    window.localStorage.setItem('estiva-peek:recents', JSON.stringify([{ kind: 'file', id: 'x' }, { kind: 'topic', id: 'a' }]))
+    const { result } = renderHook(() => useRecents())
+    expect(result.current).toEqual([{ kind: 'topic', id: 'a' }])
+  })
 })

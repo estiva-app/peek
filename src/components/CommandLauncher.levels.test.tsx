@@ -66,6 +66,7 @@ function Probe() {
   return (
     <>
       <div data-testid="where">{useLocation().pathname}</div>
+      <div data-testid="where-search">{useLocation().search}</div>
       <div data-testid="pending">{JSON.stringify(pendingTopicMessage)}</div>
     </>
   )
@@ -184,6 +185,43 @@ describe('recents (C3)', () => {
     await waitFor(() => expect(screen.queryByRole('group', { name: 'Recent' })).not.toBeInTheDocument())
     expect(JSON.parse(window.localStorage.getItem('estiva-peek:recents')!)).toEqual([])
   })
+
+  /*
+    A file opened on its page is recent too (FOL-36) — a topic started since
+    #194 is one — and shares the topic slots in the order things were opened.
+    Its title is the stored one; it opens at `/topic/<address>`; and, like a
+    topic, the file you are on is not somewhere to go.
+  */
+  describe('a file (FOL-36)', () => {
+    const FILE = '30840:' + 'c'.repeat(64) + ':0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
+    beforeEach(() => {
+      window.localStorage.setItem(
+        'estiva-peek:recents',
+        JSON.stringify([
+          { kind: 'file', id: FILE, title: 'FOL-15 test topic 2' },
+          { kind: 'topic', id: '1' },
+        ]),
+      )
+      resetRecentsForTests()
+    })
+
+    it('is listed by its stored title, newest first, and opens on the file page', async () => {
+      open()
+      const recent = await screen.findByRole('group', { name: 'Recent' })
+      const names = within(recent).getAllByRole('option').map((o) => o.textContent)
+      expect(names[0]).toContain('FOL-15 test topic 2')
+      expect(names[1]).toContain('CI/CD pipeline stuck during build stage')
+      await userEvent.click(within(recent).getByRole('option', { name: /FOL-15 test topic 2/ }))
+      expect(screen.getByTestId('where')).toHaveTextContent(`/topic/${FILE}`)
+    })
+
+    it('is left out when its page is the one you are on', async () => {
+      open({}, {}, `/topic/${FILE}`)
+      const recent = await screen.findByRole('group', { name: 'Recent' })
+      await waitFor(() => expect(recent).toHaveTextContent('CI/CD pipeline stuck during build stage'))
+      expect(recent).not.toHaveTextContent('FOL-15 test topic 2')
+    })
+  })
 })
 
 describe('inside an app', () => {
@@ -228,5 +266,46 @@ describe('a message result (R13)', () => {
     await userEvent.type(field(), 'layout')
     await userEvent.click(await screen.findByRole('option', { name: /a reply about the layout/ }))
     expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: FOLDER, eventId: 'e1', reply: 'e2' })
+  })
+
+  /*
+    A comment on a file (FOL-36). Its `h` is the team's channel — a Folder no
+    topic row carries, which used to make it "not in your sidebar" — and the
+    file it is on is where it opens: the file's page, with the thread in the
+    URL and the same one-shot for the scroll. The row says which file.
+  */
+  describe('a comment on a file', () => {
+    const TEAM = '925897ad-796e-4bc6-999c-ca19df26c4aa'
+    const FILE = '30840:' + 'c'.repeat(64) + ':0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
+
+    it('opens the file with the thread open, and lands on the comment', async () => {
+      messageSearch.mockImplementation((query) =>
+        query
+          ? { state: { kind: 'done', count: 1 }, hits: [{ id: 'c1', content: 'a comment about the layout', pubkey: 'p', createdAt: 1_758_000_000, folder: TEAM, file: FILE, fileTitle: 'FOL-15 test topic 2' }] }
+          : { state: { kind: 'idle' }, hits: [] },
+      )
+      open()
+      await userEvent.type(field(), 'layout')
+      const row = await screen.findByRole('option', { name: /a comment about the layout/ })
+      expect(row).toHaveTextContent('FOL-15 test topic 2')
+      await userEvent.click(row)
+      expect(screen.getByTestId('where').textContent).toBe(`/topic/${FILE}`)
+      expect(screen.getByTestId('where-search').textContent).toBe('?thread=c1')
+      expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: TEAM, eventId: 'c1' })
+      expect(screen.queryByText(/not in your sidebar/)).not.toBeInTheDocument()
+    })
+
+    it('a reply opens its thread and lands on the reply', async () => {
+      messageSearch.mockImplementation((query) =>
+        query
+          ? { state: { kind: 'done', count: 1 }, hits: [{ id: 'c2', content: 'a reply about the layout', pubkey: 'p', createdAt: 1_758_000_000, folder: TEAM, file: FILE, root: 'c1' }] }
+          : { state: { kind: 'idle' }, hits: [] },
+      )
+      open()
+      await userEvent.type(field(), 'layout')
+      await userEvent.click(await screen.findByRole('option', { name: /a reply about the layout/ }))
+      expect(screen.getByTestId('where-search').textContent).toBe('?thread=c1')
+      expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: TEAM, eventId: 'c1', reply: 'c2' })
+    })
   })
 })

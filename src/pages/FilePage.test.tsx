@@ -11,11 +11,14 @@
  * hold. `FoldersPage.test.tsx` used to pin that such a file "opens nothing",
  * which was true of the pane and is the gap this route closes.
  */
+import { useEffect, useRef } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
 import { READ_DWELL_MS } from '@/api'
+import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } from '@/lib/lastSelection'
+import { resetRecentsForTests } from '@/lib/recents'
 import { FilePage } from './FilePage'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -157,6 +160,9 @@ vi.mock('@/api', async () => ({
   useIsTopicResolved: () => () => false,
   useResolvedReferences: () => ({}),
 }))
+/** The scroll a landing asks for — the DOM anchor is the thread pane's, mocked away above. */
+const anchor = vi.hoisted(() => ({ scrollTo: vi.fn(async () => true) }))
+vi.mock('@/lib/messageAnchor', () => ({ scrollToMessageWhenReady: anchor.scrollTo }))
 vi.mock('@/lib/toast', () => ({
   useToast: () => ({ showToast: (toast: { label: string; type?: string }) => toasts.shown.push(toast) }),
 }))
@@ -172,17 +178,38 @@ vi.mock('@/layouts/AppShell', () => ({
 
 function Probe() {
   const location = useLocation()
-  return <output data-testid="url">{location.pathname + location.search}</output>
+  const { pendingTopicMessage } = useLastSelection()
+  return (
+    <>
+      <output data-testid="url">{location.pathname + location.search}</output>
+      <output data-testid="pending">{pendingTopicMessage ? JSON.stringify(pendingTopicMessage) : ''}</output>
+    </>
+  )
 }
 
-function mount(url: string) {
+/** What `ObjectPage` or the launcher leaves for the page before it navigates (RIC-16, FOL-36). */
+function Seed({ pending }: { pending: PendingTopicMessage }) {
+  const { setPendingTopicMessage } = useLastSelection()
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (seeded.current) return
+    seeded.current = true
+    setPendingTopicMessage(pending)
+  }, [pending, setPendingTopicMessage])
+  return null
+}
+
+function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
   return render(
-    <MemoryRouter initialEntries={[url]}>
-      <Routes>
-        <Route path="/topic/:ref" element={<><FilePage /><Probe /></>} />
-        <Route path="*" element={<Probe />} />
-      </Routes>
-    </MemoryRouter>,
+    <LastSelectionProvider>
+      <MemoryRouter initialEntries={[url]}>
+        {opts?.pending && <Seed pending={opts.pending} />}
+        <Routes>
+          <Route path="/topic/:ref" element={<><FilePage /><Probe /></>} />
+          <Route path="*" element={<Probe />} />
+        </Routes>
+      </MemoryRouter>
+    </LastSelectionProvider>,
   )
 }
 
@@ -223,6 +250,9 @@ beforeEach(() => {
   writes.resolveFolderContents.mockClear()
   toasts.shown = []
   peekView.args = []
+  anchor.scrollTo.mockClear()
+  window.localStorage.clear()
+  resetRecentsForTests()
 })
 
 describe('FilePage opens a file by address, not against the listing', () => {
@@ -425,6 +455,76 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(peekView.args.every((a) => a.container === null)).toBe(true)
     expect(screen.queryByTestId('peek-view')).toBeNull()
+  })
+})
+
+/*
+  A link to a comment lands on the comment — FOL-36. `ObjectPage` and the
+  launcher leave the same one-shot the topic view answers (RIC-16): the
+  thread's root as the conversation, the comment as the reply when it is not
+  the root. Before this, a `/message/<id>` link to a file comment landed by
+  `h` on the team's channel, which is not where the comment is.
+*/
+describe('FilePage lands on a comment left for it (FOL-36)', () => {
+  const commentable = (object: ForeignObject) => ({ ...object, actions: [{ id: 'comment', label: 'Comment' }] })
+  const rootId = issue.comments[0].id
+  const replyId = 'f'.repeat(64)
+
+  it('opens the thread from the URL, then scrolls to the reply once the pane has drawn, and consumes the one-shot', async () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
+    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`, { pending: { folder: FOLDER, eventId: rootId, reply: replyId } })
+    expect(screen.getByTestId('peek-thread').textContent).toBe(rootId)
+    await waitFor(() => expect(anchor.scrollTo).toHaveBeenCalledWith(replyId))
+    expect(anchor.scrollTo).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('pending').textContent).toBe('')
+  })
+
+  it('a root comment is the thread itself: the scroll is to the root', async () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
+    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`, { pending: { folder: FOLDER, eventId: rootId } })
+    await waitFor(() => expect(anchor.scrollTo).toHaveBeenCalledWith(rootId))
+  })
+
+  it('opens the thread itself when the URL did not carry it — the one-shot is enough on its own', async () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
+    mount(`/topic/${ISSUE_ADDRESS}`, { pending: { folder: FOLDER, eventId: rootId, reply: replyId } })
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`))
+    await waitFor(() => expect(anchor.scrollTo).toHaveBeenCalledWith(replyId))
+  })
+
+  it('leaves a one-shot for a comment that is not one of this file’s, so the page it belongs to still answers it', () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
+    const elsewhere = { folder: OTHER_FOLDER, eventId: 'a'.repeat(64) }
+    mount(`/topic/${ISSUE_ADDRESS}`, { pending: elsewhere })
+    expect(screen.getByTestId('pending').textContent).toBe(JSON.stringify(elsewhere))
+    expect(anchor.scrollTo).not.toHaveBeenCalled()
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+  })
+})
+
+/*
+  The launcher's Recent was fed by `TopicsPage` alone, so a topic started
+  since #194 — a bare file, which opens here — was never recent (FOL-36). A
+  file has no live list to read a title from, so the title is stored with it.
+*/
+describe('FilePage puts the file in Recent, with its title', () => {
+  const recents = () => JSON.parse(window.localStorage.getItem('estiva-peek:recents') ?? '[]') as unknown[]
+
+  it('a bare file, once it has resolved', async () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    await waitFor(() => expect(recents()).toEqual([{ kind: 'file', id: TOPIC_ADDRESS, title: 'FOL-15 test topic 2' }]))
+  })
+
+  it('a Ship issue too — anything this page opens', async () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    await waitFor(() => expect(recents()).toEqual([{ kind: 'file', id: ISSUE_ADDRESS, title: 'The file route' }]))
+  })
+
+  it('nothing for an address that resolved to nothing', async () => {
+    objects.byAddress = {}
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    await act(async () => {})
+    expect(recents()).toEqual([])
   })
 })
 

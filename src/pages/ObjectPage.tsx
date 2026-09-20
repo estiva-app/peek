@@ -53,8 +53,19 @@ export function ObjectPage() {
           The topic view opens the conversation once it has loaded — the same
           one-shot the launcher's search results use, keyed by what this page
           knows (the Folder and the event) rather than by Peek's own ids.
+
+          A comment on a file is the same one-shot read by the file's page
+          (FOL-36): the thread is the conversation, and a reply in it is the
+          message to land on once the thread is open — the launcher's own
+          shape for a reply (R13).
         */
-        if (place?.message) setPendingTopicMessage({ folder: place.folder, eventId: place.message })
+        if (place?.message) {
+          setPendingTopicMessage(
+            place.thread && place.thread !== place.message
+              ? { folder: place.folder, eventId: place.thread, reply: place.message }
+              : { folder: place.folder, eventId: place.thread ?? place.message },
+          )
+        }
         setState(place ?? 'unopenable')
       })
       .catch(() => {
@@ -88,7 +99,15 @@ export function ObjectPage() {
     every reference lands on the file rather than near it.
   */
   if (state.file) {
-    return <Navigate to={filePath(state.file)} replace />
+    /*
+      A comment opens its file with the thread already open (FOL-36): the
+      thread is in the URL on the file page — a link, `?thread=` — so the link
+      to a comment is a link to its thread, and the one-shot above only has
+      to scroll. Before this, a comment's link landed by `h` on the team's
+      channel, which is not where the comment is.
+    */
+    const thread = state.thread ? `?thread=${encodeURIComponent(state.thread)}` : ''
+    return <Navigate to={`${filePath(state.file)}${thread}`} replace />
   }
   // `/topic/<uuid>` without a slug: TopicsPage canonicalises the URL once the
   // topic resolves and it knows the title, exactly as it does for a legacy link.

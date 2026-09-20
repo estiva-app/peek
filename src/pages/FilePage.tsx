@@ -1,3 +1,4 @@
+import { useCallback, useEffect } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconDotsVertical, IconX } from '@tabler/icons-react'
 import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
@@ -14,6 +15,9 @@ import { useFileThreads, useForeignConversation, useWorkspaceDirectory } from '@
 import { fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
+import { useLastSelection } from '@/lib/lastSelection'
+import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
+import { rememberRecent } from '@/lib/recents'
 import { useMarkFileRead } from '@/lib/useMarkRead'
 import { KIND_TOPIC } from '@/nostr/foreign'
 
@@ -91,18 +95,34 @@ export function FilePage() {
   useMarkFileRead(file?.address)
 
   /*
+    The launcher's Recent (UIG-29), which only `TopicsPage` fed until FOL-36 —
+    so a topic started since #194, which is a bare file and opens here, was
+    never recent. Written once the file has resolved, with the title the
+    header shows, since a file has no live list the launcher could read a
+    title from (`lib/recents`).
+  */
+  const resolvedAddress = file?.address
+  const fileTitle = file?.slots.title?.value
+  useEffect(() => {
+    if (resolvedAddress && fileTitle) rememberRecent({ kind: 'file', id: resolvedAddress, title: fileTitle })
+  }, [resolvedAddress, fileTitle])
+
+  /*
     Which thread is open, in the URL rather than in state, so a thread is a
     link — the same argument `?file=` was given and the same one §7 makes about
     a topic: a conversation somebody can point at is worth more than one that
     only exists in this tab.
   */
   const openThreadId = searchParams.get('thread') ?? undefined
-  const setOpenThread = (id: string | null) => {
-    const next = new URLSearchParams(searchParams)
-    if (id) next.set('thread', id)
-    else next.delete('thread')
-    setSearchParams(next, { replace: true })
-  }
+  const setOpenThread = useCallback(
+    (id: string | null) => {
+      const next = new URLSearchParams(searchParams)
+      if (id) next.set('thread', id)
+      else next.delete('thread')
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
   const comments = file?.comments ?? []
   const rootIds = comments.map((comment) => comment.id)
   /*
@@ -132,6 +152,30 @@ export function FilePage() {
           Object.entries(threads.replies).map(([id, replies]) => [id, replies.length]),
         )
   const openThread = openThreadId ? comments.find((c) => c.id === openThreadId) : undefined
+
+  /*
+    A link to a comment lands on the comment (FOL-36) — `ObjectPage`'s and the
+    launcher's one-shot, the same one the topic view answers (RIC-16), read
+    here for a comment whose thread is one of this file's. The thread comes
+    open from the URL; what is left is the scroll, and it can only happen once
+    the thread pane has drawn the comment's anchor, which `peek.threadPanel`
+    being something says. Waiting on that rather than on the mount is what
+    makes a cold load work: the pane draws a read or more after the file does.
+    The one-shot is consumed only once it is answered, so a link that opens
+    while the reads are still in flight is not lost to them.
+  */
+  const { pendingTopicMessage, setPendingTopicMessage } = useLastSelection()
+  const threadDrawn = peek.threadPanel !== undefined
+  useEffect(() => {
+    if (!pendingTopicMessage || !rootIds.includes(pendingTopicMessage.eventId)) return
+    if (openThreadId !== pendingTopicMessage.eventId) {
+      setOpenThread(pendingTopicMessage.eventId)
+      return
+    }
+    if (!threadDrawn) return
+    setPendingTopicMessage(null)
+    void scrollToMessageWhenReady(pendingTopicMessage.reply ?? pendingTopicMessage.eventId)
+  }, [pendingTopicMessage, rootIds, openThreadId, threadDrawn, setOpenThread, setPendingTopicMessage])
 
   /*
     Rename and Delete, from the manifest and not from the kind (FOL-33) — the
