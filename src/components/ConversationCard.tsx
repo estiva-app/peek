@@ -89,6 +89,9 @@ interface ConversationCardProps {
   onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   onDelete?: () => void
   isSelected?: boolean
+  /** Draw it as secondary — Activity's mentions, which do not carry a sub-file
+   *  thread's trust (CON-11). The hairline alone, no fill, as Ship draws one. */
+  subdued?: boolean
   onReply?: () => void
   onClick?: () => void
   onMore?: () => void
@@ -132,6 +135,7 @@ export function ConversationCard({
   onReactionsChange,
   onDelete,
   isSelected = false,
+  subdued = false,
   onReply,
   onClick,
   onMore,
@@ -498,7 +502,7 @@ export function ConversationCard({
         hairline, and wins over the selected one's.
       */}
       <Card
-        fill="surface"
+        fill={subdued ? 'none' : 'surface'}
         hover="fill"
         quietUntilHover
         hovered={isHovered}

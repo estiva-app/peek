@@ -31,6 +31,26 @@ const LABELS = new Map([
   [TICKET_B, 'Fold the change stream once per read'],
 ])
 
+/** The topic a mention was said in — `39000:<relay>:<uuid>` (CON-11). */
+const OTHER_TOPIC = '39000:bb:leaf-planning'
+
+const MENTIONS: TopicActivityItem[] = [
+  {
+    relation: 'mention',
+    about: OTHER_TOPIC,
+    href: '/topic/leaf-planning',
+    conv: {
+      id: 'm1',
+      authorName: 'Miky',
+      timestamp: 'Wed',
+      body: 'Parking the billing question until the Stripe key lands — see nostr:naddr1… for where that stands.',
+      nostrReferences: ['39000:bb:this-topic'],
+    },
+  },
+]
+
+const LABELS_WITH_MENTION = new Map([...LABELS, [OTHER_TOPIC, 'Leaf planning']])
+
 const meta = {
   title: 'Messages/TopicActivity',
   component: TopicActivity,
@@ -63,6 +83,17 @@ export const Default: Story = {}
 
 /** One row selected — its thread is open in the panel beside this. */
 export const ThreadOpen: Story = { args: { selectedId: 'c1' } }
+
+/**
+ * The second relation — CON-11. A message in another topic named this one, so
+ * it is here, labelled *Mentioned in* with that topic's title, and drawn
+ * lighter: the hairline alone, no fill, because a mention is anyone typing
+ * your address and does not carry a sub-file thread's trust. It sits in the
+ * one list in time order, not in a section of its own.
+ */
+export const WithMention: Story = {
+  args: { items: [ITEMS[0], MENTIONS[0], ITEMS[1], ITEMS[2]], labelFor: LABELS_WITH_MENTION },
+}
 
 /**
  * The Folder has not resolved yet, so no ticket has a name.

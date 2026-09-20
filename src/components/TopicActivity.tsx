@@ -1,4 +1,6 @@
+import { useNavigate } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
+import type { ActivityRelation } from '@/api/useFolderProject'
 import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -28,13 +30,13 @@ import type { ConversationData } from '@/api'
  *
  * ## Same list, not same weight
  *
- * Ship's Activity carries mentions too, and draws them lighter, because a
+ * The second relation is a **mention** — CON-11. A topic is
+ * `39000:<relay>:<uuid>` (RFC 0.4 §5.2), and a message in any other channel
+ * that names it carries the address as an `a` tag; `useTopicMentions` reads
+ * those off the relay. It is drawn lighter, as Ship draws one, because a
  * mention is anyone typing your address — retroactive and permanently
- * unwithdrawable (§5.2) — while a sub-file's thread is your own subtree. Peek
- * has only the sub-file half so far: a topic is not an addressable object until
- * files nest, so *"conversations that mention this topic"* is not a question the
- * relay can answer about it. The chip is already the place that distinction
- * goes when it arrives.
+ * unwithdrawable (§5.2) — while a sub-file's thread is your own subtree. Same
+ * list, one order, and the chip says which.
  *
  * ## Replies go to the file the thread belongs to
  *
@@ -43,11 +45,32 @@ import type { ConversationData } from '@/api'
  * never on the topic's. That falls out of the data rather than being enforced
  * here, but the row names the ticket, because a composer whose destination is a
  * different object than the page around it is otherwise a trap.
+ *
+ * A mention has no thread here at all: it was said in another topic, whose
+ * conversation this page does not hold. So its row opens that topic (`href`),
+ * where the message can be read in place and replied to — the same rule, with
+ * the destination one page away instead of one column.
  */
 export interface TopicActivityItem {
   conv: ConversationData
-  /** The sub-file's address, or undefined if it resolved to nothing. */
+  /** Which related file this conversation belongs to — a sub-file's address,
+   *  or the address of the topic a mention was said in. Undefined when it
+   *  resolved to nothing. */
   about?: string
+  /** How it is related. Absent means a sub-file, which is what every row was before CON-11. */
+  relation?: ActivityRelation
+  /** Where the row opens instead of a thread: the topic a mention was said in. */
+  href?: string
+}
+
+/**
+ * The words, in one place. *"Mentioned in"* is SPEC §6.4's own phrase, kept
+ * verbatim as Ship keeps it, so the two apps and the specification cannot drift
+ * into three names for one thing.
+ */
+const RELATION: Record<ActivityRelation, { label: string; muted: boolean }> = {
+  'sub-file': { label: 'On a file', muted: false },
+  mention: { label: 'Mentioned in', muted: true },
 }
 
 /** The box the rows live in, written once: the list and its empty line both sit in it. */
@@ -65,6 +88,7 @@ export function TopicActivity({
   selectedId?: string | null
   onOpenThread: (id: string) => void
 }) {
+  const navigate = useNavigate()
   if (items.length === 0) {
     // One section of the panel is empty: the line alone, left, no icon (B18,
     // D41), where the list's first row would be — in the list's own box, and
@@ -78,10 +102,13 @@ export function TopicActivity({
 
   return (
     <ScrollArea className="flex-1" contentClassName={LIST}>
-      {items.map(({ conv, about }) => (
-        <div key={conv.id} className="flex flex-col gap-1" data-relation="sub-file">
+      {items.map(({ conv, about, relation = 'sub-file', href }) => {
+        const words = RELATION[relation]
+        const open = href ? () => navigate(href) : () => onOpenThread(conv.id)
+        return (
+        <div key={conv.id} className="flex flex-col gap-1" data-relation={relation}>
           <div className="flex items-center gap-2">
-            <Chip type="neutral" label="On a file" />
+            <Chip type="neutral" label={words.label} />
             {/*
               The ticket's own title, from its own app's manifest. Absent while
               the Folder is still resolving, and drawn as nothing rather than as
@@ -115,12 +142,14 @@ export function TopicActivity({
             nostrReferences={conv.nostrReferences}
             nostrBlockId={conv.nostrBlockId}
             showCreateTopic={false}
+            subdued={words.muted}
             isSelected={selectedId === conv.id}
-            onClick={() => onOpenThread(conv.id)}
-            onReply={() => onOpenThread(conv.id)}
+            onClick={open}
+            onReply={open}
           />
         </div>
-      ))}
+        )
+      })}
     </ScrollArea>
   )
 }
