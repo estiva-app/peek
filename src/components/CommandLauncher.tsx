@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { IconDownload, IconEraser, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
+import { IconDownload, IconEraser, IconFileText, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
 import {
   Card,
   CommandPalette,
@@ -22,10 +22,10 @@ import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
 import { formatDateLabel, useForeignObjects, useMessageSearch, usePeople, useTopics, useWorkspaceDirectory, type Person } from '@/api'
 import type { Topic } from '@/data/topicData'
-import type { ResolvedAction } from '@estiva-app/interop'
+import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
-import { topicPath } from '@/lib/objectUrl'
+import { addressFromRef, filePath, topicPath } from '@/lib/objectUrl'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
@@ -179,6 +179,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
   const openTopicId = /^\/topics?\//.test(pathname) ? selectedTopicId : null
   const openPersonId = pathname.startsWith('/people/') ? selectedPersonId : null
+  // A file's page is `/topic/<address>` (FOL-19); the address in the path is the file that is open.
+  const openFileAddress = pathname.startsWith('/topic/') ? addressFromRef(pathname.slice('/topic/'.length)) : null
   const topics = useTopics()
   const people = usePeople()
   const directory = useWorkspaceDirectory()
@@ -599,6 +601,22 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     onForget: forget,
   })
 
+  /*
+    A file the person opened — a bare-file topic, a Ship issue — by its address
+    and the title it had then (FOL-36, `lib/recents`). A bare file is Peek's
+    own topic and gets the topic's icon; anything else is another app's object
+    and is drawn as a file, since nothing here knows what it is.
+  */
+  const fileRow = (f: { id: string; title: string }, forget?: () => void): CommandPaletteRow => ({
+    id: `file-${f.id}`,
+    label: f.title,
+    ...(f.id.startsWith(`${KIND_BARE_FILE}:`)
+      ? { leading: <TopicState type="topic" status="unresolved" /> }
+      : { icon: icon(IconFileText) }),
+    onSelect: close(() => navigate(filePath(f.id))),
+    onForget: forget,
+  })
+
   const personRow = (p: Person, forget?: () => void): CommandPaletteRow => ({
     id: `person-${p.id}`,
     label: p.name,
@@ -677,18 +695,27 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const typed = query.trim()
 
     if (!q) {
+      /*
+        Topics and files share the three slots, in the order they were opened
+        (FOL-36): a topic started since #194 is a bare file and opens on the
+        file's page, and the person who opened two of those and one older
+        topic sees three topics, not one. A file carries its own title; a
+        topic's is read off the live list, and one no longer in it drops out.
+      */
       const recentTopics = recents
-        .filter((r) => r.kind === 'topic' && r.id !== openTopicId)
-        .flatMap((r) => (topics ?? []).filter((t) => t.id === r.id))
+        .flatMap((r) => {
+          if (r.kind === 'topic' && r.id !== openTopicId) {
+            return (topics ?? []).filter((t) => t.id === r.id).map((t) => topicRow(t, () => forgetRecent({ kind: 'topic', id: t.id })))
+          }
+          if (r.kind === 'file' && r.id !== openFileAddress) return [fileRow(r, () => forgetRecent({ kind: 'file', id: r.id }))]
+          return []
+        })
         .slice(0, 3)
       const recentPeople = recents
         .filter((r) => r.kind === 'person' && r.id !== openPersonId)
         .flatMap((r) => (people ?? []).filter((p) => p.id === r.id))
         .slice(0, 2)
-      const recentRows = [
-        ...recentTopics.map((t) => topicRow(t, () => forgetRecent({ kind: 'topic', id: t.id }))),
-        ...recentPeople.map((p) => personRow(p, () => forgetRecent({ kind: 'person', id: p.id }))),
-      ]
+      const recentRows = [...recentTopics, ...recentPeople.map((p) => personRow(p, () => forgetRecent({ kind: 'person', id: p.id })))]
       return {
         groups: [
           { label: 'This conversation', rows: [...intentRows(''), ...changeRowsFor(changeRows)] },
@@ -735,22 +762,31 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       all there was".
     */
     const byFolder = new Map((topics ?? []).filter((t) => t.folderId).map((t) => [t.folderId as string, t]))
-    const routable = messageHits.filter((h) => h.folder && byFolder.has(h.folder))
+    /*
+      A comment on a file names the file instead (FOL-36), and the file's page
+      resolves the address on its own, so a comment is routable wherever the
+      file is — its `h` is the team's channel, which has no topic row and is
+      not where the comment is anyway.
+    */
+    const routable = messageHits.filter((h) => h.file || (h.folder && byFolder.has(h.folder)))
     const unroutable = messageHits.length - routable.length
     const messageRows = routable.slice(0, 5).map((hit): CommandPaletteRow => {
-      const topic = byFolder.get(hit.folder as string)!
+      const topic = hit.file ? undefined : byFolder.get(hit.folder as string)
       const who = directory?.[hit.pubkey]
+      // The thread is the conversation, and a reply lands on itself once it is open (R13).
+      const pending = hit.folder ? { folder: hit.folder, eventId: hit.root ?? hit.id, ...(hit.root ? { reply: hit.id } : {}) } : null
       return {
         id: `message-${hit.id}`,
         // Words, never markdown; the match in context, not the first 80 characters.
         label: snippetAround(asWords(hit.content), typed),
-        description: [who?.displayName, topic.title, formatDateLabel(hit.createdAt * 1000)].filter(Boolean).join(' · '),
+        description: [who?.displayName, hit.fileTitle ?? topic?.title, formatDateLabel(hit.createdAt * 1000)].filter(Boolean).join(' · '),
         leading: <Avatar src={who?.picture} name={who?.displayName} size={24} />,
-        // The topic, at that message (R13) — the one-shot `ObjectPage` already uses.
+        // The topic, at that message (R13) — the one-shot `ObjectPage` already uses;
+        // or the file, with the thread open from the URL and the same one-shot for the scroll.
         onSelect: close(() => {
-          // A reply opens the conversation it is in, then lands on the reply.
-          if (hit.folder) setPendingTopicMessage({ folder: hit.folder, eventId: hit.root ?? hit.id, ...(hit.root ? { reply: hit.id } : {}) })
-          navigate(topicPath(topic))
+          if (pending) setPendingTopicMessage(pending)
+          if (hit.file) navigate(`${filePath(hit.file)}?thread=${encodeURIComponent(hit.root ?? hit.id)}`)
+          else if (topic) navigate(topicPath(topic))
         }),
       }
     })

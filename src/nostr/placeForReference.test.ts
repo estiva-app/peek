@@ -123,6 +123,45 @@ describe('a bare file opens beside the Folder it lives in', () => {
   })
 })
 
+describe('a comment on a file opens the file, with its thread (FOL-36)', () => {
+  /*
+    A `kind:1111`'s `h` is the team's channel — the Folder the file sits in —
+    so landing by `h` put a link to a file comment on the team's general chat,
+    where the comment is not. The file is the NIP-22 scope tag and the thread
+    is `rootOf`, and both go back with the message.
+  */
+  const FILE = `30840:${AUTHOR}:0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f`
+  const ROOT_ID = 'a'.repeat(64)
+  const commentEvent = (id: string, tags: string[][]) => ({ id, kind: 1111, pubkey: AUTHOR, tags, content: 'hi', created_at: 1, sig: '' })
+
+  it('a root comment: the file off `A`, the thread is itself', async () => {
+    queryRelay.mockResolvedValueOnce({
+      ok: true,
+      events: [commentEvent(ROOT_ID, [['A', FILE], ['K', '30840'], ['a', FILE], ['k', '30840'], ['h', FOLDER]])],
+    })
+    expect(await resolve(ROOT_ID)).toEqual({ folder: FOLDER, file: FILE, message: ROOT_ID, thread: ROOT_ID })
+  })
+
+  it('a reply: the file off `A` (a reply carries no `a`), the thread off `e`', async () => {
+    // What `replyToCommentAsViewer` writes: the uppercase trio unchanged, the lowercase one at the parent.
+    queryRelay.mockResolvedValueOnce({
+      ok: true,
+      events: [commentEvent(MESSAGE_ID, [['A', FILE], ['K', '30840'], ['e', ROOT_ID], ['k', '1111'], ['h', FOLDER]])],
+    })
+    expect(await resolve(MESSAGE_ID)).toEqual({ folder: FOLDER, file: FILE, message: MESSAGE_ID, thread: ROOT_ID })
+  })
+
+  it('a root written before the uppercase trio, with `a` alone, still names its file', async () => {
+    queryRelay.mockResolvedValueOnce({ ok: true, events: [commentEvent(ROOT_ID, [['a', FILE], ['h', FOLDER]])] })
+    expect(await resolve(ROOT_ID)).toEqual({ folder: FOLDER, file: FILE, message: ROOT_ID, thread: ROOT_ID })
+  })
+
+  it('a comment scoped to an event rather than a file is a message in its Folder, as before', async () => {
+    queryRelay.mockResolvedValueOnce({ ok: true, events: [commentEvent(MESSAGE_ID, [['E', ROOT_ID], ['e', ROOT_ID], ['h', FOLDER]])] })
+    expect(await resolve(MESSAGE_ID)).toEqual({ folder: FOLDER, message: MESSAGE_ID })
+  })
+})
+
 describe('nonsense is nonsense', () => {
   it('returns null rather than throwing into the route', async () => {
     expect(await resolve('nostr:not-a-reference')).toBeNull()

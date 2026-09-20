@@ -8,7 +8,9 @@ import { DateDivider } from '@/components/ui/DateDivider'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
+import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
+import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { useToast } from '@/lib/toast'
 import {
   CURRENT_USER_NAME,
@@ -225,6 +227,41 @@ export function useFileConversationView({
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [rootCount, isLoading])
+
+  /*
+    What the launcher can ask about (INT-8, here since FOL-36). The topic view
+    publishes its conversations' opening messages and says how many replies it
+    has not read; this view has read every thread already — a file's replies
+    come with `threadsAsViewer` — so the snapshot is the whole conversation,
+    each root followed by its replies, oldest first, and nothing is unread. A
+    reply names its root as the conversation to open, so a citation into a
+    closed thread opens it, through the opener registered below. The open
+    thread's own pane still registers itself and wins (the registry's rule),
+    as it does over a topic.
+  */
+  useEffect(() => {
+    if (!conversation) return
+    const projected = project(conversation, viewerPubkey, people)
+    const messages: ConversationMessage[] = projected.roots.flatMap((root) => {
+      const asMessage = (m: { id: string; authorName: string; timestamp: string; body: string }): ConversationMessage => ({
+        id: m.id,
+        author: m.authorName,
+        timestamp: m.timestamp,
+        body: m.body,
+        eventId: m.id,
+        conversationId: root.id,
+      })
+      return [asMessage(root), ...projected.byId[root.id].replies.map(asMessage)]
+    })
+    registerTopicConversation({ references: [], messages })
+    return unregisterTopicConversation
+  }, [conversation, viewerPubkey, people])
+
+  // And how to open one of its threads, for a citation into one that is closed (INT-8).
+  useEffect(() => {
+    registerThreadOpener(onOpenThread)
+    return unregisterThreadOpener
+  }, [onOpenThread])
 
   // Close the thread when the file changes.
   const prevAddress = useRef(address)
