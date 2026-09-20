@@ -195,6 +195,36 @@ export function TopicProjectPanelView({
 }) {
   const [expanded, setExpanded] = useState(false)
 
+  /*
+    Activity — CON-9's second list, under the files it is about.
+
+    A separate block rather than inside the project card, because these are
+    not the project's own comments: they are conversations on the tickets
+    listed above, and putting them inside the card would say they belong to
+    the project the way its tickets do.
+
+    **Drawn whether or not the Folder holds a Ship project.** Sub-file rows
+    need one, but a mention (CON-11) does not: any topic can be named from
+    another, and the read behind it is independent of the Folder's project.
+    Until this moved out of the project branch, a topic with no project
+    answered with the empty line alone and never showed the mentions it had —
+    which is how the first two on production went unseen.
+  */
+  const activitySection = onOpenThread && (
+    <section className="mt-4 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <SectionLabel>Activity</SectionLabel>
+        {activity.length > 0 && <span className="font-mono text-caption text-text-muted">{activity.length}</span>}
+      </div>
+      <TopicActivity
+        items={activity}
+        labelFor={subFileLabels}
+        selectedId={selectedConversationId}
+        onOpenThread={onOpenThread}
+      />
+    </section>
+  )
+
   if (folderProject === 'loading') {
     return (
       <PanelShell>
@@ -216,9 +246,10 @@ export function TopicProjectPanelView({
         {/* A section of the page is empty, not the page: the line alone,
             left, no icon (B18, D41), in the panel's own padding — never its
             own (Katerina, 2026-09-14). */}
-        <div className={PANEL_INSET}>
+        <ScrollArea className="flex-1" contentClassName={PANEL_INSET}>
           <EmptyState scope="section" message={describeRelayFailure(folderProject.failed)} />
-        </div>
+          {activitySection}
+        </ScrollArea>
       </PanelShell>
     )
   }
@@ -226,9 +257,13 @@ export function TopicProjectPanelView({
   if (folderProject === null) {
     return (
       <PanelShell>
-        <div className={PANEL_INSET}>
-          <EmptyState scope="section" message="No project linked to this topic." />
-        </div>
+        <ScrollArea className="flex-1" contentClassName={PANEL_INSET}>
+          {/* A Ship project is a file in this topic's Folder, not something
+              "linked" to it (FOL-2); the line says what is absent in those
+              words. */}
+          <EmptyState scope="section" message="No Ship project in this Folder." />
+          {activitySection}
+        </ScrollArea>
       </PanelShell>
     )
   }
@@ -288,30 +323,7 @@ export function TopicProjectPanelView({
           <ProjectTickets tickets={tickets} openCount={openCount} doneCount={doneCount} />
         </Card>
 
-        {/*
-          Activity — CON-9's second list, under the files it is about.
-
-          A separate block rather than inside the project card, because these
-          are not the project's own comments: they are conversations on the
-          tickets listed above, and putting them inside the card would say they
-          belong to the project the way its tickets do.
-        */}
-        {onOpenThread && (
-          <section className="mt-4 flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <SectionLabel>Activity</SectionLabel>
-              {activity.length > 0 && (
-                <span className="font-mono text-caption text-text-muted">{activity.length}</span>
-              )}
-            </div>
-            <TopicActivity
-              items={activity}
-              labelFor={subFileLabels}
-              selectedId={selectedConversationId}
-              onOpenThread={onOpenThread}
-            />
-          </section>
-        )}
+        {activitySection}
       </ScrollArea>
     </PanelShell>
   )
