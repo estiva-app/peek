@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
-import { useForeignObjects } from '@/api'
+import { useFollows, useForeignObjects } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import { fileContext, PEEK_HORIZON_DAYS, threadContext } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
@@ -42,6 +42,13 @@ import { fileHasUnread } from './fileUnread'
  * advances the same address. The frontier comes from the relay merge rather
  * than Convex, which has no watermark for a file; `fileHasUnread` says how
  * absence is read.
+ *
+ * ## Only followed files are judged (FOL-30)
+ *
+ * The dot exists only for what you follow. A file the person does not follow
+ * has no `unread` entry — not judged, like an unasked one — and the listing
+ * draws nothing for it however new its talk is. `counts` is not gated: how
+ * much a file holds is the file's fact, not the reader's subscription.
  */
 export function useConversationBadges(files: ForeignObject[] | undefined): {
   counts: Record<string, number>
@@ -50,6 +57,7 @@ export function useConversationBadges(files: ForeignObject[] | undefined): {
   const { conversations } = useForeignObjects()
   const [held, setHeld] = useState<Record<string, ConversationMessage[]>>({})
   const frontier = useReadFrontier()
+  const follows = useFollows()
 
   /*
     Keyed on the addresses, not the array.
@@ -105,9 +113,15 @@ export function useConversationBadges(files: ForeignObject[] | undefined): {
       counts[ref] = messages.length
       // Not judged until the first merge has landed: before that every marker
       // is absent, and "absent" would read as "new" for the whole listing.
-      if (!frontier.ready) continue
+      // Nor until the relay has said what the person follows (FOL-30).
+      if (!frontier.ready || follows.state === 'unknown') continue
+      const address = byRef.get(ref)?.address
+      // The dot exists only for what you follow: an unfollowed file is not
+      // judged, and its row draws nothing however new its talk is. The count
+      // above is not gated — "how much is here" is the file's, not the reader's.
+      if (!address || !follows.isFollowed(address)) continue
       unread[ref] = fileHasUnread(messages, {
-        file: frontier.marker(fileContext(byRef.get(ref)?.address)),
+        file: frontier.marker(fileContext(address)),
         thread: (root) => frontier.marker(threadContext(root)),
         me,
         nowSeconds,
@@ -117,5 +131,5 @@ export function useConversationBadges(files: ForeignObject[] | undefined): {
     return { counts, unread }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [held, frontier, key])
+  }, [held, frontier, follows.state, follows.isFollowed, key])
 }

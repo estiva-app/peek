@@ -70,6 +70,21 @@ export const DmHideable: Story = {
   args: { name: 'Amie Miles', type: 'DM', onHideDm: () => {} },
 }
 
+/** A followed file at rest (FOL-30): the quiet bell says this row can light; hover swaps it for the menu, whose item reads "Unfollow". */
+export const Followed: Story = {
+  args: { name: 'The file route', type: 'file', followAction: 'unfollow', onToggleFollow: () => {} },
+}
+
+/** Followed and unread: the dot wins the slot — the bell is only for a followed row with nothing new. */
+export const FollowedUnread: Story = {
+  args: { name: 'The file route', type: 'file', isUnread: true, followAction: 'unfollow', onToggleFollow: () => {} },
+}
+
+/** Not followed: nothing in the slot at rest, and the menu offers "Follow". */
+export const Unfollowed: Story = {
+  args: { name: 'The file route', type: 'file', followAction: 'follow', onToggleFollow: () => {} },
+}
+
 /** All row states side by side. */
 export const AllStates: Story = {
   parameters: { controls: { disable: true } },

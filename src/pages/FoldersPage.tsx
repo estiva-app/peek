@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { IconArrowUpRight, IconMessagePlus, IconTrash } from '@tabler/icons-react'
+import { IconArrowUpRight, IconBell, IconBellFilled, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ContainerHeader, Form, ListColumn, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -12,6 +12,7 @@ import {
   useConversationBadges,
   useFolderContents,
   useFolders,
+  useFollows,
   useForeignObjects,
   useTeamUnread,
   useTopics,
@@ -104,6 +105,17 @@ export function FoldersPage() {
   */
   const topics = useTopics()
   const topic = topics?.find((t) => t.folderId === id)
+
+  /*
+    Follow / unfollow the Folder itself (FOL-30): that is its general stream —
+    the messages in it that name no file — and it lights the Folder's dot on
+    its own, as a followed file in it does. Same control as the file page's,
+    keyed by the Folder's uuid, and absent until the relay has said what is
+    followed.
+  */
+  const follows = useFollows()
+  const followed = id ? follows.isFollowed(id) : false
+  const toggleFollow = id && follows.state !== 'unknown' ? () => void follows.setFollowed(id, !followed) : undefined
 
   async function create() {
     const trimmed = name.trim()
@@ -271,6 +283,16 @@ export function FoldersPage() {
                   >
                     <IconMessagePlus size={16} stroke={1.5} />
                   </ToolbarButton>
+                  {toggleFollow && (
+                    <ToolbarButton
+                      tooltip={followed ? 'Unfollow' : 'Follow'}
+                      aria-label={followed ? 'Unfollow this folder' : 'Follow this folder'}
+                      pressed={followed}
+                      onClick={toggleFollow}
+                    >
+                      {followed ? <IconBellFilled size={16} stroke={1.5} /> : <IconBell size={16} stroke={1.5} />}
+                    </ToolbarButton>
+                  )}
                   {topic ? (
                     /*
                       Not a delete. Deleting a topic is the topic's own action,
@@ -358,6 +380,10 @@ export function FoldersPage() {
                   showToast({ label: result.reason, type: 'error' })
                   return false
                 }
+                // You follow what you create (FOL-30). Not awaited: the topic
+                // exists whether or not the follow lands, and its own toggle
+                // is the recovery.
+                void follows.setFollowed(result.address, true)
                 await reloadContents()
                 return true
               }}

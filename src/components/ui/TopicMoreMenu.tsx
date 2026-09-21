@@ -45,6 +45,13 @@ export interface TopicMoreMenuProps {
    *  an action that is already true. */
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
+  /**
+   * Follow or unfollow the file (FOL-30): the unread dot exists only for what
+   * the person follows. Same shape as open work — the label states the
+   * direction that will work.
+   */
+  followAction?: 'follow' | 'unfollow'
+  onToggleFollow?: () => void
   onDeleteTopic?: () => void
   /**
    * Hide a DM from this viewer's sidebar (DMS-6). The label says "hide", not
@@ -63,6 +70,8 @@ export function TopicMoreMenu({
   onCopyLink,
   openWorkAction,
   onToggleOpenWork,
+  followAction,
+  onToggleFollow,
   onDeleteTopic,
   onHideDm,
 }: TopicMoreMenuProps) {
@@ -78,6 +87,9 @@ export function TopicMoreMenu({
           label={openWorkAction === 'add' ? 'Add to Open work' : 'Remove from Open work'}
           onClick={onToggleOpenWork}
         />
+      )}
+      {followAction && onToggleFollow && (
+        <MenuItem label={followAction === 'follow' ? 'Follow' : 'Unfollow'} onClick={onToggleFollow} />
       )}
       {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
       {onDeleteTopic && <MenuItem label="Delete topic" destructive onClick={onDeleteTopic} />}

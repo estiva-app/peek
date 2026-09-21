@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { IconDotsVertical, IconAlertSquareRounded, IconX } from '@tabler/icons-react'
+import { IconBell, IconDotsVertical, IconAlertSquareRounded, IconX } from '@tabler/icons-react'
 import { TopicState, type TopicStateType, type TopicStateStatus } from './TopicState'
 import { IconButton } from './IconButton'
 import { TopicMoreMenu } from './TopicMoreMenu'
@@ -35,6 +35,12 @@ interface PersonRowProps {
    *  more-menu — the label advertises which direction will succeed. */
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
+  /** Adds "Follow" / "Unfollow" to the more-menu (FOL-30), and marks a
+   *  followed row when idle — the state is visible without hovering, because
+   *  a followed-and-read row and an unfollowed one would otherwise look the
+   *  same, and only the first will ever light. */
+  followAction?: 'follow' | 'unfollow'
+  onToggleFollow?: () => void
   /** Adds "Hide conversation" to the more-menu (DMS-6) — DM rows whose hide
    *  can succeed. The same item the conversation header offers. */
   onHideDm?: () => void
@@ -61,11 +67,19 @@ export function PersonRow({
   onRename,
   openWorkAction,
   onToggleOpenWork,
+  followAction,
+  onToggleFollow,
   onHideDm,
   className,
 }: PersonRowProps) {
   const hasMenu =
-    !!onDeleteTopic || !!onOpenDetails || !!onRename || !!onHideDm || !!(openWorkAction && onToggleOpenWork)
+    !!onDeleteTopic ||
+    !!onOpenDetails ||
+    !!onRename ||
+    !!onHideDm ||
+    !!(openWorkAction && onToggleOpenWork) ||
+    !!(followAction && onToggleFollow)
+  const isFollowed = followAction === 'unfollow'
   const [isHovered, setIsHovered] = useState(false)
   /* The menu owns its button since `@estiva-app/ui` 0.10.0, so what this file
      keeps is not a position any more — it is only whether the menu is open,
@@ -142,6 +156,8 @@ export function PersonRow({
               onRename={onRename}
               openWorkAction={openWorkAction}
               onToggleOpenWork={onToggleOpenWork}
+              followAction={followAction}
+              onToggleFollow={onToggleFollow}
               onDeleteTopic={onDeleteTopic}
               onHideDm={onHideDm}
             />
@@ -157,6 +173,12 @@ export function PersonRow({
         </div>
       ) : isUnread ? (
         <UnreadDot />
+      ) : isFollowed ? (
+        /* Followed and nothing new: the quiet mark that says this row can light
+           (FOL-30). Information, not an affordance — the toggle is in the menu. */
+        <div className="w-6 h-6 flex items-center justify-center shrink-0" data-followed>
+          <IconBell size={12} stroke={1.5} className="text-text-muted" aria-label="Followed" />
+        </div>
       ) : null}
 
     </div>

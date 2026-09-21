@@ -39,6 +39,16 @@ import { fileHasUnread } from './fileUnread'
  * "Any Folder beneath it" has no instance to judge: teams never nest (the
  * project brief, 2026-09-05), and if a tree ever draws one Folder under
  * another, the fold over children is the tree's, from this answer per Folder.
+ *
+ * ## Only the streams the person follows (FOL-30)
+ *
+ * The dot exists only for what you follow. Each stream is asked of `followed`
+ * by its key — the file's address, or the Folder's own id for the general
+ * stream — before it is judged, and an unfollowed stream contributes nothing
+ * however new its messages are. Following a Folder follows its general chat;
+ * following a file follows that file's talk; neither implies the other. Read
+ * state is untouched by this: a marker still moves when the person visits, so
+ * following later starts from where they last were.
  */
 export function teamHasUnread(
   folderId: string,
@@ -46,6 +56,8 @@ export function teamHasUnread(
   frontier: {
     /** One context's merged marker, unix seconds; absent = undefined. */
     marker: (context: string | undefined) => number | undefined
+    /** Whether the person follows a stream — by file address, or by Folder id for the general one. */
+    followed: (key: string) => boolean
     /** The viewer's pubkey; their own messages do not count. */
     me: string | undefined
     /** Now and the horizon, both unix seconds — the absent-marker rule needs them. */
@@ -53,17 +65,20 @@ export function teamHasUnread(
     horizonSeconds: number
   },
 ): boolean {
-  const general = containerContext(folderId)
-  const streams = new Map<string | undefined, StreamMessage[]>()
+  // Keyed by what a person follows, not by read-state context: the address
+  // for a file's stream, the Folder's id for the general one.
+  const streams = new Map<string, StreamMessage[]>()
   for (const message of messages) {
-    const files = message.about.map(fileContext).filter((context) => context !== undefined)
-    for (const context of files.length > 0 ? files : [general]) {
-      const stream = streams.get(context)
+    const files = message.about.filter((address) => fileContext(address) !== undefined)
+    for (const key of files.length > 0 ? files : [folderId]) {
+      const stream = streams.get(key)
       if (stream) stream.push(message)
-      else streams.set(context, [message])
+      else streams.set(key, [message])
     }
   }
-  for (const [context, stream] of streams) {
+  for (const [key, stream] of streams) {
+    if (!frontier.followed(key)) continue
+    const context = key === folderId ? containerContext(folderId) : fileContext(key)
     const unread = fileHasUnread(stream, {
       file: frontier.marker(context),
       thread: (root) => frontier.marker(threadContext(root)),

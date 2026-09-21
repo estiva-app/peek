@@ -29,8 +29,11 @@ const replied = (id: string, at: number, inThread: string, about: string[] = [],
   urgent: false,
 })
 
-const frontier = (markers: Record<string, number> = {}, me = ME) => ({
+/* Everything followed unless a test says otherwise: the FOL-16/18 rules are
+   judged over the followed set, and these tests are about the rules. */
+const frontier = (markers: Record<string, number> = {}, me = ME, followed: (key: string) => boolean = () => true) => ({
   marker: (context: string | undefined) => (context ? markers[context] : undefined),
+  followed,
   me,
   nowSeconds: NOW,
   horizonSeconds: HORIZON,
@@ -100,5 +103,49 @@ describe('teamHasUnread — the rules it inherits from the file judge', () => {
   it('reads an absent marker by the horizon: recent is new, older is quiet (§11.6)', () => {
     expect(teamHasUnread(FOLDER, [said('m', NOW - 10, [FOL18])], frontier())).toBe(true)
     expect(teamHasUnread(FOLDER, [said('m', NOW - HORIZON - 10, [FOL18])], frontier())).toBe(false)
+  })
+})
+
+/*
+  FOL-30. The dot exists only for what you follow: each stream is asked of
+  `followed` by its key — the file's address, the Folder's own id for the
+  general stream — and an unfollowed stream contributes nothing however new
+  it is. The ticket's done-when in miniature: a message in a followed file
+  lights the team, the same in an unfollowed file lights nothing, and taking a
+  file off the list puts a lit team out at once, with no marker moving.
+*/
+describe('teamHasUnread — only followed streams are judged (FOL-30)', () => {
+  const only =
+    (...keys: string[]) =>
+    (key: string) =>
+      keys.includes(key)
+
+  it('lights for a followed file and not for an unfollowed one, given the same message', () => {
+    const messages = [said('m', NOW - 10, [FOL18])]
+    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL18)))).toBe(true)
+    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL16)))).toBe(false)
+    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false))).toBe(false)
+  })
+
+  it('gates the general stream on the Folder itself being followed', () => {
+    const chat = [said('m', NOW - 10)]
+    expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOLDER)))).toBe(true)
+    expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOL18)))).toBe(false)
+  })
+
+  it('follows a file without following its Folder, and the other way round', () => {
+    const both = [said('chat', NOW - 10), said('m', NOW - 10, [FOL18])]
+    // Chat is new, but only the file is followed: the file lights, and reading it puts the team out.
+    expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOL18)))).toBe(true)
+    expect(teamHasUnread(FOLDER, both, frontier({ [FOL18]: NOW }, ME, only(FOL18)))).toBe(false)
+    // The file is new, but only the Folder is followed: the chat lights, and reading the chat puts the team out.
+    expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOLDER)))).toBe(true)
+    expect(teamHasUnread(FOLDER, both, frontier({ [FOLDER]: NOW }, ME, only(FOLDER)))).toBe(false)
+  })
+
+  it('unfollowing clears a lit team at once, with no marker moving', () => {
+    const messages = [said('m', NOW - 10, [FOL18])]
+    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL18)))).toBe(true)
+    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only()))).toBe(false)
   })
 })

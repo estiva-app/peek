@@ -26,6 +26,7 @@ import { TopicMutationsProvider } from '@/api/internal/topicMutations'
 import { OpenWorkProvider } from '@/api/internal/openWork'
 import { ScreenerProvider } from '@/api/internal/screener'
 import { DmVisibilityProvider } from '@/api/internal/dmVisibility'
+import { FollowsProvider } from '@/api/internal/follows'
 import { AvatarRegistryProvider } from './avatars'
 import { MentionDirectorySync, TopicDirectorySync } from './mentions'
 import type { ConversationData } from './types'
@@ -93,7 +94,11 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
                 <DmRuntimeProvider>
                   {/* Hidden DMs (DMS-6): the relay's set, joined to rows through Convex.
                       It reads nothing from the stores above, so it sits innermost. */}
-                  <DmVisibilityProvider>{children}</DmVisibilityProvider>
+                  <DmVisibilityProvider>
+                    {/* The followed set (FOL-30): the relay's blob alone, read by the
+                        unread hooks and the follow controls. Reads no store above it. */}
+                    <FollowsProvider>{children}</FollowsProvider>
+                  </DmVisibilityProvider>
                 </DmRuntimeProvider>
               </ScreenerProvider>
             </OpenWorkProvider>

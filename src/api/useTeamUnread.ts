@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FolderSummary } from '@estiva-app/interop'
-import { useForeignObjects } from '@/api'
+import { useFollows, useForeignObjects } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { peekLiveTopics } from '@/nostr/liveTopics'
@@ -53,6 +53,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     streams: {},
   })
   const frontier = useReadFrontier()
+  const follows = useFollows()
 
   /*
     Keyed on the ids, not the array. `useFolders` reads once, but a caller may
@@ -127,8 +128,10 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   return useMemo(() => {
     const unread: Record<string, boolean> = {}
     // Not judged until the first merge has landed: before that every marker is
-    // absent, and "absent" would light the whole sidebar.
-    if (!frontier.ready) return { unread }
+    // absent, and "absent" would light the whole sidebar. Nor until the relay
+    // has said what the person follows (FOL-30): an unknown set is not an
+    // empty one, and judging over it would put every dot out and then relight.
+    if (!frontier.ready || follows.state === 'unknown') return { unread }
     const me = validToken()?.pubkey
     for (const folder of ids) {
       const messages = held.streams[folder]
@@ -136,6 +139,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       if (!messages) continue
       unread[folder] = teamHasUnread(folder, messages, {
         marker: frontier.marker,
+        followed: follows.isFollowed,
         me,
         nowSeconds: held.at,
         horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
@@ -154,5 +158,5 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       for (const container of folder.listedIn) unread[container] = true
     }
     return { unread }
-  }, [held, frontier, ids, folders])
+  }, [held, frontier, follows.state, follows.isFollowed, ids, folders])
 }
