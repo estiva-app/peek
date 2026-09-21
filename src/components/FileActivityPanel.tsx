@@ -30,7 +30,9 @@ import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivit
  * somebody just asked for and wins; Activity is context the page shows when
  * there is some — a file nobody has named keeps its two columns, since a
  * third that says only "No related conversations yet." would change every
- * file's page for the few that have one.
+ * file's page for the few that have one. Another app's file has its widget
+ * above this in the same column (`FileWidgetPanel`, FOL-29), and this takes
+ * the room the widget leaves.
  */
 export function FileActivityPanel({ mentions }: { mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()
@@ -94,7 +96,8 @@ export function FileActivityPanelView({
   labelFor: Map<string, string>
 }) {
   return (
-    <div className="flex h-full flex-col">
+    // The column's contract (D46): the room left, never `h-full` — under the file's widget (FOL-29) that room is what remains.
+    <div className="flex min-h-0 flex-1 flex-col">
       <ContainerHeader
         title={
           <div className="flex items-center gap-2">

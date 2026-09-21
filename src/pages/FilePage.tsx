@@ -12,6 +12,7 @@ import { FileThreadView } from '@/components/views/FileThreadView'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
+import { FileWidgetPanel } from '@/components/FileWidgetPanel'
 import {
   useFileAddress,
   rememberFileAddress,
@@ -26,6 +27,7 @@ import { useFileMentions } from '@/api/useFileMentions'
 import { fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef, identifierFromRef, shareableFileUrl, shortFilePath, topicPath } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
+import { referenceLink } from '@/lib/referenceLink'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { rememberRecent } from '@/lib/recents'
@@ -40,8 +42,9 @@ import { KIND_TOPIC } from '@/nostr/foreign'
  * Peek is where a file's conversation is read; this is the page that claim
  * needs. A Ship issue, a Ship project, a Peek bare file and a record from an
  * app nobody has written open here identically — navigation on the left, the
- * conversation in the middle, one thread on the right — because the address is
- * the whole of what the route carries and everything else comes off the owner's
+ * conversation in the middle, one thread on the right, or the owning app's
+ * widget while no thread is open (FOL-29) — because the address is the whole
+ * of what the route carries and everything else comes off the owner's
  * manifest at runtime. Nothing in this file knows what Ship is, and a kind
  * number here would turn the page into an integration.
  *
@@ -223,6 +226,27 @@ export function FilePage() {
     (`isCommentOn` keeps the two apart on the read).
   */
   const { mentions } = useFileMentions(ownView ? file?.address : null)
+  /*
+    The third column while no thread is open (FOL-29): another app's file has
+    its widget there, and under it the Activity above when there is any. A
+    bare file gets no widget — it is nobody's, so there is no other app whose
+    part of it the column could show, and its title is already the header —
+    and a file nobody has named keeps its two columns as before. "Another
+    app's" is `referenceLink`'s answer, the one place Peek says which files
+    live inside it: a file whose way in is a link out to its owner is the one
+    whose widget is worth a column. No kind number here, and a manifest from
+    an app nobody has written lands the same way Ship's does.
+  */
+  const home = file ? referenceLink(file.naddr ?? file.address ?? file.ref, file) : null
+  const widget = file && home?.place === 'app' ? <FileWidgetPanel file={file} /> : undefined
+  const activity = mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined
+  const aside =
+    widget || activity ? (
+      <div className="flex h-full flex-col">
+        {widget}
+        {activity}
+      </div>
+    ) : undefined
   const replyCounts =
     threads === 'loading' || 'failed' in threads
       ? undefined
@@ -393,8 +417,8 @@ export function FilePage() {
       }
       threadPanel={
         ownView ? (
-          // The thread is what somebody just asked for; Activity is what the page shows otherwise.
-          (peek.threadPanel ?? (mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined))
+          // The thread is what somebody just asked for; the widget and Activity are what the page shows otherwise.
+          (peek.threadPanel ?? aside)
         ) : openThread ? (
           <div className="flex h-full flex-col">
             <ContainerHeader
@@ -413,7 +437,9 @@ export function FilePage() {
               <FileThreadView root={openThread} state={threads} people={people} />
             </ScrollArea>
           </div>
-        ) : undefined
+        ) : (
+          aside
+        )
       }
     />
     </>

@@ -102,6 +102,8 @@ const threads = vi.hoisted(() => ({
 const writes = vi.hoisted(() => ({
   replyToComment: vi.fn(async () => ({ ok: true })),
   applyAction: vi.fn(async () => ({ ok: true })),
+  // The reference widget's own read (FOL-29) — never made for the file the page has already resolved.
+  resolveObject: vi.fn(async () => null),
   renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
   deleteFile: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // The short form's one read: the author of a `d`, off the fixtures (FOL-37).
@@ -299,6 +301,7 @@ beforeEach(() => {
   writes.deleteFile.mockClear()
   writes.resolveFolderContents.mockClear()
   writes.resolveFileAddress.mockClear()
+  writes.resolveObject.mockClear()
   shortForm.known.clear()
   convexTopics.list = []
   toasts.shown = []
@@ -701,6 +704,82 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     const column = screen.getByTestId('thread')
     expect(within(column).getByTestId('peek-thread')).toBeInTheDocument()
     expect(within(column).queryByText('Activity')).toBeNull()
+  })
+})
+
+/*
+  Another app's file has its widget in the third column while no thread is
+  open — FOL-29. The column stood empty until a thread opened, and what the
+  conversation was about was one line in the header. A bare file is nobody's,
+  so it gets nothing there.
+*/
+describe("FilePage puts another app's widget in the third column", () => {
+  const commentable = (object: ForeignObject) => ({ ...object, actions: [{ id: 'comment', label: 'Comment' }] })
+  /** The issue as Ship's manifest resolves it on production: a way into Ship, and a status. */
+  const shipIssue = foreign({
+    ...issue,
+    openUrl: 'https://ship.estiva.app/issue/the-file-route',
+    slots: { title: { value: 'The file route' }, status: { label: 'Status', value: 'In Progress', colour: 'blue', field: 'status' } },
+  })
+  const widget = () => screen.getByTestId('thread').querySelector('[data-file-widget]')
+
+  it('a Ship issue: the card, its title the link into Ship, under the app’s name', () => {
+    objects.byAddress[ISSUE_ADDRESS] = shipIssue
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const column = screen.getByTestId('thread')
+    expect(widget()).not.toBeNull()
+    // The column's bar names the app, and the card carries its own label: twice, by design.
+    expect(within(column).getAllByText('Estiva Ship')).toHaveLength(2)
+    expect(within(column).getByRole('link', { name: 'The file route' })).toHaveAttribute('href', shipIssue.openUrl)
+    expect(within(column).getByText('In Progress')).toBeInTheDocument()
+    // The same card `data-foreign-object` marks anywhere else; the tree beside it still draws rows.
+    expect(column.querySelector(`[data-foreign-object="${ISSUE_ADDRESS}"]`)).not.toBeNull()
+    expect(screen.getByTestId('left').querySelector('[data-foreign-object]')).toBeNull()
+  })
+
+  it('…and for a file the viewer may comment on, whose column is otherwise Peek’s', () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(shipIssue)
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(widget()).not.toBeNull()
+    expect(screen.getByTestId('middle').querySelector('[data-testid="peek-view"]')).not.toBeNull()
+  })
+
+  it('a bare file gets nothing: it is nobody’s, and its title is already the header', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+  })
+
+  it('opening a thread replaces the widget, and closing it brings the widget back', () => {
+    objects.byAddress[ISSUE_ADDRESS] = shipIssue
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    fireEvent.click(within(middle).getAllByRole('button', { name: THREAD_CONTROL })[0])
+    const column = screen.getByTestId('thread')
+    expect(within(column).getByText('Thread')).toBeInTheDocument()
+    expect(widget()).toBeNull()
+    fireEvent.click(within(column).getByRole('button', { name: 'Close thread' }))
+    expect(within(column).queryByText('Thread')).toBeNull()
+    expect(widget()).not.toBeNull()
+  })
+
+  it('a mention sits under the widget, in the same column', () => {
+    objects.byAddress[ISSUE_ADDRESS] = commentable(shipIssue)
+    mentions.byAddress[ISSUE_ADDRESS] = [
+      { id: 'm'.repeat(64), author: CATH, body: 'Names the issue.', createdAt: 1_700_000_000, kind: 1111, folder: FOLDER, saidIn: TOPIC_ADDRESS, threadId: 'r'.repeat(64), references: [TOPIC_ADDRESS, ISSUE_ADDRESS], files: [] },
+    ]
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const column = screen.getByTestId('thread')
+    const card = widget()!
+    const activity = within(column).getByText('Activity')
+    expect(card.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('the widget is handed the file the page resolved: no second read for it', () => {
+    objects.byAddress[ISSUE_ADDRESS] = shipIssue
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(widget()).not.toBeNull()
+    expect(writes.resolveObject).not.toHaveBeenCalled()
   })
 })
 
