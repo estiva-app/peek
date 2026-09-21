@@ -40,7 +40,7 @@
  * It takes a signer rather than reading a key file so that whichever identity
  * is granted can be handed in without editing this.
  */
-import { Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-app/protocol'
+import { KIND, Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { HANDLED_KINDS, MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
@@ -146,8 +146,17 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
         `/topic-old/`. Peek does not own `30840` (no `k` tag for it, and the
         consumer's `urls` reader needs none), but it is where such a file's
         conversation is read, so a pasted link to one resolves through this.
+
+        A thread is the topic's URL with `?thread=<id>` — the root comment's
+        event id — and the link is about the comment, not the topic (FOL-38).
+        Declared as its own shape beside the topic's: `matchObjectUrl` prefers
+        the pattern whose query the URL satisfies, so the same path with no
+        `?thread=` still resolves to the file. Nobody owns `kind:1111` either;
+        interop's built-in manifest draws a comment the way Peek draws a
+        message, which is why the kind is named here and not in `k`.
       */
       ['urls', `${appUrl.replace(/\/+$/, '')}/topic/<slug>-<d>`, String(KIND_BARE_FILE)],
+      ['urls', `${appUrl.replace(/\/+$/, '')}/topic/<slug>-<d>?thread=<id>`, String(KIND.COMMENT)],
       ['urls', `${appUrl.replace(/\/+$/, '')}/topic-old/<slug>-<d>`, String(TOPIC_KIND)],
       ['urls', `${appUrl.replace(/\/+$/, '')}/message/<id>`, String(MESSAGE_KIND)],
     ],

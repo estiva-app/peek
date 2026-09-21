@@ -55,7 +55,8 @@ import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
-import { applyActionAsViewer, threadsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
+import { applyActionAsViewer, threadsAsViewer, urlReferenceTagsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
+import { findUrls } from '@/lib/textParsing'
 
 /** Where a conversation lives. One shape today; see the module header. */
 export type ConversationContainer = {
@@ -315,11 +316,22 @@ export async function commentAsViewer(
   token: StoredToken,
 ): Promise<WriteResult> {
   const lowercase = new Set(['a', 'e', 'k', 'p'])
-  const extra: NostrTag[] = [
-    ...imetaTagsFor(args.files ?? []),
-    ...mentionTagsFor(args.body),
-    ...referenceTagsFor(args.body, args.container.address),
-  ]
+  /*
+    A pasted app URL is indexed like a `nostr:naddr…` (FOL-38): an `a` for an
+    object, a `q` for an event. Resolved before the event is built because the
+    address needs the relay; a URL that names nothing stays prose. The two
+    sources can name one object twice — a pointer and its link in the same
+    sentence — so the union is by tag, not by source.
+  */
+  const fromUrls = await urlReferenceTagsAsViewer(findUrls(args.body), args.container.address, relayUrl, token)
+  const seen = new Set<string>()
+  const references = [...referenceTagsFor(args.body, args.container.address), ...fromUrls].filter((tag) => {
+    const key = `${tag[0]}:${tag[1]}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body), ...references]
   const transform = (event: UnsignedActionEvent): UnsignedActionEvent => {
     const parent = args.parent
     const tags = parent

@@ -182,7 +182,7 @@ async function urlShapes(query: QueryFn) {
  *
  * The short route `/topic/<slug>-<d>` carries only the `d`, and a NIP-33
  * address also needs the author. This is the one `#d` query that recovers it,
- * on the same footing as `addressFromUrlAsViewer` below: RFC 0.5 §7.4 measured
+ * on the same footing as `referenceFromUrlAsViewer` below: RFC 0.5 §7.4 measured
  * that no `(kind, d)` is shared by two authors, so `limit: 1` on
  * `kinds: [30840]` is the whole answer. The `d` is returned as given rather
  * than read back off the event, so the address the page then resolves is the
@@ -204,7 +204,14 @@ export async function bareFileAddressAsViewer(
 }
 
 /**
- * The address a pasted app URL names, or null — RFC 0.5 §7.5, PRO-15.
+ * What a pasted app URL names: an addressable object, by its NIP-33 address,
+ * or an event, by its id. The two are resolved differently and tagged
+ * differently, so the caller is told which it has rather than left to sniff.
+ */
+export type UrlReference = { address: string; eventId?: undefined } | { eventId: string; address?: undefined }
+
+/**
+ * The reference a pasted app URL names, or null — RFC 0.5 §7.5, PRO-15.
  *
  * **Two steps, and the second is why this cannot be a pure function.**
  * `matchObjectUrl` recovers the kind and the `d`; a NIP-33 address also needs
@@ -212,29 +219,70 @@ export async function bareFileAddressAsViewer(
  * `#d` query, which §7.4's measurement makes unambiguous: no `(kind, d)` is
  * shared by two authors.
  *
+ * A URL that names an event — Peek's `/message/<id>`, or a thread's
+ * `?thread=<id>` (FOL-38) — costs nothing: the id is the whole identity, and
+ * whether the event exists is the resolver's question, not this one's.
+ *
  * A URL no manifest claims returns null and stays a plain link, which §7.5 says
  * is the honest outcome — it is a link, and nothing should pretend otherwise.
  */
-export async function addressFromUrlAsViewer(
+export async function referenceFromUrlAsViewer(
   url: string,
   relayUrl: string,
   token: StoredToken,
-): Promise<string | null> {
+): Promise<UrlReference | null> {
   const query = viewerQuery(relayUrl, token)
   try {
     const hit = matchObjectUrl(url, await urlShapes(query))
     if (!hit) return null
+    if (hit.by === 'id') return { eventId: hit.identifier }
     const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 1 }
     // Narrow by kind when the app named one. Without it the `d` alone is still
     // unambiguous, but the query is cheaper and the intent is clearer.
     if (hit.kind !== undefined) filter.kinds = [hit.kind]
     const [found] = await query([filter])
     if (!found) return null
-    return `${found.kind}:${found.pubkey}:${hit.identifier}`
+    return { address: `${found.kind}:${found.pubkey}:${hit.identifier}` }
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error
   }
+}
+
+/**
+ * The tags a comment carries for the app URLs its body names — the index half
+ * of a pasted link, as `referenceTagsFor` is for a `nostr:naddr…` (FOL-38).
+ *
+ * An addressable object is an `a` tag, the same index CON-11's Activity reads;
+ * the file the comment is on is left out for the reason `referenceTagsFor`
+ * gives. An event is a `q` tag — NIP-18's quote — and **not** an `e`: on a
+ * `kind:1111` a lowercase `e` is NIP-22's parent, and a root that carried one
+ * would read as a reply to whatever it mentioned (`fileMentions.ts` files a
+ * thread by its first `e`). The ticket said "an `a` or `e` tag"; `q` is the
+ * tag that says *mentioned* without saying *replied to*.
+ *
+ * Resolved here rather than in the composer because a URL is prose until it
+ * is sent — nothing chips it — and the address needs the relay anyway.
+ * A link that resolves to nothing carries no tag; the body still has it.
+ * Takes the URLs rather than the body: `findUrls` lives with the composer's
+ * parser (`lib/textParsing`), which this module does not import.
+ */
+export async function urlReferenceTagsAsViewer(
+  urls: readonly string[],
+  own: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<string[][]> {
+  if (urls.length === 0) return []
+  const found = await Promise.all([...new Set(urls)].map((url) => referenceFromUrlAsViewer(url, relayUrl, token)))
+  const addresses = new Set<string>()
+  const events = new Set<string>()
+  for (const ref of found) {
+    if (!ref) continue
+    if (ref.address !== undefined && ref.address !== own) addresses.add(ref.address)
+    if (ref.eventId !== undefined) events.add(ref.eventId)
+  }
+  return [...[...addresses].map((a) => ['a', a]), ...[...events].map((id) => ['q', id])]
 }
 
 export async function resolveObjectAsViewer(
@@ -249,14 +297,19 @@ export async function resolveObjectAsViewer(
 
       Taken here rather than at each call site so every surface that already
       renders an `naddr` — a message, a thread reply, a comment — renders a
-      pasted link with no further wiring. `addressFromUrlAsViewer` returns null
-      for a URL no manifest claims, and null is what the widget draws nothing
-      for, so an ordinary link is unaffected.
+      pasted link with no further wiring. `referenceFromUrlAsViewer` returns
+      null for a URL no manifest claims, and null is what the widget draws
+      nothing for, so an ordinary link is unaffected. A URL that names an
+      event — a message, a thread's root comment — takes the event path below
+      (FOL-38); before that, its id was put to a `#d` query and found nothing.
     */
     if (/^https?:\/\//i.test(reference)) {
-      const address = await addressFromUrlAsViewer(reference, relayUrl, token)
-      if (!address) return null
-      return await resolveForeignObject(address, query, cachedPeople(query), 0, manifests)
+      const ref = await referenceFromUrlAsViewer(reference, relayUrl, token)
+      if (!ref) return null
+      if (ref.eventId !== undefined) {
+        return await resolveForeignEvent(ref.eventId, query, cachedPeople(query), manifests)
+      }
+      return await resolveForeignObject(ref.address, query, cachedPeople(query), 0, manifests)
     }
     /*
       A message is an event, not an address (RIC-11).
