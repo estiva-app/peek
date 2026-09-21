@@ -32,6 +32,7 @@ import {
   resolveAsViewer,
   type ConversationContainer,
 } from './fileConversation'
+import { forgetUrlShapes } from './foreign'
 
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 const MIKY = 'c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2'
@@ -87,6 +88,21 @@ const manifest = event({
   }),
 })
 const file = event({ kind: BARE_FILE, tags: [['d', 'estiva-suits-updates'], ['title', 'Estiva Suits Updates'], ['h', FOLDER]] })
+/* A file a person links to by URL rather than by pointer (FOL-38): its `d` is
+   a uuid, as every linkable file's is, and Peek's manifest says what the link
+   looks like. */
+const LINKED_D = '4f9d2c1e-7b3a-4e5f-9a1b-2c3d4e5f6a7b'
+const linked = event({ kind: BARE_FILE, tags: [['d', LINKED_D], ['title', 'Linked'], ['h', FOLDER]] })
+const peekManifest = event({
+  kind: 31990,
+  tags: [
+    ['d', 'estiva-peek'],
+    ['urls', 'https://peek.estiva.app/topic/<slug>-<d>', String(BARE_FILE)],
+    ['urls', 'https://peek.estiva.app/topic/<slug>-<d>?thread=<id>', String(COMMENT)],
+    ['urls', 'https://peek.estiva.app/message/<id>', '9'],
+  ],
+  content: JSON.stringify({ name: 'Peek', projections: {} }),
+})
 
 const root = event({
   kind: COMMENT,
@@ -155,8 +171,9 @@ const signed = () => signViaEstivaId.mock.calls[0][0] as { kind: number; tags: s
 beforeEach(() => {
   publishSigned.mockClear()
   signViaEstivaId.mockClear()
+  forgetUrlShapes()
   queryRelay.mockImplementation(
-    relayOver([manifest, file, root, withPicture, mentionFromElsewhere, topicMessageNamingThis, legacyTopicComment, reply, edit, reaction, resolved]),
+    relayOver([manifest, peekManifest, file, linked, root, withPicture, mentionFromElsewhere, topicMessageNamingThis, legacyTopicComment, reply, edit, reaction, resolved]),
   )
 })
 
@@ -248,6 +265,38 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
   it('a root that names another file carries its address as a, and never its own file twice (CON-11)', async () => {
     await commentAsViewer({ container, body: `See ${OTHER_NADDR}, unlike ${OWN_NADDR}` }, 'https://relay.test', token)
     expect(signed().tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', OTHER]])
+  })
+
+  it('a pasted app URL is indexed too: an object as a, an event as q (FOL-38)', async () => {
+    // A URL is prose until it is sent, so the index is written here, from the
+    // same relay read the widget will make. `q`, not `e`: on a kind:1111 the
+    // lowercase `e` is the parent, and a root carrying one would file itself
+    // as a reply to what it merely mentioned.
+    const thread = 'd'.repeat(64)
+    await commentAsViewer(
+      {
+        container,
+        body:
+          `Compare https://peek.estiva.app/topic/linked-${LINKED_D} with ` +
+          `https://peek.estiva.app/topic/x-${LINKED_D}?thread=${thread} and https://example.com/not-ours`,
+      },
+      'https://relay.test',
+      token,
+    )
+    const tags = signed().tags
+    expect(tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', `${BARE_FILE}:${CATH}:${LINKED_D}`]])
+    expect(tags.filter((t) => t[0] === 'q')).toEqual([['q', thread]])
+    expect(tags.filter((t) => t[0] === 'e')).toEqual([])
+  })
+
+  it('a pointer and its link to the same file are one a tag', async () => {
+    const linkedNaddr = `nostr:${encodeNaddr({ kind: BARE_FILE, pubkey: CATH, identifier: LINKED_D, relays: [] })}`
+    await commentAsViewer(
+      { container, body: `${linkedNaddr} — https://peek.estiva.app/topic/linked-${LINKED_D}` },
+      'https://relay.test',
+      token,
+    )
+    expect(signed().tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', `${BARE_FILE}:${CATH}:${LINKED_D}`]])
   })
 
   it('a reply that names another file carries its address as a, beside the parent trio', async () => {

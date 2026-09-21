@@ -132,7 +132,7 @@ export function addressFromRef(ref: string): string | null {
  * A bare file's `d` is a uuid, and RFC 0.5 §7.4 measured that no `(kind, d)`
  * is shared by two authors, so the `d` alone recovers the address with one
  * `{kinds: [30840], "#d": [d]}` query — the same reasoning
- * `addressFromUrlAsViewer` already rests on for a pasted Ship URL. The slug is
+ * `referenceFromUrlAsViewer` already rests on for a pasted Ship URL. The slug is
  * decorative, as everywhere in §7: a caller without the title writes the bare
  * uuid and `FilePage` canonicalises once it knows what the file is called.
  *
