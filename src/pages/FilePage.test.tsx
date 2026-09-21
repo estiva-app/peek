@@ -11,7 +11,7 @@
  * hold. `FoldersPage.test.tsx` used to pin that such a file "opens nothing",
  * which was true of the pane and is the gap this route closes.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,7 +28,10 @@ const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 const PROJECT_ADDRESS = `30850:${SHIP}:0ebd5fdd-c58a-416e-b8a7-cbdcec77b77f`
 const ISSUE_ADDRESS = `30851:${SHIP}:d68a8c78-5ec7-4652-b236-89ab57ac5b1e`
-const TOPIC_ADDRESS = `30840:${CATH}:0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f`
+const TOPIC_D = '0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
+const TOPIC_ADDRESS = `30840:${CATH}:${TOPIC_D}`
+/** The short form FOL-37 gives a bare file: its slug and `d`, no author. */
+const TOPIC_SHORT = `/topic/fol-15-test-topic-2-${TOPIC_D}`
 
 const comment = (id: string, body: string, createdAt: number) => ({
   id: id.repeat(64).slice(0, 64),
@@ -100,10 +103,21 @@ const writes = vi.hoisted(() => ({
   applyAction: vi.fn(async () => ({ ok: true })),
   renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
   deleteFile: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
+  // The short form's one read: the author of a `d`, off the fixtures (FOL-37).
+  resolveFileAddress: vi.fn(async (d: string) => Object.keys(objects.byAddress).find((a) => a.endsWith(`:${d}`)) ?? null),
   // The delete flow reads the Folder for `hasState` seconds before the write.
   resolveFolderContents: vi.fn(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] })),
 }))
 const toasts = vi.hoisted(() => ({ shown: [] as { label: string; type?: string }[] }))
+/** The Convex topics still on the listing — none unless a test says so. */
+const convexTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; folderId: string }[] }))
+/**
+ * The short form's seam, stood in for (FOL-37): the addresses the page has
+ * remembered, and a hook that asks `writes.resolveFileAddress` for the rest.
+ * The real hook's own behaviour is `useBareFileAddress.test.tsx`; what this
+ * page's tests pin is when the page reads and when it remembers.
+ */
+const shortForm = vi.hoisted(() => ({ known: new Map<string, string>() }))
 /** What the page handed Peek's own view, per mount. */
 const peekView = vi.hoisted(() => ({ args: [] as Record<string, unknown>[] }))
 vi.mock('@/components/views/useFileConversationView', () => ({
@@ -147,6 +161,19 @@ vi.mock('@/api', async () => ({
     reload: async () => {},
   }),
   useForeignObjects: () => writes,
+  useBareFileAddress: (identifier: string | null | undefined) => {
+    const [got, setGot] = useState<{ identifier: string; address: string | null }>()
+    useEffect(() => {
+      if (!identifier || shortForm.known.has(identifier)) return
+      void writes.resolveFileAddress(identifier).then((address) => setGot({ identifier, address }))
+    }, [identifier])
+    if (!identifier) return 'loading'
+    const known = shortForm.known.get(identifier)
+    if (known) return { address: known }
+    if (got?.identifier !== identifier) return 'loading'
+    return got.address ? { address: got.address } : 'unresolved'
+  },
+  rememberFileAddress: (address: string) => shortForm.known.set(address.split(':')[2], address),
   useForeignConversation: (address: string | null | undefined) => ({
     state: address ? (objects.byAddress[address] ?? 'unresolved') : 'loading',
     reload: async () => {},
@@ -155,8 +182,9 @@ vi.mock('@/api', async () => ({
   useFileThreads: () => ({ state: threads.state, reload: threads.reload }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useTeamUnread: () => ({ unread: {} }),
-  // The tree's "Open folder" asks whether a Folder is one of Peek's topics.
-  useTopics: () => [],
+  // The tree's "Open folder" asks whether a Folder is one of Peek's topics;
+  // the page asks whether a short link's uuid is one's channel (FOL-37).
+  useTopics: () => convexTopics.list,
   useWorkspaceDirectory: () => undefined,
   useIsTopicResolved: () => () => false,
   // The Activity column names the file a mention was said on by resolving it.
@@ -264,6 +292,9 @@ beforeEach(() => {
   writes.renameFile.mockClear()
   writes.deleteFile.mockClear()
   writes.resolveFolderContents.mockClear()
+  writes.resolveFileAddress.mockClear()
+  shortForm.known.clear()
+  convexTopics.list = []
   toasts.shown = []
   peekView.args = []
   mentions.byAddress = {}
@@ -301,7 +332,56 @@ describe('FilePage opens a file by address, not against the listing', () => {
     // A `39000:` resolves — it is a real event — but its conversation is
     // `kind:9` under `h`, which no `#a` read returns. It has its own page.
     mount(`/topic/39000:${CATH}:${FOLDER}`)
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${FOLDER}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/${FOLDER}`)
+  })
+})
+
+/*
+  The short form — FOL-37. `/topic/<slug>-<d>` carries a bare file's `d` and no
+  author; the page recovers the address with one read and then draws the file
+  exactly as it does from the long form, which it turns into the short one.
+*/
+describe('FilePage opens a topic in a Folder at its short form', () => {
+  it('opens /topic/<slug>-<d> from the d alone, with one read for the author', async () => {
+    mount(TOPIC_SHORT)
+    expect(writes.resolveFileAddress).toHaveBeenCalledTimes(1)
+    expect(writes.resolveFileAddress).toHaveBeenCalledWith(TOPIC_D)
+    const middle = screen.getByTestId('middle')
+    expect(await within(middle).findByText('FOL-15 test topic 2')).toBeInTheDocument()
+    expect(screen.getByTestId('url').textContent).toBe(TOPIC_SHORT)
+  })
+
+  it('canonicalises the long form to the short one, with no second read', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.getByTestId('url').textContent).toBe(TOPIC_SHORT)
+    expect(within(screen.getByTestId('middle')).getByText('FOL-15 test topic 2')).toBeInTheDocument()
+    // The page had the address; the replace must not throw it away and ask again.
+    expect(writes.resolveFileAddress).not.toHaveBeenCalled()
+  })
+
+  it('refreshes a slug a rename has left stale — the d is the identity', async () => {
+    mount(`/topic/what-it-used-to-be-called-${TOPIC_D}?thread=x`)
+    await within(screen.getByTestId('middle')).findByText('FOL-15 test topic 2')
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${TOPIC_SHORT}?thread=x`))
+  })
+
+  it('leaves a Ship issue at its long form: only a bare file has a short one', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(within(screen.getByTestId('middle')).getByText('The file route')).toBeInTheDocument()
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
+  })
+
+  it('says so for a d no bare file carries, rather than drawing an empty conversation', async () => {
+    mount('/topic/nothing-here-00000000-0000-4000-8000-000000000000')
+    expect(await screen.findByText('This conversation could not be read.')).toBeInTheDocument()
+    expect(screen.queryByText('That link does not point at anything Peek can open.')).toBeNull()
+  })
+
+  it('sends an old /topic/<slug>-<channel-uuid> link — a Convex topic — to /topic-old/', () => {
+    convexTopics.list = [{ id: '7', title: 'Office layout', folderId: FOLDER }]
+    mount(`/topic/whatever-${FOLDER}?huddle=h1`)
+    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/office-layout-${FOLDER}?huddle=h1`)
+    expect(writes.resolveFileAddress).not.toHaveBeenCalled()
   })
 })
 
@@ -359,7 +439,8 @@ describe('FilePage draws every app’s file in the same panes', () => {
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     fireEvent.click(within(topicRow).getByText('FOL-15 test topic 2'))
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${TOPIC_ADDRESS}`)
+    // A bare file's link is its short form (FOL-37); an issue's stays the address.
+    expect(screen.getByTestId('url').textContent).toBe(TOPIC_SHORT)
   })
 
   it('draws the tree as rows, not cards — no widget in the column', () => {
@@ -702,7 +783,17 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   it('the header of a bare file has the menu: details, rename, delete', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(openHeaderMenu()).toEqual(['Topic details', 'Rename', 'Delete topic'])
+    expect(openHeaderMenu()).toEqual(['Topic details', 'Rename', 'Copy link', 'Delete topic'])
+  })
+
+  it('Copy link hands out the short form — the ticket’s done-when (FOL-37)', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = bareFile
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    openHeaderMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${TOPIC_SHORT}`))
   })
 
   it('the header of a Ship issue has no menu at all — only Open folder', () => {
@@ -806,7 +897,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
     await waitFor(() => expect(toasts.shown).toHaveLength(1))
     expect(toasts.shown[0]).toMatchObject({ label: 'invalid: must be event author', type: 'warning' })
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${TOPIC_ADDRESS}`)
+    // Stays — at the short form the page canonicalised the long link to (FOL-37).
+    expect(screen.getByTestId('url').textContent).toBe(TOPIC_SHORT)
   })
 
   it('an unreadable Folder means no delete at all — hasState is never guessed', async () => {

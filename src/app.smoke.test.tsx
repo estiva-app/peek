@@ -96,7 +96,7 @@ describe('app smoke (seam wiring)', () => {
    */
   describe('object URLs (PEE-14)', () => {
     const UUID = 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91'
-    const CANONICAL = `/topic/updates-on-the-new-office-layout-${UUID}`
+    const CANONICAL = `/topic-old/updates-on-the-new-office-layout-${UUID}`
 
     it('cold-loads a topic from its canonical URL', () => {
       renderApp(CANONICAL)
@@ -107,13 +107,13 @@ describe('app smoke (seam wiring)', () => {
     /** §7.2: a consumer MUST ignore everything before the final uuid — which is
      *  what keeps a link working after the topic has been renamed. */
     it('resolves a link whose slug is stale, and refreshes the slug', () => {
-      renderApp(`/topic/whatever-this-used-to-be-called-${UUID}`)
+      renderApp(`/topic-old/whatever-this-used-to-be-called-${UUID}`)
       expect(present('Updates on the new office layout')).toBeGreaterThan(0)
       expect(currentUrl()).toBe(CANONICAL)
     })
 
     it('resolves a bare uuid with no slug at all', () => {
-      renderApp(`/topic/${UUID}`)
+      renderApp(`/topic-old/${UUID}`)
       expect(present('Updates on the new office layout')).toBeGreaterThan(0)
       expect(currentUrl()).toBe(CANONICAL)
     })
@@ -139,11 +139,29 @@ describe('app smoke (seam wiring)', () => {
       expect(currentUrl()).toBe(`${CANONICAL}?huddle=h1`)
     })
 
+    /** The short form was the Convex topic's until FOL-37 and is in the wild;
+     *  a link that names a channel uuid there opens the topic at its new prefix,
+     *  and carries its query along. */
+    it('sends an old /topic/<slug>-<channel-uuid> link to /topic-old/', () => {
+      renderApp(`/topic/whatever-this-used-to-be-called-${UUID}?huddle=h1`)
+      expect(present('Updates on the new office layout')).toBeGreaterThan(0)
+      expect(currentUrl()).toBe(`${CANONICAL}?huddle=h1`)
+    })
+
+    /** A short link whose uuid is no topic's is a file's, and stays on the file
+     *  page: nothing here can resolve it, and it must not fall through to the
+     *  topics page and land on "some" topic. */
+    it('keeps a /topic/<slug>-<d> that is no topic on the file page', () => {
+      renderApp('/topic/some-file-00000000-0000-4000-8000-000000000000')
+      expect(currentUrl()).toBe('/topic/some-file-00000000-0000-4000-8000-000000000000')
+      expect(screen.queryByText(/doesn't lead to a topic you can open/)).toBeNull()
+    })
+
     /** A link that resolves to nothing says so, rather than quietly showing a
      *  different conversation — which would leave somebody believing they were
      *  reading what the link pointed to. */
     it('says so when a link resolves to no topic', () => {
-      renderApp('/topic/deleted-topic-00000000-0000-4000-8000-000000000000')
+      renderApp('/topic-old/deleted-topic-00000000-0000-4000-8000-000000000000')
       expect(present(/doesn't lead to a topic you can open/)).toBeGreaterThan(0)
     })
   })

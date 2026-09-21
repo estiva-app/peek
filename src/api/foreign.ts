@@ -19,6 +19,7 @@ import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { hasConvex } from './store'
 import {
   applyActionAsViewer,
+  bareFileAddressAsViewer,
   commentedFileOf,
   creatableUnderAsViewer,
   placeForReferenceAsViewer,
@@ -82,6 +83,19 @@ export function useForeignObjects() {
     async (naddr: string): Promise<ForeignObject | null> => {
       const v = viewer()
       return v ? resolveObjectAsViewer(naddr, v.relayUrl, v.token) : null
+    },
+    [viewer],
+  )
+
+  /**
+   * The address behind a short topic link's `d` (FOL-37), or null when no
+   * bare file carries it — and null signed out, which the page renders as the
+   * same dead link a signed-out viewer gets from `resolveObject`.
+   */
+  const resolveFileAddress = useCallback(
+    async (identifier: string): Promise<string | null> => {
+      const v = viewer()
+      return v ? bareFileAddressAsViewer(identifier, v.relayUrl, v.token) : null
     },
     [viewer],
   )
@@ -300,6 +314,7 @@ export function useForeignObjects() {
 
   return {
     resolveObject,
+    resolveFileAddress,
     resolveFolderProject,
     resolveFolderContents,
     conversations,

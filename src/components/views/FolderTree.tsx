@@ -138,7 +138,7 @@ export function FolderTree({
         selectedRef={selectedRef}
         selectedParent={selectedParent}
         onSelect={(file) => {
-          if (file.address) navigate(filePath(file.address))
+          if (file.address) navigate(filePath(file.address, file.slots.title?.value))
         }}
         onOpenFolder={(id) => navigate(folderPath(id))}
         onControl={onControl}

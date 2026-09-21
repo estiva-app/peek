@@ -6,7 +6,7 @@
  * That was the limit: a Ship issue is its project's child, fetched from the
  * project's manifest when a row is expanded, and never a peer in the Folder —
  * so a link to one opened the Folder and nothing else. The pane is gone; a row
- * now leads to `/topic/<address>`, where the file is resolved on its own.
+ * now leads to `/topic/<slug>-<d>` (FOL-37; `/topic/<address>` for another app's file), where the file is resolved on its own.
  *
  * The dwell tests that were here went with it, to `FilePage.test.tsx`: this
  * page marks nothing read, because a listing is not a reading.
@@ -150,7 +150,7 @@ describe('FoldersPage opens a file at its own address', () => {
     marks.thread.mockClear()
   })
 
-  it("a row's conversation control leads to /topic/<address>", async () => {
+  it("a row's conversation control leads to the file's own page", async () => {
     relay.files = [topic]
     mount(`/folders/${FOLDER}`)
     await userEvent.click(screen.getByRole('button', { name: /Conversation/i }))
@@ -160,7 +160,8 @@ describe('FoldersPage opens a file at its own address', () => {
       unreadable — RFC 0.5 §7.3's objection to bech32 in URLs, arrived at from
       the other side.
     */
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${FILE_ADDRESS}`)
+    // A bare file's link is its short form (FOL-37): the slug and the d.
+    expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
   })
 
   it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
@@ -209,9 +210,9 @@ describe('FoldersPage manages a topic’s Folder from the topic', () => {
     expect(screen.getAllByText('For testing').length).toBeGreaterThan(0)
     // A real link (UIG-14, F3): the address is on it, and a plain click routes in place.
     const open = screen.getByRole('link', { name: "Open this folder's topic" })
-    expect(open.getAttribute('href')).toBe(`/topic/for-testing-${TOPIC_CHANNEL}`)
+    expect(open.getAttribute('href')).toBe(`/topic-old/for-testing-${TOPIC_CHANNEL}`)
     await userEvent.click(open)
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/for-testing-${TOPIC_CHANNEL}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/for-testing-${TOPIC_CHANNEL}`)
   })
 
   it('still offers the delete and the rename on a Folder that is not a topic', () => {

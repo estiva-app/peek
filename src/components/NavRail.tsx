@@ -27,8 +27,9 @@ export function NavRail() {
       icon: <IconMessage2 size={16} stroke={1.5} />,
       label: 'Topics',
       // Both routes belong to this section: `/topics` is the directory and a
-      // single topic lives at `/topic/<slug>-<uuid>` (PEE-14).
-      match: ['/topics', '/topic'],
+      // single topic lives at `/topic/<slug>-<d>` (PEE-14) — or, for a Convex
+      // topic, at `/topic-old/` (FOL-37).
+      match: ['/topics', '/topic', '/topic-old'],
     },
     {
       to: '/folders',

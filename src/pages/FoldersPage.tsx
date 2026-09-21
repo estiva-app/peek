@@ -195,7 +195,7 @@ export function FoldersPage() {
             signedOut={signedOut}
             unread={teamUnread}
             currentFolder={id}
-            onSelect={(file) => file.address && navigate(filePath(file.address))}
+            onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
             onOpenFolder={(folder) => navigate(folderPath(folder))}
           />
         </ListColumn>
@@ -313,7 +313,7 @@ export function FoldersPage() {
                   held, so a Ship issue (its project's child, never a peer in
                   the Folder) had no way to open at all.
                 */
-                onSelect={(file) => file.address && navigate(filePath(file.address))}
+                onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
                 onMove={setMovingFile}
                 onStartTopic={(file) => setStartingTopic({ parent: file })}
                 counts={counts}

@@ -29,7 +29,12 @@
  *
  * Kept free of React and of `@/api` so the grammar can be tested on its own;
  * the hook that needs a topic lookup is `useTopicPath`.
+ *
+ * Since FOL-37 the short form belongs to what is being built: `/topic/<slug>-<d>`
+ * is a bare file in a Folder, and the Convex channel topics — being retired —
+ * live at `/topic-old/<slug>-<uuid>`.
  */
+import { KIND_BARE_FILE } from '@estiva-app/interop'
 
 /**
  * A v4 uuid at the very end of a ref.
@@ -93,15 +98,15 @@ export function identifierFromRef(ref: string): string | null {
 const ADDRESS_RE = /^(\d{1,6}):([0-9a-f]{64}):(.+)$/i
 
 /**
- * The address a `/topic/<ref>` path names, or `null` when it names a topic —
- * FOL-19.
+ * The address a `/topic/<ref>` path names, or `null` when it carries a bare
+ * `d` instead — FOL-19, FOL-37.
  *
- * One route serves two grammars. `/topic/<slug>-<uuid>` is Peek's own topic,
- * §7's shape and the only one that existed before this; `/topic/<address>` is
- * **any file**, Peek's or another app's, resolved by address rather than
- * against a listing's peers. Which one a link is, is readable from the link:
- * an address carries two colons and a slug carries none, so nothing has to be
- * fetched to decide and a legacy link is untouched.
+ * One route serves two grammars. `/topic/<address>` is **any file**, Peek's or
+ * another app's, resolved by address rather than against a listing's peers;
+ * `/topic/<slug>-<d>` is a bare file's short form (`filePath`), and this
+ * returns null for it so `identifierFromRef` can read the tail. Which one a
+ * link is, is readable from the link: an address carries two colons and a slug
+ * carries none, so nothing has to be fetched to decide.
  *
  * The ref as given is tested **first**, because `useParams` has already decoded
  * the path segment and decoding twice would corrupt a `d` containing a literal
@@ -123,17 +128,57 @@ export function addressFromRef(ref: string): string | null {
  * The path one file opens at — RFC 0.5 §10.7 and the project brief's "one page
  * shape for every file" (FOL-19).
  *
- * The colons are left as they are. A colon is a legal path character (RFC 3986
- * `pchar`), and `%3A` would make the one part of the URL that carries meaning
- * unreadable — §7.3's objection to bech32 in URLs, arrived at from the other
- * side. Only the `d` is escaped, because it is the one segment an app is free
- * to put anything in.
+ * **A topic in a Folder takes §7's short form, `/topic/<slug>-<d>`** (FOL-37).
+ * A bare file's `d` is a uuid, and RFC 0.5 §7.4 measured that no `(kind, d)`
+ * is shared by two authors, so the `d` alone recovers the address with one
+ * `{kinds: [30840], "#d": [d]}` query — the same reasoning
+ * `addressFromUrlAsViewer` already rests on for a pasted Ship URL. The slug is
+ * decorative, as everywhere in §7: a caller without the title writes the bare
+ * uuid and `FilePage` canonicalises once it knows what the file is called.
+ *
+ * Every other kind keeps the long form, `/topic/<kind>:<pubkey>:<d>`. A Ship
+ * issue is another app's object and its `d` is whatever Ship chose; a short
+ * form for it would put a kind lookup in front of every link, which is the
+ * redirect table §7.2 was written to avoid. The colons are left as they are.
+ * A colon is a legal path character (RFC 3986 `pchar`), and `%3A` would make
+ * the one part of the URL that carries meaning unreadable — §7.3's objection
+ * to bech32 in URLs, arrived at from the other side. Only the `d` is escaped,
+ * because it is the one segment an app is free to put anything in.
  */
-export function filePath(address: string): string {
+export function filePath(address: string, title?: string): string {
   const match = ADDRESS_RE.exec(address)
   if (!match) return `/topic/${encodeURIComponent(address)}`
   const [, kind, pubkey, identifier] = match
+  if (Number(kind) === KIND_BARE_FILE && TRAILING_UUID_RE.test(identifier) && identifier.length === 36) {
+    return `/topic/${objectRef(identifier.toLowerCase(), title)}`
+  }
   return `/topic/${kind}:${pubkey.toLowerCase()}:${encodeURIComponent(identifier)}`
+}
+
+/**
+ * A file's shareable URL — what "Copy link" on its page hands out (FOL-37).
+ *
+ * `filePath` with an origin: the short form for a bare file, the address for
+ * everything else. Unlike `shareableTopicUrl` this is never null, because an
+ * address is a protocol identity by construction — there is no file here
+ * whose only link is Peek-private.
+ */
+export function shareableFileUrl(address: string, title: string | undefined, origin: string): string {
+  return `${origin.replace(/\/+$/, '')}${filePath(address, title)}`
+}
+
+/**
+ * Whether a `/topic/<ref>` names this file, in either grammar — the launcher's
+ * "the page you are on is not somewhere to go" (FOL-37).
+ *
+ * The short form carries only the `d`, so a bare file is matched on its
+ * identifier; the long form is matched on the whole address.
+ */
+export function refNamesFile(ref: string, address: string): boolean {
+  const asAddress = addressFromRef(ref)
+  if (asAddress) return asAddress.toLowerCase() === address.toLowerCase()
+  const identifier = identifierFromRef(ref)
+  return identifier !== null && address.toLowerCase().endsWith(`:${identifier}`)
 }
 
 /** What `topicPath` needs to build a link — a `Topic`, or anything shaped like one. */
@@ -146,7 +191,9 @@ export interface TopicLinkTarget {
 }
 
 /**
- * The path for one topic.
+ * The path for one Convex channel topic — `/topic-old/<slug>-<uuid>` since
+ * FOL-37, because these topics are being retired and the short `/topic/`
+ * form now belongs to a bare file in a Folder (`filePath`).
  *
  * Falls back to the legacy `/topics/<peek-id>` shape when the topic has no
  * channel uuid — mock data in tests and Storybook, and pre-emission topics on
@@ -159,7 +206,7 @@ export function topicPath(
   opts?: { huddleId?: string | null },
 ): string {
   const base = topic.folderId
-    ? `/topic/${objectRef(topic.folderId, topic.title)}`
+    ? `/topic-old/${objectRef(topic.folderId, topic.title)}`
     : `/topics/${encodeURIComponent(topic.id)}`
   return opts?.huddleId ? `${base}?huddle=${encodeURIComponent(opts.huddleId)}` : base
 }

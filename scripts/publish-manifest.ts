@@ -44,7 +44,7 @@ import { Relay, signEvent, publicKeyFromSecret, toNostrSeconds } from '@estiva-a
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { HANDLED_KINDS, MANIFEST_D_TAG, MESSAGE_KIND, TOPIC_KIND, manifestContent } from '../src/nostr/manifest'
-import { widgetChainProblem, actionProblems, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
+import { KIND_BARE_FILE, widgetChainProblem, actionProblems, resolveForeignEvent, type QueryFn } from '@estiva-app/interop'
 
 const RELAY_URL = process.env.RELAY_URL ?? 'http://localhost:3000'
 const KEY_FILE = new URL('../.manifest-key', import.meta.url).pathname
@@ -140,8 +140,15 @@ function buildManifest(pubkey: string, createdAtMs: number, appUrl: string): Uns
         Two identities, and the placeholder says which: `<d>` is a topic's
         channel uuid, resolved with `#d`; `<id>` is a message's event id,
         resolved with `ids`, because a kind:9 has no `d` at all (§7.6).
+
+        Since FOL-37 the short `/topic/` form is a bare file's — a topic in a
+        Folder, `kind:30840` — and the Convex channel topics are at
+        `/topic-old/`. Peek does not own `30840` (no `k` tag for it, and the
+        consumer's `urls` reader needs none), but it is where such a file's
+        conversation is read, so a pasted link to one resolves through this.
       */
-      ['urls', `${appUrl.replace(/\/+$/, '')}/topic/<slug>-<d>`, String(TOPIC_KIND)],
+      ['urls', `${appUrl.replace(/\/+$/, '')}/topic/<slug>-<d>`, String(KIND_BARE_FILE)],
+      ['urls', `${appUrl.replace(/\/+$/, '')}/topic-old/<slug>-<d>`, String(TOPIC_KIND)],
       ['urls', `${appUrl.replace(/\/+$/, '')}/message/<id>`, String(MESSAGE_KIND)],
     ],
     content: JSON.stringify(manifestContent()),

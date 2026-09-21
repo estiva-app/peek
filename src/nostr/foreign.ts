@@ -178,6 +178,32 @@ async function urlShapes(query: QueryFn) {
 }
 
 /**
+ * The address of the bare file with this `d`, or null — FOL-37.
+ *
+ * The short route `/topic/<slug>-<d>` carries only the `d`, and a NIP-33
+ * address also needs the author. This is the one `#d` query that recovers it,
+ * on the same footing as `addressFromUrlAsViewer` below: RFC 0.5 §7.4 measured
+ * that no `(kind, d)` is shared by two authors, so `limit: 1` on
+ * `kinds: [30840]` is the whole answer. The `d` is returned as given rather
+ * than read back off the event, so the address the page then resolves is the
+ * one the link named.
+ *
+ * Throws a `RelayReadError` rather than answering null for an outage: the
+ * page tells "nothing has this `d`" apart from "the relay could not be asked",
+ * the way `useForeignConversation` does for the resolve that follows.
+ */
+export async function bareFileAddressAsViewer(
+  identifier: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<string | null> {
+  const [found] = await viewerQuery(relayUrl, token)([
+    { kinds: [KIND_BARE_FILE], '#d': [identifier], limit: 1 },
+  ])
+  return found ? `${found.kind}:${found.pubkey}:${identifier}` : null
+}
+
+/**
  * The address a pasted app URL names, or null — RFC 0.5 §7.5, PRO-15.
  *
  * **Two steps, and the second is why this cannot be a pure function.**
