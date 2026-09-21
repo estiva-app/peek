@@ -16,7 +16,7 @@ import {
 } from '@tabler/icons-react'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
-import { AvatarGroup, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { AttachmentCard, AvatarGroup, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { RouterLink } from './RouterLink'
 import { Chip } from './ui/Chip'
 import { Reaction as ReactionPill } from './ui/Reaction'
@@ -29,7 +29,6 @@ import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
 import { useIsTopicResolved, useAvatarSrc, hasConvex } from '@/api'
-import { FileAttachmentCard } from './ui/FileAttachmentCard'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -40,7 +39,8 @@ import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { useTopicPath } from '@/lib/useTopicPath'
 import { useEditAttachments } from '@/lib/useEditAttachments'
-import { pastedImages } from '@/lib/fileAttachments'
+import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
+import { blobObjectUrl } from '@/nostr/media'
 
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
 
@@ -677,7 +677,7 @@ export function ConversationCard({
           {!isEditing && files && files.length > 0 && (
             <div className="flex flex-wrap items-start gap-2 pl-8 pr-2 pb-2 w-full">
               {files.map((f, i) => (
-                <FileAttachmentCard key={f.storageId ?? `${f.name}_${i}`} file={f} />
+                <AttachmentCard key={f.storageId ?? `${f.name}_${i}`} {...postedAttachment(f)} fetchImage={blobObjectUrl} download data-interactive />
               ))}
             </div>
           )}
