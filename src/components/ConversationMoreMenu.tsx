@@ -49,6 +49,8 @@ interface ConversationMoreMenuProps {
   onEditMessage?: () => void
   onViewDetails?: () => void
   onDelete?: () => void
+  /** The viewer wrote this message. Edit and Delete show only then — PEE-32. */
+  isOwnMessage?: boolean
   /** The ⋯ button; the menu owns it. A `ToolbarButton` when the menu sits
    *  in the hover toolbar, so the strip stays one Tab stop (D29). */
   trigger?: ReactElement
@@ -76,6 +78,7 @@ export function ConversationMoreMenu({
   onEditMessage,
   onViewDetails,
   onDelete,
+  isOwnMessage = false,
   trigger,
   className,
 }: ConversationMoreMenuProps) {
@@ -161,36 +164,27 @@ export function ConversationMoreMenu({
 
       <div className="flex flex-col">
         {/*
-          Offered on every message since CON-8, like Delete before it.
+          Edit and Delete only on the viewer's own message — PEE-32, reversing
+          CON-8 and CON-3.
 
-          The gate was right while Peek's edit only patched its own database:
-          offering it on somebody else's message would have rewritten their
-          words for Peek's readers and nobody else's. Now the edit publishes a
-          kind:40003 and the relay adjudicates — it accepts one from the
-          target's effective author or the NIP-OA owner of an authoring agent,
-          and no client can evaluate the second half.
+          Those two offered both to everyone because the relay accepts an edit
+          or a deletion from the author OR the NIP-OA owner of an authoring
+          agent, and a client cannot evaluate the second half. The relay still
+          refuses a non-author, so what everyone saw was a control that could
+          not succeed on anybody else's message — and "I should not be able to
+          edit someone else's message" is the objection. Ruled 2026-09-21: hide
+          both; an agent's owner loses the control in Peek, not the right.
         */}
-        {!isTopic && <MenuItem label="Edit message" onClick={onEditMessage} />}
+        {!isTopic && isOwnMessage && <MenuItem label="Edit message" onClick={onEditMessage} />}
         <MenuItem label="View details" onClick={onViewDetails} />
       </div>
 
-      {/*
-        Offered on every message — CON-3, and the relay adjudicates.
-
-        This was `isOwnMessage &&`, written to SPEC §6.5's rule that a relay
-        "honours a deletion only from the pubkey that signed the original". That
-        rule was withdrawn on 2026-09-06; the reference relay accepts the author
-        or the author's NIP-OA owner, and a client cannot tell which it is
-        looking at.
-
-        Safe to remove only because `messages.remove` no longer deletes ahead of
-        the relay (PEE-18): with no local claim the rows stay put, the kind:5 is
-        published, and the row goes when the relay accepts it. Removing this
-        gate against the old mutation would have handed everybody the ability to
-        drop anybody's message from Peek while the relay kept it.
-      */}
-      <MenuSeparator />
-      <MenuItem label="Delete" destructive onClick={onDelete} />
+      {isOwnMessage && (
+        <>
+          <MenuSeparator />
+          <MenuItem label="Delete" destructive onClick={onDelete} />
+        </>
+      )}
     </Menu>
   )
 }

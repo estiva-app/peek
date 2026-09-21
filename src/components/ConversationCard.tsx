@@ -28,7 +28,7 @@ import { ConfirmDelete } from './ConfirmDelete'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useIsTopicResolved, useAvatarSrc, hasConvex } from '@/api'
+import { useIsTopicResolved, useAvatarSrc, hasConvex, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -371,6 +371,12 @@ export function ConversationCard({
     setResolutionMsg('')
     onResolvedChange?.(false)
   }
+
+  // Only the author edits or deletes (PEE-32). Every seam maps the viewer's
+  // own rows to `CURRENT_USER_NAME` — `toConversationData` by Convex author
+  // id, `useFileConversationView`'s `project` by pubkey — so the label is the
+  // one signal the card has, and the same one the "You" header reads.
+  const isOwnMessage = isCurrentUser(authorName)
 
   // Delete asks first (D56): the menu row opens the question, the delete runs on Yes.
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -799,8 +805,9 @@ export function ConversationCard({
                   onRevertToConversation={handleRevertToConversation}
                   onResolve={() => setShowResolveDialog(true)}
                   onReopen={handleReopen}
-                  onEditMessage={!isTopic ? handleEditStart : undefined}
-                  onDelete={handleDelete}
+                  isOwnMessage={isOwnMessage}
+                  onEditMessage={!isTopic && isOwnMessage ? handleEditStart : undefined}
+                  onDelete={isOwnMessage ? handleDelete : undefined}
                 />
               }
             />

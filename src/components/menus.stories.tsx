@@ -134,23 +134,19 @@ function conversationMore(props: Partial<ComponentProps<typeof ConversationMoreM
 }
 
 /**
- * A DM message that hasn't seeded a topic yet: Start topic · Resolve · Open work ·
- * Mark as Highlight, then View details. Hover "Mark as Highlight" to open the
- * 5-type submenu.
+ * Somebody else's DM message that hasn't seeded a topic yet: Start topic ·
+ * Resolve · Open work · Mark as Highlight, then View details — no Edit, no
+ * Delete. Hover "Mark as Highlight" to open the 5-type submenu.
  */
 export const ConversationMoreDmMessage: Story = { render: () => conversationMore({}) }
 
 /**
- * Edit and Delete are on **every** message, not only your own.
- *
- * This story was `OwnMessage` and set `isOwnMessage: true`, from when both rows
- * were gated on authorship. CON-3 and CON-8 removed that: the relay accepts a
- * deletion or an edit from the target's effective author *or* the NIP-OA owner
- * of an authoring agent, and no client can evaluate the second half — so a local
- * author check hides the control from the one other party the relay would
- * accept. The default story now shows what everybody sees.
+ * Your own message adds Edit message above View details and Delete below the
+ * rule. PEE-32 put the authorship gate back that CON-3 and CON-8 had removed:
+ * the relay refuses a non-author anyway, so the control everyone saw could not
+ * succeed on anybody else's message.
  */
-export const ConversationMoreEveryMessage: Story = { render: () => conversationMore({}) }
+export const ConversationMoreOwnMessage: Story = { render: () => conversationMore({ isOwnMessage: true }) }
 
 /** A message that already started a topic drops "Start topic". */
 export const ConversationMoreAlreadySeeded: Story = {
