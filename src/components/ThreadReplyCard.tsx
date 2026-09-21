@@ -18,7 +18,7 @@ import { ConfirmDelete } from './ConfirmDelete'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
-import { useIsTopicResolved, hasConvex } from '@/api'
+import { useIsTopicResolved, hasConvex, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -36,12 +36,14 @@ import { UnreadDot } from './ui/UnreadDot'
 
 // ── Reply More Menu ──
 
-function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, currentHighlight, onHighlight, className }: {
+function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, isOwnMessage = false, currentHighlight, onHighlight, className }: {
   /** The ⋯ button — the menu owns it, and portals, fits and exits itself. */
   trigger: ReactElement
   onOpenChange?: (open: boolean) => void
   onEdit?: () => void
   onDelete?: () => void
+  /** The viewer wrote this reply. Edit and Delete show only then — PEE-32. */
+  isOwnMessage?: boolean
   currentHighlight?: HighlightType
   onHighlight?: (type: HighlightType | undefined) => void
   className?: string
@@ -50,19 +52,12 @@ function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, currentHighlig
     <Menu trigger={trigger} align="right" onOpenChange={onOpenChange} className={cn('w-[180px] gap-2', className)}>
       <div className="flex flex-col">
         {/*
-          Offered on every reply, not just your own — CON-3 for Delete below and
-          CON-8 for this. The relay accepts an edit or a deletion from the
-          target's effective author OR the NIP-OA owner of an authoring agent,
-          and no client can evaluate the second half, so a local author check is
-          narrower than the relay's and hides the control from the one other
-          party it would accept.
-
-          **This menu was missed when CON-3 removed the gate from
-          `ConversationMoreMenu`.** Two menus, one rule, and only one of them was
-          changed — so a reply kept the withdrawn behaviour while a message got
-          the corrected one, which is worse than either alone.
+          Edit and Delete only on the viewer's own reply — PEE-32, the same rule
+          as `ConversationMoreMenu` and its comment. Two menus, one rule: CON-3
+          changed only one of them once, and a reply kept the behaviour a
+          message had lost. Change both or neither.
         */}
-        <MenuItem label="Edit message" onClick={onEdit} />
+        {isOwnMessage && <MenuItem label="Edit message" onClick={onEdit} />}
         {onHighlight && (
           /* The shared submenu (2026-09-03). This menu's hand-rolled copy is
              the one that dropped the ref its edge-flip measured — it measured
@@ -91,8 +86,12 @@ function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, currentHighlig
           </MenuSub>
         )}
       </div>
-      <MenuSeparator />
-      <MenuItem label="Delete" destructive onClick={onDelete} />
+      {isOwnMessage && (
+        <>
+          <MenuSeparator />
+          <MenuItem label="Delete" destructive onClick={onDelete} />
+        </>
+      )}
     </Menu>
   )
 }
@@ -379,6 +378,10 @@ export function ThreadReplyCard({
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
 
+  // Only the author edits or deletes (PEE-32) — the seams label the viewer's
+  // own rows `CURRENT_USER_NAME`, as `ConversationCard` reads it.
+  const isOwnMessage = isCurrentUser(authorName)
+
   // Delete asks first (D56).
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const handleDelete = () => setConfirmingDelete(true)
@@ -565,8 +568,9 @@ export function ThreadReplyCard({
                   setMoreMenuOpen(next)
                   if (!next) setIsHovered(false)
                 }}
-                onEdit={handleEditStart}
-                onDelete={handleDelete}
+                isOwnMessage={isOwnMessage}
+                onEdit={isOwnMessage ? handleEditStart : undefined}
+                onDelete={isOwnMessage ? handleDelete : undefined}
                 currentHighlight={highlightState}
                 onHighlight={handleHighlightChange}
               />
