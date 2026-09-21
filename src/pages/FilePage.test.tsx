@@ -611,6 +611,33 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     expect(peekView.args.every((a) => a.container === null)).toBe(true)
     expect(screen.queryByTestId('peek-view')).toBeNull()
   })
+
+  /*
+    PEE-33. A Ship project's record carries no `h` — it is placed under its
+    team by a `kind:1852` — and `useForeignConversation` now reads the Folder
+    its conversation lives in off the record. Two things to pin: that the
+    Folder it found is the container's `h`, and that a commentable file which
+    still names none draws its comments read-only rather than a column that
+    loads for ever.
+  */
+  it('a Ship project: the Folder the resolve found, not the record’s absent h, is the container', () => {
+    objects.byAddress[PROJECT_ADDRESS] = commentable({ ...project, folder: '2611db6d-57f0-4f39-a454-a198298b526f' })
+    mount(`/topic/${PROJECT_ADDRESS}`)
+    const view = within(screen.getByTestId('middle')).getByTestId('peek-view')
+    expect(view.getAttribute('data-address')).toBe(PROJECT_ADDRESS)
+    expect(view.getAttribute('data-h')).toBe('2611db6d-57f0-4f39-a454-a198298b526f')
+  })
+
+  it('a commentable file with no Folder at all keeps the read-only conversation — never a spinner', () => {
+    objects.byAddress[PROJECT_ADDRESS] = commentable({ ...project, folder: undefined, comments: issue.comments })
+    mount(`/topic/${PROJECT_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    expect(peekView.args.every((a) => a.container === null)).toBe(true)
+    expect(within(middle).queryByTestId('peek-view')).toBeNull()
+    // Its comments, off the same resolve, in the read-only panes.
+    expect(middle.querySelectorAll('[data-comment]')).toHaveLength(issue.comments.length)
+    expect(within(middle).queryByRole('textbox')).toBeNull()
+  })
 })
 
 /*

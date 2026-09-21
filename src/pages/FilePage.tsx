@@ -19,6 +19,7 @@ import {
   useForeignConversation,
   useTopics,
   useWorkspaceDirectory,
+  type ConversationContainer,
   type ForeignConversationState,
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
@@ -191,19 +192,29 @@ export function FilePage() {
     conversation view: the Topics cards, composer and thread pane over
     `kind:1111`. A file the viewer may only look at keeps the read-only panes.
     The two reads are exclusive, so a page pays for one of them and never both.
+
+    And only with somewhere to write (PEE-33). Peek's view needs the Folder the
+    comment goes in, and a file that resolved without one — a record with
+    neither `h` nor a channel of its own, after `useForeignConversation` has
+    asked — cannot have it; handing the view no container left the column
+    loading for ever, since the view answers a null container with nothing.
+    Such a file keeps the read-only panes, which draw its comments off the
+    same resolve: a conversation one can read and not write in, never a spinner.
   */
   const canComment = !!file?.naddr && (file.actions ?? []).some((a) => a.id === 'comment')
+  const container: ConversationContainer | null =
+    canComment && file?.address && file.folder ? { kind: 'file', address: file.address, h: file.folder } : null
+  const ownView = container !== null
   const title = file?.slots.title?.value ?? 'File'
   const peek = useFileConversationView({
-    container:
-      canComment && file?.address && file.folder ? { kind: 'file', address: file.address, h: file.folder } : null,
+    container,
     rootIds,
     openThreadId,
     onOpenThread: setOpenThread,
     title,
     onCommented: reloadConversation,
   })
-  const { state: threads } = useFileThreads(canComment ? null : file?.address, rootIds)
+  const { state: threads } = useFileThreads(ownView ? null : file?.address, rootIds)
   /*
     Activity — the comments elsewhere that name this file (CON-11), read by
     `#a` off the relay for a file Peek's own view draws. It takes the third
@@ -211,7 +222,7 @@ export function FilePage() {
     own conversation is the middle column, and a mention is not part of it
     (`isCommentOn` keeps the two apart on the read).
   */
-  const { mentions } = useFileMentions(canComment ? file?.address : null)
+  const { mentions } = useFileMentions(ownView ? file?.address : null)
   const replyCounts =
     threads === 'loading' || 'failed' in threads
       ? undefined
@@ -364,7 +375,7 @@ export function FilePage() {
               ) : undefined
             }
           />
-          {canComment ? (
+          {ownView ? (
             peek.conversation
           ) : (
             /* The package's bar, not the browser's (D40). */
@@ -381,7 +392,7 @@ export function FilePage() {
         </div>
       }
       threadPanel={
-        canComment ? (
+        ownView ? (
           // The thread is what somebody just asked for; Activity is what the page shows otherwise.
           (peek.threadPanel ?? (mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined))
         ) : openThread ? (
