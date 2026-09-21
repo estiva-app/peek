@@ -24,8 +24,9 @@
  * ## Writes
  *
  * A comment is the owner's `comment` action, exactly as `applyActionAsViewer`
- * publishes it, with the composer's attachments as `imeta` (CON-12) and its
- * mentions as `p`. Everything else is a plain protocol event at the comment:
+ * publishes it, with the composer's attachments as `imeta` (CON-12), its
+ * mentions as `p`, and every file its body names as `a` (CON-11 — the
+ * mention is the tag). Everything else is a plain protocol event at the comment:
  * `kind:40003` to edit (CON-8), `kind:5` to delete or to take a reaction back
  * (CON-3 — the relay adjudicates, the client does not pre-judge), `kind:7` to
  * react, `kind:9101` to resolve or reopen (PEEK-128). No Convex row is written
@@ -37,9 +38,12 @@ import {
   buildEdit,
   buildReaction,
   buildResolution,
+  decodeNaddr,
   decodeNpub,
+  findNaddrs,
   findNostrUris,
   imetaOf,
+  pointerToAddress,
   imetaTag,
   type NostrTag,
   type ResolutionAction,
@@ -155,6 +159,44 @@ export function mentionTagsFor(body: string): NostrTag[] {
 }
 
 /**
+ * The files a body names by `nostr:naddr…`, as `a` tags — the mention half of
+ * Activity (CON-11). Mirrors `convex/nostr/refs.ts`'s `referencedAddresses`,
+ * which is what a `kind:9` gets: the body is the source and the tag is the
+ * index, so one `#a` filter answers "who named this file" without reading
+ * every conversation the viewer can see (`fileMentions.ts`).
+ *
+ * The file the comment is on is left out. A root already carries it as `a`
+ * and `A`, and on a reply NIP-22's lowercase `a` would name the parent — a
+ * second copy would say the reply is a root.
+ */
+export function referenceTagsFor(body: string, own: string): NostrTag[] {
+  const addresses = new Set<string>()
+  for (const naddr of findNaddrs(body)) {
+    try {
+      const address = pointerToAddress(decodeNaddr(naddr))
+      if (address !== own) addresses.add(address)
+    } catch {
+      // A malformed pointer is prose.
+    }
+  }
+  return [...addresses].map((a) => ['a', a])
+}
+
+/**
+ * Is this root a comment on the file, rather than a comment elsewhere that
+ * merely names it? NIP-22's `A` is the thread's root object; a comment written
+ * on another file that carries this file's address as an `a` tag (above) is
+ * returned by the object's `#a` read all the same, and would be drawn as if
+ * somebody had said it here. It is that file's conversation and this file's
+ * Activity (`fileMentions.ts`). A root with no `A` at all predates the tag and
+ * is kept.
+ */
+export function isCommentOn(event: { tags: NostrTag[] }, address: string): boolean {
+  const root = event.tags.find((tag) => tag[0] === 'A')?.[1]
+  return !root || root === address
+}
+
+/**
  * The whole conversation below the roots: replies, and what has been done to
  * every root and reply.
  *
@@ -176,6 +218,11 @@ export async function fileConversationAsViewer(
   const roots = rootIds
     .map((id) => threads.roots[id])
     .filter((root): root is FileComment => !!root)
+    // A mention from another file's conversation arrives by `#a` too, and is not a root here.
+    .filter((root) => {
+      const event = raw.get(root.id)
+      return !event || isCommentOn(event, container.address)
+    })
     .map((root) => withTags(root, raw.get(root.id), container.address))
   const replies: Record<string, ConversationEvent[]> = {}
   for (const [rootId, list] of Object.entries(threads.replies)) {
@@ -247,7 +294,11 @@ export async function commentAsViewer(
   token: StoredToken,
 ): Promise<WriteResult> {
   const lowercase = new Set(['a', 'e', 'k', 'p'])
-  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body)]
+  const extra: NostrTag[] = [
+    ...imetaTagsFor(args.files ?? []),
+    ...mentionTagsFor(args.body),
+    ...referenceTagsFor(args.body, args.container.address),
+  ]
   const transform = (event: UnsignedActionEvent): UnsignedActionEvent => {
     const parent = args.parent
     const tags = parent

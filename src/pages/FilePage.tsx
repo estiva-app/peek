@@ -11,7 +11,9 @@ import { ForeignConversationView } from '@/components/views/ForeignConversationV
 import { FileThreadView } from '@/components/views/FileThreadView'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
+import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { useFileThreads, useForeignConversation, useWorkspaceDirectory } from '@/api'
+import { useFileMentions } from '@/api/useFileMentions'
 import { fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
@@ -145,6 +147,14 @@ export function FilePage() {
     onCommented: reloadConversation,
   })
   const { state: threads } = useFileThreads(canComment ? null : file?.address, rootIds)
+  /*
+    Activity — the comments elsewhere that name this file (CON-11), read by
+    `#a` off the relay for a file Peek's own view draws. It takes the third
+    column when no thread is open and there is something to show; the file's
+    own conversation is the middle column, and a mention is not part of it
+    (`isCommentOn` keeps the two apart on the read).
+  */
+  const { mentions } = useFileMentions(canComment ? file?.address : null)
   const replyCounts =
     threads === 'loading' || 'failed' in threads
       ? undefined
@@ -299,7 +309,8 @@ export function FilePage() {
       }
       threadPanel={
         canComment ? (
-          peek.threadPanel
+          // The thread is what somebody just asked for; Activity is what the page shows otherwise.
+          (peek.threadPanel ?? (mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined))
         ) : openThread ? (
           <div className="flex h-full flex-col">
             <ContainerHeader

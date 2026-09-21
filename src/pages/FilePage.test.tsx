@@ -16,7 +16,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
-import { READ_DWELL_MS } from '@/api'
+import { PeekDataProvider, READ_DWELL_MS } from '@/api'
+import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } from '@/lib/lastSelection'
 import { resetRecentsForTests } from '@/lib/recents'
 import { FilePage } from './FilePage'
@@ -158,7 +159,17 @@ vi.mock('@/api', async () => ({
   useTopics: () => [],
   useWorkspaceDirectory: () => undefined,
   useIsTopicResolved: () => () => false,
-  useResolvedReferences: () => ({}),
+  // The Activity column names the file a mention was said on by resolving it.
+  useResolvedReferences: (refs: readonly string[]) =>
+    Object.fromEntries(refs.map((ref) => [ref, objects.byAddress[ref] ?? null])),
+}))
+/** The comments elsewhere that name the open file (CON-11), per address asked. */
+const mentions = vi.hoisted(() => ({ byAddress: {} as Record<string, unknown[]>, asked: [] as (string | null | undefined)[] }))
+vi.mock('@/api/useFileMentions', () => ({
+  useFileMentions: (address: string | null | undefined) => {
+    mentions.asked.push(address)
+    return { mentions: (address && mentions.byAddress[address]) || [] }
+  },
 }))
 /** The scroll a landing asks for — the DOM anchor is the thread pane's, mocked away above. */
 const anchor = vi.hoisted(() => ({ scrollTo: vi.fn(async () => true) }))
@@ -201,15 +212,20 @@ function Seed({ pending }: { pending: PendingTopicMessage }) {
 
 function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
   return render(
-    <LastSelectionProvider>
-      <MemoryRouter initialEntries={[url]}>
-        {opts?.pending && <Seed pending={opts.pending} />}
-        <Routes>
-          <Route path="/topic/:ref" element={<><FilePage /><Probe /></>} />
-          <Route path="*" element={<Probe />} />
-        </Routes>
-      </MemoryRouter>
-    </LastSelectionProvider>,
+    // The data provider is the real one: an Activity row is a `ConversationCard`, which reads the topic store.
+    <DebugProvider>
+      <PeekDataProvider>
+        <LastSelectionProvider>
+          <MemoryRouter initialEntries={[url]}>
+            {opts?.pending && <Seed pending={opts.pending} />}
+            <Routes>
+              <Route path="/topic/:ref" element={<><FilePage /><Probe /></>} />
+              <Route path="*" element={<Probe />} />
+            </Routes>
+          </MemoryRouter>
+        </LastSelectionProvider>
+      </PeekDataProvider>
+    </DebugProvider>,
   )
 }
 
@@ -250,6 +266,8 @@ beforeEach(() => {
   writes.resolveFolderContents.mockClear()
   toasts.shown = []
   peekView.args = []
+  mentions.byAddress = {}
+  mentions.asked = []
   anchor.scrollTo.mockClear()
   window.localStorage.clear()
   resetRecentsForTests()
@@ -455,6 +473,70 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(peekView.args.every((a) => a.container === null)).toBe(true)
     expect(screen.queryByTestId('peek-view')).toBeNull()
+  })
+})
+
+/*
+  Activity — CON-11. A comment on another file whose body names this one
+  carries the address as an `a` tag, and the page reads those by `#a`. It is
+  the third column when no thread is open: labelled Mentioned in, naming the
+  file it was said on, and opening the thread there rather than here.
+*/
+describe('FilePage draws the comments elsewhere that name this file', () => {
+  const commentable = (object: ForeignObject) => ({ ...object, actions: [{ id: 'comment', label: 'Comment' }] })
+  /** Said on the issue, in a thread rooted there, naming the bare file. */
+  const mention = {
+    id: 'm'.repeat(64),
+    author: CATH,
+    body: 'Same shape as the topic, one level down.',
+    createdAt: 1_700_000_000,
+    kind: 1111,
+    folder: FOLDER,
+    saidIn: ISSUE_ADDRESS,
+    threadId: 'r'.repeat(64),
+    references: [ISSUE_ADDRESS, TOPIC_ADDRESS],
+    files: [],
+  }
+
+  it('asks by the file’s address, and only for a file the viewer may comment on', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(mentions.asked).toContain(TOPIC_ADDRESS)
+  })
+
+  it('…and not for a read-only file, whose conversation is not Peek’s view', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(mentions.asked.every((a) => !a)).toBe(true)
+  })
+
+  it('a mention is the third column: labelled, naming the file it was said on, and leading to its thread', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const column = screen.getByTestId('thread')
+    expect(within(column).getByText('Activity')).toBeInTheDocument()
+    const row = column.querySelector('[data-relation="mention"]')!
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('Mentioned in')).toBeInTheDocument()
+    expect(within(row as HTMLElement).getByText('The file route')).toBeInTheDocument()
+    expect(within(row as HTMLElement).getByText(mention.body)).toBeInTheDocument()
+    fireEvent.click(within(row as HTMLElement).getByText(mention.body))
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${mention.threadId}`)
+  })
+
+  it('a file nobody has named keeps its two columns', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+  })
+
+  it('an open thread wins the column', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    mount(`/topic/${TOPIC_ADDRESS}?thread=${'r'.repeat(64)}`)
+    const column = screen.getByTestId('thread')
+    expect(within(column).getByTestId('peek-thread')).toBeInTheDocument()
+    expect(within(column).queryByText('Activity')).toBeNull()
   })
 })
 
