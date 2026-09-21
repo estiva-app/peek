@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { IconArrowUpRight, IconDotsVertical, IconX } from '@tabler/icons-react'
+import { IconArrowUpRight, IconBell, IconBellFilled, IconDotsVertical, IconX } from '@tabler/icons-react'
 import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -17,6 +17,7 @@ import {
   useFileAddress,
   rememberFileAddress,
   useFileThreads,
+  useFollows,
   useForeignConversation,
   useTopics,
   useWorkspaceDirectory,
@@ -311,6 +312,18 @@ export function FilePage() {
       }
     : undefined
 
+  /*
+    Follow / unfollow (FOL-30): the unread dot exists only for what the person
+    follows, and this is where they say so for the file in front of them. The
+    state shows in the button itself (pressed = followed), not on hover. Absent
+    while the relay has not said what is followed — a toggle then would write
+    a guess over the person's list, and the seam refuses it anyway.
+  */
+  const follows = useFollows()
+  const followed = file?.address ? follows.isFollowed(file.address) : false
+  const toggleFollow =
+    file?.address && follows.state !== 'unknown' ? () => void follows.setFollowed(file.address!, !followed) : undefined
+
   if (topicIdentifier) return <Navigate to={`/topic-old/${topicIdentifier}`} replace />
   // A Convex topic's old short link: the same page it always opened, at its new prefix.
   if (legacyTopic) return <Navigate to={`${topicPath(legacyTopic)}${location.search}`} replace />
@@ -376,6 +389,16 @@ export function FilePage() {
                   >
                     <IconArrowUpRight size={16} stroke={1.5} />
                   </ToolbarLink>
+                  {toggleFollow && (
+                    <ToolbarButton
+                      tooltip={followed ? 'Unfollow' : 'Follow'}
+                      aria-label={followed ? 'Unfollow' : 'Follow'}
+                      pressed={followed}
+                      onClick={toggleFollow}
+                    >
+                      {followed ? <IconBellFilled size={16} stroke={1.5} /> : <IconBell size={16} stroke={1.5} />}
+                    </ToolbarButton>
+                  )}
                   {/*
                     The topic's menu, when the manifest offers anything for it
                     to hold (FOL-33) — and absent, not inert, when it does not:

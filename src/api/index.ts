@@ -25,6 +25,10 @@ installReadStateDiagnostic()
    Same reason and the same module-load registration. */
 import { installPromptContextDiagnostic } from '@/nostr/promptContextDiagnostic'
 installPromptContextDiagnostic()
+
+/* `window.__follows()` — see src/nostr/useFollowsSync.ts (FOL-30). Same again. */
+import { installFollowsDiagnostic } from '@/nostr/useFollowsSync'
+installFollowsDiagnostic()
 export * from './huddles'
 export * from './messages'
 export * from './actions'
@@ -37,6 +41,7 @@ export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionTopics } from './mentions'
 export { useStarred } from '@/api/internal/starred'
 export { useDmVisibility } from '@/api/internal/dmVisibility'
+export { useFollows, type Follows } from '@/api/internal/follows'
 export { PeekDataProvider, hasConvex } from './store'
 export { topLevelFolders, useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
 export {

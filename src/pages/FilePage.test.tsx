@@ -138,6 +138,12 @@ vi.mock('@/components/views/useFileConversationView', () => ({
     }
   },
 }))
+/* The followed set (FOL-30): known and empty unless a test says otherwise. */
+const follows = vi.hoisted(() => ({
+  state: 'present' as 'unknown' | 'absent' | 'present',
+  keys: new Set<string>(),
+  setFollowed: vi.fn<(key: string, on: boolean) => Promise<void>>(async () => {}),
+}))
 const marks = vi.hoisted(() => ({
   file: vi.fn<(address: string | null | undefined) => void>(),
   container: vi.fn<(kind: string, key: string) => void>(),
@@ -186,6 +192,12 @@ vi.mock('@/api', async () => ({
   useFileThreads: () => ({ state: threads.state, reload: threads.reload }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useTeamUnread: () => ({ unread: {} }),
+  useFollows: () => ({
+    state: follows.state,
+    followed: follows.keys,
+    isFollowed: (key: string) => follows.keys.has(key),
+    setFollowed: follows.setFollowed,
+  }),
   // The tree's "Open folder" asks whether a Folder is one of Peek's topics;
   // the page asks whether a short link's uuid is one's channel (FOL-37).
   useTopics: () => convexTopics.list,
@@ -293,6 +305,9 @@ beforeEach(() => {
   objects.byAddress = { [ISSUE_ADDRESS]: issue, [TOPIC_ADDRESS]: topic, [PROJECT_ADDRESS]: project }
   relay.files = [project, topic]
   threads.state = { roots: {}, replies: {} }
+  follows.state = 'present'
+  follows.keys = new Set()
+  follows.setFollowed.mockClear()
   marks.file.mockClear()
   marks.container.mockClear()
   marks.thread.mockClear()
@@ -966,7 +981,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     expect(within(middle).getByRole('link', { name: 'Open folder' })).toBeInTheDocument()
   })
 
-  it('the tree row of a bare file has the same menu, and an issue’s row has none', () => {
+  it('the tree row of a bare file has the same menu, and an issue’s row has only Follow', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     // The issue as a peer rather than under its collapsed project, so its row is drawn.
     relay.files = [project, bareFile, { ...shipIssue, parentRef: undefined }]
@@ -975,15 +990,20 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     hover(topicRow)
     fireEvent.click(within(topicRow).getByRole('button', { name: 'More options' }))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Topic details', 'Rename', 'Delete topic'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'Topic details',
+      'Rename',
+      'Follow',
+      'Delete topic',
+    ])
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
 
+    // Nothing from the manifest — but Follow is the reader's, not the manifest's
+    // (FOL-30): any addressable file can be followed, a Ship issue included.
     const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
     hover(issueRow)
-    const inert = within(issueRow).queryByRole('button', { name: 'More options' })
-    // An inert 3-dot may be drawn on hover (F3); what must not exist is a menu behind it.
-    if (inert) fireEvent.click(inert)
-    expect(screen.queryAllByRole('menuitem')).toHaveLength(0)
+    fireEvent.click(within(issueRow).getByRole('button', { name: 'More options' }))
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Follow'])
   })
 
   it('Rename opens the details dialog on the field, and saves through the manifest’s action', async () => {
@@ -1072,5 +1092,49 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
     await waitFor(() => expect(toasts.shown).toHaveLength(1))
     expect(writes.deleteFile).not.toHaveBeenCalled()
+  })
+})
+
+/*
+  FOL-30. Follow / unfollow on the file page and on the row, the state visible
+  without hovering: the header's button is pressed when the file is followed,
+  a followed row carries its mark when idle, and both write through the one
+  seam the dots are judged over. Nothing is offered until the relay has said
+  what is followed — a toggle then would write a guess over the person's list.
+*/
+describe('FilePage offers Follow on the header and the row (FOL-30)', () => {
+  it('the header button follows an unfollowed file', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const follow = screen.getByRole('button', { name: 'Follow' })
+    expect(follow).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(follow)
+    expect(follows.setFollowed).toHaveBeenCalledWith(ISSUE_ADDRESS, true)
+  })
+
+  it('reads pressed for a followed file, and unfollows it', () => {
+    follows.keys = new Set([ISSUE_ADDRESS])
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const unfollow = screen.getByRole('button', { name: 'Unfollow' })
+    expect(unfollow).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(unfollow)
+    expect(follows.setFollowed).toHaveBeenCalledWith(ISSUE_ADDRESS, false)
+  })
+
+  it('offers nothing while the relay has not said what is followed', () => {
+    follows.state = 'unknown'
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.queryByRole('button', { name: 'Follow' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unfollow' })).toBeNull()
+  })
+
+  it('a followed row shows its mark when idle, and its menu says Unfollow', () => {
+    follows.keys = new Set([TOPIC_ADDRESS])
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
+    expect(row.querySelector('[data-followed]')).not.toBeNull()
+    fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
+    fireEvent.click(within(row).getByRole('button', { name: 'More options' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Unfollow' }))
+    expect(follows.setFollowed).toHaveBeenCalledWith(TOPIC_ADDRESS, false)
   })
 })

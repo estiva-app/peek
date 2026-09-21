@@ -18,7 +18,35 @@ const frontier = vi.hoisted(() => ({
   version: 0,
   listeners: new Set<() => void>(),
 }))
-vi.mock('@/api', () => ({ useForeignObjects: () => ({ channelStreams: relay.channelStreams }) }))
+/* The followed set (FOL-30): everything, and known, unless a test says otherwise.
+   Read through the same store as the frontier so a change re-renders the hook. */
+const follows = vi.hoisted(() => ({
+  state: 'present' as 'unknown' | 'absent' | 'present',
+  keys: null as Set<string> | null,
+}))
+vi.mock('@/api', async () => {
+  const { useSyncExternalStore, useMemo } = await import('react')
+  return {
+    useForeignObjects: () => ({ channelStreams: relay.channelStreams }),
+    useFollows: () => {
+      const version = useSyncExternalStore(
+        (listener) => {
+          frontier.listeners.add(listener)
+          return () => frontier.listeners.delete(listener)
+        },
+        () => frontier.version,
+      )
+      return useMemo(
+        () => ({
+          state: follows.state,
+          isFollowed: (key: string) => (follows.keys ? follows.keys.has(key) : true),
+        }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [version],
+      )
+    },
+  }
+})
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 vi.mock('@/nostr/liveTopics', () => ({ peekLiveTopics: () => null }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
@@ -70,6 +98,8 @@ function advance(markers: Record<string, number>, ready = true) {
 beforeEach(() => {
   frontier.ready = false
   frontier.markers = {}
+  follows.state = 'present'
+  follows.keys = null
   relay.channelStreams.mockResolvedValue({
     // A: a sibling file nobody read, said an hour ago. B: nothing.
     [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false }],
@@ -132,5 +162,24 @@ describe('useTeamUnread', () => {
     advance({})
     expect(relay.channelStreams).not.toHaveBeenCalled()
     expect(result.current.unread).toEqual({})
+  })
+
+  it('judges nothing while the followed set is unknown, and only followed files once it is known (FOL-30)', async () => {
+    follows.state = 'unknown'
+    const { result } = renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    advance({})
+    // An unknown set is not an empty one: no dot goes out, none comes on.
+    expect(result.current.unread).toEqual({})
+    // Known, and the file is followed: the team lights.
+    follows.state = 'present'
+    follows.keys = new Set([FOL18])
+    advance({})
+    expect(result.current.unread).toEqual({ [FOLDER_A]: true, [FOLDER_B]: false })
+    // Unfollowed: the same messages, the same markers, and the team goes out at once.
+    follows.keys = new Set()
+    advance({})
+    expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false })
+    expect(relay.channelStreams).toHaveBeenCalledTimes(1)
   })
 })

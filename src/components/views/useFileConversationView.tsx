@@ -17,6 +17,7 @@ import {
   formatDateLabel,
   formatReplyTimestamp,
   useFileConversation,
+  useFollows,
   useWorkspaceDirectory,
   type ConversationContainer,
   type ConversationData,
@@ -108,6 +109,16 @@ export function useFileConversationView({
   const people = useWorkspaceDirectory()
   const { showToast } = useToast()
   const scrollRef = useRef<HTMLDivElement>(null)
+  /*
+    You follow what you comment in (FOL-30): a root or a reply of yours puts
+    the file on your list. Not awaited and not reported — the comment is on
+    the relay whether or not the follow lands, and the header's toggle is the
+    recovery.
+  */
+  const follows = useFollows()
+  const followAfterWrite = () => {
+    if (container?.address) void follows.setFollowed(container.address, true)
+  }
 
   const isLoading = state === 'loading'
   const failed = typeof state === 'object' && 'failed' in state ? state.failed : null
@@ -174,6 +185,7 @@ export function useFileConversationView({
     if (!attachments) return false
     const result = await actions.comment(text, attachments)
     if (!refuse(result)) return false
+    followAfterWrite()
     await onCommented()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
     // Your own comment always brings you down to it.
@@ -190,6 +202,7 @@ export function useFileConversationView({
     if (!attachments) return false
     const result = await actions.reply(openRoot, text, attachments)
     if (!refuse(result)) return false
+    followAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).
     if (resolution) setResolution(openRoot.id, true, resolution.message, result.id)
     return true

@@ -3,7 +3,7 @@ import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { useConversationBadges, useForeignChildren } from '@/api'
+import { useConversationBadges, useFollows, useForeignChildren } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
@@ -144,6 +144,14 @@ function TreeRow({
   // the glyph below is the one place this file asks what kind a row is.
   const controls = onControl ? fileControlsOf(file) : {}
   const offers = !!controls.rename || !!controls.delete
+  /*
+    Follow / unfollow on the row (FOL-30): the same seam the dot is judged
+    over, so a toggle here and the dot beside it agree in the same render. A
+    file with no address cannot be followed, and is offered nothing.
+  */
+  const follows = useFollows()
+  const followKey = file.address
+  const followAction = followKey ? (follows.isFollowed(followKey) ? 'unfollow' : 'follow') : undefined
 
   return (
     <div data-file={file.ref}>
@@ -174,6 +182,10 @@ function TreeRow({
           onClick={() => onSelect(file)}
           onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
           onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
+          followAction={followAction}
+          onToggleFollow={
+            followKey && followAction ? () => void follows.setFollowed(followKey, followAction === 'follow') : undefined
+          }
           onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
         />
       </div>
