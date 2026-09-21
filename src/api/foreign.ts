@@ -20,6 +20,7 @@ import { hasConvex } from './store'
 import {
   applyActionAsViewer,
   fileAddressAsViewer,
+  fileFolderAsViewer,
   routeWordsAsViewer,
   commentedFileOf,
   creatableUnderAsViewer,
@@ -121,6 +122,18 @@ export function useForeignObjects() {
     async (word: string, identifier: string): Promise<string | null> => {
       const v = viewer()
       return v ? fileAddressAsViewer(word, identifier, v.relayUrl, v.token) : null
+    },
+    [viewer],
+  )
+
+  /**
+   * The Folder a file with no `h` writes its conversation in (PEE-33), or
+   * null when the record names none — and null signed out, like the rest.
+   */
+  const resolveFileFolder = useCallback(
+    async (address: string): Promise<string | null> => {
+      const v = viewer()
+      return v ? fileFolderAsViewer(address, v.relayUrl, v.token) : null
     },
     [viewer],
   )
@@ -340,6 +353,7 @@ export function useForeignObjects() {
   return {
     resolveObject,
     resolveFileAddress,
+    resolveFileFolder,
     resolveFolderProject,
     resolveFolderContents,
     conversations,

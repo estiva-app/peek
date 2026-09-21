@@ -70,7 +70,7 @@ function useResolvedForeign(naddr: string | null | undefined): {
   state: ForeignConversationState
   reload: () => Promise<void>
 } {
-  const { resolveObject } = useForeignObjects()
+  const { resolveObject, resolveFileFolder } = useForeignObjects()
   const [resolved, setResolved] = useState<{
     naddr: string
     object?: ForeignObject | null
@@ -80,7 +80,21 @@ function useResolvedForeign(naddr: string | null | undefined): {
   const load = useCallback(
     (target: string) =>
       resolveObject(target)
-        .then((object) => ({ naddr: target, object }))
+        .then(async (object) => {
+          /*
+            A record with no `h` still has a Folder its conversation is written
+            in (PEE-33): a Ship project names it by `buzz-channel`, which the
+            projection does not report. One more read, paid only for such a
+            file — an issue, a topic and every file placed by `h` resolve with
+            it already — so the page can hand Peek's own view a container
+            rather than leaving it loading for ever.
+          */
+          if (object?.address && !object.folder) {
+            const folder = await resolveFileFolder(object.address)
+            return { naddr: target, object: folder ? { ...object, folder } : object }
+          }
+          return { naddr: target, object }
+        })
         .catch((error: unknown) => {
           /*
             Swallowed, like the folder read: nothing throws and the panel keeps
@@ -98,7 +112,7 @@ function useResolvedForeign(naddr: string | null | undefined): {
           console.warn('[nostr] foreign conversation read failed:', error)
           return { naddr: target, failed: kind as RelayFailureKind }
         }),
-    [resolveObject],
+    [resolveObject, resolveFileFolder],
   )
 
   const reload = useCallback(async () => {
