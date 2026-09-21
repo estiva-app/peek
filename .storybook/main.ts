@@ -20,7 +20,17 @@ const config: StorybookConfig = {
   stories: [
     '../src/stories/**/*.mdx',
     '../src/**/*.stories.@(ts|tsx)',
-    `${estivaIdRoot}/web/src/**/*.stories.@(ts|tsx)`,
+    /*
+      Estiva ID's stories, under one heading of their own (Katerina, 20
+      September: its four headings sat mixed in among Peek's, and "Entry" held
+      one story from each app). `titlePrefix` is prepended to the title a story
+      declares, so this needs no change in the estiva-id repo.
+    */
+    {
+      directory: `${estivaIdRoot}/web/src`,
+      files: '**/*.stories.@(ts|tsx)',
+      titlePrefix: 'Estiva ID',
+    },
   ],
   addons: ['@storybook/addon-docs'],
   viteFinal: (viteConfig) => {

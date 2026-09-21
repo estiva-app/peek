@@ -83,6 +83,50 @@ export function pendingAttachmentNote(file: { status: 'uploading' | 'done' | 'er
 }
 
 /**
+ * A file on a sent message, in the terms the package's `AttachmentCard` takes
+ * (UIG-35). Peek's own card is gone: the fetch, the full-screen viewer and the
+ * save are the package's now, and this says which file, in Peek's words.
+ *
+ * **A relay file is a request, not a URL** — CON-12. Media GET is
+ * authenticated, so an `<img src={mediaUrl}>` answers 401; `blobObjectUrl`
+ * signs a `kind:24242` first, and is what the card is handed as `fetchImage`.
+ * The card draws the *thumbnail* the relay generated and asks for the original
+ * only when somebody opens it, so a thread of screenshots does not pull every
+ * full-size file to draw them at 112px.
+ *
+ * A file this deployment holds needs none of that: `url` is a URL an `<img>`
+ * can load, and during the optimistic window only `previewUrl` exists.
+ */
+export function postedAttachment(file: {
+  name: string
+  size: number
+  contentType: string
+  url?: string
+  previewUrl?: string
+  mediaUrl?: string
+  thumbUrl?: string
+}): {
+  name: string
+  size: number
+  contentType: string
+  src?: string
+  href?: string
+  remoteSrc?: string
+  remoteFullSrc?: string
+} {
+  const local = file.url ?? file.previewUrl
+  const image = isImageAttachment(file.name, file.contentType)
+  if (local) return { name: file.name, size: file.size, contentType: file.contentType, src: image ? local : undefined, href: local }
+  return {
+    name: file.name,
+    size: file.size,
+    contentType: file.contentType,
+    remoteSrc: file.thumbUrl ?? file.mediaUrl,
+    remoteFullSrc: file.mediaUrl,
+  }
+}
+
+/**
  * Client-side validation. Returns an error message to surface, or null when
  * the file is acceptable. The server trusts the client here (uploads are
  * viewer-gated) — this is UX, not a security boundary.

@@ -101,21 +101,29 @@ const preview: Preview = {
     options: {
       // Docs first, then the domain-primary taxonomy (W6).
       storySort: {
+        /*
+          Every heading is named, so none of them falls to the bottom in
+          whatever order the indexer found it (Katerina, 20 September). Three
+          names here had outlived their stories — Auth, Feedback and Inputs.
+          Estiva ID is last and closed, because this Storybook is opened to look
+          at Peek; see `manager.ts`.
+        */
         order: [
           'Docs',
           ['Introduction'],
-          'Flows',
           'Layouts',
-          'Auth',
           'Primitives',
-          'Feedback',
-          'Inputs',
           'Messages',
-          ['*', 'Composer', 'Menus'],
+          ['*', 'Composer'],
           'Topics',
           'Huddles',
           'Screener & Desk',
           'Navigation',
+          'Overlays',
+          'Views',
+          'Diagnostics',
+          'Entry',
+          'Estiva ID',
         ],
       },
     },

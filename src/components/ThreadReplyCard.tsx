@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
-import { Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { AttachmentCard, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
@@ -19,13 +19,13 @@ import { Reaction as ReactionPill } from './ui/Reaction'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { useIsTopicResolved, hasConvex } from '@/api'
-import { FileAttachmentCard } from './ui/FileAttachmentCard'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
 import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
-import { pastedImages } from '@/lib/fileAttachments'
+import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
+import { blobObjectUrl } from '@/nostr/media'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
@@ -532,7 +532,7 @@ export function ThreadReplyCard({
             {files && files.length > 0 && (
               <div className="flex flex-wrap items-start gap-2 pl-8 pr-2 pb-2 w-full">
                 {files.map((f, i) => (
-                  <FileAttachmentCard key={f.storageId ?? `${f.name}_${i}`} file={f} />
+                  <AttachmentCard key={f.storageId ?? `${f.name}_${i}`} {...postedAttachment(f)} fetchImage={blobObjectUrl} download data-interactive />
                 ))}
               </div>
             )}
