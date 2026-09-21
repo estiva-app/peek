@@ -25,7 +25,7 @@ import type { Topic } from '@/data/topicData'
 import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
-import { addressFromRef, filePath, topicPath } from '@/lib/objectUrl'
+import { filePath, refNamesFile, topicPath } from '@/lib/objectUrl'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
@@ -177,10 +177,10 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const { setPendingTopicMessage, topicId: selectedTopicId, dmId: selectedPersonId } = useLastSelection()
   const { pathname } = useLocation()
   /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
-  const openTopicId = /^\/topics?\//.test(pathname) ? selectedTopicId : null
+  const openTopicId = /^\/(topics|topic-old)\//.test(pathname) ? selectedTopicId : null
   const openPersonId = pathname.startsWith('/people/') ? selectedPersonId : null
-  // A file's page is `/topic/<address>` (FOL-19); the address in the path is the file that is open.
-  const openFileAddress = pathname.startsWith('/topic/') ? addressFromRef(pathname.slice('/topic/'.length)) : null
+  // A file's page is `/topic/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37); the ref in the path names the file that is open.
+  const openFileRef = pathname.startsWith('/topic/') ? pathname.slice('/topic/'.length) : null
   const topics = useTopics()
   const people = usePeople()
   const directory = useWorkspaceDirectory()
@@ -613,7 +613,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     ...(f.id.startsWith(`${KIND_BARE_FILE}:`)
       ? { leading: <TopicState type="topic" status="unresolved" /> }
       : { icon: icon(IconFileText) }),
-    onSelect: close(() => navigate(filePath(f.id))),
+    onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
   })
 
@@ -707,7 +707,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           if (r.kind === 'topic' && r.id !== openTopicId) {
             return (topics ?? []).filter((t) => t.id === r.id).map((t) => topicRow(t, () => forgetRecent({ kind: 'topic', id: t.id })))
           }
-          if (r.kind === 'file' && r.id !== openFileAddress) return [fileRow(r, () => forgetRecent({ kind: 'file', id: r.id }))]
+          if (r.kind === 'file' && !(openFileRef && refNamesFile(openFileRef, r.id))) return [fileRow(r, () => forgetRecent({ kind: 'file', id: r.id }))]
           return []
         })
         .slice(0, 3)
@@ -785,7 +785,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         // or the file, with the thread open from the URL and the same one-shot for the scroll.
         onSelect: close(() => {
           if (pending) setPendingTopicMessage(pending)
-          if (hit.file) navigate(`${filePath(hit.file)}?thread=${encodeURIComponent(hit.root ?? hit.id)}`)
+          if (hit.file) navigate(`${filePath(hit.file, hit.fileTitle)}?thread=${encodeURIComponent(hit.root ?? hit.id)}`)
           else if (topic) navigate(topicPath(topic))
         }),
       }

@@ -189,7 +189,7 @@ describe('recents (C3)', () => {
   /*
     A file opened on its page is recent too (FOL-36) — a topic started since
     #194 is one — and shares the topic slots in the order things were opened.
-    Its title is the stored one; it opens at `/topic/<address>`; and, like a
+    Its title is the stored one; it opens at `/topic/<slug>-<d>` (FOL-37); and, like a
     topic, the file you are on is not somewhere to go.
   */
   describe('a file (FOL-36)', () => {
@@ -212,11 +212,19 @@ describe('recents (C3)', () => {
       expect(names[0]).toContain('FOL-15 test topic 2')
       expect(names[1]).toContain('CI/CD pipeline stuck during build stage')
       await userEvent.click(within(recent).getByRole('option', { name: /FOL-15 test topic 2/ }))
-      expect(screen.getByTestId('where')).toHaveTextContent(`/topic/${FILE}`)
+      // A bare file's link is its short form (FOL-37): the slug and the d.
+      expect(screen.getByTestId('where')).toHaveTextContent('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
     })
 
     it('is left out when its page is the one you are on', async () => {
       open({}, {}, `/topic/${FILE}`)
+      const recent = await screen.findByRole('group', { name: 'Recent' })
+      await waitFor(() => expect(recent).toHaveTextContent('CI/CD pipeline stuck during build stage'))
+      expect(recent).not.toHaveTextContent('FOL-15 test topic 2')
+    })
+
+    it('…and when that page is at its short form, whatever the slug says (FOL-37)', async () => {
+      open({}, {}, '/topic/some-old-name-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
       const recent = await screen.findByRole('group', { name: 'Recent' })
       await waitFor(() => expect(recent).toHaveTextContent('CI/CD pipeline stuck during build stage'))
       expect(recent).not.toHaveTextContent('FOL-15 test topic 2')
@@ -254,7 +262,7 @@ describe('a message result (R13)', () => {
     // Words, never markdown.
     const row = await screen.findByRole('option', { name: /the office layout is done/ })
     await userEvent.click(row)
-    expect(screen.getByTestId('where').textContent).toMatch(/^\/topic\//)
+    expect(screen.getByTestId('where').textContent).toMatch(/^\/topic-old\//)
     expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: FOLDER, eventId: 'e1' })
   })
 
@@ -289,7 +297,7 @@ describe('a message result (R13)', () => {
       const row = await screen.findByRole('option', { name: /a comment about the layout/ })
       expect(row).toHaveTextContent('FOL-15 test topic 2')
       await userEvent.click(row)
-      expect(screen.getByTestId('where').textContent).toBe(`/topic/${FILE}`)
+      expect(screen.getByTestId('where').textContent).toBe('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
       expect(screen.getByTestId('where-search').textContent).toBe('?thread=c1')
       expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: TEAM, eventId: 'c1' })
       expect(screen.queryByText(/not in your sidebar/)).not.toBeInTheDocument()

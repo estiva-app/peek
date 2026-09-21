@@ -5,6 +5,8 @@ import {
   identifierFromRef,
   addressFromRef,
   filePath,
+  refNamesFile,
+  shareableFileUrl,
   topicPath,
   shareableTopicUrl,
   shareableMessageUrl,
@@ -15,19 +17,23 @@ const UUID = '925897ad-796e-4bc6-999c-ca19df26c4aa'
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const ISSUE = `30851:${SHIP}:d68a8c78-5ec7-4652-b236-89ab57ac5b1e`
 
+/** A bare file — a topic in a Folder — by the person who started it. */
+const FILE_D = 'd68a8c78-5ec7-4652-b236-89ab57ac5b1e'
+const FILE = `30840:${SHIP}:${FILE_D}`
+
 /*
-  One route, two grammars — FOL-19. `/topic/<slug>-<uuid>` is a topic and
-  `/topic/<address>` is any file; the link says which, and nothing is fetched
-  to find out.
+  One route, two grammars — FOL-19, FOL-37. `/topic/<slug>-<d>` is a bare
+  file's short form and `/topic/<address>` is any file; the link says which,
+  and nothing is fetched to find out.
 */
 describe('addressFromRef', () => {
   it('reads an address out of the ref, colons and all', () => {
     expect(addressFromRef(ISSUE)).toBe(ISSUE)
   })
 
-  it('is null for a topic ref, which is what the route used to mean', () => {
-    // A slug cannot contain a colon, so nothing a topic link carries can be
-    // mistaken for an address — and every published topic link keeps working.
+  it('is null for a short ref, which carries a d and no author', () => {
+    // A slug cannot contain a colon, so nothing a short link carries can be
+    // mistaken for an address.
     expect(addressFromRef(`design-review-${UUID}`)).toBe(null)
     expect(addressFromRef(UUID)).toBe(null)
   })
@@ -52,10 +58,36 @@ describe('addressFromRef', () => {
 })
 
 describe('filePath', () => {
-  it('opens a file under /topic/ at its bare address', () => {
+  it('opens another app’s file under /topic/ at its bare address', () => {
     // The colons stay: a legal path character, and the one part of the URL
     // that carries meaning stays readable (§7.3, from the other side).
     expect(filePath(ISSUE)).toBe(`/topic/${ISSUE}`)
+    // A title does not buy a Ship issue a short form: only a bare file has one.
+    expect(filePath(ISSUE, 'Fix the header')).toBe(`/topic/${ISSUE}`)
+  })
+
+  /* A topic in a Folder takes §7's short form — FOL-37. */
+  it('opens a bare file at /topic/<slug>-<d>, the d alone being the identity', () => {
+    expect(filePath(FILE, 'Design review')).toBe(`/topic/design-review-${FILE_D}`)
+  })
+
+  it('writes the bare d when there is no title, for the page to canonicalise', () => {
+    expect(filePath(FILE)).toBe(`/topic/${FILE_D}`)
+    expect(filePath(FILE, '日本語')).toBe(`/topic/${FILE_D}`)
+  })
+
+  it('lowercases an upper-cased d so the short link resolves against the relay spelling', () => {
+    expect(filePath(`30840:${SHIP}:${FILE_D.toUpperCase()}`, 'X')).toBe(`/topic/x-${FILE_D}`)
+  })
+
+  it('keeps the long form for a 30840 whose d is not a uuid, since the tail could not be read back', () => {
+    expect(filePath(`30840:${SHIP}:handmade`, 'X')).toBe(`/topic/30840:${SHIP}:handmade`)
+  })
+
+  it('round-trips the short form: what it writes, identifierFromRef reads', () => {
+    const path = filePath(FILE, 'A very, very long name — with punctuation')
+    expect(identifierFromRef(path.slice('/topic/'.length))).toBe(FILE_D)
+    expect(addressFromRef(path.slice('/topic/'.length))).toBe(null)
   })
 
   it('escapes only the d, which is the one segment an app may put anything in', () => {
@@ -73,6 +105,37 @@ describe('filePath', () => {
     const segment = filePath(withSlash).slice('/topic/'.length)
     expect(segment).not.toContain('/')
     expect(addressFromRef(decodeURIComponent(segment))).toBe(withSlash)
+  })
+})
+
+describe('shareableFileUrl', () => {
+  it('is the short form for a bare file and the address for anything else, on the origin', () => {
+    expect(shareableFileUrl(FILE, 'Design review', 'https://peek.estiva.app/')).toBe(
+      `https://peek.estiva.app/topic/design-review-${FILE_D}`,
+    )
+    expect(shareableFileUrl(ISSUE, 'Fix the header', 'https://peek.estiva.app')).toBe(
+      `https://peek.estiva.app/topic/${ISSUE}`,
+    )
+  })
+})
+
+/* The launcher's "the page you are on is not somewhere to go", in both grammars — FOL-37. */
+describe('refNamesFile', () => {
+  it('matches a short ref on the file’s d, whatever the slug', () => {
+    expect(refNamesFile(`design-review-${FILE_D}`, FILE)).toBe(true)
+    expect(refNamesFile(`stale-name-${FILE_D}`, FILE)).toBe(true)
+    expect(refNamesFile(FILE_D, FILE)).toBe(true)
+    expect(refNamesFile(`design-review-${UUID}`, FILE)).toBe(false)
+  })
+
+  it('matches a long ref on the whole address', () => {
+    expect(refNamesFile(ISSUE, ISSUE)).toBe(true)
+    expect(refNamesFile(ISSUE.toUpperCase(), ISSUE)).toBe(true)
+    expect(refNamesFile(ISSUE, FILE)).toBe(false)
+  })
+
+  it('names nothing when the ref carries no identity', () => {
+    expect(refNamesFile('just-a-slug', FILE)).toBe(false)
   })
 })
 
@@ -145,17 +208,18 @@ describe('identifierFromRef', () => {
   })
 })
 
+// The Convex channel topics moved to /topic-old/ (FOL-37); the grammar is unchanged.
 describe('topicPath', () => {
   it('builds the §7 grammar for a topic with a channel uuid', () => {
     expect(topicPath({ id: '3', title: 'Design review', folderId: UUID })).toBe(
-      `/topic/design-review-${UUID}`,
+      `/topic-old/design-review-${UUID}`,
     )
   })
 
   it('carries the open huddle in the query, not the path', () => {
     expect(
       topicPath({ id: '3', title: 'Design review', folderId: UUID }, { huddleId: 'h1' }),
-    ).toBe(`/topic/design-review-${UUID}?huddle=h1`)
+    ).toBe(`/topic-old/design-review-${UUID}?huddle=h1`)
   })
 
   it('falls back to the legacy path when the topic has no channel uuid', () => {
@@ -165,14 +229,14 @@ describe('topicPath', () => {
 
   it('round-trips: the path it builds resolves back to the same identity', () => {
     const path = topicPath({ id: '3', title: 'Ongoing onboarding issues', folderId: UUID })
-    expect(identifierFromRef(path.slice('/topic/'.length))).toBe(UUID)
+    expect(identifierFromRef(path.slice('/topic-old/'.length))).toBe(UUID)
   })
 })
 
 describe('shareableTopicUrl', () => {
   it('builds an absolute URL in RFC 0.5 §7.2 grammar', () => {
     expect(shareableTopicUrl({ id: '7', title: 'Design review', folderId: UUID }, 'https://peek.estiva.app')).toBe(
-      `https://peek.estiva.app/topic/design-review-${UUID}`,
+      `https://peek.estiva.app/topic-old/design-review-${UUID}`,
     )
   })
 
@@ -184,14 +248,14 @@ describe('shareableTopicUrl', () => {
 
   it('does not double the slash when the origin carries one', () => {
     expect(shareableTopicUrl({ id: '7', title: 'X', folderId: UUID }, 'https://peek.estiva.app/')).toBe(
-      `https://peek.estiva.app/topic/x-${UUID}`,
+      `https://peek.estiva.app/topic-old/x-${UUID}`,
     )
   })
 
   it('still resolves when the title slugs to nothing', () => {
     // The uuid is the whole identity; the slug is decoration that may be absent.
     expect(shareableTopicUrl({ id: '7', title: '日本語', folderId: UUID }, 'https://peek.estiva.app')).toBe(
-      `https://peek.estiva.app/topic/${UUID}`,
+      `https://peek.estiva.app/topic-old/${UUID}`,
     )
   })
 

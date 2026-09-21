@@ -41,8 +41,12 @@ export { PeekDataProvider, hasConvex } from './store'
 export { topLevelFolders, useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
 export {
   useForeignConversation,
+  useBareFileAddress,
+  rememberFileAddress,
+  forgetFileAddresses,
   useForeignChildren,
   useFileThreads,
+  type FileAddressState,
   type ForeignConversationState,
   type ForeignChildrenState,
   type FileThreadsState,

@@ -336,7 +336,7 @@ describe('Reference, as a link (RIC-16)', () => {
   it('a topic chip is a real link to the topic, even with no router around it', () => {
     const c = render(<Reference uri={TOPIC_URI} object={topic()} />).container
     const a = c.querySelector('a')
-    expect(a?.getAttribute('href')).toBe(`/topic/feedback-on-ship-${UUID}`)
+    expect(a?.getAttribute('href')).toBe(`/topic-old/feedback-on-ship-${UUID}`)
     expect(a?.textContent).toBe('Feedback on Ship')
   })
 
@@ -370,7 +370,7 @@ describe('Reference, as a link (RIC-16)', () => {
     expect(fireEvent.click(a, { ctrlKey: true })).toBe(true) // default not prevented: open in new tab
     expect(r.getByTestId('where').textContent).toBe('/topics')
     expect(fireEvent.click(a)).toBe(false)
-    expect(r.getByTestId('where').textContent).toBe(`/topic/feedback-on-ship-${UUID}`)
+    expect(r.getByTestId('where').textContent).toBe(`/topic-old/feedback-on-ship-${UUID}`)
   })
 
   it('a message on screen opens its conversation rather than leaving the page', () => {

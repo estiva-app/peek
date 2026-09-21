@@ -227,13 +227,14 @@ describe('where things lead', () => {
   it('a row opens the file at its address, in three panes', () => {
     mount({ currentFolder: TEAM })
     fireEvent.click(within(section(TEAM)).getByText('FOL-15 test topic 2'))
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${FILE_ADDRESS}`)
+    // A bare file's link is its short form (FOL-37): the slug and the d.
+    expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f')
   })
 
   it("a Folder that is one of Peek's topics opens as the topic", () => {
     mount()
     fireEvent.click(within(section(TOPIC_FOLDER)).getByRole('button', { name: 'Open folder' }))
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/a-topic-of-ours-${TOPIC_FOLDER}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/a-topic-of-ours-${TOPIC_FOLDER}`)
   })
 
   it('any other Folder opens on the Folders page, for now', () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react'
-import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconDotsVertical, IconX } from '@tabler/icons-react'
 import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -12,19 +12,29 @@ import { FileThreadView } from '@/components/views/FileThreadView'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
-import { useFileThreads, useForeignConversation, useWorkspaceDirectory } from '@/api'
+import {
+  useBareFileAddress,
+  rememberFileAddress,
+  useFileThreads,
+  useForeignConversation,
+  useTopics,
+  useWorkspaceDirectory,
+  type ForeignConversationState,
+} from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { fileControlsOf, hasFileControls } from '@/lib/fileControls'
-import { addressFromRef } from '@/lib/objectUrl'
+import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, topicPath } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { rememberRecent } from '@/lib/recents'
 import { useMarkFileRead } from '@/lib/useMarkRead'
 import { KIND_TOPIC } from '@/nostr/foreign'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
 
 /**
- * `/topic/<address>` — one file, in three panes (FOL-19).
+ * `/topic/<slug>-<d>` and `/topic/<address>` — one file, in three panes
+ * (FOL-19, FOL-37).
  *
  * **One page shape for every file, Peek's or anybody's.** RFC 0.5 §10.7 says
  * Peek is where a file's conversation is read; this is the page that claim
@@ -48,11 +58,19 @@ import { KIND_TOPIC } from '@/nostr/foreign'
  *
  * ## Two grammars, one route
  *
- * `/topic/<slug>-<uuid>` is still Peek's own topic and still `TopicsPage`;
- * `/topic/<address>` is any file. `addressFromRef` tells them apart without
- * fetching anything — an address carries two colons and a slug carries none —
- * so every link already in the wild keeps working, which is the reason the
- * prefix was not changed.
+ * `/topic/<slug>-<d>` is a topic in a Folder — a bare file, in the short form
+ * §7 gives every object — and `/topic/<address>` is any file (FOL-37).
+ * `addressFromRef` tells them apart without fetching anything — an address
+ * carries two colons and a slug carries none. The short form costs one `#d`
+ * query to recover the author (`useBareFileAddress`), after which both grammars
+ * resolve identically, and a bare file opened from the long form is
+ * canonicalised to the short one the way `TopicsPage` refreshes a stale slug.
+ *
+ * The short form used to be the Convex channel topic's. Those now live at
+ * `/topic-old/`, and a link that still names one — its uuid is a channel's, and
+ * `TOPICS` holds it as a `folderId` — is sent there rather than resolved as a
+ * file it can never be: a migrated topic's file got a fresh uuid (FOL-25), so
+ * no `d` is both.
  *
  * ## Reading marks the file, and nothing else
  *
@@ -69,13 +87,26 @@ export function FilePage() {
     A topic is not a file page. A `39000:` address resolves — it is a real
     addressable event — but its conversation is `kind:9` messages carrying `h`
     and no `a`, so this page would draw it as a file nobody has said anything
-    about. `/topic/<uuid>` is where a topic is read, and `TopicsPage`
+    about. `/topic-old/<uuid>` is where a topic is read, and `TopicsPage`
     canonicalises the URL once it knows the title. Decided before the read, so
     the redirect costs no round trip.
   */
   const topicIdentifier = address?.startsWith(`${KIND_TOPIC}:`) ? address.split(':')[2] : null
-  const fileAddress = topicIdentifier ? null : address
+  /*
+    The short form: a `d` and nothing else (FOL-37). A Convex topic's link
+    carried a channel uuid in the same position, so the uuid is first tried
+    against the topics list — in memory already, no read — and only a uuid no
+    topic owns is looked up as a file.
+  */
+  const identifier = ref && !address ? identifierFromRef(ref) : null
+  const topics = useTopics()
+  const legacyTopic = identifier ? topics?.find((t) => t.folderId === identifier) : undefined
+  const shortForm = useBareFileAddress(legacyTopic ? null : identifier)
+  const fileAddress = topicIdentifier
+    ? null
+    : (address ?? (typeof shortForm === 'object' && 'address' in shortForm ? shortForm.address : null))
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const people = useWorkspaceDirectory()
 
@@ -85,8 +116,30 @@ export function FilePage() {
     rendered from an `a` tag is actionable and not merely visible — so nothing
     has to be encoded to bech32 on the way in.
   */
-  const { state: conversation, reload: reloadConversation } = useForeignConversation(fileAddress)
+  const { state: resolved, reload: reloadConversation } = useForeignConversation(fileAddress)
+  // A short link that resolved to no address is as dead as an address that resolved to nothing.
+  const conversation: ForeignConversationState =
+    shortForm === 'unresolved' || (typeof shortForm === 'object' && 'failed' in shortForm) ? shortForm : resolved
   const file = typeof conversation === 'object' && 'ref' in conversation ? conversation : null
+
+  /*
+    Canonicalise (FOL-37), the way `TopicsPage` does: a bare file reached from
+    its long form, or from a short link whose slug a rename has left stale, is
+    given the URL `filePath` writes for it now that its title is known. The
+    identity in the URL is what resolved and the rest is decoration, so this
+    needs no redirect table — and it is what makes the address bar the link to
+    copy. Only a bare file has a short form; every other kind's long form is
+    already canonical and is left alone.
+  */
+  const bareFileAddress = file?.address && file.kind === KIND_BARE_FILE ? file.address : null
+  const canonicalPath = bareFileAddress ? filePath(bareFileAddress, file?.slots.title?.value) : null
+  useEffect(() => {
+    if (canonicalPath && bareFileAddress && location.pathname !== canonicalPath) {
+      // The short form carries no author; the page has one, so the replace costs no read.
+      rememberFileAddress(bareFileAddress)
+      navigate(`${canonicalPath}${location.search}`, { replace: true })
+    }
+  }, [canonicalPath, bareFileAddress, location.pathname, location.search, navigate])
 
   /*
     The dwell marks this file's own stream and no container (FOL-16). Passing
@@ -206,9 +259,24 @@ export function FilePage() {
     },
   })
 
-  if (topicIdentifier) return <Navigate to={`/topic/${topicIdentifier}`} replace />
+  /*
+    Copy link (FOL-37) — the topic header's affordance (PEE-17), for a file: the
+    URL `filePath` writes, which for a topic in a Folder is the short form the
+    page has just canonicalised to. The same fallback as the topic header's,
+    for a browser that refuses the clipboard off a menu.
+  */
+  const copyLink = file?.address
+    ? () => {
+        const link = shareableFileUrl(file.address!, file.slots.title?.value, window.location.origin)
+        void navigator.clipboard?.writeText(link).catch(() => window.prompt('Copy this link:', link))
+      }
+    : undefined
 
-  if (!address) {
+  if (topicIdentifier) return <Navigate to={`/topic-old/${topicIdentifier}`} replace />
+  // A Convex topic's old short link: the same page it always opened, at its new prefix.
+  if (legacyTopic) return <Navigate to={`${topicPath(legacyTopic)}${location.search}`} replace />
+
+  if (!address && !identifier) {
     return (
       <div className="flex min-h-screen flex-col">
         <EmptyState message="That link does not point at anything Peek can open." />
@@ -283,6 +351,7 @@ export function FilePage() {
                         </ToolbarButton>
                       }
                       onOpenDetails={() => fileControls.open('details', file)}
+                      onCopyLink={copyLink}
                       onRename={controls.rename ? () => fileControls.open('rename', file) : undefined}
                       onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
                     />

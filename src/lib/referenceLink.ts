@@ -12,9 +12,11 @@
  * Three answers, in the order they are tried:
  *
  * - **Peek's own objects open in Peek**, at the path the app already owns for
- *   them: a topic at `/topic/<slug>-<uuid>` (RFC 0.5 §7, `topicPath`), a
- *   message at `/message/<id>` (§7.6, `shareableMessageUrl`), a bare file at
- *   `/o/<naddr>` beside its Folder (FOL-17). These are in-app links, wired
+ *   them: a Convex topic at `/topic-old/<slug>-<uuid>` (RFC 0.5 §7,
+ *   `topicPath`, moved by FOL-37), a message at `/message/<id>` (§7.6,
+ *   `shareableMessageUrl`), a bare file at `/topic/<slug>-<d>` (`filePath`,
+ *   FOL-37 — `/o/<naddr>` when it resolved without an address, which lands on
+ *   the same page). These are in-app links, wired
  *   through the router by the chip so a click does not reload the app
  *   (UI-RULES §3).
  * - **Another app's object opens in that app**, at the URL its manifest's
@@ -29,7 +31,7 @@
  */
 import { addressToPointer } from '@estiva-app/protocol'
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { objectRef } from '@/lib/objectUrl'
+import { filePath, objectRef } from '@/lib/objectUrl'
 import { MESSAGE_KIND, TOPIC_KIND } from '@/nostr/manifest'
 
 export type ReferenceLink =
@@ -54,7 +56,7 @@ export function referenceLink(uri: string, object: ForeignObject | null | undefi
     }
     if (!identifier) return null
     const title = object.slots.title
-    return { place: 'topic', href: `/topic/${objectRef(identifier, title && !title.isPubkey ? title.value : undefined)}` }
+    return { place: 'topic', href: `/topic-old/${objectRef(identifier, title && !title.isPubkey ? title.value : undefined)}` }
   }
 
   if (object.kind === MESSAGE_KIND && EVENT_ID.test(object.eventId)) {
@@ -63,7 +65,13 @@ export function referenceLink(uri: string, object: ForeignObject | null | undefi
   }
 
   if (object.kind === KIND_BARE_FILE) {
-    return { place: 'file', href: `/o/${uri.replace(/^nostr:/i, '')}` }
+    const title = object.slots.title
+    return {
+      place: 'file',
+      href: object.address
+        ? filePath(object.address, title && !title.isPubkey ? title.value : undefined)
+        : `/o/${uri.replace(/^nostr:/i, '')}`,
+    }
   }
 
   return object.openUrl ? { place: 'app', href: object.openUrl } : null

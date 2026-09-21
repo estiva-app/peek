@@ -109,7 +109,7 @@ export function ObjectPage() {
     const thread = state.thread ? `?thread=${encodeURIComponent(state.thread)}` : ''
     return <Navigate to={`${filePath(state.file)}${thread}`} replace />
   }
-  // `/topic/<uuid>` without a slug: TopicsPage canonicalises the URL once the
+  // `/topic-old/<uuid>` without a slug: TopicsPage canonicalises the URL once the
   // topic resolves and it knows the title, exactly as it does for a legacy link.
-  return <Navigate to={`/topic/${state.folder}`} replace />
+  return <Navigate to={`/topic-old/${state.folder}`} replace />
 }

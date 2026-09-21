@@ -40,7 +40,7 @@ describe('referenceLink', () => {
       object({ kind: 39000, address: TOPIC_ADDRESS, slots: { title: { value: 'Feedback on Ship' } } }),
     )
     expect(link).toEqual({ place: 'topic', href: topicPath({ id: 'ignored', title: 'Feedback on Ship', folderId: UUID }) })
-    expect(link?.href).toBe(`/topic/feedback-on-ship-${UUID}`)
+    expect(link?.href).toBe(`/topic-old/feedback-on-ship-${UUID}`)
   })
 
   it('a message leads to the same URL "Copy link" hands out, and carries its id', () => {
@@ -52,7 +52,17 @@ describe('referenceLink', () => {
     })
   })
 
-  it('a bare file opens beside its Folder, through /o/', () => {
+  /* FOL-37: a bare file's link is the short form the page canonicalises to and "Copy link" hands out. */
+  it('a bare file opens at /topic/<slug>-<d>, its short form', () => {
+    const d = '5b6d0f2e-4c1a-4e7b-9a3c-2f8e1d0c9b7a'
+    const link = referenceLink(
+      'nostr:naddr1file',
+      object({ kind: 30840, address: `30840:${RELAY_KEY}:${d}`, slots: { title: { value: 'Design review' } } }),
+    )
+    expect(link).toEqual({ place: 'file', href: `/topic/design-review-${d}` })
+  })
+
+  it('a bare file that resolved without an address still opens, through /o/', () => {
     expect(referenceLink('nostr:naddr1file', object({ kind: 30840 }))).toEqual({ place: 'file', href: '/o/naddr1file' })
   })
 
