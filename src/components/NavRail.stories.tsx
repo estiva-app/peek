@@ -9,7 +9,7 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   decorators: [
     (Story, ctx) => (
-      <MemoryRouter initialEntries={[ctx.parameters.route ?? '/people']}>
+      <MemoryRouter initialEntries={[ctx.parameters.route ?? '/app/people']}>
         <LastSelectionProvider>
           <div className="bg-bg-base h-[260px] flex">
             <Story />
@@ -28,5 +28,5 @@ export const Default: Story = {}
 
 /** Desk active. */
 export const DeskActive: Story = {
-  parameters: { route: '/desk' },
+  parameters: { route: '/app/desk' },
 }

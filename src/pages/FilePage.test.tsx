@@ -20,6 +20,7 @@ import { PeekDataProvider, READ_DWELL_MS } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } from '@/lib/lastSelection'
 import { resetRecentsForTests } from '@/lib/recents'
+import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
 import { FilePage } from './FilePage'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -104,7 +105,8 @@ const writes = vi.hoisted(() => ({
   renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
   deleteFile: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // The short form's one read: the author of a `d`, off the fixtures (FOL-37).
-  resolveFileAddress: vi.fn(async (d: string) => Object.keys(objects.byAddress).find((a) => a.endsWith(`:${d}`)) ?? null),
+  // The word is the seam's to turn into kinds; here every fixture answers.
+  resolveFileAddress: vi.fn(async (_word: string, d: string) => Object.keys(objects.byAddress).find((a) => a.endsWith(`:${d}`)) ?? null),
   // The delete flow reads the Folder for `hasState` seconds before the write.
   resolveFolderContents: vi.fn(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] })),
 }))
@@ -114,7 +116,7 @@ const convexTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string
 /**
  * The short form's seam, stood in for (FOL-37): the addresses the page has
  * remembered, and a hook that asks `writes.resolveFileAddress` for the rest.
- * The real hook's own behaviour is `useBareFileAddress.test.tsx`; what this
+ * The real hook's own behaviour is `useFileAddress.test.tsx`; what this
  * page's tests pin is when the page reads and when it remembers.
  */
 const shortForm = vi.hoisted(() => ({ known: new Map<string, string>() }))
@@ -161,12 +163,12 @@ vi.mock('@/api', async () => ({
     reload: async () => {},
   }),
   useForeignObjects: () => writes,
-  useBareFileAddress: (identifier: string | null | undefined) => {
+  useFileAddress: (word: string, identifier: string | null | undefined) => {
     const [got, setGot] = useState<{ identifier: string; address: string | null }>()
     useEffect(() => {
       if (!identifier || shortForm.known.has(identifier)) return
-      void writes.resolveFileAddress(identifier).then((address) => setGot({ identifier, address }))
-    }, [identifier])
+      void writes.resolveFileAddress(word, identifier).then((address) => setGot({ identifier, address }))
+    }, [word, identifier])
     if (!identifier) return 'loading'
     const known = shortForm.known.get(identifier)
     if (known) return { address: known }
@@ -247,7 +249,11 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
           <MemoryRouter initialEntries={[url]}>
             {opts?.pending && <Seed pending={opts.pending} />}
             <Routes>
-              <Route path="/topic/:ref" element={<><FilePage /><Probe /></>} />
+              {/* The one file route `App` mounts (FOL-39); the word is the page's to read.
+                  Peek's own pages rank ahead of it there, and so here. */}
+              <Route path="/topic-old/:ref" element={<Probe />} />
+              <Route path="/app/*" element={<Probe />} />
+              <Route path="/:word/:ref" element={<><FilePage /><Probe /></>} />
               <Route path="*" element={<Probe />} />
             </Routes>
           </MemoryRouter>
@@ -277,7 +283,7 @@ function shape() {
     threadButtons: within(middle).queryAllByRole('button', { name: THREAD_CONTROL }).length,
     composer: within(middle).queryByRole('textbox') !== null,
     // A link since UIG-14 (4.13): the address is real, so a new tab works.
-    openFolder: within(middle).queryByRole('link', { name: 'Open folder' })?.getAttribute('href') === `/folders/${FOLDER}`,
+    openFolder: within(middle).queryByRole('link', { name: 'Open folder' })?.getAttribute('href') === `/app/folders/${FOLDER}`,
   }
 }
 
@@ -345,7 +351,7 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
   it('opens /topic/<slug>-<d> from the d alone, with one read for the author', async () => {
     mount(TOPIC_SHORT)
     expect(writes.resolveFileAddress).toHaveBeenCalledTimes(1)
-    expect(writes.resolveFileAddress).toHaveBeenCalledWith(TOPIC_D)
+    expect(writes.resolveFileAddress).toHaveBeenCalledWith('topic', TOPIC_D)
     const middle = screen.getByTestId('middle')
     expect(await within(middle).findByText('FOL-15 test topic 2')).toBeInTheDocument()
     expect(screen.getByTestId('url').textContent).toBe(TOPIC_SHORT)
@@ -365,7 +371,7 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`${TOPIC_SHORT}?thread=x`))
   })
 
-  it('leaves a Ship issue at its long form: only a bare file has a short one', () => {
+  it('leaves a Ship issue at its long form until its manifest has been read: no word, no short form', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     expect(within(screen.getByTestId('middle')).getByText('The file route')).toBeInTheDocument()
     expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}`)
@@ -382,6 +388,56 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     mount(`/topic/whatever-${FOLDER}?huddle=h1`)
     expect(screen.getByTestId('url').textContent).toBe(`/topic-old/office-layout-${FOLDER}?huddle=h1`)
     expect(writes.resolveFileAddress).not.toHaveBeenCalled()
+  })
+})
+
+/*
+  Every declared shape — RFC 0.5 §7.7, FOL-39. The words are what the
+  manifests on the relay declare; here Ship's two are remembered the way
+  `nostr/foreign.ts` does it once it has read them, and the page is asked for
+  the issue by the word Ship gave it.
+*/
+describe('FilePage serves every declared shape', () => {
+  const ISSUE_D = ISSUE_ADDRESS.split(':')[2]
+  const ISSUE_SHORT = `/issue/the-file-route-${ISSUE_D}`
+  beforeEach(() => {
+    rememberRouteWords(
+      routeWordsOf([
+        { pattern: 'https://ship.estiva.app/project/<slug>-<d>', kind: 30850 },
+        { pattern: 'https://ship.estiva.app/issue/<slug>-<d>', kind: 30851 },
+      ]),
+    )
+  })
+  afterEach(() => forgetRouteWords())
+
+  it('opens /issue/<slug>-<d> from the d alone, asking with the word so the read is over Ship’s kind', async () => {
+    mount(`/issue/whatever-${ISSUE_D}`)
+    expect(writes.resolveFileAddress).toHaveBeenCalledWith('issue', ISSUE_D)
+    expect(await within(screen.getByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    // …and takes the slug Ship's title gives it, the d being the identity.
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_SHORT))
+  })
+
+  it('canonicalises the issue’s long form to /issue/<slug>-<d>, with no second read', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('url').textContent).toBe(ISSUE_SHORT)
+    expect(writes.resolveFileAddress).not.toHaveBeenCalled()
+  })
+
+  it('a word nobody declared still opens the file it names, and lands on the word its app declared', async () => {
+    // §7.7 rule 4: the seam resolves over every declared kind; the page does not refuse the word.
+    mount(`/ticket/whatever-${ISSUE_D}`)
+    expect(writes.resolveFileAddress).toHaveBeenCalledWith('ticket', ISSUE_D)
+    expect(await within(screen.getByTestId('middle')).findByText('The file route')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(ISSUE_SHORT))
+  })
+
+  it('the issue’s page keeps its thread in the URL through the canonicalisation', () => {
+    // A Ship issue's header has no menu (FOL-33), so the link copied from its
+    // page is the address bar — the ticket's done-when — and it must carry the
+    // open thread the way the bare file's does.
+    mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
   })
 })
 
@@ -872,7 +928,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       folder: FOLDER,
       hasState: true,
     })
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/folders/${FOLDER}`))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${FOLDER}`))
     expect(toasts.shown).toHaveLength(0)
   })
 
@@ -885,7 +941,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
     await waitFor(() => expect(writes.deleteFile).toHaveBeenCalledTimes(1))
     expect(writes.deleteFile.mock.calls[0][0]).toMatchObject({ hasState: false })
-    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/folders/${FOLDER}`))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${FOLDER}`))
   })
 
   it('a non-author’s delete says the relay refused it, in the relay’s words, and stays', async () => {

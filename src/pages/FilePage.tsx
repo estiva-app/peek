@@ -13,7 +13,7 @@ import { useFileControls } from '@/components/views/useFileControls'
 import { useFileConversationView } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import {
-  useBareFileAddress,
+  useFileAddress,
   rememberFileAddress,
   useFileThreads,
   useForeignConversation,
@@ -23,18 +23,17 @@ import {
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { fileControlsOf, hasFileControls } from '@/lib/fileControls'
-import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, topicPath } from '@/lib/objectUrl'
+import { addressFromRef, identifierFromRef, shareableFileUrl, shortFilePath, topicPath } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { rememberRecent } from '@/lib/recents'
 import { useMarkFileRead } from '@/lib/useMarkRead'
 import { KIND_TOPIC } from '@/nostr/foreign'
-import { KIND_BARE_FILE } from '@estiva-app/interop'
 
 /**
- * `/topic/<slug>-<d>` and `/topic/<address>` — one file, in three panes
- * (FOL-19, FOL-37).
+ * `/<word>/<slug>-<d>` and `/topic/<address>` — one file, in three panes
+ * (FOL-19, FOL-37, FOL-39).
  *
  * **One page shape for every file, Peek's or anybody's.** RFC 0.5 §10.7 says
  * Peek is where a file's conversation is read; this is the page that claim
@@ -58,13 +57,17 @@ import { KIND_BARE_FILE } from '@estiva-app/interop'
  *
  * ## Two grammars, one route
  *
- * `/topic/<slug>-<d>` is a topic in a Folder — a bare file, in the short form
- * §7 gives every object — and `/topic/<address>` is any file (FOL-37).
- * `addressFromRef` tells them apart without fetching anything — an address
- * carries two colons and a slug carries none. The short form costs one `#d`
- * query to recover the author (`useBareFileAddress`), after which both grammars
- * resolve identically, and a bare file opened from the long form is
- * canonicalised to the short one the way `TopicsPage` refreshes a stale slug.
+ * `/<word>/<slug>-<d>` is a file in the short form §7 gives every object —
+ * `/topic/` for a bare file (FOL-37), `/project/` and `/issue/` for Ship's,
+ * and whatever word any other manifest declares (FOL-39, §7.7) — and
+ * `/topic/<address>` is any file at all. `addressFromRef` tells them apart
+ * without fetching anything — an address carries two colons and a slug
+ * carries none. The short form costs one `#d` query over the word's kinds to
+ * recover the author (`useFileAddress`), after which both grammars resolve
+ * identically, and a file opened from the long form is canonicalised to the
+ * short one the way `TopicsPage` refreshes a stale slug. The word itself is
+ * not checked here: one nobody declares resolves over every declared kind,
+ * so a link with a word Peek has not heard of still opens the file it names.
  *
  * The short form used to be the Convex channel topic's. Those now live at
  * `/topic-old/`, and a link that still names one — its uuid is a channel's, and
@@ -81,7 +84,7 @@ import { KIND_BARE_FILE } from '@estiva-app/interop'
  * issue page, which marks only the issue.
  */
 export function FilePage() {
-  const { ref } = useParams<{ ref: string }>()
+  const { word = 'topic', ref } = useParams<{ word: string; ref: string }>()
   const address = ref ? addressFromRef(ref) : null
   /*
     A topic is not a file page. A `39000:` address resolves — it is a real
@@ -101,7 +104,7 @@ export function FilePage() {
   const identifier = ref && !address ? identifierFromRef(ref) : null
   const topics = useTopics()
   const legacyTopic = identifier ? topics?.find((t) => t.folderId === identifier) : undefined
-  const shortForm = useBareFileAddress(legacyTopic ? null : identifier)
+  const shortForm = useFileAddress(word, legacyTopic ? null : identifier)
   const fileAddress = topicIdentifier
     ? null
     : (address ?? (typeof shortForm === 'object' && 'address' in shortForm ? shortForm.address : null))
@@ -123,23 +126,24 @@ export function FilePage() {
   const file = typeof conversation === 'object' && 'ref' in conversation ? conversation : null
 
   /*
-    Canonicalise (FOL-37), the way `TopicsPage` does: a bare file reached from
-    its long form, or from a short link whose slug a rename has left stale, is
-    given the URL `filePath` writes for it now that its title is known. The
-    identity in the URL is what resolved and the rest is decoration, so this
-    needs no redirect table — and it is what makes the address bar the link to
-    copy. Only a bare file has a short form; every other kind's long form is
+    Canonicalise (FOL-37, FOL-39), the way `TopicsPage` does: a file reached
+    from its long form, from a short link whose slug a rename has left stale,
+    or under a word its own app did not declare, is given the URL `filePath`
+    writes for it now that its title and kind are known. The identity in the
+    URL is what resolved and the rest is decoration, so this needs no redirect
+    table — and it is what makes the address bar the link to copy. Only a kind
+    with a declared word has a short form; any other kind's long form is
     already canonical and is left alone.
   */
-  const bareFileAddress = file?.address && file.kind === KIND_BARE_FILE ? file.address : null
-  const canonicalPath = bareFileAddress ? filePath(bareFileAddress, file?.slots.title?.value) : null
+  const shortFormAddress = file?.address ?? null
+  const canonicalPath = shortFormAddress ? shortFilePath(shortFormAddress, file?.slots.title?.value) : null
   useEffect(() => {
-    if (canonicalPath && bareFileAddress && location.pathname !== canonicalPath) {
+    if (canonicalPath && shortFormAddress && location.pathname !== canonicalPath) {
       // The short form carries no author; the page has one, so the replace costs no read.
-      rememberFileAddress(bareFileAddress)
+      rememberFileAddress(shortFormAddress)
       navigate(`${canonicalPath}${location.search}`, { replace: true })
     }
-  }, [canonicalPath, bareFileAddress, location.pathname, location.search, navigate])
+  }, [canonicalPath, shortFormAddress, location.pathname, location.search, navigate])
 
   /*
     The dwell marks this file's own stream and no container (FOL-16). Passing
@@ -255,7 +259,7 @@ export function FilePage() {
   const fileControls = useFileControls({
     onRenamed: () => void reloadConversation(),
     onDeleted: (deleted) => {
-      if (deleted.folder && deleted.address === file?.address) navigate(`/folders/${deleted.folder}`, { replace: true })
+      if (deleted.folder && deleted.address === file?.address) navigate(`/app/folders/${deleted.folder}`, { replace: true })
     },
   })
 
@@ -332,8 +336,8 @@ export function FilePage() {
                   <ToolbarLink
                     tooltip="Open folder"
                     aria-label="Open folder"
-                    href={`/folders/${file.folder}`}
-                    onClick={(event) => followInApp(event, () => navigate(`/folders/${file.folder}`))}
+                    href={`/app/folders/${file.folder}`}
+                    onClick={(event) => followInApp(event, () => navigate(`/app/folders/${file.folder}`))}
                   >
                     <IconArrowUpRight size={16} stroke={1.5} />
                   </ToolbarLink>

@@ -127,7 +127,7 @@ function mount(url: string) {
   return render(
     <MemoryRouter initialEntries={[url]}>
       <Routes>
-        <Route path="/folders/:id" element={<><FoldersPage /><Probe /></>} />
+        <Route path="/app/folders/:id" element={<><FoldersPage /><Probe /></>} />
         {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
         <Route path="*" element={<Probe />} />
       </Routes>
@@ -152,7 +152,7 @@ describe('FoldersPage opens a file at its own address', () => {
 
   it("a row's conversation control leads to the file's own page", async () => {
     relay.files = [topic]
-    mount(`/folders/${FOLDER}`)
+    mount(`/app/folders/${FOLDER}`)
     await userEvent.click(screen.getByRole('button', { name: /Conversation/i }))
     /*
       The address, uncut and with its colons intact. A colon is a legal path
@@ -165,7 +165,7 @@ describe('FoldersPage opens a file at its own address', () => {
   })
 
   it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
-    mount(`/folders/${FOLDER}`)
+    mount(`/app/folders/${FOLDER}`)
     const listed = [...document.querySelectorAll('[data-tree-folder]')].map((node) => (node as HTMLElement).dataset.treeFolder)
     expect(listed.sort()).toEqual([FOLDER, TOPIC_CHANNEL].sort())
     expect(screen.queryByText('project-0804b906')).toBeNull()
@@ -173,13 +173,13 @@ describe('FoldersPage opens a file at its own address', () => {
 
   it('opens no pane of its own — the conversation is a page now', () => {
     relay.files = [topic]
-    mount(`/folders/${FOLDER}`)
+    mount(`/app/folders/${FOLDER}`)
     expect(screen.queryByRole('button', { name: 'Close conversation' })).toBeNull()
   })
 
   it('marks nothing read: a listing is not a reading', () => {
     relay.files = [topic]
-    mount(`/folders/${FOLDER}`)
+    mount(`/app/folders/${FOLDER}`)
     expect(marks.file).not.toHaveBeenCalled()
     expect(marks.container).not.toHaveBeenCalled()
     expect(marks.thread).not.toHaveBeenCalled()
@@ -203,7 +203,7 @@ describe('FoldersPage manages a topic’s Folder from the topic', () => {
   })
 
   it('offers neither the delete nor the rename on a Folder that is a topic, and leads to the topic', async () => {
-    mount(`/folders/${TOPIC_CHANNEL}`)
+    mount(`/app/folders/${TOPIC_CHANNEL}`)
     expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
     // The title is drawn, and drawn once: the list row and the header share it.
@@ -216,7 +216,7 @@ describe('FoldersPage manages a topic’s Folder from the topic', () => {
   })
 
   it('still offers the delete and the rename on a Folder that is not a topic', () => {
-    mount(`/folders/${FOLDER}`)
+    mount(`/app/folders/${FOLDER}`)
     expect(screen.getByRole('button', { name: 'Delete folder' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: "Open this folder's topic" })).toBeNull()
@@ -235,7 +235,7 @@ describe('FoldersPage draws the union dot on a Folder row', () => {
 
   it('lights the Folder the hook says is unread, and only that one', () => {
     teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: false }
-    const { container } = mount(`/folders/${TOPIC_CHANNEL}`)
+    const { container } = mount(`/app/folders/${TOPIC_CHANNEL}`)
     const lit = container.querySelectorAll('[data-unread]')
     expect(lit).toHaveLength(1)
     // The dot sits in its Folder's section header (FOL-21) — and the section
@@ -248,7 +248,7 @@ describe('FoldersPage draws the union dot on a Folder row', () => {
 
   it('draws no dot for a Folder it was told nothing about', () => {
     teamUnread.unread = {}
-    const { container } = mount(`/folders/${FOLDER}`)
+    const { container } = mount(`/app/folders/${FOLDER}`)
     expect(container.querySelectorAll('[data-unread]')).toHaveLength(0)
   })
 })
@@ -258,7 +258,7 @@ describe('FoldersPage makes a Folder from its name', () => {
 
   it('sends on Enter in the name, and not on Shift+Enter', async () => {
     const user = userEvent.setup()
-    mount(`/folders/${FOLDER}`)
+    mount(`/app/folders/${FOLDER}`)
     const name = screen.getByRole('textbox', { name: 'New folder name' })
     await user.type(name, 'Launch notes{Shift>}{Enter}{/Shift}')
     expect(created.folder).not.toHaveBeenCalled()

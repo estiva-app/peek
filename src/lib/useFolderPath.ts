@@ -18,7 +18,7 @@ import { topicPath } from './objectUrl'
  * building one now would be building a read-only pane that is empty until
  * FOL-22 moves the topics' talk into their Folders and FOL-23 lets Peek speak
  * in a channel without a Convex twin. Until then such a Folder opens on
- * `/folders/<id>`, which is the listing with its management actions.
+ * `/app/folders/<id>`, which is the listing with its management actions.
  *
  * The topic lookup is the same one `FoldersPage` makes for its "Open topic"
  * control, and for the same reason: a topic's channel *is* its Folder
@@ -29,7 +29,7 @@ export function useFolderPath(): (folderId: string) => string {
   return useCallback(
     (folderId) => {
       const topic = topics?.find((t) => t.folderId === folderId)
-      return topic ? topicPath(topic) : `/folders/${folderId}`
+      return topic ? topicPath(topic) : `/app/folders/${folderId}`
     },
     [topics],
   )

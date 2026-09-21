@@ -953,13 +953,13 @@ export function useTopicView({
               // it on mount. Context state is more reliable than location.state across
               // route transitions (location.state can be reset by replace navigations).
               setPendingDmThreadId(threadConvId)
-              navigate(`/people/${dmId}`)
+              navigate(`/app/people/${dmId}`)
             }
           : undefined
       }
       openInDmHref={
         promotedHuddleForThread && promotedHuddleForThread.originDmId !== undefined && threadConvId
-          ? `/people/${promotedHuddleForThread.originDmId}`
+          ? `/app/people/${promotedHuddleForThread.originDmId}`
           : undefined
       }
       onClose={closeThread}

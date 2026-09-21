@@ -178,18 +178,21 @@ export function forgetFileAddresses(): void {
 }
 
 /**
- * The address behind `/topic/<slug>-<d>` — FOL-37.
+ * The address behind `/<word>/<slug>-<d>` — FOL-37, and FOL-39 for every
+ * word the manifests declare.
  *
- * The short route carries only a bare file's `d`; this is the one `#d` query
+ * The short route carries only the file's `d`; this is the one `#d` query
  * that recovers the author, after which the page resolves the file exactly as
- * it would from the long form. Kept apart from `useResolvedForeign` rather
- * than folded into it because the resolve is keyed on the address and re-runs
- * on every refresh trigger, and the author of a `d` never changes — one
- * lookup per link is the right number, and none when the session has already
- * seen it. Failures are classified the same way, so the page can say "the
- * relay could not be asked" rather than "nothing here" during an outage.
+ * it would from the long form. The word says which kinds to ask over, and a
+ * word nothing declares asks over all of them (`fileAddressAsViewer`). Kept
+ * apart from `useResolvedForeign` rather than folded into it because the
+ * resolve is keyed on the address and re-runs on every refresh trigger, and
+ * the author of a `d` never changes — one lookup per link is the right
+ * number, and none when the session has already seen it. Failures are
+ * classified the same way, so the page can say "the relay could not be asked"
+ * rather than "nothing here" during an outage.
  */
-export function useBareFileAddress(identifier: string | null | undefined): FileAddressState {
+export function useFileAddress(word: string, identifier: string | null | undefined): FileAddressState {
   const { resolveFileAddress } = useForeignObjects()
   const [resolved, setResolved] = useState<{
     identifier: string
@@ -201,7 +204,7 @@ export function useBareFileAddress(identifier: string | null | undefined): FileA
   useEffect(() => {
     if (!identifier || knownAddresses.has(identifier)) return
     let cancelled = false
-    resolveFileAddress(identifier)
+    resolveFileAddress(word, identifier)
       .then((address) => {
         if (address) knownAddresses.set(identifier, address)
         return { identifier, address }
@@ -212,14 +215,14 @@ export function useBareFileAddress(identifier: string | null | undefined): FileA
             ? error.kind
             : classifyRelayFailure((error as Error)?.message ?? '')
         if (isOutage(kind)) recordReadFailure(kind)
-        console.warn('[nostr] bare file address read failed:', error)
+        console.warn('[nostr] file address read failed:', error)
         return { identifier, failed: kind as RelayFailureKind }
       })
       .then((next) => !cancelled && setResolved(next))
     return () => {
       cancelled = true
     }
-  }, [identifier, resolveFileAddress])
+  }, [word, identifier, resolveFileAddress])
 
   if (!identifier) return 'loading'
   if (known) return { address: known }

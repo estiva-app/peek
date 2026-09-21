@@ -1,21 +1,22 @@
 /**
- * The short form's one read — FOL-37.
+ * The short form's one read — FOL-37, FOL-39.
  *
- * `/topic/<slug>-<d>` carries a bare file's `d` and no author. These pin the
- * hook that recovers the address: one read per `d`, none for a `d` the session
- * has already seen, and an outage told apart from "nothing has this `d`".
+ * `/<word>/<slug>-<d>` carries a file's `d` and no author. These pin the hook
+ * that recovers the address: one read per `d`, with the word so the seam can
+ * choose the kinds; none for a `d` the session has already seen; and an
+ * outage told apart from "nothing has this `d`".
  */
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RelayReadError } from '@/nostr/relayRead'
 
 const seam = vi.hoisted(() => ({
-  resolveFileAddress: vi.fn<(d: string) => Promise<string | null>>(),
+  resolveFileAddress: vi.fn<(word: string, d: string) => Promise<string | null>>(),
 }))
 vi.mock('@/api', () => ({ useForeignObjects: () => seam }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
 
-import { forgetFileAddresses, rememberFileAddress, useBareFileAddress } from './useForeignConversation'
+import { forgetFileAddresses, rememberFileAddress, useFileAddress } from './useForeignConversation'
 
 const PK = 'a'.repeat(64)
 const D = '0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
@@ -26,53 +27,62 @@ beforeEach(() => {
   forgetFileAddresses()
 })
 
-describe('useBareFileAddress', () => {
-  it('asks once for the author and answers the address', async () => {
+describe('useFileAddress', () => {
+  it('asks once for the author, with the word, and answers the address', async () => {
     seam.resolveFileAddress.mockResolvedValue(ADDRESS)
-    const { result, rerender } = renderHook(({ d }: { d: string | null }) => useBareFileAddress(d), {
+    const { result, rerender } = renderHook(({ d }: { d: string | null }) => useFileAddress('topic', d), {
       initialProps: { d: D },
     })
     expect(result.current).toBe('loading')
     await waitFor(() => expect(result.current).toEqual({ address: ADDRESS }))
     rerender({ d: D })
     expect(seam.resolveFileAddress).toHaveBeenCalledTimes(1)
+    expect(seam.resolveFileAddress).toHaveBeenCalledWith('topic', D)
+  })
+
+  it("passes another app's word through — the seam picks the kinds (FOL-39)", async () => {
+    const issue = `30851:${PK}:${D}`
+    seam.resolveFileAddress.mockResolvedValue(issue)
+    const { result } = renderHook(() => useFileAddress('issue', D))
+    await waitFor(() => expect(result.current).toEqual({ address: issue }))
+    expect(seam.resolveFileAddress).toHaveBeenCalledWith('issue', D)
   })
 
   it('answers a remembered address without a read', () => {
     rememberFileAddress(ADDRESS)
-    const { result } = renderHook(() => useBareFileAddress(D))
+    const { result } = renderHook(() => useFileAddress('topic', D))
     expect(result.current).toEqual({ address: ADDRESS })
     expect(seam.resolveFileAddress).not.toHaveBeenCalled()
   })
 
   it('remembers what it read, so a second mount for the same d costs nothing', async () => {
     seam.resolveFileAddress.mockResolvedValue(ADDRESS)
-    const first = renderHook(() => useBareFileAddress(D))
+    const first = renderHook(() => useFileAddress('topic', D))
     await waitFor(() => expect(first.result.current).toEqual({ address: ADDRESS }))
     first.unmount()
-    const second = renderHook(() => useBareFileAddress(D))
+    const second = renderHook(() => useFileAddress('topic', D))
     expect(second.result.current).toEqual({ address: ADDRESS })
     expect(seam.resolveFileAddress).toHaveBeenCalledTimes(1)
   })
 
-  it('is unresolved for a d no bare file carries, and does not remember that', async () => {
+  it('is unresolved for a d no file carries, and does not remember that', async () => {
     seam.resolveFileAddress.mockResolvedValue(null)
-    const { result } = renderHook(() => useBareFileAddress(D))
+    const { result } = renderHook(() => useFileAddress('topic', D))
     await waitFor(() => expect(result.current).toBe('unresolved'))
     // A file started after the miss must be findable: a miss is not cached.
     seam.resolveFileAddress.mockResolvedValue(ADDRESS)
-    const again = renderHook(() => useBareFileAddress(D))
+    const again = renderHook(() => useFileAddress('topic', D))
     await waitFor(() => expect(again.result.current).toEqual({ address: ADDRESS }))
   })
 
   it('tells an outage apart from a miss', async () => {
     seam.resolveFileAddress.mockRejectedValue(new RelayReadError('network'))
-    const { result } = renderHook(() => useBareFileAddress(D))
+    const { result } = renderHook(() => useFileAddress('topic', D))
     await waitFor(() => expect(result.current).toEqual({ failed: 'unreachable' }))
   })
 
   it('is loading with nothing to resolve', () => {
-    const { result } = renderHook(() => useBareFileAddress(null))
+    const { result } = renderHook(() => useFileAddress('topic', null))
     expect(result.current).toBe('loading')
     expect(seam.resolveFileAddress).not.toHaveBeenCalled()
   })
@@ -82,7 +92,7 @@ describe('useBareFileAddress', () => {
     seam.resolveFileAddress.mockImplementationOnce(() => new Promise((resolve) => (releaseFirst = resolve)))
     const other = '11111111-2222-4333-8444-555555555555'
     seam.resolveFileAddress.mockResolvedValueOnce(`30840:${PK}:${other}`)
-    const { result, rerender } = renderHook(({ d }: { d: string }) => useBareFileAddress(d), {
+    const { result, rerender } = renderHook(({ d }: { d: string }) => useFileAddress('topic', d), {
       initialProps: { d: D },
     })
     rerender({ d: other })

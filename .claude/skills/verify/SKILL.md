@@ -37,7 +37,7 @@ description: Build, launch, and drive the Peek app to verify a change end-to-end
 - Put the driver script **inside the repo** (e.g. `.verify-drive.mjs`,
   delete after) — Node resolves `playwright-core` from the script's dir,
   not cwd.
-- URL routing: `/desk`, `/topics`, `/topics/:id`, `/people`, `/people/:id`.
+- URL routing: `/app/desk`, `/topics`, `/topics/:id`, `/app/people`, `/app/people/:id`; every file at `/<word>/<slug>-<d>` (FOL-39).
 - Clicking a message card opens the thread panel (the card body is the
   click target). Seeded bodies in `src/data/topicData.ts` make good
   `getByText` anchors (e.g. t1_c1 "Hey everyone, our CI/CD pipeline…").

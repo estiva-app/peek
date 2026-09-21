@@ -240,7 +240,7 @@ describe('where things lead', () => {
   it('any other Folder opens on the Folders page, for now', () => {
     mount()
     fireEvent.click(within(section(OTHER)).getByRole('button', { name: 'Open folder' }))
-    expect(screen.getByTestId('url').textContent).toBe(`/folders/${OTHER}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${OTHER}`)
   })
 
   it('offers a new topic only when the page can start one', () => {
