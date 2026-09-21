@@ -23,10 +23,10 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /** Desk — the triage home: Screener, Urgent, Open work, Starred. */
-export const Desk: Story = { args: { route: '/desk' } }
+export const Desk: Story = { args: { route: '/app/desk' } }
 
 /** Topics — the topic list + conversation area. */
 export const Topics: Story = { args: { route: '/topics' } }
 
 /** People — DMs, teams, and agents in the left panel. */
-export const People: Story = { args: { route: '/people' } }
+export const People: Story = { args: { route: '/app/people' } }

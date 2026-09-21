@@ -20,6 +20,7 @@
  * keys, and a service credential would be a member of nothing.
  */
 import type { StoredToken } from '@/auth/estivaId'
+import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
@@ -165,9 +166,13 @@ export function forgetUrlShapes(): void {
 }
 
 async function urlShapes(query: QueryFn) {
-  shapesPromise ??= query([{ kinds: [31990], limit: 100 }]).then((manifests) =>
-    manifests.flatMap((manifest) => urlPatternsOf(manifest)),
-  )
+  shapesPromise ??= query([{ kinds: [31990], limit: 100 }]).then((manifests) => {
+    const shapes = manifests.flatMap((manifest) => urlPatternsOf(manifest))
+    // The same read answers which words Peek routes (FOL-39); `filePath` reads
+    // the registry in render, where it cannot await this.
+    rememberRouteWords(routeWordsOf(shapes))
+    return shapes
+  })
   try {
     return await shapesPromise
   } catch (error) {
@@ -178,28 +183,42 @@ async function urlShapes(query: QueryFn) {
 }
 
 /**
- * The address of the bare file with this `d`, or null — FOL-37.
+ * The route words the manifests declare — FOL-39. One read, cached with the
+ * shapes; `App` asks once so links are the short form from the first render
+ * after it. Throws for an outage the way every viewer read does.
+ */
+export async function routeWordsAsViewer(relayUrl: string, token: StoredToken): Promise<RouteWords> {
+  return routeWordsOf(await urlShapes(viewerQuery(relayUrl, token)))
+}
+
+/**
+ * The address of the file a `/<word>/<slug>-<d>` route names, or null —
+ * FOL-37 for a bare file, FOL-39 for every declared shape.
  *
- * The short route `/topic/<slug>-<d>` carries only the `d`, and a NIP-33
- * address also needs the author. This is the one `#d` query that recovers it,
- * on the same footing as `referenceFromUrlAsViewer` below: RFC 0.5 §7.4 measured
- * that no `(kind, d)` is shared by two authors, so `limit: 1` on
- * `kinds: [30840]` is the whole answer. The `d` is returned as given rather
- * than read back off the event, so the address the page then resolves is the
- * one the link named.
+ * The short route carries only the `d`, and a NIP-33 address also needs the
+ * author. This is the one `#d` query that recovers it, on the same footing as
+ * `referenceFromUrlAsViewer` below: RFC 0.5 §7.4 measured that no `(kind, d)`
+ * is shared by two authors, so `limit: 1` over the word's kinds is the whole
+ * answer. A word no manifest declares is resolved over every kind any of them
+ * does (§7.7 rule 4) — and never as a bare `#d`, because a Folder's 39000 and
+ * its 30890 share one uuid (§7.4's correction) and a bare `#d` could answer
+ * with either. The `d` is returned as given rather than read back off the
+ * event, so the address the page then resolves is the one the link named.
  *
  * Throws a `RelayReadError` rather than answering null for an outage: the
  * page tells "nothing has this `d`" apart from "the relay could not be asked",
  * the way `useForeignConversation` does for the resolve that follows.
  */
-export async function bareFileAddressAsViewer(
+export async function fileAddressAsViewer(
+  word: string,
   identifier: string,
   relayUrl: string,
   token: StoredToken,
 ): Promise<string | null> {
-  const [found] = await viewerQuery(relayUrl, token)([
-    { kinds: [KIND_BARE_FILE], '#d': [identifier], limit: 1 },
-  ])
+  const query = viewerQuery(relayUrl, token)
+  const words = routeWordsOf(await urlShapes(query))
+  const kinds = words.byWord[word.toLowerCase()] ?? declaredKinds(words)
+  const [found] = await query([{ kinds: [...kinds], '#d': [identifier], limit: 1 }])
   return found ? `${found.kind}:${found.pubkey}:${identifier}` : null
 }
 

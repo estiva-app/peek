@@ -25,7 +25,7 @@ import type { Topic } from '@/data/topicData'
 import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
-import { filePath, refNamesFile, topicPath } from '@/lib/objectUrl'
+import { filePath, fileRouteFromPath, refNamesFile, topicPath } from '@/lib/objectUrl'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
@@ -178,9 +178,9 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const { pathname } = useLocation()
   /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
   const openTopicId = /^\/(topics|topic-old)\//.test(pathname) ? selectedTopicId : null
-  const openPersonId = pathname.startsWith('/people/') ? selectedPersonId : null
-  // A file's page is `/topic/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37); the ref in the path names the file that is open.
-  const openFileRef = pathname.startsWith('/topic/') ? pathname.slice('/topic/'.length) : null
+  const openPersonId = pathname.startsWith('/app/people/') ? selectedPersonId : null
+  // A file's page is `/<word>/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37, FOL-39); the ref in the path names the file that is open.
+  const openFileRef = fileRouteFromPath(pathname)?.ref ?? null
   const topics = useTopics()
   const people = usePeople()
   const directory = useWorkspaceDirectory()
@@ -622,7 +622,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     label: p.name,
     description: p.role,
     leading: <Avatar src={p.avatarSrc} name={p.name} size={24} />,
-    onSelect: close(() => navigate(`/people/${encodeURIComponent(p.id)}`)),
+    onSelect: close(() => navigate(`/app/people/${encodeURIComponent(p.id)}`)),
     onForget: forget,
   })
 

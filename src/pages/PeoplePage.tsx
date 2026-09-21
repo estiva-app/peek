@@ -51,7 +51,7 @@ export function PeoplePage() {
   const selectedId: string | null = routeId ?? lastDmId ?? null
 
   const handleSelect = (id: string) => {
-    navigate(`/people/${id}`)
+    navigate(`/app/people/${id}`)
   }
 
   const handleStartTopicFromDm = (dmId: string, dmName: string, seedMessageId: string, data: StartTopicResult) => {
@@ -105,7 +105,7 @@ export function PeoplePage() {
     // and reopening it would undo the hide).
     if (selectedId === dmId) {
       setLastDmId(null)
-      navigate('/people', { replace: true })
+      navigate('/app/people', { replace: true })
     }
   }
 
@@ -115,8 +115,8 @@ export function PeoplePage() {
       // The launcher's Recent group (UIG-29, C3).
       rememberRecent({ kind: 'person', id: routeId })
     } else if (!routeId && lastDmId != null) {
-      // Returning to /people with no id — restore last selection in URL.
-      navigate(`/people/${lastDmId}`, { replace: true })
+      // Returning to /app/people with no id — restore last selection in URL.
+      navigate(`/app/people/${lastDmId}`, { replace: true })
     }
   }, [routeId, lastDmId, navigate, setLastDmId, DM_IDS])
 

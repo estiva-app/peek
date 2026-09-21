@@ -31,7 +31,7 @@ export * from './actions'
 export * from './profile'
 export * from './uploads'
 export * from './screener'
-export { useForeignObjects, useResolvedReferences, useWorkspaceDirectory, useMessageSearch, type MessageHit } from './foreign'
+export { useForeignObjects, useResolvedReferences, useRouteWords, useWorkspaceDirectory, useMessageSearch, type MessageHit } from './foreign'
 export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionTopics } from './mentions'
@@ -41,7 +41,7 @@ export { PeekDataProvider, hasConvex } from './store'
 export { topLevelFolders, useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
 export {
   useForeignConversation,
-  useBareFileAddress,
+  useFileAddress,
   rememberFileAddress,
   forgetFileAddresses,
   useForeignChildren,

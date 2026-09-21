@@ -12,7 +12,7 @@ import App from '@/App'
  * so a story can deep-link to any page. Real navigation, toasts, and the seam
  * run, so full journeys (e.g. promoting a DM to a topic) work end to end.
  */
-export function PeekApp({ route = '/desk' }: { route?: string }) {
+export function PeekApp({ route = '/app/desk' }: { route?: string }) {
   return (
     <MemoryRouter initialEntries={[route]}>
       <ThemeProvider>

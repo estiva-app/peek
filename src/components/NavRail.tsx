@@ -9,8 +9,10 @@ import {
 import { Rail } from '@estiva-app/ui'
 import { NavItem } from './NavItem'
 import { FreshnessIndicator } from './FreshnessIndicator'
+import { useLocation } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { useTopicPath } from '@/lib/useTopicPath'
+import { fileRouteFromPath } from '@/lib/objectUrl'
 
 /**
  * The narrow bar down the left edge that moves between Desk, Topics, Folders
@@ -19,33 +21,38 @@ import { useTopicPath } from '@/lib/useTopicPath'
 export function NavRail() {
   const { topicId, dmId } = useLastSelection()
   const pathForTopic = useTopicPath()
+  const { pathname } = useLocation()
+  // A file's page, at whatever word its manifest declared (FOL-39), is read
+  // under Topics — where `/topic/<address>` always was.
+  const openFile = fileRouteFromPath(pathname)
 
   const navItems = [
-    { to: '/desk', icon: <IconNote size={16} stroke={1.5} />, label: 'Desk', match: '/desk' },
+    { to: '/app/desk', icon: <IconNote size={16} stroke={1.5} />, label: 'Desk', match: '/app/desk' },
     {
       to: topicId ? pathForTopic(topicId) : '/topics',
       icon: <IconMessage2 size={16} stroke={1.5} />,
       label: 'Topics',
-      // Both routes belong to this section: `/topics` is the directory and a
-      // single topic lives at `/topic/<slug>-<d>` (PEE-14) — or, for a Convex
-      // topic, at `/topic-old/` (FOL-37).
-      match: ['/topics', '/topic', '/topic-old'],
+      // Every route here belongs to this section: `/topics` is the directory,
+      // a single topic lives at `/topic/<slug>-<d>` (PEE-14) — or, for a
+      // Convex topic, at `/topic-old/` (FOL-37) — and any other file at the
+      // word its app declared.
+      match: ['/topics', '/topic', '/topic-old', ...(openFile ? [`/${openFile.word}`] : [])],
     },
     {
-      to: '/folders',
+      to: '/app/folders',
       icon: <IconFolder size={16} stroke={1.5} />,
       label: 'Folders',
-      // Both routes: `/folders` is the list and `/folders/<uuid>` is one of
-      // them. No last-selection memory, unlike Topics and People — a Folder
-      // list is short and a remembered one would be a guess about which of
-      // several containers somebody meant.
-      match: '/folders',
+      // Both routes: `/app/folders` is the list and `/app/folders/<uuid>` is
+      // one of them. No last-selection memory, unlike Topics and People — a
+      // Folder list is short and a remembered one would be a guess about which
+      // of several containers somebody meant.
+      match: '/app/folders',
     },
     {
-      to: dmId != null ? `/people/${dmId}` : '/people',
+      to: dmId != null ? `/app/people/${dmId}` : '/app/people',
       icon: <IconUsers size={16} stroke={1.5} />,
       label: 'People',
-      match: '/people',
+      match: '/app/people',
     },
   ]
 

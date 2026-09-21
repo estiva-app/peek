@@ -48,7 +48,7 @@ describe('app smoke (seam wiring)', () => {
   const present = (matcher: string | RegExp) => screen.getAllByText(matcher).length
 
   it('renders the Desk page sections from the seam', () => {
-    renderApp('/desk')
+    renderApp('/app/desk')
     expect(present('Desk')).toBeGreaterThan(0)
     expect(present('Open work')).toBeGreaterThan(0)
     expect(present('Starred')).toBeGreaterThan(0)
@@ -166,8 +166,42 @@ describe('app smoke (seam wiring)', () => {
     })
   })
 
+  /*
+    The root belongs to files and Peek's own pages live under `/app/` — FOL-39,
+    RFC 0.5 §7.7. What is pinned here is the router: the words themselves come
+    off the manifests at runtime and are `FilePage.test.tsx`'s.
+  */
+  describe('the root is files; Peek’s pages are under /app/', () => {
+    it.each([
+      ['/', '/app/desk'],
+      ['/desk', '/app/desk'],
+      ['/app', '/app/desk'],
+      ['/folders', '/app/folders'],
+      ['/folders/925897ad-796e-4bc6-999c-ca19df26c4aa', '/app/folders/925897ad-796e-4bc6-999c-ca19df26c4aa'],
+      ['/people', '/app/people'],
+      ['/people/alice?x=1', '/app/people/alice?x=1'],
+    ])('%s lands on %s', (from, to) => {
+      renderApp(from)
+      expect(currentUrl()).toBe(to)
+    })
+
+    it('opens /<word>/<slug>-<d> on the file page for a word another app declared', () => {
+      // No manifest is readable here, so nothing resolves — but the route is
+      // the file page's, not a 404 and not the topics page.
+      renderApp('/issue/fix-the-header-00000000-0000-4000-8000-000000000000')
+      expect(currentUrl()).toBe('/issue/fix-the-header-00000000-0000-4000-8000-000000000000')
+      expect(screen.queryByText(/doesn't lead to a topic you can open/)).toBeNull()
+      expect(screen.queryByText(/does not point at anything Peek can open/)).toBeNull()
+    })
+
+    it('keeps /topics, /topic-old/, /o/ and /message/ at the root', () => {
+      renderApp('/topics')
+      expect(currentUrl()).toBe('/topics')
+    })
+  })
+
   it('renders a DM conversation with merged reply counts', () => {
-    renderApp('/people/alice')  // DMs are keyed by the partner's person key (§2.4)
+    renderApp('/app/people/alice')  // DMs are keyed by the partner's person key (§2.4)
     expect(present('Alice Johnson')).toBeGreaterThan(0)
     // Token-free line (reference chips like #48821 split text nodes)
     expect(present(/EU completions dropped 28% in 5 days/)).toBeGreaterThan(0)

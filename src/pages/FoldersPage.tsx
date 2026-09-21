@@ -29,7 +29,7 @@ import { followInApp } from '@/lib/followInApp'
 import { useFolderPath } from '@/lib/useFolderPath'
 
 /**
- * `/folders` and `/folders/:id` — navigation by Folder (RFC 0.4 §4).
+ * `/app/folders` and `/app/folders/:id` — navigation by Folder (RFC 0.4 §4).
  *
  * **Added beside the topic model, not on top of it.** Peek's topic routes,
  * `useTopicPath` and the whole `@/api` topic seam are untouched: a Folder is a
@@ -123,7 +123,7 @@ export function FoldersPage() {
       navigating first would land on a Folder the sidebar cannot show.
     */
     await reload()
-    navigate(`/folders/${result.id}`)
+    navigate(`/app/folders/${result.id}`)
   }
 
   /*
@@ -396,7 +396,7 @@ export function FoldersPage() {
                   return false
                 }
                 await reload()
-                navigate('/folders')
+                navigate('/app/folders')
                 return true
               }}
             >

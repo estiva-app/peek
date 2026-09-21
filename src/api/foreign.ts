@@ -11,7 +11,7 @@
  * throwing. A reference that cannot be resolved must degrade to plain text; a
  * message is never broken because an attachment failed.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { validToken } from '@/auth/estivaId'
@@ -19,7 +19,8 @@ import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { hasConvex } from './store'
 import {
   applyActionAsViewer,
-  bareFileAddressAsViewer,
+  fileAddressAsViewer,
+  routeWordsAsViewer,
   commentedFileOf,
   creatableUnderAsViewer,
   placeForReferenceAsViewer,
@@ -48,6 +49,7 @@ import {
 import { RelayReadError } from '@/nostr/relayRead'
 import { rootOf, type StreamMessage } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
+import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import type {
@@ -76,6 +78,28 @@ export function useRelayViewer() {
   }, [config?.relayUrl])
 }
 
+/**
+ * The route words the manifests declare (FOL-39), and the one read that fills
+ * them in.
+ *
+ * `filePath` reads the registry in render, so it cannot wait; this asks the
+ * relay once per session from the app's root and subscribes to the registry,
+ * so links drawn before the manifests answered are drawn again with the words
+ * once they have. Until then, and signed out, the registry holds Peek's own
+ * shape alone and every other kind links in its long form, which opens the
+ * same page. A failed read is left to the next reader of the shapes — a
+ * pasted URL or a short link — which retries it.
+ */
+export function useRouteWords(): RouteWords {
+  const viewer = useRelayViewer()
+  useEffect(() => {
+    const v = viewer()
+    if (!v) return
+    routeWordsAsViewer(v.relayUrl, v.token).catch(() => {})
+  }, [viewer])
+  return useSyncExternalStore(subscribeRouteWords, currentRouteWords, currentRouteWords)
+}
+
 export function useForeignObjects() {
   const viewer = useRelayViewer()
 
@@ -88,14 +112,15 @@ export function useForeignObjects() {
   )
 
   /**
-   * The address behind a short topic link's `d` (FOL-37), or null when no
-   * bare file carries it — and null signed out, which the page renders as the
-   * same dead link a signed-out viewer gets from `resolveObject`.
+   * The address behind a `/<word>/<slug>-<d>` link (FOL-37, FOL-39), or null
+   * when no file of the word's kinds carries the `d` — and null signed out,
+   * which the page renders as the same dead link a signed-out viewer gets
+   * from `resolveObject`.
    */
   const resolveFileAddress = useCallback(
-    async (identifier: string): Promise<string | null> => {
+    async (word: string, identifier: string): Promise<string | null> => {
       const v = viewer()
-      return v ? bareFileAddressAsViewer(identifier, v.relayUrl, v.token) : null
+      return v ? fileAddressAsViewer(word, identifier, v.relayUrl, v.token) : null
     },
     [viewer],
   )

@@ -117,7 +117,7 @@ Each is a 30–60 min exploratory session with a **goal**, **what to probe**, an
 10. Add a reaction on the initial pinned message in huddle thread → shows in DM ConversationCard reactions row AND in DM thread panel.
 11. Set a highlight on the initial pinned message in huddle thread → mirrors to DM (header pill, body tag).
 12. Edit the body in either side → mirrors to the other.
-13. Click "Open original" → navigates to /people/<dmId>, thread panel auto-opens on the same message id.
+13. Click "Open original" → navigates to /app/people/<dmId>, thread panel auto-opens on the same message id.
 14. Click topic title in promotion divider from the **huddle side** → switches to Conversations tab, closes thread panel (no-op navigation).
 15. Click topic title in promotion divider from the **DM side** → navigates to topic Conversations tab.
 
@@ -204,7 +204,7 @@ This is where bugs live. Each row is a paired interaction — test both directio
 | Add reaction from huddle thread on initial message | DM ConversationCard list shows it AND DM thread panel shows it |
 | Set highlight on a reply | Both sides reflect; HighlightPill in card |
 | Promote a DM with prior replies, then post new replies | Pre-promotion replies above divider, post-promotion below divider, chronologically split by `promotedAtMs` |
-| Click "Open original" from huddle thread | Navigates to /people/<dmId>, **thread panel auto-opens on same message id**, no flicker |
+| Click "Open original" from huddle thread | Navigates to /app/people/<dmId>, **thread panel auto-opens on same message id**, no flicker |
 | Click "Promoted to <topic>" link from DM-side thread | Navigates to topic Conversations tab |
 | Click "Promoted to <topic>" link from huddle-side thread | Switches active tab to Conversations + closes thread panel (no URL change) |
 | Promote two different DM messages from the same DM | Both create separate huddles with different seedMessageIds; both anchors visible in DM list; "Start topic" hidden on each seed but visible on other messages |
@@ -307,7 +307,7 @@ Run through these for each major feature. The category headers tell you what bug
 This is the bottom layer — explicit items to mark off after exploratory sessions. Run as a final sweep.
 
 ### Navigation & shell
-- [ ] `/` redirects to `/desk`.
+- [ ] `/` redirects to `/app/desk`.
 - [ ] NavRail Desk / Topics / People all clickable, all show correct page.
 - [ ] Topics NavRail link goes to last-visited topic; People to last-visited DM.
 - [ ] Sidebar collapse works on TopicsPage and PeoplePage; collapsed state persists during session.
