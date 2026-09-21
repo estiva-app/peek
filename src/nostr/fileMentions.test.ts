@@ -1,17 +1,21 @@
 /**
- * The mentions half of a file's Activity — CON-11.
+ * The mentions half of a file's Activity — CON-11, CON-14.
  *
- * Two claims worth pinning. A mention is the `a` tag: a comment that carries
+ * Three claims worth pinning. A mention is the `a` tag: a comment that carries
  * the file's address is one, and a comment that merely has the text is not
- * (the filter never sees it). And the file's own conversation is excluded —
- * a comment whose `A` is this file is the stream, and identity merges.
+ * (the filter never sees it). The file's own conversation is excluded —
+ * a comment whose `A` is this file is the stream, and identity merges. And a
+ * topic message is read by SPEC §6.4's rule: its `a` is a mention when the
+ * body names the file, and a pre-REW-10 comment anchor when it does not.
  */
 import { describe, expect, it } from 'vitest'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { encodeNaddr, type SignedEvent } from '@estiva-app/protocol'
 import { fileMentionFilter, fileMentionsOf } from './fileMentions'
 
 const AUTHOR = 'cd'.repeat(32)
+const RELAY = 'ab'.repeat(32)
 const THIS = `30840:${AUTHOR}:this-file`
+const THIS_NADDR = `nostr:${encodeNaddr({ kind: 30840, pubkey: AUTHOR, identifier: 'this-file', relays: [] })}`
 const OTHER = `30840:${AUTHOR}:other-file`
 const OTHER_H = 'other-uuid'
 
@@ -30,8 +34,32 @@ const event = (id: string, over: Partial<SignedEvent> & { h?: string; A?: string
 }
 
 describe('fileMentionFilter', () => {
-  it('asks for comments by the address', () => {
-    expect(fileMentionFilter(THIS)).toEqual({ kinds: [1111], '#a': [THIS], limit: 200 })
+  it('asks for comments and topic messages by the address', () => {
+    expect(fileMentionFilter(THIS)).toEqual({ kinds: [1111, 9], '#a': [THIS], limit: 200 })
+  })
+})
+
+describe('fileMentionsOf reads a topic message by SPEC §6.4 (CON-14)', () => {
+  const topicMessage = event('said-in-topic', { kind: 9, h: OTHER_H, a: [THIS], content: `See ${THIS_NADDR}`, created_at: 5 })
+
+  it('one whose body names the file is a mention, said in its topic', () => {
+    const [m] = fileMentionsOf([topicMessage], THIS, RELAY)
+    expect(m).toMatchObject({ id: 'said-in-topic', kind: 9, folder: OTHER_H, saidIn: `39000:${RELAY}:${OTHER_H}`, threadId: 'said-in-topic' })
+  })
+
+  it('one whose body does not name the file is a pre-REW-10 comment on it, not a mention', () => {
+    const legacy = event('legacy-anchor', { kind: 9, h: OTHER_H, a: [THIS], content: 'anchored the old way' })
+    expect(fileMentionsOf([legacy], THIS, RELAY)).toEqual([])
+  })
+
+  it('is left out when the relay’s key is unknown, and the comments stay', () => {
+    const comment = event('comment', { h: OTHER_H, A: OTHER, a: [THIS] })
+    expect(fileMentionsOf([topicMessage, comment], THIS, null).map((m) => m.id)).toEqual(['comment'])
+  })
+
+  it('sorts with the comments, newest first', () => {
+    const comment = event('comment', { h: OTHER_H, A: OTHER, a: [THIS], created_at: 1 })
+    expect(fileMentionsOf([comment, topicMessage], THIS, RELAY).map((m) => m.id)).toEqual(['said-in-topic', 'comment'])
   })
 })
 

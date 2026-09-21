@@ -45,6 +45,7 @@ import {
   imetaOf,
   pointerToAddress,
   imetaTag,
+  KIND,
   type NostrTag,
   type ResolutionAction,
   type SignedEvent,
@@ -170,28 +171,47 @@ export function mentionTagsFor(body: string): NostrTag[] {
  * second copy would say the reply is a root.
  */
 export function referenceTagsFor(body: string, own: string): NostrTag[] {
+  const addresses = namedInBody(body)
+  addresses.delete(own)
+  return [...addresses].map((a) => ['a', a])
+}
+
+/** The addresses a body names by `nostr:naddr…`; a pointer that will not decode is prose. */
+export function namedInBody(body: string): Set<string> {
   const addresses = new Set<string>()
   for (const naddr of findNaddrs(body)) {
     try {
-      const address = pointerToAddress(decodeNaddr(naddr))
-      if (address !== own) addresses.add(address)
+      addresses.add(pointerToAddress(decodeNaddr(naddr)))
     } catch {
       // A malformed pointer is prose.
     }
   }
-  return [...addresses].map((a) => ['a', a])
+  return addresses
 }
 
 /**
- * Is this root a comment on the file, rather than a comment elsewhere that
- * merely names it? NIP-22's `A` is the thread's root object; a comment written
- * on another file that carries this file's address as an `a` tag (above) is
- * returned by the object's `#a` read all the same, and would be drawn as if
- * somebody had said it here. It is that file's conversation and this file's
- * Activity (`fileMentions.ts`). A root with no `A` at all predates the tag and
- * is kept.
+ * Is this root a comment on the file, rather than a message elsewhere that
+ * merely names it? Both arrive by the object's `#a` read, and drawn as one
+ * list a mention would look as if somebody had said it here. SPEC §6.4 says
+ * which tag carries which strength, per kind (CON-13, CON-14):
+ *
+ * - A `kind:1111`'s `A` is the comment — NIP-22's root object. A root whose
+ *   `A` is another file is that file's conversation and this file's Activity
+ *   (`fileMentions.ts`); its `a` for this file is the index of a reference
+ *   (`referenceTagsFor`). A root with no `A` at all is malformed and read as
+ *   a comment, the way §6.4 says to read it rather than drop the thread.
+ * - A `kind:9` has no `A`, so its `a` is read against its body. One the body
+ *   also names is the index of that reference — what Peek writes for every
+ *   `[`-menu reference in a topic message (RIC-11) — and a mention. One the
+ *   body does not name is the anchor of a comment written before REW-10
+ *   moved comments to `1111`, which nothing writes any more and which is not
+ *   replaceable, so it is read as a comment for good.
  */
-export function isCommentOn(event: { tags: NostrTag[] }, address: string): boolean {
+export function isCommentOn(event: Pick<SignedEvent, 'kind' | 'content' | 'tags'>, address: string): boolean {
+  if (event.kind === KIND.STREAM_MESSAGE) {
+    const anchored = event.tags.some((tag) => tag[0] === 'a' && tag[1] === address)
+    return anchored && !namedInBody(event.content).has(address)
+  }
   const root = event.tags.find((tag) => tag[0] === 'A')?.[1]
   return !root || root === address
 }
@@ -218,7 +238,8 @@ export async function fileConversationAsViewer(
   const roots = rootIds
     .map((id) => threads.roots[id])
     .filter((root): root is FileComment => !!root)
-    // A mention from another file's conversation arrives by `#a` too, and is not a root here.
+    // A mention — from another file's conversation, or a topic message naming
+    // this file — arrives by `#a` too, and is not a root here.
     .filter((root) => {
       const event = raw.get(root.id)
       return !event || isCommentOn(event, container.address)

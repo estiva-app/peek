@@ -109,6 +109,14 @@ const mentionFromElsewhere = event({
   content: `Compare with ${OWN_NADDR}`,
   tags: [['A', OTHER], ['K', String(BARE_FILE)], ['P', CATH], ['a', OTHER], ['k', String(BARE_FILE)], ['p', CATH], ['h', OTHER_FOLDER], ['a', ADDRESS]],
 })
+/** A topic message naming this file: the `#a` read returns it, its `a` is a mention (SPEC §6.4, CON-14). */
+const topicMessageNamingThis = event({
+  kind: 9,
+  content: `Let's talk about ${OWN_NADDR}`,
+  tags: [['h', OTHER_FOLDER], ['a', ADDRESS]],
+})
+/** A topic message anchored to this file before REW-10 — its body does not name it, and it is a comment for good. */
+const legacyTopicComment = event({ kind: 9, content: 'Anchored the old way', tags: [['h', FOLDER], ['a', ADDRESS]] })
 const reply = event({
   kind: COMMENT,
   content: 'Agreed',
@@ -147,7 +155,9 @@ const signed = () => signViaEstivaId.mock.calls[0][0] as { kind: number; tags: s
 beforeEach(() => {
   publishSigned.mockClear()
   signViaEstivaId.mockClear()
-  queryRelay.mockImplementation(relayOver([manifest, file, root, withPicture, mentionFromElsewhere, reply, edit, reaction, resolved]))
+  queryRelay.mockImplementation(
+    relayOver([manifest, file, root, withPicture, mentionFromElsewhere, topicMessageNamingThis, legacyTopicComment, reply, edit, reaction, resolved]),
+  )
 })
 
 describe('fileConversationAsViewer reads the whole conversation below the roots', () => {
@@ -185,6 +195,16 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
   it('drops a root that is a comment on another file naming this one — that is Activity, not the conversation', async () => {
     const found = await fileConversationAsViewer(container, [root.id, mentionFromElsewhere.id], 'https://relay.test', token)
     expect(found.roots.map((r) => r.id)).toEqual([root.id])
+  })
+
+  it('drops a topic message whose body names this file, and keeps one anchored to it the pre-REW-10 way (CON-14)', async () => {
+    const found = await fileConversationAsViewer(
+      container,
+      [root.id, topicMessageNamingThis.id, legacyTopicComment.id],
+      'https://relay.test',
+      token,
+    )
+    expect(found.roots.map((r) => r.id)).toEqual([root.id, legacyTopicComment.id])
   })
 
   it('drops a root the relay no longer returns — a deleted comment is gone, not blank', async () => {
@@ -316,11 +336,27 @@ describe('referenceTagsFor', () => {
   })
 })
 
-describe('isCommentOn', () => {
-  it('is what the A names; a root without one is kept', () => {
+describe('isCommentOn — SPEC §6.4’s per-tag rule', () => {
+  it('a kind:1111 is what the A names; a root without one is kept', () => {
     expect(isCommentOn(root, ADDRESS)).toBe(true)
     expect(isCommentOn(withPicture, ADDRESS)).toBe(true)
     expect(isCommentOn(mentionFromElsewhere, ADDRESS)).toBe(false)
+  })
+
+  /* A kind:9 has no A, so its a is read against its body (CON-14). */
+  it('a kind:9 whose body names the file is a mention — the a is the index of the reference', () => {
+    const topicMessage = event({ kind: 9, content: `See ${OWN_NADDR}`, tags: [['h', OTHER_FOLDER], ['a', ADDRESS]] })
+    expect(isCommentOn(topicMessage, ADDRESS)).toBe(false)
+  })
+
+  it('a kind:9 whose body does not name the file is a pre-REW-10 comment anchor, read for good', () => {
+    const legacy = event({ kind: 9, content: 'Written before comments moved to 1111', tags: [['h', OTHER_FOLDER], ['a', ADDRESS]] })
+    expect(isCommentOn(legacy, ADDRESS)).toBe(true)
+  })
+
+  it('a kind:9 that does not carry the file as a is not a comment on it, whatever its body says', () => {
+    const named = event({ kind: 9, content: `See ${OWN_NADDR}`, tags: [['h', OTHER_FOLDER]] })
+    expect(isCommentOn(named, ADDRESS)).toBe(false)
   })
 })
 

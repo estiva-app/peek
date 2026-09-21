@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { ContainerHeader } from '@estiva-app/ui'
+import { KIND } from '@estiva-app/protocol'
 import { formatTimestamp, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
 import type { FileMention } from '@/nostr/fileMentions'
 import { filePath } from '@/lib/objectUrl'
@@ -74,7 +75,13 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     nostrReferences: m.references,
     nostrEventId: m.id,
   }
-  return { conv, about: m.saidIn, relation: 'mention', href: `${filePath(m.saidIn)}?thread=${m.threadId}` }
+  /*
+    A comment opens the thread it was said in, on that file's page. A topic
+    message (`kind:9`, CON-14) opens its topic, whose page has no thread
+    parameter — `FilePage` sends a `39000:` address on to the topic's page.
+  */
+  const href = m.kind === KIND.STREAM_MESSAGE ? filePath(m.saidIn) : `${filePath(m.saidIn)}?thread=${m.threadId}`
+  return { conv, about: m.saidIn, relation: 'mention', href }
 }
 
 /** The column as drawn: a header saying Activity and how many, over the rows. Pure, for the story. */
