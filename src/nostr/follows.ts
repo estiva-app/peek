@@ -61,9 +61,25 @@ export interface FollowsBlob {
   updatedAt: number
   /** Followed keys — file addresses and Folder uuids. Sorted on serialize; a set in spirit. */
   keys: string[]
+  /**
+   * Keys the person unfollowed although the relay implies them — named in a
+   * comment, placed on an issue (`impliedFollows.ts`). An implied follow is
+   * computed from the relay on every load, so an unfollow of one has to be
+   * written down or it comes back; this is where. Absent in a blob written
+   * before it existed, and read as empty.
+   */
+  muted: string[]
 }
 
-const EMPTY: FollowsBlob = { v: 1, updatedAt: 0, keys: [] }
+const EMPTY: FollowsBlob = { v: 1, updatedAt: 0, keys: [], muted: [] }
+
+function keySet(raw: unknown): string[] {
+  const keys = new Set<string>()
+  for (const key of Array.isArray(raw) ? raw : []) {
+    if (typeof key === 'string' && key.length > 0) keys.add(key)
+  }
+  return [...keys]
+}
 
 /**
  * Parse a decrypted blob, tolerating everything except a shape it cannot trust
@@ -82,14 +98,11 @@ export function parseFollowsBlob(plaintext: string | undefined): FollowsBlob {
   if (typeof raw !== 'object' || raw === null) return EMPTY
   const blob = raw as Partial<FollowsBlob>
   if (blob.v !== 1) return EMPTY
-  const keys = new Set<string>()
-  for (const key of Array.isArray(blob.keys) ? blob.keys : []) {
-    if (typeof key === 'string' && key.length > 0) keys.add(key)
-  }
   return {
     v: 1,
     updatedAt: typeof blob.updatedAt === 'number' && Number.isFinite(blob.updatedAt) ? blob.updatedAt : 0,
-    keys: [...keys],
+    keys: keySet(blob.keys),
+    muted: keySet(blob.muted),
   }
 }
 
@@ -99,6 +112,7 @@ export function serializeFollowsBlob(blob: FollowsBlob): string {
     v: blob.v,
     updatedAt: blob.updatedAt,
     keys: [...new Set(blob.keys)].sort(),
+    muted: [...new Set(blob.muted)].sort(),
   })
 }
 
@@ -179,11 +193,16 @@ export async function publishFollows(
  * write wins at one-second resolution, and a lost toggle is one click to redo.
  */
 export function followsToPublish(
-  keys: Iterable<string>,
+  next: { keys: Iterable<string>; muted: Iterable<string> },
   current: FollowsBlob | undefined,
   nowMs: number,
 ): FollowsBlob | undefined {
-  const candidate: FollowsBlob = { v: 1, updatedAt: nowMs, keys: [...new Set(keys)] }
+  const candidate: FollowsBlob = {
+    v: 1,
+    updatedAt: nowMs,
+    keys: [...new Set(next.keys)],
+    muted: [...new Set(next.muted)],
+  }
   if (current) {
     const same =
       serializeFollowsBlob({ ...candidate, updatedAt: 0 }) === serializeFollowsBlob({ ...current, updatedAt: 0 })
