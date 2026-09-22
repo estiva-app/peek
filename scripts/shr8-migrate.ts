@@ -13,6 +13,25 @@
  * `rehearse` and `migrate` write to production. `writeback` needs Convex admin
  * and is the one step this machine cannot run — see {@link writeback}.
  *
+ * ## `--include-published` — CON-12's partials
+ *
+ * SHR-8 asked *"which rows has Buzz never heard of?"* and answered `nostrEventId
+ * is null`. CON-12 measured the other half of the same question and found it
+ * was the wrong meter: 509 rows are published, so the census scores them 0, and
+ * every one of them is readable **only** as a `kind:9` under a topic channel
+ * that FOL-26 retires and FOL-25's delete mode deletes. Present in Buzz, and
+ * reachable by nobody.
+ *
+ * So `--include-published` widens the population from *"no relay event"* to
+ * *"no copy on this topic's `30840`"* — one meter, matching the done-when the
+ * project actually has. Everything else is unchanged: same `orig` idempotency,
+ * same author signatures, same true `created_at`, same threading.
+ *
+ * The one behaviour that differs is the write-back. A row already carrying a
+ * `nostrEventId` names its `kind:9` in the channel, and that pointer is how
+ * `verify` and `probe-con16-channel-vs-file.ts` match the two stores; the run
+ * does not overwrite it with the copy's id.
+ *
  * ## What it migrates, and where to
  *
  * The population is the census's gap minus CON-4's discard: the rows whose
@@ -61,6 +80,15 @@ const CONVEX = process.env.CONVEX_URL ?? 'https://honorable-guineapig-592.eu-wes
 
 /** Between writes: the relay's quota trips after a handful in a row (FOL-25). */
 const WRITE_GAP_MS = 6_000
+
+/**
+ * CON-12: count a row as owed a copy when the *file* lacks it, not when the
+ * relay has never heard of it. See the note at the top of this file.
+ */
+const INCLUDE_PUBLISHED = process.argv.includes('--include-published')
+
+/** Is this row part of the population, before asking whether it is done? */
+const inScope = (i: Item) => INCLUDE_PUBLISHED || !i.eventId
 
 /** What a copy written by this run is marked with, so a re-run skips it. */
 const MARK = 'shr8-migrate'
@@ -195,8 +223,19 @@ interface Surface {
   file?: SignedEvent
   address?: string
   items: Item[]
-  /** Copies already on the file, by the `orig` they stand for. */
+  /**
+   * Copies already on the file, **by the Convex row they stand for**.
+   *
+   * Not by the raw `orig`, because the two runs that wrote these do not mean
+   * the same thing by it: `fol25-topics-to-files.ts` copied events off the
+   * relay and named the `kind:9` it copied, while this script starts from
+   * Convex and names the row. Keyed by `orig` verbatim, a row that FOL-25
+   * already copied reads as missing — which, under `--include-published`,
+   * is 123 duplicate re-posts rather than a no-op.
+   */
   done: Map<string, SignedEvent>
+  /** How many copies actually sit on the file, however they are keyed. */
+  fileCopies: number
   discarded?: string
   noFileTarget?: string
 }
@@ -285,6 +324,7 @@ async function survey(query: ReturnType<typeof queryFn>, agent: string): Promise
       channelUuid: t.channelUuid,
       items: await collect(t.title, t.id),
       done: new Map(),
+      fileCopies: 0,
       discarded: DISCARDED[t.title],
       noFileTarget: NO_FILE_TARGET[t.title],
     }
@@ -298,9 +338,16 @@ async function survey(query: ReturnType<typeof queryFn>, agent: string): Promise
         break
       }
       if (s.address) {
+        const rowOfEvent = new Map<string, string>()
+        for (const i of s.items) if (i.eventId) rowOfEvent.set(i.eventId, i.id)
         for (const e of await fileConversation(query, s.address)) {
           const o = origOf(e)
-          if (o) s.done.set(o, e)
+          if (!o) continue
+          s.fileCopies++
+          const rowId = rowOfEvent.get(o) ?? o
+          // If a row has both a FOL-25 copy and one of this script's, the
+          // marked one is the copy `verify` is entitled to measure.
+          if (!s.done.has(rowId) || migrated(e)) s.done.set(rowId, e)
         }
       }
     }
@@ -375,8 +422,8 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
   const authorTally = new Map<string, number>()
 
   for (const s of surfaces) {
-    const gapItems = s.items.filter((i) => !i.eventId)
-    if (!gapItems.length && !s.done.size) continue
+    const gapItems = s.items.filter(inScope)
+    if (!gapItems.length && !s.fileCopies) continue
     if (s.discarded) {
       console.log(`${('topic/' + s.title).slice(0, 44).padEnd(46)}${String(gapItems.length).padStart(5)}${''.padStart(7)}${''.padStart(9)}${''.padStart(6)}${''.padStart(8)}  DISCARDED (CON-4)`)
       continue
@@ -402,11 +449,14 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
     for (const i of gapItems) {
       total++
       const pk = pubkeyFor(i, keys)
+      if (s.done.has(i.id)) continue
+      writable++
+      // Tallied over what is left to write, not over the whole scope: the
+      // list is read as "export these keys", and on a re-run most of the
+      // scope needs no signature at all.
       if (!pk) missingKeys.add(`${i.authorName} (authorId ${i.authorId ?? '?'})`)
       else authorTally.set(pk, (authorTally.get(pk) ?? 0) + 1)
       if (i.attachments > 0) attachmentHeld.push(i)
-      if (s.done.has(i.id)) continue
-      writable++
     }
     const desc = Object.entries(anchors).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(', ')
     console.log(
@@ -414,7 +464,7 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
         String(gapItems.length).padStart(5) +
         String(roots.length).padStart(7) +
         String(replies.length).padStart(9) +
-        String(s.done.size).padStart(6) +
+        String(s.fileCopies).padStart(6) +
         String(gapItems.reduce((n, i) => n + i.attachments, 0)).padStart(8) +
         (desc ? `  ${desc}` : ''),
     )
@@ -457,7 +507,7 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
 
   const oldest = surfaces
     .filter((s) => s.address)
-    .flatMap((s) => s.items.filter((i) => !i.eventId))
+    .flatMap((s) => s.items.filter((i) => inScope(i) && !s.done.has(i.id)))
     .reduce((m, i) => Math.min(m, i.createdAt), Date.now())
   console.log(`\noldest row in scope: ${stamp(Math.floor(oldest / 1000))} UTC — ${Math.ceil((Date.now() - oldest) / 86_400_000)} days.`)
   console.log(`So BUZZ_CREATED_AT_FLOOR_SECS must be at least ${Math.ceil((Date.now() - oldest) / 1000)} for the run to keep its dates.`)
@@ -651,9 +701,9 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
 
   for (const s of surfaces) {
     if (s.discarded || s.noFileTarget || !s.address) continue
-    const gapItems = s.items.filter((i) => !i.eventId && !s.done.has(i.id))
+    const gapItems = s.items.filter((i) => inScope(i) && !s.done.has(i.id))
     if (!gapItems.length) continue
-    const gap = new Set(s.items.filter((i) => !i.eventId).map((i) => i.id))
+    const gap = new Set(s.items.filter(inScope).map((i) => i.id))
     for (const i of gapItems) {
       const pk = pubkeyFor(i, keys)
       if (!pk) problems.push(`${s.title}: no pubkey for author ${i.authorName}`)
@@ -697,6 +747,8 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
     const map = new Map<string, { id: string; pubkey: string }>([...s.done].map(([orig, e]) => [orig, { id: e.id, pubkey: e.pubkey }]))
     let posted = 0
     let failed = 0
+    /** Of `posted`, the ones that were already on the relay in their channel. */
+    let copiedOnly = 0
 
     // Roots first: an event id is the hash of its own content, so a reply's
     // `e` cannot name its root until the root exists.
@@ -736,11 +788,14 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
       posted++
 
       const accessToken = tokens.get(pk)
-      if (accessToken) {
+      // A row that already names an event names its `kind:9` in the channel.
+      // That pointer is what matches the two stores; a copy does not replace it.
+      if (accessToken && !item.eventId) {
         const err = await writeBack(item, r.id, accessToken)
         if (err) console.log(`    ${short(item.id)} → published ${short(r.id)} but the write-back errored: ${err}`)
       }
-      pending.push({ item, eventId: r.id })
+      if (!item.eventId) pending.push({ item, eventId: r.id })
+      else copiedOnly++
       await sleep(WRITE_GAP_MS)
     }
 
@@ -750,7 +805,10 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
     const byId = new Map(after.map((i) => [i.id, i.eventId]))
     const wrote = pending.filter((p) => p.item.surface === s.title && byId.get(p.item.id) === p.eventId).length
     const mine = pending.filter((p) => p.item.surface === s.title).length
-    console.log(`${s.title}: published ${posted}${failed ? `, ${failed} refused` : ''}; Convex now names ${wrote}/${mine}`)
+    console.log(
+      `${s.title}: published ${posted}${copiedOnly ? ` (${copiedOnly} a copy of an existing kind:9 — no write-back owed)` : ''}` +
+        `${failed ? `, ${failed} refused` : ''}${mine ? `; Convex now names ${wrote}/${mine}` : ''}`,
+    )
   }
 
   const unwritten = []
@@ -950,6 +1008,11 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
     let dated = 0
     let threaded = 0
     let named = 0
+    // A row that names an event *other than* its copy is a CON-12 partial: the
+    // pointer is its `kind:9` in the channel, which the copy does not replace.
+    // So the write-back column is only over rows that owe one, and after a
+    // successful write-back the row names the copy — which is `named`.
+    let namedElsewhere = 0
     for (const i of scope) {
       const copy = copies.get(i.id)
       if (!copy) continue
@@ -960,13 +1023,15 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
         if (parent && copy.tags.some((x) => x[0] === 'e' && x[1] === parent.id)) threaded++
       }
       if (i.eventId === copy.id) named++
+      else if (i.eventId) namedElsewhere++
     }
+    const owed = scope.length - namedElsewhere
     const onRelay = copies.size === scope.length && dated === scope.length && threaded === scope.length
-    const ok = onRelay && named === scope.length
+    const ok = onRelay && named === owed
     if (!onRelay) failures++
-    else if (!ok) pendingWriteback += scope.length - named
+    else if (!ok) pendingWriteback += owed - named
     console.log(
-      `${ok ? ' ' : '✗'}${('topic/' + s.title).slice(0, 44).padEnd(45)}${String(scope.length).padStart(7)}${String(copies.size).padStart(8)}${String(dated).padStart(7)}${String(threaded).padStart(10)}  ${named}/${scope.length}`,
+      `${ok ? ' ' : '✗'}${('topic/' + s.title).slice(0, 44).padEnd(45)}${String(scope.length).padStart(7)}${String(copies.size).padStart(8)}${String(dated).padStart(7)}${String(threaded).padStart(10)}  ${named}/${owed}${namedElsewhere ? ` (+${namedElsewhere} kept their kind:9)` : ''}`,
     )
   }
   if (failures) console.log(`\n${failures} surface(s) incomplete on the relay — that is a migration failure`)
