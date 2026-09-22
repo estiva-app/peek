@@ -3,12 +3,15 @@
  *
  *   cd ~/peek-shr8-work && set -a && . ~/.estiva-agent.env && set +a
  *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts plan
- *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts rehearse
- *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts migrate --as ~/.shr8-tokens.json
+ *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts rehearse [days]
+ *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts migrate --keys ~/.fol25-keys.json
+ *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts writeback
  *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts verify
+ *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts cleanup <channel uuid>
  *
  * `plan` and `verify` are read-only and need nothing but the agent credential.
- * `rehearse` and `migrate` write to production.
+ * `rehearse` and `migrate` write to production. `writeback` needs Convex admin
+ * and is the one step this machine cannot run — see {@link writeback}.
  *
  * ## What it migrates, and where to
  *
@@ -737,18 +740,65 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
   console.log(`published: ${pending.length}`)
   console.log(`Convex rows updated: ${pending.length - unwritten.length}`)
   if (unwritten.length) {
-    console.log(`\n!! ${unwritten.length} row(s) are on the relay but still read null in Convex, so the census`)
-    console.log(`   cannot reach 0 and the two stores cannot be matched. Somebody with Convex admin`)
-    console.log(`   must run these — the mutation is internal and takes the raw row id:`)
-    for (const p of unwritten.slice(0, 5)) {
-      const fn = p.item.kind === 'root' ? 'nostr/data:markMessagePublished' : 'nostr/data:markReplyPublished'
-      const arg = p.item.kind === 'root' ? 'messageId' : 'replyId'
-      console.log(`   npx convex run --prod ${fn} '{"${arg}":"${p.item.id}","nostrEventId":"${p.eventId}"}'`)
-    }
-    if (unwritten.length > 5) console.log(`   … and ${unwritten.length - 5} more; the full list is in shr8-writeback.json`)
     const { writeFileSync } = await import('node:fs')
     writeFileSync('shr8-writeback.json', JSON.stringify(unwritten.map((p) => ({ kind: p.item.kind, id: p.item.id, nostrEventId: p.eventId })), null, 2))
+    console.log(`\n!! ${unwritten.length} row(s) are on the relay but still read null in Convex, so the census`)
+    console.log(`   cannot reach 0 and the two stores can no longer be matched. Written to`)
+    console.log(`   shr8-writeback.json; somebody with Convex admin applies them in one command:`)
+    console.log(`\n   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts writeback\n`)
+    console.log(`   It re-reads every row afterwards and says how many columns actually moved.`)
   }
+}
+
+// ── writeback ──────────────────────────────────────────────────────────────
+
+/**
+ * Apply the write-backs the run could not, from somebody with Convex admin.
+ *
+ *   npx tsx --tsconfig tsconfig.app.json scripts/shr8-migrate.ts writeback
+ *
+ * Under the key-export route the run signs as the authors but authenticates
+ * nothing, and `recordMessagePublished` is viewer-gated on `me ===
+ * m.authorId`. So the column stays null, the census goes on reporting the row
+ * as never published, and there is no way left to match it to its event — the
+ * failure the ticket calls trap 1. The internal mutation has no viewer check
+ * and is reachable from the CLI, which needs the account that owns
+ * `honorable-guineapig-592`; this machine's `~/.convex/config.json` is an
+ * anonymous local deployment, so this mode is the one part of SHR-8 that is
+ * somebody else's paste.
+ *
+ * It re-reads every row afterwards. `npx convex run` exiting 0 says the call
+ * was made, not that the column moved, and the whole point of the write-back
+ * is the column.
+ */
+async function writeback() {
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const run = promisify(execFile)
+  const path = process.argv[3] ?? 'shr8-writeback.json'
+  const rows = JSON.parse(readFileSync(path, 'utf8')) as Array<{ kind: 'root' | 'reply'; id: string; nostrEventId: string }>
+  console.log(`${rows.length} row(s) from ${path}\n`)
+
+  let called = 0
+  for (const row of rows) {
+    const fn = row.kind === 'root' ? 'nostr/data:markMessagePublished' : 'nostr/data:markReplyPublished'
+    const arg = row.kind === 'root' ? 'messageId' : 'replyId'
+    try {
+      await run('npx', ['convex', 'run', '--prod', fn, JSON.stringify({ [arg]: row.id, nostrEventId: row.nostrEventId })])
+      called++
+    } catch (e) {
+      console.log(`  ${short(row.id)} → ${e instanceof Error ? e.message.split('\n')[0] : e}`)
+    }
+  }
+
+  // The column is the evidence, not the exit code.
+  const topics = await convex<Array<{ title: string; id: string }>>('topics:list', {})
+  const seen = new Map<string, string | null>()
+  for (const t of topics) for (const i of await collect(t.title, t.id)) seen.set(i.id, i.eventId)
+  const landed = rows.filter((r) => seen.get(r.id) === r.nostrEventId).length
+  console.log(`\ncalls that returned: ${called}/${rows.length}`)
+  console.log(`rows whose column now names the event: ${landed}/${rows.length}`)
+  process.exitCode = landed === rows.length ? 0 : 1
 }
 
 // ── verify ─────────────────────────────────────────────────────────────────
@@ -820,11 +870,14 @@ async function main() {
     case 'migrate':
       await migrate(agent, query)
       break
+    case 'writeback':
+      await writeback()
+      break
     case 'verify':
       await verify(query, t.pubkey)
       break
     default:
-      throw new Error(`unknown mode "${mode}" — plan | rehearse | migrate | verify`)
+      throw new Error(`unknown mode "${mode}" — plan | rehearse | migrate | writeback | verify | cleanup`)
   }
 }
 
