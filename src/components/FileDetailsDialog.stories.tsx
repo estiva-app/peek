@@ -20,7 +20,7 @@ const file = {
 }
 
 const meta = {
-  title: 'Components/FileDetailsDialog',
+  title: 'Overlays/FileDetailsDialog',
   component: FileDetailsDialog,
   parameters: { layout: 'fullscreen' },
   args: {
