@@ -61,27 +61,32 @@ const live = vi.hoisted(() => ({
   stops: 0,
   fire: undefined as ((channelUuid: string) => void) | undefined,
 }))
-vi.mock('@/nostr/liveTopics', () => ({
-  peekLiveTopics: () =>
-    live.present
-      ? {
-          watchChannels: (
-            ids: readonly string[],
-            listener: (id: string) => void,
-            options?: { kinds?: readonly number[] },
-          ) => {
-            live.watched.push({ ids: [...ids], kinds: options?.kinds })
-            live.fire = listener
-            return {
-              stop: () => {
-                live.stops++
-                live.fire = undefined
-              },
-            }
-          },
-        }
-      : null,
-}))
+vi.mock('@/nostr/useLiveTopics', () => {
+  // One client object, built once: a fresh one per render would re-run the
+  // subscription effect for ever ([[mock-use-relay-viewer-stably]]).
+  const client = {
+    watchChannels: (
+      ids: readonly string[],
+      listener: (id: string) => void,
+      options?: { kinds?: readonly number[] },
+    ) => {
+      live.watched.push({ ids: [...ids], kinds: options?.kinds })
+      live.fire = listener
+      return {
+        stop: () => {
+          live.stops++
+          live.fire = undefined
+        },
+      }
+    },
+  }
+  return {
+    useLiveTopics: () => ({
+      live: live.present ? client : null,
+      relayState: live.present ? 'live' : 'connecting',
+    }),
+  }
+})
 /** Captured so a test can fire the fallback re-read by hand. */
 const refresh = vi.hoisted(() => ({ fire: undefined as (() => void) | undefined }))
 vi.mock('@/lib/useRefreshTriggers', () => ({
@@ -271,6 +276,23 @@ describe('the socket path (FOL-40)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('subscribes to a socket that arrives after it mounted, and re-reads when it goes live', async () => {
+    // The shipped bug: the client was read once, at mount, and on a page where
+    // nothing else had connected it was null — so no subscription was ever
+    // made and the dot moved on the refresh triggers alone.
+    live.present = false
+    const { rerender } = renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    expect(live.watched).toEqual([])
+
+    live.present = true
+    rerender()
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    // Connecting is not watching: what was said while the socket was down is
+    // covered by one read on the transition into live.
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(2))
   })
 
   it('the refresh fallback stays armed, because a wide filter may silently not fan out', async () => {

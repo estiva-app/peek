@@ -106,16 +106,21 @@ const live = vi.hoisted(() => ({
 }))
 vi.mock('@/nostr/liveTopics', () => ({
   peekLiveTopics: () => ({
-    watchChannels: (_ids: readonly string[], listener: (id: string) => void) => {
-      live.fire = listener
-      return { stop: () => {} }
-    },
     onForeignActivity: (folder: string, listener: () => void) => {
       live.fireForeign.set(folder, listener)
       return () => live.fireForeign.delete(folder)
     },
   }),
 }))
+vi.mock('@/nostr/useLiveTopics', () => {
+  const client = {
+    watchChannels: (_ids: readonly string[], listener: (id: string) => void) => {
+      live.fire = listener
+      return { stop: () => {} }
+    },
+  }
+  return { useLiveTopics: () => ({ live: client, relayState: 'live' }) }
+})
 
 import { FolderTree } from './FolderTree'
 

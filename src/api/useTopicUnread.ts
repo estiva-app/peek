@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForeignObjects } from '@/api/foreign'
 import { validToken } from '@/auth/estivaId'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { peekLiveTopics } from '@/nostr/liveTopics'
+import { useLiveTopics } from '@/nostr/useLiveTopics'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
@@ -87,6 +87,13 @@ export function useTopicUnread(
     streams: {},
   })
   const frontier = useReadFrontier()
+  /*
+    Acquired, not borrowed (FOL-40): the topics column mounts before anything
+    that builds the socket, and `peekLiveTopics()` answers null until one
+    exists — so this subscription was made only when something else had
+    already connected. Same defect as the team dot's, found with it.
+  */
+  const { live, relayState } = useLiveTopics()
 
   /*
     Keyed on the pairs, not the array: `useTopics` hands back a fresh array per
@@ -137,7 +144,6 @@ export function useTopicUnread(
   }, [load])
 
   useEffect(() => {
-    const live = peekLiveTopics()
     if (!live || channels.length === 0) return
     let timer: ReturnType<typeof setTimeout> | undefined
     const settle = () => {
@@ -152,7 +158,14 @@ export function useTopicUnread(
       if (timer) clearTimeout(timer)
       watch.stop()
     }
-  }, [channels, load])
+  }, [live, channels, load])
+
+  /* Connecting is not watching: the transition into live is a re-read. */
+  const wasLive = useRef(relayState === 'live')
+  useEffect(() => {
+    if (relayState === 'live' && !wasLive.current) load()
+    wasLive.current = relayState === 'live'
+  }, [relayState, load])
 
   useRefreshTriggers(load, { enabled: channels.length > 0 })
 
