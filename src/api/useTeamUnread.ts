@@ -174,8 +174,28 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     if (!live || ids.length === 0) return
     let timer: ReturnType<typeof setTimeout> | undefined
     const settle = (folder: string) => {
+      // Counted whether or not it schedules a read: `deliveries` beside
+      // `loads` is what measured the flood below in the first place.
       probe.current?.delivered(folder)
-      if (timer) clearTimeout(timer)
+      /*
+        The window opens on the first signal and is never pushed back by a
+        later one (FOL-40). Restarting it is the ordinary debounce, and it is
+        wrong here: the wide filter's listener fires for the relay's **stored**
+        events as well as live ones — one production tab reported
+        `deliveries: 1081` on an 81-Folder watch where `__wideFilters()`
+        counted 1,078 of them as backfill — so a subscribe or a reconnect
+        delivers a continuous run of them, each one pushing the read further
+        away. The same tab measured the result: the last signal at 17:12:50 and
+        the next read at 17:13:09, nineteen seconds later, carrying
+        `trigger: 'refresh'`. The socket had done its job and the 30-second
+        fallback still got there first.
+
+        So this is a ceiling, not a delay: at most one read per window, the
+        first signal in a burst is served within it, and a flood costs one read
+        per window rather than none. That is what the doc above has always
+        claimed — "a burst of comments is one read rather than one each".
+      */
+      if (timer) return
       timer = setTimeout(() => {
         timer = undefined
         load('socket')

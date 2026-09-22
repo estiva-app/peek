@@ -166,8 +166,12 @@ export function useTopicUnread(
   useEffect(() => {
     if (!live || channels.length === 0) return
     let timer: ReturnType<typeof setTimeout> | undefined
+    // A ceiling, not a delay — the same fix and the same reason as
+    // `useTeamUnread`'s, which has the measurement (FOL-40): the wide filter
+    // delivers the relay's stored events too, and a debounce that restarts on
+    // each one is pushed past the fallback tick by its own backfill.
     const settle = () => {
-      if (timer) clearTimeout(timer)
+      if (timer) return
       timer = setTimeout(() => {
         timer = undefined
         load()
