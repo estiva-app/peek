@@ -799,17 +799,56 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
 async function writeback() {
   const { execFile } = await import('node:child_process')
   const { promisify } = await import('node:util')
+  const { mkdtempSync, rmSync, existsSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
   const run = promisify(execFile)
   const path = process.argv[3] ?? 'shr8-writeback.json'
   const rows = JSON.parse(readFileSync(path, 'utf8')) as Array<{ kind: 'root' | 'reply'; id: string; nostrEventId: string }>
   console.log(`${rows.length} row(s) from ${path}\n`)
+
+  /*
+    Every id here is a **seedKey**, not a Convex id: the public queries return
+    `seedKey ?? _id` (`convex/messages.ts` `shape`), and all 145 rows in the gap
+    carry one — 28 `sent_…`, 117 `reply_…`, minted by the composer's optimistic
+    send (`src/api/actions.ts:468`). Both mark mutations take `v.id('messages')`,
+    which rejects a seedKey, and nothing in `convex/` maps one to its `_id`.
+
+    So the map comes from a snapshot rather than from new Convex code — Convex
+    is being retired, and a migration is the wrong moment to add to it. `export
+    --path <dir>` writes `<table>/documents.jsonl` directly, so there is no
+    archive to open. It needs the account that owns the deployment, which is
+    also what the mutation needs, so it costs no extra credential.
+  */
+  const dir = join(mkdtempSync(join(tmpdir(), 'shr8-')), 'snapshot')
+  console.log(`reading a snapshot for the seedKey → _id map (${dir}) …`)
+  await run('npx', ['convex', 'export', '--prod', '--path', dir], { maxBuffer: 1 << 28 })
+  const idOf = new Map<string, string>()
+  for (const table of ['messages', 'replies']) {
+    const file = join(dir, table, 'documents.jsonl')
+    if (!existsSync(file)) throw new Error(`${file} missing — the export has no ${table} table`)
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (!line.trim()) continue
+      const doc = JSON.parse(line) as { _id: string; seedKey?: string }
+      idOf.set(doc._id, doc._id)
+      if (doc.seedKey) idOf.set(doc.seedKey, doc._id)
+    }
+  }
+  // The snapshot is the whole database. It has done its job by here.
+  rmSync(dir, { recursive: true, force: true })
+  const unresolved = rows.filter((r) => !idOf.has(r.id))
+  console.log(`map: ${idOf.size} key(s); unresolved: ${unresolved.length}\n`)
+  if (unresolved.length) {
+    for (const r of unresolved.slice(0, 5)) console.log(`  no _id for ${r.id}`)
+    throw new Error('refusing to start: the snapshot does not name every row')
+  }
 
   let called = 0
   for (const row of rows) {
     const fn = row.kind === 'root' ? 'nostr/data:markMessagePublished' : 'nostr/data:markReplyPublished'
     const arg = row.kind === 'root' ? 'messageId' : 'replyId'
     try {
-      await run('npx', ['convex', 'run', '--prod', fn, JSON.stringify({ [arg]: row.id, nostrEventId: row.nostrEventId })])
+      await run('npx', ['convex', 'run', '--prod', fn, JSON.stringify({ [arg]: idOf.get(row.id), nostrEventId: row.nostrEventId })])
       called++
     } catch (e) {
       console.log(`  ${short(row.id)} → ${e instanceof Error ? e.message.split('\n')[0] : e}`)
