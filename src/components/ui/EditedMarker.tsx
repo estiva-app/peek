@@ -15,6 +15,9 @@ import { formatReplyTimestamp } from '@/api/format'
  *
  * The time it was edited is in the tooltip rather than inline, so the header
  * stays one line. Nothing is drawn when there was no edit.
+ *
+ * @registry reusable: stays in Peek (Katerina, 23 September): it was the one
+ * part put forward for the package, and she ruled it is not promoted
  */
 export function EditedMarker({ editedAt }: { editedAt?: number }) {
   if (!editedAt) return null
