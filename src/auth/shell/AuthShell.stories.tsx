@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { ThemeProvider } from '@/lib/theme'
 import { AuthShell } from './AuthShell'
 
 /**
@@ -20,9 +19,7 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   decorators: [
     Story => (
-      <ThemeProvider>
-        <Story />
-      </ThemeProvider>
+      <Story />
     ),
   ],
   args: {

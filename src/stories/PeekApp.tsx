@@ -1,5 +1,4 @@
 import { MemoryRouter } from 'react-router-dom'
-import { ThemeProvider } from '@/lib/theme'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
@@ -15,17 +14,15 @@ import App from '@/App'
 export function PeekApp({ route = '/app/desk' }: { route?: string }) {
   return (
     <MemoryRouter initialEntries={[route]}>
-      <ThemeProvider>
-        <DebugProvider>
-          <PeekDataProvider>
-            <LastSelectionProvider>
-              <ToastProvider>
-                <App />
-              </ToastProvider>
-            </LastSelectionProvider>
-          </PeekDataProvider>
-        </DebugProvider>
-      </ThemeProvider>
+      <DebugProvider>
+        <PeekDataProvider>
+          <LastSelectionProvider>
+            <ToastProvider>
+              <App />
+            </ToastProvider>
+          </LastSelectionProvider>
+        </PeekDataProvider>
+      </DebugProvider>
     </MemoryRouter>
   )
 }

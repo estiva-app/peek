@@ -8,7 +8,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { ThemeProvider } from '@/lib/theme'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
@@ -24,18 +23,16 @@ function LocationProbe() {
 function renderApp(route: string) {
   return render(
     <MemoryRouter initialEntries={[route]}>
-      <ThemeProvider>
-        <DebugProvider>
-          <PeekDataProvider>
-            <LastSelectionProvider>
-              <ToastProvider>
-                <App />
-                <LocationProbe />
-              </ToastProvider>
-            </LastSelectionProvider>
-          </PeekDataProvider>
-        </DebugProvider>
-      </ThemeProvider>
+      <DebugProvider>
+        <PeekDataProvider>
+          <LastSelectionProvider>
+            <ToastProvider>
+              <App />
+              <LocationProbe />
+            </ToastProvider>
+          </LastSelectionProvider>
+        </PeekDataProvider>
+      </DebugProvider>
     </MemoryRouter>,
   )
 }
