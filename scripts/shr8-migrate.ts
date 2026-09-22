@@ -954,6 +954,10 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
 
 async function main() {
   const mode = process.argv[2] ?? 'plan'
+  // `writeback` talks to Convex and nothing else. It is also the one mode run
+  // by somebody other than the agent, so demanding the agent's relay
+  // credential turned "you need Convex admin" into a missing-env error.
+  if (mode === 'writeback') return writeback()
   if (!CLIENT_ID || !CLIENT_SECRET) throw new Error('ESTIVA_ID_CLIENT_ID / ESTIVA_ID_CLIENT_SECRET are required')
   const t = await token()
   const agent = tokenSigner(t)
