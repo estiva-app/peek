@@ -10,9 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LiveProjectionApi } from './liveProjection'
 import {
   getLiveTopics,
+  installWideFilterDiagnostic,
   relayLog,
   resetLiveTopicsForTests,
   wideFilterDeliveryLog,
+  type WideFilterSnapshot,
 } from './liveTopics'
 
 const CHANNEL = '11111111-1111-4111-8111-111111111111'
@@ -245,8 +247,51 @@ describe('the log says when a live path stopped (FOL-40)', () => {
       expect(info).toHaveBeenCalledExactlyOnceWith(
         `[relay] wide filter of 81 delivered LIVE #1 for ${CHANNEL_B}, 184000ms after subscribing`,
       )
+      // A watch outlives the test otherwise: `__wideFilters()` lists the live
+      // ones, so a log left open here is a phantom entry in the next test.
+      log.stop()
     } finally {
       info.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers on demand, so a reading does not depend on the scrollback', () => {
+    /*
+      Three readings in a row were lost to the console rather than to the bug:
+      the wrong page was open, so the 81-Folder watch never existed; the paste
+      stopped above the line; the cap had already fired. A snapshot needs none
+      of that — `live: 0` here, beside a non-zero `live` on a 1-Folder watch,
+      is FOL-40's remaining question answered outright.
+    */
+    vi.useFakeTimers()
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    installWideFilterDiagnostic()
+    const read = () =>
+      (window as unknown as { __wideFilters: () => WideFilterSnapshot[] }).__wideFilters()
+    try {
+      const wide = wideFilterDeliveryLog(81)
+      const one = wideFilterDeliveryLog(1)
+      wide.record(CHANNEL)
+      expect(read()).toEqual([
+        expect.objectContaining({ folders: 81, stored: 1, live: 0 }),
+        expect.objectContaining({ folders: 1, stored: 0, live: 0 }),
+      ])
+
+      vi.advanceTimersByTime(60_000)
+      one.record(CHANNEL_B)
+      const [team, file] = read()
+      expect(team).toMatchObject({ folders: 81, stored: 1, live: 0 })
+      expect(team.lastLive).toBeUndefined()
+      expect(file).toMatchObject({ folders: 1, live: 1 })
+      expect(file.lastLive?.folder).toBe(CHANNEL_B)
+
+      // A stopped watch leaves nothing behind to read.
+      wide.stop()
+      one.stop()
+      expect(read()).toEqual([])
+    } finally {
+      vi.restoreAllMocks()
       vi.useRealTimers()
     }
   })
