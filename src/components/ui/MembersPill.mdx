@@ -7,7 +7,7 @@ import { Meta } from '@storybook/addon-docs/blocks'
 Who is in this conversation: up to three faces and the total, in a small
 outlined pill.
 
-**Seen in** — *Frame/ConversationHeader* and *Frame/ThreadPanel*. Those
+**Seen in** — *Frame/Header* and *Frame/ThreadPanel*. Those
 are both the places it is used, which is why it has no story of its own.
 
 ## When
@@ -37,7 +37,7 @@ import { MembersPill } from '@/components/ui/MembersPill'
 
 ## What it owns
 
-- **Being one pill rather than two.** `ConversationHeader` drew this and
+- **Being one pill rather than two.** `Header` drew this and
   `ThreadPanel` re-typed it, down to the padding, and the copy had drifted
   (COMPONENTS-PEEK F12). Both call this now.
 - **Faces that are the size they say they are.** The re-typed copy stacked its

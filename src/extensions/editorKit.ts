@@ -5,7 +5,7 @@ import { KeptSelection } from './keptSelection'
 
 /**
  * The marks and nodes every Peek editor uses (main composer + the
- * edit-in-place editors in ConversationCard/ThreadReplyCard). Keeping it in
+ * edit-in-place editors in ConversationCard/ReplyCard). Keeping it in
  * one place means the three editors can't drift apart on what formatting the
  * app supports.
  *

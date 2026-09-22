@@ -42,7 +42,7 @@ const reply = (id: string, author: string, body: string, ago: number) => ({
 })
 
 const meta = {
-  title: 'Views/FileThreadView',
+  title: 'Messages/FileThreadView',
   component: FileThreadView,
   args: { root: ROOT, people: PEOPLE },
   decorators: [

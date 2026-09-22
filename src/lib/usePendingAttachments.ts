@@ -4,7 +4,7 @@
  * This was `ComposeBox`'s, and only `ComposeBox`'s, until the message-edit
  * boxes needed the same thing (the paperclip and the paste there did nothing
  * at all: COMPONENTS-PEEK F3). Three callers pasting the same sixty lines is
- * how `ConversationCard`, `ThreadReplyCard` and `HuddleCard` became one card
+ * how `ConversationCard`, `ReplyCard` and `HuddleCard` became one card
  * drawn three times (F4), so the lines moved here first and the callers were
  * wired to them afterwards.
  *

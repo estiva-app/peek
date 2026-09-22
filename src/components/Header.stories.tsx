@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { ConversationHeader } from './ConversationHeader'
+import { Header } from './Header'
 
 const members = ['Alice Johnson', 'Jake Walter', 'Zack Bright', 'Amie Miles']
 
 const meta = {
-  title: 'Frame/ConversationHeader',
-  component: ConversationHeader,
+  title: 'Frame/Header',
+  component: Header,
   parameters: { layout: 'fullscreen' },
   decorators: [
     Story => (
@@ -17,7 +17,7 @@ const meta = {
   args: {
     onToggleStarred: () => {},
   },
-} satisfies Meta<typeof ConversationHeader>
+} satisfies Meta<typeof Header>
 
 export default meta
 type Story = StoryObj<typeof meta>
@@ -27,7 +27,7 @@ type Story = StoryObj<typeof meta>
 export const Topic: Story = {
   args: {
     name: 'Feedback on mobile onboarding flow',
-    topicMode: true,
+    variant: 'topic',
     openCount: 6,
     resolvedCount: 0,
     members,
@@ -50,7 +50,7 @@ export const Topic: Story = {
 export const TopicResolved: Story = {
   args: {
     name: 'Remote work policy clarifications',
-    topicMode: true,
+    variant: 'topic',
     isResolved: true,
     openCount: 0,
     resolvedCount: 4,
@@ -86,7 +86,7 @@ export const DmHideable: Story = {
 export const Huddle: Story = {
   args: {
     name: 'Greg Bothman, Alice Johnson',
-    huddleMode: true,
+    variant: 'huddle',
     members: ['You', 'Greg Bothman', 'Alice Johnson'],
   },
 }

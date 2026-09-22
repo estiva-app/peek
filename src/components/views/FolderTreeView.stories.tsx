@@ -21,7 +21,7 @@ const folders = [
 ]
 
 const meta = {
-  title: 'Views/FolderTree',
+  title: 'Navigation/FolderTree',
   component: FolderTreeView,
   args: {
     folders,

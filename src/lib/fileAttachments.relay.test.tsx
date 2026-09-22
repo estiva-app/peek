@@ -34,7 +34,7 @@ const fromRelay: FileAttachment = {
   thumbUrl: `${RELAY}/media/${SHA}.thumb.jpg`,
 }
 
-/** The two call sites, in one line: ConversationCard and ThreadReplyCard. */
+/** The two call sites, in one line: ConversationCard and ReplyCard. */
 const card = (file: FileAttachment) => <AttachmentCard {...postedAttachment(file)} fetchImage={blobObjectUrl} download />
 
 /*

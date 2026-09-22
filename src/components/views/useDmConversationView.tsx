@@ -5,7 +5,7 @@ import { useReportDelete } from '@/lib/reportDelete'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { isNearBottom } from './scrollPolicy'
 import { ScrollArea } from '@estiva-app/ui'
-import { ConversationHeader } from '@/components/ConversationHeader'
+import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { ConversationCard } from '@/components/ConversationCard'
 import { ReactionHorizon } from '@/components/ReactionHorizon'
@@ -303,7 +303,7 @@ export function useDmConversationView({
 
   const rightPanel = (
     <div className="flex flex-col h-full">
-      <ConversationHeader
+      <Header
         name={dmName}
         isStarred={dmId != null && isDmStarred(dmId)}
         onToggleStarred={

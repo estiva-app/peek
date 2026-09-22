@@ -46,7 +46,7 @@ const project = (comments: ForeignObject['comments']): ForeignObject =>
   }) as ForeignObject
 
 const meta = {
-  title: 'Views/ForeignConversationView',
+  title: 'Messages/ForeignConversationView',
   component: ForeignConversationView,
   decorators: [
     (Story) => (

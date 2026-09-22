@@ -6,7 +6,7 @@ import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener
 import { scrollToEventWhenReady, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { isNearBottom } from './scrollPolicy'
 import { ScrollArea } from '@estiva-app/ui'
-import { ConversationHeader } from '@/components/ConversationHeader'
+import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { JoinTopicBanner } from '@/components/JoinTopicBanner'
 import { ReactionHorizon } from '@/components/ReactionHorizon'
@@ -642,7 +642,7 @@ export function useTopicView({
 
   const rightPanel = (
     <div className="flex flex-col h-full">
-      <ConversationHeader
+      <Header
         folderId={topicFolderId}
         /* PEE-17. Null for a topic with no channel uuid — its only link is
            Peek-private, so offering to copy one would hand somebody a URL that
@@ -656,7 +656,7 @@ export function useTopicView({
         onToggleFolderPanel={topicFolderId ? onToggleFolderPanel : undefined}
         folderPanelOpen={folderPanelOpen}
         name={topicTitle}
-        topicMode
+        variant="topic"
         isResolved={topicResolved}
         openCount={openCount}
         resolvedCount={resolvedCount}

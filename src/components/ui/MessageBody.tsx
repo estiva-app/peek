@@ -28,7 +28,7 @@ import {
 } from '@estiva-app/protocol'
 import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protocol'
 
-// Inline token renderer shared by ConversationCard and ThreadReplyCard: turns
+// Inline token renderer shared by ConversationCard and ReplyCard: turns
 // [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
 // into pills.
 

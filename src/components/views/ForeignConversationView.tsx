@@ -25,7 +25,7 @@ const COMMENTS = 'flex flex-col gap-1 p-4'
  * identically. That sameness *is* the claim being tested — if this needed a
  * branch per app, aspects would not be a model.
  *
- * **Not `ThreadReplyCard`.** That component is Peek's own message: a tiptap
+ * **Not `ReplyCard`.** That component is Peek's own message: a tiptap
  * editor, reactions, attachments, resolutions, deletion. None of it applies to a
  * comment owned by another app, which this viewer cannot edit here and should
  * not be offered controls for — "only offer actions that can succeed". So this

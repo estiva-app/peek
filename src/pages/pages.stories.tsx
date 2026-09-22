@@ -77,7 +77,7 @@ const STARRED_ROWS: DeskRow[] = [
 ]
 
 /** The five team Folders FOL-20 leaves on production — the same fixture
- *  `Views/FolderTree` uses, so the two stories agree about what is there. */
+ *  `Navigation/FolderTree` uses, so the two stories agree about what is there. */
 const FOLDERS = [
   { id: '925897ad-796e-4bc6-999c-ca19df26c4aa', name: 'Peek', hasState: true },
   { id: '3789d2ca-103c-40e5-906f-0490782db5fd', name: 'Ship', hasState: true },

@@ -96,9 +96,9 @@ function ReplyMoreMenu({ trigger, onOpenChange, onEdit, onDelete, isOwnMessage =
   )
 }
 
-// ── ThreadReplyCard ──
+// ── ReplyCard ──
 
-interface ThreadReplyCardProps {
+interface ReplyCardProps {
   authorName: string
   authorAvatarSrc?: string
   timestamp: string
@@ -144,7 +144,7 @@ interface ThreadReplyCardProps {
  * One reply in a conversation's thread: its author, time, text, files and
  * reactions, with a hover menu to react, edit, highlight or delete it.
  */
-export function ThreadReplyCard({
+export function ReplyCard({
   authorName,
   authorAvatarSrc,
   timestamp,
@@ -168,7 +168,7 @@ export function ThreadReplyCard({
   nostrBlockId,
   resolvedObjects,
   className,
-}: ThreadReplyCardProps) {
+}: ReplyCardProps) {
   const messageLink = shareableMessageUrl(nostrEventId, window.location.origin)
   const [isHovered, setIsHovered] = useState(false)
   /* Not a rect since `@estiva-app/ui` 0.10.0 — the menu owns its button. Only

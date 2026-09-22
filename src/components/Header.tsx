@@ -8,14 +8,20 @@ import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
 import { Toolbar, ToolbarButton } from '@estiva-app/ui'
 
-interface ConversationHeaderProps {
+interface HeaderProps {
   avatarSrc?: string
   name?: string
-  /** When true, shows topic-mode layout: TopicState icon, status counts, members */
-  topicMode?: boolean
-  /** V2 huddle main-view header: lock icon on the left, no open/resolved counts. Members pill still
-   *  shows when `members` is provided. Pairs with `name` carrying the comma-joined member names. */
-  huddleMode?: boolean
+  /**
+   * Which of the three this header is over. It was two booleans, `topicMode`
+   * and `huddleMode`, which could both be true and said nothing about the
+   * third case — a direct message was "neither" (Katerina's review, 22
+   * September).
+   *
+   * - `topic` — the status icon, the open and resolved counts, the members pill
+   * - `huddle` — a lock, no counts, the members pill, and no Start huddle
+   * - `dm` — the other person's face, and nothing else
+   */
+  variant?: 'topic' | 'dm' | 'huddle'
   isResolved?: boolean
   openCount?: number
   resolvedCount?: number
@@ -78,11 +84,10 @@ interface ConversationHeaderProps {
  * The bar above an open topic, huddle or direct message: its name, open and
  * resolved counts, members, a star and a more-actions menu, with tabs below.
  */
-export function ConversationHeader({
+export function Header({
   avatarSrc,
   name,
-  topicMode = false,
-  huddleMode = false,
+  variant = 'dm',
   isResolved = false,
   openCount = 0,
   resolvedCount = 0,
@@ -103,7 +108,7 @@ export function ConversationHeader({
   folderId,
   onToggleFolderPanel,
   folderPanelOpen = false,
-}: ConversationHeaderProps) {
+}: HeaderProps) {
   const copyFolderLink = () => {
     // `folder:<uuid>`, not a URL. A Folder belongs to no single app, so a link
     // pointing at Peek would misdescribe a container Peek merely shares.
@@ -139,9 +144,9 @@ export function ConversationHeader({
       <div className="h-12 flex items-center justify-between pl-5 pr-4 py-2">
         {/* Left */}
         <div className="flex items-center gap-2 overflow-hidden">
-          {huddleMode ? (
+          {variant === 'huddle' ? (
             <IconLock size={16} stroke={1.5} className="text-text-secondary shrink-0" />
-          ) : topicMode ? (
+          ) : variant === 'topic' ? (
             <TopicState
               type="topic"
               status={isResolved ? 'resolved' : 'unresolved'}
@@ -157,7 +162,7 @@ export function ConversationHeader({
 
         {/* Right */}
         <div className="flex gap-3 items-center shrink-0">
-          {topicMode && !hideTopicMeta && !huddleMode && (
+          {variant === 'topic' && !hideTopicMeta && (
             <>
               {/* Open / resolved counts */}
               <div className="flex items-center gap-2">
@@ -175,12 +180,12 @@ export function ConversationHeader({
           {/* Members pill — shown for both topic mode and huddle mode. In topic
               mode it opens the members dialog (huddle membership is set at
               creation, so the huddle pill stays inert). */}
-          {(topicMode || huddleMode) && !hideTopicMeta && members.length > 0 && (
+          {variant !== 'dm' && !hideTopicMeta && members.length > 0 && (
             <MembersPill members={members} onClick={onShowMembers} />
           )}
 
           {/* Start huddle (V2 / V3 only — driven by onStartHuddle prop). Hidden inside a huddle. */}
-          {onStartHuddle && !huddleMode && (
+          {onStartHuddle && variant !== 'huddle' && (
             <IconButton
               tooltip="Start a huddle"
               aria-label="Start a huddle"

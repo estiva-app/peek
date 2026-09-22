@@ -1,21 +1,21 @@
 import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
-import * as ConversationHeaderStories from './ConversationHeader.stories'
+import * as HeaderStories from './Header.stories'
 
-<Meta of={ConversationHeaderStories} />
+<Meta of={HeaderStories} />
 
-# ConversationHeader
+# Header
 
 The bar above an open topic, huddle or direct message: its name, its open and
 resolved counts, its members, a star and a more-actions menu, with tabs below.
 
-<Canvas of={ConversationHeaderStories.Topic} />
+<Canvas of={HeaderStories.Topic} />
 
 ## When
 
 - Above any open conversation, whichever kind it is. One header draws all
   three.
 
-<Canvas of={ConversationHeaderStories.Dm} />
+<Canvas of={HeaderStories.Dm} />
 
 ## When not
 
@@ -28,11 +28,11 @@ resolved counts, its members, a star and a more-actions menu, with tabs below.
 ## How
 
 ```tsx
-import { ConversationHeader } from '@/components/ConversationHeader'
+import { Header } from '@/components/Header'
 
-<ConversationHeader
+<Header
   name={topic.title}
-  topicMode
+  variant="topic"
   isResolved={topic.isResolved}
   openCount={open}
   resolvedCount={resolved}
@@ -52,14 +52,14 @@ import { ConversationHeader } from '@/components/ConversationHeader'
   as icons, and the menu deliberately does not repeat them (Katerina, 19
   August).
 
-## One thing that is going to change
+## Why it is not called TopicHeader
 
-`topicMode` and `huddleMode` are two booleans for what is really one choice of
-three. Katerina's review of 22 September rules that this becomes **Header**,
-with `variant="topic" | "dm" | "huddle"` — not "TopicHeader", because it draws
-direct messages and huddles too. That is a rename, which UIG-17 explicitly does
-not do, so it is recorded here and belongs to whichever ticket takes it.
+Because it draws direct messages and huddles too. Katerina's review of 22
+September, which also replaced the two booleans this used to take: `topicMode`
+and `huddleMode` could both be true, and said nothing about the third case — a
+direct message was "neither". **`huddleMode` was never passed by the app at
+all**; only a story set it, which two booleans made impossible to notice.
 
 ## Props
 
-<Controls of={ConversationHeaderStories.Topic} />
+<Controls of={HeaderStories.Topic} />
