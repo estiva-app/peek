@@ -99,42 +99,61 @@ const preview: Preview = {
     // app's dark canvas via .dark .docs-story in preview.css.
     docs: { theme: themes.dark },
     options: {
-      // Docs first, then the domain-primary taxonomy (W6).
-      storySort: {
-        /*
-          Every heading is named, so none of them falls to the bottom in
-          whatever order the indexer found it (Katerina, 20 September). Three
-          names here had outlived their stories — Auth, Feedback and Inputs.
-          Estiva ID is last and closed, because this Storybook is opened to look
-          at Peek; see `manager.ts`.
-        */
-        order: [
+      /*
+        Headings in a written order; everything inside them alphabetical;
+        the stories inside one component left exactly as its file writes them
+        (Katerina, 23 September).
+
+        Why this is a function and not `method: 'alphabetical'`: that setting
+        sorts every level, including the stories within a component, and those
+        are ordered on purpose — a card's default before its fifteen states.
+        Returning 0 for two entries of the same title is what leaves them
+        alone.
+
+        A heading not named here sorts after the named ones rather than
+        wherever the indexer happened to find it. Estiva ID is last and closed,
+        because this Storybook is opened to look at Peek; see `manager.ts`.
+      */
+      storySort: (a, b) => {
+        const HEADINGS = [
           'Docs',
-          ['Introduction'],
-          /* Where `Layouts` used to be: the pages themselves come first,
-             before the parts they are built from (UIG-17). */
+          /* The pages themselves first, before the parts they are built from. */
           'Pages',
-          /* The frame around a conversation: its header and its replies
-             column (Katerina's review, 22 September). */
+          /* Everything that wraps a screen: the shell, the rail, the header,
+             the replies column, the signed-out shell (Katerina, 23 September —
+             `Navigation` and `Entry` were the same idea under two names). */
           'Frame',
           'Primitives',
           'Messages',
-          /* Carved out of Messages, same review: the body, what renders
-             it, and the composer that writes it. */
+          /* Carved out of Messages: the body, what renders it, and the
+             composer that writes it. */
           'Writing & text',
-          ['*', 'Composer'],
           'Topics',
+          /* The seven file and folder parts that had been split across
+             Messages, Navigation and Overlays (Katerina, 23 September). */
+          'Folders',
           'Huddles',
           'Screener & Desk',
-          'Navigation',
           'Overlays',
-          'Entry',
           /* Parked, so a story that is going is visible instead of vanishing in
-             someone else's pull request (Katerina, 22 September). Nothing goes in
-             without a ticket number and the date it went in. */
+             someone else's pull request (Katerina, 22 September). Nothing goes
+             in without a ticket number and the date it went in. */
           'To be removed',
           'Estiva ID',
-        ],
+        ]
+        const left = a.title.split('/')
+        const right = b.title.split('/')
+        const rank = (name) => {
+          const at = HEADINGS.indexOf(name)
+          return at === -1 ? HEADINGS.length : at
+        }
+        if (left[0] !== right[0]) return rank(left[0]) - rank(right[0])
+        for (let depth = 1; depth < Math.max(left.length, right.length); depth++) {
+          if (left[depth] === undefined) return -1
+          if (right[depth] === undefined) return 1
+          if (left[depth] !== right[depth]) return left[depth].localeCompare(right[depth], 'en')
+        }
+        return 0
       },
     },
   },

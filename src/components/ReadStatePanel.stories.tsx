@@ -14,7 +14,7 @@ import { SizeReadout } from './ReadStatePanel'
  * that has to stay legible when it turns into a warning.
  */
 const meta = {
-  title: 'To be removed/Read state size',
+  title: 'To be removed/ReadStatePanel',
   component: SizeReadout,
   decorators: [
     (Story) => (

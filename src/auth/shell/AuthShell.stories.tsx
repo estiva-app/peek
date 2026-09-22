@@ -14,7 +14,7 @@ import { AuthShell } from './AuthShell'
  * honest — editing the string here would only make them drift.
  */
 const meta = {
-  title: 'Entry/AuthShell',
+  title: 'Frame/AuthShell',
   component: AuthShell,
   parameters: { layout: 'fullscreen' },
   decorators: [

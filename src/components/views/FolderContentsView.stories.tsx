@@ -61,7 +61,7 @@ const FILES: ForeignObject[] = [
 ]
 
 const meta = {
-  title: 'Navigation/FolderContentsView',
+  title: 'Folders/FolderContentsView',
   component: FolderContentsView,
   decorators: [
     (Story) => (

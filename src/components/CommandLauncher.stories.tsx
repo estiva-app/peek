@@ -40,7 +40,7 @@ const inThread: LauncherContext = {
  * is offered only where it can succeed.
  */
 const meta = {
-  title: 'Overlays/Command launcher',
+  title: 'Overlays/CommandLauncher',
   component: CommandLauncher,
   parameters: { layout: 'fullscreen', docs: { story: { inline: false, height: '560px' } } },
   args: { context: nowhere, onClose: noop },

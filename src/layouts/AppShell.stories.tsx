@@ -26,7 +26,7 @@ function ListPanel() {
 }
 
 const meta = {
-  title: 'Navigation/AppShell',
+  title: 'Frame/AppShell',
   component: AppShell,
   parameters: { layout: 'fullscreen' },
   decorators: [
