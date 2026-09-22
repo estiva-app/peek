@@ -59,6 +59,11 @@ const KIND_FOLDER_COMMAND = 1852
  */
 const WANT_FILE: Array<[title: string, team: keyof typeof TEAMS]> = [
   ['Interesting Claude-generated docs - Renamed 4', 'Steer'],
+  // CON-12. Its channel is live and holds two published messages that no file
+  // and no Ship project addresses, so it is the one topic in the census that
+  // neither of the migration's two targets can take. A `30840` in Leaf is the
+  // ordinary shape — it is a topic like the other ten, not a record channel.
+  ['Leaf planning', 'Leaf'],
 ]
 
 type Token = { accessToken: string; pubkey: string }
