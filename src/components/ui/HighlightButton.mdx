@@ -1,0 +1,63 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as HighlightButtonStories from './HighlightButton.stories'
+
+<Meta of={HighlightButtonStories} />
+
+# HighlightButton
+
+Mark a message as a highlight — the toolbar button, and the picker it opens.
+
+<Canvas of={HighlightButtonStories.Open} />
+
+## When
+
+- In the toolbar of any box that writes or edits a message: the composer and
+  both edit boxes.
+
+## When not
+
+- To *show* a highlight. That is `HighlightPill` on the message, or
+  `HighlightSwatch` where the name is written beside it.
+- By writing the picker inline. That is exactly what this exists to stop — see
+  below.
+
+## How
+
+```tsx
+import { HighlightButton } from '@/components/ui/HighlightButton'
+
+<Toolbar>
+  <AttachFileButton onPick={uploads.add} />
+  <HighlightButton editor={editor} container={composeRef} />
+</Toolbar>
+```
+
+## What it owns
+
+- **The picker, and what it costs to own one.** The copy this replaced was a
+  hand-placed panel closing through its own `mousedown` listener, and its
+  comment argued that a `Menu` "would fight it" — which was true only of the
+  hand-placement it was defending. Making the trade hands back the Escape key,
+  the outside click, the portal, and not being cut off at an edge.
+- **Hanging from the button rather than from the box.** The panel used to be
+  placed against the whole composer, so its left edge sat at the composer's; it
+  sits at the button's now. **That is a visible change and the only one the move
+  made** — recorded for the screenshot diff rather than hidden, because a menu
+  belonging to the control that opens it is the point.
+
+## Why it is a component at all
+
+It was written inline in `ComposeBox` and nowhere else, so a message could be
+marked as an Insight when it was written and **never after**. The edit boxes
+could always *keep* a highlight — `extractHighlightType` reads one back on save
+— and had no way to add, change or drop one. It is here once now and all three
+call it: the same move `AttachFileButton` made for the paperclip.
+
+## A note on its stories
+
+Parked under *To be removed* by Katerina's review of 22 September. The component
+stays.
+
+## Props
+
+<Controls of={HighlightButtonStories.Default} />

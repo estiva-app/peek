@@ -1,0 +1,67 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as MessageBodyStories from './MessageBody.stories'
+
+<Meta of={MessageBodyStories} />
+
+# MessageBody
+
+The text of a message or a reply — formatted, with its mentions and links, and a
+card below it for each item from another app it refers to.
+
+<Canvas of={MessageBodyStories.Paragraph} />
+
+<Canvas of={MessageBodyStories.InlineTokens} />
+
+## When
+
+- Anywhere a message's body is read rather than written: a conversation card, a
+  reply, a pinned message, a comment on another app's object.
+- For a comment Peek does not own, through `CommentRow`, which is built on this
+  precisely because the body is the part that genuinely is shared.
+
+## When not
+
+- In an editor. This renders; the composer writes.
+- For text with no protocol meaning. A label or a caption is a `span`; this
+  parses a dialect.
+
+## How
+
+```tsx
+import { MessageBody } from '@/components/ui/MessageBody'
+
+<MessageBody
+  body={message.body}
+  isTopicResolved={isTopicResolved}
+  resolvedObjects={resolved}
+/>
+```
+
+- `isTopicResolved` is required, because a topic chip has to show whether that
+  topic is open or resolved, and only the caller can know.
+
+## What it owns
+
+- **That marks are parsed before tokens, and that the order is load-bearing.**
+  It used to be the other way round, which was fine until the dialect gained a
+  way to say *"this text is literal"*. `code` says exactly that (SPEC §13.1: its
+  content MUST NOT be parsed for further marks) — under the old order, a
+  backticked `@Alice` would have rendered a mention chip inside a code span.
+- **What an unknown block does.** §13.3 is explicit: a reader meeting an unknown
+  block type MUST render its inline text rather than drop it, and MUST NOT drop
+  it silently. So it becomes a paragraph of its own text, tagged with
+  `data-block-type`. A blank would be the PEE-10 failure, where an object that
+  renders empty is indistinguishable from one the reader is not allowed to see.
+- **One element for both kinds of link** — a bare URL and `[label](url)` — so
+  the two cannot drift apart. The bare form breaks anywhere, because it has no
+  spaces to wrap at; a label wraps at its words.
+
+## One thing it does not do yet
+
+A `table` falls into the default case — *everything Peek has no design for* —
+and renders as one flat paragraph of its words. Ship draws tables properly since
+UIG-18, so the two apps currently disagree. That divergence is filed on UIG-30.
+
+## Props
+
+<Controls of={MessageBodyStories.Paragraph} />

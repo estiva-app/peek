@@ -1,0 +1,73 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as TopicDetailsStories from './TopicDetailsDialog.stories'
+
+<Meta of={TopicDetailsStories} />
+
+# TopicDetailsDialog
+
+Everything a topic is, and the one place its name can be changed (PEE-2).
+
+<Canvas of={TopicDetailsStories.CanRename} />
+
+## When
+
+- From the ⋯ menu, wherever it is opened from — the sidebar row or the
+  conversation header.
+- For any topic, whether or not this reader may rename it.
+
+## When not
+
+- As a rename prompt. Renaming lives here, but the dialog has to be worth
+  opening when you can change **nothing** — which is what the members, the
+  project and the history are for. Peek had nowhere showing who started a topic,
+  who is in it, what project it is attached to, or what has happened to it.
+- In the header title. That was the alternative and it fails on two counts —
+  see below.
+
+<Canvas of={TopicDetailsStories.ReadOnly} />
+
+## Why renaming is here and not in the header title
+
+**Permission.** Only the topic's creator may rename it: the relay grants a
+`kind:9002` name change to a channel's owner or admin. A details row can simply
+be a *label* for everybody else. A header title would have to be an input that
+refuses to be typed in.
+
+**Failure.** When the relay says no, a dialog has somewhere to put the reason. A
+title in a header has nowhere at all (Katerina, 19 August 2026).
+
+## How
+
+```tsx
+import { TopicDetailsDialogView } from '@/components/TopicDetailsDialog'
+
+<TopicDetailsDialogView
+  details={details}
+  activity={activity}
+  folderProject={project}
+  onRename={rename}
+  onClose={close}
+/>
+```
+
+- `onRename` resolves to `null` on success, or to an outcome carrying a message
+  — which is how the same dialog says both "the relay refused" and "renamed, but
+  not announced".
+
+## What it owns
+
+- **The difference between a refusal and a partial success.** Renamed-but-not-
+  announced is not a failure and must not look like one: the topic *was*
+  renamed, the relay just was not told, so the editor closes and the note is a
+  warning rather than an error. Red under a name that had visibly changed read
+  as "this failed" (Katerina, 20 August).
+- **A label rather than a disabled field** for everybody who cannot rename. A
+  greyed-out input says "you could type here but we won't let you" and invites
+  somebody to try; a label just says what the name is.
+- **Showing a project's work the same way the Files panel does**, through
+  `ProjectTickets` — the same accordion, counter, bar and rows, because two
+  renderings of one thing is how they drift, and these two are one click apart.
+
+## Props
+
+<Controls of={TopicDetailsStories.CanRename} />

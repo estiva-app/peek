@@ -1,0 +1,58 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as AppShellStories from './AppShell.stories'
+
+<Meta of={AppShellStories} />
+
+# AppShell
+
+The frame of every page: the top bar, the side navigation, and the list, main
+and replies columns, with Cmd/Ctrl+K opening the command launcher.
+
+<Canvas of={AppShellStories.Default} />
+
+## When
+
+- Around every page in Peek. There is one frame and this is it.
+- With `threadPanel` when a thread is open, which is what makes the third
+  column appear.
+
+<Canvas of={AppShellStories.WithThreadPanel} />
+
+## When not
+
+- Inside a story of a single part. A component's story should show that
+  component, not the app around it.
+- As a layout to copy. The three-column arrangement is the frame's; a page that
+  wants columns of its own wants a grid.
+
+## How
+
+```tsx
+import { AppShell } from '@/layouts/AppShell'
+
+<AppShell leftPanel={<TopicList />} rightPanel={<Conversation />} threadPanel={thread} />
+```
+
+## What is the package's and what is Peek's
+
+**The package's** (UIG-14 §9.3): the floating shell itself — the bar over the
+top edge, the rail on the ground, the rounded card, and the Signal dot grid on
+the ground, which the package's preset draws. The list column is the package's
+`ListColumn` (UIG-14 N9), with its own error boundary.
+
+**Peek's**: the bar's slots, the rail's entries, the three columns inside the
+card, the launcher, and the collapsing. The frame only tells the list column
+when the rail is closed.
+
+## What it owns
+
+- **The launcher's context, captured once.** It is read at the invoking
+  keystroke or click — selection, then composer, then nothing — and **frozen for
+  the launcher's lifetime**, so what the launcher acts on cannot change under it
+  while somebody is typing into it.
+- **Cmd/Ctrl+K**, in one place rather than per page.
+- **The rail collapsing**, and telling the list column about it.
+
+## Props
+
+<Controls of={AppShellStories.Default} />

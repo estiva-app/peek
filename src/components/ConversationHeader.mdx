@@ -1,0 +1,65 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as ConversationHeaderStories from './ConversationHeader.stories'
+
+<Meta of={ConversationHeaderStories} />
+
+# ConversationHeader
+
+The bar above an open topic, huddle or direct message: its name, its open and
+resolved counts, its members, a star and a more-actions menu, with tabs below.
+
+<Canvas of={ConversationHeaderStories.Topic} />
+
+## When
+
+- Above any open conversation, whichever kind it is. One header draws all
+  three.
+
+<Canvas of={ConversationHeaderStories.Dm} />
+
+## When not
+
+- Above a list. This is the head of a conversation, not of a column.
+- Building the ⋯ menu yourself. It opens `TopicMoreMenu` — the same menu the
+  sidebar row opens, which is the point: one menu, two places to open it
+  (PEE-2). Two menus for one object is how a topic came to be deletable from
+  the list but not from inside itself.
+
+## How
+
+```tsx
+import { ConversationHeader } from '@/components/ConversationHeader'
+
+<ConversationHeader
+  name={topic.title}
+  topicMode
+  isResolved={topic.isResolved}
+  openCount={open}
+  resolvedCount={resolved}
+  members={memberNames}
+  onOpenDetails={openDetails}
+/>
+```
+
+## What it owns
+
+- **The members pill**, through `MembersPill` — which is one component because
+  this header drew it and the thread panel re-typed it, down to the padding,
+  and the copy had drifted (COMPONENTS-PEEK F12).
+- **Which meta is drawn at all.** `hideTopicMeta` exists because a direct
+  message has no open and resolved counts to show.
+- **Not repeating the menu's items as icons.** Star and the Folder link are here
+  as icons, and the menu deliberately does not repeat them (Katerina, 19
+  August).
+
+## One thing that is going to change
+
+`topicMode` and `huddleMode` are two booleans for what is really one choice of
+three. Katerina's review of 22 September rules that this becomes **Header**,
+with `variant="topic" | "dm" | "huddle"` — not "TopicHeader", because it draws
+direct messages and huddles too. That is a rename, which UIG-17 explicitly does
+not do, so it is recorded here and belongs to whichever ticket takes it.
+
+## Props
+
+<Controls of={ConversationHeaderStories.Topic} />

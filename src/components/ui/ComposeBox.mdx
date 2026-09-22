@@ -1,0 +1,66 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as ComposeBoxStories from './ComposeBox.stories'
+
+<Meta of={ComposeBoxStories} />
+
+# ComposeBox
+
+The box for writing a new message or reply: text formatting, files, highlights
+and a send button, with unsent text kept for later.
+
+<Canvas of={ComposeBoxStories.Default} />
+
+## When
+
+- Anywhere a message is written: the bottom of a conversation, the bottom of a
+  thread panel, the huddle creator.
+- With a `draftKey` — built with `draftKeys` — wherever the destination is
+  stable, so an unsent message is still there when somebody comes back.
+
+## When not
+
+- **With a `draftKey` you had to invent.** Omitting it means nothing is kept,
+  which is correct for a composer with no stable destination: the huddle creator
+  has no huddle yet, and a draft that cannot be keyed correctly is worse than no
+  draft, because it comes back somewhere it was never written.
+- For editing an existing message. That is the edit box inside the card, which
+  shares the editor extensions but not this shell.
+
+<Canvas of={ComposeBoxStories.SlashMenu} />
+
+## How
+
+```tsx
+import { ComposeBox } from '@/components/ui/ComposeBox'
+
+<ComposeBox
+  onSend={send}
+  draftKey={draftKeys.topic(topic.id)}
+  contextLabel={`#${topic.title}`}
+/>
+```
+
+- **`onSend` resolves `false` only when nothing was written anywhere** (CON-10).
+  `void` and `true` both mean sent, so a caller that does not know keeps the old
+  behaviour, and only an explicit `false` puts the text back.
+- What matters is whether the message was **stored**, not whether it reached the
+  relay: a message Peek holds is on every Peek reader's screen, so returning
+  `false` for a failed relay mirror would re-offer text that has already been
+  posted.
+
+## What it owns
+
+- **One writer for what a message becomes.** What a message is *sent* as is what
+  an edit is *saved* as — `serializeTiptapToText`, once. This file used to carry
+  its own copy of that walk and the two drifted: RIC-11 taught the edit path to
+  write a topic as `nostr:naddr…` and a message as `nostr:nevent…`, while the
+  composer went on sending the bracket form and dropping the message node on the
+  floor. **The first pointer mention ever typed on production went out as
+  `[Title]` with nothing after it.**
+- **The draft store as an injected dependency**, so a test needs no browser.
+- **Naming itself to the command launcher** through `contextLabel` — "Reply to
+  Alice", "#Topic" — which is what the launcher's context chip shows.
+
+## Props
+
+<Controls of={ComposeBoxStories.Default} />

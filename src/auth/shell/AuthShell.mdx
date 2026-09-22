@@ -1,0 +1,64 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as AuthShellStories from './AuthShell.stories'
+
+<Meta of={AuthShellStories} />
+
+# AuthShell
+
+One surface for the whole of entry: the loading state, and the place a passkey
+is invoked when loading is not enough.
+
+<Canvas of={AuthShellStories.NoSession} />
+
+**The thing it must never look like is a sign-in page.** An app that shows a
+branded login screen for the same identity system the person is already signed
+into is two products stitched together — and that seam is what PEEK-116 closed.
+So it is deliberately the same canvas in every state: a logo, and at most one
+affordance.
+
+## When
+
+- Around the whole app, before anything else renders, for every state entry can
+  be in: checking, entering, no session, session expired, token rejected, an
+  inactive identity, a loop guard, a network failure, a timeout.
+
+## When not
+
+- As a page. It is the shell that stands in *for* the page while entry is being
+  decided.
+- With branding beyond the badge. That is the rule the component exists to keep.
+- Duplicating its copy. The words come from `@estiva-app/identity` — Ship
+  renders the same states with the same copy in plain DOM, and **the shared
+  artifact is the contract in `contract.ts`, not this component.**
+
+<Canvas of={AuthShellStories.SessionExpired} />
+
+## How
+
+```tsx
+import { AuthShell } from '@/auth/shell/AuthShell'
+
+<AuthShell state={state} onContinue={startPasskey} />
+```
+
+- **`onContinue` must run from the tap.** WebAuthn needs the user gesture, so it
+  cannot be deferred behind anything asynchronous.
+
+## What it owns
+
+- **One canvas for every state**, so entry never flashes between two designs.
+- **Which states offer an affordance at all**, through `isRecoverable` — an
+  unrecoverable state gets the explanation and no button, because a button that
+  cannot work is worse than none.
+- **Nothing about the words.** They are the identity package's, which is what
+  keeps Peek and Ship saying the same thing.
+
+## A note on the story order
+
+`NoSession` is first on purpose: it is the screen people actually see, and
+Storybook links the first story in a file. This page used to open on
+`Checking`, a spinner (UIG-17).
+
+## Props
+
+<Controls of={AuthShellStories.NoSession} />

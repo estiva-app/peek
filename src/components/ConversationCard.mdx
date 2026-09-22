@@ -1,0 +1,63 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as ConversationCardStories from './ConversationCard.stories'
+
+<Meta of={ConversationCardStories} />
+
+# ConversationCard
+
+One message in a topic or a direct message: its author, its text, its files, its
+reactions and its replies, with a hover menu to react, reply, resolve or edit.
+
+<Canvas of={ConversationCardStories.Default} />
+
+## When
+
+- For every message in the main conversation stream.
+- For a message Peek owns. It can be edited, reacted to, resolved and deleted,
+  and all four are built in.
+
+## When not
+
+- For a **reply**. That is `ThreadReplyCard` — a different card with different
+  states, and deliberately not merged with this one.
+- For a comment **another app** owns. That is `CommentRow`, which offers none of
+  these controls, because this viewer cannot make any of them succeed.
+
+<Canvas of={ConversationCardStories.WithReactions} />
+
+## How
+
+```tsx
+import { ConversationCard } from '@/components/ConversationCard'
+
+<ConversationCard
+  authorName={message.author}
+  timestamp={formatted}
+  body={message.body}
+  editedAt={message.editedAt}
+  reactions={message.reactions}
+  replyCount={message.replyCount}
+  onReply={openThread}
+/>
+```
+
+- **Pass `onReply` if the card should offer Reply.** The hover strip draws each
+  button only when its handler is there, so without it the strip silently loses
+  Reply — which is a thing to check when a card looks short.
+
+## What it owns
+
+- **The hover strip's contents**, by which handlers it was given, through
+  `ConversationQuickMenu`.
+- **The body's rendering**, through `MessageBody`, so a message in a card and
+  the same message in a thread read identically.
+- **The edit box**, which shares the editor's extensions with the composer but
+  not the composer's shell — and which is where `AttachFileButton` and
+  `HighlightButton` are reached from, so a message can gain a file or a
+  highlight after it was written.
+- **Its own unread and new-reply marks**, which are about this card rather than
+  about the list it sits in.
+
+## Props
+
+<Controls of={ConversationCardStories.Default} />

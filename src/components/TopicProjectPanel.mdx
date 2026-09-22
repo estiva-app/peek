@@ -1,0 +1,62 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as TopicProjectPanelStories from './TopicProjectPanel.stories'
+
+<Meta of={TopicProjectPanelStories} />
+
+# TopicProjectPanel
+
+The Files panel beside a topic: the project linked to its Folder, with its
+properties, its tickets and their activity — or a line saying why there is none.
+
+<Canvas of={TopicProjectPanelStories.WithTickets} />
+
+## When
+
+- As the third column beside a topic that has a Folder with a project in it.
+- In the app. This one is wired: changes to the project's properties are saved
+  and shown, and it hides itself when there is no data behind it.
+
+## When not
+
+- In a story or a test. That is `TopicProjectPanelView`, the half that only
+  draws what it is handed — which is why every story here is of the view and not
+  of this.
+- Drawing the tickets beside it. **Tickets live inside the widget**: they are
+  part of the project, not a second thing in the column next to it.
+- Reusing this layout for a reference in a message. A project that is the
+  subject of a whole column wants a properties list and a ticket table; a
+  reference sitting inside a message wants a line (PEEK-24). That one is
+  `ForeignObjectCard`.
+
+<Canvas of={TopicProjectPanelStories.NoProject} />
+
+## How
+
+```tsx
+import { TopicProjectPanel } from '@/components/TopicProjectPanel'
+
+<TopicProjectPanel topicId={topic.id} />
+```
+
+The view, for a story or a test:
+
+```tsx
+import { TopicProjectPanelView } from '@/components/TopicProjectPanel'
+
+<TopicProjectPanelView folderProject={fixture} onAct={noop} />
+```
+
+## What it owns
+
+- **The split into a wired half and a drawn half**, which is the pattern Ship
+  uses everywhere and that Peek's six pages still lack.
+- **Saying why there is no project**, rather than drawing an empty column. A
+  blank panel and a panel for a topic with no Folder are different facts.
+- **Per-field errors and a per-field busy state**, so one failing property does
+  not make the whole panel look broken.
+- **The activity list**, through `TopicActivity` — which routes on a click, and
+  is why any story of this panel needs a router around it.
+
+## Props
+
+<Controls of={TopicProjectPanelStories.WithTickets} />
