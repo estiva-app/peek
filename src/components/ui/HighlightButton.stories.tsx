@@ -53,7 +53,7 @@ function Box({ withText }: { withText?: boolean }) {
 /** The button needs an editor and the box it hangs from, so the stories stand
  *  up a small one rather than passing props at it. */
 const meta = {
-  title: 'Messages/Composer/HighlightButton',
+  title: 'To be removed/HighlightButton',
   component: Box,
   decorators: [
     Story => (

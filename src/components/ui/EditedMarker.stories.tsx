@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { EditedMarker } from './EditedMarker'
 
 const meta = {
-  title: 'Primitives/EditedMarker',
+  title: 'To be removed/EditedMarker',
   component: EditedMarker,
   args: {
     editedAt: Date.now() - 5 * 60_000,

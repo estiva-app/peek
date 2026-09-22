@@ -1,0 +1,40 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="To be removed/Why these are here" />
+
+# To be removed
+
+Stories that are on their way out wait here until they are deleted, instead of
+disappearing inside somebody else's pull request. Katerina's idea, 22 September
+2026: a thing waiting to go should be visible, not quietly rotting where it is.
+
+**The components themselves all stay.** Nothing under this heading has been
+deleted from the app. Only its *story* is parked.
+
+## The rule
+
+Nothing goes under this heading without **a ticket number and the date it went
+in**, both written in the row below. A heading with no rule becomes a junk
+drawer, and a junk drawer is somewhere to lose things rather than somewhere to
+find them.
+
+It sorts last, under everything of Peek's own.
+
+## What is parked, and why
+
+| Story | Ticket | Parked | Why |
+| --- | --- | --- | --- |
+| `TopicActivity` | UIG-17 | 2026-09-22 | Her review, 22 September. |
+| `EditedMarker` | UIG-17 | 2026-09-22 | The one part put forward for `@estiva-app/ui`. If it is promoted, its story goes with it. |
+| `AttachmentChips` | UIG-17 | 2026-09-22 | Her review, 22 September. **See the cost below.** |
+| `HighlightButton` | UIG-17 | 2026-09-22 | Her review, 22 September. |
+| `Read state size` | UIG-17 | 2026-09-22 | A developer's readout, not a design. It was the only thing under a `Diagnostics` heading, which is gone with it. |
+
+## One cost, flagged rather than buried
+
+Parking `AttachmentChips` takes away the **only** picture anywhere of three
+things: a file part-way through uploading, a file that failed, and the line
+*"Other apps won't see this"*.
+
+Those three states have not been drawn anywhere else. They should come back
+inside the `ComposeBox` story rather than stay lost — that is not done yet.

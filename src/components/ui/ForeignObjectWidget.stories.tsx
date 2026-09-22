@@ -86,7 +86,7 @@ const unassigned: ForeignObject = {
 }
 
 const meta = {
-  title: 'Messages/Reference widget',
+  title: 'Messages/Reference widget (ForeignObjectCard)',
   component: ForeignObjectCard,
   parameters: { layout: 'padded' },
   // Required props, so a story can be pure `render`.
@@ -95,19 +95,6 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
-
-/**
- * **The fix for FEE-3.** While the relay is being asked, the card's shell is
- * drawn at the size the answer will take, so the message does not grow under
- * you when it lands.
- *
- * It holds itself invisible for 150ms first, so a reference that resolves
- * quickly — the common case — never flashes a placeholder at all. If it looks
- * like nothing is happening here, that delay is why.
- */
-export const Loading: Story = {
-  render: () => <ForeignObjectSkeleton />,
-}
 
 /**
  * **Assigned** — a Ship issue as Peek renders it, with somebody on it.
@@ -120,6 +107,19 @@ export const Loading: Story = {
  */
 export const Assigned: Story = {
   args: { object: issue, onAct: () => {}, directory: DIRECTORY },
+}
+
+/**
+ * **The fix for FEE-3.** While the relay is being asked, the card's shell is
+ * drawn at the size the answer will take, so the message does not grow under
+ * you when it lands.
+ *
+ * It holds itself invisible for 150ms first, so a reference that resolves
+ * quickly — the common case — never flashes a placeholder at all. If it looks
+ * like nothing is happening here, that delay is why.
+ */
+export const Loading: Story = {
+  render: () => <ForeignObjectSkeleton />,
 }
 
 /**

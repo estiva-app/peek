@@ -52,7 +52,7 @@ const MENTIONS: TopicActivityItem[] = [
 const LABELS_WITH_MENTION = new Map([...LABELS, [OTHER_TOPIC, 'Leaf planning']])
 
 const meta = {
-  title: 'Messages/TopicActivity',
+  title: 'To be removed/TopicActivity',
   component: TopicActivity,
   parameters: { layout: 'fullscreen' },
   decorators: [

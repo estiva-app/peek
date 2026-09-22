@@ -28,7 +28,7 @@ const SHOT = svg(
 )
 
 const meta = {
-  title: 'Messages/Composer/AttachmentChips',
+  title: 'To be removed/AttachmentChips',
   component: AttachmentChips,
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof AttachmentChips>

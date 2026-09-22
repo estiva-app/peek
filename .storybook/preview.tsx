@@ -121,8 +121,11 @@ const preview: Preview = {
           'Navigation',
           'Overlays',
           'Views',
-          'Diagnostics',
           'Entry',
+          /* Parked, so a story that is going is visible instead of vanishing in
+             someone else's pull request (Katerina, 22 September). Nothing goes in
+             without a ticket number and the date it went in. */
+          'To be removed',
           'Estiva ID',
         ],
       },

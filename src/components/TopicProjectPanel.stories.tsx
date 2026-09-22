@@ -121,7 +121,7 @@ const full: FolderProject = {
 }
 
 const meta = {
-  title: 'Topics/Files panel',
+  title: 'Topics/Files panel (TopicProjectPanel)',
   component: TopicProjectPanelView,
   parameters: { layout: 'fullscreen' },
   decorators: [

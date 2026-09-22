@@ -20,7 +20,7 @@ const now = Math.floor(Date.now() / 1000)
 const PEOPLE: People = { [CATH]: { displayName: 'Cath' } }
 
 const meta = {
-  title: 'Views/CommentRow',
+  title: 'Messages/CommentRow',
   component: CommentRow,
   args: {
     comment: {
