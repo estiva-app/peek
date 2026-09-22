@@ -119,12 +119,13 @@ const noRename = async (): Promise<RenameOutcome> => null
  * **CanRename** with **ReadOnly** below: the difference is one button, and no
  * disabled field anywhere.
  *
- * These ten states had their own page made for them on 22 September: they were
- * ten of the twenty-six stories on `Overlays/Dialogs`, which is a sheet you
- * scan down, and one dialog taking nearly half of it stopped it scanning.
+ * These ten states had their own page made for them on 22 September, when they
+ * were ten of the twenty-six stories on one `Overlays/Dialogs` sheet and this
+ * dialog alone took nearly half of it. On 23 September the rest followed: every
+ * dialog has its own entry now, under the place in the app it belongs to.
  */
 const meta = {
-  title: 'Overlays/TopicDetailsDialog',
+  title: 'Topics/TopicDetailsDialog',
   component: TopicDetailsDialogView,
   parameters: {
     layout: 'fullscreen',

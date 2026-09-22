@@ -1,16 +1,16 @@
 import { Meta } from '@storybook/addon-docs/blocks'
+import * as CreateTopicDialogStories from './CreateTopicDialog.stories'
 
-<Meta title="Overlays/CreateTopicDialog" />
+<Meta of={CreateTopicDialogStories} />
 
 # CreateTopicDialog
 
 The Start topic dialog: a title, people to invite, and a privacy note when a
 direct message is being turned into a private huddle.
 
-**Seen in** — *Overlays/Dialogs*, as **Create topic**, **Create topic
-prefilled** and **Create topic from a DM**. Its stories sit on the dialogs
-sheet so Peek's words can be read against the other dialogs', rather than
-repeating the dialog shell again.
+**Seen in** — its own three stories, **Empty**, **Prefilled** and **From a
+DM**. What they show is Peek's words and its two fields; the dialog shell
+itself is the package's and has its stories there.
 
 ## When
 

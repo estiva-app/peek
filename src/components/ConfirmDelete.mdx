@@ -1,16 +1,16 @@
 import { Meta } from '@storybook/addon-docs/blocks'
+import * as ConfirmDeleteStories from './ConfirmDelete.stories'
 
-<Meta title="Overlays/ConfirmDelete" />
+<Meta of={ConfirmDeleteStories} />
 
 # ConfirmDelete
 
 The question asked before a deletion — a message, a reply, a huddle or a topic —
 on the package's `ConfirmDialog` (D56).
 
-**Seen in** — *Overlays/Dialogs*, as **ConfirmDeleteMessage** and
-**ConfirmDeleteTopic**. Its stories live on the dialogs sheet because what is
-worth comparing is Peek's words against the other dialogs', not the dialog shell
-again.
+**Seen in** — its own two stories, **A message** and **A topic**. What they
+show is Peek's words; the dialog shell itself is the package's `ConfirmDialog`
+and has its stories there.
 
 Until D56, **every Delete in Peek fired on the click** (PEEK-ADOPTION §13.7).
 
