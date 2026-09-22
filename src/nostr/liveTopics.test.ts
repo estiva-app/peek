@@ -296,6 +296,46 @@ describe('the log says when a live path stopped (FOL-40)', () => {
     }
   })
 
+  it('does not read a replayed page as a live burst', () => {
+    /*
+      The instrument's own defect, found before it cost a wrong fix. A
+      reconnect re-issues the REQ, a re-issued REQ carries no `since`, and the
+      relay replays its stored page — minutes after the watch was created, so
+      every one of those lands outside the original window. Production showed
+      77 of them in 7ms for a single Folder and they read as a fan-out storm.
+    */
+    vi.useFakeTimers()
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      const log = wideFilterDeliveryLog(81)
+      for (let i = 0; i < 40; i++) log.record(CHANNEL)
+      vi.advanceTimersByTime(3_000)
+
+      // Thirteen seconds in, the socket comes back and the page arrives again.
+      vi.advanceTimersByTime(10_000)
+      log.resubscribed()
+      info.mockClear()
+      for (let i = 0; i < 77; i++) log.record(CHANNEL)
+
+      installWideFilterDiagnostic()
+      const [snapshot] = (
+        window as unknown as { __wideFilters: () => WideFilterSnapshot[] }
+      ).__wideFilters()
+      expect(snapshot).toMatchObject({ live: 0, stored: 77, resubscribes: 1 })
+      expect(info).not.toHaveBeenCalled()
+
+      // And the window it opened still closes, so the ruler is redrawn.
+      vi.advanceTimersByTime(3_000)
+      expect(info).toHaveBeenCalledExactlyOnceWith(
+        '[relay] wide filter of 81: 77 stored event(s) in the first 3000ms. Anything below this line arrived live.',
+      )
+      log.stop()
+    } finally {
+      info.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('does not leave the summary pending once the watch is stopped', () => {
     vi.useFakeTimers()
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})

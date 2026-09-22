@@ -177,28 +177,55 @@ const WIDE_FILTER_LIVE_CEILING = 200
  */
 export function wideFilterDeliveryLog(watchSize: number): {
   record: (folder: string) => void
+  resubscribed: () => void
   stop: () => void
 } {
-  const watchedAt = Date.now()
+  let watchedAt = Date.now()
   let backfill = 0
   let live = 0
+  let resubscribes = 0
   let lastLive: WideFilterSnapshot['lastLive']
-  const summary = setTimeout(() => {
-    console.info(
-      `[relay] wide filter of ${watchSize}: ${backfill} stored event(s) in the first ${WIDE_FILTER_BACKFILL_MS}ms. Anything below this line arrived live.`,
-    )
-  }, WIDE_FILTER_BACKFILL_MS)
+  let summary: ReturnType<typeof setTimeout>
+  const openWindow = () => {
+    summary = setTimeout(() => {
+      console.info(
+        `[relay] wide filter of ${watchSize}: ${backfill} stored event(s) in the first ${WIDE_FILTER_BACKFILL_MS}ms. Anything below this line arrived live.`,
+      )
+    }, WIDE_FILTER_BACKFILL_MS)
+  }
+  openWindow()
   const entry = {
     snapshot: (): WideFilterSnapshot => ({
       folders: watchSize,
       subscribedAt: new Date(watchedAt).toISOString(),
       stored: backfill,
       live,
+      resubscribes,
       ...(lastLive ? { lastLive } : {}),
     }),
   }
   wideFilters.add(entry)
   return {
+    /*
+      A reconnect re-issues every REQ (`protocol`'s `live.ts`), and a re-issued
+      REQ carries no `since` — so the relay replays its stored page again,
+      minutes after the watch was created. Measured from the original
+      `watchedAt` those land outside the backfill window and were counted, and
+      printed, as **live**. That is the instrument inventing the signal it
+      exists to detect, and it is how a burst of 77 replayed events at once
+      reads as a fan-out storm.
+
+      So the window belongs to the *subscription*, not to the watch: each
+      re-issue restarts it, and `resubscribes` says how many times that
+      happened, because a reading taken across one is not the same reading.
+    */
+    resubscribed: () => {
+      resubscribes += 1
+      watchedAt = Date.now()
+      backfill = 0
+      clearTimeout(summary)
+      openWindow()
+    },
     record: (folder: string) => {
       const elapsed = Date.now() - watchedAt
       if (elapsed < WIDE_FILTER_BACKFILL_MS) {
@@ -228,6 +255,14 @@ export interface WideFilterSnapshot {
   stored: number
   /** Events delivered after it. **Zero here is the finding**, not an absence of data. */
   live: number
+  /**
+   * How many times the REQ was re-issued after a reconnect.
+   *
+   * Above zero, `stored` counts only the most recent replay and
+   * `msAfterSubscribing` is measured from it. A reading taken across a
+   * reconnect is not one reading.
+   */
+  resubscribes: number
   lastLive?: { folder: string; at: string; msAfterSubscribing: number }
 }
 
@@ -362,6 +397,18 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
           object, fed by the projection. Nothing else can make this fire.
         */
         const log = wideFilterDeliveryLog(channelUuids.length)
+        /*
+          Every return to `live` re-issues the REQ, so it opens a new backfill
+          window (`wideFilterDeliveryLog`). Read off the socket's own state
+          rather than from a reconnect callback, because the thing that matters
+          is the same thing `useTeamUnread` already treats as a re-read: the
+          transition into `live`, whatever caused it.
+        */
+        let wasLive = client.state() === 'live'
+        const unwatchState = client.onState((state) => {
+          if (state === 'live' && !wasLive) log.resubscribed()
+          wasLive = state === 'live'
+        })
         const watch = client.watchFolders(
           [...channelUuids],
           (folder) => {
@@ -372,6 +419,7 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
         )
         return {
           stop: () => {
+            unwatchState()
             log.stop()
             watch.stop()
           },
