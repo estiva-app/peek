@@ -48,8 +48,47 @@ vi.mock('@/api', async () => {
   }
 })
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
-vi.mock('@/nostr/liveTopics', () => ({ peekLiveTopics: () => null }))
-vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
+/*
+  The socket, present or absent — both are real states for this hook. What it
+  must hold is the wide filter (`watchChannels`, FOL-40), never
+  `onForeignActivity`: that one is fed by the projection and never fires for a
+  message kind, which is exactly what a comment is. So the fake offers only
+  the wide filter, and a hook reaching for the other would throw.
+*/
+const live = vi.hoisted(() => ({
+  present: true,
+  watched: [] as { ids: string[]; kinds?: readonly number[] }[],
+  stops: 0,
+  fire: undefined as ((channelUuid: string) => void) | undefined,
+}))
+vi.mock('@/nostr/liveTopics', () => ({
+  peekLiveTopics: () =>
+    live.present
+      ? {
+          watchChannels: (
+            ids: readonly string[],
+            listener: (id: string) => void,
+            options?: { kinds?: readonly number[] },
+          ) => {
+            live.watched.push({ ids: [...ids], kinds: options?.kinds })
+            live.fire = listener
+            return {
+              stop: () => {
+                live.stops++
+                live.fire = undefined
+              },
+            }
+          },
+        }
+      : null,
+}))
+/** Captured so a test can fire the fallback re-read by hand. */
+const refresh = vi.hoisted(() => ({ fire: undefined as (() => void) | undefined }))
+vi.mock('@/lib/useRefreshTriggers', () => ({
+  useRefreshTriggers: (fn: () => void, opts?: { enabled?: boolean }) => {
+    refresh.fire = opts?.enabled === false ? undefined : fn
+  },
+}))
 vi.mock('@/nostr/useReadStateSync', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')
   return {
@@ -73,7 +112,7 @@ vi.mock('@/nostr/useReadStateSync', async () => {
   }
 })
 
-import { useTeamUnread } from './useTeamUnread'
+import { TEAM_UNREAD_SETTLE_MS, useTeamUnread } from './useTeamUnread'
 
 const FOLDER_A = '11111111-1111-4111-8111-111111111111'
 const FOLDER_B = '22222222-2222-4222-8222-222222222222'
@@ -100,6 +139,11 @@ beforeEach(() => {
   frontier.markers = {}
   follows.state = 'present'
   follows.keys = null
+  live.present = true
+  live.watched = []
+  live.stops = 0
+  live.fire = undefined
+  refresh.fire = undefined
   relay.channelStreams.mockResolvedValue({
     // A: a sibling file nobody read, said an hour ago. B: nothing.
     [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false }],
@@ -181,5 +225,68 @@ describe('useTeamUnread', () => {
     advance({})
     expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false })
     expect(relay.channelStreams).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the socket path (FOL-40)', () => {
+  it('watches every listed Folder through the wide filter, for both message kinds, and stops on unmount', async () => {
+    const { unmount } = renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    expect(live.watched[0]).toEqual({ ids: [FOLDER_A, FOLDER_B], kinds: [9, 1111] })
+    unmount()
+    expect(live.stops).toBe(1)
+  })
+
+  it('a comment on a followed file lights the team after the settle, and a burst is one re-read', async () => {
+    vi.useFakeTimers()
+    try {
+      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
+      const { result } = renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+      advance({})
+      await vi.waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false }))
+
+      // Somebody comments three times on the followed file in A; the relay now holds them.
+      relay.channelStreams.mockResolvedValue({
+        [FOLDER_A]: [
+          { id: 'n', at: NOW - 1, by: THEM, root: 'n', about: [FOL18], urgent: false },
+          { id: 'o', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false },
+          { id: 'p', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false },
+        ],
+        [FOLDER_B]: [],
+      })
+      act(() => {
+        live.fire?.(FOLDER_A)
+        live.fire?.(FOLDER_A)
+        live.fire?.(FOLDER_A)
+      })
+      // Nothing yet: the settle window is still open, and no refresh trigger was needed.
+      expect(relay.channelStreams).toHaveBeenCalledTimes(1)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
+      })
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
+      expect(result.current.unread[FOLDER_B]).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the refresh fallback stays armed, because a wide filter may silently not fan out', async () => {
+    renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    expect(refresh.fire).toBeDefined()
+  })
+
+  it('works with no socket at all — the refresh triggers still drive it', async () => {
+    live.present = false
+    const { result } = renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    expect(live.watched).toEqual([])
+    advance({})
+    await waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
+    act(() => refresh.fire?.())
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(2))
   })
 })
