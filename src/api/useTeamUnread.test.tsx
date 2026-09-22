@@ -117,6 +117,7 @@ vi.mock('@/nostr/useReadStateSync', async () => {
   }
 })
 
+import { RelayReadError } from '@/nostr/relayRead'
 import { TEAM_UNREAD_SETTLE_MS, useTeamUnread } from './useTeamUnread'
 
 const FOLDER_A = '11111111-1111-4111-8111-111111111111'
@@ -273,6 +274,53 @@ describe('the socket path (FOL-40)', () => {
       expect(relay.channelStreams).toHaveBeenCalledTimes(2)
       await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
       expect(result.current.unread[FOLDER_B]).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits out a quota refusal at the second the relay named, rather than dropping it', async () => {
+    /*
+      The shipped defect, and the last one in the chain. The wide filter was
+      registered and did fire — the console said so — but the re-read it
+      triggered came back `rate-limited: quota exceeded; retry in 8s`, which
+      classified as `unreachable` and fell into a `.catch(() => {})`. Nothing
+      retried, so the dot moved only when a later refresh tick happened to win,
+      which is the "long wait, then the sidebar reloads" Miky saw.
+    */
+    vi.useFakeTimers()
+    try {
+      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
+      const { result } = renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+      advance({})
+      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(false))
+
+      relay.channelStreams
+        .mockRejectedValueOnce(new RelayReadError('rate-limited: quota exceeded; retry in 8s'))
+        .mockResolvedValue({
+          [FOLDER_A]: [{ id: 'n', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false }],
+          [FOLDER_B]: [],
+        })
+      act(() => live.fire?.(FOLDER_A))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
+      })
+      // Refused, and the dot has not moved — but the read is still alive.
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+      expect(result.current.unread[FOLDER_A]).toBe(false)
+
+      // Not a moment sooner: the window the relay named has not rolled over.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(7_000)
+      })
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(relay.channelStreams).toHaveBeenCalledTimes(3)
+      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
     } finally {
       vi.useRealTimers()
     }
