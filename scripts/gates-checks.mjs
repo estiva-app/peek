@@ -23,7 +23,29 @@ import { appChecks } from '@estiva-app/ui/gates'
 export default function define(h) {
   const PROBE = "src/components/__gates_probe__.tsx";
   const GATES = "eslint.gates.config.js";
-  const fiveSections = (mdx) => h.exists(mdx) && ["What it is", "When", "When not", "How", "What it owns"].every((s) => new RegExp(`^#+\\s*${s}\\s*$`, "m").test(h.read(mdx)));
+  /*
+    The page contract, as it is actually written (Ship's UIG-18 set it): an
+    opening line that says what the part is, then four headings. "What it is"
+    is that opening line, not a heading of its own — a check that demanded five
+    headings would fail every page in the repo.
+  */
+  const fourSections = (mdx) => {
+    if (!h.exists(mdx)) return false;
+    const text = h.read(mdx);
+    const headed = ["When", "When not", "How", "What it owns"].every((s) => new RegExp(`^##\\s*${s}\\s*$`, "m").test(text));
+    const body = text.replace(/^import .*$/gm, "").replace(/^<Meta[^>]*\/>$/gm, "");
+    const opening = body.slice(body.indexOf("\n", body.indexOf("# ")), body.search(/^##\s/m));
+    return headed && opening.trim().length > 0;
+  };
+  const registry = () => { try { return JSON.parse(h.read("registry.json")).entries ?? null; } catch { return null; } };
+  /** The set UIG-17 is about: reusable and promote-candidate, nothing else. */
+  const targets = (test) => {
+    const entries = registry();
+    if (!entries) return h.FAIL("registry.json has no entries — run `npm run registry`");
+    const parts = entries.filter((e) => ["reusable", "promote-candidate"].includes(e.app?.class));
+    return parts.length ? test(parts) : h.FAIL("no reusable parts in the registry — rebuild it");
+  };
+  const storyFiles = () => h.listFiles("src", (name) => name.endsWith(".stories.tsx") || name.endsWith(".mdx"));
   const probe = (code, expect, mentions, file = PROBE, config = GATES) => () => h.lint({ config, file, code, expect, mentions });
   const component = (body) => `export function Probe() {\n  return ${body}\n}\n`;
 
@@ -35,8 +57,69 @@ export default function define(h) {
       { what: "a component that hands its className on is followed", run: probe(`import { ConversationCard } from '@/components/ConversationCard'\n${component('<ConversationCard className="bg-bg-hover" />')}`, "error", "hands its `className` to `Card`") },
     ] },
     { ref: "UIG-17", title: "Usage rules — Peek's own components", owner: true, checks: [
-      { what: "PendingAttachmentChip has a usage page with the five sections", run: () => fiveSections("src/components/ui/PendingAttachmentChip.mdx") ? h.PASS("PendingAttachmentChip.mdx has all five") : h.FAIL("src/components/ui/PendingAttachmentChip.mdx does not have all five yet") },
-      { what: "every Peek component in the registry has a class", run: () => h.json("registry.json", (d) => (d.entries ?? d.components ?? []).every((e) => e.repo !== "peek" || e.class || e.classification), "every peek entry has a class") },
+      /*
+        Both checks here were first guesses from the ticket's own text, and both
+        were wrong in a way worth recording. One named `PendingAttachmentChip`,
+        which UIG-35 deleted — a check can name a file that no longer exists and
+        simply fail for ever. The other read `e.class`, and the class lives at
+        `e.app.class`, so it failed on a registry that was entirely correct.
+        A check that reads the wrong field is worse than no check: it reports a
+        problem in the thing it is checking rather than in itself.
+      */
+      { what: "every reusable part has a usage page with the four sections", run: () => targets((parts) => {
+        const missing = parts.filter((e) => !e.docPage || !fourSections(e.docPage)).map((e) => e.name);
+        return missing.length === 0
+          ? h.PASS(`all ${parts.length} reusable parts have a page with When / When not / How / What it owns`)
+          : h.FAIL(`${parts.length - missing.length} of ${parts.length}; no page or an incomplete one: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? `, +${missing.length - 6}` : ""}`);
+      }) },
+      { what: "a usage page sits beside the component it describes", run: () => targets((parts) => {
+        const dir = (f) => f.replace(/\\/g, "/").replace(/\/[^/]*$/, "");
+        const stray = parts.filter((e) => e.docPage && dir(e.docPage) !== dir(e.sourceFile)).map((e) => e.name);
+        return stray.length === 0
+          ? h.PASS("every page is in its component's own folder, so the rule travels with the code")
+          : h.FAIL(`filed away from their component: ${stray.join(", ")}`);
+      }) },
+      { what: "the classification reconciles — every part has one, and they sum", run: () => {
+        const entries = registry();
+        if (!entries) return h.FAIL("registry.json has no entries — run `npm run registry`");
+        const unclassified = entries.filter((e) => !e.app?.class).map((e) => e.name);
+        if (unclassified.length) return h.FAIL(`no class: ${unclassified.slice(0, 6).join(", ")}`);
+        const by = {};
+        for (const e of entries) by[e.app.class] = (by[e.app.class] ?? 0) + 1;
+        const sum = Object.values(by).reduce((a, b) => a + b, 0);
+        const shape = Object.entries(by).map(([k, n]) => `${n} ${k}`).join(", ");
+        return sum === entries.length ? h.PASS(`${entries.length} parts — ${shape}`) : h.FAIL(`${shape} sums to ${sum}, not ${entries.length}`);
+      } },
+      /*
+        The Introduction is a hand-written map of something that moves, and it
+        has been wrong twice in three days — once naming three headings that no
+        longer existed, once missing four that did. Nothing noticed either time
+        (Katerina, 23 September). This is what notices.
+      */
+      { what: "the Introduction names exactly the headings the sidebar has", run: () => {
+        const intro = "src/stories/Introduction.mdx";
+        if (!h.exists(intro)) return h.FAIL(`${intro} is missing`);
+        const listed = new Set([...h.read(intro).matchAll(/^\|\s*\*\*([^*]+)\*\*\s*\|/gm)].map((m) => m[1].trim()));
+        // `Estiva ID` is prepended by .storybook/main.ts, not by any title here.
+        const real = new Set(["Estiva ID"]);
+        for (const file of storyFiles()) {
+          const text = h.read(file);
+          /*
+            Only the title the meta declares. A story file is full of invented
+            data, and fixtures have titles too — reading the first `title:` in
+            the file reported a heading called "Feedback on Peek", which is a
+            topic's name in TopicDetailsDialog's fixtures.
+          */
+          const start = text.indexOf("const meta");
+          const meta = start === -1 ? "" : text.slice(start, text.indexOf("satisfies Meta", start) + 1 || undefined);
+          const title = meta.match(/\btitle: *['"]([^'"]+)['"]/) ?? text.match(/<Meta\s+title="([^"]+)"/);
+          if (title) real.add(title[1].split("/")[0].trim());
+        }
+        const missing = [...real].filter((r) => !listed.has(r));
+        const stale = [...listed].filter((l) => !real.has(l));
+        if (!missing.length && !stale.length) return h.PASS(`${real.size} headings, all named on the Introduction`);
+        return h.FAIL([missing.length ? `the sidebar has, the page does not name: ${missing.join(", ")}` : "", stale.length ? `the page names, the sidebar does not have: ${stale.join(", ")}` : ""].filter(Boolean).join("; "));
+      } },
     ] },
     { ref: "UIG-27", checks: [
       { what: "Peek's hand-made progress bar is gone", run: () => h.exists("src/components/ui/ProjectTickets.tsx") ? h.lacks("src/components/ui/ProjectTickets.tsx", 'role="progressbar"') : h.PASS("ProjectTickets.tsx is gone") },
