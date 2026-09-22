@@ -65,18 +65,7 @@ export function teamHasUnread(
     horizonSeconds: number
   },
 ): boolean {
-  // Keyed by what a person follows, not by read-state context: the address
-  // for a file's stream, the Folder's id for the general one.
-  const streams = new Map<string, StreamMessage[]>()
-  for (const message of messages) {
-    const files = message.about.filter((address) => fileContext(address) !== undefined)
-    for (const key of files.length > 0 ? files : [folderId]) {
-      const stream = streams.get(key)
-      if (stream) stream.push(message)
-      else streams.set(key, [message])
-    }
-  }
-  for (const [key, stream] of streams) {
+  for (const [key, stream] of streamsOf(folderId, messages)) {
     if (!frontier.followed(key)) continue
     const context = key === folderId ? containerContext(folderId) : fileContext(key)
     const unread = fileHasUnread(stream, {
@@ -89,6 +78,34 @@ export function teamHasUnread(
     if (unread) return true
   }
   return false
+}
+
+/**
+ * A Folder's messages split into the streams a person follows them by — the
+ * file's address for a message that names one, the Folder's own id for the
+ * general chat. Keyed by what is followed, not by read-state context.
+ *
+ * Exported because `window.__teamUnread()` reports the dot per stream, and a
+ * second grouping written beside this one would be the instrument inventing
+ * its own answer. FOL-40 lost a day to exactly that: a delivery log whose
+ * window was measured from the wrong event reported a reconnect's replayed
+ * page as seventy-seven live events. A diagnostic that does not share the
+ * code it explains is a second implementation to be wrong twice.
+ */
+export function streamsOf(
+  folderId: string,
+  messages: readonly StreamMessage[],
+): Map<string, StreamMessage[]> {
+  const streams = new Map<string, StreamMessage[]>()
+  for (const message of messages) {
+    const files = message.about.filter((address) => fileContext(address) !== undefined)
+    for (const key of files.length > 0 ? files : [folderId]) {
+      const stream = streams.get(key)
+      if (stream) stream.push(message)
+      else streams.set(key, [message])
+    }
+  }
+  return streams
 }
 
 /**
