@@ -820,9 +820,18 @@ async function writeback() {
     archive to open. It needs the account that owns the deployment, which is
     also what the mutation needs, so it costs no extra credential.
   */
+  /*
+    `--deployment <name>`, not `--prod`. This worktree has no `.env.local` and
+    the repo has no `convex.json`, so there is nothing for the CLI to resolve a
+    *project* from and `--prod` fails with "No CONVEX_DEPLOYMENT set" before it
+    reaches the network. A deployment name needs no project resolution, and the
+    name is the first label of the URL every script here already points at.
+  */
+  const deployment = process.env.CONVEX_DEPLOYMENT_NAME ?? new URL(CONVEX).hostname.split('.')[0]!
   const dir = join(mkdtempSync(join(tmpdir(), 'shr8-')), 'snapshot')
+  console.log(`deployment: ${deployment}`)
   console.log(`reading a snapshot for the seedKey → _id map (${dir}) …`)
-  await run('npx', ['convex', 'export', '--prod', '--path', dir], { maxBuffer: 1 << 28 })
+  await run('npx', ['convex', 'export', '--deployment', deployment, '--path', dir], { maxBuffer: 1 << 28 })
   const idOf = new Map<string, string>()
   for (const table of ['messages', 'replies']) {
     const file = join(dir, table, 'documents.jsonl')
@@ -848,7 +857,7 @@ async function writeback() {
     const fn = row.kind === 'root' ? 'nostr/data:markMessagePublished' : 'nostr/data:markReplyPublished'
     const arg = row.kind === 'root' ? 'messageId' : 'replyId'
     try {
-      await run('npx', ['convex', 'run', '--prod', fn, JSON.stringify({ [arg]: idOf.get(row.id), nostrEventId: row.nostrEventId })])
+      await run('npx', ['convex', 'run', '--deployment', deployment, fn, JSON.stringify({ [arg]: idOf.get(row.id), nostrEventId: row.nostrEventId })])
       called++
     } catch (e) {
       console.log(`  ${short(row.id)} → ${e instanceof Error ? e.message.split('\n')[0] : e}`)
