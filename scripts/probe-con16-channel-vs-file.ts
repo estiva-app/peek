@@ -118,13 +118,38 @@ async function main() {
   }
 
   // Everything on the five team Folders — where FOL-25 put the file copies.
+  //
+  // **Not only there, since CON-12.** Miky's decision of 2026-09-22 sends a
+  // record channel's messages to the channel's own Ship project, so those
+  // copies carry `h = <the channel>` and never appear in a team read. Counting
+  // team Folders alone both missed every project-target copy *and* counted the
+  // copies themselves as fresh orphans under their channel — which took the
+  // number up from 509 to 664 after a run that fixed 182 of them.
   const onTeams: SignedEvent[] = []
   for (const [, id] of Object.entries(TEAMS)) {
     onTeams.push(...(await query([{ kinds: [9, 1111], '#h': [id], limit: 2000 }], t)))
   }
-  // A copy names the event it copied in `orig`; map that back to a channel.
+  for (const u of uuids) onTeams.push(...(await query([{ kinds: [1111], '#h': [u], limit: 2000 }], t)))
+  // A copy names in `orig` **either** the relay event it copied (FOL-25, which
+  // worked off the relay) **or** the Convex row (SHR-8 and CON-12, which work
+  // off Convex). Both have to resolve to a channel or the newer copies read as
+  // absent — the same two-spellings trap that made `shr8-migrate` want to write
+  // 148 where 25 were outstanding.
   const channelOfEvent = new Map<string, string>()
   for (const [h, es] of byChannel) for (const e of es) channelOfEvent.set(e.id, h)
+  for (const tp of topics) {
+    if (!tp.channelUuid) continue
+    const page = await convex<{ rows: Array<{ id: string; nostrEventId?: string | null }> }>('messages:list', {
+      parentKind: 'topic',
+      parentKey: tp.id,
+    })
+    for (const m of page.rows) {
+      if (m.nostrEventId && channelOfEvent.has(m.nostrEventId)) channelOfEvent.set(m.id, tp.channelUuid)
+      for (const r of await convex<Array<{ id: string; nostrEventId?: string | null }>>('replies:list', { messageKey: m.id })) {
+        if (r.nostrEventId && channelOfEvent.has(r.nostrEventId)) channelOfEvent.set(r.id, tp.channelUuid)
+      }
+    }
+  }
 
   const copiesPerChannel = new Map<string, number>()
   let copiesUnmatched = 0
@@ -152,7 +177,15 @@ async function main() {
   const rowsOut: Array<[string, number]> = []
   for (const tp of topics.slice().sort((a, b) => a.title.localeCompare(b.title))) {
     const h = tp.channelUuid
-    const events = h ? (byChannel.get(h) ?? []) : []
+    // Two exclusions, both measured by CON-12:
+    //  - a copy sitting in the channel is not itself content needing a copy;
+    //  - an event that already carries an `a`/`A` is reachable by the readers
+    //    that survive FOL-26, so it was never orphaned. That is the 360 Ship
+    //    issue comments Convex mirrors as topic messages — counting them made
+    //    this probe claim 481 where the real number was 121.
+    const events = h
+      ? (byChannel.get(h) ?? []).filter((e) => !tagOf(e, 'orig') && !tagOf(e, 'a') && !tagOf(e, 'A'))
+      : []
     const copies = h ? (copiesPerChannel.get(h) ?? 0) : 0
     const hasFile = fileTitles.has(tp.title.trim().toLowerCase())
     const orphan = Math.max(0, events.length - copies)
