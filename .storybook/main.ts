@@ -18,7 +18,13 @@ const estivaIdRoot = resolve(peekRoot, '../estiva-id')
 const config: StorybookConfig = {
   framework: '@storybook/react-vite',
   stories: [
-    '../src/stories/**/*.mdx',
+    /*
+      Usage pages sit beside the component they describe, not in one central
+      folder, so the rule travels with the code and is found by whoever opens
+      the file (UIG-17). `src/stories/**` used to be the only place read, which
+      is why a page next to a component silently never appeared.
+    */
+    '../src/**/*.mdx',
     '../src/**/*.stories.@(ts|tsx)',
     /*
       Estiva ID's stories, under one heading of their own (Katerina, 20

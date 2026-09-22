@@ -1,0 +1,52 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as DateDividerStories from './DateDivider.stories'
+
+<Meta of={DateDividerStories} />
+
+# DateDivider
+
+A thin line across a list with a label in the middle — a date, or "Replies" —
+that separates one stretch of messages from the next.
+
+<Canvas of={DateDividerStories.Default} />
+
+## When
+
+- Between two stretches of a message list that belong to different days.
+- As a named break inside a list: "Replies" in the thread panel, or the line
+  that says a conversation was promoted to a topic.
+
+## When not
+
+- For the package's labelled `Divider`. That one takes a string and draws it as
+  a muted caption. This label is the section-label voice, it truncates, and it
+  is sometimes a row of its own — three things the package's does not do.
+- As a heading. It separates; it does not introduce. A heading that has content
+  under it wants a heading.
+
+## How
+
+```tsx
+import { DateDivider } from '@/components/ui/DateDivider'
+
+<DateDivider label="Yesterday" />
+<DateDivider label={`Promoted to ${topic.title}`} />
+```
+
+- `label` is a `ReactNode`, not a string, so a label can carry a chip or an
+  emphasis where one is meant.
+
+## What it owns
+
+- **Two package `Divider`s pulled edge to edge** (`mx-0`) with the label
+  between them. A caller writing this by hand gets the package's default side
+  margins and a line that stops short of both edges.
+- **Long labels ellipsize rather than clip.** The label is `min-w-0 truncate`,
+  not `shrink-0`: `Promoted to {a long topic title}` inside a 380px thread panel
+  would otherwise run past the container edge. Short date labels are unaffected.
+- **The Signal voice** — mono, uppercase, wide tracking, muted — applied through
+  `signal:` variants rather than at each call site.
+
+## Props
+
+<Controls of={DateDividerStories.Default} />

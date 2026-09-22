@@ -1,0 +1,52 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as PeekLogoStories from './PeekLogoMark.stories'
+
+<Meta of={PeekLogoStories} />
+
+# PeekLogoMark
+
+The Peek logo mark on its own — brand purple on light, white on dark, at any
+height.
+
+<Canvas of={PeekLogoStories.Mark} />
+
+## When
+
+- Wherever Peek needs to name itself inside its own interface: the command
+  launcher's header, the sign-in shell.
+
+## When not
+
+- As a favicon. The favicon keeps the saturated fixed-colour version in
+  `public/favicon.svg`, because a browser tab has no theme to take a token from.
+- On a coloured ground. It paints with `currentColor` from the `text-logo`
+  token, which is chosen against the page's own background. Put it on an accent
+  fill and it can vanish.
+- When you want the mark on a rounded square. That is `PeekLogoBadge`, in the
+  same file — the in-app treatment is `accent-muted` behind the mark, settled in
+  the design review of 9 July 2026.
+
+<Canvas of={PeekLogoStories.Badge} />
+
+## How
+
+```tsx
+import { PeekLogoMark } from '@/components/ui/PeekLogo'
+
+<PeekLogoMark height={24} />
+```
+
+- `height` is the only size control. The width follows from the mark's native
+  19×24, so it can never be stretched.
+
+## What it owns
+
+- **The aspect ratio.** Width is computed from height, so no call site can
+  distort the mark.
+- **The theme swap**, through the `text-logo` token rather than two files.
+- **Its own accessible name** — `role="img"`, `aria-label="Peek"` — so a caller
+  wrapping it in a link does not have to supply one.
+
+## Props
+
+<Controls of={PeekLogoStories.Mark} />

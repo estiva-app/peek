@@ -1,0 +1,59 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as UnreadDotStories from './UnreadDot.stories'
+
+<Meta of={UnreadDotStories} />
+
+# UnreadDot
+
+The accent dot that says "something new here" — a 6px disc centred in a 24px
+slot, so it sits exactly where a control would and the row does not shift when
+one replaces the other.
+
+<Canvas of={UnreadDotStories.Default} />
+
+## When
+
+- On any row that can be unread: a person, a conversation, a reply, a huddle, a
+  file in the Folder listing.
+- Anywhere a control appears on hover and the dot is what is there at rest. The
+  24px slot is what keeps those two the same size.
+
+## When not
+
+- As the only thing that says "unread". A coloured disc reads as nothing to a
+  screen reader, so **the row that draws it must say "unread" in its own
+  accessible name**. This part is purely visual and deliberately carries no
+  label of its own.
+- For a count. It says *that* there is something new, never how much.
+
+## How
+
+```tsx
+import { UnreadDot } from '@/components/ui/UnreadDot'
+
+<div className="flex items-center">
+  {isUnread ? <UnreadDot /> : <div className="w-6" />}
+  <span>{title}</span>
+</div>
+```
+
+- It renders unconditionally, so the caller decides whether there is anything
+  new — unlike `EditedMarker`, which decides for itself.
+
+## What it owns
+
+- **The 6-in-24 geometry.** This was the same two lines in four files —
+  `PersonRow`, `ConversationCard`, `ThreadReplyCard`, `HuddleCard` — until the
+  Folder listing needed a fifth (FOL-16), which is the moment UI-RULES §1 says
+  it is a component.
+- **`data-unread`**, the attribute tests and pixel runs select on.
+- **`shrink-0`**, so a tight row never squashes it into an ellipse.
+
+## Where it will live
+
+The package has nothing for this yet. When it does, this file becomes a
+one-line re-export and nothing that uses it changes.
+
+## Props
+
+<Controls of={UnreadDotStories.Default} />

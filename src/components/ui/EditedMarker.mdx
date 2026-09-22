@@ -1,0 +1,66 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as EditedMarkerStories from './EditedMarker.stories'
+
+<Meta of={EditedMarkerStories} />
+
+# EditedMarker
+
+"(edited)" beside a message's time — the marker RFC 0.4 §7.2.1 requires
+(CON-8). It is not decoration: it is the half of the edit contract that the
+reader sees.
+
+<Canvas of={EditedMarkerStories.Default} />
+
+An edit on the relay is a `kind:40003` that every reader folds newest-wins. What
+makes that safe is that the reader is **told**. A body that silently changed
+under a reply written against the old text misattributes the reply.
+
+## When
+
+- Beside the time on any card that draws a message body — a conversation, a
+  reply, anything that arrives from the relay or from Peek's own store. Which
+  store the body came from makes no difference; that is why this is a part of
+  its own rather than a line inside one card.
+
+## When not
+
+- Behind a condition of your own. It draws nothing when `editedAt` is absent,
+  so `{message.editedAt && <EditedMarker .../>}` is a guard that repeats what
+  the component already does.
+- To show *when* something was edited in the layout. The time is in the tooltip
+  on purpose, so the message header stays one line.
+
+## How
+
+```tsx
+import { EditedMarker } from '@/components/ui/EditedMarker'
+
+<div className="flex items-baseline gap-1.5">
+  <time>{timestamp}</time>
+  <EditedMarker editedAt={message.editedAt} />
+</div>
+```
+
+- `editedAt` is a millisecond timestamp, or `undefined` when the message has
+  never been edited.
+
+## What it owns
+
+- **Drawing nothing when there was no edit**, so no call site needs a
+  conditional.
+- **The wording and the tooltip split** — "(edited)" inline, `Edited {time}` on
+  hover. One line in the header, the detail on demand.
+- **`shrink-0`**, so the marker is never the thing a tight header squeezes.
+
+## A note on where this lives
+
+This is the one part of Peek's the catalogue puts forward for `@estiva-app/ui`:
+it is used in two places, everything inside it is already in the package, and
+Ship has the same idea with no component for it. Katerina's ruling on 22
+September was **a page now, promotion as its own ticket** — nothing is promoted
+inside UIG-17. Its story is parked under *To be removed* for that reason: if it
+is promoted, the story goes with it.
+
+## Props
+
+<Controls of={EditedMarkerStories.Default} />

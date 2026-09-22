@@ -1,0 +1,58 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Primitives/Avatar" />
+
+# Avatar
+
+The package's `Avatar`, handed the picture Peek knows about. **The lookup is the
+only part of it that is Peek's** — everything drawn is `@estiva-app/ui`'s
+(SHA-5, 2026-08-28).
+
+**Seen in** — *Messages/ConversationCard*, *Messages/ConversationHeader*,
+*Messages/ThreadReplyCard*, *Messages/PinnedMessage*, *Messages/CommentRow*,
+*Messages/Reference widget*, *Topics/TopicState*, *Screener & Desk/ScreenerItem*,
+*Screener & Desk/ScreenerPreviewCard*, and *Overlays/TopicDetailsDialog*. It has
+no story of its own because one would only repeat the package's: ten stories
+already draw it in the places it is really used.
+
+## When
+
+- Every time a person is drawn in Peek. Always this one, never the package's
+  directly — importing `Avatar` from `@estiva-app/ui` gets you a component that
+  cannot find anybody's picture.
+
+## When not
+
+- For a pubkey you have not resolved to a person. That is `Person`, which takes
+  a key and the `people` map from a resolved object, and draws the em dash when
+  nobody has published a name.
+- With `src` set from something you have not already resolved. Passing `src`
+  skips the lookup entirely, which is right when the relay handed you a URL and
+  wrong the rest of the time.
+
+## How
+
+```tsx
+import { Avatar } from '@/components/ui/Avatar'
+
+<Avatar name={authorName} size={28} />
+```
+
+- `name` is what the lookup keys on. `alt` is tried as a fallback key, which is
+  why a caller that only has an alt text still gets a portrait.
+- `size`, `label` and `className` pass straight through to the package.
+
+## What it owns
+
+- **The order a picture is looked for:** the uploaded avatar in Convex file
+  storage, then the seeded portrait for that name, then nothing — at which point
+  the package draws initials on the person's own colour, or the silhouette when
+  there is no name at all.
+- **Working outside a `PeekDataProvider`.** In Storybook and in tests the lookup
+  falls back to the mock portraits rather than throwing, which is why every
+  story above draws a face without arranging anything.
+
+## Props
+
+The shape is the package's `AvatarProps`, unchanged: `src`, `name`, `alt`,
+`size`, `label`, `className`. Its controls table is on the package's own page.
