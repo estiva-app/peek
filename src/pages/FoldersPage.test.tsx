@@ -38,6 +38,29 @@ const topic: ForeignObject = {
 } as unknown as ForeignObject
 
 /*
+  A file and a topic started under it (SPEC §6.7) — the pair the filter's
+  "parents of a match are drawn" needs: `peersOf` hides the child at the top
+  level, and `listedChildrenOf` puts it back under its parent.
+*/
+const PARENT_ADDRESS = `30850:${ADDRESS.split(':')[0]}:1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d`
+const CHILD_ADDRESS = `30840:${ADDRESS.split(':')[0]}:2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e`
+const parent = {
+  ...topic,
+  ref: PARENT_ADDRESS,
+  address: PARENT_ADDRESS,
+  kind: 30850,
+  appName: 'Estiva Ship',
+  slots: { title: { value: 'A parent project' } },
+} as unknown as ForeignObject
+const child = {
+  ...topic,
+  ref: CHILD_ADDRESS,
+  address: CHILD_ADDRESS,
+  parentRef: PARENT_ADDRESS,
+  slots: { title: { value: 'A child topic' } },
+} as unknown as ForeignObject
+
+/*
   The listing is the only thing that varies between tests, so it is the one
   hoisted knob. Everything else the page reads is pinned to the quietest
   answer it accepts: a signed-in reader, no counts, no directory, a
@@ -57,12 +80,26 @@ const peekTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; 
   tested in `teamUnread.test.ts`; here the question is only that a Folder row
   draws the dot it is told to, and no dot for a Folder it was told nothing about.
 */
-const teamUnread = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
+const teamUnread = vi.hoisted(() => ({
+  unread: {} as Record<string, boolean>,
+  /* And which hold a followed stream — the other half of the same read (FOL-41). */
+  followed: {} as Record<string, boolean>,
+}))
+/* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
+const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
 /*
   Making a Folder — UIG-7. The row is the package Form: Enter in the name sends
   it. Refused here, so the page stays put and the test reads only the call.
 */
-const created = vi.hoisted(() => ({ folder: vi.fn(async (_name: string) => ({ ok: false as const, reason: 'Refused.' })) }))
+const created = vi.hoisted(() => ({
+  folder: vi.fn(async (_name: string) => ({ ok: false as const, reason: 'Refused.' })),
+  /*
+    Starting a topic from the header (FOL-41) — a bare file on the relay, the
+    same writer the folder pane's control uses. Refused, like the folder create
+    above, so the page stays put and the test reads only what was asked for.
+  */
+  topic: vi.fn(async () => ({ ok: false as const, reason: 'Refused.' })),
+}))
 /*
   The read-state writers, spied — FOL-16. What the page must do is mark the
   open file's own stream after a dwell, and what it must never do is mark the
@@ -95,10 +132,10 @@ vi.mock('@/api', async () => ({
     state: { id: FOLDER, name: 'Folders', hasState: true, source: 'state', files: relay.files },
     reload: async () => {},
   }),
-  useForeignObjects: () => ({ createFolder: created.folder }),
+  useForeignObjects: () => ({ createFolder: created.folder, createTopic: created.topic }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
-  useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: teamUnread.unread }),
+  useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
+  useTeamUnread: () => ({ unread: teamUnread.unread, followed: teamUnread.followed }),
   useWorkspaceDirectory: () => undefined,
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
@@ -256,13 +293,177 @@ describe('FoldersPage draws the union dot on a Folder row', () => {
 describe('FoldersPage makes a Folder from its name', () => {
   beforeEach(() => created.folder.mockClear())
 
+  /*
+    From the header's New folder, not from a row above the list (FOL-41). The
+    field is the same field and `Form`'s Enter rule is the same rule — what
+    moved is where it is, so the test opens the dialog and then asks exactly
+    what it asked before.
+  */
   it('sends on Enter in the name, and not on Shift+Enter', async () => {
     const user = userEvent.setup()
     mount(`/app/folders/${FOLDER}`)
-    const name = screen.getByRole('textbox', { name: 'New folder name' })
+    await user.click(screen.getByRole('button', { name: 'New folder' }))
+    const name = screen.getByRole('textbox', { name: 'Folder name' })
     await user.type(name, 'Launch notes{Shift>}{Enter}{/Shift}')
     expect(created.folder).not.toHaveBeenCalled()
     await user.type(name, '{Enter}')
     expect(created.folder).toHaveBeenCalledWith('Launch notes')
+  })
+
+  it('has no create row above the list', () => {
+    mount(`/app/folders/${FOLDER}`)
+    expect(screen.queryByRole('textbox', { name: 'New folder name' })).toBeNull()
+  })
+})
+
+/*
+  The header's filter — FOL-41. What is judged is unit tested in
+  `treeFilter.test.ts`; here the question is that the control is wired to the
+  column, and that the two verdicts come from the two different maps. Both
+  Folders are sections (`topLevelFolders`), and the section's title is the
+  fold's own button, so a Folder that survived is a button with its name.
+*/
+describe('FoldersPage filters the column', () => {
+  beforeEach(() => {
+    teamUnread.unread = {}
+    teamUnread.followed = {}
+    badges.unread = {}
+    relay.files = []
+  })
+  afterEach(() => {
+    teamUnread.unread = {}
+    teamUnread.followed = {}
+    badges.unread = {}
+    relay.files = []
+  })
+
+  async function choose(label: string) {
+    const user = userEvent.setup()
+    const view = mount(`/app/folders/${FOLDER}`)
+    await user.click(screen.getByRole('button', { name: 'Filter folders' }))
+    await user.click(await screen.findByRole('menuitem', { name: label }))
+    return view
+  }
+
+  it('shows every Folder until the filter says otherwise', () => {
+    mount(`/app/folders/${FOLDER}`)
+    expect(screen.getByRole('button', { name: /For testing/ })).toBeTruthy()
+  })
+
+  it('Unread keeps the Folders with a dot and drops the rest', async () => {
+    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: false }
+    await choose('Unread')
+    expect(screen.queryByRole('button', { name: /For testing/ })).toBeNull()
+  })
+
+  /*
+    The unjudged Folder is the one this pins: `RECORD_CHANNEL` is not a section
+    either way, but `TOPIC_CHANNEL` here has no entry in the map at all — no
+    viewer, a read that failed, a frontier that has not landed — and it draws
+    no dot, so `Unread` must not show it. A filter that kept it would be
+    showing a Folder the column is not claiming anything about.
+  */
+  it('Unread drops a Folder it was told nothing about', async () => {
+    teamUnread.unread = { [FOLDER]: true }
+    await choose('Unread')
+    expect(screen.queryByRole('button', { name: /For testing/ })).toBeNull()
+  })
+
+  it('Followed reads the other verdict, not the dots', async () => {
+    // Lit, but nothing in it is followed — the two questions are not the same one.
+    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
+    teamUnread.followed = { [FOLDER]: false, [TOPIC_CHANNEL]: true }
+    await choose('Followed')
+    expect(screen.getByRole('button', { name: /For testing/ })).toBeTruthy()
+    expect(screen.queryAllByRole('button', { name: /^Folders/ })).toHaveLength(0)
+  })
+
+  it('says the filter is hiding them, not that there are none', async () => {
+    await choose('Unread')
+    expect(screen.getByText('Nothing unread.')).toBeTruthy()
+  })
+
+  /*
+    The parents of a match are drawn (Miky, FOL-41). The parent row has no dot
+    of its own and would be hidden on its own account; it survives because the
+    child does, and it is expanded so the child is on screen without a click.
+  */
+  it('keeps and expands a row whose child is the match', async () => {
+    relay.files = [parent, child]
+    badges.unread = { [child.ref]: true }
+    teamUnread.unread = { [FOLDER]: true }
+    const { container } = await choose('Unread')
+    expect(container.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
+    expect(container.querySelector(`[data-file="${CSS.escape(child.ref)}"]`)).toBeTruthy()
+  })
+
+  /*
+    The column only. The right pane is the Folder's own listing — everything
+    in it, drawn as cards — and the header's filter is the *tree's*, so a peer
+    hidden from the column is still on the page beside it.
+  */
+  it('drops the column rows that hold no match', async () => {
+    relay.files = [parent, child, topic]
+    badges.unread = { [child.ref]: true }
+    teamUnread.unread = { [FOLDER]: true }
+    const { container } = await choose('Unread')
+    const tree = container.querySelector(`[data-tree-folder="${FOLDER}"]`)!
+    expect(tree.querySelector(`[data-file="${CSS.escape(topic.ref)}"]`)).toBeNull()
+    expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
+  })
+})
+
+/*
+  Starting a topic from the header — FOL-41. The one thing that is new is that
+  the Folder is chosen here rather than being the open one, so what is pinned
+  is which Folder the write names and that `hasState` came from that Folder's
+  own summary rather than from the page's open one.
+*/
+describe('FoldersPage starts a topic from the header', () => {
+  beforeEach(() => created.topic.mockClear())
+
+  it('starts it in the open Folder by default', async () => {
+    const user = userEvent.setup()
+    mount(`/app/folders/${FOLDER}`)
+    await user.click(screen.getByRole('button', { name: 'New topic' }))
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
+    await user.click(screen.getByRole('button', { name: 'Start' }))
+    expect(created.topic).toHaveBeenCalledWith({
+      folder: FOLDER,
+      title: 'Launch plan',
+      parent: undefined,
+      hasState: true,
+    })
+  })
+
+  it('starts it in the Folder that was chosen', async () => {
+    const user = userEvent.setup()
+    mount(`/app/folders/${FOLDER}`)
+    await user.click(screen.getByRole('button', { name: 'New topic' }))
+    await user.click(screen.getByRole('combobox', { name: 'Folder' }))
+    await user.click(await screen.findByRole('option', { name: 'For testing' }))
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
+    await user.click(screen.getByRole('button', { name: 'Start' }))
+    expect(created.topic).toHaveBeenCalledWith({
+      folder: TOPIC_CHANNEL,
+      title: 'Launch plan',
+      parent: undefined,
+      hasState: true,
+    })
+  })
+
+  /*
+    The record channel is not offered. `topLevelFolders` drops it — no folder
+    state — and it is exactly the Folder a `kind:1852` must never be sent
+    against, so "only offer actions that can succeed" and the writer's
+    `hasState` rule are the same rule here.
+  */
+  it('offers only the Folders the tree draws', async () => {
+    const user = userEvent.setup()
+    mount(`/app/folders/${FOLDER}`)
+    await user.click(screen.getByRole('button', { name: 'New topic' }))
+    await user.click(screen.getByRole('combobox', { name: 'Folder' }))
+    expect(await screen.findByRole('option', { name: 'For testing' })).toBeTruthy()
+    expect(screen.queryByRole('option', { name: 'project-0804b906' })).toBeNull()
   })
 })

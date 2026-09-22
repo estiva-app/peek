@@ -15,8 +15,9 @@ import { useTopicPath } from '@/lib/useTopicPath'
 import { fileRouteFromPath } from '@/lib/objectUrl'
 
 /**
- * The narrow bar down the left edge that moves between Desk, Topics, Folders
- * and People, with a small dot saying whether what is shown is current.
+ * The narrow bar down the left edge that moves between Desk, Topics,
+ * Topics (new) and People, with a small dot saying whether what is shown is
+ * current.
  */
 export function NavRail() {
   const { topicId, dmId } = useLastSelection()
@@ -41,7 +42,17 @@ export function NavRail() {
     {
       to: '/app/folders',
       icon: <IconFolder size={16} stroke={1.5} />,
-      label: 'Folders',
+      /*
+        "Topics (new)", not "Folders" (Miky, FOL-41). The route, the page and
+        the tree are unchanged: this rail item is what a person is told the
+        section *is*, and what it is is the topic list that replaces the one
+        above it — a Folder is how it is organised, not what it holds. Named
+        beside the old Topics rather than in place of it, because both are
+        reachable while the twenty-five Convex topics still live at
+        `/topic-old/` (FOL-37); the "(new)" is what says which is which, and it
+        goes when the old one does.
+      */
+      label: 'Topics (new)',
       // Both routes: `/app/folders` is the list and `/app/folders/<uuid>` is
       // one of them. No last-selection memory, unlike Topics and People — a
       // Folder list is short and a remembered one would be a guess about which

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
 import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
@@ -10,6 +10,7 @@ import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { UnreadDot } from '@/components/ui/UnreadDot'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
+import { folderMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { useRailClosed } from '@/layouts/railClosed'
 import { filePath } from '@/lib/objectUrl'
 import { useRememberedOpen } from '@/lib/rememberedOpen'
@@ -152,6 +153,8 @@ export function FolderTreeView({
   folders,
   signedOut,
   unread,
+  followed = {},
+  filter = 'all',
   currentFolder,
   selectedRef,
   selectedParent,
@@ -164,6 +167,10 @@ export function FolderTreeView({
   signedOut: boolean
   /** The union dot per Folder id (FOL-18). Missing means unjudged. */
   unread: Record<string, boolean>
+  /** Whether each Folder holds a followed stream (FOL-41). Missing means unjudged. */
+  followed?: Record<string, boolean>
+  /** What the column is showing — `all` unless the header says otherwise (FOL-41). */
+  filter?: TreeFilter
   currentFolder?: string | null
   selectedRef?: string
   selectedParent?: string | null
@@ -181,9 +188,22 @@ export function FolderTreeView({
 
   // Alphabetical, as the topic list was. The relay's order is arrival order,
   // which tells the person nothing.
-  const ordered = [...folders].sort((a, b) =>
-    (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }),
-  )
+  const ordered = [...folders]
+    .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
+    .filter((folder) => folderMatches(filter, folder.id, unread, followed))
+
+  /*
+    A filter that matched nothing is not an empty workspace, and the two must
+    not share a sentence: the Folders are there, this view is hiding them.
+  */
+  if (ordered.length === 0) {
+    return (
+      <EmptyState
+        scope="section"
+        message={filter === 'unread' ? 'Nothing unread.' : 'Nothing you follow.'}
+      />
+    )
+  }
 
   return (
     <>
@@ -193,6 +213,7 @@ export function FolderTreeView({
           folder={folder}
           /* `=== true`: an unjudged Folder draws no dot, not a dark one. */
           unread={unread[folder.id] === true}
+          filter={filter}
           current={folder.id === currentFolder}
           selectedRef={selectedRef}
           selectedParent={selectedParent}
@@ -209,6 +230,7 @@ export function FolderTreeView({
 function FolderSection({
   folder,
   unread,
+  filter,
   current,
   selectedRef,
   selectedParent,
@@ -218,6 +240,7 @@ function FolderSection({
 }: {
   folder: FolderSummary
   unread: boolean
+  filter: TreeFilter
   current: boolean
   selectedRef?: string
   selectedParent?: string | null
@@ -225,7 +248,22 @@ function FolderSection({
   onOpen: () => void
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
-  const [open, setOpen] = useRememberedOpen(`peek.tree.folder.${folder.id}`, current)
+  /*
+    Under a filter every section that survived it starts open (FOL-41). The
+    filter's whole job is to lead to the file, and a list of shut Folders leads
+    nowhere — the person would open each in turn, which is the tree they asked
+    to be spared. The reads stay bounded because the filter is what bounds
+    them: only the Folders with a match are drawn, so only those are read.
+
+    The remembered state is deliberately not consulted and not written: a
+    Folder somebody closed under `All` is closed again the moment they go back
+    to it, and closing one here is this view's, not a change of mind about the
+    tree. `useRememberedOpen` is still what holds it under `All`.
+  */
+  const [remembered, setRemembered] = useRememberedOpen(`peek.tree.folder.${folder.id}`, current)
+  const [filtered, setFiltered] = useState(true)
+  const open = filter === 'all' ? remembered : filtered
+  const setOpen = filter === 'all' ? setRemembered : setFiltered
   /*
     The read is the fold. `null` while closed is the hook's "nothing to read"
     — no request, no refresh trigger, no socket subscription — so a Folder
@@ -272,6 +310,7 @@ function FolderSection({
         {open && (
           <FileTreeView
             state={state}
+            filter={filter}
             selectedRef={selectedRef}
             expand={parentRow ? [parentRow.ref] : undefined}
             onSelect={onSelect}
