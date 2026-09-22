@@ -72,17 +72,24 @@ export function impliedKeyOf(event: SignedEvent): string | undefined {
   }
 }
 
-export function impliedKeysOf(events: readonly SignedEvent[]): Set<string> {
-  const keys = new Set<string>()
+/**
+ * Each implied key with the time, epoch ms, of the newest event that names
+ * the person in it. The time is what a mute is judged against: a mute covers
+ * the namings before it, and a newer one follows the key again (`follows.ts`).
+ */
+export function impliedKeysOf(events: readonly SignedEvent[]): Map<string, number> {
+  const keys = new Map<string, number>()
   for (const event of events) {
     const key = impliedKeyOf(event)
-    if (key) keys.add(key)
+    if (!key) continue
+    const at = event.created_at * 1000
+    if ((keys.get(key) ?? 0) < at) keys.set(key, at)
   }
   return keys
 }
 
 /** The implied set, or `undefined` when the relay did not answer — never an empty guess. */
-export async function fetchImpliedFollows(seam: RelaySeam, nowSeconds = Math.floor(Date.now() / 1000)): Promise<Set<string> | undefined> {
+export async function fetchImpliedFollows(seam: RelaySeam, nowSeconds = Math.floor(Date.now() / 1000)): Promise<Map<string, number> | undefined> {
   const { ok, events } = await queryRelay(seam.relayUrl, [impliedFollowsFilter(seam.pubkey, nowSeconds)], seam.accessToken, seam.pubkey)
   return ok ? impliedKeysOf(events) : undefined
 }

@@ -38,9 +38,12 @@
  * control that lied. Last write wins on the relay (§12.3, as stars).
  *
  * A follow adds the key and clears any mute; an unfollow removes the key and,
- * when the relay implies it, mutes it — otherwise the next load would follow
- * it again. Following an implied key writes it explicitly, so it outlives the
- * horizon the implied read is bounded by.
+ * when the relay implies it, mutes it **as of now** — otherwise the next load
+ * would follow it again. A mute covers only the namings before it: placed on
+ * the issue again, or named in it again, after the unfollow is a new call for
+ * attention, and the key follows again (FOL-30's test F, 2026-09-22). Following
+ * an implied key writes it explicitly, so it outlives the horizon the implied
+ * read is bounded by.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { validToken } from '@/auth/estivaId'
@@ -73,23 +76,33 @@ function seamFrom(relayUrl: string | null | undefined): RelaySeam | null {
 /** The three lists a set is made of. */
 interface Lists {
   keys: Set<string>
-  muted: Set<string>
-  implied: Set<string>
+  /** Key → when it was muted, epoch ms. */
+  muted: Map<string, number>
+  /** Key → the newest naming of the person in it, epoch ms. */
+  implied: Map<string, number>
 }
 
+/** A mute covers the namings before it: an implied key follows unless muted since its newest naming. */
 function union({ keys, muted, implied }: Lists): Set<string> {
   const out = new Set(keys)
-  for (const key of implied) if (!muted.has(key)) out.add(key)
+  for (const [key, at] of implied) {
+    const mutedAt = muted.get(key)
+    if (mutedAt === undefined || at > mutedAt) out.add(key)
+  }
   return out
 }
 
 /** What this tab last saw, for `window.__follows()`. Module scope, like `__readState`. */
-let lastSnapshot: { state: FollowsState; keys: string[]; muted: string[]; implied: string[]; updatedAt?: string } = {
-  state: 'unknown',
-  keys: [],
-  muted: [],
-  implied: [],
-}
+let lastSnapshot: {
+  state: FollowsState
+  keys: string[]
+  muted: Record<string, string>
+  implied: Record<string, string>
+  updatedAt?: string
+} = { state: 'unknown', keys: [], muted: {}, implied: {} }
+
+const stamped = (map: ReadonlyMap<string, number>): Record<string, string> =>
+  Object.fromEntries([...map].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, at]) => [k, new Date(at).toISOString()]))
 
 export function useFollowsSync(relayUrl: string | null | undefined): FollowsSync {
   const [followed, setFollowedSet] = useState<ReadonlySet<string>>(() => new Set())
@@ -97,7 +110,7 @@ export function useFollowsSync(relayUrl: string | null | undefined): FollowsSync
   /** The relay's blob as last read or written; what a publish is diffed against. */
   const relayBlob = useRef<FollowsBlob | undefined>(undefined)
   /** What this tab wants: the blob's two lists as they should be on the relay, and the implied set as last read. */
-  const lists = useRef<Lists>({ keys: new Set(), muted: new Set(), implied: new Set() })
+  const lists = useRef<Lists>({ keys: new Set(), muted: new Map(), implied: new Map() })
   /** Whether each read has answered at least once — `state` leaves `unknown` only when both have. */
   const landed = useRef({ blob: false, implied: false })
   /** Publishes in flight, chained so none is dropped and none overtakes another. */
@@ -112,8 +125,8 @@ export function useFollowsSync(relayUrl: string | null | undefined): FollowsSync
     lastSnapshot = {
       state: nextState,
       keys: [...lists.current.keys].sort(),
-      muted: [...lists.current.muted].sort(),
-      implied: [...lists.current.implied].sort(),
+      muted: stamped(lists.current.muted),
+      implied: stamped(lists.current.implied),
       ...(blob ? { updatedAt: new Date(blob.updatedAt).toISOString() } : {}),
     }
   }, [])
@@ -143,13 +156,13 @@ export function useFollowsSync(relayUrl: string | null | undefined): FollowsSync
       blobState.current = 'present'
       landed.current.blob = true
       next.keys = new Set(blob.blob.keys)
-      next.muted = new Set(blob.blob.muted)
+      next.muted = new Map(Object.entries(blob.blob.muted))
     } else if (blob?.state === 'absent') {
       relayBlob.current = undefined
       blobState.current = 'absent'
       landed.current.blob = true
       next.keys = new Set()
-      next.muted = new Set()
+      next.muted = new Map()
     } else {
       // Unreachable stays as it was on purpose: a relay that did not answer
       // and one that has not been asked license the same thing — nothing.
@@ -184,17 +197,18 @@ export function useFollowsSync(relayUrl: string | null | undefined): FollowsSync
         console.warn('[follows] not changed: the relay has not said what set it holds')
         return
       }
-      const before = { keys: new Set(lists.current.keys), muted: new Set(lists.current.muted) }
+      const before = { keys: new Set(lists.current.keys), muted: new Map(lists.current.muted) }
       if (union(lists.current).has(key) === on) return
       generation.current++
       const keys = new Set(before.keys)
-      const muted = new Set(before.muted)
+      const muted = new Map(before.muted)
       if (on) {
         keys.add(key)
         muted.delete(key)
       } else {
         keys.delete(key)
-        if (lists.current.implied.has(key)) muted.add(key)
+        // Muted as of now: a naming after this moment follows the key again.
+        if (lists.current.implied.has(key)) muted.set(key, Date.now())
       }
       apply({ keys, muted }, state, relayBlob.current)
 
@@ -217,10 +231,10 @@ export function useFollowsSync(relayUrl: string | null | undefined): FollowsSync
         }
         // Refused: the control said something the relay does not hold. Undo
         // this toggle alone — a later one in the chain is its own write.
-        const reverted = { keys: new Set(lists.current.keys), muted: new Set(lists.current.muted) }
+        const reverted = { keys: new Set(lists.current.keys), muted: new Map(lists.current.muted) }
         if (on) {
           reverted.keys.delete(key)
-          if (before.muted.has(key)) reverted.muted.add(key)
+          if (before.muted.has(key)) reverted.muted.set(key, before.muted.get(key)!)
         } else {
           if (before.keys.has(key)) reverted.keys.add(key)
           if (!before.muted.has(key)) reverted.muted.delete(key)
