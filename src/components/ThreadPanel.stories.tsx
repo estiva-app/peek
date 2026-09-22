@@ -14,6 +14,8 @@ const conversation: ConversationData = {
 
 const replies = REPLIES['t1_c1']
 
+const noop = () => {}
+
 const meta = {
   title: 'Frame/ThreadPanel',
   component: ThreadPanel,
@@ -54,11 +56,21 @@ export const Resolved: Story = {
   args: { isResolved: true },
 }
 
-/** Huddle thread — lock icon + member pill in the header. */
+/**
+ * Huddle thread — lock icon + member pill in the header, and the button that
+ * jumps to the matching DM.
+ *
+ * That button is drawn only when a caller hands over `onOpenInDm`, which is
+ * the huddle side and nothing else. No story passed it, so it had never been
+ * drawn (23 September). `openInDmHref` comes with it on purpose: it is a real
+ * link, so a modified click opens the DM in a new tab (UIG-14, 4.13).
+ */
 export const Huddle: Story = {
   args: {
     huddleMembers: ['You', 'Daniel Stanton', 'Juan Foley'],
     huddleMemberCount: 3,
+    onOpenInDm: noop,
+    openInDmHref: '/app/people/alice',
   },
 }
 

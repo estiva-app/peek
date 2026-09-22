@@ -65,6 +65,10 @@ function topicMore(props: Partial<ComponentProps<typeof TopicMoreMenu>>) {
         onOpenDetails={noop}
         onToggleOpenWork={noop}
         onDeleteTopic={noop}
+        /* Two more rows the app passes and no story did, so neither had ever
+           been drawn: Copy link, and Rename (23 September). */
+        onCopyLink={noop}
+        onRename={noop}
         openWorkAction="add"
         {...props}
       />

@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { ConversationCard } from './ConversationCard'
 
+const noop = () => {}
+
 const meta = {
   title: 'Messages/ConversationCard',
   component: ConversationCard,
@@ -23,6 +25,13 @@ const meta = {
     authorName: 'Daniel Stanton',
     timestamp: '11:08 AM',
     body: 'Found the root cause — a dependency bump broke the build. Pinning it back now; will confirm once it goes green.',
+    /*
+      The hover strip draws Reply only when a caller hands over `onReply`
+      (`ConversationQuickMenu`, line 95). The app always does; no story here
+      ever did, so every card in Storybook lost an action the real one has
+      (Katerina, 22 September; fixed 23 September).
+    */
+    onReply: noop,
   },
 } satisfies Meta<typeof ConversationCard>
 

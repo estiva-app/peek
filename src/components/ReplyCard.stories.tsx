@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { PeekDataProvider } from '@/api'
 import { ReplyCard } from './ReplyCard'
 
+const noop = () => {}
+
 const meta = {
   title: 'Messages/ReplyCard',
   component: ReplyCard,
@@ -58,4 +60,17 @@ export const New: Story = {
  */
 export const NewUrgent: Story = {
   args: { isNew: true, isUrgent: true },
+}
+
+/**
+ * **Your own reply.** Two rows the more-menu shows nobody else — *Edit
+ * message*, and *Delete* under a separator (PEE-32).
+ *
+ * The card decides that from the author's name, not a prop:
+ * `isCurrentUser(authorName)`. Every reply story was somebody else's, so half
+ * of this menu had never been drawn anywhere. `ConversationCard` already had
+ * its own-message stories; the reply did not (23 September).
+ */
+export const YourOwnReply: Story = {
+  args: { authorName: 'You', onDelete: noop },
 }
