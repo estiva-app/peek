@@ -41,10 +41,19 @@ export const DISCARDED: Record<string, string> = {
  * These rows stay in the gap: they are migrated, just not onto a file. Both
  * are record channels that PEE-31/FOL-25 keep — issues live in them by `h` —
  * and both are live, so their missing messages can be published where the rest
- * of their conversation already is. Which shape that takes is the migration
- * ticket's to settle, and it is also gated on CON-12's one signed-in check of
- * whether those channels render at all; CON-4 measured it and did not write.
- * Decided by Miky, 2026-09-22.
+ * of their conversation already is.
+ *
+ * **The shape is settled (Miky, CON-12, 2026-09-22): a `kind:1111` addressed
+ * to the channel's own Ship project.** No new object, no conversation split,
+ * and it is exactly the shape a Ship comment on an issue in that channel
+ * already has — `A`/`a` the record, `h` the channel. `shr8-migrate.ts`
+ * resolves that target itself and no longer skips these two.
+ *
+ * This map therefore now says only *"not a `30840`"*, which is still what the
+ * census and `con4-topic-files.ts` read it for. Seven more record channels
+ * take a project target without being named here, because CON-4 only had to
+ * list the two that had unpublished rows — the other seven's content is all
+ * published, and it was CON-12 that found it unreachable.
  */
 export const NO_FILE_TARGET: Record<string, string> = {
   'Feedback on Peek': [

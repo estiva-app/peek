@@ -90,6 +90,14 @@ const INCLUDE_PUBLISHED = process.argv.includes('--include-published')
 /** Is this row part of the population, before asking whether it is done? */
 const inScope = (i: Item) => INCLUDE_PUBLISHED || !i.eventId
 
+/**
+ * Every published row's own event, filled by {@link survey}.
+ *
+ * Module-level because three modes want it and it is ~800 ids either way; a
+ * second batched `ids:` read per mode bought nothing but latency.
+ */
+const publishedEvents = new Map<string, SignedEvent>()
+
 /** What a copy written by this run is marked with, so a re-run skips it. */
 const MARK = 'shr8-migrate'
 
@@ -222,6 +230,29 @@ interface Surface {
   /** The `30840` this topic's conversation migrates onto. */
   file?: SignedEvent
   address?: string
+  /**
+   * What a copy addresses, and where it lands.
+   *
+   * Two kinds, because two kinds of topic survive. Most migrate onto a `30840`
+   * file in their team — CON-4's shape, and `h` is then the team Folder. The
+   * nine record channels migrate onto **their own Ship project** instead
+   * (Miky, 2026-09-22, CON-12): a `30840` beside a `30850` of the same name
+   * splits one conversation, and the project's conversation is already where
+   * these channels' Ship comments live, so a copy there is reachable by the
+   * one reader FOL-26 leaves standing. `h` is then the channel itself, which
+   * is what a Ship comment on an issue in that channel already carries.
+   */
+  target?: { address: string; kind: 30840 | 30850; pubkey: string; h: string }
+  /**
+   * Rows whose own published event already carries an `a`/`A`, so they are
+   * reachable as they stand and are not this migration's business.
+   *
+   * Only meaningful on a project target. 360 of CON-12's 481 are Ship issue
+   * comments mirrored into Convex as topic messages; they address a `30851`
+   * and render in their issue. Re-posting them would duplicate a conversation
+   * that is already correct.
+   */
+  addressed: Set<string>
   items: Item[]
   /**
    * Copies already on the file, **by the Convex row they stand for**.
@@ -316,28 +347,92 @@ async function survey(query: ReturnType<typeof queryFn>, agent: string): Promise
     filesByTeam.set(name, await query([{ kinds: [30840], '#h': [uuid], authors: [agent], limit: 500 }]))
   }
 
+  // Every Ship project, by the channel it lives in. **Two spellings**: the
+  // older records name their channel `buzz-channel`, the newer ones `h`.
+  // Reading only `h` finds four of the nine record channels and makes the
+  // other five look like channels no project claims.
+  const projectByChannel = new Map<string, SignedEvent>()
+  const projects = await query([{ kinds: [30850], limit: 500 }])
+  for (const p of projects) {
+    const channel = tag(p, 'h') ?? tag(p, 'buzz-channel')
+    if (channel) projectByChannel.set(channel, p)
+  }
+  // **The re-linked ones.** A project that has been moved no longer names the
+  // channel its conversation is in (PRO-21: interop writes to the record's `h`,
+  // Ship reads the re-link), so four of the nine record channels match no
+  // `30850` by either spelling. Their issues do know: a `kind:30851` carries
+  // `h` — the channel it lives in — *and* `a`, its project. That is the
+  // relationship Ship itself navigates, so it is the one to ask.
+  const projectByAddress = new Map(projects.map((p) => [`30850:${p.pubkey}:${tag(p, 'd')}`, p]))
+  for (const issue of await query([{ kinds: [30851], limit: 2000 }])) {
+    const channel = tag(issue, 'h')
+    const address = tag(issue, 'a')
+    if (!channel || !address || projectByChannel.has(channel)) continue
+    const p = projectByAddress.get(address)
+    if (p) projectByChannel.set(channel, p)
+  }
+
+  // Every row's own published event, so "is this already addressed?" is
+  // answerable without a second pass per surface.
+  const published = publishedEvents
+  published.clear()
+  const allItems = await Promise.all(topics.map((t) => collect(t.title, t.id)))
+  const collected = new Map(topics.map((t, i) => [t.id, allItems[i]!]))
+  const publishedIds = allItems.flat().map((i) => i.eventId).filter((x): x is string => !!x)
+  for (let i = 0; i < publishedIds.length; i += 100) {
+    const batch = publishedIds.slice(i, i + 100)
+    for (const e of await query([{ ids: batch, limit: batch.length }])) published.set(e.id, e)
+  }
+
   const out: Surface[] = []
   for (const t of topics) {
     const s: Surface = {
       title: t.title,
       topicId: t.id,
       channelUuid: t.channelUuid,
-      items: await collect(t.title, t.id),
+      items: collected.get(t.id)!,
       done: new Map(),
+      addressed: new Set(),
       fileCopies: 0,
       discarded: DISCARDED[t.title],
       noFileTarget: NO_FILE_TARGET[t.title],
     }
-    if (!s.discarded && !s.noFileTarget) {
-      for (const [team, files] of filesByTeam) {
-        const file = files.find((e) => tag(e, 'title') === t.title)
-        if (!file) continue
-        s.team = team
-        s.file = file
-        s.address = `30840:${file.pubkey}:${tag(file, 'd')}`
-        break
+    if (!s.discarded) {
+      // A `30840` in a team is the first choice — CON-4's shape, and the one
+      // every topic that is not a record channel takes.
+      if (!s.noFileTarget) {
+        for (const [team, files] of filesByTeam) {
+          const file = files.find((e) => tag(e, 'title') === t.title)
+          if (!file) continue
+          s.team = team
+          s.file = file
+          s.address = `30840:${file.pubkey}:${tag(file, 'd')}`
+          s.target = { address: s.address, kind: 30840, pubkey: file.pubkey, h: TEAMS[team] }
+          break
+        }
       }
-      if (s.address) {
+      // Otherwise, if a Ship project lives in this topic's channel, that is the
+      // target: Miky's CON-12 decision. This runs for *any* topic without a
+      // file, not only the two `NO_FILE_TARGET` names — seven of the nine
+      // record channels were never listed there, because CON-4 only had to
+      // name the two that had unpublished rows.
+      if (!s.target && s.channelUuid) {
+        const project = projectByChannel.get(s.channelUuid)
+        if (project) {
+          s.address = `30850:${project.pubkey}:${tag(project, 'd')}`
+          s.target = { address: s.address, kind: 30850, pubkey: project.pubkey, h: s.channelUuid }
+        }
+      }
+      // Whatever already names an address is reachable and not ours to copy.
+      if (s.target?.kind === 30850) {
+        for (const i of s.items) {
+          const e = i.eventId ? published.get(i.eventId) : undefined
+          if (e && e.tags.some((x) => x[0] === 'a' || x[0] === 'A')) s.addressed.add(i.id)
+        }
+      }
+    }
+    if (s.address) {
+      {
         const rowOfEvent = new Map<string, string>()
         for (const i of s.items) if (i.eventId) rowOfEvent.set(i.eventId, i.id)
         for (const e of await fileConversation(query, s.address)) {
@@ -391,6 +486,12 @@ function anchorFor(item: Item, s: Surface, gap: Set<string>, onRelay: Map<string
   if (gap.has(rootId)) return { kind: 'in-run', rootId }
   const copy = s.done.get(rootId)
   if (copy) return { kind: 'on-file', eventId: copy.id, pubkey: copy.pubkey }
+  // On a project target, a root that is already addressed needs no copy — so
+  // the reply hangs off the root's *own* event, which is what a reply to that
+  // comment would do anyway. Without this the reply reads as unanchored and
+  // the run refuses, for a root that is perfectly reachable.
+  const original = s.addressed.has(rootId) ? onRelay.get(s.items.find((x) => x.id === rootId)?.eventId ?? '') : undefined
+  if (original) return { kind: 'on-file', eventId: original.id, pubkey: original.pubkey }
   const root = s.items.find((x) => x.id === rootId)
   if (root?.eventId && onRelay.has(root.eventId)) return { kind: 'channel-only', eventId: root.eventId }
   return { kind: 'unreachable' }
@@ -403,15 +504,11 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
   // A root that is published lives as a kind:9 in the topic channel; whether it
   // is *readable* is a separate question from whether a column names it, and
   // PEE-30 is the reason to ask the relay rather than trust the column.
-  const publishedIds = surfaces.flatMap((s) => s.items.map((i) => i.eventId).filter((x): x is string => !!x))
-  const onRelay = new Map<string, SignedEvent>()
-  for (let i = 0; i < publishedIds.length; i += 100) {
-    const batch = publishedIds.slice(i, i + 100)
-    for (const e of await query([{ ids: batch, limit: batch.length }])) onRelay.set(e.id, e)
-  }
+  // `survey` already read every one of them, to decide which rows are addressed.
+  const onRelay = publishedEvents
 
   console.log(`Convex: ${surfaces.length} topics. Relay: ${RELAY_URL}\n`)
-  const header = 'surface'.padEnd(46) + 'gap'.padStart(5) + 'roots'.padStart(7) + 'replies'.padStart(9) + 'done'.padStart(6) + 'attach'.padStart(8) + '  anchors'
+  const header = 'surface'.padEnd(46) + 'gap'.padStart(5) + 'roots'.padStart(7) + 'replies'.padStart(9) + 'done'.padStart(6) + 'attach'.padStart(8) + '  target / anchors'
   console.log(header)
 
   let total = 0
@@ -422,18 +519,14 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
   const authorTally = new Map<string, number>()
 
   for (const s of surfaces) {
-    const gapItems = s.items.filter(inScope)
+    const gapItems = s.items.filter((i) => inScope(i) && !s.addressed.has(i.id))
     if (!gapItems.length && !s.fileCopies) continue
     if (s.discarded) {
       console.log(`${('topic/' + s.title).slice(0, 44).padEnd(46)}${String(gapItems.length).padStart(5)}${''.padStart(7)}${''.padStart(9)}${''.padStart(6)}${''.padStart(8)}  DISCARDED (CON-4)`)
       continue
     }
-    if (s.noFileTarget) {
-      console.log(`${('topic/' + s.title).slice(0, 44).padEnd(46)}${String(gapItems.length).padStart(5)}${''.padStart(7)}${''.padStart(9)}${''.padStart(6)}${''.padStart(8)}  held for CON-12`)
-      continue
-    }
-    if (!s.address) {
-      console.log(`${('topic/' + s.title).slice(0, 44).padEnd(46)}${String(gapItems.length).padStart(5)}  NO FILE — CON-4 missed it`)
+    if (!s.target) {
+      console.log(`${('topic/' + s.title).slice(0, 44).padEnd(46)}${String(gapItems.length).padStart(5)}  NO TARGET — no 30840, and no Ship project in its channel`)
       continue
     }
 
@@ -459,6 +552,7 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
       if (i.attachments > 0) attachmentHeld.push(i)
     }
     const desc = Object.entries(anchors).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(', ')
+    const where = s.target!.kind === 30850 ? 'project' : 'file'
     console.log(
       ('topic/' + s.title).slice(0, 44).padEnd(46) +
         String(gapItems.length).padStart(5) +
@@ -466,12 +560,12 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
         String(replies.length).padStart(9) +
         String(s.fileCopies).padStart(6) +
         String(gapItems.reduce((n, i) => n + i.attachments, 0)).padStart(8) +
-        (desc ? `  ${desc}` : ''),
+        `  → ${where}${s.addressed.size ? `, ${s.addressed.size} already addressed` : ''}${desc ? `; ${desc}` : ''}`,
     )
   }
 
   console.log(`\n— the run ———————————————————————————————`)
-  console.log(`rows in scope (file targets only):  ${total}`)
+  console.log(`rows in scope (targets resolved):   ${total}`)
   console.log(`already migrated by an earlier run: ${total - writable}`)
   console.log(`to write:                           ${writable}  (~${Math.ceil((writable * WRITE_GAP_MS) / 60_000)} min at ${WRITE_GAP_MS / 1000}s between writes)`)
 
@@ -506,8 +600,8 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
   }
 
   const oldest = surfaces
-    .filter((s) => s.address)
-    .flatMap((s) => s.items.filter((i) => inScope(i) && !s.done.has(i.id)))
+    .filter((s) => s.target)
+    .flatMap((s) => s.items.filter((i) => inScope(i) && !s.addressed.has(i.id) && !s.done.has(i.id)))
     .reduce((m, i) => Math.min(m, i.createdAt), Date.now())
   console.log(`\noldest row in scope: ${stamp(Math.floor(oldest / 1000))} UTC — ${Math.ceil((Date.now() - oldest) / 86_400_000)} days.`)
   console.log(`So BUZZ_CREATED_AT_FLOOR_SECS must be at least ${Math.ceil((Date.now() - oldest) / 1000)} for the run to keep its dates.`)
@@ -700,16 +794,16 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
   let oldest = Date.now()
 
   for (const s of surfaces) {
-    if (s.discarded || s.noFileTarget || !s.address) continue
-    const gapItems = s.items.filter((i) => inScope(i) && !s.done.has(i.id))
+    if (s.discarded || !s.target) continue
+    const gapItems = s.items.filter((i) => inScope(i) && !s.addressed.has(i.id) && !s.done.has(i.id))
     if (!gapItems.length) continue
-    const gap = new Set(s.items.filter(inScope).map((i) => i.id))
+    const gap = new Set(s.items.filter((i) => inScope(i) && !s.addressed.has(i.id)).map((i) => i.id))
     for (const i of gapItems) {
       const pk = pubkeyFor(i, keys)
       if (!pk) problems.push(`${s.title}: no pubkey for author ${i.authorName}`)
       else if (!signers.has(pk)) problems.push(`${s.title}: no signer for ${short(pk)}… ${i.authorName}`)
       if (i.kind === 'reply') {
-        const a = anchorFor(i, s, gap, new Map())
+        const a = anchorFor(i, s, gap, publishedEvents)
         if (a.kind !== 'in-run' && a.kind !== 'on-file') problems.push(`${s.title}: reply ${short(i.id)} has no parent on the file`)
       }
       oldest = Math.min(oldest, i.createdAt)
@@ -742,9 +836,14 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
   const pending: Array<{ item: Item; eventId: string }> = []
   for (const job of jobs) {
     const { surface: s } = job
-    const team = TEAMS[s.team!]
+    const { address, kind: targetKind, pubkey: targetPubkey, h } = s.target!
     // orig (a Convex row id) → the copy that now stands for it.
     const map = new Map<string, { id: string; pubkey: string }>([...s.done].map(([orig, e]) => [orig, { id: e.id, pubkey: e.pubkey }]))
+    // A root that is already addressed is its own anchor — see {@link anchorFor}.
+    for (const rowId of s.addressed) {
+      const e = publishedEvents.get(s.items.find((x) => x.id === rowId)?.eventId ?? '')
+      if (e && !map.has(rowId)) map.set(rowId, { id: e.id, pubkey: e.pubkey })
+    }
     let posted = 0
     let failed = 0
     /** Of `posted`, the ones that were already on the relay in their channel. */
@@ -765,11 +864,13 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
         created_at: toNostrSeconds(item.createdAt),
         kind: 1111,
         tags: [
-          ['A', s.address!],
-          ['K', '30840'],
-          ['P', s.file!.pubkey],
-          ...(parent ? [['e', parent.id], ['k', '1111'], ['p', parent.pubkey]] : [['a', s.address!], ['k', '30840'], ['p', s.file!.pubkey]]),
-          ['h', team!],
+          ['A', address],
+          ['K', String(targetKind)],
+          ['P', targetPubkey],
+          ...(parent
+            ? [['e', parent.id], ['k', '1111'], ['p', parent.pubkey]]
+            : [['a', address], ['k', String(targetKind)], ['p', targetPubkey]]),
+          ['h', h],
           // The Convex row this stands for, its true time and its author — so
           // a re-run skips it and `verify` can match the two stores by id.
           ['orig', item.id, String(Math.floor(item.createdAt / 1000)), pk],
@@ -997,7 +1098,7 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
   let pendingWriteback = 0
   console.log('surface'.padEnd(46) + 'scope'.padStart(7) + 'copied'.padStart(8) + 'dated'.padStart(7) + 'threaded'.padStart(10) + '  in Convex')
   for (const s of surfaces) {
-    if (s.discarded || s.noFileTarget || !s.address) continue
+    if (s.discarded || !s.target) continue
     // Scope is what *this run* owes: a row with no event, or one it copied.
     // Not `s.done`, which also holds FOL-25's `migrate` copies — those carry an
     // `orig` naming a Convex row that was published long ago, so counting them
