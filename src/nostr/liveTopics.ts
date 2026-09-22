@@ -146,34 +146,61 @@ export function relayLog(message: string, detail?: unknown): void {
 }
 
 /**
- * How many wide-filter deliveries are named before the log goes quiet.
+ * How long after subscribing a delivery is still stored history.
  *
- * A wide filter backfills — the REQ carries no `since`, so the relay answers
- * with stored events before EOSE — and on 79 Folders that is a page of them.
- * The first few are what make the difference legible; the rest would bury it.
+ * The REQ carries no `since`, so the relay answers with a page of stored
+ * events before EOSE. Measured on production: 81 Folders delivered its whole
+ * page **within 2 ms**, 221–223 ms after subscribing. So the boundary does not
+ * need to be tight, and a generous one is safer — a live event misfiled as
+ * backfill is the failure that matters, and it is the one this window is sized
+ * against.
  */
-const WIDE_FILTER_LOG_CEILING = 25
+const WIDE_FILTER_BACKFILL_MS = 3_000
+
+/** Past this many live deliveries the log stops, so a busy tab is not flooded. */
+const WIDE_FILTER_LIVE_CEILING = 200
 
 /**
- * One line per wide-filter delivery, until the ceiling.
+ * The wide filter's delivery log: silent for history, loud for anything live.
  *
- * Separate and exported so the wording can be pinned by a test: the wording is
- * the whole artefact here. A reader has to be able to tell a backfilled event
- * from a live one at a glance, so the line carries what the watch asked for,
- * which delivery this is, and how long after subscribing it arrived.
+ * **The first cut of this counted deliveries and stopped at 25, and that was
+ * the wrong axis.** A backfill of a page is dozens of events in two
+ * milliseconds, so it spent the whole budget before the interesting line could
+ * exist, and the console proved only that the REQ matched *something* — which
+ * was never in doubt. Counting history separately from live is the only shape
+ * that answers the question, because the two differ by three orders of
+ * magnitude in volume and by everything in meaning.
+ *
+ * So: history is one summary line, printed when the window closes; every live
+ * delivery gets its own. A reader does not have to interpret elapsed times —
+ * the summary line is a ruler, and anything below it arrived live.
  */
-export function logWideFilterDelivery(
-  watchSize: number,
-  delivered: number,
-  folder: string,
-  elapsedMs: number,
-): void {
-  if (delivered > WIDE_FILTER_LOG_CEILING) return
-  console.info(
-    `[relay] wide filter of ${watchSize} delivered #${delivered} for ${folder}, ${elapsedMs}ms after subscribing`,
-  )
-  if (delivered === WIDE_FILTER_LOG_CEILING) {
-    console.info(`[relay] wide filter of ${watchSize}: further deliveries not logged`)
+export function wideFilterDeliveryLog(watchSize: number): {
+  record: (folder: string) => void
+  stop: () => void
+} {
+  const watchedAt = Date.now()
+  let backfill = 0
+  let live = 0
+  const summary = setTimeout(() => {
+    console.info(
+      `[relay] wide filter of ${watchSize}: ${backfill} stored event(s) in the first ${WIDE_FILTER_BACKFILL_MS}ms. Anything below this line arrived live.`,
+    )
+  }, WIDE_FILTER_BACKFILL_MS)
+  return {
+    record: (folder: string) => {
+      const elapsed = Date.now() - watchedAt
+      if (elapsed < WIDE_FILTER_BACKFILL_MS) {
+        backfill += 1
+        return
+      }
+      live += 1
+      if (live > WIDE_FILTER_LIVE_CEILING) return
+      console.info(
+        `[relay] wide filter of ${watchSize} delivered LIVE #${live} for ${folder}, ${elapsed}ms after subscribing`,
+      )
+    },
+    stop: () => clearTimeout(summary),
   }
 }
 
@@ -255,45 +282,51 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
           And said out loud again when it *delivers* — the question peek#290
           left unanswerable (FOL-40).
 
-          "Was the REQ accepted?" is now answered: no closure means yes. It is
-          the wrong question. A filter naming many distinct `#h` values is
-          classified by the relay's `extract_channel_id_from_filters` as a
+          "Was the REQ accepted?" is answered by the absence of a closure, and
+          it is the wrong question. A filter naming many distinct `#h` values
+          is classified by the relay's `extract_channel_id_from_filters` as a
           **global** subscription the moment two of them differ, and
           `fan_out_scoped` documents a symmetric invariant — a global
           subscription is never handed an event that carries a channel. A
-          `kind:9` or `kind:1111` in a Folder carries one. So the REQ is
-          accepted, EOSE arrives, the socket reports `live`, and nothing is
-          ever delivered, with no error anywhere. The relay branch carrying the
-          plural `extract_channel_ids_from_filters` registers the same REQ per
-          channel instead, which is why this is a property of the deployed
-          image rather than of the filter.
+          `kind:9` or `kind:1111` in a Folder carries one. On that build the
+          REQ is accepted, EOSE arrives, the socket reports `live`, and no
+          *live* event is ever delivered, with no error anywhere. Stored
+          history still arrives, because the historical query is scoped by the
+          viewer's accessible channels rather than by the fan-out index — which
+          is exactly why counting deliveries settles nothing and only their
+          timing does.
 
-          Two readings this line separates, and nothing else does:
+          Measured on production, 81 Folders: the whole stored page arrived
+          inside 2 ms, 221 ms after subscribing. So history is summarised in
+          one line and every live delivery gets its own, and a reader needs no
+          arithmetic — the summary line is a ruler, and what is under it is
+          live.
 
-          - **Elapsed.** The REQ backfills, so a delivery a few ms after
-            subscribing is stored history and says nothing. A delivery seconds
-            or minutes later, when somebody else spoke, is live fan-out.
-          - **Watch size.** `useLiveFile` watches a single Folder, and a single
-            `#h` is channel-scoped on every build. So one console holds its own
-            control: if the 1-Folder watch delivers late and the 79-Folder one
-            never does, the difference is the count, not the socket.
+          `useLiveFile` watches a single Folder, and a single `#h` is
+          channel-scoped on every build, so one console also holds its own
+          control: a 1-Folder watch delivering live while an 81-Folder watch
+          does not is the count, not the socket.
 
           The listener is safe to read this way. `client.watchFolders` notifies
           through the *client's* own folder activity, whose only writer is that
           subscription's handler — Peek's `activity` above is a different
           object, fed by the projection. Nothing else can make this fire.
         */
-        const watchedAt = Date.now()
-        let delivered = 0
-        return client.watchFolders(
+        const log = wideFilterDeliveryLog(channelUuids.length)
+        const watch = client.watchFolders(
           [...channelUuids],
           (folder) => {
-            delivered += 1
-            logWideFilterDelivery(channelUuids.length, delivered, folder, Date.now() - watchedAt)
+            log.record(folder)
             listener(folder)
           },
           { kinds },
         )
+        return {
+          stop: () => {
+            log.stop()
+            watch.stop()
+          },
+        }
       },
     },
   }
