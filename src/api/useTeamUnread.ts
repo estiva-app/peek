@@ -4,7 +4,7 @@ import { KIND } from '@estiva-app/protocol'
 import { useFollows, useForeignObjects } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { peekLiveTopics } from '@/nostr/liveTopics'
+import { useLiveTopics } from '@/nostr/useLiveTopics'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
@@ -56,6 +56,12 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   })
   const frontier = useReadFrontier()
   const follows = useFollows()
+  /*
+    Acquired, not borrowed (FOL-40). `peekLiveTopics()` answers null until
+    something else has built the socket, and the sidebar is usually the first
+    thing in the tab that wants one — see `useLiveTopics`.
+  */
+  const { live, relayState } = useLiveTopics()
 
   /*
     Keyed on the ids, not the array. `useFolders` reads once, but a caller may
@@ -103,7 +109,6 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   }, [load])
 
   useEffect(() => {
-    const live = peekLiveTopics()
     if (!live || ids.length === 0) return
     let timer: ReturnType<typeof setTimeout> | undefined
     const settle = () => {
@@ -128,7 +133,19 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       if (timer) clearTimeout(timer)
       watch.stop()
     }
-  }, [ids, load])
+  }, [live, ids, load])
+
+  /*
+    Connecting is not watching. A socket that goes live after the subscription
+    was made delivers nothing about what was said while it was down, so the
+    transition itself is a re-read — the same thing `useLiveFile` does, and the
+    reason a dot is not stale for thirty seconds after a laptop wakes.
+  */
+  const wasLive = useRef(relayState === 'live')
+  useEffect(() => {
+    if (relayState === 'live' && !wasLive.current) load()
+    wasLive.current = relayState === 'live'
+  }, [relayState, load])
 
   useRefreshTriggers(load, { enabled: ids.length > 0 })
 
