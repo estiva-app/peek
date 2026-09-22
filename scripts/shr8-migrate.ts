@@ -828,23 +828,43 @@ async function writeback() {
     name is the first label of the URL every script here already points at.
   */
   const deployment = process.env.CONVEX_DEPLOYMENT_NAME ?? new URL(CONVEX).hostname.split('.')[0]!
-  const dir = join(mkdtempSync(join(tmpdir(), 'shr8-')), 'snapshot')
+  const home = mkdtempSync(join(tmpdir(), 'shr8-'))
+  const zip = join(home, 'snapshot.zip')
   console.log(`deployment: ${deployment}`)
-  console.log(`reading a snapshot for the seedKey → _id map (${dir}) …`)
-  await run('npx', ['convex', 'export', '--deployment', deployment, '--path', dir], { maxBuffer: 1 << 28 })
-  const idOf = new Map<string, string>()
-  for (const table of ['messages', 'replies']) {
-    const file = join(dir, table, 'documents.jsonl')
-    if (!existsSync(file)) throw new Error(`${file} missing — the export has no ${table} table`)
-    for (const line of readFileSync(file, 'utf8').split('\n')) {
-      if (!line.trim()) continue
-      const doc = JSON.parse(line) as { _id: string; seedKey?: string }
-      idOf.set(doc._id, doc._id)
-      if (doc.seedKey) idOf.set(doc.seedKey, doc._id)
-    }
+  console.log(`reading a snapshot for the seedKey → _id map …`)
+  await run('npx', ['convex', 'export', '--deployment', deployment, '--path', zip], { maxBuffer: 1 << 28 })
+  if (!existsSync(zip)) throw new Error(`${zip} was not written — the export produced nothing`)
+
+  /*
+    `--path` always writes a **ZIP**, whatever the path looks like: given a
+    directory-shaped path with no extension the CLI creates that path as a zip
+    *file*, which read as a directory looks exactly like an export with no
+    tables in it. Node has no archive reader and this machine has no `unzip`,
+    so python3 opens it — it is the one dependency already relied on here.
+  */
+  const PY = `
+import json,sys,zipfile
+z=zipfile.ZipFile(sys.argv[1])
+out={}
+for t in ('messages','replies'):
+    name=t+'/documents.jsonl'
+    if name not in z.namelist(): raise SystemExit('missing entry: '+name)
+    for line in z.read(name).decode('utf-8').splitlines():
+        if not line.strip(): continue
+        d=json.loads(line)
+        out[d['_id']]=d['_id']
+        if d.get('seedKey'): out[d['seedKey']]=d['_id']
+json.dump(out,sys.stdout)
+`
+  let idOf: Map<string, string>
+  try {
+    const { stdout } = await run('python3', ['-c', PY, zip], { maxBuffer: 1 << 28 })
+    idOf = new Map<string, string>(Object.entries(JSON.parse(stdout) as Record<string, string>))
+  } finally {
+    // The snapshot is the whole production database, in a shared /tmp. It must
+    // not survive a failure any more than a success.
+    rmSync(home, { recursive: true, force: true })
   }
-  // The snapshot is the whole database. It has done its job by here.
-  rmSync(dir, { recursive: true, force: true })
   const unresolved = rows.filter((r) => !idOf.has(r.id))
   console.log(`map: ${idOf.size} key(s); unresolved: ${unresolved.length}\n`)
   if (unresolved.length) {
