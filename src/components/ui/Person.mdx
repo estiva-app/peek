@@ -1,6 +1,7 @@
-import { Meta } from '@storybook/addon-docs/blocks'
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as PersonStories from './Person.stories'
 
-<Meta title="Primitives/Person" />
+<Meta of={PersonStories} />
 
 # Person
 
@@ -8,9 +9,12 @@ Somebody named and pictured, resolved from a key. The package's `Person` does
 the drawing; Peek's job is the lookup, the same split as `Avatar`'s
 (2026-09-01).
 
-**Seen in** — *Overlays/FileDetailsDialog*, *Overlays/TopicDetailsDialog*,
-*Topics/Files panel*, and *Messages/Reference widget*. Those are all four places
-it is used, so a story of its own would draw nothing new.
+<Canvas of={PersonStories.NamedAndNot} />
+
+The stories here are **only the two answers the lookup can give**, because the
+drawing is the package's. For the component in use, see
+*Overlays/FileDetailsDialog*, *Overlays/TopicDetailsDialog*, *Topics/Files
+panel* and *Messages/Reference widget* — all four places it is used.
 
 ## When
 
@@ -41,15 +45,10 @@ import { Person } from '@/components/ui/Person'
 - **The two-step lookup:** the picture the relay published for that key, else
   Peek's own portrait for that name.
 - **What an unresolved person looks like.** When nobody has published a name,
-  the package draws an em dash — not the key, not "Unknown", not a blank. That
-  is the one state no story in Peek currently shows, because every fixture in
-  the app has tidy named people in it.
+  the package draws an em dash — not the key, not "Unknown", not a blank. Until
+  UIG-17 no story in Peek showed that at all, because every fixture in the app
+  has tidy named people in it; **Unnamed** above is that state.
 
 ## Props
 
-| | |
-| --- | --- |
-| `pubkey` | required — the key to resolve |
-| `people` | the resolved object's map; absent when nothing resolved |
-| `size` | px, default 16 |
-| `className` | passed through |
+<Controls of={PersonStories.Named} />

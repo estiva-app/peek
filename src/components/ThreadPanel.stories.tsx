@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { REPLIES } from '@/api/fixtures'
 import type { ConversationData } from '@/api'
-import { ThreadPanel } from './ThreadPanel'
+import { ThreadPanel, ThreadPanelLoading } from './ThreadPanel'
 
 const conversation: ConversationData = {
   id: 't1_c1',
@@ -75,4 +75,19 @@ export const PromotedLongTitle: Story = {
       dateLabel: 'Today',
     },
   },
+}
+
+/**
+ * **The panel while the thread you switched to is still arriving.**
+ *
+ * `ThreadPanelLoading`, which had no story at all until UIG-17. It is not a
+ * nicety: rendering `null` through that beat tears the column down and reads
+ * as the thread closing and reopening — and on a deployed build the beat
+ * happens on *every* switch, because remote-only messages have no local copy.
+ *
+ * Same chrome as the real panel, and the skeleton waits 200ms, so a fast
+ * switch shows nothing at all.
+ */
+export const Loading: StoryObj = {
+  render: () => <ThreadPanelLoading onClose={() => {}} />,
 }

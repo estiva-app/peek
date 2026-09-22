@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject, FolderProject } from '@estiva-app/interop'
 import { TopicProjectPanelView } from './TopicProjectPanel'
@@ -349,4 +350,22 @@ export const WithActivity: Story = {
 /** A Folder whose files nobody has commented on — the honest empty, not a hidden section. */
 export const ActivityEmpty: Story = {
   args: { activity: [], subFileLabels: new Map(), onOpenThread: () => {} },
+}
+
+/**
+ * **The ticket list open.**
+ *
+ * `ProjectTickets` is shut by default in both places that draw it, and until
+ * UIG-17 no story anywhere opened it — so the rows, their keys and their
+ * statuses had no picture at all. This one presses the count, so the picture
+ * is of the real thing opening rather than of a prop set to say it is open.
+ */
+export const TicketsOpen: Story = {
+  args: { activity: [], subFileLabels: new Map(), onOpenThread: () => {} },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const toggle = canvas.getByRole('button', { expanded: false })
+    await userEvent.click(toggle)
+    await expect(canvas.getByRole('button', { expanded: true })).toBeInTheDocument()
+  },
 }
