@@ -111,6 +111,9 @@ vi.mock('@/nostr/liveTopics', () => ({
       return () => live.fireForeign.delete(folder)
     },
   }),
+  // `@/api` installs the console diagnostics at module load, so a mock of this
+  // module owes them even though nothing here calls one.
+  installWideFilterDiagnostic: () => {},
 }))
 vi.mock('@/nostr/useLiveTopics', () => {
   const client = {

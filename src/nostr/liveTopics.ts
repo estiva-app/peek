@@ -182,11 +182,22 @@ export function wideFilterDeliveryLog(watchSize: number): {
   const watchedAt = Date.now()
   let backfill = 0
   let live = 0
+  let lastLive: WideFilterSnapshot['lastLive']
   const summary = setTimeout(() => {
     console.info(
       `[relay] wide filter of ${watchSize}: ${backfill} stored event(s) in the first ${WIDE_FILTER_BACKFILL_MS}ms. Anything below this line arrived live.`,
     )
   }, WIDE_FILTER_BACKFILL_MS)
+  const entry = {
+    snapshot: (): WideFilterSnapshot => ({
+      folders: watchSize,
+      subscribedAt: new Date(watchedAt).toISOString(),
+      stored: backfill,
+      live,
+      ...(lastLive ? { lastLive } : {}),
+    }),
+  }
+  wideFilters.add(entry)
   return {
     record: (folder: string) => {
       const elapsed = Date.now() - watchedAt
@@ -195,13 +206,51 @@ export function wideFilterDeliveryLog(watchSize: number): {
         return
       }
       live += 1
+      lastLive = { folder, at: new Date().toISOString(), msAfterSubscribing: elapsed }
       if (live > WIDE_FILTER_LIVE_CEILING) return
       console.info(
         `[relay] wide filter of ${watchSize} delivered LIVE #${live} for ${folder}, ${elapsed}ms after subscribing`,
       )
     },
-    stop: () => clearTimeout(summary),
+    stop: () => {
+      wideFilters.delete(entry)
+      clearTimeout(summary)
+    },
   }
+}
+
+/** What `window.__wideFilters()` answers, per live wide filter. */
+export interface WideFilterSnapshot {
+  /** How many Folders this REQ asked about. 81 is the team dots, 26 the topics. */
+  folders: number
+  subscribedAt: string
+  /** Events delivered inside the backfill window: stored history, not a signal. */
+  stored: number
+  /** Events delivered after it. **Zero here is the finding**, not an absence of data. */
+  live: number
+  lastLive?: { folder: string; at: string; msAfterSubscribing: number }
+}
+
+const wideFilters = new Set<{ snapshot: () => WideFilterSnapshot }>()
+
+/**
+ * `window.__wideFilters()` — every wide filter this tab holds, and what each
+ * has delivered.
+ *
+ * The console lines are chronological, and that turned out to be the wrong
+ * shape for the question. Reading them needs the right page to have been open
+ * when the tab loaded, the scrollback to reach back far enough, and the
+ * summary line to be found among a thousand others — and three readings in a
+ * row were lost to one of those rather than to the bug. A snapshot needs none
+ * of it: comment from the other identity, then call this.
+ *
+ * `live: 0` on the 81-Folder entry, with a `live` above zero on a 1-Folder
+ * entry, is the whole of FOL-40's remaining question answered in one line.
+ */
+export function installWideFilterDiagnostic(): void {
+  if (typeof window === 'undefined') return
+  ;(window as unknown as Record<string, unknown>).__wideFilters = () =>
+    [...wideFilters].map((entry) => entry.snapshot())
 }
 
 interface Wiring {

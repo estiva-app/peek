@@ -29,6 +29,10 @@ installPromptContextDiagnostic()
 /* `window.__follows()` — see src/nostr/useFollowsSync.ts (FOL-30). Same again. */
 import { installFollowsDiagnostic } from '@/nostr/useFollowsSync'
 installFollowsDiagnostic()
+
+/* `window.__wideFilters()` — see src/nostr/liveTopics.ts (FOL-40). Same again. */
+import { installWideFilterDiagnostic } from '@/nostr/liveTopics'
+installWideFilterDiagnostic()
 export * from './huddles'
 export * from './messages'
 export * from './actions'
