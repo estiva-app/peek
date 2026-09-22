@@ -175,13 +175,18 @@ describe('an imported file survives into what the browser reads', () => {
   */
   it('editing a message keeps an imported file that is still in the list', async () => {
     const t = convexTest(schema, modules)
-    const { ada, topicId } = await seed(t)
+    const { ada } = await seed(t)
     const kept = { ...relayRow }
     const dropped = { ...relayRow, name: 'other.png', sha256: OTHER, mediaUrl: `${RELAY}/media/${OTHER}.png` }
     await t.run(async (ctx) => {
+      // A DM: a topic's message takes no edit since CON-8 (Stop writing
+      // messages to Convex); the file rule still holds where edits remain.
+      const bea = await ctx.db.insert('users', { name: 'Bea', nostrPubkey: 'c'.repeat(64) })
+      const [userLowId, userHighId] = (ada as string) < (bea as string) ? [ada, bea] : [bea, ada]
+      const dmId = await ctx.db.insert('dmConversations', { userLowId, userHighId, createdAt: 1 })
       await ctx.runMutation(internal.nostr.data.importMessage, {
-        parentKind: 'topic',
-        parentId: topicId as string,
+        parentKind: 'dm',
+        parentId: dmId as string,
         authorId: ada,
         body: 'two files',
         createdAt: Date.now(),

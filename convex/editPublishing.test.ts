@@ -26,7 +26,12 @@ const AGENT = 'b'.repeat(64)
 const TARGET = 'e'.repeat(64)
 const asUser = (pubkey: string) => ({ issuer: ESTIVA_ID_ISSUER, subject: pubkey })
 
-async function seed(t: ReturnType<typeof convexTest>, opts: { published?: boolean } = {}) {
+/*
+  `parent: 'huddle'` for the editBody cases: a topic takes no writes since the
+  CON-8 stop (Stop writing messages to Convex), so the author rules are pinned
+  on a container that still does. `unsignedEdit` reads a topic's channel.
+*/
+async function seed(t: ReturnType<typeof convexTest>, opts: { published?: boolean; parent?: 'topic' | 'huddle' } = {}) {
   return await t.run(async (ctx) => {
     const ada = await ctx.db.insert('users', { name: 'Ada', nostrPubkey: ADA })
     const agent = await ctx.db.insert('users', { name: 'Claude', nostrPubkey: AGENT })
@@ -39,9 +44,13 @@ async function seed(t: ReturnType<typeof convexTest>, opts: { published?: boolea
     for (const userId of [ada, agent]) {
       await ctx.db.insert('topicMembers', { topicId, userId, addedAt: 1 })
     }
+    const huddleId =
+      opts.parent === 'huddle'
+        ? await ctx.db.insert('huddles', { topicId, state: 'active', createdById: agent, createdAt: 1 })
+        : undefined
     const messageId = await ctx.db.insert('messages', {
-      parentKind: 'topic',
-      parentId: topicId as string,
+      parentKind: huddleId ? 'huddle' : 'topic',
+      parentId: (huddleId ?? topicId) as string,
       authorId: agent,
       body: "the agent's original words",
       createdAt: 10,
@@ -55,7 +64,7 @@ async function seed(t: ReturnType<typeof convexTest>, opts: { published?: boolea
 describe('editBody', () => {
   it('patches for the author', async () => {
     const t = convexTest(schema, modules)
-    const { messageId } = await seed(t)
+    const { messageId } = await seed(t, { parent: 'huddle' })
     const out = await t.withIdentity(asUser(AGENT)).mutation(api.messages.editBody, { key: 'msg-1', body: 'corrected' })
 
     expect(out.patched).toBe(true)
@@ -68,7 +77,7 @@ describe('editBody', () => {
   */
   it('does NOT patch for someone who is not the author', async () => {
     const t = convexTest(schema, modules)
-    const { messageId } = await seed(t)
+    const { messageId } = await seed(t, { parent: 'huddle' })
     const out = await t.withIdentity(asUser(ADA)).mutation(api.messages.editBody, { key: 'msg-1', body: 'not yours' })
 
     expect(out.patched).toBe(false)
@@ -77,10 +86,19 @@ describe('editBody', () => {
 
   it('refuses a non-author outright when the message never reached the relay', async () => {
     const t = convexTest(schema, modules)
-    await seed(t, { published: false })
+    await seed(t, { published: false, parent: 'huddle' })
     await expect(
       t.withIdentity(asUser(ADA)).mutation(api.messages.editBody, { key: 'msg-1', body: 'x' }),
     ).rejects.toThrow(/only the author/)
+  })
+
+  it('refuses a topic message even for its author (CON-8 stop)', async () => {
+    const t = convexTest(schema, modules)
+    const { messageId } = await seed(t)
+    await expect(
+      t.withIdentity(asUser(AGENT)).mutation(api.messages.editBody, { key: 'msg-1', body: 'corrected' }),
+    ).rejects.toThrow(/read-only/)
+    expect((await t.run(async (ctx) => await ctx.db.get(messageId)))?.body).toBe("the agent's original words")
   })
 
   it('refuses a caller who is not signed in at all', async () => {
