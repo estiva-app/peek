@@ -1,0 +1,65 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/ActionControl" />
+
+# ActionControl
+
+Another app's declared actions, drawn as controls.
+
+**Seen in** — the *Assigned*, *Unassigned*, *Busy* and *Action failed* stories
+on *Messages/Reference widget (ForeignObjectCard)*, which is where the controls
+appear. It has no story of its own because a control with no object behind it
+has nothing to change.
+
+**Every control is drawn from a declaration, never from knowledge of the app:**
+a select because the manifest named a vocabulary, a person picker because it
+asked for a pubkey, an input because it asked for text. Peek supplies the
+widgets; the owning app supplies the meaning.
+
+## When
+
+- Inside a foreign object's card, one per action the manifest declares.
+- With `directory` when the action asks for a pubkey — that is the picker's
+  option list.
+
+## When not
+
+- For an action Peek owns. Peek's own actions are components, not declarations.
+- Adding a control the manifest did not declare. The moment Peek draws something
+  another app did not ask for, Peek is guessing at that app's rules.
+- Without `busy` while one is in flight. An action that can be pressed twice is
+  an action that will be.
+
+## How
+
+```tsx
+import { ActionControl } from '@/components/ui/ForeignObjectWidget'
+
+{object.actions.map((action) => (
+  <ActionControl
+    key={action.id}
+    action={action}
+    people={object.people}
+    directory={directory}
+    busy={busy === action.id}
+    onAct={act}
+  />
+))}
+```
+
+## What it owns
+
+- **The mapping from a declared control to a widget**, in one place, so a new
+  kind of action is one case here rather than a change at every call site.
+- **`people` against `directory`.** `people` names who holds the field now;
+  `directory` is the list of who could. Only the pubkey control reads either.
+
+## Props
+
+| | |
+| --- | --- |
+| `action` | required — the resolved action from the manifest |
+| `people` | who holds the field now |
+| `directory` | the workspace directory, for a pubkey control |
+| `busy` | while this action is in flight |
+| `onAct` | required |

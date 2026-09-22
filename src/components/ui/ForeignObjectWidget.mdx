@@ -1,0 +1,54 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/ForeignObjectWidget" />
+
+# ForeignObjectWidget
+
+The card a message shows for an item from another app — the one that **fetches**
+it, and draws `ForeignObjectCard` when it arrives.
+
+**Seen in** — every story on *Messages/Reference widget (ForeignObjectCard)*
+draws what this resolves to, and *Messages/MessageBody* draws it under a
+message that references an object. The widget itself needs a relay, so what the
+stories stand up is the card.
+
+## When
+
+- Under a message that carries a `nostr:naddr…` or an `nevent`, where the object
+  behind it still has to be read.
+- Anywhere you have a reference rather than an object.
+
+## When not
+
+- When you already have the object. Then it is `ForeignObjectCard`, which draws
+  and nothing else — and which is what a story can show.
+- For a reference Peek itself owns. This is for another app's.
+
+## How
+
+```tsx
+import { ForeignObjectWidget } from '@/components/ui/ForeignObjectWidget'
+
+<ForeignObjectWidget reference={naddr} />
+```
+
+## What it owns
+
+- **The read**, and the three states it can be in — in flight, arrived, and
+  never arrived.
+- **The placeholder's shape.** `ForeignObjectSkeleton` uses the same surface as
+  the card it stands in for — same radius, same border, same inset background —
+  because otherwise the placeholder and the thing it becomes are two different
+  shapes, and the swap is visible as a jump.
+- **Being `aria-hidden` while it waits**, so nothing announces an empty card.
+
+## Why it is split from the card
+
+Two concerns, two components: this fetches, the card draws. That is what lets
+every story of the card exist at all — a story of this one would need a relay,
+and would only ever show whatever that relay happened to hold.
+
+## Props
+
+Takes the reference to resolve, and passes the resolved object plus its action
+handler through to `ForeignObjectCard`.

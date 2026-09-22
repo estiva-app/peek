@@ -1,0 +1,55 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/StatusPill" />
+
+# StatusPill
+
+The status of an item from another app — In Progress, Done, Cancelled — shown
+as coloured words.
+
+**Seen in** — every story on *Messages/Reference widget (ForeignObjectCard)*,
+and in *Topics/Files panel*, where each ticket row carries one. Those are both
+the places it is used.
+
+## When
+
+- On any foreign object that has a `status` slot: a reference card, a ticket row
+  in the Files panel, a property row in the topic details dialog.
+
+## When not
+
+- For a **topic's** resolved state. That is `TopicState`, which draws a glyph
+  Peek owns. This one draws words another app sent.
+- With a size of your own assumed. It is 12px, which suits the row widget and
+  the panel's dense property rows — the details dialog reads its properties at
+  body size, so **the size is the caller's to set** through `className`.
+
+## How
+
+```tsx
+import { StatusPill } from '@/components/ui/ForeignObjectWidget'
+
+<StatusPill slot={object.slots.status} />
+<StatusPill slot={ticket.slots.status} className="text-body" />
+```
+
+- `slot` is the whole resolved slot, not a string: it carries both the words and
+  the colour the owning app chose.
+
+## What it owns
+
+- **The colour map, and its fallback.** Four names — neutral, blue, green,
+  muted — and anything unrecognised falls to muted rather than to nothing.
+- **Reading the colour the relay sent rather than guessing from the words.** The
+  projection sends a label and a colour; it never sends the raw key. A component
+  that switched on the words would be guessing at another app's vocabulary.
+- **That `muted` means muted.** It used to inherit the surrounding colour, so a
+  cancelled item looked ordinary; it maps to `--text-muted` now, which is the
+  token that name always meant.
+
+## Props
+
+| | |
+| --- | --- |
+| `slot` | required — the resolved status slot, with its value and colour |
+| `className` | the size is set here |

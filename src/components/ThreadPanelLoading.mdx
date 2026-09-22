@@ -1,0 +1,59 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/ThreadPanelLoading" />
+
+# ThreadPanelLoading
+
+The replies column while the thread you just switched to is still arriving:
+the same chrome as the real panel, with a skeleton where the replies will be.
+
+**Drawn nowhere.** No story mounts it, and the state it exists for lasts a
+beat. It is one of the missing pictures UIG-17 records rather than one it has
+closed.
+
+## When
+
+- Whenever the panel is open and the conversation behind it is `undefined` —
+  which happens on **every** switch between threads on a deployed build.
+
+## When not
+
+- By rendering `null` instead. That is the bug this exists to prevent: it tears
+  the whole panel down and reads as the thread closing and reopening.
+- For the first open of a thread from nothing. Then there is no column yet, so
+  there is nothing to keep mounted.
+
+## Why the state exists at all
+
+Remote-only messages — anything created in the app rather than seeded into the
+mock pools, which is all real data on the deployed builds — have no local copy.
+So the conversation query returns `undefined` for a beat on every switch. The
+panel has to stay standing through that beat.
+
+## How
+
+```tsx
+import { ThreadPanel, ThreadPanelLoading } from '@/components/ThreadPanel'
+
+{conversation ? (
+  <ThreadPanel conversation={conversation} … />
+) : (
+  <ThreadPanelLoading onClose={closeThread} />
+)}
+```
+
+## What it owns
+
+- **Keeping the column mounted**, which is its entire reason for being.
+- **The same chrome as the real panel** — the Replies header and its close
+  button — so nothing shifts when the real one takes over.
+- **The same 200ms delay before the skeleton appears** as the replies area
+  uses, so a fast switch shows no skeleton at all.
+- **Close still working while loading.** The panel is not yet useful but it is
+  already dismissible, which is the difference between a wait and a trap.
+
+## Props
+
+| | |
+| --- | --- |
+| `onClose` | required — the same handler the real panel takes |
