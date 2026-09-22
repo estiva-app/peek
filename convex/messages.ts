@@ -14,7 +14,6 @@ import { highlightType, fileAttachment } from './schema'
 import { avatarUrl, pubkeyFromIdentity, viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
 import { isUrgentBody, screenMessage } from './screener'
-import { ensureTopicMember } from './topics'
 import type { Doc, Id } from './_generated/dataModel'
 
 const parentKindArg = v.union(v.literal('topic'), v.literal('dm'), v.literal('huddle'))
@@ -489,6 +488,7 @@ export const toggleReaction = mutation({
       m = await ctx.db.get(reply.messageId)
       if (!m) return null
     }
+    refuseTopicWrite(m)
     const you = await viewerOrThrow(ctx)
     const mine = await ctx.db
       .query('reactions')
@@ -531,6 +531,7 @@ export const send = mutation({
     fileAttachments: v.optional(v.array(fileAttachment)),
   },
   handler: async (ctx, { parentKind, parentKey, seedKey, body, highlightType, resolved, resolutionMessage, attachments, fileAttachments }) => {
+    refuseTopicWrite({ parentKind })
     const you = await viewerOrThrow(ctx)
     let parentId = await resolveParentId(ctx, parentKind, parentKey, you._id)
     // First DM to someone: create the pair's conversation on demand.
@@ -565,12 +566,6 @@ export const send = mutation({
       fileAttachments,
       seedKey,
     })
-    // Posting into a topic makes you a member (QA #2.6 — keeps the member
-    // pill consistent for every user; also the implicit join for QA #2.7).
-    if (parentKind === 'topic') {
-      const topicId = ctx.db.normalizeId('topics', parentId)
-      if (topicId) await ensureTopicMember(ctx, topicId, you._id)
-    }
     const inserted = await ctx.db.get(id)
     if (inserted) await screenMessage(ctx, inserted)
     // Published by the browser after this returns: only it holds the token,
@@ -603,6 +598,30 @@ export async function findMessageByKey(
   if (bySeed) return bySeed
   const normalized = ctx.db.normalizeId('messages', key)
   return normalized ? await ctx.db.get(normalized) : null
+}
+
+/**
+ * Convex takes no more topic content — CON-8.
+ *
+ * A topic's conversation lives on its `30840` file now (FOL-25, CON-12), and
+ * `/topic-old/` is read-only in the UI. This is the half that holds when the UI
+ * does not: a tab opened before the deploy, or any other caller of these
+ * mutations. Every write that would change a topic message, a reply under one,
+ * or a reaction on either comes through here first, so the census can stay 0.
+ *
+ * DMs and huddles are untouched — DMS-7 owns the first, and a huddle message
+ * has no relay copy at all yet, so refusing it would lose the only one.
+ */
+export const TOPIC_READ_ONLY = "topics are read-only: post in the topic's Folder instead"
+
+export function refuseTopicWrite(m: Pick<Doc<'messages'>, 'parentKind'>): void {
+  if (m.parentKind === 'topic') throw new Error(TOPIC_READ_ONLY)
+}
+
+/** The same rule for a reply: it is topic content when its parent is. */
+export async function refuseTopicReplyWrite(ctx: QueryCtx | MutationCtx, r: Doc<'replies'>): Promise<void> {
+  const parent = await ctx.db.get(r.messageId)
+  if (parent) refuseTopicWrite(parent)
 }
 
 /**
@@ -642,6 +661,7 @@ export const editBody = mutation({
 
     const m = await findMessageByKey(ctx, key)
     if (m) {
+      refuseTopicWrite(m)
       if (m.authorId !== you._id) {
         if (!m.nostrEventId) throw new Error('only the author may edit a message that is not on the relay')
         return { patched: false }
@@ -658,6 +678,7 @@ export const editBody = mutation({
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
     if (!r) return { patched: false }
+    await refuseTopicReplyWrite(ctx, r)
     if (r.authorId !== you._id) {
       if (!r.nostrEventId) throw new Error('only the author may edit a reply that is not on the relay')
       return { patched: false }
@@ -726,6 +747,7 @@ export const editFiles = mutation({
 
     const m = await findMessageByKey(ctx, key)
     if (m) {
+      refuseTopicWrite(m)
       if (m.authorId !== you._id) throw new Error("only the author may change a message's files")
       await deleteAttachmentBlobs(ctx, (m.fileAttachments ?? []).filter((f) => !kept.has(fileKey(f))))
       await ctx.db.patch(m._id, { fileAttachments: files })
@@ -739,6 +761,7 @@ export const editFiles = mutation({
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
     if (!r) return
+    await refuseTopicReplyWrite(ctx, r)
     if (r.authorId !== you._id) throw new Error("only the author may change a reply's files")
     await deleteAttachmentBlobs(ctx, (r.fileAttachments ?? []).filter((f) => !kept.has(fileKey(f))))
     await ctx.db.patch(r._id, { fileAttachments: files })
@@ -763,6 +786,7 @@ export const setResolution = mutation({
   handler: async (ctx, { key, resolved, resolutionMessage, resolvedByReplyKey, dropReplyPointer }): Promise<Id<'resolutionAssertions'> | null> => {
     const m = await findMessageByKey(ctx, key)
     if (!m) return null
+    refuseTopicWrite(m)
     const you = await viewerOrThrow(ctx)
     const at = Date.now()
 
@@ -808,6 +832,7 @@ export const setHighlight = mutation({
   handler: async (ctx, { key, highlightType: hl }) => {
     const m = await findMessageByKey(ctx, key)
     if (m) {
+      refuseTopicWrite(m)
       await ctx.db.patch(m._id, { highlightType: hl })
       return
     }
@@ -818,7 +843,9 @@ export const setHighlight = mutation({
       .unique()
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
-    if (r) await ctx.db.patch(r._id, { highlightType: hl })
+    if (!r) return
+    await refuseTopicReplyWrite(ctx, r)
+    await ctx.db.patch(r._id, { highlightType: hl })
   },
 })
 

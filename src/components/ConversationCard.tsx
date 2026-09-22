@@ -95,6 +95,9 @@ interface ConversationCardProps {
   onReply?: () => void
   onClick?: () => void
   onMore?: () => void
+  /** Show it with no way to change it: no hover menu, reactions not toggleable.
+   *  A Convex topic's messages since CON-8. Opening the thread still works. */
+  readOnly?: boolean
   className?: string
 }
 
@@ -139,6 +142,7 @@ export function ConversationCard({
   onReply,
   onClick,
   onMore,
+  readOnly = false,
   className,
 }: ConversationCardProps) {
   const [isHovered, setIsHovered] = useState(false)
@@ -696,7 +700,7 @@ export function ConversationCard({
           {!isEditing && reactionsState.length > 0 && (
             <div className="flex items-center gap-2 pl-8 pt-1 pb-2 w-full">
               {reactionsState.map((r, i) => (
-                <ReactionPill key={i} emoji={r.emoji} count={r.count} owner={r.owner} names={r.names} onClick={() => handleReact(r.emoji)} />
+                <ReactionPill key={i} emoji={r.emoji} count={r.count} owner={r.owner} names={r.names} onClick={readOnly ? undefined : () => handleReact(r.emoji)} />
               ))}
             </div>
           )}
@@ -776,7 +780,7 @@ export function ConversationCard({
         )}
 
         {/* ── Quick menu on hover ── */}
-        {isHovered && !isEditing && (
+        {isHovered && !isEditing && !readOnly && (
           <div className="absolute right-1 top-1" onClick={(e) => e.stopPropagation()}>
             <ConversationQuickMenu
               isResolved={resolved}

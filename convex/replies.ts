@@ -12,8 +12,7 @@ import { highlightType, fileAttachment } from './schema'
 import { viewerId, viewerOrThrow } from './users'
 import { watermarks } from './readState'
 import { isUrgentBody, screenReply } from './screener'
-import { foldReactionRows, resolveFileAttachments, deleteAttachmentBlobs, userFaces, type RemoveOutcome } from './messages'
-import { ensureTopicMember } from './topics'
+import { foldReactionRows, resolveFileAttachments, deleteAttachmentBlobs, refuseTopicWrite, userFaces, type RemoveOutcome } from './messages'
 import type { Doc } from './_generated/dataModel'
 
 async function findMessageByKey(ctx: QueryCtx | MutationCtx, key: string): Promise<Doc<'messages'> | null> {
@@ -100,6 +99,7 @@ export const send = mutation({
   handler: async (ctx, { messageKey, seedKey, body, highlightType, attachments, fileAttachments }) => {
     const message = await findMessageByKey(ctx, messageKey)
     if (!message) throw new Error(`Unknown message '${messageKey}'`)
+    refuseTopicWrite(message)
     const you = await viewerOrThrow(ctx)
     const id = await ctx.db.insert('replies', {
       messageId: message._id,
@@ -112,11 +112,6 @@ export const send = mutation({
       fileAttachments,
       seedKey,
     })
-    // Replying in a topic thread makes you a member too (QA #2.6).
-    if (message.parentKind === 'topic') {
-      const topicId = ctx.db.normalizeId('topics', message.parentId)
-      if (topicId) await ensureTopicMember(ctx, topicId, you._id)
-    }
     const inserted = await ctx.db.get(id)
     if (inserted) await screenReply(ctx, inserted)
     // Published by the browser after this returns (see `messages.send`).
