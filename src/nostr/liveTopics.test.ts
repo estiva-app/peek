@@ -10,9 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LiveProjectionApi } from './liveProjection'
 import {
   getLiveTopics,
-  logWideFilterDelivery,
   relayLog,
   resetLiveTopicsForTests,
+  wideFilterDeliveryLog,
 } from './liveTopics'
 
 const CHANNEL = '11111111-1111-4111-8111-111111111111'
@@ -217,28 +217,50 @@ describe('the log says when a live path stopped (FOL-40)', () => {
     somebody speaks. The watch size gives the console its own control, because
     a single-Folder watch is channel-scoped on every build.
   */
-  it('names each wide-filter delivery, and goes quiet rather than burying the live one', () => {
+  it('summarises stored history in one line and names every live delivery', () => {
+    /*
+      The first cut of this counted deliveries and stopped at 25, which is the
+      wrong axis: production delivered its whole stored page in 2 ms, so the
+      budget was gone 221 ms after subscribing and the console proved only that
+      the REQ matched something — which was never in doubt. History and live
+      differ by three orders of magnitude in volume, so they are counted apart.
+    */
+    vi.useFakeTimers()
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     try {
-      logWideFilterDelivery(79, 1, CHANNEL, 12)
-      expect(info).toHaveBeenLastCalledWith(
-        `[relay] wide filter of 79 delivered #1 for ${CHANNEL}, 12ms after subscribing`,
+      const log = wideFilterDeliveryLog(81)
+      // The page, as production delivers it: dozens, inside a couple of ms.
+      for (let i = 0; i < 40; i++) log.record(CHANNEL)
+      expect(info).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(3_000)
+      expect(info).toHaveBeenCalledExactlyOnceWith(
+        '[relay] wide filter of 81: 40 stored event(s) in the first 3000ms. Anything below this line arrived live.',
       )
 
-      // The one a reader is looking for: minutes later, on a 79-Folder watch.
-      logWideFilterDelivery(79, 2, CHANNEL_B, 184_000)
-      expect(info).toHaveBeenLastCalledWith(
-        `[relay] wide filter of 79 delivered #2 for ${CHANNEL_B}, 184000ms after subscribing`,
+      // And the one line the whole exercise exists for.
+      info.mockClear()
+      vi.advanceTimersByTime(181_000)
+      log.record(CHANNEL_B)
+      expect(info).toHaveBeenCalledExactlyOnceWith(
+        `[relay] wide filter of 81 delivered LIVE #1 for ${CHANNEL_B}, 184000ms after subscribing`,
       )
+    } finally {
+      info.mockRestore()
+      vi.useRealTimers()
+    }
+  })
 
-      info.mockClear()
-      logWideFilterDelivery(79, 25, CHANNEL, 40)
-      expect(info).toHaveBeenLastCalledWith('[relay] wide filter of 79: further deliveries not logged')
-      info.mockClear()
-      logWideFilterDelivery(79, 26, CHANNEL, 41)
+  it('does not leave the summary pending once the watch is stopped', () => {
+    vi.useFakeTimers()
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      wideFilterDeliveryLog(81).stop()
+      vi.advanceTimersByTime(10_000)
       expect(info).not.toHaveBeenCalled()
     } finally {
       info.mockRestore()
+      vi.useRealTimers()
     }
   })
 })
