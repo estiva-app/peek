@@ -21,7 +21,12 @@
  * | refresh — you participated in the thread | `event.isReply && event.iWroteInThread` |
  * | urgent never screens | dropped in `candidates`; it is Desk Urgent's (§4.4) |
  * | 1 — someone DMs you | **not here.** Convex, until DMS-3 — see below |
+ * | a followed file got a comment you have not read (FOL-34) | `foldFileScreenerRows`, from the relay |
  *
+ * The file row is relay-only end to end: a file's `kind:1111` conversation
+ * never enters Convex, so `candidates` cannot hold it, and nothing was added to
+ * Convex to make it (ADR 0001 — the conversation is the relay's, and the rule
+ * is the unread dot's, which is already computed here from the read frontier).
  * One row per conversation, carrying the newest screening event's preview,
  * which is what `upsert` meant by "refreshed, never duplicated".
  *
@@ -62,9 +67,15 @@ import { hasConvex } from '@/api/store'
 import { useAvatarSrc } from '@/api/avatars'
 import { useTopics } from '@/api/topics'
 import { useOpenWork } from '@/api/internal/openWork'
+import { useFollows } from '@/api/internal/follows'
+import { useForeignObjects } from '@/api/foreign'
+import { validToken } from '@/auth/estivaId'
 import { useScreenerSync } from '@/nostr/useScreenerSync'
+import { useReadFrontier } from '@/nostr/useReadStateSync'
+import { fileContext, PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
-import { foldScreenerRows } from '@/api/internal/screenerFold'
+import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { foldFileScreenerRows, foldScreenerRows, type ScreenerFile } from '@/api/internal/screenerFold'
 import type { ScreenerItem } from '@/api/types'
 
 export interface ScreenerValue {
@@ -76,6 +87,65 @@ export interface ScreenerValue {
   dismissTopic: (topicId: string, nowMs: number) => void
   /** "Later" on a folded topic row. */
   snoozeTopic: (topicId: string, untilMs: number) => void
+  /** Dismiss a followed file's row (FOL-34) — a watermark, as for a topic. */
+  dismissFile: (address: string, nowMs: number) => void
+  /** "Later" on a followed file's row. */
+  snoozeFile: (address: string, untilMs: number) => void
+}
+
+/**
+ * How often the file half re-reads while the Desk is visible (FOL-34).
+ *
+ * Slower than `REFRESH_INTERVAL_MS` because it costs one relay request per
+ * followed file — `resolveObject` has no batched form — against a quota of 300
+ * a minute per person that every open tab shares. Focus and visibility still
+ * re-read at once, which is the moment somebody actually looks.
+ */
+const FILE_REFRESH_MS = 60_000
+
+/**
+ * The followed files the Screener judges, read from the relay (FOL-34).
+ *
+ * A file's conversation never enters Convex, so this half has no server-side
+ * candidates to fold: it asks the relay for each followed file directly — the
+ * title and the top-level comments come back together from one read — and
+ * `foldFileScreenerRows` decides which of them screen. `[]` until asked and
+ * after a failed read: a missing file row is the quiet failure, and a Desk held
+ * under a skeleton for a relay that is down is the loud one.
+ */
+function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
+  const { resolveObject } = useForeignObjects()
+  const [held, setHeld] = useState<{ key: string; files: ScreenerFile[] }>({ key: '', files: [] })
+  const key = addresses.join('\u0000')
+
+  const load = useCallback(() => {
+    if (!hasConvex || !key) return
+    const asked = key
+    void Promise.all(
+      asked.split('\u0000').map((address) =>
+        resolveObject(address)
+          .then((object): ScreenerFile | null =>
+            object
+              ? {
+                  address,
+                  kind: object.kind,
+                  title: object.slots.title?.value ?? 'File',
+                  comments: object.comments,
+                }
+              : null,
+          )
+          .catch(() => null),
+      ),
+    ).then((files) => setHeld({ key: asked, files: files.filter((f): f is ScreenerFile => f !== null) }))
+  }, [key, resolveObject])
+
+  useEffect(() => {
+    load()
+  }, [load])
+  useRefreshTriggers(load, { enabled: hasConvex && !!key, intervalMs: FILE_REFRESH_MS })
+
+  // An answer for a set that is no longer the one asked about is not drawn.
+  return held.key === key ? held.files : []
 }
 
 const ScreenerContext = createContext<ScreenerValue | null>(null)
@@ -164,6 +234,26 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   /** PEE-6, on the list rather than the rendered rows — see the header. */
   const openWorkKeys = useMemo(() => openWork.topicIds, [openWork.topicIds])
 
+  /*
+    The file half (FOL-34). Followed keys are file addresses and Folder uuids;
+    only an address has a file context. A file already in open work is not
+    asked about at all — PEE-6 would drop its row anyway, and the read is the
+    expensive part. Nothing is judged before the relay has said what is
+    followed, for the reason `useConversationBadges` gives.
+  */
+  const follows = useFollows()
+  const frontier = useReadFrontier()
+  const followedFiles = useMemo(
+    () =>
+      follows.state === 'unknown'
+        ? []
+        : [...follows.followed]
+            .filter((key) => fileContext(key) !== undefined && !openWork.fileAddresses.has(key))
+            .sort(),
+    [follows.state, follows.followed, openWork.fileAddresses],
+  )
+  const files = useFollowedFiles(followedFiles)
+
   const items = useMemo<ScreenerItem[]>(() => {
     if (!hasConvex) return SCREENER_ITEMS
     if (!candidates || !effective) return []
@@ -176,6 +266,23 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
       now,
     )
 
+    // Not judged until the read-state merge has landed: before it every marker
+    // is absent, and absent reads as "new" for every followed file at once.
+    const fileRows = frontier.ready
+      ? foldFileScreenerRows(
+          files,
+          effective,
+          openWork.fileAddresses,
+          {
+            marker: (address) => frontier.marker(fileContext(address)),
+            me: validToken()?.pubkey,
+            nowSeconds: Math.floor(now / 1000),
+            horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
+          },
+          now,
+        )
+      : []
+
     // The DM half, merged rather than folded. `screenerList` already sorts
     // `createdAt` descending and applies its own snooze and PEE-6 check, but it
     // does not return the instant — so DMs keep their relative order and sit
@@ -184,8 +291,15 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
       row.kind === 'dm' ? { ...row, authorAvatarSrc: avatarSrcFor(row.authorName) } : row,
     )
 
-    return [...dms, ...rows.map((r) => r.item)]
-  }, [candidates, effective, openWorkKeys, topicById, dmRows, avatarSrcFor, now])
+    // Topics and files are both folded with their instant, so they interleave
+    // by it; `at` is seconds for a file and the Convex ms for a topic.
+    const folded = [
+      ...rows.map((r) => ({ at: r.at, item: r.item as ScreenerItem })),
+      ...fileRows.map((r) => ({ at: r.at * 1000, item: r.item as ScreenerItem })),
+    ].sort((a, b) => b.at - a.at)
+
+    return [...dms, ...folded.map((r) => r.item)]
+  }, [candidates, effective, openWorkKeys, topicById, dmRows, avatarSrcFor, now, files, frontier, openWork.fileAddresses])
 
   /*
     Publish the decisions the person owns, not the change that produced them.
@@ -221,13 +335,25 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     setPending((prev) => ({ ...prev, snoozed: { ...prev.snoozed, [key]: Math.floor(untilMs / 1000) } }))
   }, [])
 
+  const dismissFile = useCallback((address: string, nowMs: number) => {
+    const key = screenerKey('file', address)
+    setPending((prev) => ({ ...prev, dismissed: { ...prev.dismissed, [key]: Math.floor(nowMs / 1000) } }))
+  }, [])
+
+  const snoozeFile = useCallback((address: string, untilMs: number) => {
+    const key = screenerKey('file', address)
+    setPending((prev) => ({ ...prev, snoozed: { ...prev.snoozed, [key]: Math.floor(untilMs / 1000) } }))
+  }, [])
+
   // Not gated on `topics`: it settles only for a signed-in viewer, and hanging
   // on it would leave the Desk under a skeleton for anyone it never settles for.
+  // Nor on the file half: its rows are additive, so arriving late costs a row a
+  // moment, where waiting on a relay read per followed file would cost the Desk.
   const isLoading = hasConvex && (candidates === undefined || dmRows === undefined || effective === undefined)
 
   const value = useMemo<ScreenerValue>(
-    () => ({ items, isLoading, dismissTopic, snoozeTopic }),
-    [items, isLoading, dismissTopic, snoozeTopic],
+    () => ({ items, isLoading, dismissTopic, snoozeTopic, dismissFile, snoozeFile }),
+    [items, isLoading, dismissTopic, snoozeTopic, dismissFile, snoozeFile],
   )
 
   return <ScreenerContext.Provider value={value}>{children}</ScreenerContext.Provider>
@@ -240,4 +366,4 @@ export function useScreener(): ScreenerValue {
   return ctx
 }
 
-export { topicIdFromScreenerRowId } from '@/api/internal/screenerFold'
+export { fileAddressFromScreenerRowId, topicIdFromScreenerRowId } from '@/api/internal/screenerFold'

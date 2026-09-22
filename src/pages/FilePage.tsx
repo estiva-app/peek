@@ -19,6 +19,7 @@ import {
   useFileThreads,
   useFollows,
   useForeignConversation,
+  useOpenWorkFiles,
   useTopics,
   useWorkspaceDirectory,
   type ConversationContainer,
@@ -324,6 +325,17 @@ export function FilePage() {
   const toggleFollow =
     file?.address && follows.state !== 'unknown' ? () => void follows.setFollowed(file.address!, !followed) : undefined
 
+  /*
+    Open work (FOL-34): the topic menu's Add/Remove, for a file, by its address.
+    Offered for any addressable file, a Ship issue included — which is why the
+    menu below now opens for one, holding this and nothing else.
+  */
+  const openWorkFiles = useOpenWorkFiles()
+  const inOpenWork = file?.address ? openWorkFiles.has(file.address) : false
+  const toggleOpenWork = file?.address
+    ? () => (inOpenWork ? openWorkFiles.remove(file.address!) : openWorkFiles.add(file.address!))
+    : undefined
+
   if (topicIdentifier) return <Navigate to={`/topic-old/${topicIdentifier}`} replace />
   // A Convex topic's old short link: the same page it always opened, at its new prefix.
   if (legacyTopic) return <Navigate to={`${topicPath(legacyTopic)}${location.search}`} replace />
@@ -405,15 +417,17 @@ export function FilePage() {
                     a Ship issue's header has nothing to put here, and a button
                     that opens nothing would say otherwise.
                   */}
-                  {hasFileControls(controls) && (
+                  {(hasFileControls(controls) || toggleOpenWork) && (
                     <TopicMoreMenu
                       trigger={
                         <ToolbarButton tooltip="More actions" aria-label="More actions">
                           <IconDotsVertical size={16} stroke={1.5} />
                         </ToolbarButton>
                       }
-                      onOpenDetails={() => fileControls.open('details', file)}
-                      onCopyLink={copyLink}
+                      onOpenDetails={hasFileControls(controls) ? () => fileControls.open('details', file) : undefined}
+                      onCopyLink={hasFileControls(controls) ? copyLink : undefined}
+                      openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
+                      onToggleOpenWork={toggleOpenWork}
                       onRename={controls.rename ? () => fileControls.open('rename', file) : undefined}
                       onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
                     />

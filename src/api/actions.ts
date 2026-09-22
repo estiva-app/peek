@@ -10,7 +10,7 @@ import { useConvex, useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { useOpenWork } from '@/api/internal/openWork'
-import { topicIdFromScreenerRowId, useScreener } from '@/api/internal/screener'
+import { fileAddressFromScreenerRowId, topicIdFromScreenerRowId, useScreener } from '@/api/internal/screener'
 import { hasConvex, useDmRuntime } from './store'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '@estiva-app/protocol'
@@ -915,6 +915,12 @@ export function usePeekActions(
         screener.dismissTopic(topicId, nowMs)
         return
       }
+      // A file row is folded too, and has even less of a Convex side (FOL-34).
+      const address = fileAddressFromScreenerRowId(id)
+      if (address) {
+        screener.dismissFile(address, nowMs)
+        return
+      }
       if (hasConvex) void dismissScreenerRemote({ id })
     },
     /**
@@ -925,7 +931,16 @@ export function usePeekActions(
      * list now and the client has to know what it is appending. The Screener row
      * already carries it (`desk.screenerList`), so nothing has to be looked up.
      */
-    addScreenerToOpenWork(id: string, target: { kind: 'topic'; topicId: string } | { kind: 'dm'; dmId: string }) {
+    addScreenerToOpenWork(
+      id: string,
+      target: { kind: 'topic'; topicId: string } | { kind: 'dm'; dmId: string } | { kind: 'file'; address: string },
+    ) {
+      // A file goes to the blob and nowhere else: `deskOpenWork` is keyed on
+      // Convex ids and has no row to write for it (FOL-34).
+      if (target.kind === 'file') {
+        openWork.addFile(target.address)
+        return
+      }
       if (target.kind === 'dm') openWork.addDm(target.dmId)
       else openWork.addTopics([target.topicId])
       if (!hasConvex) return
@@ -954,6 +969,11 @@ export function usePeekActions(
         screener.snoozeTopic(topicId, untilMs ?? Date.now() + 24 * 60 * 60 * 1000)
         return
       }
+      const address = fileAddressFromScreenerRowId(id)
+      if (address) {
+        screener.snoozeFile(address, untilMs ?? Date.now() + 24 * 60 * 60 * 1000)
+        return
+      }
       if (hasConvex) void snoozeScreenerRemote({ id, until: untilMs })
     },
     /** Remove a DM from Open work. By the partner's person key since SHR-9 —
@@ -976,6 +996,5 @@ export function usePeekActions(
     removeTopicFromOpenWork(topicId: string) {
       openWork.removeTopic(topicId)
       if (hasConvex) void removeTopicFromOpenWorkRemote({ topicKey: topicId })
-    },
-  }
+    },  }
 }

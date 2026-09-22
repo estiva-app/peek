@@ -960,7 +960,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   it('the header of a bare file has the menu: details, rename, delete', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(openHeaderMenu()).toEqual(['Topic details', 'Rename', 'Copy link', 'Delete topic'])
+    expect(openHeaderMenu()).toEqual(['Topic details', 'Rename', 'Copy link', 'Add to Open work', 'Delete topic'])
   })
 
   it('Copy link hands out the short form — the ticket’s done-when (FOL-37)', async () => {
@@ -973,15 +973,16 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${TOPIC_SHORT}`))
   })
 
-  it('the header of a Ship issue has no menu at all — only Open folder', () => {
+  it('the header of a Ship issue has nothing from the manifest — only Open work (FOL-34)', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
-    expect(within(middle).queryByRole('button', { name: 'More actions' })).toBeNull()
     expect(within(middle).getByRole('link', { name: 'Open folder' })).toBeInTheDocument()
+    // Open work is the reader's, not the manifest's: any addressable file can be put there.
+    expect(openHeaderMenu()).toEqual(['Add to Open work'])
   })
 
-  it('the tree row of a bare file has the same menu, and an issue’s row has only Follow', () => {
+  it('the tree row of a bare file has the same menu, and an issue’s row has only Open work and Follow', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     // The issue as a peer rather than under its collapsed project, so its row is drawn.
     relay.files = [project, bareFile, { ...shipIssue, parentRef: undefined }]
@@ -993,17 +994,19 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'Topic details',
       'Rename',
+      'Add to Open work',
       'Follow',
       'Delete topic',
     ])
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
 
-    // Nothing from the manifest — but Follow is the reader's, not the manifest's
-    // (FOL-30): any addressable file can be followed, a Ship issue included.
+    // Nothing from the manifest — but Follow and Open work are the reader's, not
+    // the manifest's (FOL-30, FOL-34): any addressable file can be followed or
+    // put in Open work, a Ship issue included.
     const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
     hover(issueRow)
     fireEvent.click(within(issueRow).getByRole('button', { name: 'More options' }))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Follow'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Add to Open work', 'Follow'])
   })
 
   it('Rename opens the details dialog on the field, and saves through the manifest’s action', async () => {

@@ -75,7 +75,22 @@ export interface OpenWorkPersonRef {
   pubkey?: string
 }
 
-export type OpenWorkRef = OpenWorkTopicRef | OpenWorkPersonRef
+/**
+ * A file — a bare-file topic, a Ship issue — by its relay address (FOL-34).
+ *
+ * The one entry that carries no app-local id, because a file has none: it never
+ * entered Convex, so the address *is* its identity and there is nothing to
+ * travel beside it. It is also the one entry with no Convex copy — the
+ * `deskOpenWork` dual-write is keyed on Convex ids and cannot hold it, which is
+ * fine, because the seed that table exists for predates files being openable.
+ */
+export interface OpenWorkFileRef {
+  kind: 'file'
+  /** `kind:pubkey:d`. */
+  address: string
+}
+
+export type OpenWorkRef = OpenWorkTopicRef | OpenWorkPersonRef | OpenWorkFileRef
 
 export interface OpenWorkBlob {
   /** Schema version. An unknown value is ignored, never guessed at. */
@@ -88,8 +103,9 @@ export interface OpenWorkBlob {
 
 const EMPTY: OpenWorkBlob = { v: 1, updatedAt: 0, entries: [] }
 
-/** The overlay/dedup key for an entry. The two prefixes cannot shadow each other. */
+/** The overlay/dedup key for an entry. The three prefixes cannot shadow each other. */
 export function openWorkKey(entry: OpenWorkRef): string {
+  if (entry.kind === 'file') return `file:${entry.address}`
   return entry.kind === 'dm' ? `dm:${entry.key}` : `topic:${entry.id}`
 }
 
@@ -123,11 +139,21 @@ export function parseOpenWorkBlob(plaintext: string | undefined): OpenWorkBlob {
   const entries: OpenWorkRef[] = []
   // Not `Partial<OpenWorkRef>`: the two members disagree on `kind`, so an
   // intersection of them is `never` and every field read off it is an error.
-  type LooseEntry = { kind?: unknown; id?: unknown; key?: unknown; channelUuid?: unknown; pubkey?: unknown }
+  type LooseEntry = {
+    kind?: unknown
+    id?: unknown
+    key?: unknown
+    channelUuid?: unknown
+    pubkey?: unknown
+    address?: unknown
+  }
   for (const item of Array.isArray(blob.entries) ? blob.entries : []) {
     const entry = item as LooseEntry | null
     let parsed: OpenWorkRef | undefined
-    if (entry?.kind === 'dm') {
+    if (entry?.kind === 'file') {
+      const address = str(entry.address)
+      if (address) parsed = { kind: 'file', address }
+    } else if (entry?.kind === 'dm') {
       const key = str(entry.key)
       const pubkey = str(entry.pubkey)
       if (key) parsed = { kind: 'dm', key, ...(pubkey ? { pubkey } : {}) }
@@ -164,9 +190,11 @@ export function serializeOpenWorkBlob(blob: OpenWorkBlob): string {
     v: blob.v,
     updatedAt: blob.updatedAt,
     entries: blob.entries.map((e) =>
-      e.kind === 'dm'
-        ? { kind: 'dm', key: e.key, ...(e.pubkey ? { pubkey: e.pubkey } : {}) }
-        : { kind: 'topic', id: e.id, ...(e.channelUuid ? { channelUuid: e.channelUuid } : {}) },
+      e.kind === 'file'
+        ? { kind: 'file', address: e.address }
+        : e.kind === 'dm'
+          ? { kind: 'dm', key: e.key, ...(e.pubkey ? { pubkey: e.pubkey } : {}) }
+          : { kind: 'topic', id: e.id, ...(e.channelUuid ? { channelUuid: e.channelUuid } : {}) },
     ),
   })
 }

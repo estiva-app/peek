@@ -63,25 +63,31 @@ import { OPEN_WORK_ITEMS } from '@/data/deskData'
 import { hasConvex } from '@/api/store'
 import { usePeople } from '@/api/people'
 import { useTopics } from '@/api/topics'
+import { useResolvedReferences } from '@/api/foreign'
 import { useOpenWorkSync } from '@/nostr/useOpenWorkSync'
 import { openWorkKey, type OpenWorkRef } from '@/nostr/openWork'
 import type { OpenWorkItem } from '@/api/types'
 
-/** Overlay keys. The two prefixes cannot shadow each other. */
+/** Overlay keys. The three prefixes cannot shadow each other. */
 const TOPIC = 'topic:'
 const PERSON = 'dm:'
+const FILE = 'file:'
 
 export interface OpenWorkValue {
   /** The rendered rows, in the person's order. Never the list — see the header. */
   items: OpenWorkItem[]
   /** Topic ids in the list, from the list rather than from `items`. */
   topicIds: Set<string>
+  /** File addresses in the list, from the list for the same reason (FOL-34). */
+  fileAddresses: Set<string>
   /** True until a source has settled and there is a list to render. */
   isLoading: boolean
   addTopics: (topicIds: string[]) => void
   addDm: (dmId: string) => void
+  addFile: (address: string) => void
   removeTopic: (topicId: string) => void
   removeDm: (dmId: string) => void
+  removeFile: (address: string) => void
 }
 
 const OpenWorkContext = createContext<OpenWorkValue | null>(null)
@@ -144,6 +150,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
       if (settled) added.push(settled)
       else if (key.startsWith(PERSON)) added.push({ kind: 'dm', key: key.slice(PERSON.length) })
       else if (key.startsWith(TOPIC)) added.push({ kind: 'topic', id: key.slice(TOPIC.length) })
+      else if (key.startsWith(FILE)) added.push({ kind: 'file', address: key.slice(FILE.length) })
     }
     return [...kept, ...added]
   }, [settledSet, pending])
@@ -151,12 +158,36 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   const topicById = useMemo(() => new Map((topics ?? []).map((t) => [t.id, t])), [topics])
   const personByKey = useMemo(() => new Map((people ?? []).map((p) => [p.id, p])), [people])
 
+  /*
+    A file's row is rendered from the relay, not from a workspace index: it has
+    no Convex id and no Convex copy (FOL-34). One `resolveObject` per file, once
+    per change to the set — a title is not something that needs a refresh, and
+    the unread badge is read separately, by the Desk, where it is drawn.
+  */
+  const fileAddresses = useMemo(
+    () => new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'file' ? [e.address] : []))),
+    [effectiveSet],
+  )
+  const fileObjects = useResolvedReferences(useMemo(() => [...fileAddresses].sort(), [fileAddresses]))
+
   const items = useMemo<OpenWorkItem[]>(() => {
     if (!hasConvex) return mockItems
     if (!effectiveSet) return []
     const out: OpenWorkItem[] = []
     for (const entry of effectiveSet) {
-      if (entry.kind === 'dm') {
+      if (entry.kind === 'file') {
+        // Unresolved (still asking, deleted, or unreadable): no row, and the
+        // address stays in the list — the rule every other kind follows.
+        const object = fileObjects[entry.address]
+        if (!object) continue
+        out.push({
+          id: `ow_file_${entry.address}`,
+          kind: 'file',
+          address: entry.address,
+          title: object.slots.title?.value ?? 'File',
+          object,
+        })
+      } else if (entry.kind === 'dm') {
         const person = personByKey.get(entry.key)
         if (!person) continue
         out.push({
@@ -181,7 +212,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
       }
     }
     return out
-  }, [mockItems, effectiveSet, topicById, personByKey])
+  }, [mockItems, effectiveSet, topicById, personByKey, fileObjects])
 
   /*
     Publish the list the person owns, not the change that produced it.
@@ -210,6 +241,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   const publishEntries = useMemo<OpenWorkRef[] | undefined>(() => {
     if (!effectiveSet) return undefined
     return effectiveSet.map((entry) => {
+      if (entry.kind === 'file') return entry
       if (entry.kind === 'dm') {
         const pubkey = personByKey.get(entry.key)?.pubkey ?? entry.pubkey
         return pubkey ? { kind: 'dm', key: entry.key, pubkey } : { kind: 'dm', key: entry.key }
@@ -229,15 +261,15 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     // The list, never `items`: a row whose topic the index has not delivered yet
     // is still in the list, and reading it off the rows would let the "+" picker
     // offer it again and add a second copy.
-    if (!hasConvex) return new Set(mockItems.flatMap((w) => (w.kind === 'dm' ? [] : [w.topicId])))
-    return new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'dm' ? [] : [e.id])))
+    if (!hasConvex) return new Set(mockItems.flatMap((w) => (w.kind === 'dm' || w.kind === 'file' ? [] : [w.topicId])))
+    return new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'topic' ? [e.id] : [])))
   }, [mockItems, effectiveSet])
 
   const addTopics = useCallback(
     (ids: string[]) => {
       if (!hasConvex) {
         setMockItems((prev) => {
-          const have = new Set(prev.flatMap((w) => (w.kind === 'dm' ? [] : [w.topicId])))
+          const have = new Set(prev.flatMap((w) => (w.kind === 'dm' || w.kind === 'file' ? [] : [w.topicId])))
           const rows = ids
             .filter((id) => !have.has(id))
             .map((id) => ({
@@ -275,12 +307,32 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /*
+    Relay only, in both modes' sense: mock mode has no relay to resolve a file
+    from, so there is no row to add and nothing is pretended. The Convex
+    dual-write the other kinds keep has no table to go to — see `OpenWorkFileRef`.
+  */
+  const addFile = useCallback((address: string) => {
+    if (!hasConvex) return
+    setPending((prev) => {
+      const next = new Map(prev)
+      next.delete(`${FILE}${address}`)
+      next.set(`${FILE}${address}`, true)
+      return next
+    })
+  }, [])
+
   const removeTopic = useCallback((topicId: string) => {
     if (!hasConvex) {
-      setMockItems((prev) => prev.filter((w) => w.kind === 'dm' || w.topicId !== topicId))
+      setMockItems((prev) => prev.filter((w) => w.kind === 'dm' || w.kind === 'file' || w.topicId !== topicId))
       return
     }
     setPending((prev) => new Map(prev).set(`${TOPIC}${topicId}`, false))
+  }, [])
+
+  const removeFile = useCallback((address: string) => {
+    if (!hasConvex) return
+    setPending((prev) => new Map(prev).set(`${FILE}${address}`, false))
   }, [])
 
   const removeDm = useCallback((dmId: string) => {
@@ -297,11 +349,19 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   const isLoading = hasConvex && effectiveSet === undefined
 
   const value = useMemo<OpenWorkValue>(
-    () => ({ items, topicIds, isLoading, addTopics, addDm, removeTopic, removeDm }),
-    [items, topicIds, isLoading, addTopics, addDm, removeTopic, removeDm],
+    () => ({ items, topicIds, fileAddresses, isLoading, addTopics, addDm, addFile, removeTopic, removeDm, removeFile }),
+    [items, topicIds, fileAddresses, isLoading, addTopics, addDm, addFile, removeTopic, removeDm, removeFile],
   )
 
   return <OpenWorkContext.Provider value={value}>{children}</OpenWorkContext.Provider>
+}
+
+/**
+ * Seam-internal, and `null` outside the provider rather than a throw — for a
+ * control on a row that a story or a test mounts on its own (`useFollows`'s rule).
+ */
+export function useOpenWorkIfMounted(): OpenWorkValue | null {
+  return useContext(OpenWorkContext)
 }
 
 /** Seam-internal. Components never call this. */

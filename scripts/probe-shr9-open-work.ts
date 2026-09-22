@@ -205,7 +205,7 @@ async function main() {
   check(
     'new work is last, and the earlier entries have not moved',
     JSON.stringify(reread.blob?.entries) === JSON.stringify(appended),
-    JSON.stringify(reread.blob?.entries?.map((e) => (e.kind === 'dm' ? e.key : e.id))),
+    JSON.stringify(reread.blob?.entries?.map((e) => (e.kind === 'dm' ? e.key : e.kind === 'file' ? e.address : e.id))),
   )
   check(
     'a re-publish replaces the coordinate rather than adding to it',

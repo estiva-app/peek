@@ -27,8 +27,12 @@ import {
   useCreateTopicFromDm,
   usePeekActions,
   useStarred,
+  useConversationBadges,
+  useOpenWorkFiles,
   type OpenWorkItem,
 } from '@/api'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
+import { filePath } from '@/lib/objectUrl'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useToast } from '@/lib/toast'
@@ -82,10 +86,24 @@ export function DeskPage() {
   const showTopicUnreads = debug.unreads.topics
   const showPeopleUnreads = debug.unreads.people
 
-  // Open work holds topics and (via Screener "Open") DMs. Sort unread first
-  // when unreads are visible. Filter out items dismissed via the row's X.
+  /*
+    A file's dot (FOL-34) is the listing's: its own conversation against its own
+    marker, and only for what the person follows. `=== true` — an unjudged file
+    draws no dot, not a dark one.
+  */
+  const openWorkFiles = useOpenWorkFiles()
+  const { unread: fileUnread } = useConversationBadges(
+    OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' ? [i.object] : [])),
+  )
+
+  // Open work holds topics, files and (via Screener "Open") DMs. Sort unread
+  // first when unreads are visible. Filter out items dismissed via the row's X.
   const openWorkUnread = (i: OpenWorkItem) =>
-    i.kind === 'dm' ? dmHasUnread(i.dmId) : topicHasUnread(i.topicId)
+    i.kind === 'file'
+      ? fileUnread[i.object.ref] === true
+      : i.kind === 'dm'
+        ? dmHasUnread(i.dmId)
+        : topicHasUnread(i.topicId)
   const baseOpenWork = (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : [])
     .filter((i) => !dismissedOpenWorkIds.has(i.id))
   const openWorkItems = showTopicUnreads
@@ -96,20 +114,24 @@ export function DeskPage() {
     // Removing the conversation you're looking at clears the stale selection —
     // the right panel falls back to "No conversation selected" (QA #2.2).
     const item = openWorkItems.find((i) => i.id === id)
+    // A file is never selected here — it opens on its own page — so only the
+    // other two kinds can leave a stale selection behind.
     const wasSelected =
       item != null &&
       selected != null &&
+      item.kind !== 'file' &&
       (item.kind === 'dm'
         ? selected.kind === 'dm' && selected.dmId === item.dmId
         : selected.kind === 'topic' && selected.topicId === item.topicId)
     if (wasSelected) setSelected(null)
     setDismissedOpenWorkIds((prev) => new Set([...prev, id]))
-    // Both kinds remove by the key the blob holds, never by a row id: since
+    // Every kind removes by the key the blob holds, never by a row id: since
     // SHR-9 the list comes from the relay and the rows carry synthetic ids. The
     // action marks the removal in the session overlay — so the "+" picker offers
     // a topic again immediately — and deletes the Convex row the Screener's
-    // de-duplication still reads.
-    if (item && item.kind === 'dm') actions.removeDmFromOpenWork(item.dmId)
+    // de-duplication still reads (a file has none).
+    if (item && item.kind === 'file') openWorkFiles.remove(item.address)
+    else if (item && item.kind === 'dm') actions.removeDmFromOpenWork(item.dmId)
     else if (item) actions.removeTopicFromOpenWork(item.topicId)
   }
 
@@ -140,7 +162,11 @@ export function DeskPage() {
     setDismissedScreenerIds((prev) => new Set([...prev, id]))
     actions.addScreenerToOpenWork(
       id,
-      item.kind === 'dm' ? { kind: 'dm', dmId: item.dmId } : { kind: 'topic', topicId: item.topicId },
+      item.kind === 'file'
+        ? { kind: 'file', address: item.address }
+        : item.kind === 'dm'
+          ? { kind: 'dm', dmId: item.dmId }
+          : { kind: 'topic', topicId: item.topicId },
     )
   }
 
@@ -182,7 +208,9 @@ export function DeskPage() {
       })
       if (!wasStarred) return
       const inUrgent = urgentItems.some((u) => u.kind === 'topic' && u.topicId === selected.topicId)
-      const inOpenWork = openWorkItems.some((i) => i.kind !== 'dm' && i.topicId === selected.topicId)
+      const inOpenWork = openWorkItems.some(
+        (i) => i.kind !== 'dm' && i.kind !== 'file' && i.topicId === selected.topicId,
+      )
       if (!inUrgent && !inOpenWork) setSelected(null)
       else if (selected.section === 'starred') {
         setSelected({ ...selected, section: inUrgent ? 'urgent' : 'openWork' })
@@ -367,7 +395,21 @@ export function DeskPage() {
             ) : (
               <div className="flex flex-col gap-0.5 mt-1">
                 {openWorkItems.map((item) =>
-                  item.kind === 'dm' ? (
+                  item.kind === 'file' ? (
+                    /*
+                      A file opens on its own page rather than beside the Desk
+                      (FOL-34): its conversation is the file page's, and the
+                      Desk's right column draws only a topic or a DM.
+                    */
+                    <PersonRow
+                      key={item.id}
+                      name={item.title}
+                      type={item.object.kind === KIND_BARE_FILE ? 'topic' : 'file'}
+                      isUnread={showTopicUnreads && fileUnread[item.object.ref] === true}
+                      onClick={() => navigate(filePath(item.address, item.title))}
+                      onRemove={() => dismissOpenWork(item.id)}
+                    />
+                  ) : item.kind === 'dm' ? (
                     <PersonRow
                       key={item.id}
                       name={item.name}
