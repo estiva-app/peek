@@ -29,7 +29,10 @@ const TOPIC = `30840:${PK}:0a2e4f9b-2f1c-4a52-9c0f-5f0e9b0e1a11`
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const RELAY = 'https://relay.test'
 
-const blob = (keys: string[], muted: string[] = []): FollowsBlob => ({ v: 1, updatedAt: 1_000, keys, muted })
+/** Namings a minute ago; a mute the test writes is `Date.now()`, which is later. */
+const NAMED_AT = Date.now() - 60_000
+const blob = (keys: string[], muted: Record<string, number> = {}): FollowsBlob => ({ v: 1, updatedAt: 1_000, keys, muted })
+const implied = (...keys: string[]) => new Map(keys.map((key) => [key, NAMED_AT]))
 
 /** A read the test releases by hand, to hold `state` at `unknown`. */
 function deferred<T>() {
@@ -39,8 +42,8 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
-  relay.fetchFollows.mockResolvedValue({ state: 'present', blob: blob([ISSUE], []) })
-  relay.fetchImpliedFollows.mockResolvedValue(new Set([TOPIC, FOLDER]))
+  relay.fetchFollows.mockResolvedValue({ state: 'present', blob: blob([ISSUE]) })
+  relay.fetchImpliedFollows.mockResolvedValue(implied(TOPIC, FOLDER))
   relay.publishFollows.mockResolvedValue({ ok: true, eventId: 'x' })
 })
 afterEach(() => {
@@ -51,14 +54,14 @@ afterEach(() => {
 
 describe('useFollowsSync', () => {
   it('is unknown until both reads have landed, then the union of explicit and implied', async () => {
-    const implied = deferred<Set<string>>()
-    relay.fetchImpliedFollows.mockReturnValue(implied.promise)
+    const pending = deferred<Map<string, number>>()
+    relay.fetchImpliedFollows.mockReturnValue(pending.promise)
     const { result } = renderHook(() => useFollowsSync(RELAY))
     await waitFor(() => expect(relay.fetchFollows).toHaveBeenCalledTimes(1))
     // The blob alone does not settle it: explicit follows lit and mentions dark is a wrong answer.
     expect(result.current.state).toBe('unknown')
     expect(result.current.followed.size).toBe(0)
-    await act(async () => implied.resolve(new Set([TOPIC, FOLDER])))
+    await act(async () => pending.resolve(implied(TOPIC, FOLDER)))
     await waitFor(() => expect(result.current.state).toBe('present'))
     expect([...result.current.followed].sort()).toEqual([ISSUE, TOPIC, FOLDER].sort())
   })
@@ -71,7 +74,7 @@ describe('useFollowsSync', () => {
   })
 
   it('a muted key is implied but not followed, and following it again clears the mute', async () => {
-    relay.fetchFollows.mockResolvedValue({ state: 'present', blob: blob([ISSUE], [TOPIC]) })
+    relay.fetchFollows.mockResolvedValue({ state: 'present', blob: blob([ISSUE], { [TOPIC]: NAMED_AT + 1 }) })
     const { result } = renderHook(() => useFollowsSync(RELAY))
     await waitFor(() => expect(result.current.state).toBe('present'))
     expect([...result.current.followed].sort()).toEqual([ISSUE, FOLDER].sort())
@@ -79,7 +82,15 @@ describe('useFollowsSync', () => {
     expect(result.current.followed.has(TOPIC)).toBe(true)
     const written = relay.publishFollows.mock.calls[0][0] as FollowsBlob
     expect(written.keys.sort()).toEqual([ISSUE, TOPIC].sort())
-    expect(written.muted).toEqual([])
+    expect(written.muted).toEqual({})
+  })
+
+  it('a naming newer than the mute follows the key again — placed on it after unfollowing it (test F)', async () => {
+    // Muted before the naming: the mute covers only what came before it.
+    relay.fetchFollows.mockResolvedValue({ state: 'present', blob: blob([ISSUE], { [TOPIC]: NAMED_AT - 1, [FOLDER]: NAMED_AT + 1 }) })
+    const { result } = renderHook(() => useFollowsSync(RELAY))
+    await waitFor(() => expect(result.current.state).toBe('present'))
+    expect([...result.current.followed].sort()).toEqual([ISSUE, TOPIC].sort())
   })
 
   it('unfollowing an implied key mutes it, so the next load does not bring it back', async () => {
@@ -89,12 +100,14 @@ describe('useFollowsSync', () => {
     expect(result.current.followed.has(FOLDER)).toBe(false)
     const written = relay.publishFollows.mock.calls[0][0] as FollowsBlob
     expect(written.keys).toEqual([ISSUE])
-    expect(written.muted).toEqual([FOLDER])
+    expect(Object.keys(written.muted)).toEqual([FOLDER])
+    // Muted as of now, later than the naming that implied it.
+    expect(written.muted[FOLDER]).toBeGreaterThan(NAMED_AT)
     // Unfollowing an explicit key that nothing implies removes it and mutes nothing.
     await act(() => result.current.setFollowed(ISSUE, false))
     const again = relay.publishFollows.mock.calls[1][0] as FollowsBlob
     expect(again.keys).toEqual([])
-    expect(again.muted).toEqual([FOLDER])
+    expect(Object.keys(again.muted)).toEqual([FOLDER])
   })
 
   it('a refused publish puts the toggle back', async () => {

@@ -60,6 +60,11 @@ describe('the key each event implies', () => {
       event(1851, [['a', PROJECT], ['field', 'lead'], ['value', ME], ['p', ME]]),
       event(7, [['p', ME]]),
     ])
-    expect([...keys].sort()).toEqual([ISSUE, TOPIC, PROJECT, FOLDER].sort())
+    expect([...keys.keys()].sort()).toEqual([ISSUE, TOPIC, PROJECT, FOLDER].sort())
+  })
+
+  it('keeps the newest naming per key, in epoch ms — what a mute is judged against', () => {
+    const at = (seconds: number) => ({ ...event(1111, [['A', ISSUE], ['p', ME]]), created_at: seconds })
+    expect(impliedKeysOf([at(NOW - 100), at(NOW - 10), at(NOW - 50)]).get(ISSUE)).toBe((NOW - 10) * 1000)
   })
 })
