@@ -118,7 +118,19 @@ vi.mock('@/nostr/useReadStateSync', async () => {
 })
 
 import { RelayReadError } from '@/nostr/relayRead'
+import {
+  type TeamUnreadSnapshot,
+  installTeamUnreadDiagnostic,
+} from './teamUnreadDiagnostic'
 import { TEAM_UNREAD_SETTLE_MS, useTeamUnread } from './useTeamUnread'
+
+/* The api barrel is mocked here, so the installer the app calls at module load
+   is called by hand — the probe module itself is the real one. */
+installTeamUnreadDiagnostic()
+const teamUnread = (folder?: string): TeamUnreadSnapshot[] =>
+  (window as unknown as Record<string, (folder?: string) => TeamUnreadSnapshot[]>).__teamUnread(
+    folder,
+  )
 
 const FOLDER_A = '11111111-1111-4111-8111-111111111111'
 const FOLDER_B = '22222222-2222-4222-8222-222222222222'
@@ -347,6 +359,69 @@ describe('the socket path (FOL-40)', () => {
     renderHook(() => useTeamUnread(folders))
     await waitFor(() => expect(live.watched).toHaveLength(1))
     expect(refresh.fire).toBeDefined()
+  })
+
+  /*
+    FOL-40's instrument. Production proved a delivery reached the socket while
+    the dot stayed dark, and every step between the two lives for one render:
+    the settle firing, the re-read, the gates, the judge. `__teamUnread()` is
+    those steps kept, so the question can be asked after the fact.
+  */
+  it('hands the console the delivery, the re-read it caused, and the gates it was judged behind', async () => {
+    vi.useFakeTimers()
+    try {
+      const { unmount } = renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() =>
+        expect(teamUnread()[0]?.lastLoad).toMatchObject({
+          trigger: 'folders',
+          outcome: 'ok',
+          // What came back, not what was asked for: a read that answers for
+          // fewer Folders than it was given is a narrowing nobody would see.
+          answered: 2,
+        }),
+      )
+      expect(teamUnread()).toHaveLength(1)
+      expect(teamUnread()[0]).toMatchObject({
+        folders: 2,
+        live: true,
+        deliveries: 0,
+        // Nothing is judged yet — the frontier has not landed.
+        frontierReady: false,
+        lit: [],
+      })
+
+      act(() => live.fire?.(FOLDER_A))
+      // Recorded at the signal, not at the re-read: a settle that never fires
+      // and a read that never returns are different failures.
+      expect(teamUnread()[0]).toMatchObject({
+        deliveries: 1,
+        lastDelivery: { folder: FOLDER_A, listed: true },
+        lastLoad: { trigger: 'folders' },
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
+      })
+      await vi.waitFor(() =>
+        expect(teamUnread()[0].lastLoad).toMatchObject({ trigger: 'socket', outcome: 'ok' }),
+      )
+
+      advance({})
+      // With no argument it explains the Folder the socket last named, which
+      // is the one somebody at a console is asking about.
+      await vi.waitFor(() => expect(teamUnread()[0].frontierReady).toBe(true))
+      const folder = teamUnread()[0].folder
+      expect(folder).toMatchObject({ id: FOLDER_A, listed: true, read: true, unread: true })
+      expect(folder?.streams).toEqual([
+        expect.objectContaining({ key: FOL18, followed: true, marker: null, unread: true }),
+      ])
+
+      unmount()
+      // A stopped hook leaves nothing to read, in a tab as in a test.
+      expect(teamUnread()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('works with no socket at all — the refresh triggers still drive it', async () => {

@@ -33,6 +33,11 @@ installFollowsDiagnostic()
 /* `window.__wideFilters()` — see src/nostr/liveTopics.ts (FOL-40). Same again. */
 import { installWideFilterDiagnostic } from '@/nostr/liveTopics'
 installWideFilterDiagnostic()
+
+/* `window.__teamUnread()` — the other end of the same path (FOL-40): what the
+   sidebar did with a delivery `__wideFilters()` proved arrived. */
+import { installTeamUnreadDiagnostic } from '@/api/teamUnreadDiagnostic'
+installTeamUnreadDiagnostic()
 export * from './huddles'
 export * from './messages'
 export * from './actions'

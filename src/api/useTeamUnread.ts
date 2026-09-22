@@ -10,10 +10,14 @@ import { relayFailureKind, withRateLimitRetry } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { type TeamUnreadProbe, type TeamUnreadTrigger, teamUnreadProbe } from './teamUnreadDiagnostic'
 import { teamHasFollowedStream, teamHasUnread } from './teamUnread'
 
 /** How long the socket's activity is gathered before one re-read pays for all of it. */
 export const TEAM_UNREAD_SETTLE_MS = 1_000
+
+/** §11.6's absent-marker horizon, in seconds — the judge's and the probe's. */
+const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
 
 /**
  * The dot on each Folder in a list: whether anything in it is new to the
@@ -96,6 +100,23 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   }, [key])
 
   /*
+    The console's view of this mount (FOL-40). Opened before the effects that
+    write to it — effects run in declaration order — and closed on unmount, so
+    a snapshot never reports a hook that is no longer on screen. Every call
+    below is optional-chained: the probe does not exist during the first
+    render, and nothing here is allowed to be the reason a dot fails.
+  */
+  const probe = useRef<TeamUnreadProbe | undefined>(undefined)
+  useEffect(() => {
+    const opened = teamUnreadProbe()
+    probe.current = opened
+    return () => {
+      opened.stop()
+      probe.current = undefined
+    }
+  }, [])
+
+  /*
     Wrapped, because the live re-read is the one read in the app most likely to
     be refused (FOL-40): it goes out a second after somebody said something,
     which is a second after *their* client and every other tab did the same
@@ -113,41 +134,51 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     [ids, channelStreams],
   )
 
-  const load = useCallback(() => {
-    // Nothing to ask about. What is held is not cleared — the judge below only
-    // looks up the Folders currently listed, so a stale entry is never drawn.
-    if (ids.length === 0) return
-    const asked = key
-    void read()
-      .then((next) => current.current === asked && setHeld(next))
+  const load = useCallback(
+    (trigger: TeamUnreadTrigger) => {
+      // Nothing to ask about. What is held is not cleared — the judge below only
+      // looks up the Folders currently listed, so a stale entry is never drawn.
+      if (ids.length === 0) return
+      const asked = key
+      probe.current?.loadStarted(trigger)
+      void read()
+        .then((next) => {
+          probe.current?.loadSettled('ok', { answered: Object.keys(next.streams).length })
+          return current.current === asked && setHeld(next)
+        })
       // A failed read costs the dots, never the list — and it leaves the last
       // answer standing rather than blanking every row on one bad request.
       // Swallowed, but no longer in silence (FOL-40): a quota refusal that
       // outlived its retries is a live path that has stopped, and that is
       // worth a warning. An unreachable relay on a 30 s tick is the ordinary
       // offline case and stays at debug, where it has always been.
-      .catch((error: unknown) =>
-        relayLog(
-          relayFailureKind(error) === 'rate_limited'
-            ? 'team unread giving up after waiting out the quota'
-            : 'team unread read failed',
-          error,
-        ),
-      )
-  }, [ids, key, read])
+        .catch((error: unknown) => {
+          const failure = relayFailureKind(error)
+          probe.current?.loadSettled('failed', { failure })
+          relayLog(
+            failure === 'rate_limited'
+              ? 'team unread giving up after waiting out the quota'
+              : 'team unread read failed',
+            error,
+          )
+        })
+    },
+    [ids, key, read],
+  )
 
   useEffect(() => {
-    load()
+    load('folders')
   }, [load])
 
   useEffect(() => {
     if (!live || ids.length === 0) return
     let timer: ReturnType<typeof setTimeout> | undefined
-    const settle = () => {
+    const settle = (folder: string) => {
+      probe.current?.delivered(folder)
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = undefined
-        load()
+        load('socket')
       }, TEAM_UNREAD_SETTLE_MS)
     }
     /*
@@ -175,18 +206,18 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   */
   const wasLive = useRef(relayState === 'live')
   useEffect(() => {
-    if (relayState === 'live' && !wasLive.current) load()
+    if (relayState === 'live' && !wasLive.current) load('relay-live')
     wasLive.current = relayState === 'live'
   }, [relayState, load])
 
-  useRefreshTriggers(load, { enabled: ids.length > 0 })
+  useRefreshTriggers(() => load('refresh'), { enabled: ids.length > 0 })
 
   /*
     Judged on every frontier change, not only when the messages arrive — the
     frontier moves when this tab records a read, and that is what turns a dot
     off. A listing's worth of messages against a map lookup each.
   */
-  return useMemo(() => {
+  const judged = useMemo(() => {
     const unread: Record<string, boolean> = {}
     const followedIn: Record<string, boolean> = {}
     // Not judged until the first merge has landed: before that every marker is
@@ -212,7 +243,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
         followed: follows.isFollowed,
         me,
         nowSeconds: held.at,
-        horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
+        horizonSeconds: HORIZON_SECONDS,
       })
     }
     /*
@@ -238,4 +269,28 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     }
     return { unread, followed: followedIn }
   }, [held, frontier, follows.state, follows.isFollowed, ids, folders])
+
+  /*
+    Handed over after the commit, not during the render that produced it: the
+    probe holds the values, and reading them from a console call is what makes
+    a gate that lives for one render answerable minutes later.
+  */
+  useEffect(() => {
+    probe.current?.observe({
+      ids,
+      folders: folders ?? [],
+      live: Boolean(live),
+      relayState,
+      frontierReady: frontier.ready,
+      marker: frontier.marker,
+      follows: follows.state,
+      isFollowed: follows.isFollowed,
+      me: validToken()?.pubkey,
+      held,
+      horizonSeconds: HORIZON_SECONDS,
+      result: judged,
+    })
+  }, [ids, folders, live, relayState, frontier, follows.state, follows.isFollowed, held, judged])
+
+  return judged
 }
