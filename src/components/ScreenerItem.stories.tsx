@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { PeekDataProvider } from '@/api'
-import { SCREENER_ITEMS } from '@/api/fixtures'
+import { SCREENER_ITEMS, SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
 import { ScreenerItem } from './ScreenerItem'
 import { ScreenerPreviewCardView } from './ScreenerPreviewCard'
 
@@ -24,6 +24,13 @@ const meta = {
     onOpen: noop,
     onLater: noop,
     onDismiss: noop,
+    /*
+      On the meta, so hovering *any* of these stories opens the card — not only
+      the one written to prove it (Katerina, 23 September). The real card reads
+      the conversation, which needs a backend, so a story that hands over
+      nothing shows nothing on hover and reads as a broken behaviour.
+    */
+    preview: <ScreenerPreviewCardView isTopicResolved={() => false} rows={SCREENER_PREVIEW_ROWS} />,
   },
   argTypes: {
     item: { control: false },
@@ -46,45 +53,19 @@ export const PersonItem: Story = {
  * snippet, so hovering shows more of the actual conversation (asked for on
  * 2026-07-09).
  *
- * It had never been drawn in Storybook: the card reads the conversation, and
- * with no backend `useScreenerPreview` returns nothing, so `ScreenerItem`
- * refused to open a card on an empty box. A caller that brings its own rows has
- * something to say, so this one hands them over (UIG-17).
+ * Every story here opens it, because the rows are on the meta. This one is the
+ * proof: it hovers the row and waits for the card, rather than leaving a
+ * behaviour nobody checks.
  *
  * The card waits 350ms, which is `PreviewCard`'s own default — this story waits
  * for it rather than assuming.
  */
 export const HoverPreview: Story = {
-  args: {
-    preview: (
-      <ScreenerPreviewCardView
-        isTopicResolved={() => false}
-        rows={[
-          {
-            kind: 'message',
-            authorName: 'Juan Foley',
-            timestamp: '9:14 AM',
-            body: "Our CI/CD pipeline has been failing at the build stage since this morning. Logs show it can't resolve some dependencies during the Docker image build step.",
-          },
-          {
-            kind: 'reply',
-            authorName: 'Daniel Stanton',
-            timestamp: '9:22 AM',
-            body: 'Found the root cause — a dependency bump broke the build. Pinning it back now.',
-          },
-          {
-            kind: 'reply',
-            authorName: 'Alice Johnson',
-            timestamp: '9:41 AM',
-            body: 'Confirmed green on my end.',
-          },
-        ]}
-      />
-    ),
-  },
   play: async ({ canvasElement }) => {
     await userEvent.hover(within(canvasElement).getByText('Updates on the new office layout'))
     // The card portals out of the story root, so it is found through the body.
-    await expect(await within(document.body).findByText(/Found the root cause/, undefined, { timeout: 3000 })).toBeVisible()
+    await expect(
+      await within(document.body).findByText(/base image moved/, undefined, { timeout: 3000 }),
+    ).toBeVisible()
   },
 }

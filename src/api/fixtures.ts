@@ -6,6 +6,7 @@
  * stories live there). Nothing in the app runtime may import this module.
  */
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
+import type { ScreenerPreviewRow } from '@/api'
 
 export { TOPIC_HUDDLES } from '@/data/huddleData'
 export { SCREENER_ITEMS } from '@/data/screenerData'
@@ -54,3 +55,34 @@ export const PICKER_FOLDERS = [
   { id: 'a1b2c3d4-0000-4000-8000-000000000001', name: 'Performance & infrastructure' },
   { id: 'a1b2c3d4-0000-4000-8000-000000000002' },
 ] as FolderSummary[]
+
+/**
+ * The conversation a Screener row's hover card shows.
+ *
+ * One set, used by every story that draws a Screener row — the item, the
+ * section, the preview card itself and the Desk page. The real card reads the
+ * conversation through `useScreenerPreview`, which needs a backend and returns
+ * nothing without one, so a story that does not hand these over shows no card
+ * at all on hover and reads as if the behaviour were broken (Katerina, 23
+ * September). Three story files had each written their own copy.
+ */
+export const SCREENER_PREVIEW_ROWS: ScreenerPreviewRow[] = [
+  {
+    kind: 'message',
+    authorName: 'Juan Foley',
+    timestamp: '9:14 AM',
+    body: "Our CI/CD pipeline has been failing at the build stage since this morning — it can't resolve some dependencies during the Docker image build.",
+  },
+  {
+    kind: 'reply',
+    authorName: 'Priya Nair',
+    timestamp: '9:20 AM',
+    body: 'Looks like the Docker base image moved — pinning it now.',
+  },
+  {
+    kind: 'reply',
+    authorName: 'You',
+    timestamp: '9:22 AM',
+    body: "Thanks — I'll re-run the build once that lands.",
+  },
+]

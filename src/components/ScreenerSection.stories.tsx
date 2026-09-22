@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { PeekDataProvider } from '@/api'
-import { SCREENER_ITEMS } from '@/api/fixtures'
+import { SCREENER_ITEMS, SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
+import { ScreenerPreviewCardView } from './ScreenerPreviewCard'
 import { ScreenerSection } from './ScreenerSection'
 
 const noop = () => {}
@@ -22,6 +23,9 @@ const meta = {
     onOpen: noop,
     onLater: noop,
     onDismiss: noop,
+    /* Every row in the section opens the same card a lone row does — the
+       section drew none at all before (Katerina, 23 September). */
+    previewFor: () => <ScreenerPreviewCardView isTopicResolved={() => false} rows={SCREENER_PREVIEW_ROWS} />,
   },
   argTypes: {
     items: { control: false },

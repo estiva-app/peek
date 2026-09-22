@@ -4,7 +4,7 @@ import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { SCREENER_ITEMS } from '@/api/fixtures'
+import { SCREENER_ITEMS, SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
 import { ScreenerPreviewCardView } from '@/components/ScreenerPreviewCard'
 import type { StarredItem } from '@/components/ui/StarredSection'
 import { PeoplePageView, type PeopleListItem } from './PeoplePage'
@@ -31,27 +31,9 @@ const TOPICS: TopicListItem[] = [
   { id: 't6', title: 'Pricing page copy', isResolved: false, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
 ]
 
-/** The hover card a Screener row opens. The real one reads the conversation,
- *  which needs a backend, so a story brings its own rows (UIG-17). */
-const screenerPreview = () => (
-  <ScreenerPreviewCardView
-    isTopicResolved={() => false}
-    rows={[
-      {
-        kind: 'message',
-        authorName: 'Hallie Pratt',
-        timestamp: '8:40 AM',
-        body: 'Facilities shared the Q3 floor plan and is asking each team for desk allocations by Friday.',
-      },
-      {
-        kind: 'reply',
-        authorName: 'Amie Miles',
-        timestamp: '9:05 AM',
-        body: 'Worth a look before the deadline so design gets the corner cluster we discussed.',
-      },
-    ]}
-  />
-)
+/** The hover card a Screener row opens, from the one fixture every Screener
+ *  story uses. The real one reads the conversation, which needs a backend. */
+const screenerPreview = () => <ScreenerPreviewCardView isTopicResolved={() => false} rows={SCREENER_PREVIEW_ROWS} />
 
 const row = (
   id: string,
