@@ -1,0 +1,57 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/SkeletonConversationList" />
+
+# SkeletonConversationList
+
+The conversation area while its messages are still arriving: three grey cards in
+the shape real ones will take.
+
+**Drawn nowhere.** This is one of the few parts of Peek with no picture at all —
+no story mounts it, and the four places that use it only reach it while a read
+is in flight, which no story stages. A story for it is one of the gaps UIG-17
+records rather than one it has closed.
+
+## When
+
+- In the conversation area of a topic, a direct message or a file thread, while
+  the first read is outstanding.
+- In the thread panel, for the same reason.
+
+## When not
+
+- For an **empty** conversation. Empty and loading are different sentences, and
+  a skeleton that resolves to nothing tells somebody their messages are coming
+  when they are not. Empty is `EmptyState`, or `NewTopicBanner` when the
+  conversation is new.
+- For a **failed** read. Same argument, more sharply: a skeleton that never
+  resolves looks like a slow network rather than an error.
+- In a side list. That is `SkeletonSidebarList`, which is the package's
+  `SkeletonList` under Peek's name — a row of small square-and-bar rows, not
+  cards.
+
+## How
+
+```tsx
+import { SkeletonConversationList } from '@/components/ui/Skeleton'
+
+if (loading) return <SkeletonConversationList />
+```
+
+## What it owns
+
+- **The shape of a conversation card**, which is the only part of the skeleton
+  family that is Peek's: a 24px avatar, a name, a time, and two body lines. The
+  bar, the row and the list underneath are all the package's.
+- **Three cards with different second lines** — 420, 300 and 500 — so the block
+  reads as messages rather than as a pattern.
+- **Coming in after a delay**, through `animate-skeleton-in`, so a fast read
+  never flashes a skeleton at all.
+- **`aria-hidden`.** It is a placeholder, and announcing three empty cards helps
+  nobody.
+
+## Props
+
+| | |
+| --- | --- |
+| `className` | passed through |

@@ -1,0 +1,65 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/ProjectTickets" />
+
+# ProjectTickets
+
+A project's tickets: a count you can open, a quiet progress bar beside it, and
+the list behind them.
+
+**Seen in** — *Topics/Files panel* and *Overlays/TopicDetailsDialog*, which are
+both the places it is used. **In every one of those stories the list is shut**,
+because shut is the default and no story opens it. Open it yourself by pressing
+the count. A story that shows it open is one of the gaps UIG-17 records.
+
+## When
+
+- Beside a topic that has a project linked to it: in the Files panel, and in the
+  topic's details dialog.
+- Shut, always, to begin with. The count and the bar answer the question most
+  people arrive with; the list is for when they do not.
+
+## When not
+
+- As a ticket list on its own. It is a project's work, with that project's
+  counts — the accordion and the counter are the component, not decoration
+  around it.
+- Twice, differently. It was extracted from the Files panel precisely so the
+  details dialog could show a project's work the same way (PEE-2): the same
+  accordion, counter, bar and rows. **Two renderings of one thing is how they
+  drift, and these two are one click apart.**
+
+## How
+
+```tsx
+import { ProjectTickets } from '@/components/ui/ProjectTickets'
+
+<ProjectTickets tickets={folderProject.tickets} openCount={2} doneCount={1} />
+```
+
+## What it owns
+
+- **Which field is a ticket's key.** `FEE-1` comes from a **meta** slot with no
+  label and no pubkey — the unlabelled one is an identifier, the labelled ones
+  ("Assignee", "Lead") are properties. Nothing here knows the tag is called
+  `ref`, and the rule is about shape rather than about Ship.
+- **Not using `subtitle` for it.** That was the first guess and it was wrong in
+  the only place that mattered: Ship maps `subtitle` to the issue's
+  *description*, so the column filled with the opening words of each ticket's
+  body. The fixtures said otherwise because they were written to the guess —
+  which is exactly how it passed Storybook and failed in production (20 August
+  2026).
+- **The bar's restraint.** Two hairlines of muted colour, no legend, no
+  percentage: the counts already say it, but a number is read and a bar is
+  *seen*. The package's `ProgressBar` in its `quiet` look, 4px by Katerina's
+  ruling of 14 September.
+- **Drawing no bar at all when there is nothing to measure.**
+
+## Props
+
+| | |
+| --- | --- |
+| `tickets` | required — the project's foreign objects |
+| `openCount` | required |
+| `doneCount` | required |
+| `className` | passed through |

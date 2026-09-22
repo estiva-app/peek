@@ -1,0 +1,59 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/MembersPill" />
+
+# MembersPill
+
+Who is in this conversation: up to three faces and the total, in a small
+outlined pill.
+
+**Seen in** — *Messages/ConversationHeader* and *Messages/ThreadPanel*. Those
+are both the places it is used, which is why it has no story of its own.
+
+## When
+
+- In the header of anything with members: a topic, a group, a huddle.
+- With `onClick` when the membership can be opened or changed.
+
+## When not
+
+- Without `onClick` as a way of hiding it. It stays visible and goes
+  **disabled**, which is deliberate: a huddle's membership is fixed at creation,
+  and the reader still needs to see who is in it.
+- For a single person. At `total === 0` it draws nothing, but a one-person
+  conversation wants that person's name, not a pill counting to one.
+
+## How
+
+```tsx
+import { MembersPill } from '@/components/ui/MembersPill'
+
+<MembersPill members={names} count={memberCount} onClick={openMembers} />
+```
+
+- `members` is the names in order; at most three faces are drawn.
+- `count` is the number beside them, defaulting to how many names there are —
+  pass it when you have more members than names loaded.
+
+## What it owns
+
+- **Being one pill rather than two.** `ConversationHeader` drew this and
+  `ThreadPanel` re-typed it, down to the padding, and the copy had drifted
+  (COMPONENTS-PEEK F12). Both call this now.
+- **Faces that are the size they say they are.** The re-typed copy stacked its
+  own avatars in `overflow-hidden border-2` boxes, which clips the face and the
+  right edge of the initials, and takes the border out of the inside — a 24px
+  avatar showed 20px of face. The package's `AvatarGroup` draws its ring as a
+  shadow, outside the face, so 24 means 24.
+- **Disabled rather than a different element** when there is nothing to press,
+  so one set of pixels covers both cases.
+- **Drawing nothing at zero**, so no call site needs that guard.
+
+## Props
+
+| | |
+| --- | --- |
+| `members` | required — names in order, up to three faces drawn |
+| `count` | the total shown; defaults to `members.length` |
+| `onClick` | omit it and the pill is disabled, not hidden |
+| `className` | passed through |

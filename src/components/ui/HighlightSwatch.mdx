@@ -1,0 +1,49 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/HighlightSwatch" />
+
+# HighlightSwatch
+
+The colour square for one kind of highlight, on its own — for the places where
+the name is already written beside it.
+
+**Seen in** — the *Swatches* story on *Topics/HighlightPill*, which draws all of
+them in a row. It lives in that same file, so its page sits beside its sibling's
+rather than carrying a repeat of it.
+
+## When
+
+- In a list where each row already says the word: the highlight menu, the slash
+  menu, the more-menu on a message.
+- Anywhere the colour is the only thing that needs to be recognised, and the
+  name is a neighbouring element rather than part of the same object.
+
+## When not
+
+- On a message. There the square needs its word with it, which is
+  `HighlightPill`.
+- As a colour sample of its own. The size is fixed at a 12px square inside a
+  16px box so it lines up with menu icons; it is a marker, not a swatch in the
+  design-token sense.
+
+## How
+
+```tsx
+import { HighlightSwatch } from '@/components/ui/HighlightPill'
+
+<MenuItem icon={<HighlightSwatch type="insight" />}>Insight</MenuItem>
+```
+
+## What it owns
+
+- **The same colour map as the pill** — `HIGHLIGHT_FILL_CLASSES` — so a menu row
+  and the pill it produces can never disagree about what Insight looks like.
+- **The 12-in-16 box**, so it occupies exactly the space a menu icon does and
+  rows do not shift between a swatch and an icon.
+
+## Props
+
+| | |
+| --- | --- |
+| `type` | required — a `HighlightType` |
+| `className` | passed through |

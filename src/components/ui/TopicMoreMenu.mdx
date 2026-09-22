@@ -1,0 +1,70 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Topics/TopicMoreMenu" />
+
+# TopicMoreMenu
+
+The one menu a topic has, wherever you open it from (PEE-2).
+
+**Seen in** — *Overlays/Menus*, and *Messages/ConversationHeader*, where it
+hangs off the header's own ⋯ button. Press the trigger in either to open it.
+
+There were two menus before, hand-rolled a few files apart, and they had already
+drifted: the sidebar row offered **Delete topic** and the conversation header did
+not, so a topic could be deleted from the list but not from inside itself. **Two
+menus for one object is how that happens.**
+
+## When
+
+- Anywhere a topic, a direct message or a file's topic can be acted on: the
+  sidebar row, the conversation header, the file page.
+- Pass only the handlers that apply. Every item is drawn only when its handler
+  is there, so the menu shortens itself rather than offering something that
+  cannot work.
+
+## When not
+
+- For actions that are already reachable. Star and the Folder link are icons in
+  the header, and repeating them here would make the menu longer without making
+  either easier to reach (Katerina, 19 August).
+- As a general-purpose menu. That is the package's `Menu` directly.
+- By measuring a rectangle and keeping open state yourself. It owns its trigger
+  since `@estiva-app/ui@0.10.0`; both callers used to do that and neither does
+  now.
+
+## How
+
+```tsx
+import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
+
+<TopicMoreMenu
+  trigger={<IconButton aria-label="More" icon={<IconDots />} />}
+  onOpenDetails={openDetails}
+  onToggleFollow={toggleFollow}
+  followAction={isFollowing ? 'unfollow' : 'follow'}
+  onDeleteTopic={canDelete ? confirmDelete : undefined}
+/>
+```
+
+- `onOpenChange` is for a caller whose own look depends on the menu being open —
+  the sidebar row keeps its hover surface and its actions visible while its menu
+  is open, which is the whole reason that prop exists.
+
+## What it owns
+
+- **Being the only menu.** Both call sites hand it their handlers; neither draws
+  its own items.
+- **Labels that state the direction that will work.** `openWorkAction` is `add`
+  or `remove`, `followAction` is `follow` or `unfollow` — so the menu never
+  offers an action that is already true.
+- **The word "hide" for a direct message** (DMS-6), because that is all it does:
+  the conversation, its history and the other person's view of it all survive,
+  and opening it again brings it back.
+- **Where it opens.** Portalled and right-aligned: the sidebar scrolls and clips
+  its overflow, and a content-sized menu grows leftward so a long label never
+  runs off screen.
+
+## Props
+
+Every handler is optional and each one draws its item. `trigger` is required and
+is the control the menu owns. `onOpenChange` reports open and closed.

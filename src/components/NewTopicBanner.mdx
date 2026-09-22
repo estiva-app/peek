@@ -1,0 +1,55 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as NewTopicBannerStories from './NewTopicBanner.stories'
+
+<Meta of={NewTopicBannerStories} />
+
+# NewTopicBanner
+
+The strip above the composer of a conversation that has no messages yet — "this
+is the beginning of…" — with an invitation to bring people in, where that makes
+sense.
+
+<Canvas of={NewTopicBannerStories.Default} />
+
+## When
+
+- Above the composer, when a topic or a direct message has nothing in it yet.
+- `kind="topic"` for a topic or group, which gets **Invite members**.
+- `kind="dm"` for a direct message, which does not.
+
+<Canvas of={NewTopicBannerStories.DmBeginning} />
+
+## When not
+
+- For an empty *list* — a topic with no replies, a folder with nothing in it.
+  That is `EmptyState`. This one is specifically the head of a conversation that
+  is about to have its first message written into it.
+- To announce anything else. It is the package's `Banner` in its `info` tone
+  (Katerina, 18 September); a warning or an error is that component directly,
+  with its own tone.
+
+## How
+
+```tsx
+import { NewTopicBanner } from '@/components/NewTopicBanner'
+
+<NewTopicBanner title={topic.title} onInviteMembers={openInvite} />
+<NewTopicBanner title={partnerName} kind="dm" />
+```
+
+- `title` is the topic's title for a topic, and the other person's name for a
+  direct message.
+
+## What it owns
+
+- **The two sentences, and which one applies.** "…your conversations in" for a
+  topic, "…your conversation with" for a direct message — singular against
+  plural, decided here rather than at the two call sites.
+- **That a direct message gets no invite action.** You cannot invite a third
+  person into a DM, so the action is not merely disabled, it is absent.
+- **The emphasis on the name**, so the title reads as the subject of the
+  sentence rather than as part of the sentence.
+
+## Props
+
+<Controls of={NewTopicBannerStories.Default} />

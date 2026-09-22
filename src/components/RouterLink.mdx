@@ -1,0 +1,56 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Primitives/RouterLink" />
+
+# RouterLink
+
+The package's `Link`, followed through Peek's router (UIG-27).
+
+**Seen in** — *Messages/ConversationCard* and *Messages/ThreadPanel*, which are
+both the places it is used. It draws exactly what the package's `Link` draws, so
+a story of its own would only repeat that one.
+
+## When
+
+- Any link inside Peek that points somewhere inside Peek. It navigates in place
+  rather than reloading the app.
+- In a component that might be rendered **without** a router — a story, a
+  detached panel. The router is read here, in the link, not in the card around
+  it, so such a card still renders.
+
+## When not
+
+- For a link out of Peek. Pass `external` and it behaves as a plain anchor;
+  a modified click, or one carrying a `target`, is left to the browser either
+  way, so a new tab still works.
+- Using react-router's own `Link`. That was what this replaced: it draws
+  nothing of the package's, so its links did not look like Peek's.
+- Using a bare `<a>`. That reloads the whole app. SHI-20 is the ticket where
+  exactly that was found in Ship, and a Playwright test that watches for a
+  window marker is how it was proved.
+
+## How
+
+```tsx
+import { RouterLink } from '@/components/RouterLink'
+
+<RouterLink href={`/topic/${topic.id}`}>{topic.title}</RouterLink>
+```
+
+- `onClick` runs **first** and may take the click with `preventDefault`. Only if
+  it does not does the link navigate.
+
+## What it owns
+
+- **Which clicks it keeps and which it hands back.** A plain left click
+  navigates in place; a middle click, a modified click, or one with a `target`
+  is the browser's.
+- **Reading the router at the leaf**, so a component tree without a router still
+  renders. That is the property react-router's `Link` did not have, and it is
+  why two Files-panel stories were throwing until UIG-17 wrapped them.
+
+## Props
+
+The package's `LinkProps`: `href`, `variant`, `external`, `truncate`,
+`children`, plus the usual anchor attributes. Their rules are on the package's
+own page.

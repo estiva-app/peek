@@ -1,0 +1,63 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Primitives/PersonChipInput" />
+
+# PersonChipInput
+
+Peek's people picker: the package's `ChipInput`, given Peek's directory and
+Peek's faces.
+
+**Seen in** — *Overlays/Dialogs* (**Create topic** and **Members**) and
+*Huddles/HuddleCreator*. Those, with the action form panel, are all the places
+it is used.
+
+## When
+
+- Any field where a person picks people: inviting to a topic, adding members,
+  starting a huddle, filling a `pubkey` control on another app's form.
+- With `excludeIds` when somebody should not be offered — the current user,
+  or people already in the room.
+
+## When not
+
+- For picking anything that is not a person. The generic input is the package's
+  `ChipInput` and knows nothing about people; that is the one to reach for.
+- Expecting the package's option objects back. It hands you **your own `Person`
+  objects**, deliberately, so nothing extra rides into a mutation.
+
+## How
+
+```tsx
+import { PersonChipInput } from '@/components/ui/PersonChipInput'
+
+<PersonChipInput value={invitees} onChange={setInvitees} excludeIds={[me.id]} />
+```
+
+- `value` and what `onChange` returns are both `Person[]` — the same shape the
+  rest of Peek passes around.
+
+## What it owns
+
+- **The mapping in both directions.** `Person` becomes an id, a label and a
+  description on the way in; on the way out the ids are looked back up in
+  Peek's own people, so the caller never handles a mapped object.
+- **The faces**, through Peek's `Avatar` wrapper rather than the package's, so
+  the pictures resolve the same way they do everywhere else — 16px on a chip,
+  32px in a suggestion row.
+- **Peek's directory** — `usePeople()` — so no call site passes an options list.
+
+## What changed visibly when it stopped being hand-rolled
+
+Three things, all ruled: the chip is curved (`rounded-md`), the face keeps the
+`Avatar`'s own corners instead of being forced into a circle, and it sits 2px
+from the edge.
+
+## Props
+
+| | |
+| --- | --- |
+| `value` | required — the chosen people |
+| `onChange` | required — receives `Person[]` |
+| `placeholder` | default "Search people..." |
+| `autoFocus` | |
+| `excludeIds` | ids kept out of the suggestions |
