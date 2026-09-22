@@ -1,5 +1,5 @@
 import { IconEdit, IconSortDescending } from '@tabler/icons-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -132,6 +132,72 @@ export function PeoplePage() {
   })
 
   return (
+    <PeoplePageView
+      railClosed={railClosed}
+      loading={DMS === undefined || starredLoading}
+      starred={starredDmItems}
+      people={visibleDms.map((dm) => {
+        const urgent = showUnreads && dmIsUrgent(dm.id)
+        return {
+          id: dm.id,
+          name: dm.name,
+          isUnread: (showUnreads && dmHasUnread(dm.id)) || urgent,
+          isUrgent: urgent,
+          canHide: canHideDm(dm.id),
+        }
+      })}
+      selectedId={selectedId}
+      onSelect={handleSelect}
+      onHideDm={hideDm}
+      rightPanel={DMS === undefined ? <div className="flex-1 h-full" /> : dmView.rightPanel}
+      threadPanel={dmView.threadPanel}
+    />
+  )
+}
+
+/** One row in the people list, with everything it needs already decided. */
+export interface PeopleListItem {
+  id: string
+  name: string
+  isUnread: boolean
+  isUrgent: boolean
+  /** Hiding is offered only where it can succeed (DMS-6). */
+  canHide: boolean
+}
+
+/**
+ * The People page's body, handed everything it draws — the half a story can
+ * show (UIG-17).
+ *
+ * `PeoplePage` above reads, sorts and routes; this one only draws, so a story
+ * can put it in the shell with a fixture and show an empty workspace, a long
+ * list or a first read still in flight — none of which the live page could
+ * ever be made to show.
+ */
+export function PeoplePageView({
+  railClosed,
+  loading,
+  starred,
+  people,
+  selectedId,
+  onSelect,
+  onHideDm,
+  rightPanel,
+  threadPanel,
+}: {
+  railClosed: boolean
+  /** The first read, still in flight. Not the same as an empty workspace. */
+  loading: boolean
+  starred: StarredItem[]
+  /** Already sorted, already filtered of starred and hidden. */
+  people: PeopleListItem[]
+  selectedId: string | null
+  onSelect: (id: string) => void
+  onHideDm: (id: string) => void
+  rightPanel?: ReactNode
+  threadPanel?: ReactNode
+}) {
+  return (
     <AppShell
       leftPanel={
         <ListColumn
@@ -149,41 +215,34 @@ export function PeoplePage() {
             </Toolbar>
           }
         >
-          {DMS === undefined || starredLoading ? (
+          {loading ? (
             <SkeletonSidebarList rows={8} />
           ) : (
             <>
-              <StarredSection
-                items={starredDmItems}
-                selectedId={selectedId}
-                onSelect={handleSelect}
-              />
+              <StarredSection items={starred} selectedId={selectedId} onSelect={onSelect} />
 
               {/* Divider only when there are people below it — no dangling
                   line when the workspace has no one else yet (issue #2). */}
-              {visibleDms.length > 0 && <Divider className="my-2" />}
+              {people.length > 0 && <Divider className="my-2" />}
 
-              {visibleDms.map((dm) => {
-                const urgent = showUnreads && dmIsUrgent(dm.id)
-                return (
-                  <PersonRow
-                    key={dm.id}
-                    name={dm.name}
-                    type="DM"
-                    isUnread={(showUnreads && dmHasUnread(dm.id)) || urgent}
-                    isUrgent={urgent}
-                    isSelected={selectedId === dm.id}
-                    onClick={() => handleSelect(dm.id)}
-                    onHideDm={canHideDm(dm.id) ? () => hideDm(dm.id) : undefined}
-                  />
-                )
-              })}
+              {people.map((dm) => (
+                <PersonRow
+                  key={dm.id}
+                  name={dm.name}
+                  type="DM"
+                  isUnread={dm.isUnread}
+                  isUrgent={dm.isUrgent}
+                  isSelected={selectedId === dm.id}
+                  onClick={() => onSelect(dm.id)}
+                  onHideDm={dm.canHide ? () => onHideDm(dm.id) : undefined}
+                />
+              ))}
             </>
           )}
         </ListColumn>
       }
-      rightPanel={DMS === undefined ? <div className="flex-1 h-full" /> : dmView.rightPanel}
-      threadPanel={dmView.threadPanel}
+      rightPanel={rightPanel}
+      threadPanel={threadPanel}
     />
   )
 }
