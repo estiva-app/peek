@@ -27,7 +27,7 @@
  * Read-only: three `POST /query` and one WebSocket handshake that subscribes
  * to nothing.
  */
-import { WebSocket } from 'ws'
+import { request } from 'node:https'
 import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 
@@ -75,36 +75,48 @@ async function query(
 
 const tag = (e: SignedEvent, name: string) => e.tags.find((x) => x[0] === name)?.[1]
 
-/** The handshake, with the browser's Origin. Resolves with what happened. */
+/**
+ * The handshake, with a browser's `Origin`. Written against `node:https`
+ * rather than a WebSocket library on purpose: the question is whether the
+ * relay *upgrades* the connection, which is the HTTP 101 and nothing after
+ * it — and a dependency for one request would be a dependency the app ships.
+ */
 function handshake(origin: string | undefined): Promise<string> {
   return new Promise((resolve) => {
-    const url = RELAY_URL.replace(/^http/, 'ws').replace(/\/+$/, '')
-    const socket = new WebSocket(url, origin ? { headers: { Origin: origin } } : {})
-    const done = (verdict: string) => {
-      try {
-        socket.close()
-      } catch {
-        /* already gone */
-      }
-      resolve(verdict)
-    }
-    const timer = setTimeout(() => done('no answer in 10 s'), 10_000)
-    socket.on('open', () => {
-      // Upgraded. Ask for something unauthenticated so the relay says its piece.
-      socket.send(JSON.stringify(['REQ', 'probe', { kinds: [1111], limit: 1 }]))
+    const url = new URL(RELAY_URL)
+    const req = request({
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname === '/' ? '/' : url.pathname,
+      method: 'GET',
+      headers: {
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Version': '13',
+        // Any 16 random bytes, base64: the relay echoes an accept token.
+        'Sec-WebSocket-Key': Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('base64'),
+        ...(origin ? { Origin: origin } : {}),
+      },
     })
-    socket.on('message', (raw) => {
+    const timer = setTimeout(() => {
+      req.destroy()
+      resolve('no answer in 10 s')
+    }, 10_000)
+    req.on('upgrade', (res, socket) => {
       clearTimeout(timer)
-      done(`upgraded, first frame: ${String(raw).slice(0, 160)}`)
+      socket.destroy()
+      resolve(`upgraded (HTTP ${res.statusCode ?? 101})`)
     })
-    socket.on('error', (error: Error) => {
+    req.on('response', (res) => {
       clearTimeout(timer)
-      done(`refused: ${error.message}`)
+      res.resume()
+      resolve(`refused at the upgrade: HTTP ${res.statusCode}`)
     })
-    socket.on('unexpected-response', (_req, res) => {
+    req.on('error', (error: Error) => {
       clearTimeout(timer)
-      done(`refused at the upgrade: HTTP ${res.statusCode}`)
+      resolve(`refused: ${error.message}`)
     })
+    req.end()
   })
 }
 

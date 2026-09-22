@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LiveProjectionApi } from './liveProjection'
-import { getLiveTopics, resetLiveTopicsForTests } from './liveTopics'
+import { getLiveTopics, relayLog, resetLiveTopicsForTests } from './liveTopics'
 
 const CHANNEL = '11111111-1111-4111-8111-111111111111'
 const CHANNEL_B = '22222222-2222-4222-8222-222222222222'
@@ -157,6 +157,45 @@ describe('watchChannels — the sidebar’s wide filter (SHR-5)', () => {
     nothing — EOSE, `live`, silence. It needs a signed-in person against
     production, which is why the interval fallback stays armed.
   */
+})
+
+describe('the log says when a live path stopped (FOL-40)', () => {
+  /*
+    The console is the only place a refused subscription shows, and the
+    client's log is `console.debug`, which the browser hides at its default
+    level. Three rounds of FOL-40 were spent on a question one visible line
+    would have answered, so the lines that mean "this stopped working" are
+    warnings and the rest stays quiet.
+  */
+  it('warns for a refusal and stays quiet for a trace', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    try {
+      relayLog('folder subscription closed', { reason: 'rate-limited: quota exceeded' })
+      relayLog('no credential; deferring auth')
+      relayLog('relay refused the auth event', { reason: 'restricted' })
+      expect(warn).toHaveBeenCalledTimes(3)
+
+      relayLog('authenticated', { subscriptions: 3 })
+      relayLog('reconnecting', { attempt: 1 })
+      expect(debug).toHaveBeenCalledTimes(2)
+      expect(warn).toHaveBeenCalledTimes(3)
+    } finally {
+      warn.mockRestore()
+      debug.mockRestore()
+    }
+  })
+
+  it('says how many Folders a wide filter asked for', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      const live = getLiveTopics('https://relay.test', api)
+      live.watchChannels([CHANNEL, CHANNEL_B], () => {}).stop()
+      expect(info).toHaveBeenCalledWith('[relay] watching 2 folder(s) for kinds 9, 1111')
+    } finally {
+      info.mockRestore()
+    }
+  })
 })
 
 describe('the state seam', () => {

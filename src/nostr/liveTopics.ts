@@ -125,6 +125,26 @@ export interface LiveTopics {
  */
 const holder = createLiveClientHolder()
 
+/**
+ * Messages that mean a live feature has silently stopped working.
+ *
+ * The client's log is `console.debug`, which the browser hides at its default
+ * level — right for a frame-by-frame trace and wrong for these. A refused
+ * subscription, a credential that never arrives and an auth the relay rejects
+ * each disable something the person is looking at, with no other symptom than
+ * the feature quietly not happening. FOL-40 cost three rounds partly because
+ * the one line that would have named the cause was a level nobody had turned
+ * on.
+ */
+const LOUD = ['closed', 'refused', 'giving up', 'no credential', 'could not sign']
+
+/** The relay client's log: quiet by default, loud when something stopped. */
+export function relayLog(message: string, detail?: unknown): void {
+  const loud = LOUD.some((phrase) => message.includes(phrase))
+  const write = loud ? console.warn : console.debug
+  write('[relay]', message, detail ?? '')
+}
+
 interface Wiring {
   relayUrl: string
   client: LiveClient
@@ -159,7 +179,7 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
       // wastes their time.
       onSignFailure: (error) => recordCredentialFailure(reasonForSignFailure(error)),
     },
-    log: (message, detail) => console.debug('[relay]', message, detail ?? ''),
+    log: relayLog,
   })
 
   const activity = createFolderActivity()
@@ -187,10 +207,20 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
       // refused outright on some builds with `restricted: p-gated events
       // require #p matching your pubkey`. Both message kinds, because a
       // comment written before Ship flipped stays `kind:9` for ever.
-      watchChannels: (channelUuids, listener, options) =>
-        client.watchFolders([...channelUuids], listener, {
-          kinds: [...(options?.kinds ?? [KIND.STREAM_MESSAGE, KIND.COMMENT])],
-        }),
+      watchChannels: (channelUuids, listener, options) => {
+        const kinds = [...(options?.kinds ?? [KIND.STREAM_MESSAGE, KIND.COMMENT])]
+        /*
+          Said out loud, once per subscription. A wide filter is the only live
+          path with no visible effect when it works and none when it does not,
+          so "did this tab even ask?" was unanswerable from a console at its
+          default level — and it is the first question every time a dot does
+          not move.
+        */
+        console.info(
+          `[relay] watching ${channelUuids.length} folder(s) for kinds ${kinds.join(', ')}`,
+        )
+        return client.watchFolders([...channelUuids], listener, { kinds })
+      },
     },
   }
 }
