@@ -10,6 +10,7 @@ import { PersonRow } from '@/components/ui/PersonRow'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
 import type { FileControl } from '@/components/views/useFileControls'
+import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { fileControlsOf } from '@/lib/fileControls'
 
 /**
@@ -46,12 +47,19 @@ function TreeLine({ message }: { message: string }) {
  */
 export function FileTreeView({
   state,
+  filter = 'all',
   selectedRef,
   expand,
   onSelect,
   onControl,
 }: {
   state: FolderContentsState
+  /**
+   * What the column is showing (FOL-41). A peer survives when it matches or
+   * one of the children this same read listed does, and a peer kept for a
+   * child's sake starts expanded — the parents of a match are drawn.
+   */
+  filter?: TreeFilter
   /** `ref` of the file this page is showing. */
   selectedRef?: string
   /**
@@ -70,6 +78,11 @@ export function FileTreeView({
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
+  /*
+    The same set the rows' own follow controls read, so a row kept by the
+    `Followed` filter and the bell drawn on it cannot disagree in one render.
+  */
+  const { followed } = useFollows()
 
   if (state === 'loading') {
     return (
@@ -87,16 +100,43 @@ export function FileTreeView({
     return <TreeLine message="Nothing in this folder yet." />
   }
 
+  /*
+    Filtered here rather than inside the row, so the rows kept for a child's
+    sake can be started expanded in the same pass — a match one level down is
+    reached without a click, which is the point of the filter.
+  */
+  const peers = peersOf(folder.files)
+  const kept = peers.filter((file) =>
+    fileMatches(filter, file, listedChildrenOf(file, folder.files), unread, followed),
+  )
+  const openForChild =
+    filter === 'all'
+      ? []
+      : kept
+          .filter((file) => !fileMatches(filter, file, [], unread, followed))
+          .map((file) => file.ref)
+
+  /*
+    Empty because of the filter, not because the Folder is: the Folder-level
+    verdict sees the whole channel and this listing is only its first level, so
+    a Folder can survive the filter on something below the rows drawn here
+    (`treeFilter`'s "What it cannot reach"). Saying "nothing in this folder"
+    would be a lie about the Folder.
+  */
+  if (kept.length === 0) {
+    return <TreeLine message="Nothing here matches — the match is deeper in." />
+  }
+
   return (
     <div className="flex flex-col gap-0.5" data-folder={folder.id} data-source={folder.source}>
-      {peersOf(folder.files).map((file) => (
+      {kept.map((file) => (
         <TreeRow
           key={file.ref}
           file={file}
           listed={folder.files}
           unread={unread}
           selectedRef={selectedRef}
-          expand={expand}
+          expand={[...(expand ?? []), ...openForChild]}
           onSelect={onSelect}
           onControl={onControl}
         />

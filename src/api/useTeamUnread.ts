@@ -10,7 +10,7 @@ import { relayFailureKind, withRateLimitRetry } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
-import { teamHasUnread } from './teamUnread'
+import { teamHasFollowedStream, teamHasUnread } from './teamUnread'
 
 /** How long the socket's activity is gathered before one re-read pays for all of it. */
 export const TEAM_UNREAD_SETTLE_MS = 1_000
@@ -45,6 +45,13 @@ export const TEAM_UNREAD_SETTLE_MS = 1_000
  */
 export function useTeamUnread(folders: readonly FolderSummary[] | null | undefined): {
   unread: Record<string, boolean>
+  /**
+   * Whether each Folder holds a stream the person follows — the tree's
+   * `Followed` filter (FOL-41), judged over the messages already read for the
+   * dots. Same rule about absence as `unread`: a Folder with no entry was not
+   * judged, and a filter keeps it rather than hiding it on a guess.
+   */
+  followed: Record<string, boolean>
 } {
   const { channelStreams } = useForeignObjects()
   /*
@@ -181,14 +188,23 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   */
   return useMemo(() => {
     const unread: Record<string, boolean> = {}
+    const followedIn: Record<string, boolean> = {}
     // Not judged until the first merge has landed: before that every marker is
     // absent, and "absent" would light the whole sidebar. Nor until the relay
     // has said what the person follows (FOL-30): an unknown set is not an
     // empty one, and judging over it would put every dot out and then relight.
-    if (!frontier.ready || follows.state === 'unknown') return { unread }
+    if (!frontier.ready || follows.state === 'unknown') return { unread, followed: followedIn }
     const me = validToken()?.pubkey
     for (const folder of ids) {
       const messages = held.streams[folder]
+      /*
+        Judged before the messages are, because half of it does not need them:
+        following the Folder follows its general chat, and a Folder nobody has
+        said anything in still answers "yes" to that. `teamHasUnread` below is
+        the opposite — with nothing said there is nothing unread — so it keeps
+        the entry-or-nothing rule and an unasked Folder draws no dot.
+      */
+      followedIn[folder] = teamHasFollowedStream(folder, messages ?? [], follows.isFollowed)
       // Not asked about, or not answered yet: no entry, so no dot either way.
       if (!messages) continue
       unread[folder] = teamHasUnread(folder, messages, {
@@ -208,9 +224,18 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       team's entry as it was, and a topic not judged says nothing.
     */
     for (const folder of folders ?? []) {
-      if (!unread[folder.id] || !folder.listedIn) continue
-      for (const container of folder.listedIn) unread[container] = true
+      if (!folder.listedIn) continue
+      /*
+        The same travel for both verdicts, and for the same reason: a topic is
+        a channel of its own placed in its team, so a team that holds a
+        followed topic holds something followed, exactly as it holds something
+        unread. Only a confident "yes" travels.
+      */
+      for (const container of folder.listedIn) {
+        if (unread[folder.id]) unread[container] = true
+        if (followedIn[folder.id]) followedIn[container] = true
+      }
     }
-    return { unread }
+    return { unread, followed: followedIn }
   }, [held, frontier, follows.state, follows.isFollowed, ids, folders])
 }

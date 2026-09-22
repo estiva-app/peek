@@ -3,6 +3,7 @@ import type { FolderProject, FolderSummary, ForeignObject } from '@estiva-app/in
 import { PEOPLE, PeekDataProvider, type RenameOutcome } from '@/api'
 import { AddToOpenWorkDialog } from './AddToOpenWorkDialog'
 import { ConfirmDelete } from './ConfirmDelete'
+import { CreateFolderDialog } from './CreateFolderDialog'
 import { CreateTopicDialog } from './CreateTopicDialog'
 import { MembersDialog } from './MembersDialog'
 import { MoveFileDialog } from './MoveFileDialog'
@@ -176,6 +177,46 @@ export const StartTopicUnderAFile: Story = {
   render: () => (
     <StartTopicDialog folderName="Folders" parent={shipProject} onCreate={async () => true} onClose={noop} />
   ),
+}
+
+/**
+ * The third case, and the one FOL-41 added: started from the column header,
+ * where there is no Folder in hand. The dialog asks — a second field, the same
+ * `Select` as `MoveFileDialog`'s and for the same reason — and the sentence
+ * above names whichever Folder is chosen, so it changes as the picker does.
+ *
+ * What the old Start topic dialog asks for second is people to invite. That one
+ * makes a Convex topic, whose membership is its own; a bare file has no invitee
+ * list on the wire, and its readers are the Folder's — which is what this field
+ * decides.
+ */
+export const StartTopicChoosingAFolder: Story = {
+  /* `folders` is declared below, beside `MoveFileDialog`'s stories — the same
+     four Folders, including the one with no name, which reads as its id here
+     exactly as it does there. */
+  render: () => <StartTopicDialog folders={folders} onCreate={async () => true} onClose={noop} />,
+}
+
+/**
+ * Nowhere to start one. The same rule as `MoveFileDialog`'s empty case: a
+ * picker with no rows is an action that cannot succeed, so the dialog says so
+ * instead of drawing one.
+ */
+export const StartTopicWithNoFolders: Story = {
+  render: () => <StartTopicDialog folders={[]} onCreate={async () => true} onClose={noop} />,
+}
+
+/* ── CreateFolderDialog ─────────────────────────────────────────────────── */
+
+/**
+ * Making a Folder (FOL-41) — the header's first action, and what replaced the
+ * name-and-Create row that sat above the Folders list.
+ *
+ * One field, because a Folder is a name and nothing else on the wire: the relay
+ * mints the channel and its state from the command (§4.1).
+ */
+export const CreateFolder: Story = {
+  render: () => <CreateFolderDialog onCreate={async () => true} onClose={noop} />,
 }
 
 /**

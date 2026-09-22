@@ -90,3 +90,40 @@ export function teamHasUnread(
   }
   return false
 }
+
+/**
+ * Does this Folder hold anything the person follows — the `Followed` filter's
+ * Folder-level question (FOL-41).
+ *
+ * The sibling of {@link teamHasUnread} and judged over the same messages, so
+ * it costs nothing: `useTeamUnread` has already read every Folder's streams to
+ * place its dots, and this is one more pass over what is in hand. The tree
+ * cannot answer it any other way — a Folder's contents are read when its fold
+ * opens, and filtering a hundred and sixty Folders by opening all of them is
+ * the whole minute's relay budget.
+ *
+ * ## What it can and cannot see
+ *
+ * Following a Folder follows its general chat, so a followed Folder is one of
+ * its own answers. Beyond that, a file is visible here only through a message
+ * that names it: a followed file with nothing said in it inside the 90-day
+ * horizon (§11.6) leaves no trace in these streams and its Folder is not
+ * listed. That is the same horizon the dots are judged by, and a file nobody
+ * has said anything in has nothing for the filter to lead to — but it is a
+ * real limit, not a rounding, and `All` is one click away.
+ */
+export function teamHasFollowedStream(
+  folderId: string,
+  messages: readonly StreamMessage[],
+  followed: (key: string) => boolean,
+): boolean {
+  if (followed(folderId)) return true
+  for (const message of messages) {
+    for (const address of message.about) {
+      // The same test `teamHasUnread` streams by: an `a` that is not an address
+      // names no stream, and the message belongs to the general one.
+      if (fileContext(address) !== undefined && followed(address)) return true
+    }
+  }
+  return false
+}
