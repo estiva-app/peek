@@ -4,7 +4,7 @@ import { ConversationHeader } from './ConversationHeader'
 const members = ['Alice Johnson', 'Jake Walter', 'Zack Bright', 'Amie Miles']
 
 const meta = {
-  title: 'Messages/ConversationHeader',
+  title: 'Frame/ConversationHeader',
   component: ConversationHeader,
   parameters: { layout: 'fullscreen' },
   decorators: [

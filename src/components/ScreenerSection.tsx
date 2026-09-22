@@ -1,4 +1,5 @@
-﻿import { CollapsibleSection } from '@estiva-app/ui'
+﻿import type { ReactNode } from 'react'
+import { CollapsibleSection } from '@estiva-app/ui'
 import { Chip } from './ui/Chip'
 import { ScreenerItem } from './ScreenerItem'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
@@ -8,6 +9,12 @@ interface ScreenerSectionProps {
   onOpen?: (id: string) => void
   onLater?: (id: string, untilMs: number) => void
   onDismiss?: (id: string) => void
+  /**
+   * The hover card for a row. The app leaves it out and each row reads its own
+   * conversation; a story passes fixture rows, which is the only way the hover
+   * can be seen outside the app — the read needs a backend (UIG-17).
+   */
+  previewFor?: (item: ScreenerItemData) => ReactNode
   className?: string
 }
 
@@ -15,7 +22,7 @@ interface ScreenerSectionProps {
  * The Screener on the Desk: a folding list of incoming topics and messages,
  * each with Open, Later and Dismiss, and a count beside the title.
  */
-export function ScreenerSection({ items, onOpen, onLater, onDismiss, className }: ScreenerSectionProps) {
+export function ScreenerSection({ items, onOpen, onLater, onDismiss, previewFor, className }: ScreenerSectionProps) {
   if (items.length === 0) return null
 
   return (
@@ -36,6 +43,7 @@ export function ScreenerSection({ items, onOpen, onLater, onDismiss, className }
           onOpen={onOpen}
           onLater={onLater}
           onDismiss={onDismiss}
+          preview={previewFor?.(item)}
         />
       ))}
     </CollapsibleSection>

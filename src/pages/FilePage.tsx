@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconBell, IconBellFilled, IconDotsVertical, IconX } from '@tabler/icons-react'
 import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
@@ -340,10 +340,14 @@ export function FilePage() {
     <>
     {fileControls.dialogs}
       <FilePageView
-        currentFolder={file?.folder}
-        selectedRef={file?.ref}
-        selectedParent={file?.parentRef}
-        onControl={fileControls.open}
+        nav={
+          <FolderTree
+            currentFolder={file?.folder}
+            selectedRef={file?.ref}
+            selectedParent={file?.parentRef}
+            onControl={fileControls.open}
+          />
+        }
         rightPanel={
         <div className="flex h-full flex-col">
           <ContainerHeader
@@ -470,33 +474,15 @@ export function FilePage() {
  * child whose parent is listed, so without it a Ship issue would be in the
  * Folder and drawn nowhere — the same shape of gap this route was opened for.
  */
-export function FilePageView({
-  currentFolder,
-  selectedRef,
-  selectedParent,
-  onControl,
-  rightPanel,
-  threadPanel,
-}: {
-  currentFolder?: string
-  selectedRef?: string
-  selectedParent?: string | null
-  onControl: ComponentProps<typeof FolderTree>['onControl']
+export function FilePageView({ nav, rightPanel, threadPanel }: {
+  /**
+   * The navigation column. The page hands over its wired `FolderTree`; a story
+   * hands over `FolderTreeView` with a fixture, which is the only way this
+   * column can be drawn at all outside the app — the wired one reads a relay.
+   */
+  nav?: ReactNode
   rightPanel?: ReactNode
   threadPanel?: ReactNode
 }) {
-  return (
-    <AppShell
-      leftPanel={
-        <FolderTree
-          currentFolder={currentFolder}
-          selectedRef={selectedRef}
-          selectedParent={selectedParent}
-          onControl={onControl}
-        />
-      }
-      rightPanel={rightPanel}
-      threadPanel={threadPanel}
-    />
-  )
+  return <AppShell leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} />
 }

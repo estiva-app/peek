@@ -5,12 +5,14 @@ import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SCREENER_ITEMS } from '@/api/fixtures'
+import { ScreenerPreviewCardView } from '@/components/ScreenerPreviewCard'
 import type { StarredItem } from '@/components/ui/StarredSection'
 import { PeoplePageView, type PeopleListItem } from './PeoplePage'
 import { TopicsPageView, type TopicListItem } from './TopicsPage'
 import { DeskPageView, type DeskRow } from './DeskPage'
 import { FoldersPageView } from './FoldersPage'
 import { FilePageView } from './FilePage'
+import { FolderTreeView } from '@/components/views/FolderTree'
 import { ObjectPageView } from './ObjectPage'
 
 const noop = () => {}
@@ -28,6 +30,28 @@ const TOPICS: TopicListItem[] = [
   { id: 't5', title: 'Usability test results for the dashboard redesign', isResolved: true, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
   { id: 't6', title: 'Pricing page copy', isResolved: false, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
 ]
+
+/** The hover card a Screener row opens. The real one reads the conversation,
+ *  which needs a backend, so a story brings its own rows (UIG-17). */
+const screenerPreview = () => (
+  <ScreenerPreviewCardView
+    isTopicResolved={() => false}
+    rows={[
+      {
+        kind: 'message',
+        authorName: 'Hallie Pratt',
+        timestamp: '8:40 AM',
+        body: 'Facilities shared the Q3 floor plan and is asking each team for desk allocations by Friday.',
+      },
+      {
+        kind: 'reply',
+        authorName: 'Amie Miles',
+        timestamp: '9:05 AM',
+        body: 'Worth a look before the deadline so design gets the corner cluster we discussed.',
+      },
+    ]}
+  />
+)
 
 const row = (
   id: string,
@@ -50,6 +74,16 @@ const OPEN_WORK: DeskRow[] = [
 const STARRED_ROWS: DeskRow[] = [
   row('s1', 'dm', 'Amie Miles', { isUnread: true }),
   row('s2', 'topic', 'Ongoing onboarding issues'),
+]
+
+/** The five team Folders FOL-20 leaves on production — the same fixture
+ *  `Views/FolderTree` uses, so the two stories agree about what is there. */
+const FOLDERS = [
+  { id: '925897ad-796e-4bc6-999c-ca19df26c4aa', name: 'Peek', hasState: true },
+  { id: '3789d2ca-103c-40e5-906f-0490782db5fd', name: 'Ship', hasState: true },
+  { id: '85db5b59-9e49-4ea1-8e93-3d2a2d78c048', name: 'Estiva HQ', hasState: true },
+  { id: '0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f', name: 'Leaf', hasState: true },
+  { id: '7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f', name: 'Steer', hasState: true },
 ]
 
 const PEOPLE: PeopleListItem[] = [
@@ -227,6 +261,7 @@ export const Desk: Story = {
       onOpenScreener={noop}
       onDismissScreener={noop}
       onLaterScreener={noop}
+      screenerPreviewFor={screenerPreview}
       urgent={URGENT}
       openWork={OPEN_WORK}
       starred={STARRED_ROWS}
@@ -295,7 +330,7 @@ export const Folders: Story = {
       name=""
       onNameChange={noop}
       onCreate={noop}
-      folders={[]}
+      folders={FOLDERS}
       unread={{}}
       onSelect={noop}
       onOpenFolder={noop}
@@ -338,7 +373,7 @@ export const FoldersCreating: Story = {
       name="Launch"
       onNameChange={noop}
       onCreate={noop}
-      folders={[]}
+      folders={FOLDERS}
       unread={{}}
       onSelect={noop}
       onOpenFolder={noop}
@@ -355,7 +390,18 @@ export const FoldersCreating: Story = {
 export const File: Story = {
   render: () => (
     <FilePageView
-      onControl={noop}
+      nav={
+        <div className="flex w-[290px] shrink-0 flex-col gap-0.5 bg-bg-surface px-3 py-4">
+          <FolderTreeView
+            folders={FOLDERS}
+            signedOut={false}
+            unread={{ '3789d2ca-103c-40e5-906f-0490782db5fd': true }}
+            currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd"
+            onSelect={noop}
+            onOpenFolder={noop}
+          />
+        </div>
+      }
       rightPanel={<EmptyState message="No file selected" />}
     />
   ),
@@ -374,4 +420,24 @@ export const ObjectOpening: Story = {
 
 export const ObjectUnopenable: Story = {
   render: () => <ObjectPageView state="unopenable" />,
+}
+
+/** **A workspace with no Folders in it at all** — which is a different sentence
+ *  from "not signed in", and from a read still in flight. */
+export const FoldersEmpty: Story = {
+  render: () => (
+    <FoldersPageView
+      railClosed={false}
+      signedOut={false}
+      creating={false}
+      name=""
+      onNameChange={noop}
+      onCreate={noop}
+      folders={[]}
+      unread={{}}
+      onSelect={noop}
+      onOpenFolder={noop}
+      rightPanel={<EmptyState message="No folder selected" />}
+    />
+  ),
 }

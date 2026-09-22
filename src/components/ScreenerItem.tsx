@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
 import { PreviewCard } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
@@ -17,11 +18,18 @@ interface ScreenerItemProps {
   /** "Later" → snooze until the chosen absolute timestamp. */
   onLater?: (id: string, untilMs: number) => void
   onDismiss?: (id: string) => void
+  /**
+   * What the hover card shows. The app leaves it out and gets
+   * `ScreenerPreviewContent`, which reads the conversation. A story passes
+   * `ScreenerPreviewCardView` with fixture rows — the only way the hover card
+   * can be seen outside the app, since the read needs a backend (UIG-17).
+   */
+  preview?: ReactNode
 }
 
 /** A single incoming item in the Desk Screener: who/what it is, a two-line preview,
  *  and the Open / Later / ✕ Dismiss triage actions. Rendered by ScreenerSection. */
-export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemProps) {
+export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: ScreenerItemProps) {
   const isTopicResolved = useIsTopicResolved()
 
   const row = (
@@ -67,7 +75,10 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemP
   /*
     The preview needs a backend: with none, `useScreenerPreview` returns an
     empty list and the card would open on an empty box. Offered only where it
-    can say something — the rule `AttachFileButton` already follows.
+    can say something — the rule `AttachFileButton` already follows. A caller
+    that brings its own `preview` has something to say, so the card opens for
+    it whatever the backend: that is how the stories show the hover at all
+    (UIG-17).
 
     The 350ms wait, the portal, the prefer-right-flip-left and the clamp against
     the bottom edge were all written here; they are `PreviewCard`'s now (P27),
@@ -75,9 +86,12 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemP
     the wrapper because the trigger is a row, and the component's own wrapper is
     an inline span.
   */
-  if (!hasConvex) return row
+  if (!hasConvex && !preview) return row
   return (
-    <PreviewCard content={<ScreenerPreviewContent itemId={item.id} />} wrapperClassName="block w-full">
+    <PreviewCard
+      content={preview ?? <ScreenerPreviewContent itemId={item.id} />}
+      wrapperClassName="block w-full"
+    >
       {row}
     </PreviewCard>
   )

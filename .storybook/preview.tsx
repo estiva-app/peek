@@ -111,8 +111,17 @@ const preview: Preview = {
         order: [
           'Docs',
           ['Introduction'],
+          /* Where `Layouts` used to be: the pages themselves come first,
+             before the parts they are built from (UIG-17). */
+          'Pages',
+          /* The frame around a conversation: its header and its replies
+             column (Katerina's review, 22 September). */
+          'Frame',
           'Primitives',
           'Messages',
+          /* Carved out of Messages, same review: the body, what renders
+             it, and the composer that writes it. */
+          'Writing & text',
           ['*', 'Composer'],
           'Topics',
           'Huddles',

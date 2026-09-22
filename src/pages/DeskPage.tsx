@@ -425,6 +425,7 @@ export function DeskPageView({
   onOpenScreener,
   onDismissScreener,
   onLaterScreener,
+  screenerPreviewFor,
   urgent,
   openWork,
   starred,
@@ -440,6 +441,8 @@ export function DeskPageView({
   onOpenScreener: ComponentProps<typeof ScreenerSection>['onOpen']
   onDismissScreener: ComponentProps<typeof ScreenerSection>['onDismiss']
   onLaterScreener: ComponentProps<typeof ScreenerSection>['onLater']
+  /** Passed straight to the section; see its note. */
+  screenerPreviewFor?: ComponentProps<typeof ScreenerSection>['previewFor']
   urgent: DeskRow[]
   openWork: DeskRow[]
   starred: DeskRow[]
@@ -462,6 +465,7 @@ export function DeskPageView({
                     onOpen={onOpenScreener}
                     onDismiss={onDismissScreener}
                     onLater={onLaterScreener}
+                    previewFor={screenerPreviewFor}
                   />
                   <Divider className="my-2" />
                 </>

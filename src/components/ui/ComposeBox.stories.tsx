@@ -10,7 +10,7 @@ import { ComposeBox } from './ComposeBox'
  * centred box — otherwise they render above the canvas and you see nothing.
  */
 const meta = {
-  title: 'Messages/Composer/ComposeBox',
+  title: 'Writing & text/Composer/ComposeBox',
   component: ComposeBox,
   decorators: [
     // The upload actions come from the seam's Convex context.

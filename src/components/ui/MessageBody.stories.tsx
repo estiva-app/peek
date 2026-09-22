@@ -45,7 +45,7 @@ const MESSAGE_OBJECT = {
 } as unknown as ForeignObject
 
 const meta = {
-  title: 'Messages/MessageBody',
+  title: 'Writing & text/MessageBody',
   component: MessageBody,
   args: {
     // MessageBody takes the resolved-lookup from its caller (useTopicMutations);
