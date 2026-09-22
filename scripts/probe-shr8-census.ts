@@ -29,6 +29,12 @@
  * That third leg is the one that decides the ticket's done-when, which is "0
  * messages and 0 attachments with no relay event" — not "0 with a null column".
  *
+ * **A discarded topic is subtracted, not ignored.** CON-4 dropped *For
+ * testing* rather than recovering it, so its rows can never leave the gap by
+ * being migrated. They are listed in `con4-discarded.ts`, still counted in
+ * every raw total here, and netted off in one line, so the done-when's 0 stays
+ * a measurement and nobody has to be told by hand why 23 of the gap is fine.
+ *
  * DMs are counted only if a viewer is available, and normally are not: Convex's
  * DM queries resolve through `viewerId(ctx)`, which is null for an
  * unauthenticated caller. Their size is a question for the DM track, and this
@@ -36,6 +42,7 @@
  */
 import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { DISCARDED, NO_FILE_TARGET, TEAMS } from './con4-discarded.js'
 
 const CONVEX = process.env.CONVEX_URL ?? 'https://honorable-guineapig-592.eu-west-1.convex.cloud'
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
@@ -213,7 +220,35 @@ async function main() {
   const bySurface = new Map<string, Item[]>()
   for (const i of items) bySurface.set(i.surface, [...(bySurface.get(i.surface) ?? []), i])
 
-  console.log('surface                                        msgs  no-id  id-but-gone  attach  gap')
+  /** Why this surface's rows are not the migration's to carry, if they are not. */
+  const discardOf = (surface: string) => (surface.startsWith('topic/') ? DISCARDED[surface.slice('topic/'.length)] : undefined)
+
+  /*
+    Where a gap-bearing topic's rows are to land. A migrated message is a
+    `kind:1111` on the topic's `kind:30840` file (the migration project's
+    decision 1, 2026-09-22), so a topic with rows and no file has nowhere to
+    go — which is what CON-4 exists to end. The file is matched by `title`,
+    the same way `probe-con16-channel-vs-file.ts` and `fol25-topics-to-files.ts`
+    match it.
+  */
+  const fileTitles = new Set<string>()
+  for (const id of Object.values(TEAMS)) {
+    const res = await query([{ kinds: [30840], '#h': [id], limit: 500 }], t)
+    for (const e of res.events) {
+      const title = e.tags.find((x) => x[0] === 'title')?.[1]
+      if (title) fileTitles.add(title)
+    }
+  }
+  const targetOf = (surface: string): { label: string; ok: boolean } => {
+    if (!surface.startsWith('topic/')) return { label: 'huddle', ok: true }
+    const title = surface.slice('topic/'.length)
+    if (DISCARDED[title]) return { label: 'DISCARDED', ok: true }
+    if (fileTitles.has(title)) return { label: '30840 file', ok: true }
+    if (NO_FILE_TARGET[title]) return { label: 'in place (see con4-discarded)', ok: true }
+    return { label: 'NO TARGET', ok: false }
+  }
+
+  console.log('surface                                        msgs  no-id  id-but-gone  attach  gap  target')
   for (const [surface, rows] of [...bySurface].sort()) {
     const noId = rows.filter((i) => i.eventId === null)
     const gone = rows.filter((i) => i.eventId !== null && !found.has(i.eventId))
@@ -222,7 +257,8 @@ async function main() {
     if (gap === 0 && attach === 0) continue
     console.log(
       `${surface.slice(0, 44).padEnd(44)} ${String(rows.length).padStart(5)} ${String(noId.length).padStart(6)} ` +
-        `${String(gone.length).padStart(12)} ${String(attach).padStart(7)} ${String(gap).padStart(4)}`,
+        `${String(gone.length).padStart(12)} ${String(attach).padStart(7)} ${String(gap).padStart(4)}` +
+        (gap > 0 ? `  ${targetOf(surface).label}` : ''),
     )
   }
 
@@ -252,12 +288,37 @@ async function main() {
 
   // Authorship of the gap, which is the key-export list.
   const authors = new Map<string, number>()
-  for (const i of [...noId, ...gone]) authors.set(i.author, (authors.get(i.author) ?? 0) + 1)
-  console.log(`\nauthors of the gap (the key-export list):`)
+  for (const i of [...noId, ...gone]) {
+    if (discardOf(i.surface)) continue // a discarded row needs nobody's key
+    authors.set(i.author, (authors.get(i.author) ?? 0) + 1)
+  }
+  console.log(`\nauthors of the gap, discards excluded (the key-export list):`)
   for (const [a, n] of [...authors].sort((x, y) => y[1] - x[1])) console.log(`  ${String(n).padStart(4)}  ${a}`)
 
+  // CON-4's done-when: nothing with rows to migrate is left without somewhere
+  // to put them.
+  const untargeted = [...bySurface].filter(([surface, rows]) => rows.some((i) => !onRelay(i)) && !targetOf(surface).ok)
+  console.log(`\nsurfaces with rows to migrate and no target: ${untargeted.length}${untargeted.length ? ` — ${untargeted.map(([s]) => s).join(', ')}` : ''}`)
+  for (const [title, why] of Object.entries(NO_FILE_TARGET)) {
+    const rows = items.filter((i) => i.surface === `topic/${title}` && !onRelay(i))
+    console.log(`\ntopic/${title}: ${rows.length} migrated in place, not onto a file`)
+    console.log(`  ${why}`)
+  }
+
+  // The discard, netted off — every raw number above still counts it.
+  const dropped = [...noId, ...gone].filter((i) => discardOf(i.surface))
+  const droppedAttach = items.filter((i) => discardOf(i.surface)).reduce((n, i) => n + i.attachments, 0)
+  console.log(`\n— discarded, so never migrated ————————————`)
+  for (const [title, why] of Object.entries(DISCARDED)) {
+    const rows = items.filter((i) => i.surface === `topic/${title}`)
+    console.log(`topic/${title}: ${rows.filter((i) => i.eventId === null || !found.has(i.eventId)).length} of the gap, ${rows.reduce((n, i) => n + i.attachments, 0)} attachment(s)`)
+    console.log(`  ${why}`)
+  }
+  console.log(`\nmigration's population:             ${noId.length + gone.length - dropped.length}  (${noId.length + gone.length} − ${dropped.length} discarded)`)
+  console.log(`attachments to re-upload:           ${attachTotal - attachDescribed - droppedAttach}  (${attachTotal - attachDescribed} − ${droppedAttach} discarded)`)
+
   console.log(`\nDMs are not counted: Convex's DM queries resolve through viewerId(), which is null here.`)
-  console.log(`done-when is 0 with no relay event; currently ${noId.length + gone.length}.`)
+  console.log(`done-when is 0 with no relay event; currently ${noId.length + gone.length}, of which ${dropped.length} discarded → ${noId.length + gone.length - dropped.length} to migrate.`)
 }
 
 main().catch((e) => {
