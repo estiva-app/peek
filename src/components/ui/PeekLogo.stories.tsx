@@ -8,7 +8,6 @@ import { PeekLogoMark, PeekLogoBadge } from './PeekLogo'
 const meta = {
   title: 'Primitives/PeekLogo',
   component: PeekLogoMark,
-  parameters: { layout: 'centered' },
   argTypes: { height: { control: { type: 'range', min: 16, max: 96, step: 4 } } },
 } satisfies Meta<typeof PeekLogoMark>
 

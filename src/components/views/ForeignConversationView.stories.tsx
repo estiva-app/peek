@@ -48,7 +48,6 @@ const project = (comments: ForeignObject['comments']): ForeignObject =>
 const meta = {
   title: 'Views/ForeignConversationView',
   component: ForeignConversationView,
-  parameters: { layout: 'centered' },
   decorators: [
     (Story) => (
       <div className="w-[420px] bg-bg-surface">

@@ -12,7 +12,6 @@ import { ComposeBox } from './ComposeBox'
 const meta = {
   title: 'Messages/Composer/ComposeBox',
   component: ComposeBox,
-  parameters: { layout: 'centered' },
   decorators: [
     // The upload actions come from the seam's Convex context.
     Story => (

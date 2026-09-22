@@ -55,7 +55,6 @@ function Box({ withText }: { withText?: boolean }) {
 const meta = {
   title: 'Messages/Composer/HighlightButton',
   component: Box,
-  parameters: { layout: 'centered' },
   decorators: [
     Story => (
       <PeekDataProvider>

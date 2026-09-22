@@ -217,7 +217,6 @@ export const ConversationQuickBothStates: Story = {
  * open the menu (it portals so it can escape the Desk panel's clip).
  */
 export const ScreenerLater: Story = {
-  parameters: { layout: 'centered' },
   render: () => <ScreenerLaterMenu onPick={noop} />,
 }
 

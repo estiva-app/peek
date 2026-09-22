@@ -23,7 +23,6 @@ const folders = [
 const meta = {
   title: 'Views/FolderTree',
   component: FolderTreeView,
-  parameters: { layout: 'centered' },
   args: {
     folders,
     signedOut: false,

@@ -22,7 +22,6 @@ const PEOPLE: People = { [CATH]: { displayName: 'Cath' } }
 const meta = {
   title: 'Views/CommentRow',
   component: CommentRow,
-  parameters: { layout: 'centered' },
   args: {
     comment: {
       id: 'c1',

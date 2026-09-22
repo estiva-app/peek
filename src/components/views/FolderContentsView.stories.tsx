@@ -63,7 +63,6 @@ const FILES: ForeignObject[] = [
 const meta = {
   title: 'Views/FolderContentsView',
   component: FolderContentsView,
-  parameters: { layout: 'centered' },
   decorators: [
     (Story) => (
       <div className="w-[560px] bg-bg-surface">

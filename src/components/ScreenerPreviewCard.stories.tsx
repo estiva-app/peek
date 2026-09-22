@@ -38,7 +38,6 @@ const SAMPLE: ScreenerPreviewRow[] = [
 const meta = {
   title: 'Screener & Desk/ScreenerPreviewCard',
   component: ScreenerPreviewCardView,
-  parameters: { layout: 'centered' },
   decorators: [
     (Story) => (
       <div className="flex w-[360px] flex-col gap-3 rounded-lg border border-border-default bg-bg-elevated p-3 shadow-lg">

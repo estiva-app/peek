@@ -63,7 +63,6 @@ const listing = (files: ForeignObject[]) => ({
 const meta = {
   title: 'Views/FileTreeView',
   component: FileTreeView,
-  parameters: { layout: 'centered' },
   args: { onSelect: () => {} },
   decorators: [
     Story => (
