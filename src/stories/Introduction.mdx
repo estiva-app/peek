@@ -26,25 +26,44 @@ state nobody can reach.
 Checking a *shared* part across themes is the package's Storybook's job, and it
 has the picker. (Katerina, 11 September 2026 — D58.)
 
-## Where things live
+## The six rules
 
-The sidebar is grouped by the **product area** a thing belongs to, never by the
-folder it happens to sit in.
+These are the whole of how this sidebar is arranged. Katerina ruled them on 23
+September, after a review that found three different ideas of what a heading
+meant, all running at once.
+
+1. **One principle, stated here.** In an app, a heading is **a place in the
+   product**. In `@estiva-app/ui` a heading is a *kind of part*, because that is
+   a library. Never the two in one sidebar.
+2. **Three levels, never four** — Group / Component / Story. One source file
+   that exports several parts is still one entry.
+3. **An entry is its component's name**, in PascalCase. Plain English only for
+   a page that is not a component — this one, *In the shell*, *Why these are
+   here*.
+4. **Headings in a written order, everything inside them alphabetical.** The
+   order is a decision and lives in `.storybook/preview.tsx`. What sits inside
+   a heading is not a decision, so it sorts itself.
+5. **Docs first, then whole screens, then the parts.** Someone new reads
+   downwards: what this is, what it builds, what it is built from.
+6. **A status group is allowed, and carries a ticket and a date.** That is
+   *To be removed*, and nothing enters it without both.
+
+## Where things live
 
 | Section | What lives here |
 |---|---|
 | **Docs** | This page. |
-| **Layouts** | The whole app, live, opened at a route. |
-| **Primitives** | Peek's own atoms — DateDivider, EditedMarker, UnreadDot, PeekLogo, ShipLogo. |
-| **Messages** | The conversation surface — cards, replies, bodies, the thread panel — and **Composer**, the box you write in. |
-| **Topics** | The topic domain — state, highlights, banners, reactions, the files panel. |
+| **Pages** | Peek's six screens, each a presentational view fed a fixture and dropped into the shell. |
+| **Frame** | Everything that wraps a screen — AppShell, AuthShell, Header, NavRail, PersonRow, StarredSection, ThreadPanel. |
+| **Primitives** | Peek's own atoms, and the package parts it uses often enough to have a rule of its own about — DateDivider, EditedMarker, UnreadDot, the two logos, Avatar, Person, EmptyState. |
+| **Messages** | The conversation surface — cards, replies, pinned messages, the reference widgets under **ForeignObject**. |
+| **Writing & text** | The body, what renders it, and the **Composer** you write it in. |
+| **Topics** | The topic domain — state, highlights, banners, reactions, the files panel, and every dialog a topic opens. |
+| **Folders** | The file and folder screens, the panels beside them, and the dialogs that make, move and describe a file. |
 | **Huddles** | The inline huddle card and the inline creator. The grid variant is V1/V2 and is not storied. |
-| **Screener & Desk** | The triage surfaces. |
-| **Navigation** | The frame and the side lists — AppShell, NavRail, PersonRow, StarredSection. |
-| **Overlays** | Dialogs and menus, each as one sheet you can scan down. |
-| **Views** | The file and folder screens, handed what they draw. |
-| **Diagnostics** | A developer readout. Not design. |
-| **Entry** | The signed-out screen. |
+| **Screener & Desk** | The triage surfaces, and the picker that adds to Open work. |
+| **Overlays** | What is *not* about one place: the command launcher, the delete question, and every menu on one sheet. |
+| **To be removed** | A story on its way out, with the ticket and the date it was parked. Read that page before adding to it. |
 | **Estiva ID** | Another product's account screens, loaded from the `estiva-id` checkout beside this one. Closed by default. |
 
 ## How a story is written here
@@ -58,6 +77,13 @@ folder it happens to sit in.
 - **Peek's use, not the package's.** A part that wraps something from
   `@estiva-app/ui` is shown in its place — inside the row, the card or the panel
   it belongs to — rather than documented a second time.
+- **The story is args, not markup.** A story names its `component` and hands it
+  `args`; a wrapper every story needs is a decorator on the meta. Composition
+  written into a `render` is markup living in a story file, which is the thing
+  these pages exist to stop.
+- **A part that means nothing alone is drawn where it means something.**
+  `EditedMarker` is three words beside a time: its page draws the message that
+  carries them rather than an empty canvas.
 
 ## What every story is already inside
 
