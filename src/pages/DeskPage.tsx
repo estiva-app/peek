@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+﻿import { useState, type ComponentProps, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { IconPlus, IconSortDescending } from '@tabler/icons-react'
 import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
@@ -277,194 +277,265 @@ export function DeskPage() {
 
   return (
     <>
-    {detailsTopicId && (
-      <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
-    )}
+      {detailsTopicId && (
+        <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
+      )}
+      <DeskPageView
+        railClosed={railClosed}
+        loading={deskLoading || starredLoading}
+        screener={debug.desk.showScreener ? screenerItems : []}
+        onOpenScreener={openScreener}
+        onDismissScreener={dismissScreener}
+        onLaterScreener={laterScreener}
+        urgent={urgentItems.map((item) =>
+          item.kind === 'dm'
+            ? {
+                id: item.id,
+                kind: 'dm' as const,
+                name: item.name,
+                avatarSrc: item.avatarSrc,
+                isUnread: true,
+                isUrgent: true,
+                isSelected: selectionAnchor === 'urgent' && selected?.kind === 'dm' && selected.dmId === item.dmId,
+                onClick: () => selectDm(item.dmId, item.name, 'urgent'),
+              }
+            : {
+                id: item.id,
+                kind: 'topic' as const,
+                name: item.title,
+                isResolved: isTopicResolved(item.topicId),
+                isUnread: true,
+                isUrgent: true,
+                isSelected: selectionAnchor === 'urgent' && selected?.kind === 'topic' && selected.topicId === item.topicId,
+                onClick: () => selectTopic(item.topicId, 'urgent'),
+              },
+        )}
+        openWork={openWorkItems.map((item) =>
+          item.kind === 'dm'
+            ? {
+                id: item.id,
+                kind: 'dm' as const,
+                name: item.name,
+                avatarSrc: item.avatarSrc,
+                isUnread: (showPeopleUnreads && dmHasUnread(item.dmId)) || Boolean(item.isUnread),
+                isSelected: selectionAnchor === 'openWork' && selected?.kind === 'dm' && selected.dmId === item.dmId,
+                onClick: () => selectDm(item.dmId, item.name, 'openWork'),
+                onRemove: () => dismissOpenWork(item.id),
+              }
+            : {
+                id: item.id,
+                kind: 'topic' as const,
+                name: item.title,
+                isResolved: isTopicResolved(item.topicId),
+                isUnread: (showTopicUnreads && topicHasUnread(item.topicId)) || Boolean(item.isUnread),
+                isSelected: selectionAnchor === 'openWork' && selected?.kind === 'topic' && selected.topicId === item.topicId,
+                onClick: () => selectTopic(item.topicId, 'openWork'),
+                onRemove: () => dismissOpenWork(item.id),
+              },
+        )}
+        starred={starredEntries.map((entry) =>
+          entry.kind === 'dm'
+            ? {
+                id: entry.id,
+                kind: 'dm' as const,
+                name: entry.name,
+                avatarSrc: entry.avatarSrc,
+                isUnread: (showPeopleUnreads && dmHasUnread(entry.dmId)) || Boolean(entry.isUnread),
+                isSelected: selectionAnchor === 'starred' && selected?.kind === 'dm' && selected.dmId === entry.dmId,
+                onClick: () => selectDm(entry.dmId, entry.name, 'starred'),
+              }
+            : {
+                id: entry.id,
+                kind: 'topic' as const,
+                name: entry.title,
+                isResolved: isTopicResolved(entry.topicId),
+                isUnread: (showTopicUnreads && topicHasUnread(entry.topicId)) || Boolean(entry.isUnread),
+                isSelected: selectionAnchor === 'starred' && selected?.kind === 'topic' && selected.topicId === entry.topicId,
+                onClick: () => selectTopic(entry.topicId, 'starred'),
+              },
+        )}
+        onAddToOpenWork={() => setShowAddToOpenWork(true)}
+        rightPanel={rightPanel}
+        threadPanel={threadPanel}
+      />
+      {showAddToOpenWork && (
+        <AddToOpenWorkDialog
+          onAdd={(topicIds) => actions.addTopicsToOpenWork(topicIds)}
+          onClose={() => setShowAddToOpenWork(false)}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * One row on the Desk, whichever section it is in, with every decision already
+ * made — which is what lets the four sections stop repeating the same
+ * DM-or-topic branch with the selection worked out inline.
+ */
+export interface DeskRow {
+  id: string
+  kind: 'dm' | 'topic'
+  name: string
+  avatarSrc?: string
+  /** Topics only. */
+  isResolved?: boolean
+  isUnread: boolean
+  isUrgent?: boolean
+  isSelected: boolean
+  onClick: () => void
+  /** Open work only: the ✕ that takes it off the list. */
+  onRemove?: () => void
+}
+
+function DeskRows({ rows }: { rows: DeskRow[] }) {
+  return (
+    <div className="flex flex-col gap-0.5 mt-1">
+      {rows.map((row) => (
+        <PersonRow
+          key={row.id}
+          name={row.name}
+          type={row.kind === 'dm' ? 'DM' : 'topic'}
+          avatarSrc={row.avatarSrc}
+          topicStatus={row.kind === 'topic' ? (row.isResolved ? 'resolved' : 'unresolved') : undefined}
+          isUnread={row.isUnread}
+          isUrgent={row.isUrgent}
+          isSelected={row.isSelected}
+          onClick={row.onClick}
+          onRemove={row.onRemove}
+        />
+      ))}
+    </div>
+  )
+}
+
+/**
+ * The Desk's body, handed everything it draws — the half a story can show
+ * (UIG-17). `DeskPage` above reads, selects and routes; this one only draws.
+ *
+ * Every section hides itself when it is empty, except Open work, which says
+ * what it is for instead — an empty Desk with four headings over nothing is a
+ * page that looks broken, and an empty Open work is the one a person is meant
+ * to fill.
+ */
+export function DeskPageView({
+  railClosed,
+  loading,
+  screener,
+  onOpenScreener,
+  onDismissScreener,
+  onLaterScreener,
+  urgent,
+  openWork,
+  starred,
+  onAddToOpenWork,
+  rightPanel,
+  threadPanel,
+}: {
+  railClosed: boolean
+  /** The first read, still in flight. Not the same as an empty Desk. */
+  loading: boolean
+  /** Empty hides the section entirely. */
+  screener: ComponentProps<typeof ScreenerSection>['items']
+  onOpenScreener: ComponentProps<typeof ScreenerSection>['onOpen']
+  onDismissScreener: ComponentProps<typeof ScreenerSection>['onDismiss']
+  onLaterScreener: ComponentProps<typeof ScreenerSection>['onLater']
+  urgent: DeskRow[]
+  openWork: DeskRow[]
+  starred: DeskRow[]
+  onAddToOpenWork: () => void
+  rightPanel?: ReactNode
+  threadPanel?: ReactNode
+}) {
+  return (
     <AppShell
       leftPanel={
         <ListColumn title="Desk" collapsed={railClosed}>
-          {(deskLoading || starredLoading) ? (
-          <SkeletonSidebarList rows={8} />
+          {loading ? (
+            <SkeletonSidebarList rows={8} />
           ) : (
-          <>
-          {/* Screener - only shows when toggled on AND has items */}
-          {debug.desk.showScreener && screenerItems.length > 0 && (
             <>
-              <ScreenerSection
-                items={screenerItems}
-                onOpen={openScreener}
-                onDismiss={dismissScreener}
-                onLater={laterScreener}
-              />
-              <Divider className="my-2" />
-            </>
-          )}
+              {screener.length > 0 && (
+                <>
+                  <ScreenerSection
+                    items={screener}
+                    onOpen={onOpenScreener}
+                    onDismiss={onDismissScreener}
+                    onLater={onLaterScreener}
+                  />
+                  <Divider className="my-2" />
+                </>
+              )}
 
-          {/* Urgent - only shows when toggled on AND has items */}
-          {urgentItems.length > 0 && (
-            <>
+              {urgent.length > 0 && (
+                <>
+                  <div className="flex flex-col">
+                    <SectionHeader title="Urgent" hover="none" />
+                    <DeskRows rows={urgent} />
+                  </div>
+                  <Divider className="my-2" />
+                </>
+              )}
+
               <div className="flex flex-col">
-                <SectionHeader title="Urgent" hover="none" />
-                <div className="flex flex-col gap-0.5 mt-1">
-                  {urgentItems.map((item) =>
-                    item.kind === 'dm' ? (
-                      <PersonRow
-                        key={item.id}
-                        name={item.name}
-                        type="DM"
-                        avatarSrc={item.avatarSrc}
-                        isUnread
-                        isUrgent
-                        isSelected={
-                          selectionAnchor === 'urgent' &&
-                          selected?.kind === 'dm' &&
-                          selected.dmId === item.dmId
-                        }
-                        onClick={() => selectDm(item.dmId, item.name, 'urgent')}
-                      />
-                    ) : (
-                      <PersonRow
-                        key={item.id}
-                        name={item.title}
-                        type="topic"
-                        topicStatus={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'}
-                        isUnread
-                        isUrgent
-                        isSelected={
-                          selectionAnchor === 'urgent' &&
-                          selected?.kind === 'topic' &&
-                          selected.topicId === item.topicId
-                        }
-                        onClick={() => selectTopic(item.topicId, 'urgent')}
-                      />
-                    )
-                  )}
-                </div>
-              </div>
-              <Divider className="my-2" />
-            </>
-          )}
-
-          {/* Open work */}
-          <div className="flex flex-col">
-            {/* The package's section row (UIG-14, 10.2): its actions always
-                shown, and the row itself still under the pointer — the
-                buttons light up on their own (Katerina, 19 September). */}
-            <SectionHeader
-              title="Open work"
-              showActions="always"
-              hover="none"
-              actions={[
-                // Sort does nothing yet, as before.
-                { icon: <IconSortDescending size={16} stroke={1.5} />, tooltip: 'Sort by', onClick: () => {} },
-                { icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add to Open work', onClick: () => setShowAddToOpenWork(true) },
-              ]}
-            />
-            {openWorkItems.length === 0 ? (
-              <p className="px-2 py-1 text-caption leading-snug text-text-muted">
-                Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-0.5 mt-1">
-                {openWorkItems.map((item) =>
-                  item.kind === 'dm' ? (
-                    <PersonRow
-                      key={item.id}
-                      name={item.name}
-                      type="DM"
-                      avatarSrc={item.avatarSrc}
-                      isUnread={(showPeopleUnreads && dmHasUnread(item.dmId)) || item.isUnread}
-                      isSelected={
-                        selectionAnchor === 'openWork' &&
-                        selected?.kind === 'dm' &&
-                        selected.dmId === item.dmId
-                      }
-                      onClick={() => selectDm(item.dmId, item.name, 'openWork')}
-                      onRemove={() => dismissOpenWork(item.id)}
-                    />
-                  ) : (
-                    <PersonRow
-                      key={item.id}
-                      name={item.title}
-                      type="topic"
-                      topicStatus={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'}
-                      isUnread={(showTopicUnreads && topicHasUnread(item.topicId)) || item.isUnread}
-                      isSelected={
-                        selectionAnchor === 'openWork' &&
-                        selected?.kind === 'topic' &&
-                        selected.topicId === item.topicId
-                      }
-                      onClick={() => selectTopic(item.topicId, 'openWork')}
-                      onRemove={() => dismissOpenWork(item.id)}
-                    />
-                  )
+                {/* The package's section row (UIG-14, 10.2): its actions always
+                    shown, and the row itself still under the pointer — the
+                    buttons light up on their own (Katerina, 19 September). */}
+                <SectionHeader
+                  title="Open work"
+                  showActions="always"
+                  hover="none"
+                  actions={[
+                    // Sort does nothing yet, as before.
+                    { icon: <IconSortDescending size={16} stroke={1.5} />, tooltip: 'Sort by', onClick: () => {} },
+                    { icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add to Open work', onClick: onAddToOpenWork },
+                  ]}
+                />
+                {openWork.length === 0 ? (
+                  <p className="px-2 py-1 text-caption leading-snug text-text-muted">
+                    Organize what you want to read, write, work on now, soon, or simply keep it open for the very first moment once you have time for it.
+                  </p>
+                ) : (
+                  <DeskRows rows={openWork} />
                 )}
               </div>
-            )}
-          </div>
 
-          <Divider className="my-2" />
+              <Divider className="my-2" />
 
-          {/* Starred — the package's CollapsibleSection (§4.8, D42): the same
-              32px row, but the title is a button, the rows slide, and this
-              browser remembers the fold. It was a hand-drawn copy of
-              ui/StarredSection until 2026-09-10 (Peek scan F10). */}
-          <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
-            {starredEntries.length === 0 ? (
-              // Level with the rows (Katerina, 2026-09-14): each PersonRow pads itself,
-              // so the line takes a row's inset here, never on EmptyState.
-              <div className="px-2 py-1">
-                <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
-              </div>
-            ) : (
-                  starredEntries.map((entry) =>
-                    entry.kind === 'dm' ? (
-                      <PersonRow
-                        key={entry.id}
-                        name={entry.name}
-                        type="DM"
-                        avatarSrc={entry.avatarSrc}
-                        isUnread={(showPeopleUnreads && dmHasUnread(entry.dmId)) || entry.isUnread}
-                        isSelected={
-                          selectionAnchor === 'starred' &&
-                          selected?.kind === 'dm' &&
-                          selected.dmId === entry.dmId
-                        }
-                        onClick={() => selectDm(entry.dmId, entry.name, 'starred')}
-                      />
-                    ) : (
-                      <PersonRow
-                        key={entry.id}
-                        name={entry.title}
-                        type="topic"
-                        topicStatus={isTopicResolved(entry.topicId) ? 'resolved' : 'unresolved'}
-                        isUnread={(showTopicUnreads && topicHasUnread(entry.topicId)) || entry.isUnread}
-                        isSelected={
-                          selectionAnchor === 'starred' &&
-                          selected?.kind === 'topic' &&
-                          selected.topicId === entry.topicId
-                        }
-                        onClick={() => selectTopic(entry.topicId, 'starred')}
-                      />
-                    )
-                  )
-            )}
-          </CollapsibleSection>
+              {/* Starred — the package's CollapsibleSection (§4.8, D42): the same
+                  32px row, but the title is a button, the rows slide, and this
+                  browser remembers the fold. It was a hand-drawn copy of
+                  ui/StarredSection until 2026-09-10 (Peek scan F10). */}
+              <CollapsibleSection title="Starred" storageKey="peek.desk.starred" contentClassName="gap-0.5 mt-1">
+                {starred.length === 0 ? (
+                  // Level with the rows (Katerina, 2026-09-14): each PersonRow pads itself,
+                  // so the line takes a row's inset here, never on EmptyState.
+                  <div className="px-2 py-1">
+                    <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
+                  </div>
+                ) : (
+                  starred.map((row) => (
+                    <PersonRow
+                      key={row.id}
+                      name={row.name}
+                      type={row.kind === 'dm' ? 'DM' : 'topic'}
+                      avatarSrc={row.avatarSrc}
+                      topicStatus={row.kind === 'topic' ? (row.isResolved ? 'resolved' : 'unresolved') : undefined}
+                      isUnread={row.isUnread}
+                      isSelected={row.isSelected}
+                      onClick={row.onClick}
+                    />
+                  ))
+                )}
+              </CollapsibleSection>
 
-          <Divider className="my-2" />
-          </>
+              <Divider className="my-2" />
+            </>
           )}
         </ListColumn>
       }
       rightPanel={rightPanel}
       threadPanel={threadPanel}
     />
-    {showAddToOpenWork && (
-      <AddToOpenWorkDialog
-        onAdd={(topicIds) => actions.addTopicsToOpenWork(topicIds)}
-        onClose={() => setShowAddToOpenWork(false)}
-      />
-    )}
-    </>
   )
 }

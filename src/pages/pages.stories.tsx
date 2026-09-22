@@ -4,9 +4,11 @@ import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SCREENER_ITEMS } from '@/api/fixtures'
 import type { StarredItem } from '@/components/ui/StarredSection'
 import { PeoplePageView, type PeopleListItem } from './PeoplePage'
 import { TopicsPageView, type TopicListItem } from './TopicsPage'
+import { DeskPageView, type DeskRow } from './DeskPage'
 
 const noop = () => {}
 
@@ -22,6 +24,29 @@ const TOPICS: TopicListItem[] = [
   { id: 't4', title: 'Remote work policy clarifications', isResolved: true, isUnread: false, isUrgent: false, isMember: true, inOpenWork: false },
   { id: 't5', title: 'Usability test results for the dashboard redesign', isResolved: true, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
   { id: 't6', title: 'Pricing page copy', isResolved: false, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
+]
+
+const row = (
+  id: string,
+  kind: 'dm' | 'topic',
+  name: string,
+  extra: Partial<DeskRow> = {},
+): DeskRow => ({ id, kind, name, isUnread: false, isSelected: false, onClick: noop, ...extra })
+
+const URGENT: DeskRow[] = [
+  row('u1', 'topic', 'CI/CD pipeline stuck during build stage', { isUnread: true, isUrgent: true, isSelected: true }),
+  row('u2', 'dm', 'Alice Johnson', { isUnread: true, isUrgent: true }),
+]
+
+const OPEN_WORK: DeskRow[] = [
+  row('o1', 'topic', 'Launch checklist for v2 of the mobile app', { isUnread: true, onRemove: noop }),
+  row('o2', 'topic', 'Remote work policy clarifications', { isResolved: true, onRemove: noop }),
+  row('o3', 'dm', 'Daniel Stanton', { onRemove: noop }),
+]
+
+const STARRED_ROWS: DeskRow[] = [
+  row('s1', 'dm', 'Amie Miles', { isUnread: true }),
+  row('s2', 'topic', 'Ongoing onboarding issues'),
 ]
 
 const PEOPLE: PeopleListItem[] = [
@@ -181,6 +206,73 @@ export const TopicsLoading: Story = {
       onDeleteTopic={noop}
       onOpenDetails={noop}
       onToggleOpenWork={noop}
+      rightPanel={<div className="flex-1 h-full" />}
+    />
+  ),
+}
+
+/**
+ * The Desk, with every section carrying something: the screener, Urgent, Open
+ * work and Starred.
+ */
+export const Desk: Story = {
+  render: () => (
+    <DeskPageView
+      railClosed={false}
+      loading={false}
+      screener={SCREENER_ITEMS.slice(0, 2)}
+      onOpenScreener={noop}
+      onDismissScreener={noop}
+      onLaterScreener={noop}
+      urgent={URGENT}
+      openWork={OPEN_WORK}
+      starred={STARRED_ROWS}
+      onAddToOpenWork={noop}
+      rightPanel={<EmptyState />}
+    />
+  ),
+}
+
+/**
+ * **A Desk with nothing on it.**
+ *
+ * Every section hides itself when it is empty, except Open work, which says
+ * what it is *for*, and Starred, which says how to fill it. Four headings over
+ * nothing would be a page that looks broken; these two are the ones a person is
+ * meant to fill, so they speak.
+ */
+export const DeskEmpty: Story = {
+  render: () => (
+    <DeskPageView
+      railClosed={false}
+      loading={false}
+      screener={[]}
+      onOpenScreener={noop}
+      onDismissScreener={noop}
+      onLaterScreener={noop}
+      urgent={[]}
+      openWork={[]}
+      starred={[]}
+      onAddToOpenWork={noop}
+      rightPanel={<EmptyState />}
+    />
+  ),
+}
+
+/** The Desk, first read in flight. */
+export const DeskLoading: Story = {
+  render: () => (
+    <DeskPageView
+      railClosed={false}
+      loading
+      screener={[]}
+      onOpenScreener={noop}
+      onDismissScreener={noop}
+      onLaterScreener={noop}
+      urgent={[]}
+      openWork={[]}
+      starred={[]}
+      onAddToOpenWork={noop}
       rightPanel={<div className="flex-1 h-full" />}
     />
   ),
