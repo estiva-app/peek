@@ -6,12 +6,22 @@ import { LastSelectionProvider } from '@/lib/lastSelection'
 import { EmptyState } from '@/components/ui/EmptyState'
 import type { StarredItem } from '@/components/ui/StarredSection'
 import { PeoplePageView, type PeopleListItem } from './PeoplePage'
+import { TopicsPageView, type TopicListItem } from './TopicsPage'
 
 const noop = () => {}
 
 const STARRED: StarredItem[] = [
   { id: 'amie', name: 'Amie Miles', type: 'DM', isUnread: true, isUrgent: false },
   { id: 'daniel', name: 'Daniel Stanton', type: 'DM', isUnread: false, isUrgent: false },
+]
+
+const TOPICS: TopicListItem[] = [
+  { id: 't1', title: 'CI/CD pipeline stuck during build stage', isResolved: false, isUnread: true, isUrgent: true, isMember: true, inOpenWork: true },
+  { id: 't2', title: 'Launch checklist for v2 of the mobile app', isResolved: false, isUnread: true, isUrgent: false, isMember: true, inOpenWork: false },
+  { id: 't3', title: 'Ongoing onboarding issues', isResolved: false, isUnread: false, isUrgent: false, isMember: true, inOpenWork: false },
+  { id: 't4', title: 'Remote work policy clarifications', isResolved: true, isUnread: false, isUrgent: false, isMember: true, inOpenWork: false },
+  { id: 't5', title: 'Usability test results for the dashboard redesign', isResolved: true, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
+  { id: 't6', title: 'Pricing page copy', isResolved: false, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
 ]
 
 const PEOPLE: PeopleListItem[] = [
@@ -110,6 +120,67 @@ export const PeopleLoading: Story = {
       selectedId={null}
       onSelect={noop}
       onHideDm={noop}
+      rightPanel={<div className="flex-1 h-full" />}
+    />
+  ),
+}
+
+/**
+ * The Topics page, with topics the reader is **not** a member of present — so
+ * the list splits into "Your topics" and "Other topics" (QA #2.7).
+ */
+export const Topics: Story = {
+  render: () => (
+    <TopicsPageView
+      railClosed={false}
+      loading={false}
+      topics={TOPICS}
+      selectedId="t1"
+      onSelect={noop}
+      onNewTopic={noop}
+      onDeleteTopic={noop}
+      onOpenDetails={noop}
+      onToggleOpenWork={noop}
+      rightPanel={<EmptyState />}
+    />
+  ),
+}
+
+/**
+ * The same page where the reader is a member of everything: **one flat list**,
+ * no sections at all. Which of the two you get is decided by the topics, not by
+ * a setting, and this is the first story that shows both shapes exist.
+ */
+export const TopicsFlat: Story = {
+  render: () => (
+    <TopicsPageView
+      railClosed={false}
+      loading={false}
+      topics={TOPICS.filter((t) => t.isMember)}
+      selectedId="t3"
+      onSelect={noop}
+      onNewTopic={noop}
+      onDeleteTopic={noop}
+      onOpenDetails={noop}
+      onToggleOpenWork={noop}
+      rightPanel={<EmptyState />}
+    />
+  ),
+}
+
+/** Topics, first read in flight. */
+export const TopicsLoading: Story = {
+  render: () => (
+    <TopicsPageView
+      railClosed={false}
+      loading
+      topics={[]}
+      selectedId={null}
+      onSelect={noop}
+      onNewTopic={noop}
+      onDeleteTopic={noop}
+      onOpenDetails={noop}
+      onToggleOpenWork={noop}
       rightPanel={<div className="flex-1 h-full" />}
     />
   ),

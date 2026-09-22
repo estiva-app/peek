@@ -224,33 +224,168 @@ export function TopicsPage() {
 
   return (
     <>
-    {confirmDeleteId && (
-      <ConfirmDelete
-        what="topic"
-        onConfirm={() => runDeleteTopic(confirmDeleteId)}
-        onClose={() => setConfirmDeleteId(null)}
+      {confirmDeleteId && (
+        <ConfirmDelete
+          what="topic"
+          onConfirm={() => runDeleteTopic(confirmDeleteId)}
+          onClose={() => setConfirmDeleteId(null)}
+        />
+      )}
+      {createOpen && (
+        <CreateTopicDialog
+          confirmLabel="Create topic"
+          onConfirm={handleCreateTopic}
+          onCancel={() => setCreateOpen(false)}
+        />
+      )}
+      {detailsTopicId && (
+        <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
+      )}
+      <TopicsPageView
+        railClosed={railClosed}
+        loading={TOPICS === undefined}
+        topics={orderedTopics.map((topic) => ({
+          id: topic.id,
+          title: topic.title,
+          isResolved: isTopicResolved(topic.id),
+          isUnread: showUnreads && (topicHasUnread(topic.id) || topicIsUrgent(topic.id)),
+          isUrgent: showUnreads && topicIsUrgent(topic.id),
+          isMember: isTopicMember(topic.id),
+          inOpenWork: openWorkTopicIds.has(topic.id),
+        }))}
+        selectedId={selectedHuddleId ? null : selectedId}
+        onSelect={handleSelectTopic}
+        onNewTopic={() => setCreateOpen(true)}
+        onDeleteTopic={handleDeleteTopic}
+        onOpenDetails={setDetailsTopicId}
+        onToggleOpenWork={(id, inOpenWork) => {
+          if (inOpenWork) {
+            actions.removeTopicFromOpenWork(id)
+          } else {
+            actions.addTopicsToOpenWork([id])
+            showToast({ label: 'Added to Open work', type: 'success' })
+          }
+        }}
+        rightPanel={rightPanel}
+        threadPanel={
+          // The right column is the thread when one is open, and the Folder
+          // panel otherwise (PEEK-24). A reply thread is what somebody just
+          // asked for; the Folder is context they chose to keep open.
+          view.threadPanel ??
+          (hasConvex && folderPanelOpen && selectedTopic && view.folderId ? (
+            <TopicProjectPanel
+              topicKey={selectedTopic.id}
+              folderProject={folderProject.state}
+              reload={folderProject.reload}
+              onBusyChange={setPanelBusy}
+              activity={view.activity}
+              subFileLabels={view.subFileLabels}
+              selectedConversationId={view.openThreadId}
+              onOpenThread={view.openThread}
+            />
+          ) : undefined)
+        }
       />
-    )}
-    {createOpen && (
-      <CreateTopicDialog
-        confirmLabel="Create topic"
-        onConfirm={handleCreateTopic}
-        onCancel={() => setCreateOpen(false)}
+    </>
+  )
+}
+
+/** One row in the topic list, with everything it needs already decided. */
+export interface TopicListItem {
+  id: string
+  title: string
+  isResolved: boolean
+  isUnread: boolean
+  isUrgent: boolean
+  /** Decides which section it falls in — see the view's note on that split. */
+  isMember: boolean
+  inOpenWork: boolean
+}
+
+/**
+ * The Topics page's body, handed everything it draws — the half a story can
+ * show (UIG-17). `TopicsPage` above reads, routes and owns the dialogs; this
+ * one only draws.
+ *
+ * The topic list is here rather than the Folder tree (Miky, 2026-09-14).
+ * peek#213 put the tree in this column, and until FOL-22 turns the twenty-five
+ * topics into rows a topic *is* a Folder in it — a section, opened from a hover
+ * action, with no highlighted row. That is not a column to read topics from.
+ * The tree is where a Folder is navigated: the Folders rail item and the file
+ * page.
+ */
+export function TopicsPageView({
+  railClosed,
+  loading,
+  topics,
+  selectedId,
+  onSelect,
+  onNewTopic,
+  onDeleteTopic,
+  onOpenDetails,
+  onToggleOpenWork,
+  rightPanel,
+  threadPanel,
+}: {
+  railClosed: boolean
+  /** The first read, still in flight. Not the same as a workspace with none. */
+  loading: boolean
+  /** Already ordered. The view only decides how to section them. */
+  topics: TopicListItem[]
+  selectedId: string | null
+  onSelect: (id: string) => void
+  onNewTopic: () => void
+  onDeleteTopic: (id: string) => void
+  onOpenDetails: (id: string) => void
+  /** The second argument is whether it is in Open work now. */
+  onToggleOpenWork: (id: string, inOpenWork: boolean) => void
+  rightPanel?: ReactNode
+  threadPanel?: ReactNode
+}) {
+  const row = (topic: TopicListItem): ReactNode => (
+    <div key={topic.id} className="flex flex-col gap-0.5">
+      <PersonRow
+        name={topic.title}
+        type="topic"
+        topicStatus={topic.isResolved ? 'resolved' : 'unresolved'}
+        isUnread={topic.isUnread}
+        isUrgent={topic.isUrgent}
+        isSelected={selectedId === topic.id}
+        onClick={() => onSelect(topic.id)}
+        onDeleteTopic={() => onDeleteTopic(topic.id)}
+        onOpenDetails={() => onOpenDetails(topic.id)}
+        openWorkAction={topic.inOpenWork ? 'remove' : 'add'}
+        onToggleOpenWork={() => onToggleOpenWork(topic.id, topic.inOpenWork)}
       />
-    )}
-    {detailsTopicId && (
-      <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
-    )}
+    </div>
+  )
+
+  /*
+    With non-member topics present the list splits into "Your topics" and
+    "Other topics" (QA #2.7); otherwise it is flat, exactly as before. The
+    package's CollapsibleSection owns its rows, the slide and the memory of the
+    fold (§4.8, D42), so nothing here keeps an expanded flag.
+  */
+  const mine = topics.filter((t) => t.isMember)
+  const others = topics.filter((t) => !t.isMember)
+  const list =
+    others.length === 0 ? (
+      topics.map(row)
+    ) : (
+      <>
+        <CollapsibleSection title="Your topics" storageKey="peek.topics.yours" className="shrink-0" contentClassName="gap-0.5">
+          {mine.map(row)}
+        </CollapsibleSection>
+        <Divider className="my-2" />
+        <CollapsibleSection title="Other topics" storageKey="peek.topics.others" className="shrink-0" contentClassName="gap-0.5">
+          {others.map(row)}
+        </CollapsibleSection>
+      </>
+    )
+
+  return (
     <AppShell
       leftPanel={
-        /*
-          The topic list, back (Miky, 2026-09-14). peek#213 put the Folder
-          tree here, and until FOL-22 turns the twenty-five topics into rows a
-          topic is a Folder in it — a section, opened from a hover action, with
-          no highlighted row. That is not a column to read topics from. So the
-          list stays until then, and the tree is where a Folder is navigated:
-          the Folders rail item (`FoldersPage`, peek#214) and the file page.
-        */
         <ListColumn
           title="All topics"
           chevron
@@ -261,87 +396,18 @@ export function TopicsPage() {
               <ToolbarButton tooltip="Sort by" aria-label="Sort by">
                 <IconSortDescending size={16} stroke={1.5} />
               </ToolbarButton>
-              <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={() => setCreateOpen(true)}>
+              <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
                 <IconEdit size={16} stroke={1.5} />
               </ToolbarButton>
             </Toolbar>
           }
         >
-          {TOPICS === undefined && <SkeletonSidebarList rows={9} />}
-          {renderTopicList()}
+          {loading && <SkeletonSidebarList rows={9} />}
+          {list}
         </ListColumn>
       }
       rightPanel={rightPanel}
-      threadPanel={
-        // The right column is the thread when one is open, and the Folder panel
-        // otherwise (PEEK-24). A reply thread is what somebody just asked for;
-        // the Folder is context they chose to keep open.
-        view.threadPanel ??
-        (hasConvex && folderPanelOpen && selectedTopic && view.folderId ? (
-          <TopicProjectPanel
-            topicKey={selectedTopic.id}
-            folderProject={folderProject.state}
-            reload={folderProject.reload}
-            onBusyChange={setPanelBusy}
-            activity={view.activity}
-            subFileLabels={view.subFileLabels}
-            selectedConversationId={view.openThreadId}
-            onOpenThread={view.openThread}
-          />
-        ) : undefined)
-      }
+      threadPanel={threadPanel}
     />
-    </>
   )
-
-  /** The sidebar list body. With non-member topics present, splits into
-   *  "Your topics" / "Other topics" sections (QA #2.7 ruling); otherwise a
-   *  flat list, exactly as before (mock data carries no membership). */
-  function renderTopicList(): ReactNode {
-    const memberTopics = orderedTopics.filter((t) => isTopicMember(t.id))
-    const otherTopics = orderedTopics.filter((t) => !isTopicMember(t.id))
-    if (otherTopics.length === 0) return orderedTopics.map(renderTopicRow)
-    return (
-      <>
-        {/* The package's CollapsibleSection (§4.8, D42): the section owns its
-            rows, the slide and the memory of the fold — the page no longer
-            keeps an expanded flag per section. */}
-        <CollapsibleSection title="Your topics" storageKey="peek.topics.yours" className="shrink-0" contentClassName="gap-0.5">
-          {memberTopics.map(renderTopicRow)}
-        </CollapsibleSection>
-        <Divider className="my-2" />
-        <CollapsibleSection title="Other topics" storageKey="peek.topics.others" className="shrink-0" contentClassName="gap-0.5">
-          {otherTopics.map(renderTopicRow)}
-        </CollapsibleSection>
-      </>
-    )
-  }
-
-  function renderTopicRow(topic: NonNullable<typeof TOPICS>[number]): ReactNode {
-              const topicSelected = selectedId === topic.id && !selectedHuddleId
-              return (
-                <div key={topic.id} className="flex flex-col gap-0.5">
-                  <PersonRow
-                    name={topic.title}
-                    type="topic"
-                    topicStatus={isTopicResolved(topic.id) ? 'resolved' : 'unresolved'}
-                    isUnread={(showUnreads && topicHasUnread(topic.id)) || (showUnreads && topicIsUrgent(topic.id))}
-                    isUrgent={showUnreads && topicIsUrgent(topic.id)}
-                    isSelected={topicSelected}
-                    onClick={() => handleSelectTopic(topic.id)}
-                    onDeleteTopic={() => handleDeleteTopic(topic.id)}
-                    onOpenDetails={() => setDetailsTopicId(topic.id)}
-                    openWorkAction={openWorkTopicIds.has(topic.id) ? 'remove' : 'add'}
-                    onToggleOpenWork={() => {
-                      if (openWorkTopicIds.has(topic.id)) {
-                        actions.removeTopicFromOpenWork(topic.id)
-                      } else {
-                        actions.addTopicsToOpenWork([topic.id])
-                        showToast({ label: 'Added to Open work', type: 'success' })
-                      }
-                    }}
-                  />
-                </div>
-              )
-  }
 }
