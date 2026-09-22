@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ForeignObject } from '@estiva-app/interop'
 import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
 import { MessageBody } from './MessageBody'
-import recorded from '@/data/recordedShipIssue.json'
+import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 
 // A topic and a message as interop resolves them through Peek's manifest
 // (src/nostr/manifest.ts): a kind:39000 titled from its `name` tag, and a
