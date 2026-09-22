@@ -87,21 +87,23 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
         <TopicDirectorySync />
         <StarredProvider>
           <TopicMutationsProvider>
-            {/* Inside OpenWorkProvider: the Screener's PEE-6 de-duplication
-                reads the open-work list, so open work has to be above it. */}
-            <OpenWorkProvider>
-              <ScreenerProvider>
-                <DmRuntimeProvider>
-                  {/* Hidden DMs (DMS-6): the relay's set, joined to rows through Convex.
-                      It reads nothing from the stores above, so it sits innermost. */}
-                  <DmVisibilityProvider>
-                    {/* The followed set (FOL-30): the relay's blob alone, read by the
-                        unread hooks and the follow controls. Reads no store above it. */}
-                    <FollowsProvider>{children}</FollowsProvider>
-                  </DmVisibilityProvider>
-                </DmRuntimeProvider>
-              </ScreenerProvider>
-            </OpenWorkProvider>
+            {/* The followed set (FOL-30): the relay's blob alone, read by the
+                unread hooks and the follow controls. Reads no store above it,
+                and sits above the Screener, whose file half is judged over it
+                (FOL-34). */}
+            <FollowsProvider>
+              {/* Inside OpenWorkProvider: the Screener's PEE-6 de-duplication
+                  reads the open-work list, so open work has to be above it. */}
+              <OpenWorkProvider>
+                <ScreenerProvider>
+                  <DmRuntimeProvider>
+                    {/* Hidden DMs (DMS-6): the relay's set, joined to rows through Convex.
+                        It reads nothing from the stores above, so it sits innermost. */}
+                    <DmVisibilityProvider>{children}</DmVisibilityProvider>
+                  </DmRuntimeProvider>
+                </ScreenerProvider>
+              </OpenWorkProvider>
+            </FollowsProvider>
           </TopicMutationsProvider>
         </StarredProvider>
       </TopicStoreProvider>

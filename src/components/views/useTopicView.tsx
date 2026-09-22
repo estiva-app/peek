@@ -7,8 +7,7 @@ import { scrollToEventWhenReady, scrollToMessageWhenReady } from '@/lib/messageA
 import { isNearBottom } from './scrollPolicy'
 import { ScrollArea } from '@estiva-app/ui'
 import { Header } from '@/components/Header'
-import { NewTopicBanner } from '@/components/NewTopicBanner'
-import { JoinTopicBanner } from '@/components/JoinTopicBanner'
+import { ReadOnlyTopicBanner } from '@/components/ReadOnlyTopicBanner'
 import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { MembersDialog, type MembersDialogView } from '@/components/MembersDialog'
 import { HuddleCreator } from '@/components/HuddleCreator'
@@ -18,9 +17,8 @@ import { HuddleCard } from '@/components/HuddleCard'
 import { DateDivider } from '@/components/ui/DateDivider'
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/Button'
-import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
+import type { SendPayload } from '@/components/ui/ComposeBox'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { draftKeys } from '@/lib/drafts'
 import { partitionByRelation, subFileAddresses, subFileLabels, type FolderProjectState } from '@/api/useFolderProject'
 import type { TopicActivityItem } from '@/components/TopicActivity'
 import {
@@ -32,7 +30,6 @@ import {
   useTopicLookup,
   useIsTopicResolved,
   useIsTopicMember,
-  useJoinTopic,
   useInviteToTopic,
   useOpenWorkTopicIds,
   usePeekActions,
@@ -133,7 +130,6 @@ export function useTopicView({
   const huddleLookup = useHuddleLookup()
   const isTopicResolved = useIsTopicResolved()
   const isTopicMember = useIsTopicMember()
-  const joinTopic = useJoinTopic()
   const inviteToTopic = useInviteToTopic()
   const openWorkTopicIds = useOpenWorkTopicIds()
   const { showToast } = useToast()
@@ -235,7 +231,6 @@ export function useTopicView({
     openCount,
     resolvedCount,
     members: topicMembers,
-    hasAnyPublicMessages,
     isLoading,
     hasEarlier,
     showEarlier,
@@ -410,10 +405,14 @@ export function useTopicView({
     void actions.deleteReply(threadConvId, replyId).then(({ kept }) => reportDelete('reply', kept))
   }
 
-  const handleSend = (payload: SendPayload) => {
-    if (topicId == null) return
-    return actions.sendTopicMessage(topicId, payload)
-  }
+  /*
+    Where the composer was — CON-8. A Convex topic takes no more writes; its
+    conversation continues on the topic's `30840` file, which the Folder panel
+    lists. Huddle threads keep their composer: a huddle has no relay copy yet.
+  */
+  const readOnlyNotice = (
+    <ReadOnlyTopicBanner onOpenFolder={topicFolderId && !folderPanelOpen ? onToggleFolderPanel : undefined} />
+  )
 
   const handleDelete = (id: string) => {
     if (topicId == null) return
@@ -834,6 +833,7 @@ export function useTopicView({
                           onClick={() => openThread(c.id)}
                           onReply={() => openThread(c.id)}
                           onDelete={() => handleDelete(c.id)}
+                          readOnly
                         />
                       )
                     })}
@@ -852,25 +852,16 @@ export function useTopicView({
               {!isLoading && <ReactionHorizon omitted={topic?.reactionTargetsOmitted ?? 0} />}
             </div>
           </ScrollArea>
-          {!isLoading && !isMemberHere && (
-            <div className="px-3 pt-2">
-              <JoinTopicBanner title={topicTitle} onJoin={() => topicId != null && joinTopic(topicId)} />
-            </div>
-          )}
-          {!isLoading && isMemberHere && !hasAnyPublicMessages && (
-            <div className="px-3 pt-2">
-              <NewTopicBanner title={topicTitle} onInviteMembers={() => setMembersView('add')} />
-            </div>
-          )}
           {/* V3 only: the topic-header "+ Start huddle" button toggles isCreatingHuddle and
-              flips the regular composer into the people-picker + first-message creator.
-              V2 uses a portalled dialog (rendered below) and never touches the composer. */}
+              flips the read-only banner into the people-picker + first-message creator.
+              V2 uses a portalled dialog (rendered below) and never touches the composer.
+              Huddles still take writes; the topic itself does not (CON-8), so
+              there is no composer here and no Join / New-topic banner inviting
+              a post that cannot be made. */}
           {isCreatingHuddle ? (
             <HuddleCreator topicTitle={topicTitle} onCancel={cancelHuddleCreation} onCreate={handleCreateHuddle} />
           ) : (
-            <div className="p-3">
-              <ComposeBox onSend={handleSend} contextLabel={topicTitle ? `#${topicTitle}` : undefined} draftKey={topicId ? draftKeys.container(topicId) : undefined} />
-            </div>
+            !isLoading && <div className="p-3">{readOnlyNotice}</div>
           )}
         </>
         )
@@ -964,6 +955,7 @@ export function useTopicView({
       }
       onClose={closeThread}
       onSendReply={handleSendReply}
+      readOnlyNotice={selectedHuddleId ? undefined : readOnlyNotice}
       onDeleteReply={handleDeleteReply}
       onInitialBodyChange={
         selectedHuddleId && threadConvId

@@ -137,6 +137,9 @@ interface ReplyCardProps {
   nostrBlockId?: string
   /** Already-resolved reference objects, keyed by naddr (stories/tests — no relay). */
   resolvedObjects?: Record<string, ForeignObject>
+  /** Show it with no way to change it: no hover menu, reactions not toggleable.
+   *  A Convex topic's replies since CON-8. */
+  readOnly?: boolean
   className?: string
 }
 
@@ -167,6 +170,7 @@ export function ReplyCard({
   nostrEventId,
   nostrBlockId,
   resolvedObjects,
+  readOnly = false,
   className,
 }: ReplyCardProps) {
   const messageLink = shareableMessageUrl(nostrEventId, window.location.origin)
@@ -542,7 +546,7 @@ export function ReplyCard({
             {reactionsState.length > 0 && (
               <div className="flex items-center gap-2 pl-8 pt-1 pb-2 w-full">
                 {reactionsState.map((r, i) => (
-                  <ReactionPill key={i} emoji={r.emoji} count={r.count} owner={r.owner} names={r.names} onClick={() => handleReact(r.emoji)} />
+                  <ReactionPill key={i} emoji={r.emoji} count={r.count} owner={r.owner} names={r.names} onClick={readOnly ? undefined : () => handleReact(r.emoji)} />
                 ))}
               </div>
             )}
@@ -552,7 +556,7 @@ export function ReplyCard({
         {/* Quick menu — React and ⋯ only: the package Toolbar the message
             card uses, the third copy of its chrome gone (§4.2, F7). The menu
             owns its button; the picker is the strip's. */}
-        {isHovered && !isEditing && (
+        {isHovered && !isEditing && !readOnly && (
           <ConversationQuickMenu
             className="absolute right-1 top-1"
             onReact={handleReact}

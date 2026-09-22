@@ -33,9 +33,12 @@ async function seed(t: ReturnType<typeof convexTest>) {
     for (const userId of [ada, claude]) {
       await ctx.db.insert('topicMembers', { topicId, userId, addedAt: 1 })
     }
+    // In a huddle: a topic takes no writes since CON-8 (Stop writing messages
+    // to Convex), and reply reactions still have to work where writes remain.
+    const huddleId = await ctx.db.insert('huddles', { topicId, state: 'active', createdById: claude, createdAt: 1 })
     const messageId = await ctx.db.insert('messages', {
-      parentKind: 'topic',
-      parentId: topicId as string,
+      parentKind: 'huddle',
+      parentId: huddleId as string,
       authorId: claude,
       body: 'the plan, as a conversation root',
       createdAt: 10,
@@ -47,7 +50,7 @@ async function seed(t: ReturnType<typeof convexTest>) {
       createdAt: 20,
       nostrEventId: 'e'.repeat(64),
     })
-    return { ada, claude, topicId, messageId, replyId }
+    return { ada, claude, huddleId, messageId, replyId }
   })
 }
 
@@ -72,7 +75,7 @@ describe('reactions on replies', () => {
 
   it("stays off the parent message's own pill", async () => {
     const t = convexTest(schema, modules)
-    const { topicId, messageId, replyId } = await seed(t)
+    const { huddleId, messageId, replyId } = await seed(t)
 
     await t
       .withIdentity(asUser(PUBKEY))
@@ -80,7 +83,7 @@ describe('reactions on replies', () => {
 
     const { rows } = await t
       .withIdentity(asUser(PUBKEY))
-      .query(api.messages.list, { parentKind: 'topic', parentKey: topicId as string, limit: 50 })
+      .query(api.messages.list, { parentKind: 'huddle', parentKey: huddleId as string, limit: 50 })
     expect(rows.find((r) => r.id === (messageId as string))!.reactions).toBeUndefined()
   })
 

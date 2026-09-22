@@ -232,7 +232,7 @@ describe('PEE-6', () => {
     openWorkTopicIds = new Set(['t3'])
     const { result } = await setup()
     await waitFor(() => expect(result.current.isLoading).toBe(false))
-    expect(result.current.items.map((i) => (i.kind === 'topic' ? i.topicId : i.dmId))).toEqual(['t1'])
+    expect(result.current.items.map((i) => (i.kind === 'topic' ? i.topicId : i.kind === 'dm' ? i.dmId : i.address))).toEqual(['t1'])
   })
 })
 

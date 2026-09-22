@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { PreviewCard } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
@@ -38,11 +39,14 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
       <div className="flex items-center gap-2">
         {item.kind === 'topic' ? (
           <TopicState type="topic" status={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'} />
+        ) : item.kind === 'file' ? (
+          // The tree's glyph rule: a bare-file topic draws as a topic, anything else as a file.
+          <TopicState type={item.fileKind === KIND_BARE_FILE ? 'topic' : 'file'} />
         ) : (
           <Avatar size={16} src={item.authorAvatarSrc} alt={item.authorName} />
         )}
         <span className="text-body-2-strong text-text-primary truncate">
-          {item.kind === 'topic' ? item.topicTitle : item.authorName}
+          {item.kind === 'topic' ? item.topicTitle : item.kind === 'file' ? item.title : item.authorName}
         </span>
       </div>
 
@@ -86,6 +90,17 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
     the wrapper because the trigger is a row, and the component's own wrapper is
     an inline span.
   */
+  /*
+    A file row never opens a card, whatever the caller hands over: a file's
+    conversation is not in Convex, so there is nothing to show (FOL-34). Not
+    even a story overrides that, or its picture would promise a behaviour the
+    app does not have.
+
+    Otherwise the read is Convex's, so with no backend there is nothing either —
+    unless a caller brings its own rows, which is how a story draws the card at
+    all (UIG-17).
+  */
+  if (item.kind === 'file') return row
   if (!hasConvex && !preview) return row
   return (
     <PreviewCard

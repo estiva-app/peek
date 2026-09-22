@@ -180,6 +180,34 @@ describe('parsing keeps the order and drops only what it cannot trust', () => {
     ])
   })
 
+  it('keeps a file by its address, in its place among the other kinds (FOL-34)', async () => {
+    const { parseOpenWorkBlob, serializeOpenWorkBlob, openWorkKey } = await import('./openWork')
+    const address = `30840:${'a'.repeat(64)}:topic-d`
+    const blob = parseOpenWorkBlob(
+      JSON.stringify({
+        v: 1,
+        updatedAt: 5,
+        entries: [
+          { kind: 'topic', id: 't1' },
+          { kind: 'file', address },
+          { kind: 'file' },
+          { kind: 'file', address },
+          { kind: 'dm', key: 'greg' },
+        ],
+      }),
+    )
+    // The one with no address is dropped, and the duplicate keeps the first slot.
+    expect(blob.entries).toEqual([
+      { kind: 'topic', id: 't1' },
+      { kind: 'file', address },
+      { kind: 'dm', key: 'greg' },
+    ])
+    expect(JSON.parse(serializeOpenWorkBlob(blob)).entries).toEqual(blob.entries)
+    // Its own prefix: a topic id that happened to look like an address cannot shadow it.
+    expect(openWorkKey({ kind: 'file', address })).toBe(`file:${address}`)
+    expect(openWorkKey({ kind: 'topic', id: address })).not.toBe(openWorkKey({ kind: 'file', address }))
+  })
+
   it('ignores a version it does not know rather than reading it with v1 rules', async () => {
     const { parseOpenWorkBlob } = await import('./openWork')
     expect(parseOpenWorkBlob(JSON.stringify({ v: 2, updatedAt: 9, entries: [{ kind: 'topic', id: 't1' }] }))).toEqual({

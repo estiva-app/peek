@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useState } from 'react'
+import { useRef, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
 import { Chip, ScrollArea } from '@estiva-app/ui'
 import { RouterLink } from './RouterLink'
@@ -195,6 +195,11 @@ interface ThreadPanelProps {
    * be quietly lying about the one thing this contract is for.
    */
   onSendReply: (payload: SendPayload) => void | boolean | Promise<void | boolean>
+  /**
+   * Makes the thread read-only and is drawn where the composer would be — a
+   * Convex topic's thread since CON-8. The replies keep no hover menu either.
+   */
+  readOnlyNotice?: ReactNode
   onDeleteReply?: (id: string) => void
   onInitialBodyChange?: (newBody: string) => void
   /** The root message's files after an edit — PEE-16. */
@@ -276,6 +281,7 @@ export function ThreadPanel({
   openInDmHref,
   onClose,
   onSendReply,
+  readOnlyNotice,
   onDeleteReply,
   onInitialBodyChange,
   onInitialFilesChange,
@@ -439,6 +445,7 @@ export function ThreadPanel({
               onFilesChange={onInitialFilesChange}
               onReactionsChange={onInitialReactionsChange}
               onHighlightChange={onInitialHighlightChange}
+              readOnly={readOnlyNotice != null}
             />
           ) : (
             <PinnedMessage
@@ -488,6 +495,7 @@ export function ThreadPanel({
                     onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
                     onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
                     onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
+                    readOnly={readOnlyNotice != null}
                   />
                 </div>
               )
@@ -541,7 +549,9 @@ export function ThreadPanel({
 
       {/* Compose box */}
       <div className="p-3">
-        <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
+        {readOnlyNotice ?? (
+          <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
+        )}
       </div>
     </div>
   )

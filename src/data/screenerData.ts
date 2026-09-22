@@ -15,8 +15,20 @@ export type ScreenerItem =
       authorAvatarSrc?: string
       preview: string
     }
+  | {
+      id: string
+      /** A followed file with a comment the viewer has not read (FOL-34). */
+      kind: 'file'
+      /** `kind:pubkey:d`. */
+      address: string
+      /** The file's kind, for the glyph: a bare-file topic draws as a topic. */
+      fileKind: number
+      title: string
+      preview: string
+    }
 
-export const SCREENER_ITEMS: ScreenerItem[] = [
+// No file rows: a file resolves from the relay, which mock mode has none of.
+export const SCREENER_ITEMS: Exclude<ScreenerItem, { kind: 'file' }>[] = [
   {
     id: 'sc_1',
     kind: 'topic',
