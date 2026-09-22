@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, type ComponentProps, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconBell, IconBellFilled, IconDotsVertical, IconX } from '@tabler/icons-react'
 import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
@@ -339,27 +339,12 @@ export function FilePage() {
   return (
     <>
     {fileControls.dialogs}
-    <AppShell
-      leftPanel={
-        /*
-          The navigation: the Folder tree (FOL-21), opened to the Folder this
-          file lives in and to the row it sits under. Both come off the
-          resolved file rather than the URL, which is what lets a bare address
-          open in a fresh tab with the left pane in the right place — §7.2's
-          property, one level up: the identity in the link is enough, and
-          nothing else has to be carried. `selectedParent` is the file this one
-          names as its parent: `peersOf` hides a child whose parent is listed,
-          so without it a Ship issue would be in the Folder and drawn nowhere —
-          the same shape of gap the route itself was opened for.
-        */
-        <FolderTree
-          currentFolder={file?.folder}
-          selectedRef={file?.ref}
-          selectedParent={file?.parentRef}
-          onControl={fileControls.open}
-        />
-      }
-      rightPanel={
+      <FilePageView
+        currentFolder={file?.folder}
+        selectedRef={file?.ref}
+        selectedParent={file?.parentRef}
+        onControl={fileControls.open}
+        rightPanel={
         <div className="flex h-full flex-col">
           <ContainerHeader
             title={
@@ -437,8 +422,8 @@ export function FilePage() {
             </ScrollArea>
           )}
         </div>
-      }
-      threadPanel={
+        }
+        threadPanel={
         ownView ? (
           // The thread is what somebody just asked for; the widget and Activity are what the page shows otherwise.
           (peek.threadPanel ?? aside)
@@ -463,8 +448,55 @@ export function FilePage() {
         ) : (
           aside
         )
-      }
-    />
+        }
+      />
     </>
+  )
+}
+
+
+/**
+ * The file page's body, handed everything it draws — the half a story can show
+ * (UIG-17). `FilePage` above resolves the file, reads its conversation and owns
+ * its controls; this one only draws, and takes both panes as nodes.
+ *
+ * The navigation is the Folder tree (FOL-21), opened to the Folder this file
+ * lives in and to the row it sits under. Both come off the **resolved file**
+ * rather than the URL, which is what lets a bare address open in a fresh tab
+ * with the left pane already in the right place — §7.2's property, one level up:
+ * the identity in the link is enough, and nothing else has to be carried.
+ *
+ * `selectedParent` is the file this one names as its parent. `peersOf` hides a
+ * child whose parent is listed, so without it a Ship issue would be in the
+ * Folder and drawn nowhere — the same shape of gap this route was opened for.
+ */
+export function FilePageView({
+  currentFolder,
+  selectedRef,
+  selectedParent,
+  onControl,
+  rightPanel,
+  threadPanel,
+}: {
+  currentFolder?: string
+  selectedRef?: string
+  selectedParent?: string | null
+  onControl: ComponentProps<typeof FolderTree>['onControl']
+  rightPanel?: ReactNode
+  threadPanel?: ReactNode
+}) {
+  return (
+    <AppShell
+      leftPanel={
+        <FolderTree
+          currentFolder={currentFolder}
+          selectedRef={selectedRef}
+          selectedParent={selectedParent}
+          onControl={onControl}
+        />
+      }
+      rightPanel={rightPanel}
+      threadPanel={threadPanel}
+    />
   )
 }

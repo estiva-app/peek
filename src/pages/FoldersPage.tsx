@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import { IconArrowUpRight, IconBell, IconBellFilled, IconMessagePlus, IconTrash } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ContainerHeader, Form, ListColumn, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
@@ -147,72 +147,19 @@ export function FoldersPage() {
   */
   return (
     <>
-    <AppShell
-      leftPanel={
-        <ListColumn
-          title="Folders"
-          collapsed={railClosed}
-          above={
-            !signedOut && (
-              // The package Form (UIG-7): Enter or Create makes the folder; the row locks while it does.
-              <Form busy={creating} onSubmit={create} className="flex items-center gap-2 px-3 pt-3 pb-1">
-                {/* min-w-0 + shrink-0: the column is 290px and the field has no
-                    width of its own, so "Create" was pushed past the right edge
-                    and clipped (Katerina, 2026-09-11). */}
-                <TextInput
-                  className="min-w-0 flex-1"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="New folder name"
-                  aria-label="New folder name"
-                />
-                <Button className="shrink-0" type="submit" disabled={!name.trim() || creating}>
-                  {creating ? 'Creating…' : 'Create'}
-                </Button>
-              </Form>
-            )
-          }
-        >
-          {/*
-            Three states, not two. "Not signed in", "still loading" and "there
-            are genuinely none" are different sentences, and the first version
-            of this page told a signed-out viewer "No folders yet" about a
-            workspace holding eighty-one of them.
-          */}
-          {/*
-            The list scrolls, and it is the package's bar (D40). It had none at
-            all: `AppShell`'s list panel was `overflow-hidden`, so a workspace
-            of eighty-one Folders simply had the ones past the fold clipped
-            away, with nothing to scroll (Katerina, 2026-09-11). Step 6 could
-            not have caught it — that sweep converted regions that already had
-            a native bar, and a column that should scroll and never did has
-            none to find. The package's `ListColumn` scrolls its rows itself
-            now, with the insets every list column in Peek shares (UIG-14, N9).
-
-            The list column of a two-column page, so its empties are sections
-            (D51): the line alone, left, no icon. Loading is a skeleton, not a
-            sentence (§4.7).
-          */}
-          {/*
-            The same tree the Topics column draws (FOL-21), so the two rail
-            items navigate the same way: a Folder is a fold over its first
-            level, the one open on the right starts open, and a row opens its
-            file in three panes. The body rather than `FolderTree` because this
-            page already holds the Folder list — it re-reads it after a
-            create, a rename and a delete — and the create form sits between
-            the header and the list.
-          */}
-          <FolderTreeView
-            folders={topLevel}
-            signedOut={signedOut}
-            unread={teamUnread}
-            currentFolder={id}
-            onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
-            onOpenFolder={(folder) => navigate(folderPath(folder))}
-          />
-        </ListColumn>
-      }
-      rightPanel={
+      <FoldersPageView
+        railClosed={railClosed}
+        signedOut={signedOut}
+        creating={creating}
+        name={name}
+        onNameChange={setName}
+        onCreate={create}
+        folders={topLevel}
+        unread={teamUnread}
+        currentFolder={id}
+        onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
+        onOpenFolder={(folder: string) => navigate(folderPath(folder))}
+        rightPanel={
         id ? (
           <div className="flex h-full flex-col">
             {/*
@@ -346,17 +293,8 @@ export function FoldersPage() {
         ) : (
           <EmptyState message="Select a folder." />
         )
-      }
-      /*
-        No third pane here any more. A file's conversation is a page of its own
-        — `/topic/<address>`, FOL-19 — because a pane on this page could only
-        ever show a file this listing holds, and the files people most want to
-        open are the ones it does not: a Ship issue is its project's child,
-        resolved by address rather than found among peers. The three panes moved
-        wholesale to `FilePage`, which is why this one lost its conversation
-        rather than gaining a second way in.
-      */
-    />
+        }
+      />
 <>
           {startingTopic && id && (
             <StartTopicDialog
@@ -443,3 +381,110 @@ export function FoldersPage() {
   )
 }
 
+
+
+/**
+ * The Folders page's body, handed everything it draws — the half a story can
+ * show (UIG-17). `FoldersPage` above reads, creates, renames and routes; this
+ * one only draws, and takes the pane beside the list as a node.
+ *
+ * No third pane here any more. A file's conversation is a page of its own —
+ * `/topic/<address>`, FOL-19 — because a pane on this page could only ever show
+ * a file this listing holds, and the files people most want to open are the
+ * ones it does not: a Ship issue is its project's child, resolved by address
+ * rather than found among peers. The three panes moved wholesale to `FilePage`,
+ * which is why this one lost its conversation rather than gaining a second way
+ * in.
+ */
+export function FoldersPageView({
+  railClosed,
+  signedOut,
+  creating,
+  name,
+  onNameChange,
+  onCreate,
+  folders,
+  unread,
+  currentFolder,
+  onSelect,
+  onOpenFolder,
+  rightPanel,
+}: {
+  railClosed: boolean
+  /** Nobody is signed in. A different sentence from "still loading". */
+  signedOut: boolean
+  /** A create is in flight: the row locks while it is. */
+  creating: boolean
+  name: string
+  onNameChange: (next: string) => void
+  onCreate: () => void
+  /** `null` while the first read is in flight, or when signed out. */
+  folders: ComponentProps<typeof FolderTreeView>['folders']
+  unread: ComponentProps<typeof FolderTreeView>['unread']
+  currentFolder?: string | null
+  onSelect: ComponentProps<typeof FolderTreeView>['onSelect']
+  onOpenFolder: ComponentProps<typeof FolderTreeView>['onOpenFolder']
+  rightPanel?: ReactNode
+}) {
+  return (
+    <AppShell
+      leftPanel={
+        <ListColumn
+          title="Folders"
+          collapsed={railClosed}
+          above={
+            !signedOut && (
+              // The package Form (UIG-7): Enter or Create makes the folder; the row locks while it does.
+              <Form busy={creating} onSubmit={onCreate} className="flex items-center gap-2 px-3 pt-3 pb-1">
+                {/* min-w-0 + shrink-0: the column is 290px and the field has no
+                    width of its own, so "Create" was pushed past the right edge
+                    and clipped (Katerina, 2026-09-11). */}
+                <TextInput
+                  className="min-w-0 flex-1"
+                  value={name}
+                  onChange={(event) => onNameChange(event.target.value)}
+                  placeholder="New folder name"
+                  aria-label="New folder name"
+                />
+                <Button className="shrink-0" type="submit" disabled={!name.trim() || creating}>
+                  {creating ? 'Creating…' : 'Create'}
+                </Button>
+              </Form>
+            )
+          }
+        >
+          {/*
+            The same tree the Topics column draws (FOL-21), so the two rail
+            items navigate the same way: a Folder is a fold over its first
+            level, the one open on the right starts open, and a row opens its
+            file in three panes. The body rather than `FolderTree` because the
+            page above already holds the Folder list — it re-reads it after a
+            create, a rename and a delete — and the create form sits between the
+            header and the list.
+
+            Three states, not two: "not signed in", "still loading" and "there
+            are genuinely none" are different sentences, and the first version
+            of this page told a signed-out viewer "No folders yet" about a
+            workspace holding eighty-one of them.
+
+            The list scrolls, and it is the package's bar (D40). It had none at
+            all: `AppShell`'s list panel was `overflow-hidden`, so a workspace
+            of eighty-one Folders simply had the ones past the fold clipped
+            away, with nothing to scroll (Katerina, 2026-09-11). The package's
+            `ListColumn` scrolls its rows itself now, with the insets every list
+            column in Peek shares (UIG-14, N9).
+          */}
+          <FolderTreeView
+            folders={folders}
+            signedOut={signedOut}
+            unread={unread}
+            currentFolder={currentFolder}
+            onSelect={onSelect}
+            onOpenFolder={onOpenFolder}
+          />
+        </ListColumn>
+      }
+      rightPanel={rightPanel}
+    />
+  )
+}

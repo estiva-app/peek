@@ -47,7 +47,7 @@ type Selected =
  */
 export function DeskPage() {
   const railClosed = useRailClosed()
-  const { topicHasUnread, dmHasUnread, topicIsUrgent, dmIsUrgent } = useUnread()
+  const { topicHasUnread, dmHasUnread } = useUnread()
   const navigate = useNavigate()
   const pathForTopic = useTopicPath()
   const location = useLocation()

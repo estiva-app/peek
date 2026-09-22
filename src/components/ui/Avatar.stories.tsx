@@ -50,7 +50,7 @@ export const FallBack: Story = {
       ].map(({ label, name }) => (
         <div key={label} style={{ display: 'grid', gap: 8, justifyItems: 'center' }}>
           <Avatar {...args} name={name} />
-          <span style={{ fontSize: 11, opacity: 0.6 }}>{label}</span>
+          <span className="text-caption text-text-muted">{label}</span>
         </div>
       ))}
     </div>

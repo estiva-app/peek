@@ -54,7 +54,7 @@ export const NamedAndNot: Story = {
       ].map(({ label, people }) => (
         <div key={label} style={{ display: 'grid', gap: 8 }}>
           <Person {...args} people={people} />
-          <span style={{ fontSize: 11, opacity: 0.6 }}>{label}</span>
+          <span className="text-caption text-text-muted">{label}</span>
         </div>
       ))}
     </div>

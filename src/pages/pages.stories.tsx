@@ -9,6 +9,9 @@ import type { StarredItem } from '@/components/ui/StarredSection'
 import { PeoplePageView, type PeopleListItem } from './PeoplePage'
 import { TopicsPageView, type TopicListItem } from './TopicsPage'
 import { DeskPageView, type DeskRow } from './DeskPage'
+import { FoldersPageView } from './FoldersPage'
+import { FilePageView } from './FilePage'
+import { ObjectPageView } from './ObjectPage'
 
 const noop = () => {}
 
@@ -276,4 +279,99 @@ export const DeskLoading: Story = {
       rightPanel={<div className="flex-1 h-full" />}
     />
   ),
+}
+
+/**
+ * The Folders page. The tree is `FolderTreeView`, so its three states — signed
+ * out, still loading, and genuinely none — are its own page's to show; here it
+ * is the create row above the list that matters.
+ */
+export const Folders: Story = {
+  render: () => (
+    <FoldersPageView
+      railClosed={false}
+      signedOut={false}
+      creating={false}
+      name=""
+      onNameChange={noop}
+      onCreate={noop}
+      folders={[]}
+      unread={{}}
+      onSelect={noop}
+      onOpenFolder={noop}
+      rightPanel={<EmptyState message="No folder selected" />}
+    />
+  ),
+}
+
+/**
+ * **Signed out.** The create row is gone entirely — not disabled — because
+ * there is nothing to create into, and the tree says so in its own words. The
+ * first version of this page told a signed-out viewer "No folders yet" about a
+ * workspace holding eighty-one of them.
+ */
+export const FoldersSignedOut: Story = {
+  render: () => (
+    <FoldersPageView
+      railClosed={false}
+      signedOut
+      creating={false}
+      name=""
+      onNameChange={noop}
+      onCreate={noop}
+      folders={null}
+      unread={{}}
+      onSelect={noop}
+      onOpenFolder={noop}
+      rightPanel={<EmptyState message="No folder selected" />}
+    />
+  ),
+}
+
+/** **Mid-create**: the row locks while the folder is being made. */
+export const FoldersCreating: Story = {
+  render: () => (
+    <FoldersPageView
+      railClosed={false}
+      signedOut={false}
+      creating
+      name="Launch"
+      onNameChange={noop}
+      onCreate={noop}
+      folders={[]}
+      unread={{}}
+      onSelect={noop}
+      onOpenFolder={noop}
+      rightPanel={<EmptyState message="No folder selected" />}
+    />
+  ),
+}
+
+/**
+ * A file's page: the Folder tree on the left, opened to where the file lives,
+ * and the file's own panes beside it. Both panes read and write the file they
+ * show, so the page hands them over as nodes; here they stand in as empties.
+ */
+export const File: Story = {
+  render: () => (
+    <FilePageView
+      onControl={noop}
+      rightPanel={<EmptyState message="No file selected" />}
+    />
+  ),
+}
+
+/**
+ * `/o/<bech32>` while it resolves, and when it cannot.
+ *
+ * **The second one is the state nobody could see**: reaching it meant finding a
+ * reference Peek genuinely cannot open. Another app's `naddr` is a valid
+ * reference, and sending it somewhere arbitrary would be worse than saying so.
+ */
+export const ObjectOpening: Story = {
+  render: () => <ObjectPageView state="looking" />,
+}
+
+export const ObjectUnopenable: Story = {
+  render: () => <ObjectPageView state="unopenable" />,
 }
