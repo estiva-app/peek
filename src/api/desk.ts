@@ -8,11 +8,12 @@
  * DM-partner avatars resolve through the shared registry (uploaded avatar,
  * else the seeded portrait).
  */
+import { useMemo } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { URGENT_ITEMS } from '@/data/deskData'
 import { useAvatarSrc } from './avatars'
-import { useOpenWork } from './internal/openWork'
+import { useOpenWork, useOpenWorkIfMounted } from './internal/openWork'
 import { useScreener } from './internal/screener'
 import { hasConvex } from './store'
 import type { ScreenerItem, OpenWorkItem, UrgentItem } from './types'
@@ -56,6 +57,36 @@ export function useDeskItems(): { openWork: OpenWorkItem[]; urgent: UrgentItem[]
  *  the picker offer it again and add a second copy. */
 export function useOpenWorkTopicIds(): Set<string> {
   return useOpenWork().topicIds
+}
+
+/** Which files are in Open work, and the toggle — FOL-34. */
+export interface OpenWorkFiles {
+  /** File addresses in the list, read off the list for the reason above. */
+  has: (address: string) => boolean
+  add: (address: string) => void
+  remove: (address: string) => void
+}
+
+const NO_FILES = new Set<string>()
+const INERT_FILES: OpenWorkFiles = { has: () => false, add: () => {}, remove: () => {} }
+
+/**
+ * Open work for files — the file page's and the tree row's Add/Remove (FOL-34).
+ *
+ * Its own seam, like `useFollows`, rather than two more `usePeekActions` verbs:
+ * the list is the relay's alone (no Convex dual-write for a file), and a tree
+ * row mounted without the provider — a story, a test — gets an inert value
+ * instead of a throw, so the row can still be drawn on its own.
+ */
+export function useOpenWorkFiles(): OpenWorkFiles {
+  const openWork = useOpenWorkIfMounted()
+  const addresses = openWork?.fileAddresses ?? NO_FILES
+  const add = openWork?.addFile
+  const remove = openWork?.removeFile
+  return useMemo(
+    () => (add && remove ? { has: (a: string) => addresses.has(a), add, remove } : INERT_FILES),
+    [addresses, add, remove],
+  )
 }
 
 /** True while any Desk list is still unsettled (drives the sidebar skeleton). */

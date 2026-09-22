@@ -3,7 +3,7 @@ import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { useConversationBadges, useFollows, useForeignChildren } from '@/api'
+import { useConversationBadges, useFollows, useForeignChildren, useOpenWorkFiles } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
@@ -192,6 +192,9 @@ function TreeRow({
   const follows = useFollows()
   const followKey = file.address
   const followAction = followKey ? (follows.isFollowed(followKey) ? 'unfollow' : 'follow') : undefined
+  // Open work on the row (FOL-34), by the same address — the file page's control.
+  const openWorkFiles = useOpenWorkFiles()
+  const openWorkAction = followKey ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
   return (
     <div data-file={file.ref}>
@@ -222,6 +225,12 @@ function TreeRow({
           onClick={() => onSelect(file)}
           onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
           onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
+          openWorkAction={openWorkAction}
+          onToggleOpenWork={
+            followKey && openWorkAction
+              ? () => (openWorkAction === 'add' ? openWorkFiles.add(followKey) : openWorkFiles.remove(followKey))
+              : undefined
+          }
           followAction={followAction}
           onToggleFollow={
             followKey && followAction ? () => void follows.setFollowed(followKey, followAction === 'follow') : undefined

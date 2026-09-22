@@ -1,4 +1,5 @@
 import { IconX } from '@tabler/icons-react'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { PreviewCard } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
@@ -30,11 +31,14 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemP
       <div className="flex items-center gap-2">
         {item.kind === 'topic' ? (
           <TopicState type="topic" status={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'} />
+        ) : item.kind === 'file' ? (
+          // The tree's glyph rule: a bare-file topic draws as a topic, anything else as a file.
+          <TopicState type={item.fileKind === KIND_BARE_FILE ? 'topic' : 'file'} />
         ) : (
           <Avatar size={16} src={item.authorAvatarSrc} alt={item.authorName} />
         )}
         <span className="text-body-2-strong text-text-primary truncate">
-          {item.kind === 'topic' ? item.topicTitle : item.authorName}
+          {item.kind === 'topic' ? item.topicTitle : item.kind === 'file' ? item.title : item.authorName}
         </span>
       </div>
 
@@ -75,7 +79,9 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss }: ScreenerItemP
     the wrapper because the trigger is a row, and the component's own wrapper is
     an inline span.
   */
-  if (!hasConvex) return row
+  // A file row has no preview read yet: the card's query is Convex's, and a
+  // file's conversation is not there (FOL-34). No card rather than an empty one.
+  if (!hasConvex || item.kind === 'file') return row
   return (
     <PreviewCard content={<ScreenerPreviewContent itemId={item.id} />} wrapperClassName="block w-full">
       {row}

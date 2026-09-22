@@ -83,7 +83,8 @@ const EMPTY: ScreenerBlob = { v: 1, updatedAt: 0, snoozed: {}, dismissed: {} }
  * uses, because the PEE-6 de-duplication is an intersection of the two key
  * sets and a second spelling would make that comparison silently empty.
  */
-export function screenerKey(kind: 'topic' | 'dm', targetId: string): string {
+export function screenerKey(kind: 'topic' | 'dm' | 'file', targetId: string): string {
+  if (kind === 'file') return `file:${targetId}`
   return kind === 'dm' ? `dm:${targetId}` : `topic:${targetId}`
 }
 

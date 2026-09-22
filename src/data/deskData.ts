@@ -1,3 +1,4 @@
+import type { ForeignObject } from '@estiva-app/interop'
 import type { TopicStateStatus } from '@/components/ui/TopicState'
 
 export type OpenWorkItem =
@@ -16,6 +17,16 @@ export type OpenWorkItem =
       name: string
       avatarSrc?: string
       isUnread?: boolean
+    }
+  | {
+      id: string
+      /** A file on the relay — a bare-file topic, a Ship issue (FOL-34). */
+      kind: 'file'
+      /** `kind:pubkey:d`, the file's identity; it has no Convex id. */
+      address: string
+      title: string
+      /** The resolved file, for the unread badge (`useConversationBadges`). */
+      object: ForeignObject
     }
 
 export type UrgentItem =
@@ -57,7 +68,8 @@ export const URGENT_ITEMS: UrgentItem[] = [
   { id: 'urg_2', kind: 'dm', dmId: 'hallie', name: 'Hallie Pratt' },
 ]
 
-export const OPEN_WORK_ITEMS: OpenWorkItem[] = [
+// No file rows: a file resolves from the relay, which mock mode has none of.
+export const OPEN_WORK_ITEMS: Exclude<OpenWorkItem, { kind: 'file' }>[] = [
   {
     id: 'ow_1',
     topicId: '2',
