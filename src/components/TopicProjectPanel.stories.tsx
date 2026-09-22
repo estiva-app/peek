@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject, FolderProject } from '@estiva-app/interop'
 import { TopicProjectPanelView } from './TopicProjectPanel'
 
@@ -131,10 +132,16 @@ const meta = {
      * a panel that reads correctly here and cramped in the app — the wrapping of
      * a ticket title is decided by that width, so it has to be the true one.
      */
+    /* The activity list is `TopicActivity`, which routes on a click, so the
+       two activity stories threw "useNavigate() may be used only in the
+       context of a <Router>" until this went in (UIG-17, 2026-09-22). They
+       had been throwing on main, which tsc and both lints pass over. */
     (Story) => (
-      <div className="h-screen shrink-0 w-[380px] border-l border-border-subtle flex flex-col overflow-hidden">
-        <Story />
-      </div>
+      <MemoryRouter>
+        <div className="h-screen shrink-0 w-[380px] border-l border-border-subtle flex flex-col overflow-hidden">
+          <Story />
+        </div>
+      </MemoryRouter>
     ),
   ],
   args: { folderProject: full },
