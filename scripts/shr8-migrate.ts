@@ -236,6 +236,34 @@ async function collect(title: string, topicId: string): Promise<Item[]> {
 }
 
 /**
+ * Everything on a file's conversation, read the way the product reads it.
+ *
+ * **Two reads, because that is what Peek does.** Interop asks for the roots by
+ * lowercase `#a` (`projection.js` — `'#a': [file.address]`), and Peek then
+ * asks for the replies by `#e` on those root ids (`src/nostr/foreign.ts:792`).
+ * A NIP-22 reply carries no lowercase `a` at all, so one `#a` read returns
+ * roots only and a reader that stopped there would report a thread as absent.
+ *
+ * **Not `#A`.** The uppercase read looks like the tidier question and is what
+ * `fol25-topics-to-files.ts` uses, but this relay does not answer it reliably:
+ * measured 2026-09-22 against two files whose contents were confirmed present
+ * by an `ids:` lookup, the same filter returned 78 events at `limit: 2000` and
+ * **0** at `limit: 100`, and 0 at any limit for the other file. Whatever that
+ * is, a done-when must not rest on it — and the product never asks it, so the
+ * product's own shape is both safer and more honest.
+ */
+async function fileConversation(query: ReturnType<typeof queryFn>, address: string): Promise<SignedEvent[]> {
+  const roots = await query([{ kinds: [1111], '#a': [address], limit: 2000 }])
+  const out = new Map(roots.map((e) => [e.id, e]))
+  for (let i = 0; i < roots.length; i += 100) {
+    const ids = roots.slice(i, i + 100).map((e) => e.id)
+    if (!ids.length) continue
+    for (const e of await query([{ kinds: [1111], '#e': ids, limit: 2000 }])) out.set(e.id, e)
+  }
+  return [...out.values()]
+}
+
+/**
  * Every topic, with its file, its rows and what is already migrated onto it.
  *
  * The file is matched on the `30840`'s `title` tag against the Convex title
@@ -270,10 +298,7 @@ async function survey(query: ReturnType<typeof queryFn>, agent: string): Promise
         break
       }
       if (s.address) {
-        // `#A`, not `#a`: a NIP-22 reply keeps the uppercase root tags and
-        // drops the lowercase `a`, so an `#a` read misses every threaded copy.
-        const onFile = await query([{ kinds: [1111], '#A': [s.address], limit: 2000 }])
-        for (const e of onFile) {
+        for (const e of await fileConversation(query, s.address)) {
           const o = origOf(e)
           if (o) s.done.set(o, e)
         }
@@ -801,18 +826,59 @@ async function writeback() {
   process.exitCode = landed === rows.length ? 0 : 1
 }
 
+// ── readback ───────────────────────────────────────────────────────────────
+
+/**
+ * Ask the relay for the run's own event ids, one by one.
+ *
+ * `verify` reads each file by `#A` and counts what is on it. When that
+ * disagrees with a run that reported 145 accepted and zero refusals, the two
+ * candidate explanations need separating before anything is re-run: the event
+ * is **not stored** (accepted at ingest, lost at COMMIT), or it is stored and
+ * **not reachable by that filter**. An `ids:` lookup answers only the first,
+ * which is what makes it the right question here.
+ */
+async function readback(query: ReturnType<typeof queryFn>) {
+  const rows = JSON.parse(readFileSync(process.argv[3] ?? 'shr8-writeback.json', 'utf8')) as Array<{ kind: string; id: string; nostrEventId: string }>
+  const found = new Map<string, SignedEvent>()
+  for (let i = 0; i < rows.length; i += 50) {
+    const batch = rows.slice(i, i + 50).map((r) => r.nostrEventId)
+    for (const e of await query([{ ids: batch, limit: batch.length }])) found.set(e.id, e)
+  }
+  const missing = rows.filter((r) => !found.has(r.nostrEventId))
+  console.log(`published ids: ${rows.length}`)
+  console.log(`readable by id: ${found.size}`)
+  console.log(`missing: ${missing.length}`)
+  if (found.size) {
+    const sample = [...found.values()].sort((a, b) => a.created_at - b.created_at)
+    console.log(`\noldest readable: ${stamp(sample[0]!.created_at)} UTC`)
+    console.log(`newest readable: ${stamp(sample[sample.length - 1]!.created_at)} UTC`)
+  }
+  // The discriminator: if what survived is exactly the recent end, the floor
+  // took the rest at COMMIT and "accepted" never meant stored.
+  const byAge = rows.map((r) => ({ r, e: found.get(r.nostrEventId) }))
+  const oldestFound = byAge.filter((x) => x.e).reduce((m, x) => Math.min(m, x.e!.created_at), Infinity)
+  console.log(`\nevery readable event is newer than ${stamp(oldestFound)} UTC`)
+  process.exitCode = missing.length ? 1 : 0
+}
+
 // ── verify ─────────────────────────────────────────────────────────────────
 
 /** The done-when, read off both stores. No writes, so it needs no signer. */
 async function verify(query: ReturnType<typeof queryFn>, agent: string) {
   const surfaces = await survey(query, agent)
   let failures = 0
+  let pendingWriteback = 0
   console.log('surface'.padEnd(46) + 'scope'.padStart(7) + 'copied'.padStart(8) + 'dated'.padStart(7) + 'threaded'.padStart(10) + '  in Convex')
   for (const s of surfaces) {
     if (s.discarded || s.noFileTarget || !s.address) continue
-    const scope = s.items.filter((i) => !i.eventId || s.done.has(i.id))
-    if (!scope.length) continue
+    // Scope is what *this run* owes: a row with no event, or one it copied.
+    // Not `s.done`, which also holds FOL-25's `migrate` copies — those carry an
+    // `orig` naming a Convex row that was published long ago, so counting them
+    // marked nine surfaces incomplete for work that was never this ticket's.
     const copies = new Map([...s.done].filter(([, e]) => migrated(e)))
+    const scope = s.items.filter((i) => !i.eventId || copies.has(i.id))
+    if (!scope.length) continue
     let dated = 0
     let threaded = 0
     let named = 0
@@ -827,14 +893,21 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
       }
       if (i.eventId === copy.id) named++
     }
-    const ok = copies.size === scope.length && dated === scope.length && threaded === scope.length && named === scope.length
-    if (!ok) failures++
+    const onRelay = copies.size === scope.length && dated === scope.length && threaded === scope.length
+    const ok = onRelay && named === scope.length
+    if (!onRelay) failures++
+    else if (!ok) pendingWriteback += scope.length - named
     console.log(
       `${ok ? ' ' : '✗'}${('topic/' + s.title).slice(0, 44).padEnd(45)}${String(scope.length).padStart(7)}${String(copies.size).padStart(8)}${String(dated).padStart(7)}${String(threaded).padStart(10)}  ${named}/${scope.length}`,
     )
   }
-  console.log(`\n${failures ? `${failures} surface(s) incomplete` : 'every migrated row is copied, dated, threaded and named in Convex'}`)
-  console.log(`The gap itself is probe-shr8-census.ts — this only checks what this run wrote.`)
+  if (failures) console.log(`\n${failures} surface(s) incomplete on the relay — that is a migration failure`)
+  else console.log(`\nOn the relay: every row in scope is copied, dated with its original created_at, and threaded.`)
+  if (pendingWriteback) {
+    console.log(`In Convex: ${pendingWriteback} row(s) still read null, so the census cannot see any of this.`)
+    console.log(`Run \`writeback\` from an account with Convex admin — that is the remaining step.`)
+  }
+  console.log(`\nThe gap itself is probe-shr8-census.ts — this only checks what this run wrote.`)
   process.exitCode = failures ? 1 : 0
 }
 
@@ -872,6 +945,9 @@ async function main() {
       break
     case 'writeback':
       await writeback()
+      break
+    case 'readback':
+      await readback(query)
       break
     case 'verify':
       await verify(query, t.pubkey)
