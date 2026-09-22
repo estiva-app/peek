@@ -71,21 +71,38 @@ export function useFolderContents(folder: string | null | undefined): {
     [resolveFolderContents],
   )
 
+  /*
+    A failed *re*-read keeps what is on screen (FOL-40). The failure is worth
+    a sentence when there is nothing else to say — an empty Folder and an
+    unreadable one are different (PEE-10) — and worth nothing at all when the
+    rows are already drawn: a 30 s tick that hits a hiccup would otherwise
+    replace a read Folder with "This folder could not be read", and the next
+    tick would put it back. A first read for this Folder still says so,
+    because there is then no answer to keep.
+  */
+  const keep = useCallback(
+    (next: { folder: string; contents?: FolderContents; failed?: RelayFailureKind }) =>
+      setResolved((held) =>
+        next.failed && held?.folder === next.folder && held.contents ? held : next,
+      ),
+    [],
+  )
+
   const reload = useCallback(async () => {
     if (!folder) return
     const next = await load(folder)
     // A slow resolve for the previous Folder must not paint over the next one.
-    if (next.folder === folder) setResolved(next)
-  }, [folder, load])
+    if (next.folder === folder) keep(next)
+  }, [folder, load, keep])
 
   useEffect(() => {
     if (!folder) return
     let cancelled = false
-    void load(folder).then((next) => !cancelled && setResolved(next))
+    void load(folder).then((next) => !cancelled && keep(next))
     return () => {
       cancelled = true
     }
-  }, [folder, load])
+  }, [folder, load, keep])
 
   useEffect(() => {
     if (!folder) return

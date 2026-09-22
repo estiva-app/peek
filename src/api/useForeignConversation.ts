@@ -115,22 +115,39 @@ function useResolvedForeign(naddr: string | null | undefined): {
     [resolveObject, resolveFileFolder],
   )
 
+  /*
+    A failed *re*-read keeps the answer it has (FOL-40), the same rule the
+    Folder's own listing follows. It matters beyond this pane: the file page
+    hands the tree `currentFolder` and `selectedRef` off this object, so one
+    hiccup on the 30 s tick would close the open Folder in the sidebar and
+    unselect the row, and the next tick would open it again — the redraw
+    Miky saw beside the late dot. A first read still reports its failure;
+    there is nothing to keep.
+  */
+  const keep = useCallback(
+    (next: { naddr: string; object?: ForeignObject | null; failed?: RelayFailureKind }) =>
+      setResolved((held) =>
+        next.failed && held?.naddr === next.naddr && held.failed === undefined ? held : next,
+      ),
+    [],
+  )
+
   const reload = useCallback(async () => {
     if (!naddr) return
     const next = await load(naddr)
     // A slow resolve for the previously selected file must not paint over the
     // one that is open now.
-    if (next.naddr === naddr) setResolved(next)
-  }, [naddr, load])
+    if (next.naddr === naddr) keep(next)
+  }, [naddr, load, keep])
 
   useEffect(() => {
     if (!naddr) return
     let cancelled = false
-    void load(naddr).then((next) => !cancelled && setResolved(next))
+    void load(naddr).then((next) => !cancelled && keep(next))
     return () => {
       cancelled = true
     }
-  }, [naddr, load])
+  }, [naddr, load, keep])
 
   useRefreshTriggers(
     () => {

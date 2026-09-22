@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FolderSummary } from '@estiva-app/interop'
+import { KIND } from '@estiva-app/protocol'
 import { useFollows, useForeignObjects } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import type { StreamMessage } from '@/nostr/channelStreams'
@@ -32,10 +33,11 @@ export const TEAM_UNREAD_SETTLE_MS = 1_000
  *
  * ## When it re-reads
  *
- * On the set of Folders changing, on the socket reporting activity in any of
- * them — gathered for a moment, so a burst of comments is one read rather than
- * one each — and on the refresh triggers as the fallback the socket does not
- * cover, exactly as the Folder view keeps its own listing fresh. The judging
+ * On the set of Folders changing, on the socket reporting something said in
+ * any of them (`watchChannels`, the wide `#h` filter — FOL-40) — gathered for
+ * a moment, so a burst of comments is one read rather than one each — and on
+ * the refresh triggers as the fallback the socket does not cover, exactly as
+ * the Folder view keeps its own listing fresh. The judging
  * is separate and cheaper: it runs on every frontier change without a read,
  * which is what turns the dot off when this tab records a file as read.
  */
@@ -111,10 +113,20 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
         load()
       }, TEAM_UNREAD_SETTLE_MS)
     }
-    const stops = ids.map((folder) => live.onForeignActivity(folder, settle))
+    /*
+      The wide filter, not `onForeignActivity` (FOL-40). That signal is fed by
+      the projection and reports only what it did *not* take — a Ship issue
+      moved, a record changed — never a `kind:9` or `kind:1111`, which it
+      consumes as messages. So the socket never told the dot that somebody
+      commented; only the refresh triggers did, a focus or the 30 s tick, and
+      the dot arrived on the same tick as every listing's re-read. This is the
+      same subscription `useTopicUnread` holds, one REQ per 128 Folders, told
+      which Folder said something and nothing else — so the re-read stays.
+    */
+    const watch = live.watchChannels(ids, settle, { kinds: [KIND.STREAM_MESSAGE, KIND.COMMENT] })
     return () => {
       if (timer) clearTimeout(timer)
-      for (const stop of stops) stop()
+      watch.stop()
     }
   }, [ids, load])
 
