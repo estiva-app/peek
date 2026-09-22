@@ -8,7 +8,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LiveProjectionApi } from './liveProjection'
-import { getLiveTopics, relayLog, resetLiveTopicsForTests } from './liveTopics'
+import {
+  getLiveTopics,
+  logWideFilterDelivery,
+  relayLog,
+  resetLiveTopicsForTests,
+} from './liveTopics'
 
 const CHANNEL = '11111111-1111-4111-8111-111111111111'
 const CHANNEL_B = '22222222-2222-4222-8222-222222222222'
@@ -192,6 +197,46 @@ describe('the log says when a live path stopped (FOL-40)', () => {
       const live = getLiveTopics('https://relay.test', api)
       live.watchChannels([CHANNEL, CHANNEL_B], () => {}).stop()
       expect(info).toHaveBeenCalledWith('[relay] watching 2 folder(s) for kinds 9, 1111')
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  /*
+    And says when one *delivers*, which is the question the subscription line
+    could not answer. "Was the REQ accepted?" is answered by the absence of a
+    closure, and it is the wrong question: a filter naming many distinct `#h`
+    values is classified as a global subscription on a relay build carrying the
+    singular `extract_channel_id_from_filters`, and a global subscription is
+    never handed an event that carries a channel. The frame is identical, the
+    acceptance is identical, and the delivery is zero.
+
+    So the wording is the artefact, and it is pinned here. Elapsed tells a
+    backfilled event from a live one — the REQ carries no `since`, so stored
+    events arrive within a moment of subscribing and a live one arrives when
+    somebody speaks. The watch size gives the console its own control, because
+    a single-Folder watch is channel-scoped on every build.
+  */
+  it('names each wide-filter delivery, and goes quiet rather than burying the live one', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      logWideFilterDelivery(79, 1, CHANNEL, 12)
+      expect(info).toHaveBeenLastCalledWith(
+        `[relay] wide filter of 79 delivered #1 for ${CHANNEL}, 12ms after subscribing`,
+      )
+
+      // The one a reader is looking for: minutes later, on a 79-Folder watch.
+      logWideFilterDelivery(79, 2, CHANNEL_B, 184_000)
+      expect(info).toHaveBeenLastCalledWith(
+        `[relay] wide filter of 79 delivered #2 for ${CHANNEL_B}, 184000ms after subscribing`,
+      )
+
+      info.mockClear()
+      logWideFilterDelivery(79, 25, CHANNEL, 40)
+      expect(info).toHaveBeenLastCalledWith('[relay] wide filter of 79: further deliveries not logged')
+      info.mockClear()
+      logWideFilterDelivery(79, 26, CHANNEL, 41)
+      expect(info).not.toHaveBeenCalled()
     } finally {
       info.mockRestore()
     }
