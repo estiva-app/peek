@@ -111,7 +111,6 @@ const preview: Preview = {
         order: [
           'Docs',
           ['Introduction'],
-          'Layouts',
           'Primitives',
           'Messages',
           ['*', 'Composer'],

@@ -38,3 +38,15 @@ things: a file part-way through uploading, a file that failed, and the line
 
 Those three states have not been drawn anywhere else. They should come back
 inside the `ComposeBox` story rather than stay lost — that is not done yet.
+
+## Deleted outright, not parked
+
+`Layouts/App` and its `PeekApp` harness went on 22 September rather than waiting
+here, because Katerina asked for them to go now. They were the whole running app
+on three routes — Desk, Topics and People — fed by the invented data, which is
+the thing being got rid of; and being live, each could only ever show the one
+state the seed data put it in.
+
+Peek therefore has **no page-level stories at all** until Ship's shape replaces
+them: a presentational View fed a fixture, dropped into the shell, with a
+loading state beside it. That work is in this same pull request.
