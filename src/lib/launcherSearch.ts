@@ -37,6 +37,7 @@
  */
 import type { Person } from '@/data/peopleData'
 import type { Topic } from '@/data/topicData'
+import type { RelayFailureKind } from '@/nostr/relayRead'
 
 /**
  * A window of text around the match, rather than the first N characters.
@@ -101,7 +102,7 @@ export type MessageSearchState =
   /** The relay answered. `count` may be zero. */
   | { kind: 'done'; count: number }
   /** The relay did not answer, or answered no. */
-  | { kind: 'failed'; failure: 'unreachable' | 'refused' | 'not_a_member' }
+  | { kind: 'failed'; failure: RelayFailureKind }
   /** No token, so there was nothing to ask with. */
   | { kind: 'signed-out' }
 
@@ -132,7 +133,13 @@ export function messageEmptyState(state: MessageSearchState, query: string): str
         ? 'No messages you can read match — some conversations are not yours to see.'
         : state.failure === 'refused'
           ? 'The relay refused the search, so this list is incomplete.'
-          : 'Could not reach the relay, so messages are not included.'
+          : state.failure === 'rate_limited'
+            ? // Not an outage: the relay answered, and said to come back. A
+              // search is typed, so it is retried by typing rather than on a
+              // timer — the sentence has to invite that rather than report a
+              // broken relay (FOL-40).
+              'The relay is busy, so messages are not included. Try again in a moment.'
+            : 'Could not reach the relay, so messages are not included.'
     case 'done':
       if (state.count > 0) return null
       /*

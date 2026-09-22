@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FolderContents, FolderSummary } from '@estiva-app/interop'
 import { useForeignObjects } from '@/api'
 import {
-  RelayReadError,
-  classifyRelayFailure,
   isOutage,
+  relayFailureKind,
+  withRateLimitRetry,
   type RelayFailureKind,
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
@@ -53,17 +53,22 @@ export function useFolderContents(folder: string | null | undefined): {
 
   const load = useCallback(
     (target: string) =>
-      resolveFolderContents(target)
+      /*
+        A quota refusal is waited out at the second the relay named rather than
+        drawn as a failure (FOL-40). This read is one of the six that go out
+        together when the sidebar and the Folder view both refresh, so it is
+        among the first to be refused — and "This folder could not be read" for
+        a relay that answered promptly and will answer again in eight seconds
+        is the wrong sentence twice over.
+      */
+      withRateLimitRetry(() => resolveFolderContents(target))
         .then((contents) => ({ folder: target, contents }))
         .catch((error: unknown) => {
           // Swallowed, like the project read: nothing throws and the app keeps
           // working. What the failure buys is that the view can say *which*
           // empty state this is — an empty Folder and an unreadable one look
           // identical otherwise, which is the ambiguity PEE-10 exists to remove.
-          const kind =
-            error instanceof RelayReadError
-              ? error.kind
-              : classifyRelayFailure((error as Error)?.message ?? '')
+          const kind = relayFailureKind(error)
           if (isOutage(kind)) recordReadFailure(kind)
           console.warn('[nostr] folder contents read failed:', error)
           return { folder: target, failed: kind as RelayFailureKind }

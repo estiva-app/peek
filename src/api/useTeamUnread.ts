@@ -5,6 +5,8 @@ import { useFollows, useForeignObjects } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { useLiveTopics } from '@/nostr/useLiveTopics'
+import { relayLog } from '@/nostr/liveTopics'
+import { relayFailureKind, withRateLimitRetry } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
@@ -86,11 +88,23 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     current.current = key
   }, [key])
 
-  const read = useCallback(async () => {
-    const at = Math.floor(Date.now() / 1000)
-    const streams = await channelStreams(ids)
-    return { at, streams }
-  }, [ids, channelStreams])
+  /*
+    Wrapped, because the live re-read is the one read in the app most likely to
+    be refused (FOL-40): it goes out a second after somebody said something,
+    which is a second after *their* client and every other tab did the same
+    work, and the relay's per-minute quota is per person. `withRateLimitRetry`
+    waits out the window at the second the relay named and asks again; anything
+    else throws on the first attempt, as before.
+  */
+  const read = useCallback(
+    () =>
+      withRateLimitRetry(async () => {
+        const at = Math.floor(Date.now() / 1000)
+        const streams = await channelStreams(ids)
+        return { at, streams }
+      }),
+    [ids, channelStreams],
+  )
 
   const load = useCallback(() => {
     // Nothing to ask about. What is held is not cleared — the judge below only
@@ -101,7 +115,18 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       .then((next) => current.current === asked && setHeld(next))
       // A failed read costs the dots, never the list — and it leaves the last
       // answer standing rather than blanking every row on one bad request.
-      .catch(() => {})
+      // Swallowed, but no longer in silence (FOL-40): a quota refusal that
+      // outlived its retries is a live path that has stopped, and that is
+      // worth a warning. An unreachable relay on a 30 s tick is the ordinary
+      // offline case and stays at debug, where it has always been.
+      .catch((error: unknown) =>
+        relayLog(
+          relayFailureKind(error) === 'rate_limited'
+            ? 'team unread giving up after waiting out the quota'
+            : 'team unread read failed',
+          error,
+        ),
+      )
   }, [ids, key, read])
 
   useEffect(() => {

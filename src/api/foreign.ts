@@ -47,7 +47,7 @@ import {
   type FileComment,
   type FileThreads,
 } from '@/nostr/foreign'
-import { RelayReadError } from '@/nostr/relayRead'
+import { relayFailureKind } from '@/nostr/relayRead'
 import { rootOf, type StreamMessage } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
@@ -620,7 +620,7 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
           */
           setAnswer({
             term,
-            state: { kind: 'failed', failure: error instanceof RelayReadError ? error.kind : 'unreachable' },
+            state: { kind: 'failed', failure: relayFailureKind(error) },
             hits: [],
           })
         })
