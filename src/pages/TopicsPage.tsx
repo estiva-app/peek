@@ -11,7 +11,7 @@ import { CollapsibleSection, ListColumn, Toolbar, ToolbarButton } from '@estiva-
 import { useRailClosed } from '@/layouts/railClosed'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
-import { TopicProjectPanel } from '@/components/TopicProjectPanel'
+import { FilesPanel } from '@/components/FilesPanel'
 import { useFolderProject } from '@/api/useFolderProject'
 import { hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useOpenWorkTopicIds, usePeekActions } from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -273,7 +273,7 @@ export function TopicsPage() {
           // asked for; the Folder is context they chose to keep open.
           view.threadPanel ??
           (hasConvex && folderPanelOpen && selectedTopic && view.folderId ? (
-            <TopicProjectPanel
+            <FilesPanel
               topicKey={selectedTopic.id}
               folderProject={folderProject.state}
               reload={folderProject.reload}

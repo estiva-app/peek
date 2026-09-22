@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject, FolderProject } from '@estiva-app/interop'
-import { TopicProjectPanelView } from './TopicProjectPanel'
+import { TopicProjectPanelView } from './FilesPanel'
 
 /**
  * The Files panel — the linked project beside a topic, and its tickets.
@@ -123,7 +123,7 @@ const full: FolderProject = {
 }
 
 const meta = {
-  title: 'Topics/Files panel (TopicProjectPanel)',
+  title: 'Topics/FilesPanel',
   component: TopicProjectPanelView,
   parameters: { layout: 'fullscreen' },
   decorators: [

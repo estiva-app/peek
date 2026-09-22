@@ -86,7 +86,7 @@ const unassigned: ForeignObject = {
 }
 
 const meta = {
-  title: 'Messages/Reference widget (ForeignObjectCard)',
+  title: 'Messages/ForeignObjectCard',
   component: ForeignObjectCard,
   parameters: { layout: 'padded' },
   // Required props, so a story can be pure `render`.

@@ -1,9 +1,9 @@
 import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
-import * as TopicProjectPanelStories from './TopicProjectPanel.stories'
+import * as TopicProjectPanelStories from './FilesPanel.stories'
 
 <Meta of={TopicProjectPanelStories} />
 
-# TopicProjectPanel
+# FilesPanel
 
 The Files panel beside a topic: the project linked to its Folder, with its
 properties, its tickets and their activity — or a line saying why there is none.
@@ -33,15 +33,15 @@ properties, its tickets and their activity — or a line saying why there is non
 ## How
 
 ```tsx
-import { TopicProjectPanel } from '@/components/TopicProjectPanel'
+import { FilesPanel } from '@/components/FilesPanel'
 
-<TopicProjectPanel topicId={topic.id} />
+<FilesPanel topicId={topic.id} />
 ```
 
 The view, for a story or a test:
 
 ```tsx
-import { TopicProjectPanelView } from '@/components/TopicProjectPanel'
+import { TopicProjectPanelView } from '@/components/FilesPanel'
 
 <TopicProjectPanelView folderProject={fixture} onAct={noop} />
 ```

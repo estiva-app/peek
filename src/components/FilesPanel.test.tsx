@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { FolderProject, ForeignObject } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
-import { TopicProjectPanelView } from './TopicProjectPanel'
+import { TopicProjectPanelView } from './FilesPanel'
 import type { TopicActivityItem } from './TopicActivity'
 
 /** A mention row, which is a card — and a card needs the router and the data seam behind it. */

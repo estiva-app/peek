@@ -13,7 +13,7 @@ import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { useTopicView } from '@/components/views/useTopicView'
-import { TopicProjectPanel } from '@/components/TopicProjectPanel'
+import { FilesPanel } from '@/components/FilesPanel'
 import { useFolderProject } from '@/api/useFolderProject'
 import {
   dmNameById,
@@ -263,7 +263,7 @@ export function DeskPage() {
       ? dmView.threadPanel
       : (topicView.threadPanel ??
         (hasConvex && folderPanelOpen && selected?.kind === 'topic' && topicView.folderId ? (
-          <TopicProjectPanel
+          <FilesPanel
             topicKey={selected.topicId}
             folderProject={folderProject.state}
             reload={folderProject.reload}

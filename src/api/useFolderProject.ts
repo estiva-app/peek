@@ -16,7 +16,7 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 /**
  * What is in this topic's Folder — the project and its tickets.
  *
- * **Extracted from `TopicProjectPanel` by CON-9, because a second caller
+ * **Extracted from `FilesPanel` by CON-9, because a second caller
  * appeared.** The topic's conversation now has to know which objects are *this
  * file* and which are files *under* it, so that a comment on a ticket goes to
  * Activity rather than into the topic's own stream. That is the same question

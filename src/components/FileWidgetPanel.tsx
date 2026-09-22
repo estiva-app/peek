@@ -17,7 +17,7 @@ import { ForeignObjectWidget } from '@/components/ui/ForeignObjectWidget'
  *
  * ## Why the card, and not a layout of its own
  *
- * `TopicProjectPanel` draws a project as a properties list with a ticket
+ * `FilesPanel` draws a project as a properties list with a ticket
  * table, because a project is the subject of a whole column there. A file
  * page is the file's own page, so the column is context and not the subject,
  * and the reference card is the right weight for context — the same call

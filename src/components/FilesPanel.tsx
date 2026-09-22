@@ -333,7 +333,7 @@ export function TopicProjectPanelView({
  * The Files panel beside a topic, wired up so changes to the linked project's
  * properties are saved and shown; hidden when the app has no data behind it.
  */
-export function TopicProjectPanel({
+export function FilesPanel({
   topicKey,
   folderProject,
   reload,
