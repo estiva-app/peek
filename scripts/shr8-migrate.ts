@@ -787,6 +787,12 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
   const surfaces = await survey(query, agent.pubkey)
   const keys = await authorKeys()
   const { signers, tokens } = loadSigners()
+  // The agent signs for itself through `/sign` with the credential this process
+  // already holds, so its own rows never needed to be in the hand-made file —
+  // but nothing seeded them, and the run refused 15 of its own as "no signer".
+  // Not a token: `/sign` is not Convex, so an agent-authored row still owes a
+  // write-back. None of them do here; all 15 already carry a `nostrEventId`.
+  if (!signers.has(agent.pubkey)) signers.set(agent.pubkey, agent)
 
   type Job = { surface: Surface; roots: Item[]; replies: Item[] }
   const jobs: Job[] = []
