@@ -25,7 +25,6 @@ It sorts last, under everything of Peek's own.
 | Story | Ticket | Parked | Why |
 | --- | --- | --- | --- |
 | `TopicActivity` | UIG-17 | 2026-09-22 | Her review, 22 September. |
-| `EditedMarker` | UIG-17 | 2026-09-22 | The one part put forward for `@estiva-app/ui`. If it is promoted, its story goes with it. |
 | `AttachmentChips` | UIG-17 | 2026-09-22 | Her review, 22 September. **See the cost below.** |
 | `HighlightButton` | UIG-17 | 2026-09-22 | Her review, 22 September. |
 | `ReadStatePanel` | UIG-17 | 2026-09-22 | A developer's readout, not a design. It was the only thing under a `Diagnostics` heading, which is gone with it. |
@@ -50,3 +49,10 @@ state the seed data put it in.
 Peek therefore has **no page-level stories at all** until Ship's shape replaces
 them: a presentational View fed a fixture, dropped into the shell, with a
 loading state beside it. That work is in this same pull request.
+
+`EditedMarker`'s story went on 23 September, and the component did not. Katerina
+ruled that a standalone primitive showing three words beside a time says nothing
+on an empty canvas: the marker is drawn where it means something, in
+*Messages/ConversationCard* → **Edited** and *Messages/ReplyCard* → **Edited**,
+and its rule page points at both. The same ruling ended its candidacy for the
+package.

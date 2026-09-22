@@ -1,7 +1,8 @@
-import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
-import * as EditedMarkerStories from './EditedMarker.stories'
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as ConversationCardStories from '../ConversationCard.stories'
+import * as ReplyCardStories from '../ReplyCard.stories'
 
-<Meta of={EditedMarkerStories} />
+<Meta title="Primitives/EditedMarker" />
 
 # EditedMarker
 
@@ -9,7 +10,16 @@ import * as EditedMarkerStories from './EditedMarker.stories'
 (CON-8). It is not decoration: it is the half of the edit contract that the
 reader sees.
 
-<Canvas of={EditedMarkerStories.Default} />
+**Seen in** — *Messages/ConversationCard* → **Edited**, and
+*Messages/ReplyCard* → **Edited**. It has no story of its own, at Katerina's
+word on 23 September: three words beside a time mean nothing on an empty
+canvas, and everything in the message that carries them.
+
+<Canvas of={ConversationCardStories.Edited} />
+
+The same marker on a reply.
+
+<Canvas of={ReplyCardStories.Edited} />
 
 An edit on the relay is a `kind:40003` that every reader folds newest-wins. What
 makes that safe is that the reader is **told**. A body that silently changed
@@ -54,13 +64,8 @@ import { EditedMarker } from '@/components/ui/EditedMarker'
 
 ## A note on where this lives
 
-This is the one part of Peek's the catalogue puts forward for `@estiva-app/ui`:
-it is used in two places, everything inside it is already in the package, and
-Ship has the same idea with no component for it. Katerina's ruling on 22
-September was **a page now, promotion as its own ticket** — nothing is promoted
-inside UIG-17. Its story is parked under *To be removed* for that reason: if it
-is promoted, the story goes with it.
-
-## Props
-
-<Controls of={EditedMarkerStories.Default} />
+It was the one part of Peek's the catalogue put forward for `@estiva-app/ui`.
+**Katerina ruled on 23 September that it is not promoted** — it stays Peek's,
+and it stops being a candidate. The component is unchanged and every edited
+message still carries it; what went is its standalone story, because a marker
+is only itself inside the message it marks.
