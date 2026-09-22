@@ -61,9 +61,47 @@ export interface FollowsBlob {
   updatedAt: number
   /** Followed keys — file addresses and Folder uuids. Sorted on serialize; a set in spirit. */
   keys: string[]
+  /**
+   * Keys the person unfollowed although the relay implies them — named in a
+   * comment, placed on an issue (`impliedFollows.ts`) — each with **when**,
+   * epoch ms. An implied follow is computed from the relay on every load, so
+   * an unfollow of one has to be written down or it comes back; this is where.
+   *
+   * A mute covers what came before it and nothing after: being placed on the
+   * issue again, or named in it again, after the unfollow is a new call for
+   * attention and follows it again (found by FOL-30's test F, 2026-09-22 —
+   * an issue unfollowed in one test and self-assigned in the next stayed
+   * dark). So the judge compares the implying event's time with the mute's.
+   *
+   * Absent in a blob written before it existed, and read as empty. A blob
+   * written while this was a plain list (peek#284, one day) reads each entry
+   * as muted at the blob's own `updatedAt` — the latest it could have been.
+   */
+  muted: Record<string, number>
 }
 
-const EMPTY: FollowsBlob = { v: 1, updatedAt: 0, keys: [] }
+const EMPTY: FollowsBlob = { v: 1, updatedAt: 0, keys: [], muted: {} }
+
+function mutedMap(raw: unknown, legacyAt: number): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (Array.isArray(raw)) {
+    for (const key of keySet(raw)) out[key] = legacyAt
+    return out
+  }
+  if (typeof raw !== 'object' || raw === null) return out
+  for (const [key, at] of Object.entries(raw as Record<string, unknown>)) {
+    if (key.length > 0 && typeof at === 'number' && Number.isFinite(at)) out[key] = at
+  }
+  return out
+}
+
+function keySet(raw: unknown): string[] {
+  const keys = new Set<string>()
+  for (const key of Array.isArray(raw) ? raw : []) {
+    if (typeof key === 'string' && key.length > 0) keys.add(key)
+  }
+  return [...keys]
+}
 
 /**
  * Parse a decrypted blob, tolerating everything except a shape it cannot trust
@@ -82,14 +120,12 @@ export function parseFollowsBlob(plaintext: string | undefined): FollowsBlob {
   if (typeof raw !== 'object' || raw === null) return EMPTY
   const blob = raw as Partial<FollowsBlob>
   if (blob.v !== 1) return EMPTY
-  const keys = new Set<string>()
-  for (const key of Array.isArray(blob.keys) ? blob.keys : []) {
-    if (typeof key === 'string' && key.length > 0) keys.add(key)
-  }
+  const updatedAt = typeof blob.updatedAt === 'number' && Number.isFinite(blob.updatedAt) ? blob.updatedAt : 0
   return {
     v: 1,
-    updatedAt: typeof blob.updatedAt === 'number' && Number.isFinite(blob.updatedAt) ? blob.updatedAt : 0,
-    keys: [...keys],
+    updatedAt,
+    keys: keySet(blob.keys),
+    muted: mutedMap(blob.muted, updatedAt),
   }
 }
 
@@ -99,6 +135,7 @@ export function serializeFollowsBlob(blob: FollowsBlob): string {
     v: blob.v,
     updatedAt: blob.updatedAt,
     keys: [...new Set(blob.keys)].sort(),
+    muted: Object.fromEntries(Object.entries(blob.muted).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
   })
 }
 
@@ -179,11 +216,16 @@ export async function publishFollows(
  * write wins at one-second resolution, and a lost toggle is one click to redo.
  */
 export function followsToPublish(
-  keys: Iterable<string>,
+  next: { keys: Iterable<string>; muted: ReadonlyMap<string, number> | Record<string, number> },
   current: FollowsBlob | undefined,
   nowMs: number,
 ): FollowsBlob | undefined {
-  const candidate: FollowsBlob = { v: 1, updatedAt: nowMs, keys: [...new Set(keys)] }
+  const candidate: FollowsBlob = {
+    v: 1,
+    updatedAt: nowMs,
+    keys: [...new Set(next.keys)],
+    muted: next.muted instanceof Map ? Object.fromEntries(next.muted) : { ...(next.muted as Record<string, number>) },
+  }
   if (current) {
     const same =
       serializeFollowsBlob({ ...candidate, updatedAt: 0 }) === serializeFollowsBlob({ ...current, updatedAt: 0 })

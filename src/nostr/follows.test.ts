@@ -52,14 +52,29 @@ describe('the event', () => {
 
 describe('parsing, which must never cost the read that asked for it', () => {
   it('round-trips a set of file addresses and Folder ids, sorted and de-duplicated', () => {
-    const blob = { v: 1 as const, updatedAt: 1_787_142_018_561, keys: [TOPIC, ISSUE, FOLDER, ISSUE] }
+    const blob = { v: 1 as const, updatedAt: 1_787_142_018_561, keys: [TOPIC, ISSUE, FOLDER, ISSUE], muted: { [ISSUE]: 500 } }
     expect(parseFollowsBlob(serializeFollowsBlob(blob))).toEqual({ ...blob, keys: [FOLDER, TOPIC, ISSUE].sort() })
   })
 
   it('returns an empty set for anything unreadable rather than throwing', () => {
     for (const bad of [undefined, '', 'not json', 'null', '[]', '"a string"', '42']) {
-      expect(parseFollowsBlob(bad)).toEqual({ v: 1, updatedAt: 0, keys: [] })
+      expect(parseFollowsBlob(bad)).toEqual({ v: 1, updatedAt: 0, keys: [], muted: {} })
     }
+  })
+
+  it('reads a blob written before `muted` existed as muting nothing', () => {
+    expect(parseFollowsBlob(JSON.stringify({ v: 1, updatedAt: 1, keys: [ISSUE] }))).toEqual({
+      v: 1,
+      updatedAt: 1,
+      keys: [ISSUE],
+      muted: {},
+    })
+  })
+
+  it('reads a blob written while `muted` was a list as muted at the blob\'s own clock', () => {
+    // peek#284's shape, one day of blobs: the latest each entry could have been muted.
+    const parsed = parseFollowsBlob(JSON.stringify({ v: 1, updatedAt: 1_000, keys: [], muted: [ISSUE, TOPIC] }))
+    expect(parsed.muted).toEqual({ [ISSUE]: 1_000, [TOPIC]: 1_000 })
   })
 
   it('ignores an unknown version instead of guessing at it', () => {
@@ -67,30 +82,34 @@ describe('parsing, which must never cost the read that asked for it', () => {
   })
 
   it('drops a malformed entry and keeps the rest', () => {
-    const parsed = parseFollowsBlob(JSON.stringify({ v: 1, updatedAt: 1, keys: [ISSUE, 42, '', null, FOLDER] }))
+    const parsed = parseFollowsBlob(JSON.stringify({ v: 1, updatedAt: 1, keys: [ISSUE, 42, '', null, FOLDER], muted: { [TOPIC]: 7, [FOLDER]: 'soon', '': 1 } }))
     expect(parsed.keys).toEqual([ISSUE, FOLDER])
+    expect(parsed.muted).toEqual({ [TOPIC]: 7 })
   })
 })
 
 describe('what gets published', () => {
-  const current = { v: 1 as const, updatedAt: 1_000, keys: [ISSUE, FOLDER] }
+  const current = { v: 1 as const, updatedAt: 1_000, keys: [ISSUE, FOLDER], muted: { [TOPIC]: 500 } }
+  const lists = (keys: string[], muted: Record<string, number> = { [TOPIC]: 500 }) => ({ keys, muted })
 
   it('is nothing when the set is unchanged, whatever the order', () => {
-    expect(followsToPublish([FOLDER, ISSUE], current, 2_000)).toBeUndefined()
-    expect(followsToPublish(new Set([ISSUE, FOLDER, ISSUE]), current, 2_000)).toBeUndefined()
+    expect(followsToPublish(lists([FOLDER, ISSUE]), current, 2_000)).toBeUndefined()
+    expect(followsToPublish({ keys: new Set([ISSUE, FOLDER, ISSUE]), muted: new Map([[TOPIC, 500]]) }, current, 2_000)).toBeUndefined()
   })
 
-  it('is the new set with a fresh clock when it changed', () => {
-    expect(followsToPublish([ISSUE], current, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [ISSUE] })
-    expect(followsToPublish([], current, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [] })
+  it('is the new set with a fresh clock when either list changed', () => {
+    expect(followsToPublish(lists([ISSUE]), current, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [ISSUE], muted: { [TOPIC]: 500 } })
+    expect(followsToPublish(lists([ISSUE, FOLDER], {}), current, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [ISSUE, FOLDER], muted: {} })
+    expect(followsToPublish(lists([ISSUE, FOLDER], { [TOPIC]: 900 }), current, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [ISSUE, FOLDER], muted: { [TOPIC]: 900 } })
+    expect(followsToPublish(lists([], {}), current, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [], muted: {} })
   })
 
   it('is the whole set on a first write', () => {
-    expect(followsToPublish([TOPIC], undefined, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [TOPIC] })
+    expect(followsToPublish(lists([TOPIC], {}), undefined, 2_000)).toEqual({ v: 1, updatedAt: 2_000, keys: [TOPIC], muted: {} })
   })
 
   it('never stamps the zero the parser uses as its floor', () => {
     // `fetchFollows` reads `updatedAt: 0` as "decrypted and said nothing usable".
-    expect(followsToPublish([TOPIC], undefined, 2_000)!.updatedAt).not.toBe(0)
+    expect(followsToPublish(lists([TOPIC], {}), undefined, 2_000)!.updatedAt).not.toBe(0)
   })
 })

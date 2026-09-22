@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForeignObjects } from '@/api/foreign'
 import { validToken } from '@/auth/estivaId'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { peekLiveTopics } from '@/nostr/liveTopics'
+import { useLiveTopics } from '@/nostr/useLiveTopics'
+import { relayLog } from '@/nostr/liveTopics'
+import { relayFailureKind, withRateLimitRetry } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
@@ -87,6 +89,13 @@ export function useTopicUnread(
     streams: {},
   })
   const frontier = useReadFrontier()
+  /*
+    Acquired, not borrowed (FOL-40): the topics column mounts before anything
+    that builds the socket, and `peekLiveTopics()` answers null until one
+    exists — so this subscription was made only when something else had
+    already connected. Same defect as the team dot's, found with it.
+  */
+  const { live, relayState } = useLiveTopics()
 
   /*
     Keyed on the pairs, not the array: `useTopics` hands back a fresh array per
@@ -116,11 +125,21 @@ export function useTopicUnread(
     current.current = key
   }, [key])
 
-  const read = useCallback(async () => {
-    const at = Math.floor(Date.now() / 1000)
-    const streams = await channelStreams(channels)
-    return { at, streams }
-  }, [channels, channelStreams])
+  /*
+    Waits out a quota refusal at the second the relay named, rather than
+    dropping it (FOL-40) — the same wrapper the team dot's read has, for the
+    same reason: this re-read goes out a second after somebody spoke, which is
+    when every other client is asking too.
+  */
+  const read = useCallback(
+    () =>
+      withRateLimitRetry(async () => {
+        const at = Math.floor(Date.now() / 1000)
+        const streams = await channelStreams(channels)
+        return { at, streams }
+      }),
+    [channels, channelStreams],
+  )
 
   const load = useCallback(() => {
     if (channels.length === 0) return
@@ -129,7 +148,15 @@ export function useTopicUnread(
       .then((next) => current.current === asked && setHeld(next))
       // A failed read costs the dots, never the list — and it leaves the last
       // answer standing rather than blanking every row on one bad request.
-      .catch(() => {})
+      // Loud only for a quota refusal that outlived its retries (FOL-40).
+      .catch((error: unknown) =>
+        relayLog(
+          relayFailureKind(error) === 'rate_limited'
+            ? 'topic unread giving up after waiting out the quota'
+            : 'topic unread read failed',
+          error,
+        ),
+      )
   }, [channels, key, read])
 
   useEffect(() => {
@@ -137,11 +164,14 @@ export function useTopicUnread(
   }, [load])
 
   useEffect(() => {
-    const live = peekLiveTopics()
     if (!live || channels.length === 0) return
     let timer: ReturnType<typeof setTimeout> | undefined
+    // A ceiling, not a delay — the same fix and the same reason as
+    // `useTeamUnread`'s, which has the measurement (FOL-40): the wide filter
+    // delivers the relay's stored events too, and a debounce that restarts on
+    // each one is pushed past the fallback tick by its own backfill.
     const settle = () => {
-      if (timer) clearTimeout(timer)
+      if (timer) return
       timer = setTimeout(() => {
         timer = undefined
         load()
@@ -152,7 +182,14 @@ export function useTopicUnread(
       if (timer) clearTimeout(timer)
       watch.stop()
     }
-  }, [channels, load])
+  }, [live, channels, load])
+
+  /* Connecting is not watching: the transition into live is a re-read. */
+  const wasLive = useRef(relayState === 'live')
+  useEffect(() => {
+    if (relayState === 'live' && !wasLive.current) load()
+    wasLive.current = relayState === 'live'
+  }, [relayState, load])
 
   useRefreshTriggers(load, { enabled: channels.length > 0 })
 

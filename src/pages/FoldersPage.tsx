@@ -1,7 +1,25 @@
 import { useMemo, useState, type ComponentProps, type ReactNode } from 'react'
-import { IconArrowUpRight, IconBell, IconBellFilled, IconMessagePlus, IconTrash } from '@tabler/icons-react'
+import {
+  IconArrowUpRight,
+  IconBell,
+  IconBellFilled,
+  IconEdit,
+  IconFilter,
+  IconFolderPlus,
+  IconMessagePlus,
+  IconTrash,
+} from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ContainerHeader, Form, ListColumn, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
+import {
+  ContainerHeader,
+  ListColumn,
+  Menu,
+  MenuItem,
+  ScrollArea,
+  Toolbar,
+  ToolbarButton,
+  ToolbarLink,
+} from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { useRailClosed } from '@/layouts/railClosed'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -18,12 +36,12 @@ import {
   useTopics,
 } from '@/api'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button } from '@/components/ui/Button'
-import { TextInput } from '@/components/ui/TextInput'
 import { EditableText } from '@/components/ui/EditableText'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
+import { TREE_FILTERS, type TreeFilter } from '@/components/views/treeFilter'
 import { useToast } from '@/lib/toast'
 import { filePath, topicPath } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
@@ -49,8 +67,10 @@ export function FoldersPage() {
   const { state, reload: reloadContents } = useFolderContents(id)
   const { createFolder, createTopic, renameFolder, deleteFolder, moveFile } = useForeignObjects()
   const { showToast } = useToast()
-  const [name, setName] = useState('')
-  const [creating, setCreating] = useState(false)
+  /** The New folder dialog, open or not — the header's first action (FOL-41). */
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  /** What the column is showing — the header's third action (FOL-41). */
+  const [filter, setFilter] = useState<TreeFilter>('all')
   /** The file whose destination is being chosen, if any. */
   const [movingFile, setMovingFile] = useState<ForeignObject | null>(null)
   /*
@@ -59,7 +79,7 @@ export function FoldersPage() {
     topic at the top of the Folder. Two different sentences in the dialog and
     one different tag on the wire.
   */
-  const [startingTopic, setStartingTopic] = useState<{ parent?: ForeignObject } | null>(null)
+  const [startingTopic, setStartingTopic] = useState<{ parent?: ForeignObject; choose?: boolean } | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   /*
     One request for the whole listing's badges, made here rather than inside
@@ -79,7 +99,7 @@ export function FoldersPage() {
     because somebody read the team's chat, and never because this page was
     opened, which reads nothing.
   */
-  const { unread: teamUnread } = useTeamUnread(folders)
+  const { unread: teamUnread, followed: teamFollowed } = useTeamUnread(folders)
   /* Where a Folder's own control leads — its topic when it is one (FOL-21). */
   const folderPath = useFolderPath()
   /*
@@ -117,17 +137,12 @@ export function FoldersPage() {
   const followed = id ? follows.isFollowed(id) : false
   const toggleFollow = id && follows.state !== 'unknown' ? () => void follows.setFollowed(id, !followed) : undefined
 
-  async function create() {
-    const trimmed = name.trim()
-    if (!trimmed || creating) return
-    setCreating(true)
+  async function create(trimmed: string) {
     const result = await createFolder(trimmed)
-    setCreating(false)
     if (!result.ok) {
       showToast({ label: result.reason, type: 'error' })
-      return
+      return false
     }
-    setName('')
     /*
       Re-read before navigating. The relay emits the `kind:39000` this list
       reads as a side effect of accepting the create, so it exists by the time
@@ -136,6 +151,7 @@ export function FoldersPage() {
     */
     await reload()
     navigate(`/app/folders/${result.id}`)
+    return true
   }
 
   /*
@@ -150,12 +166,13 @@ export function FoldersPage() {
       <FoldersPageView
         railClosed={railClosed}
         signedOut={signedOut}
-        creating={creating}
-        name={name}
-        onNameChange={setName}
-        onCreate={create}
         folders={topLevel}
         unread={teamUnread}
+        followed={teamFollowed}
+        filter={filter}
+        onFilterChange={setFilter}
+        onNewFolder={() => setCreatingFolder(true)}
+        onNewTopic={() => setStartingTopic({ choose: true })}
         currentFolder={id}
         onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
         onOpenFolder={(folder: string) => navigate(folderPath(folder))}
@@ -296,20 +313,42 @@ export function FoldersPage() {
         }
       />
 <>
-          {startingTopic && id && (
+          {creatingFolder && (
+            <CreateFolderDialog onClose={() => setCreatingFolder(false)} onCreate={create} />
+          )}
+          {startingTopic && (id || startingTopic.choose) && (
             <StartTopicDialog
               folderName={selected?.name ?? id}
+              /*
+                Started from the column header there is no Folder in hand, so
+                the dialog asks — the Folders the tree draws, which are the ones
+                `topLevelFolders` selects, every one of which has folder state.
+                Started from a row or the folder pane, the Folder is the open
+                one and the dialog only names it.
+              */
+              folders={startingTopic.choose ? (topLevel ?? []) : undefined}
+              defaultFolder={id}
               parent={startingTopic.parent}
               onClose={() => setStartingTopic(null)}
-              onCreate={async (title) => {
+              onCreate={async (title, chosen) => {
+                const folder = chosen ?? id
+                if (!folder) return false
                 /*
-                  `hasState` from the read on this page, never guessed — the
-                  same argument as the rename: a `kind:1852` against a Folder
-                  with no state empties it on every surface.
+                  `hasState` from a read, never guessed — the same argument as
+                  the rename: a `kind:1852` against a Folder with no state
+                  empties it on every surface. For the open Folder that is this
+                  page's contents read; for one picked in the dialog it is the
+                  summary `listFolders` already answered, which carries every
+                  Folder's state and is what `topLevelFolders` filters on — so
+                  a chosen Folder is `true` by construction and this reads it
+                  rather than assuming it.
                 */
-                const hasState = typeof state === 'object' && 'hasState' in state && state.hasState
+                const hasState =
+                  folder === id && typeof state === 'object' && 'hasState' in state
+                    ? state.hasState
+                    : (folders?.find((candidate) => candidate.id === folder)?.hasState ?? false)
                 const result = await createTopic({
-                  folder: id,
+                  folder,
                   title,
                   parent: startingTopic.parent?.address,
                   hasState,
@@ -322,7 +361,16 @@ export function FoldersPage() {
                 // exists whether or not the follow lands, and its own toggle
                 // is the recovery.
                 void follows.setFollowed(result.address, true)
-                await reloadContents()
+                /*
+                  Into the topic when it was made from the header, because that
+                  is the only report there is: the tree may not be showing the
+                  Folder it went into, and under a filter it may not be showing
+                  the row either. From a row or the folder pane the listing is
+                  on screen and re-reading it is enough — the row appears where
+                  the person was already looking.
+                */
+                if (startingTopic.choose) navigate(filePath(result.address, title))
+                else await reloadContents()
                 return true
               }}
             />
@@ -399,12 +447,13 @@ export function FoldersPage() {
 export function FoldersPageView({
   railClosed,
   signedOut,
-  creating,
-  name,
-  onNameChange,
-  onCreate,
   folders,
   unread,
+  followed,
+  filter,
+  onFilterChange,
+  onNewFolder,
+  onNewTopic,
   currentFolder,
   onSelect,
   onOpenFolder,
@@ -413,14 +462,14 @@ export function FoldersPageView({
   railClosed: boolean
   /** Nobody is signed in. A different sentence from "still loading". */
   signedOut: boolean
-  /** A create is in flight: the row locks while it is. */
-  creating: boolean
-  name: string
-  onNameChange: (next: string) => void
-  onCreate: () => void
   /** `null` while the first read is in flight, or when signed out. */
   folders: ComponentProps<typeof FolderTreeView>['folders']
   unread: ComponentProps<typeof FolderTreeView>['unread']
+  followed: ComponentProps<typeof FolderTreeView>['followed']
+  filter: TreeFilter
+  onFilterChange: (next: TreeFilter) => void
+  onNewFolder: () => void
+  onNewTopic: () => void
   currentFolder?: string | null
   onSelect: ComponentProps<typeof FolderTreeView>['onSelect']
   onOpenFolder: ComponentProps<typeof FolderTreeView>['onOpenFolder']
@@ -432,24 +481,46 @@ export function FoldersPageView({
         <ListColumn
           title="Folders"
           collapsed={railClosed}
-          above={
+          /*
+            Three actions in the header, and the create row is gone from above
+            the list (Miky, FOL-41) — the Topics column's shape (`TopicsPage`),
+            which is what this column replaces. One strip: one Tab stop, arrows
+            along it (UIG-14). Absent when signed out, because all three of them
+            act as somebody.
+          */
+          actions={
             !signedOut && (
-              // The package Form (UIG-7): Enter or Create makes the folder; the row locks while it does.
-              <Form busy={creating} onSubmit={onCreate} className="flex items-center gap-2 px-3 pt-3 pb-1">
-                {/* min-w-0 + shrink-0: the column is 290px and the field has no
-                    width of its own, so "Create" was pushed past the right edge
-                    and clipped (Katerina, 2026-09-11). */}
-                <TextInput
-                  className="min-w-0 flex-1"
-                  value={name}
-                  onChange={(event) => onNameChange(event.target.value)}
-                  placeholder="New folder name"
-                  aria-label="New folder name"
-                />
-                <Button className="shrink-0" type="submit" disabled={!name.trim() || creating}>
-                  {creating ? 'Creating…' : 'Create'}
-                </Button>
-              </Form>
+              <Toolbar aria-label="Folder list actions" surface={false}>
+                <ToolbarButton tooltip="New folder" aria-label="New folder" onClick={onNewFolder}>
+                  <IconFolderPlus size={16} stroke={1.5} />
+                </ToolbarButton>
+                <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
+                  <IconEdit size={16} stroke={1.5} />
+                </ToolbarButton>
+                <Menu
+                  align="right"
+                  trigger={
+                    /*
+                      Pressed while anything but `All` is chosen: the tree is
+                      hiding Folders, and nothing else on screen says so — a
+                      person who filters, navigates away and comes back would
+                      otherwise read a short column as a small workspace.
+                    */
+                    <ToolbarButton tooltip="Filter" aria-label="Filter folders" pressed={filter !== 'all'}>
+                      <IconFilter size={16} stroke={1.5} />
+                    </ToolbarButton>
+                  }
+                >
+                  {TREE_FILTERS.map((option) => (
+                    <MenuItem
+                      key={option.value}
+                      label={option.label}
+                      selected={filter === option.value}
+                      onClick={() => onFilterChange(option.value)}
+                    />
+                  ))}
+                </Menu>
+              </Toolbar>
             )
           }
         >
@@ -459,8 +530,7 @@ export function FoldersPageView({
             level, the one open on the right starts open, and a row opens its
             file in three panes. The body rather than `FolderTree` because the
             page above already holds the Folder list — it re-reads it after a
-            create, a rename and a delete — and the create form sits between the
-            header and the list.
+            create, a rename and a delete.
 
             Three states, not two: "not signed in", "still loading" and "there
             are genuinely none" are different sentences, and the first version
@@ -478,6 +548,8 @@ export function FoldersPageView({
             folders={folders}
             signedOut={signedOut}
             unread={unread}
+            followed={followed}
+            filter={filter}
             currentFolder={currentFolder}
             onSelect={onSelect}
             onOpenFolder={onOpenFolder}

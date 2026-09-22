@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { teamHasUnread } from './teamUnread'
+import { teamHasFollowedStream, teamHasUnread } from './teamUnread'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const ME = 'c'.repeat(64)
@@ -147,5 +147,56 @@ describe('teamHasUnread — only followed streams are judged (FOL-30)', () => {
     const messages = [said('m', NOW - 10, [FOL18])]
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL18)))).toBe(true)
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only()))).toBe(false)
+  })
+})
+
+/*
+  The `Followed` filter's Folder-level question — FOL-41. Judged over the same
+  messages as the dot and with no read of its own, which is what makes the
+  filter affordable; what it cannot see is pinned here too, so the limit is a
+  test rather than a comment.
+*/
+describe('teamHasFollowedStream — does this Folder hold anything followed', () => {
+  const only =
+    (...keys: string[]) =>
+    (key: string) =>
+      keys.includes(key)
+
+  it('is true when the Folder itself is followed — that is its general chat', () => {
+    expect(teamHasFollowedStream(FOLDER, [], only(FOLDER))).toBe(true)
+  })
+
+  it('is true when a message names a followed file', () => {
+    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL18))).toBe(true)
+  })
+
+  it('is false when the talk in it is about files nobody follows', () => {
+    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL16))).toBe(false)
+  })
+
+  /*
+    Chat in a Folder is the Folder's own stream, not a file's, so it answers to
+    following the Folder — the same rule `teamHasUnread` streams by, and the
+    reason the dot does not light for a team whose chat you do not follow.
+  */
+  it('is false when the Folder has chat but the Folder is not followed', () => {
+    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10)], only(FOL18))).toBe(false)
+  })
+
+  /*
+    The limit, written down: a followed file that nobody has said anything in
+    leaves no trace in these streams, so its Folder is not one of the answers.
+    `All` is the recovery, and the Folder is one click away in it.
+  */
+  it('cannot see a followed file that has no messages', () => {
+    expect(teamHasFollowedStream(FOLDER, [], only(FOL18))).toBe(false)
+  })
+
+  /* An `a` that is not an address names no stream — `teamHasUnread`'s rule. */
+  it('ignores an `a` that is not an address', () => {
+    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], () => true)).toBe(true)
+    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], only('not-an-address'))).toBe(
+      false,
+    )
   })
 })

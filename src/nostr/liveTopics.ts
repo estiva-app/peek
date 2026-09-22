@@ -125,6 +125,169 @@ export interface LiveTopics {
  */
 const holder = createLiveClientHolder()
 
+/**
+ * Messages that mean a live feature has silently stopped working.
+ *
+ * The client's log is `console.debug`, which the browser hides at its default
+ * level — right for a frame-by-frame trace and wrong for these. A refused
+ * subscription, a credential that never arrives and an auth the relay rejects
+ * each disable something the person is looking at, with no other symptom than
+ * the feature quietly not happening. FOL-40 cost three rounds partly because
+ * the one line that would have named the cause was a level nobody had turned
+ * on.
+ */
+const LOUD = ['closed', 'refused', 'giving up', 'no credential', 'could not sign']
+
+/** The relay client's log: quiet by default, loud when something stopped. */
+export function relayLog(message: string, detail?: unknown): void {
+  const loud = LOUD.some((phrase) => message.includes(phrase))
+  const write = loud ? console.warn : console.debug
+  write('[relay]', message, detail ?? '')
+}
+
+/**
+ * How long after subscribing a delivery is still stored history.
+ *
+ * The REQ carries no `since`, so the relay answers with a page of stored
+ * events before EOSE. Measured on production: 81 Folders delivered its whole
+ * page **within 2 ms**, 221–223 ms after subscribing. So the boundary does not
+ * need to be tight, and a generous one is safer — a live event misfiled as
+ * backfill is the failure that matters, and it is the one this window is sized
+ * against.
+ */
+const WIDE_FILTER_BACKFILL_MS = 3_000
+
+/** Past this many live deliveries the log stops, so a busy tab is not flooded. */
+const WIDE_FILTER_LIVE_CEILING = 200
+
+/**
+ * The wide filter's delivery log: silent for history, loud for anything live.
+ *
+ * **The first cut of this counted deliveries and stopped at 25, and that was
+ * the wrong axis.** A backfill of a page is dozens of events in two
+ * milliseconds, so it spent the whole budget before the interesting line could
+ * exist, and the console proved only that the REQ matched *something* — which
+ * was never in doubt. Counting history separately from live is the only shape
+ * that answers the question, because the two differ by three orders of
+ * magnitude in volume and by everything in meaning.
+ *
+ * So: history is one summary line, printed when the window closes; every live
+ * delivery gets its own. A reader does not have to interpret elapsed times —
+ * the summary line is a ruler, and anything below it arrived live.
+ */
+export function wideFilterDeliveryLog(watchSize: number): {
+  record: (folder: string) => void
+  resubscribed: () => void
+  stop: () => void
+} {
+  let watchedAt = Date.now()
+  let backfill = 0
+  let live = 0
+  let resubscribes = 0
+  let lastLive: WideFilterSnapshot['lastLive']
+  let summary: ReturnType<typeof setTimeout>
+  const openWindow = () => {
+    summary = setTimeout(() => {
+      console.info(
+        `[relay] wide filter of ${watchSize}: ${backfill} stored event(s) in the first ${WIDE_FILTER_BACKFILL_MS}ms. Anything below this line arrived live.`,
+      )
+    }, WIDE_FILTER_BACKFILL_MS)
+  }
+  openWindow()
+  const entry = {
+    snapshot: (): WideFilterSnapshot => ({
+      folders: watchSize,
+      subscribedAt: new Date(watchedAt).toISOString(),
+      stored: backfill,
+      live,
+      resubscribes,
+      ...(lastLive ? { lastLive } : {}),
+    }),
+  }
+  wideFilters.add(entry)
+  return {
+    /*
+      A reconnect re-issues every REQ (`protocol`'s `live.ts`), and a re-issued
+      REQ carries no `since` — so the relay replays its stored page again,
+      minutes after the watch was created. Measured from the original
+      `watchedAt` those land outside the backfill window and were counted, and
+      printed, as **live**. That is the instrument inventing the signal it
+      exists to detect, and it is how a burst of 77 replayed events at once
+      reads as a fan-out storm.
+
+      So the window belongs to the *subscription*, not to the watch: each
+      re-issue restarts it, and `resubscribes` says how many times that
+      happened, because a reading taken across one is not the same reading.
+    */
+    resubscribed: () => {
+      resubscribes += 1
+      watchedAt = Date.now()
+      backfill = 0
+      clearTimeout(summary)
+      openWindow()
+    },
+    record: (folder: string) => {
+      const elapsed = Date.now() - watchedAt
+      if (elapsed < WIDE_FILTER_BACKFILL_MS) {
+        backfill += 1
+        return
+      }
+      live += 1
+      lastLive = { folder, at: new Date().toISOString(), msAfterSubscribing: elapsed }
+      if (live > WIDE_FILTER_LIVE_CEILING) return
+      console.info(
+        `[relay] wide filter of ${watchSize} delivered LIVE #${live} for ${folder}, ${elapsed}ms after subscribing`,
+      )
+    },
+    stop: () => {
+      wideFilters.delete(entry)
+      clearTimeout(summary)
+    },
+  }
+}
+
+/** What `window.__wideFilters()` answers, per live wide filter. */
+export interface WideFilterSnapshot {
+  /** How many Folders this REQ asked about. 81 is the team dots, 26 the topics. */
+  folders: number
+  subscribedAt: string
+  /** Events delivered inside the backfill window: stored history, not a signal. */
+  stored: number
+  /** Events delivered after it. **Zero here is the finding**, not an absence of data. */
+  live: number
+  /**
+   * How many times the REQ was re-issued after a reconnect.
+   *
+   * Above zero, `stored` counts only the most recent replay and
+   * `msAfterSubscribing` is measured from it. A reading taken across a
+   * reconnect is not one reading.
+   */
+  resubscribes: number
+  lastLive?: { folder: string; at: string; msAfterSubscribing: number }
+}
+
+const wideFilters = new Set<{ snapshot: () => WideFilterSnapshot }>()
+
+/**
+ * `window.__wideFilters()` — every wide filter this tab holds, and what each
+ * has delivered.
+ *
+ * The console lines are chronological, and that turned out to be the wrong
+ * shape for the question. Reading them needs the right page to have been open
+ * when the tab loaded, the scrollback to reach back far enough, and the
+ * summary line to be found among a thousand others — and three readings in a
+ * row were lost to one of those rather than to the bug. A snapshot needs none
+ * of it: comment from the other identity, then call this.
+ *
+ * `live: 0` on the 81-Folder entry, with a `live` above zero on a 1-Folder
+ * entry, is the whole of FOL-40's remaining question answered in one line.
+ */
+export function installWideFilterDiagnostic(): void {
+  if (typeof window === 'undefined') return
+  ;(window as unknown as Record<string, unknown>).__wideFilters = () =>
+    [...wideFilters].map((entry) => entry.snapshot())
+}
+
 interface Wiring {
   relayUrl: string
   client: LiveClient
@@ -159,7 +322,7 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
       // wastes their time.
       onSignFailure: (error) => recordCredentialFailure(reasonForSignFailure(error)),
     },
-    log: (message, detail) => console.debug('[relay]', message, detail ?? ''),
+    log: relayLog,
   })
 
   const activity = createFolderActivity()
@@ -187,10 +350,81 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
       // refused outright on some builds with `restricted: p-gated events
       // require #p matching your pubkey`. Both message kinds, because a
       // comment written before Ship flipped stays `kind:9` for ever.
-      watchChannels: (channelUuids, listener, options) =>
-        client.watchFolders([...channelUuids], listener, {
-          kinds: [...(options?.kinds ?? [KIND.STREAM_MESSAGE, KIND.COMMENT])],
-        }),
+      watchChannels: (channelUuids, listener, options) => {
+        const kinds = [...(options?.kinds ?? [KIND.STREAM_MESSAGE, KIND.COMMENT])]
+        /*
+          Said out loud, once per subscription. A wide filter is the only live
+          path with no visible effect when it works and none when it does not,
+          so "did this tab even ask?" was unanswerable from a console at its
+          default level — and it is the first question every time a dot does
+          not move.
+        */
+        console.info(
+          `[relay] watching ${channelUuids.length} folder(s) for kinds ${kinds.join(', ')}`,
+        )
+        /*
+          And said out loud again when it *delivers* — the question peek#290
+          left unanswerable (FOL-40).
+
+          "Was the REQ accepted?" is answered by the absence of a closure, and
+          it is the wrong question. A filter naming many distinct `#h` values
+          is classified by the relay's `extract_channel_id_from_filters` as a
+          **global** subscription the moment two of them differ, and
+          `fan_out_scoped` documents a symmetric invariant — a global
+          subscription is never handed an event that carries a channel. A
+          `kind:9` or `kind:1111` in a Folder carries one. On that build the
+          REQ is accepted, EOSE arrives, the socket reports `live`, and no
+          *live* event is ever delivered, with no error anywhere. Stored
+          history still arrives, because the historical query is scoped by the
+          viewer's accessible channels rather than by the fan-out index — which
+          is exactly why counting deliveries settles nothing and only their
+          timing does.
+
+          Measured on production, 81 Folders: the whole stored page arrived
+          inside 2 ms, 221 ms after subscribing. So history is summarised in
+          one line and every live delivery gets its own, and a reader needs no
+          arithmetic — the summary line is a ruler, and what is under it is
+          live.
+
+          `useLiveFile` watches a single Folder, and a single `#h` is
+          channel-scoped on every build, so one console also holds its own
+          control: a 1-Folder watch delivering live while an 81-Folder watch
+          does not is the count, not the socket.
+
+          The listener is safe to read this way. `client.watchFolders` notifies
+          through the *client's* own folder activity, whose only writer is that
+          subscription's handler — Peek's `activity` above is a different
+          object, fed by the projection. Nothing else can make this fire.
+        */
+        const log = wideFilterDeliveryLog(channelUuids.length)
+        /*
+          Every return to `live` re-issues the REQ, so it opens a new backfill
+          window (`wideFilterDeliveryLog`). Read off the socket's own state
+          rather than from a reconnect callback, because the thing that matters
+          is the same thing `useTeamUnread` already treats as a re-read: the
+          transition into `live`, whatever caused it.
+        */
+        let wasLive = client.state() === 'live'
+        const unwatchState = client.onState((state) => {
+          if (state === 'live' && !wasLive) log.resubscribed()
+          wasLive = state === 'live'
+        })
+        const watch = client.watchFolders(
+          [...channelUuids],
+          (folder) => {
+            log.record(folder)
+            listener(folder)
+          },
+          { kinds },
+        )
+        return {
+          stop: () => {
+            unwatchState()
+            log.stop()
+            watch.stop()
+          },
+        }
+      },
     },
   }
 }

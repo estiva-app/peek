@@ -26,23 +26,28 @@ const live = vi.hoisted(() => ({
   stops: 0,
   fire: undefined as ((channelUuid: string) => void) | undefined,
 }))
-vi.mock('@/nostr/liveTopics', () => ({
-  peekLiveTopics: () =>
-    live.present
-      ? {
-          watchChannels: (ids: readonly string[], listener: (id: string) => void) => {
-            live.watched.push([...ids])
-            live.fire = listener
-            return {
-              stop: () => {
-                live.stops++
-                live.fire = undefined
-              },
-            }
-          },
-        }
-      : null,
-}))
+vi.mock('@/nostr/useLiveTopics', () => {
+  // One client object, built once: a fresh one per render would re-run the
+  // subscription effect for ever.
+  const client = {
+    watchChannels: (ids: readonly string[], listener: (id: string) => void) => {
+      live.watched.push([...ids])
+      live.fire = listener
+      return {
+        stop: () => {
+          live.stops++
+          live.fire = undefined
+        },
+      }
+    },
+  }
+  return {
+    useLiveTopics: () => ({
+      live: live.present ? client : null,
+      relayState: live.present ? 'live' : 'connecting',
+    }),
+  }
+})
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 /** Captured so a test can fire the hook's only re-read path by hand. */
 const refresh = vi.hoisted(() => ({ fire: undefined as (() => void) | undefined }))

@@ -66,3 +66,32 @@ export const SignedOut: Story = {
 export const Empty: Story = {
   args: { folders: [] },
 }
+
+/**
+ * Filtered to what is unread (FOL-41). Only the Folders with a dot are drawn,
+ * and each of them starts open — the filter's job is to lead to the file, and
+ * a list of shut Folders leads nowhere.
+ */
+export const FilteredToUnread: Story = {
+  args: { filter: 'unread', unread: { [folders[1].id]: true, [folders[3].id]: true } },
+}
+
+/**
+ * Filtered to what is followed — the other verdict, from the other map, so a
+ * lit Folder nobody follows is not one of the answers.
+ */
+export const FilteredToFollowed: Story = {
+  args: {
+    filter: 'followed',
+    unread: { [folders[0].id]: true },
+    followed: { [folders[1].id]: true },
+  },
+}
+
+/**
+ * The filter matched nothing. Not "No folders yet": the Folders are there and
+ * this view is hiding them, and the two must not share a sentence.
+ */
+export const FilteredToNothing: Story = {
+  args: { filter: 'unread', unread: {} },
+}

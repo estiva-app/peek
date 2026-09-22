@@ -48,8 +48,52 @@ vi.mock('@/api', async () => {
   }
 })
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
-vi.mock('@/nostr/liveTopics', () => ({ peekLiveTopics: () => null }))
-vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
+/*
+  The socket, present or absent — both are real states for this hook. What it
+  must hold is the wide filter (`watchChannels`, FOL-40), never
+  `onForeignActivity`: that one is fed by the projection and never fires for a
+  message kind, which is exactly what a comment is. So the fake offers only
+  the wide filter, and a hook reaching for the other would throw.
+*/
+const live = vi.hoisted(() => ({
+  present: true,
+  watched: [] as { ids: string[]; kinds?: readonly number[] }[],
+  stops: 0,
+  fire: undefined as ((channelUuid: string) => void) | undefined,
+}))
+vi.mock('@/nostr/useLiveTopics', () => {
+  // One client object, built once: a fresh one per render would re-run the
+  // subscription effect for ever ([[mock-use-relay-viewer-stably]]).
+  const client = {
+    watchChannels: (
+      ids: readonly string[],
+      listener: (id: string) => void,
+      options?: { kinds?: readonly number[] },
+    ) => {
+      live.watched.push({ ids: [...ids], kinds: options?.kinds })
+      live.fire = listener
+      return {
+        stop: () => {
+          live.stops++
+          live.fire = undefined
+        },
+      }
+    },
+  }
+  return {
+    useLiveTopics: () => ({
+      live: live.present ? client : null,
+      relayState: live.present ? 'live' : 'connecting',
+    }),
+  }
+})
+/** Captured so a test can fire the fallback re-read by hand. */
+const refresh = vi.hoisted(() => ({ fire: undefined as (() => void) | undefined }))
+vi.mock('@/lib/useRefreshTriggers', () => ({
+  useRefreshTriggers: (fn: () => void, opts?: { enabled?: boolean }) => {
+    refresh.fire = opts?.enabled === false ? undefined : fn
+  },
+}))
 vi.mock('@/nostr/useReadStateSync', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')
   return {
@@ -73,7 +117,20 @@ vi.mock('@/nostr/useReadStateSync', async () => {
   }
 })
 
-import { useTeamUnread } from './useTeamUnread'
+import { RelayReadError } from '@/nostr/relayRead'
+import {
+  type TeamUnreadSnapshot,
+  installTeamUnreadDiagnostic,
+} from './teamUnreadDiagnostic'
+import { TEAM_UNREAD_SETTLE_MS, useTeamUnread } from './useTeamUnread'
+
+/* The api barrel is mocked here, so the installer the app calls at module load
+   is called by hand — the probe module itself is the real one. */
+installTeamUnreadDiagnostic()
+const teamUnread = (folder?: string): TeamUnreadSnapshot[] =>
+  (window as unknown as Record<string, (folder?: string) => TeamUnreadSnapshot[]>).__teamUnread(
+    folder,
+  )
 
 const FOLDER_A = '11111111-1111-4111-8111-111111111111'
 const FOLDER_B = '22222222-2222-4222-8222-222222222222'
@@ -100,6 +157,11 @@ beforeEach(() => {
   frontier.markers = {}
   follows.state = 'present'
   follows.keys = null
+  live.present = true
+  live.watched = []
+  live.stops = 0
+  live.fire = undefined
+  refresh.fire = undefined
   relay.channelStreams.mockResolvedValue({
     // A: a sibling file nobody read, said an hour ago. B: nothing.
     [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false }],
@@ -181,5 +243,236 @@ describe('useTeamUnread', () => {
     advance({})
     expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false })
     expect(relay.channelStreams).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the socket path (FOL-40)', () => {
+  it('watches every listed Folder through the wide filter, for both message kinds, and stops on unmount', async () => {
+    const { unmount } = renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    expect(live.watched[0]).toEqual({ ids: [FOLDER_A, FOLDER_B], kinds: [9, 1111] })
+    unmount()
+    expect(live.stops).toBe(1)
+  })
+
+  it('a comment on a followed file lights the team after the settle, and a burst is one re-read', async () => {
+    vi.useFakeTimers()
+    try {
+      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
+      const { result } = renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+      advance({})
+      await vi.waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false }))
+
+      // Somebody comments three times on the followed file in A; the relay now holds them.
+      relay.channelStreams.mockResolvedValue({
+        [FOLDER_A]: [
+          { id: 'n', at: NOW - 1, by: THEM, root: 'n', about: [FOL18], urgent: false },
+          { id: 'o', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false },
+          { id: 'p', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false },
+        ],
+        [FOLDER_B]: [],
+      })
+      act(() => {
+        live.fire?.(FOLDER_A)
+        live.fire?.(FOLDER_A)
+        live.fire?.(FOLDER_A)
+      })
+      // Nothing yet: the settle window is still open, and no refresh trigger was needed.
+      expect(relay.channelStreams).toHaveBeenCalledTimes(1)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
+      })
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
+      expect(result.current.unread[FOLDER_B]).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a flood of signals cannot push the re-read past its window (FOL-40)', async () => {
+    /*
+      The shipped defect. The wide filter's listener fires for the relay's
+      stored events as well as live ones — a production tab took 1,081 signals
+      on an 81-Folder watch, 1,078 of them backfill — so a subscribe or a
+      reconnect delivers a run of them with no gap. A window that restarted on
+      each one was pushed along by its own backfill: the tab recorded the last
+      signal at 17:12:50 and the next read at 17:13:09, nineteen seconds later
+      and carrying `trigger: 'refresh'`. The socket had done its job and the
+      30-second fallback still got there first.
+    */
+    vi.useFakeTimers()
+    try {
+      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
+      renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+
+      await act(async () => {
+        live.fire?.(FOLDER_A)
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 2)
+        // The signal that used to move the goalposts.
+        live.fire?.(FOLDER_A)
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 2)
+      })
+      // One window after the *first* signal, not one after the last.
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+
+      // Still a ceiling rather than a read per event: a flood lasting ten
+      // windows costs about ten reads, not the six hundred it delivered.
+      await act(async () => {
+        for (let signal = 0; signal < 100; signal++) {
+          live.fire?.(FOLDER_A)
+          await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 10)
+        }
+      })
+      expect(relay.channelStreams.mock.calls.length).toBeLessThanOrEqual(13)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits out a quota refusal at the second the relay named, rather than dropping it', async () => {
+    /*
+      The shipped defect, and the last one in the chain. The wide filter was
+      registered and did fire — the console said so — but the re-read it
+      triggered came back `rate-limited: quota exceeded; retry in 8s`, which
+      classified as `unreachable` and fell into a `.catch(() => {})`. Nothing
+      retried, so the dot moved only when a later refresh tick happened to win,
+      which is the "long wait, then the sidebar reloads" Miky saw.
+    */
+    vi.useFakeTimers()
+    try {
+      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
+      const { result } = renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+      advance({})
+      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(false))
+
+      relay.channelStreams
+        .mockRejectedValueOnce(new RelayReadError('rate-limited: quota exceeded; retry in 8s'))
+        .mockResolvedValue({
+          [FOLDER_A]: [{ id: 'n', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false }],
+          [FOLDER_B]: [],
+        })
+      act(() => live.fire?.(FOLDER_A))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
+      })
+      // Refused, and the dot has not moved — but the read is still alive.
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+      expect(result.current.unread[FOLDER_A]).toBe(false)
+
+      // Not a moment sooner: the window the relay named has not rolled over.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(7_000)
+      })
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(relay.channelStreams).toHaveBeenCalledTimes(3)
+      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('subscribes to a socket that arrives after it mounted, and re-reads when it goes live', async () => {
+    // The shipped bug: the client was read once, at mount, and on a page where
+    // nothing else had connected it was null — so no subscription was ever
+    // made and the dot moved on the refresh triggers alone.
+    live.present = false
+    const { rerender } = renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    expect(live.watched).toEqual([])
+
+    live.present = true
+    rerender()
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    // Connecting is not watching: what was said while the socket was down is
+    // covered by one read on the transition into live.
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(2))
+  })
+
+  it('the refresh fallback stays armed, because a wide filter may silently not fan out', async () => {
+    renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(live.watched).toHaveLength(1))
+    expect(refresh.fire).toBeDefined()
+  })
+
+  /*
+    FOL-40's instrument. Production proved a delivery reached the socket while
+    the dot stayed dark, and every step between the two lives for one render:
+    the settle firing, the re-read, the gates, the judge. `__teamUnread()` is
+    those steps kept, so the question can be asked after the fact.
+  */
+  it('hands the console the delivery, the re-read it caused, and the gates it was judged behind', async () => {
+    vi.useFakeTimers()
+    try {
+      const { unmount } = renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() =>
+        expect(teamUnread()[0]?.lastLoad).toMatchObject({
+          trigger: 'folders',
+          outcome: 'ok',
+          // What came back, not what was asked for: a read that answers for
+          // fewer Folders than it was given is a narrowing nobody would see.
+          answered: 2,
+        }),
+      )
+      expect(teamUnread()).toHaveLength(1)
+      expect(teamUnread()[0]).toMatchObject({
+        folders: 2,
+        live: true,
+        deliveries: 0,
+        // Nothing is judged yet — the frontier has not landed.
+        frontierReady: false,
+        lit: [],
+      })
+
+      act(() => live.fire?.(FOLDER_A))
+      // Recorded at the signal, not at the re-read: a settle that never fires
+      // and a read that never returns are different failures.
+      expect(teamUnread()[0]).toMatchObject({
+        deliveries: 1,
+        lastDelivery: { folder: FOLDER_A, listed: true },
+        lastLoad: { trigger: 'folders' },
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
+      })
+      await vi.waitFor(() =>
+        expect(teamUnread()[0].lastLoad).toMatchObject({ trigger: 'socket', outcome: 'ok' }),
+      )
+
+      advance({})
+      // With no argument it explains the Folder the socket last named, which
+      // is the one somebody at a console is asking about.
+      await vi.waitFor(() => expect(teamUnread()[0].frontierReady).toBe(true))
+      const folder = teamUnread()[0].folder
+      expect(folder).toMatchObject({ id: FOLDER_A, listed: true, read: true, unread: true })
+      expect(folder?.streams).toEqual([
+        expect.objectContaining({ key: FOL18, followed: true, marker: null, unread: true }),
+      ])
+
+      unmount()
+      // A stopped hook leaves nothing to read, in a tab as in a test.
+      expect(teamUnread()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('works with no socket at all — the refresh triggers still drive it', async () => {
+    live.present = false
+    const { result } = renderHook(() => useTeamUnread(folders))
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    expect(live.watched).toEqual([])
+    advance({})
+    await waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
+    act(() => refresh.fire?.())
+    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(2))
   })
 })

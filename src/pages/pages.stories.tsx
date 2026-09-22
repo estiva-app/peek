@@ -319,19 +319,22 @@ export const DeskLoading: Story = {
 /**
  * The Folders page. The tree is `FolderTreeView`, so its three states — signed
  * out, still loading, and genuinely none — are its own page's to show; here it
- * is the create row above the list that matters.
+ * is the header's three actions that matter (FOL-41). Making a folder is a
+ * dialog now, not a row above the list, so the mid-create state is
+ * `Overlays/CreateFolderDialog`'s and not this page's.
  */
 export const Folders: Story = {
   render: () => (
     <FoldersPageView
       railClosed={false}
       signedOut={false}
-      creating={false}
-      name=""
-      onNameChange={noop}
-      onCreate={noop}
       folders={FOLDERS}
       unread={{}}
+      followed={{}}
+      filter="all"
+      onFilterChange={noop}
+      onNewFolder={noop}
+      onNewTopic={noop}
       onSelect={noop}
       onOpenFolder={noop}
       rightPanel={<EmptyState message="No folder selected" />}
@@ -350,12 +353,13 @@ export const FoldersSignedOut: Story = {
     <FoldersPageView
       railClosed={false}
       signedOut
-      creating={false}
-      name=""
-      onNameChange={noop}
-      onCreate={noop}
       folders={null}
       unread={{}}
+      followed={{}}
+      filter="all"
+      onFilterChange={noop}
+      onNewFolder={noop}
+      onNewTopic={noop}
       onSelect={noop}
       onOpenFolder={noop}
       rightPanel={<EmptyState message="No folder selected" />}
@@ -363,18 +367,24 @@ export const FoldersSignedOut: Story = {
   ),
 }
 
-/** **Mid-create**: the row locks while the folder is being made. */
-export const FoldersCreating: Story = {
+/**
+ * **Filtered.** The filter button stays pressed while anything but `All` is
+ * chosen, because the tree is hiding Folders and nothing else on screen says
+ * so (FOL-41). The tree's own three filter states are `Folders/FolderTreeView`'s;
+ * the pressed button is only visible here, on the page that draws the header.
+ */
+export const FoldersFiltered: Story = {
   render: () => (
     <FoldersPageView
       railClosed={false}
       signedOut={false}
-      creating
-      name="Launch"
-      onNameChange={noop}
-      onCreate={noop}
       folders={FOLDERS}
-      unread={{}}
+      unread={{ '3789d2ca-103c-40e5-906f-0490782db5fd': true }}
+      followed={{}}
+      filter="unread"
+      onFilterChange={noop}
+      onNewFolder={noop}
+      onNewTopic={noop}
       onSelect={noop}
       onOpenFolder={noop}
       rightPanel={<EmptyState message="No folder selected" />}
@@ -429,12 +439,13 @@ export const FoldersEmpty: Story = {
     <FoldersPageView
       railClosed={false}
       signedOut={false}
-      creating={false}
-      name=""
-      onNameChange={noop}
-      onCreate={noop}
       folders={[]}
       unread={{}}
+      followed={{}}
+      filter="all"
+      onFilterChange={noop}
+      onNewFolder={noop}
+      onNewTopic={noop}
       onSelect={noop}
       onOpenFolder={noop}
       rightPanel={<EmptyState message="No folder selected" />}

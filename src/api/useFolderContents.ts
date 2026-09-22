@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FolderContents, FolderSummary } from '@estiva-app/interop'
 import { useForeignObjects } from '@/api'
 import {
-  RelayReadError,
-  classifyRelayFailure,
   isOutage,
+  relayFailureKind,
+  withRateLimitRetry,
   type RelayFailureKind,
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
@@ -53,17 +53,22 @@ export function useFolderContents(folder: string | null | undefined): {
 
   const load = useCallback(
     (target: string) =>
-      resolveFolderContents(target)
+      /*
+        A quota refusal is waited out at the second the relay named rather than
+        drawn as a failure (FOL-40). This read is one of the six that go out
+        together when the sidebar and the Folder view both refresh, so it is
+        among the first to be refused — and "This folder could not be read" for
+        a relay that answered promptly and will answer again in eight seconds
+        is the wrong sentence twice over.
+      */
+      withRateLimitRetry(() => resolveFolderContents(target))
         .then((contents) => ({ folder: target, contents }))
         .catch((error: unknown) => {
           // Swallowed, like the project read: nothing throws and the app keeps
           // working. What the failure buys is that the view can say *which*
           // empty state this is — an empty Folder and an unreadable one look
           // identical otherwise, which is the ambiguity PEE-10 exists to remove.
-          const kind =
-            error instanceof RelayReadError
-              ? error.kind
-              : classifyRelayFailure((error as Error)?.message ?? '')
+          const kind = relayFailureKind(error)
           if (isOutage(kind)) recordReadFailure(kind)
           console.warn('[nostr] folder contents read failed:', error)
           return { folder: target, failed: kind as RelayFailureKind }
@@ -71,21 +76,38 @@ export function useFolderContents(folder: string | null | undefined): {
     [resolveFolderContents],
   )
 
+  /*
+    A failed *re*-read keeps what is on screen (FOL-40). The failure is worth
+    a sentence when there is nothing else to say — an empty Folder and an
+    unreadable one are different (PEE-10) — and worth nothing at all when the
+    rows are already drawn: a 30 s tick that hits a hiccup would otherwise
+    replace a read Folder with "This folder could not be read", and the next
+    tick would put it back. A first read for this Folder still says so,
+    because there is then no answer to keep.
+  */
+  const keep = useCallback(
+    (next: { folder: string; contents?: FolderContents; failed?: RelayFailureKind }) =>
+      setResolved((held) =>
+        next.failed && held?.folder === next.folder && held.contents ? held : next,
+      ),
+    [],
+  )
+
   const reload = useCallback(async () => {
     if (!folder) return
     const next = await load(folder)
     // A slow resolve for the previous Folder must not paint over the next one.
-    if (next.folder === folder) setResolved(next)
-  }, [folder, load])
+    if (next.folder === folder) keep(next)
+  }, [folder, load, keep])
 
   useEffect(() => {
     if (!folder) return
     let cancelled = false
-    void load(folder).then((next) => !cancelled && setResolved(next))
+    void load(folder).then((next) => !cancelled && keep(next))
     return () => {
       cancelled = true
     }
-  }, [folder, load])
+  }, [folder, load, keep])
 
   useEffect(() => {
     if (!folder) return

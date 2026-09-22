@@ -65,18 +65,7 @@ export function teamHasUnread(
     horizonSeconds: number
   },
 ): boolean {
-  // Keyed by what a person follows, not by read-state context: the address
-  // for a file's stream, the Folder's id for the general one.
-  const streams = new Map<string, StreamMessage[]>()
-  for (const message of messages) {
-    const files = message.about.filter((address) => fileContext(address) !== undefined)
-    for (const key of files.length > 0 ? files : [folderId]) {
-      const stream = streams.get(key)
-      if (stream) stream.push(message)
-      else streams.set(key, [message])
-    }
-  }
-  for (const [key, stream] of streams) {
+  for (const [key, stream] of streamsOf(folderId, messages)) {
     if (!frontier.followed(key)) continue
     const context = key === folderId ? containerContext(folderId) : fileContext(key)
     const unread = fileHasUnread(stream, {
@@ -87,6 +76,71 @@ export function teamHasUnread(
       horizonSeconds: frontier.horizonSeconds,
     })
     if (unread) return true
+  }
+  return false
+}
+
+/**
+ * A Folder's messages split into the streams a person follows them by — the
+ * file's address for a message that names one, the Folder's own id for the
+ * general chat. Keyed by what is followed, not by read-state context.
+ *
+ * Exported because `window.__teamUnread()` reports the dot per stream, and a
+ * second grouping written beside this one would be the instrument inventing
+ * its own answer. FOL-40 lost a day to exactly that: a delivery log whose
+ * window was measured from the wrong event reported a reconnect's replayed
+ * page as seventy-seven live events. A diagnostic that does not share the
+ * code it explains is a second implementation to be wrong twice.
+ */
+export function streamsOf(
+  folderId: string,
+  messages: readonly StreamMessage[],
+): Map<string, StreamMessage[]> {
+  const streams = new Map<string, StreamMessage[]>()
+  for (const message of messages) {
+    const files = message.about.filter((address) => fileContext(address) !== undefined)
+    for (const key of files.length > 0 ? files : [folderId]) {
+      const stream = streams.get(key)
+      if (stream) stream.push(message)
+      else streams.set(key, [message])
+    }
+  }
+  return streams
+}
+
+/**
+ * Does this Folder hold anything the person follows — the `Followed` filter's
+ * Folder-level question (FOL-41).
+ *
+ * The sibling of {@link teamHasUnread} and judged over the same messages, so
+ * it costs nothing: `useTeamUnread` has already read every Folder's streams to
+ * place its dots, and this is one more pass over what is in hand. The tree
+ * cannot answer it any other way — a Folder's contents are read when its fold
+ * opens, and filtering a hundred and sixty Folders by opening all of them is
+ * the whole minute's relay budget.
+ *
+ * ## What it can and cannot see
+ *
+ * Following a Folder follows its general chat, so a followed Folder is one of
+ * its own answers. Beyond that, a file is visible here only through a message
+ * that names it: a followed file with nothing said in it inside the 90-day
+ * horizon (§11.6) leaves no trace in these streams and its Folder is not
+ * listed. That is the same horizon the dots are judged by, and a file nobody
+ * has said anything in has nothing for the filter to lead to — but it is a
+ * real limit, not a rounding, and `All` is one click away.
+ */
+export function teamHasFollowedStream(
+  folderId: string,
+  messages: readonly StreamMessage[],
+  followed: (key: string) => boolean,
+): boolean {
+  if (followed(folderId)) return true
+  for (const message of messages) {
+    for (const address of message.about) {
+      // The same test `teamHasUnread` streams by: an `a` that is not an address
+      // names no stream, and the message belongs to the general one.
+      if (fileContext(address) !== undefined && followed(address)) return true
+    }
   }
   return false
 }
