@@ -147,7 +147,16 @@ const preview: Preview = {
           const at = HEADINGS.indexOf(name)
           return at === -1 ? HEADINGS.length : at
         }
-        if (left[0] !== right[0]) return rank(left[0]) - rank(right[0])
+        /*
+          Two headings that are both unnamed ranked equal, so the sort left
+          them tied and their entries interleaved rather than grouping
+          (estiva-04, 23 September). Unnamed headings sort after the named ones
+          and alphabetically among themselves.
+        */
+        if (left[0] !== right[0]) {
+          const byRank = rank(left[0]) - rank(right[0])
+          return byRank !== 0 ? byRank : left[0].localeCompare(right[0], 'en')
+        }
         for (let depth = 1; depth < Math.max(left.length, right.length); depth++) {
           if (left[depth] === undefined) return -1
           if (right[depth] === undefined) return 1

@@ -46,6 +46,18 @@ export default function define(h) {
     return parts.length ? test(parts) : h.FAIL("no reusable parts in the registry — rebuild it");
   };
   const storyFiles = () => h.listFiles("src", (name) => name.endsWith(".stories.tsx") || name.endsWith(".mdx"));
+  /** Every top-level heading the sidebar actually has. `Estiva ID` is prepended by main.ts, not by a title. */
+  const sidebarHeadings = () => {
+    const real = new Set(["Estiva ID"]);
+    for (const file of storyFiles()) {
+      const text = h.read(file);
+      const start = text.indexOf("const meta");
+      const meta = start === -1 ? "" : text.slice(start, text.indexOf("satisfies Meta", start) + 1 || undefined);
+      const title = meta.match(/\btitle: *['"]([^'"]+)['"]/) ?? text.match(/<Meta\s+title="([^"]+)"/);
+      if (title) real.add(title[1].split("/")[0].trim());
+    }
+    return real;
+  };
   const probe = (code, expect, mentions, file = PROBE, config = GATES) => () => h.lint({ config, file, code, expect, mentions });
   const component = (body) => `export function Probe() {\n  return ${body}\n}\n`;
 
@@ -72,23 +84,57 @@ export default function define(h) {
           ? h.PASS(`all ${parts.length} reusable parts have a page with When / When not / How / What it owns`)
           : h.FAIL(`${parts.length - missing.length} of ${parts.length}; no page or an incomplete one: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? `, +${missing.length - 6}` : ""}`);
       }) },
-      { what: "a usage page sits beside the component it describes", run: () => targets((parts) => {
-        const dir = (f) => f.replace(/\\/g, "/").replace(/\/[^/]*$/, "");
-        const stray = parts.filter((e) => e.docPage && dir(e.docPage) !== dir(e.sourceFile)).map((e) => e.name);
-        return stray.length === 0
-          ? h.PASS("every page is in its component's own folder, so the rule travels with the code")
-          : h.FAIL(`filed away from their component: ${stray.join(", ")}`);
-      }) },
-      { what: "the classification reconciles — every part has one, and they sum", run: () => {
+      /*
+        This replaced a check that could not fail. "A usage page sits beside its
+        component" is true by construction — the builder derives `docPage` as
+        `join(dirname(sourceFile), name + '.mdx')` (estiva-ui
+        `src/registry/app.ts:735`), so the two directories are always equal or
+        the page is null, which check 1 already catches. estiva-04 found it and
+        proved it by moving a page and watching the check stay green.
+
+        What can actually rot is the heading list in `preview.tsx`, and that is
+        the bug Katerina caught by eye on 22 September: `Pages` was not named in
+        the order, so it fell to the bottom and sat under "To be removed". A
+        heading named on the Introduction but not in the order still reads
+        correctly on the page and still falls to the bottom in the sidebar.
+      */
+      { what: "every heading is named in preview.tsx's order, and names something", run: () => {
+        const preview = ".storybook/preview.tsx";
+        if (!h.exists(preview)) return h.FAIL(`${preview} is missing`);
+        const block = h.read(preview).match(/const HEADINGS = \[([\s\S]*?)\]/);
+        if (!block) return h.FAIL("no HEADINGS list in preview.tsx — storySort cannot be ordering anything");
+        /* Comments first: the list is commented per heading, and an apostrophe
+           in "someone's pull request" opens a string that swallows the rest. */
+        const listed = block[1].replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+        const ordered = [...listed.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+        const real = sidebarHeadings();
+        const unordered = [...real].filter((r) => !ordered.includes(r));
+        const empty = ordered.filter((o) => !real.has(o));
+        if (!unordered.length && !empty.length) return h.PASS(`${ordered.length} headings, every one named and every one real`);
+        return h.FAIL([
+          unordered.length ? `not named in the order, so they fall to the bottom: ${unordered.join(", ")}` : "",
+          empty.length ? `named in the order but no story uses them: ${empty.join(", ")}` : "",
+        ].filter(Boolean).join("; "));
+      } },
+      /*
+        This one could not fail either: a group-by always sums to the length of
+        the list it grouped, and the builder assigns every part a class. It
+        asserted arithmetic. What rots is the number a person wrote down — so
+        the check now reads the Introduction's sentence and holds the registry
+        against it. estiva-04's suggestion, and it is the right one: the counts
+        in this project have gone stale in three separate documents already.
+      */
+      { what: "the count the Introduction states is the count the registry builds", run: () => {
         const entries = registry();
         if (!entries) return h.FAIL("registry.json has no entries — run `npm run registry`");
-        const unclassified = entries.filter((e) => !e.app?.class).map((e) => e.name);
-        if (unclassified.length) return h.FAIL(`no class: ${unclassified.slice(0, 6).join(", ")}`);
-        const by = {};
-        for (const e of entries) by[e.app.class] = (by[e.app.class] ?? 0) + 1;
-        const sum = Object.values(by).reduce((a, b) => a + b, 0);
-        const shape = Object.entries(by).map(([k, n]) => `${n} ${k}`).join(", ");
-        return sum === entries.length ? h.PASS(`${entries.length} parts — ${shape}`) : h.FAIL(`${shape} sums to ${sum}, not ${entries.length}`);
+        const intro = "src/stories/Introduction.mdx";
+        if (!h.exists(intro)) return h.FAIL(`${intro} is missing`);
+        const said = h.read(intro).match(/\*\*(\d+) parts worth reusing\*\*/);
+        if (!said) return h.FAIL(`${intro} no longer states how many parts are worth reusing`);
+        const reusable = entries.filter((e) => ["reusable", "promote-candidate"].includes(e.app?.class)).length;
+        return Number(said[1]) === reusable
+          ? h.PASS(`${reusable}, and the Introduction says ${said[1]}`)
+          : h.FAIL(`the Introduction says ${said[1]}; the registry builds ${reusable}`);
       } },
       /*
         The Introduction is a hand-written map of something that moves, and it
@@ -101,20 +147,7 @@ export default function define(h) {
         if (!h.exists(intro)) return h.FAIL(`${intro} is missing`);
         const listed = new Set([...h.read(intro).matchAll(/^\|\s*\*\*([^*]+)\*\*\s*\|/gm)].map((m) => m[1].trim()));
         // `Estiva ID` is prepended by .storybook/main.ts, not by any title here.
-        const real = new Set(["Estiva ID"]);
-        for (const file of storyFiles()) {
-          const text = h.read(file);
-          /*
-            Only the title the meta declares. A story file is full of invented
-            data, and fixtures have titles too — reading the first `title:` in
-            the file reported a heading called "Feedback on Peek", which is a
-            topic's name in TopicDetailsDialog's fixtures.
-          */
-          const start = text.indexOf("const meta");
-          const meta = start === -1 ? "" : text.slice(start, text.indexOf("satisfies Meta", start) + 1 || undefined);
-          const title = meta.match(/\btitle: *['"]([^'"]+)['"]/) ?? text.match(/<Meta\s+title="([^"]+)"/);
-          if (title) real.add(title[1].split("/")[0].trim());
-        }
+        const real = sidebarHeadings();
         const missing = [...real].filter((r) => !listed.has(r));
         const stale = [...listed].filter((l) => !real.has(l));
         if (!missing.length && !stale.length) return h.PASS(`${real.size} headings, all named on the Introduction`);
