@@ -291,6 +291,47 @@ describe('the socket path (FOL-40)', () => {
     }
   })
 
+  it('a flood of signals cannot push the re-read past its window (FOL-40)', async () => {
+    /*
+      The shipped defect. The wide filter's listener fires for the relay's
+      stored events as well as live ones — a production tab took 1,081 signals
+      on an 81-Folder watch, 1,078 of them backfill — so a subscribe or a
+      reconnect delivers a run of them with no gap. A window that restarted on
+      each one was pushed along by its own backfill: the tab recorded the last
+      signal at 17:12:50 and the next read at 17:13:09, nineteen seconds later
+      and carrying `trigger: 'refresh'`. The socket had done its job and the
+      30-second fallback still got there first.
+    */
+    vi.useFakeTimers()
+    try {
+      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
+      renderHook(() => useTeamUnread(folders))
+      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+
+      await act(async () => {
+        live.fire?.(FOLDER_A)
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 2)
+        // The signal that used to move the goalposts.
+        live.fire?.(FOLDER_A)
+        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 2)
+      })
+      // One window after the *first* signal, not one after the last.
+      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
+
+      // Still a ceiling rather than a read per event: a flood lasting ten
+      // windows costs about ten reads, not the six hundred it delivered.
+      await act(async () => {
+        for (let signal = 0; signal < 100; signal++) {
+          live.fire?.(FOLDER_A)
+          await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 10)
+        }
+      })
+      expect(relay.channelStreams.mock.calls.length).toBeLessThanOrEqual(13)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('waits out a quota refusal at the second the relay named, rather than dropping it', async () => {
     /*
       The shipped defect, and the last one in the chain. The wide filter was
