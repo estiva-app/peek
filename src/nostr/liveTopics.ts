@@ -145,6 +145,38 @@ export function relayLog(message: string, detail?: unknown): void {
   write('[relay]', message, detail ?? '')
 }
 
+/**
+ * How many wide-filter deliveries are named before the log goes quiet.
+ *
+ * A wide filter backfills — the REQ carries no `since`, so the relay answers
+ * with stored events before EOSE — and on 79 Folders that is a page of them.
+ * The first few are what make the difference legible; the rest would bury it.
+ */
+const WIDE_FILTER_LOG_CEILING = 25
+
+/**
+ * One line per wide-filter delivery, until the ceiling.
+ *
+ * Separate and exported so the wording can be pinned by a test: the wording is
+ * the whole artefact here. A reader has to be able to tell a backfilled event
+ * from a live one at a glance, so the line carries what the watch asked for,
+ * which delivery this is, and how long after subscribing it arrived.
+ */
+export function logWideFilterDelivery(
+  watchSize: number,
+  delivered: number,
+  folder: string,
+  elapsedMs: number,
+): void {
+  if (delivered > WIDE_FILTER_LOG_CEILING) return
+  console.info(
+    `[relay] wide filter of ${watchSize} delivered #${delivered} for ${folder}, ${elapsedMs}ms after subscribing`,
+  )
+  if (delivered === WIDE_FILTER_LOG_CEILING) {
+    console.info(`[relay] wide filter of ${watchSize}: further deliveries not logged`)
+  }
+}
+
 interface Wiring {
   relayUrl: string
   client: LiveClient
@@ -219,7 +251,49 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
         console.info(
           `[relay] watching ${channelUuids.length} folder(s) for kinds ${kinds.join(', ')}`,
         )
-        return client.watchFolders([...channelUuids], listener, { kinds })
+        /*
+          And said out loud again when it *delivers* — the question peek#290
+          left unanswerable (FOL-40).
+
+          "Was the REQ accepted?" is now answered: no closure means yes. It is
+          the wrong question. A filter naming many distinct `#h` values is
+          classified by the relay's `extract_channel_id_from_filters` as a
+          **global** subscription the moment two of them differ, and
+          `fan_out_scoped` documents a symmetric invariant — a global
+          subscription is never handed an event that carries a channel. A
+          `kind:9` or `kind:1111` in a Folder carries one. So the REQ is
+          accepted, EOSE arrives, the socket reports `live`, and nothing is
+          ever delivered, with no error anywhere. The relay branch carrying the
+          plural `extract_channel_ids_from_filters` registers the same REQ per
+          channel instead, which is why this is a property of the deployed
+          image rather than of the filter.
+
+          Two readings this line separates, and nothing else does:
+
+          - **Elapsed.** The REQ backfills, so a delivery a few ms after
+            subscribing is stored history and says nothing. A delivery seconds
+            or minutes later, when somebody else spoke, is live fan-out.
+          - **Watch size.** `useLiveFile` watches a single Folder, and a single
+            `#h` is channel-scoped on every build. So one console holds its own
+            control: if the 1-Folder watch delivers late and the 79-Folder one
+            never does, the difference is the count, not the socket.
+
+          The listener is safe to read this way. `client.watchFolders` notifies
+          through the *client's* own folder activity, whose only writer is that
+          subscription's handler — Peek's `activity` above is a different
+          object, fed by the projection. Nothing else can make this fire.
+        */
+        const watchedAt = Date.now()
+        let delivered = 0
+        return client.watchFolders(
+          [...channelUuids],
+          (folder) => {
+            delivered += 1
+            logWideFilterDelivery(channelUuids.length, delivered, folder, Date.now() - watchedAt)
+            listener(folder)
+          },
+          { kinds },
+        )
       },
     },
   }
