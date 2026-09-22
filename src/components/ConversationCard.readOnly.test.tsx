@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
-import { PeekDataProvider } from '@/api'
+import { PeekDataProvider, type ReactionData } from '@/api'
 import { ConversationCard } from './ConversationCard'
 import { ThreadReplyCard } from './ThreadReplyCard'
 
@@ -27,7 +27,7 @@ function hover(node: React.ReactElement) {
   return container
 }
 
-const reactions = [{ emoji: '👍', count: 1, owner: false, names: ['Katerina'] }]
+const reactions: ReactionData[] = [{ emoji: '👍', count: 1, owner: 'others', names: ['Katerina'] }]
 
 describe('a read-only message card', () => {
   it('draws the hover menu when it is not read-only — the control', () => {
