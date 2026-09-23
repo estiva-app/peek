@@ -60,6 +60,7 @@ import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
 import { buildDiffReport } from './readStateDiff'
 import { useDebug } from '@/lib/debug'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { RELAY_URL } from '@/api/relayUrl'
 
 /**
  * The previous merge, kept so a *regression* between fetches is detectable
@@ -310,9 +311,9 @@ export function resetReadStateQueueForTests(): void {
  * markers of every session.
  */
 export function useReadStateSync(): void {
-  // A query rather than a build-time variable, so the bundle and the backend
-  // cannot disagree about where the relay is (convex/nostr/config.ts).
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  // A build-time value since REM-2 (`@/api/relayUrl`), so read state reaches
+  // the relay with Convex unreachable.
+  const relayUrl = RELAY_URL
 
   useEffect(() => {
     relayOrigin = relayUrl ?? null
@@ -497,12 +498,12 @@ export function useMergedReadState(): MergedReadStateView {
        */
       const contexts = Object.entries(state.merged).map(([context, atSeconds]) => ({ context, atSeconds }))
       if (contexts.length > 0) {
-        try {
-          await applyToCache({ contexts })
-        } catch (error) {
-          // The relay half succeeded; the cache is an optimisation on top of it.
-          console.warn('[read-state] could not write the merged state into the cache:', error)
-        }
+        // Not awaited (REM-2). The relay half succeeded and the cache is an
+        // optimisation on top of it; awaiting it meant a Convex that never
+        // answers kept `ready` false, so no unread dot was ever judged.
+        applyToCache({ contexts }).catch((error: unknown) =>
+          console.warn('[read-state] could not write the merged state into the cache:', error),
+        )
       }
       /*
        * Our coordinate holds another installation's `client_id`. Publishing to

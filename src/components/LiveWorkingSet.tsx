@@ -35,13 +35,12 @@
 import { useEffect } from 'react'
 import { useConvex, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { hasConvex } from '@/api'
+import { hasConvex, RELAY_URL } from '@/api'
 import { getLiveTopics } from '@/nostr/liveTopics'
 
 export function LiveWorkingSet() {
   const convex = useConvex()
-  const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
-  const relayUrl = relayConfig?.relayUrl
+  const relayUrl = RELAY_URL
   const channels = useQuery(api.nostr.sync.watchableChannels, hasConvex ? {} : 'skip')
 
   // Reactive: the query re-runs when the Desk, inbox or stars change, so the

@@ -17,8 +17,9 @@
  * Nothing outside src/api may import the underlying providers directly.
  */
 import { createContext, useContext, useState, useMemo, type ReactNode, type Dispatch, type SetStateAction } from 'react'
-import { ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
-import { useEstivaIdAuth } from '@/auth/useEstivaIdAuth'
+import { ConvexProvider, ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
+import { EstivaIdSessionProvider } from '@/auth/EstivaIdSession'
+import { useEstivaIdSession } from '@/auth/useEstivaIdSession'
 import { StarredProvider } from '@/api/internal/starred'
 import { ReadStateSync } from '@/nostr/useReadStateSync'
 import { TopicStoreProvider } from '@/api/internal/topicStore'
@@ -119,14 +120,26 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
   // rendering Convex Auth's screen under the wrong provider made
   // `useAuthActions` return undefined and took the app down.
   //
-  // With Estiva ID the only sign-in, `useEstivaIdAuth` simply reports
-  // unauthenticated when there is no token, which is what `AuthGate` wants
-  // anyway. Mock mode never connects the client, so mounting this there is
-  // harmless.
+  // With Estiva ID the only sign-in, the session simply reports
+  // unauthenticated when there is no token.
+  //
+  // **Convex no longer decides who is signed in (REM-2).** `AuthGate` reads the
+  // same Estiva ID session this hands Convex, through `EstivaIdSessionProvider`,
+  // so there is one session and one renewal timer, and Convex being slow or
+  // unreachable holds up only the screens that read it.
+  //
+  // Without a deployment the client gets no auth at all: handing it a token
+  // would open a socket to the placeholder origin in a relay-only build.
   return (
-    <ConvexProviderWithAuth client={convexClient} useAuth={useEstivaIdAuth}>
-      {tree}
-    </ConvexProviderWithAuth>
+    <EstivaIdSessionProvider>
+      {hasConvex ? (
+        <ConvexProviderWithAuth client={convexClient} useAuth={useEstivaIdSession}>
+          {tree}
+        </ConvexProviderWithAuth>
+      ) : (
+        <ConvexProvider client={convexClient}>{tree}</ConvexProvider>
+      )}
+    </EstivaIdSessionProvider>
   )
 }
 

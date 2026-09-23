@@ -42,6 +42,7 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { recordBackfillEnd, recordBackfillStart } from './freshness'
 import { getLiveTopics } from './liveTopics'
 import { syncContainerFromRelay, type SyncContainer } from './sync'
+import { RELAY_URL } from '@/api/relayUrl'
 
 export interface ChannelSync {
   /** The tab's socket state, for PEE-9's freshness indicator. */
@@ -62,8 +63,7 @@ export interface ChannelSync {
 
 export function useChannelSync(kind: SyncContainer['kind'], key: string | null): ChannelSync {
   const convex = useConvex()
-  const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
-  const relayUrl = relayConfig?.relayUrl
+  const relayUrl = RELAY_URL
 
   const plan = useQuery(
     api.nostr.sync.syncPlan,

@@ -67,6 +67,7 @@ import { useResolvedReferences } from '@/api/foreign'
 import { useOpenWorkSync } from '@/nostr/useOpenWorkSync'
 import { openWorkKey, type OpenWorkRef } from '@/nostr/openWork'
 import type { OpenWorkItem } from '@/api/types'
+import { RELAY_URL } from '@/api/relayUrl'
 
 /** Overlay keys. The three prefixes cannot shadow each other. */
 const TOPIC = 'topic:'
@@ -100,9 +101,8 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   // is why nothing here needs a timestamp.
   const [pending, setPending] = useState<Map<string, boolean>>(new Map())
 
-  // Where the relay lives — a query rather than a build-time variable, so the
-  // bundle and the backend cannot disagree about it (convex/nostr/config.ts).
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  // Where the relay lives — a build-time value since REM-2 (`@/api/relayUrl`).
+  const relayUrl = RELAY_URL
   const sync = useOpenWorkSync(relayUrl)
   const convexOpenWork = useQuery(api.desk.openWorkList, hasConvex ? {} : 'skip')
 

@@ -20,6 +20,7 @@ import { validToken } from '@/auth/estivaId'
 import { deleteTopicChannel, publishTopicChannel, renameTopicChannel } from '@/nostr/topics'
 import type { Topic } from './types'
 import type { Person } from './types'
+import { RELAY_URL } from '@/api/relayUrl'
 
 /** All topics. `undefined` while the Convex query is loading. */
 export function useTopics(): Topic[] | undefined {
@@ -122,7 +123,7 @@ export type DeleteTopicOutcome = { kind: 'warning'; message: string } | null
 export function useDeleteTopic(): (topicId: string) => Promise<DeleteTopicOutcome> {
   const deleteLocal = useTopicStore().deleteTopicLocal
   const removeRemote = useMutation(api.topics.remove)
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const relayUrl = RELAY_URL
   return useCallback(
     async (topicId: string): Promise<DeleteTopicOutcome> => {
       deleteLocal(topicId)
@@ -217,7 +218,7 @@ export interface CreateTopicFromDmResult {
  */
 function usePublishTopicChannel() {
   const convex = useConvex()
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const relayUrl = RELAY_URL
   return useCallback(
     async (topicId: string) => {
       // Said out loud for the same reason as the publish paths in actions.ts:
@@ -339,7 +340,7 @@ export type RenameOutcome = null | { kind: 'error' | 'warning'; message: string 
  */
 export function useRenameTopic(): (topicKey: string, title: string) => Promise<RenameOutcome> {
   const renameRemote = useMutation(api.topics.rename)
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const relayUrl = RELAY_URL
   const renameLocal = useTopicStore().renameTopicLocal
   return useCallback(
     async (topicKey, title): Promise<RenameOutcome> => {

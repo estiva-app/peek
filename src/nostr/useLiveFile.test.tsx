@@ -36,6 +36,7 @@ vi.mock('./liveTopics', () => ({
   }),
 }))
 vi.mock('@/api/store', () => ({ hasConvex: true }))
+vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('convex/react', () => ({
   useConvex: () => ({ action: vi.fn() }),
   useQuery: () => ({ relayUrl: 'https://relay.test' }),

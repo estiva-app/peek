@@ -6,12 +6,13 @@
  * deployment is configured, the corresponding Convex mutation. All writes
  * stamp CURRENT_USER_NAME (the Phase 3 identity switch point).
  */
-import { useConvex, useMutation, useQuery } from 'convex/react'
+import { useConvex, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { useOpenWork } from '@/api/internal/openWork'
 import { fileAddressFromScreenerRowId, topicIdFromScreenerRowId, useScreener } from '@/api/internal/screener'
 import { hasConvex, useDmRuntime } from './store'
+import { RELAY_URL } from './relayUrl'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '@estiva-app/protocol'
 import type { UnsignedEvent } from '@estiva-app/protocol'
@@ -125,9 +126,6 @@ export function usePeekActions(
   const recordReplyPublished = useMutation(api.nostr.outbox.recordReplyPublished)
   const recordReactionPublished = useMutation(api.nostr.outbox.recordReactionPublished)
   const recordResolutionPublished = useMutation(api.nostr.outbox.recordResolutionPublished)
-  // Where the relay lives. A query rather than a build-time variable so the
-  // bundle and the backend cannot disagree about it — see convex/nostr/config.ts.
-  const relayConfig = useQuery(api.nostr.config.relayConfig)
   const editBodyRemote = useMutation(api.messages.editBody)
   const editFilesRemote = useMutation(api.messages.editFiles)
   const removeRemote = useMutation(api.messages.remove)
@@ -209,7 +207,8 @@ export function usePeekActions(
     token: { accessToken: string; pubkey: string },
     onFailure?: (reason: string) => void,
   ): Promise<string | null> => {
-    const relay = relayConfig?.relayUrl
+    // A build-time value since REM-2 — see `relayUrl.ts`.
+    const relay = RELAY_URL
     if (!relay) {
       const reason = 'publishing is off in this deployment'
       console.warn(
@@ -296,7 +295,7 @@ export function usePeekActions(
    * conversation nobody has spoken in yet.
    */
   const ensureDmChannel = async (dmKey: string): Promise<void> => {
-    const relay = relayConfig?.relayUrl
+    const relay = RELAY_URL
     if (!relay) return
     // At call time, never a snapshot — `tokenForPublish` says why.
     const token = validToken()

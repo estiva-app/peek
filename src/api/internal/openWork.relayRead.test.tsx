@@ -36,11 +36,11 @@ vi.mock('convex/react', () => ({
   useQuery: (ref: unknown) => {
     const name = getFunctionName(ref as Parameters<typeof getFunctionName>[0])
     if (name.includes('openWorkList')) return openWorkListResult
-    if (name.includes('relayConfig')) return { relayUrl: 'https://relay.test' }
     return undefined
   },
   useMutation: () => vi.fn(),
 }))
+vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 let topics: unknown = [
   { id: 't1', title: 'CI/CD pipeline stuck', isResolved: false, folderId: 'u-1' },

@@ -18,6 +18,7 @@ import { DebugProvider } from '@/lib/debug'
 vi.mock('@/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api')>()),
   hasConvex: true,
+  useCanUpload: () => true,
   useUploadActions: () => ({
     deleteUpload: () => {},
     uploadFile: async (file: File) => ({

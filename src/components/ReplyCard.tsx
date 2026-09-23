@@ -18,7 +18,7 @@ import { ConfirmDelete } from './ConfirmDelete'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
-import { useIsTopicResolved, hasConvex, isCurrentUser } from '@/api'
+import { useIsTopicResolved, useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -202,6 +202,7 @@ export function ReplyCard({
   // card uses. The paste handler is a closure from the editor's first render,
   // so it reads the current one through a ref, assigned in an effect.
   const editAttachments = useEditAttachments(files)
+  const canUpload = useCanUpload()
   const editAttachmentsRef = useRef(editAttachments)
   useEffect(() => {
     editAttachmentsRef.current = editAttachments
@@ -224,7 +225,7 @@ export function ReplyCard({
       /* A pasted screenshot becomes an attachment here too — PEE-16. See
          ComposeBox for why text on the clipboard wins over a picture. */
       handlePaste: (_view, event) => {
-        if (!hasConvex) return false
+        if (!canUpload) return false
         const images = pastedImages(event.clipboardData)
         if (images.length === 0) return false
         editAttachmentsRef.current.add(images)

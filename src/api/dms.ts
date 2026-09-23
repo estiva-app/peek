@@ -11,6 +11,7 @@ import { api } from '../../convex/_generated/api'
 import { hasConvex } from './store'
 import { validToken } from '@/auth/estivaId'
 import { publishDmChannel } from '@/nostr/dms'
+import { RELAY_URL } from '@/api/relayUrl'
 
 /**
  * Give this DM a channel on the relay, once, while it is open.
@@ -37,7 +38,7 @@ import { publishDmChannel } from '@/nostr/dms'
  */
 export function useEnsureDmChannel(dmKey: string | null): void {
   const convex = useConvex()
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const relayUrl = RELAY_URL
   const plan = useQuery(api.nostr.outbox.unsignedDmOpen, hasConvex && dmKey ? { dmKey } : 'skip')
   const needsChannel = plan?.ok === true
   const attempted = useRef<Set<string>>(new Set())

@@ -58,11 +58,15 @@ In the Convex dashboard, production deployment — **not** GitHub secrets. These
 are read by Convex-side code at runtime, so they belong to the deployment rather
 than the build:
 
-* `NOSTR_RELAY_URL` = `https://estiva.estiva.app`
 * `NOSTR_KEY_ENCRYPTION_SECRET` — required by `convex/nostr/keys.ts`
 
-**Until `NOSTR_RELAY_URL` is set, `convex/nostr/publish.ts` no-ops silently by
-design.** Peek will appear to work perfectly while nothing reaches the relay.
+**The relay origin is not here any more (REM-2).** The browser reads it from
+`VITE_RELAY_URL`, set on the build step in `.github/workflows/deploy.yml`
+(`https://estiva.estiva.app`). The deployment's `NOSTR_RELAY_URL` now feeds only
+`nostr.config.relayConfig`, which nothing in `src/` calls; it stays until
+REM-7 deletes `convex/`, so a bundle cached from before the change keeps
+working. **Without `VITE_RELAY_URL` the build runs in mock mode for every relay
+path** — nothing reaches the relay, and nothing says so.
 
 ### 3. Add the GitHub secret
 

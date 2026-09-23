@@ -44,11 +44,11 @@
  * out — the first connect's read is the caller's own mount.
  */
 import { useEffect, useRef, useState } from 'react'
-import { useConvex, useQuery } from 'convex/react'
+import { useConvex } from 'convex/react'
 import { KIND, type RelayState } from '@estiva-app/protocol'
 import { api } from '../../convex/_generated/api'
-import { hasConvex } from '@/api/store'
 import { getLiveTopics } from './liveTopics'
+import { RELAY_URL } from '@/api/relayUrl'
 
 /** How long the socket's activity is gathered before one re-read pays for all of it. */
 export const LIVE_FILE_SETTLE_MS = 300
@@ -60,8 +60,7 @@ export function useLiveFile(
   onActivity: () => void,
 ): { relayState: RelayState } {
   const convex = useConvex()
-  const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
-  const relayUrl = relayConfig?.relayUrl
+  const relayUrl = RELAY_URL
   const [relayState, setRelayState] = useState<RelayState>('connecting')
 
   // Written in an effect rather than during render (`react-hooks/refs`); every
@@ -72,7 +71,10 @@ export function useLiveFile(
   })
 
   useEffect(() => {
-    if (!hasConvex || !folder || !relayUrl) return
+    // Relay-only: gated on the relay, never on Convex (REM-2). The actions
+    // handed to `getLiveTopics` are the topic projection's and this watch
+    // never calls them.
+    if (!folder || !relayUrl) return
 
     let unsubscribe: (() => void) | undefined
     let watch: { stop(): void } | undefined

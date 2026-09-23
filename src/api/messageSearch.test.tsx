@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 
 vi.mock('@/api/store', () => ({ hasConvex: true }))
+vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('convex/react', () => ({
   useQuery: () => ({ relayUrl: 'https://relay.test' }),
   useMutation: () => vi.fn(),

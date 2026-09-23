@@ -10,7 +10,7 @@ import { useRef } from 'react'
 import { IconPaperclip } from '@tabler/icons-react'
 import { AttachmentCard, FilePicker, ToolbarButton } from '@estiva-app/ui'
 import { FILE_ACCEPT_ATTR, pendingAttachmentNote } from '@/lib/fileAttachments'
-import { hasConvex } from '@/api'
+import { useCanUpload } from '@/api'
 import type { EditAttachmentChip } from '@/lib/useEditAttachments'
 
 /**
@@ -19,7 +19,9 @@ import type { EditAttachmentChip } from '@/lib/useEditAttachments'
  *
  * The paperclip, with the file picker it needs to mean anything.
  *
- * Uploads need storage, so it renders only against a live backend — the demo
+ * Uploads need storage, so it renders only where the conversation's storage is
+ * configured (`useCanUpload`: the blob store for a file's conversation, Convex
+ * for a DM, REM-2) — the demo
  * build has none, and an action is offered only where it can succeed. That is
  * also why it returns null rather than rendering disabled: there is nothing
  * to explain to somebody who will never have the option.
@@ -34,8 +36,9 @@ import type { EditAttachmentChip } from '@/lib/useEditAttachments'
  */
 export function AttachFileButton({ onPick }: { onPick: (files: File[]) => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const drawOnly = !hasConvex && Boolean(import.meta.env.STORYBOOK)
-  if (!hasConvex && !drawOnly) return null
+  const canUpload = useCanUpload()
+  const drawOnly = !canUpload && Boolean(import.meta.env.STORYBOOK)
+  if (!canUpload && !drawOnly) return null
   return (
     <>
       {/* Clears itself, so the same file can be re-picked; calls onPick only when something was chosen. */}

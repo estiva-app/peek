@@ -1,16 +1,27 @@
 /**
  * File-upload writes — the composer's attach flow (Phase 5).
  *
- * Mirrors the avatar upload (profile.ts): ask Convex for a short-lived upload
- * URL, POST the blob, keep the returned storage id. The id + metadata then
- * ride into `messages.send`/`replies.send` as `fileAttachments`. Uploads need
- * real storage, so this is Convex-only (no-op path throws in mock mode — the
- * composer hides the attach button when `!hasConvex`, per the rule that an
- * action only appears where it can succeed).
+ * **Two destinations since REM-2**, chosen by the conversation the composer is
+ * in rather than by the composer (`UploadDestinationProvider`):
+ *
+ * - `blobStore` — a file's conversation. The bytes go to the relay's blob store
+ *   and nowhere else, and the descriptor carries what the `imeta` names. This
+ *   path makes no Convex request at all. A failed upload fails the attachment:
+ *   a relay-only comment has no other copy for it to fall back on.
+ * - `convex` — the default, and what DMs still use until REM-1: ask Convex for
+ *   a short-lived upload URL, POST the blob, keep the storage id, and mirror to
+ *   the blob store as well (CON-12). The id + metadata then ride into
+ *   `messages.send`/`replies.send` as `fileAttachments`.
+ *
+ * Either way an upload needs somewhere real to go, so it throws in mock mode,
+ * and `useCanUpload` hides the attach button there, per the rule that an
+ * action only appears where it can succeed.
  */
-import { useConvex, useMutation } from 'convex/react'
+import { createContext, useContext } from 'react'
+import { useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { hasConvex } from './store'
+import { RELAY_URL, hasRelay } from './relayUrl'
 import { validateFile, isImageAttachment } from '@/lib/fileAttachments'
 import { validToken } from '@/auth/estivaId'
 import { uploadBlob } from '@estiva-app/protocol'
@@ -20,7 +31,8 @@ import { signViaEstivaId } from '@/nostr/bridge'
  *  local object URL for the optimistic window (images render before the
  *  server resolves the real storage URL). */
 export interface UploadedFile {
-  storageId: string
+  /** The Convex copy. Absent on a `blobStore` upload, which has none. */
+  storageId?: string
   name: string
   contentType: string
   size: number
@@ -28,16 +40,17 @@ export interface UploadedFile {
   /**
    * The relay's copy — CON-12.
    *
-   * Absent when the blob upload failed or there was no token. The message still
-   * sends and Peek still renders it from Convex; what is missing is every
-   * *other* reader, which is the whole point of carrying these.
+   * Always present on a `blobStore` upload. On a `convex` one, absent when the
+   * blob upload failed or there was no token: the message still sends and Peek
+   * still renders it from Convex; what is missing is every *other* reader,
+   * which is the whole point of carrying these.
    */
   sha256?: string
   mediaUrl?: string
   thumbUrl?: string
   dim?: string
   /**
-   * Why the relay has no copy, when it has none — CON-12.
+   * Why the relay has no copy, when it has none — CON-12. `convex` uploads only.
    *
    * The file still attaches and the message still sends; what is lost is every
    * *other* reader. That consequence has to reach the person **before** they
@@ -49,20 +62,53 @@ export interface UploadedFile {
   shareError?: string
 }
 
+/** Where a composer's attachments go — see the file header. */
+export type UploadDestination = 'convex' | 'blobStore'
+
+const UploadDestinationContext = createContext<UploadDestination>('convex')
+
+/**
+ * Set by a conversation whose messages live only on the relay, around its
+ * composer, its thread panel and its cards' edit boxes, so every attach path
+ * inside it uploads to the blob store alone.
+ */
+export const UploadDestinationProvider = UploadDestinationContext.Provider
+
+/** Whether attaching can succeed here — the attach button and paste read it. */
+export function useCanUpload(): boolean {
+  return useContext(UploadDestinationContext) === 'blobStore' ? hasRelay : hasConvex
+}
+
+type Token = NonNullable<ReturnType<typeof validToken>>
+
+function putBlob(relayUrl: string, token: Token, file: File) {
+  return file.arrayBuffer().then((bytes) =>
+    uploadBlob({
+      relayUrl,
+      bytes,
+      contentType: file.type || undefined,
+      filename: file.name,
+      sign: (unsigned) => signViaEstivaId(unsigned, token.accessToken, token.pubkey),
+      pubkey: token.pubkey,
+    }),
+  )
+}
+
 export function useUploadActions() {
+  const destination = useContext(UploadDestinationContext)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
   const deleteUploadRemote = useMutation(api.messages.deleteUpload)
-  // The client rather than a `useQuery`: the relay origin is wanted once, when
-  // a file is actually uploaded, and a live subscription here would open one in
-  // every component that can attach. A first version used `useQuery` and left
-  // an unhandled cross-realm Event error behind in the full suite — visible
-  // only there, because the file's own tests pass either way.
-  const convex = useConvex()
 
   return {
-    /** Clean up a blob that was uploaded but removed before sending. */
-    deleteUpload(storageId: string) {
-      if (hasConvex) void deleteUploadRemote({ storageId: storageId as never })
+    /**
+     * Clean up a blob that was uploaded but removed before sending.
+     *
+     * Only a Convex copy can be deleted. The blob store has no delete, so a
+     * `blobStore` upload removed before send stays there unreferenced — as the
+     * relay mirror of a `convex` upload always has.
+     */
+    deleteUpload(storageId: string | undefined) {
+      if (hasConvex && storageId) void deleteUploadRemote({ storageId: storageId as never })
     },
 
     /** Upload one file and return its descriptor. Throws with a user-facing
@@ -70,6 +116,27 @@ export function useUploadActions() {
     async uploadFile(file: File): Promise<UploadedFile> {
       const err = validateFile(file)
       if (err) throw new Error(err)
+      const local = {
+        name: file.name,
+        contentType: file.type || '',
+        size: file.size,
+        previewUrl: isImageAttachment(file.name, file.type) ? URL.createObjectURL(file) : undefined,
+      }
+
+      if (destination === 'blobStore') {
+        if (!RELAY_URL) throw new Error('File uploads need the live app.')
+        const token = validToken()
+        if (!token) throw new Error('Sign in again to attach files.')
+        let blob: Awaited<ReturnType<typeof uploadBlob>>
+        try {
+          blob = await putBlob(RELAY_URL, token, file)
+        } catch (error) {
+          console.warn('[nostr] attachment not uploaded to the relay:', error)
+          throw new Error(`Upload failed — ${error instanceof Error ? error.message : String(error)}`)
+        }
+        return { ...local, sha256: blob.sha256, mediaUrl: blob.url, thumbUrl: blob.thumb, dim: blob.dim }
+      }
+
       if (!hasConvex) throw new Error('File uploads need the live app.')
       const uploadUrl = await generateUploadUrl({})
       const res = await fetch(uploadUrl, {
@@ -83,10 +150,10 @@ export function useUploadActions() {
       /*
         And to the relay — CON-12.
 
-        Deliberately **as well as** Convex, not instead of it. Peek renders from
-        its own copy and this change does not touch that; what the relay's copy
-        buys is every other reader. Doing both means a relay that refuses costs
-        nobody their message.
+        Deliberately **as well as** Convex, not instead of it. Peek renders a DM
+        from its own copy and this change does not touch that; what the relay's
+        copy buys is every other reader. Doing both means a relay that refuses
+        costs nobody their message.
 
         Attempted here, at attach time, rather than at send: ingest refuses a
         message whose blob it does not already hold, so the bytes must land
@@ -106,20 +173,12 @@ export function useUploadActions() {
         said a word. So the reason comes back with the file and the chip says
         it — before send, while the person can still act on it.
       */
-      const relayUrl = (await convex.query(api.nostr.config.relayConfig, {}))?.relayUrl
       const token = validToken()
       let blob: Awaited<ReturnType<typeof uploadBlob>> | undefined
       let shareError: string | undefined
-      if (relayUrl && token) {
+      if (RELAY_URL && token) {
         try {
-          blob = await uploadBlob({
-            relayUrl,
-            bytes: await file.arrayBuffer(),
-            contentType: file.type || undefined,
-            filename: file.name,
-            sign: (unsigned) => signViaEstivaId(unsigned, token.accessToken, token.pubkey),
-            pubkey: token.pubkey,
-          })
+          blob = await putBlob(RELAY_URL, token, file)
         } catch (error) {
           shareError = error instanceof Error ? error.message : String(error)
           console.warn('[nostr] attachment not uploaded to the relay:', error)
@@ -130,11 +189,8 @@ export function useUploadActions() {
       }
 
       return {
+        ...local,
         storageId,
-        name: file.name,
-        contentType: file.type || '',
-        size: file.size,
-        previewUrl: isImageAttachment(file.name, file.type) ? URL.createObjectURL(file) : undefined,
         sha256: blob?.sha256,
         mediaUrl: blob?.url,
         thumbUrl: blob?.thumb,

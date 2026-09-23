@@ -11,7 +11,7 @@ import { IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
 import { AttachmentCard, Kbd, Toolbar } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
-import { hasConvex, type HighlightType, type UploadedFile } from '@/api'
+import { useCanUpload, type HighlightType, type UploadedFile } from '@/api'
 import { pastedImages, pendingAttachmentNote } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { AttachFileButton } from './AttachFiles'
@@ -82,6 +82,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const [hasUrgent, setHasUrgent] = useState(false)
   const [hasHighlight, setHasHighlight] = useState(false)
   const uploads = usePendingAttachments()
+  // Fixed for the composer's life: the conversation around it decides it.
+  const canUpload = useCanUpload()
   const composeRef = useRef<HTMLDivElement>(null)
 
   const sendFnRef = useRef(onSend)
@@ -120,7 +122,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
        * pasted link stays a link.
        */
       handlePaste: (_view, event) => {
-        if (!hasConvex) return false
+        if (!canUpload) return false
         const images = pastedImages(event.clipboardData)
         if (images.length === 0) return false
         uploadsRef.current.add(images)

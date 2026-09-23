@@ -12,11 +12,9 @@
  * message is never broken because an attachment failed.
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { useQuery } from 'convex/react'
-import { api } from '../../convex/_generated/api'
 import { validToken } from '@/auth/estivaId'
 import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
-import { hasConvex } from './store'
+import { RELAY_URL, hasRelay } from './relayUrl'
 import {
   applyActionAsViewer,
   fileAddressAsViewer,
@@ -71,12 +69,11 @@ import type {
  * that suits it rather than guessing here.
  */
 export function useRelayViewer() {
-  const config = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
   return useCallback(() => {
-    const relayUrl = config?.relayUrl
+    const relayUrl = RELAY_URL
     const token = validToken()
     return relayUrl && token ? { relayUrl, token } : null
-  }, [config?.relayUrl])
+  }, [])
 }
 
 /**
@@ -393,7 +390,7 @@ export function useForeignObjects() {
  * hook does not flatten them — that flattening is what PEE-10 fixed further
  * down, where "empty" and "you may not read this" had become the same screen.
  *
- * Nothing is asked for at all without a relay and a token (`hasConvex`, the
+ * Nothing is asked for at all without a relay and a token (`hasRelay`, the
  * viewer), so tests, Storybook and no-backend checkouts settle immediately on
  * "resolved to nothing" rather than hanging on a request that cannot be made.
  *
@@ -412,7 +409,7 @@ export function useResolvedReferences(
   const key = references.join('\u0000')
 
   useEffect(() => {
-    if (!hasConvex) return
+    if (!hasRelay) return
     const refs = key ? key.split('\u0000') : []
     if (!refs.length) return
     let cancelled = false
@@ -433,7 +430,7 @@ export function useResolvedReferences(
     render for an answer that was never in doubt. `useWorkspaceDirectory` below
     keeps setState out of its effect for the same reason.
   */
-  if (!hasConvex) {
+  if (!hasRelay) {
     return Object.fromEntries((key ? key.split('\u0000') : []).map((ref) => [ref, null]))
   }
   return objects
@@ -463,11 +460,11 @@ let directoryCache: { at: number; people: People } | null = null
 export function useWorkspaceDirectory(): People | undefined {
   const viewer = useRelayViewer()
   const [people, setPeople] = useState<People | undefined>(() =>
-    hasConvex ? directoryCache?.people : DEMO_DIRECTORY,
+    hasRelay ? directoryCache?.people : DEMO_DIRECTORY,
   )
 
   useEffect(() => {
-    if (!hasConvex || people !== undefined) return
+    if (!hasRelay || people !== undefined) return
     let cancelled = false
     const cached = directoryCache
     // A fresh shared cache is adopted asynchronously — setState stays out of
@@ -596,7 +593,7 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
   useEffect(() => {
     // Nothing to ask, or nowhere to ask it: both are derived states, not
     // fetches. Demo mode has no relay at all.
-    if (!term || !hasConvex) return
+    if (!term || !hasRelay) return
     let cancelled = false
     // Debounced: the relay is a round trip and a launcher fires on every
     // keystroke. 250 ms is short enough to feel live and long enough that
@@ -638,7 +635,7 @@ export function useMessageSearch(query: string): { state: MessageSearchState; hi
   const state: MessageSearchState = !term
     ? { kind: 'idle' }
     : // "No messages matched" would be a claim about a corpus nobody searched.
-      !hasConvex
+      !hasRelay
       ? { kind: 'signed-out' }
       : (fresh?.state ?? { kind: 'searching' })
 

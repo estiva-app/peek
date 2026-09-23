@@ -119,10 +119,16 @@ jobs:
       #
       # It runs before the image build because the image is only an envelope for
       # dist/; building without this produces a bundle pointed at nothing.
+      #
+      # The relay origin is a build-time value since REM-2, and this is where it
+      # is set. It used to be read at runtime from the deployment's
+      # NOSTR_RELAY_URL through `nostr.config.relayConfig`, which made a Convex
+      # outage a relay outage. Not a secret: every published event names it.
       - name: Deploy Convex backend and build frontend
         run: npx convex deploy --cmd 'npm run build'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          VITE_RELAY_URL: https://estiva.estiva.app
 
       - uses: docker/setup-buildx-action@v3
 

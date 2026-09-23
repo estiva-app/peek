@@ -57,6 +57,7 @@ export { useStarred } from '@/api/internal/starred'
 export { useDmVisibility } from '@/api/internal/dmVisibility'
 export { useFollows, type Follows } from '@/api/internal/follows'
 export { PeekDataProvider, hasConvex } from './store'
+export { RELAY_URL, hasRelay } from './relayUrl'
 export { topLevelFolders, useFolderContents, useFolders, type FolderContentsState } from './useFolderContents'
 export {
   useForeignConversation,
