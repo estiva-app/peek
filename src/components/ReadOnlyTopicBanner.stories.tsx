@@ -26,3 +26,8 @@ export const Default: Story = {}
 export const NoAction: Story = {
   args: { onOpenFolder: undefined },
 }
+
+/** In place of a huddle thread's reply composer: huddles are disabled. */
+export const Huddle: Story = {
+  args: { what: 'huddle', onOpenFolder: undefined },
+}

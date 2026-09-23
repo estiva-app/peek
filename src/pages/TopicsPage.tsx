@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
-import { IconMessagePlus, IconLinkOff, IconEdit, IconSortDescending } from '@tabler/icons-react'
+import { IconMessagePlus, IconLinkOff, IconSortDescending } from '@tabler/icons-react'
 import { AppShell } from '@/layouts/AppShell'
 import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
-import { CreateTopicDialog, type StartTopicResult } from '@/components/CreateTopicDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
@@ -13,7 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { useTopicView } from '@/components/views/useTopicView'
 import { FilesPanel } from '@/components/FilesPanel'
 import { useFolderProject } from '@/api/useFolderProject'
-import { hasConvex, useUnread, useTopics, useCreateTopic, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useOpenWorkTopicIds, usePeekActions } from '@/api'
+import { hasConvex, useUnread, useTopics, useDeleteTopic, useIsTopicResolved, useIsTopicMember, useOpenWorkTopicIds, usePeekActions } from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -36,7 +35,6 @@ export function TopicsPage() {
   const { topicId: lastTopicId, setLastTopicId } = useLastSelection()
   const { state: debug } = useDebug()
   const TOPICS = useTopics()
-  const createTopic = useCreateTopic()
   const deleteTopic = useDeleteTopic()
   const isTopicResolved = useIsTopicResolved()
   const isTopicMember = useIsTopicMember()
@@ -49,13 +47,9 @@ export function TopicsPage() {
    *  the header button closes it and the choice holds while you browse. */
   const [folderPanelOpen, setFolderPanelOpen] = useState(true)
   const showUnreads = debug.unreads.topics
-  const [createOpen, setCreateOpen] = useState(false)
-
-  const handleCreateTopic = (data: StartTopicResult) => {
-    setCreateOpen(false)
-    const topicId = createTopic(data.title, data.invitees)
-    navigate(pathForTopic(topicId))
-  }
+  /* No "New topic" here any more (CON-8): a Convex topic takes no writes, so a
+     new one would be a topic nobody can post in. New conversations start as
+     files in a Folder. */
 
   const selectedHuddleId = searchParams.get('huddle')
 
@@ -205,7 +199,6 @@ export function TopicsPage() {
     <EmptyState
       icon={<IconMessagePlus size={16} stroke={1.5} />}
       message="No topics yet."
-      action={{ label: 'New topic', onClick: () => setCreateOpen(true) }}
     />
   ) : TOPICS === undefined ? (
     <div className="flex-1 h-full" />
@@ -231,13 +224,6 @@ export function TopicsPage() {
           onClose={() => setConfirmDeleteId(null)}
         />
       )}
-      {createOpen && (
-        <CreateTopicDialog
-          confirmLabel="Create topic"
-          onConfirm={handleCreateTopic}
-          onCancel={() => setCreateOpen(false)}
-        />
-      )}
       {detailsTopicId && (
         <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
       )}
@@ -255,7 +241,6 @@ export function TopicsPage() {
         }))}
         selectedId={selectedHuddleId ? null : selectedId}
         onSelect={handleSelectTopic}
-        onNewTopic={() => setCreateOpen(true)}
         onDeleteTopic={handleDeleteTopic}
         onOpenDetails={setDetailsTopicId}
         onToggleOpenWork={(id, inOpenWork) => {
@@ -320,7 +305,6 @@ export function TopicsPageView({
   topics,
   selectedId,
   onSelect,
-  onNewTopic,
   onDeleteTopic,
   onOpenDetails,
   onToggleOpenWork,
@@ -334,7 +318,6 @@ export function TopicsPageView({
   topics: TopicListItem[]
   selectedId: string | null
   onSelect: (id: string) => void
-  onNewTopic: () => void
   onDeleteTopic: (id: string) => void
   onOpenDetails: (id: string) => void
   /** The second argument is whether it is in Open work now. */
@@ -395,9 +378,6 @@ export function TopicsPageView({
             <Toolbar aria-label="Topic list actions" surface={false}>
               <ToolbarButton tooltip="Sort by" aria-label="Sort by">
                 <IconSortDescending size={16} stroke={1.5} />
-              </ToolbarButton>
-              <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
-                <IconEdit size={16} stroke={1.5} />
               </ToolbarButton>
             </Toolbar>
           }

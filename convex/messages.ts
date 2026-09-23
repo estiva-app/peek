@@ -488,7 +488,7 @@ export const toggleReaction = mutation({
       m = await ctx.db.get(reply.messageId)
       if (!m) return null
     }
-    refuseTopicWrite(m)
+    refuseReadOnlyWrite(m)
     const you = await viewerOrThrow(ctx)
     const mine = await ctx.db
       .query('reactions')
@@ -531,7 +531,7 @@ export const send = mutation({
     fileAttachments: v.optional(v.array(fileAttachment)),
   },
   handler: async (ctx, { parentKind, parentKey, seedKey, body, highlightType, resolved, resolutionMessage, attachments, fileAttachments }) => {
-    refuseTopicWrite({ parentKind })
+    refuseReadOnlyWrite({ parentKind })
     const you = await viewerOrThrow(ctx)
     let parentId = await resolveParentId(ctx, parentKind, parentKey, you._id)
     // First DM to someone: create the pair's conversation on demand.
@@ -609,19 +609,23 @@ export async function findMessageByKey(
  * mutations. Every write that would change a topic message, a reply under one,
  * or a reaction on either comes through here first, so the census can stay 0.
  *
- * DMs and huddles are untouched — DMS-7 owns the first, and a huddle message
- * has no relay copy at all yet, so refusing it would lose the only one.
+ * Huddles are disabled the same way (Miky, 2026-09-23): nothing about a huddle
+ * is on the relay, so every new huddle message would be Convex's only copy. The
+ * existing ones stay readable; *Huddles* in Ship holds the rebuild. DMs are
+ * untouched — DMS-7 owns them.
  */
 export const TOPIC_READ_ONLY = "topics are read-only: post in the topic's Folder instead"
+export const HUDDLE_DISABLED = 'huddles are disabled until they are rebuilt on the relay'
 
-export function refuseTopicWrite(m: Pick<Doc<'messages'>, 'parentKind'>): void {
+export function refuseReadOnlyWrite(m: Pick<Doc<'messages'>, 'parentKind'>): void {
   if (m.parentKind === 'topic') throw new Error(TOPIC_READ_ONLY)
+  if (m.parentKind === 'huddle') throw new Error(HUDDLE_DISABLED)
 }
 
-/** The same rule for a reply: it is topic content when its parent is. */
-export async function refuseTopicReplyWrite(ctx: QueryCtx | MutationCtx, r: Doc<'replies'>): Promise<void> {
+/** The same rule for a reply: it is read-only content when its parent is. */
+export async function refuseReadOnlyReplyWrite(ctx: QueryCtx | MutationCtx, r: Doc<'replies'>): Promise<void> {
   const parent = await ctx.db.get(r.messageId)
-  if (parent) refuseTopicWrite(parent)
+  if (parent) refuseReadOnlyWrite(parent)
 }
 
 /**
@@ -661,7 +665,7 @@ export const editBody = mutation({
 
     const m = await findMessageByKey(ctx, key)
     if (m) {
-      refuseTopicWrite(m)
+      refuseReadOnlyWrite(m)
       if (m.authorId !== you._id) {
         if (!m.nostrEventId) throw new Error('only the author may edit a message that is not on the relay')
         return { patched: false }
@@ -678,7 +682,7 @@ export const editBody = mutation({
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
     if (!r) return { patched: false }
-    await refuseTopicReplyWrite(ctx, r)
+    await refuseReadOnlyReplyWrite(ctx, r)
     if (r.authorId !== you._id) {
       if (!r.nostrEventId) throw new Error('only the author may edit a reply that is not on the relay')
       return { patched: false }
@@ -747,7 +751,7 @@ export const editFiles = mutation({
 
     const m = await findMessageByKey(ctx, key)
     if (m) {
-      refuseTopicWrite(m)
+      refuseReadOnlyWrite(m)
       if (m.authorId !== you._id) throw new Error("only the author may change a message's files")
       await deleteAttachmentBlobs(ctx, (m.fileAttachments ?? []).filter((f) => !kept.has(fileKey(f))))
       await ctx.db.patch(m._id, { fileAttachments: files })
@@ -761,7 +765,7 @@ export const editFiles = mutation({
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
     if (!r) return
-    await refuseTopicReplyWrite(ctx, r)
+    await refuseReadOnlyReplyWrite(ctx, r)
     if (r.authorId !== you._id) throw new Error("only the author may change a reply's files")
     await deleteAttachmentBlobs(ctx, (r.fileAttachments ?? []).filter((f) => !kept.has(fileKey(f))))
     await ctx.db.patch(r._id, { fileAttachments: files })
@@ -786,7 +790,7 @@ export const setResolution = mutation({
   handler: async (ctx, { key, resolved, resolutionMessage, resolvedByReplyKey, dropReplyPointer }): Promise<Id<'resolutionAssertions'> | null> => {
     const m = await findMessageByKey(ctx, key)
     if (!m) return null
-    refuseTopicWrite(m)
+    refuseReadOnlyWrite(m)
     const you = await viewerOrThrow(ctx)
     const at = Date.now()
 
@@ -832,7 +836,7 @@ export const setHighlight = mutation({
   handler: async (ctx, { key, highlightType: hl }) => {
     const m = await findMessageByKey(ctx, key)
     if (m) {
-      refuseTopicWrite(m)
+      refuseReadOnlyWrite(m)
       await ctx.db.patch(m._id, { highlightType: hl })
       return
     }
@@ -844,7 +848,7 @@ export const setHighlight = mutation({
     const normalized = bySeed ? null : ctx.db.normalizeId('replies', key)
     const r = bySeed ?? (normalized ? await ctx.db.get(normalized) : null)
     if (!r) return
-    await refuseTopicReplyWrite(ctx, r)
+    await refuseReadOnlyReplyWrite(ctx, r)
     await ctx.db.patch(r._id, { highlightType: hl })
   },
 })

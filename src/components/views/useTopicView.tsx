@@ -10,7 +10,6 @@ import { Header } from '@/components/Header'
 import { ReadOnlyTopicBanner } from '@/components/ReadOnlyTopicBanner'
 import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { MembersDialog, type MembersDialogView } from '@/components/MembersDialog'
-import { HuddleCreator } from '@/components/HuddleCreator'
 import { ConversationCard } from '@/components/ConversationCard'
 import { ThreadPanel, ThreadPanelLoading } from '@/components/ThreadPanel'
 import { HuddleCard } from '@/components/HuddleCard'
@@ -219,7 +218,6 @@ export function useTopicView({
   // thread's new-reply state (§4.3).
   useMarkRead('topic', topicId, threadConvId)
   const [selectedHuddleId, setSelectedHuddleId] = useState<string | null>(null)
-  const [isCreatingHuddle, setIsCreatingHuddle] = useState(false)
   /** Members dialog: 'list' from the pill, 'add' from the empty-topic banner. */
   const [membersView, setMembersView] = useState<MembersDialogView | null>(null)
 
@@ -408,25 +406,17 @@ export function useTopicView({
   /*
     Where the composer was — CON-8. A Convex topic takes no more writes; its
     conversation continues on the topic's `30840` file, which the Folder panel
-    lists. Huddle threads keep their composer: a huddle has no relay copy yet.
+    lists. Huddles are disabled too (2026-09-23): nothing of one is on the
+    relay, so a huddle thread reads but takes no reply, and none can be started.
   */
   const readOnlyNotice = (
     <ReadOnlyTopicBanner onOpenFolder={topicFolderId && !folderPanelOpen ? onToggleFolderPanel : undefined} />
   )
+  const huddleNotice = <ReadOnlyTopicBanner what="huddle" />
 
   const handleDelete = (id: string) => {
     if (topicId == null) return
     void actions.deleteTopicMessage(topicId, id).then(({ kept }) => reportDelete('message', kept))
-  }
-
-  // The huddle creator (HuddleCreator) owns its own recipient/query/focus state and
-  // handles Escape + outside-click internally; here we just flip the open flag.
-  const cancelHuddleCreation = () => setIsCreatingHuddle(false)
-
-  const handleCreateHuddle = (recipients: string[], firstMessage: string) => {
-    if (!firstMessage || recipients.length === 0 || topicId == null) return
-    actions.createHuddle(topicId, recipients, firstMessage)
-    setIsCreatingHuddle(false)
   }
 
   const handleDeleteHuddle = (huddleId: string) => {
@@ -442,7 +432,6 @@ export function useTopicView({
     setThreadConvId(null)
     setSelectedHuddleId(null)
     setMembersView(null)
-    cancelHuddleCreation()
   }, [topicId])
 
   /*
@@ -671,7 +660,6 @@ export function useTopicView({
               })
             : undefined)
         }
-        onStartHuddle={() => setIsCreatingHuddle(true)}
         onShowMembers={topicId != null ? () => setMembersView('list') : undefined}
         openWorkAction={
           topicId != null ? (openWorkTopicIds.has(topicId) ? 'remove' : 'add') : undefined
@@ -788,7 +776,6 @@ export function useTopicView({
                         const openHuddle = () => {
                           setSelectedHuddleId(huddle.id)
                           setThreadConvId(threadId)
-                          cancelHuddleCreation()
                         }
                         return (
                           <HuddleCard
@@ -852,17 +839,10 @@ export function useTopicView({
               {!isLoading && <ReactionHorizon omitted={topic?.reactionTargetsOmitted ?? 0} />}
             </div>
           </ScrollArea>
-          {/* V3 only: the topic-header "+ Start huddle" button toggles isCreatingHuddle and
-              flips the read-only banner into the people-picker + first-message creator.
-              V2 uses a portalled dialog (rendered below) and never touches the composer.
-              Huddles still take writes; the topic itself does not (CON-8), so
-              there is no composer here and no Join / New-topic banner inviting
-              a post that cannot be made. */}
-          {isCreatingHuddle ? (
-            <HuddleCreator topicTitle={topicTitle} onCancel={cancelHuddleCreation} onCreate={handleCreateHuddle} />
-          ) : (
-            !isLoading && <div className="p-3">{readOnlyNotice}</div>
-          )}
+          {/* The topic takes no writes (CON-8) and huddles are disabled, so
+              there is no composer, no huddle creator, and no Join / New-topic
+              banner inviting a post that cannot be made. */}
+          {!isLoading && <div className="p-3">{readOnlyNotice}</div>}
         </>
         )
       })()}
@@ -955,7 +935,7 @@ export function useTopicView({
       }
       onClose={closeThread}
       onSendReply={handleSendReply}
-      readOnlyNotice={selectedHuddleId ? undefined : readOnlyNotice}
+      readOnlyNotice={selectedHuddleId ? huddleNotice : readOnlyNotice}
       onDeleteReply={handleDeleteReply}
       onInitialBodyChange={
         selectedHuddleId && threadConvId

@@ -160,6 +160,11 @@ export function topLevelFolders(folders: FolderSummary[]): FolderSummary[] {
   return folders.filter((folder) => folder.hasState && !folder.listedIn?.length)
 }
 
+/** The first wait before reading a failed Folder listing again. */
+export const FOLDERS_RETRY_FIRST_MS = 5_000
+/** The longest wait between re-reads while the listing keeps failing. */
+export const FOLDERS_RETRY_MAX_MS = 60_000
+
 /**
  * Every Folder this viewer can see, for the navigation.
  *
@@ -169,9 +174,20 @@ export function topLevelFolders(folders: FolderSummary[]): FolderSummary[] {
  * budget re-learning a list nobody is looking at. The folder *view* re-reads
  * its own contents, which is where change actually shows up.
  *
- * A failure is an empty list rather than an error: the rest of the navigation
- * is unaffected, and "no folders" is what a signed-out viewer legitimately
- * sees, so the two need not be told apart here.
+ * **A failed read is read again, and never replaces a good one** (FOL-42).
+ * Reading once made a single failure last the whole session, and on production
+ * it did: the listing's second request — the records whose channels it places
+ * under their teams — was refused on one page load, and a project's channel
+ * stayed unplaced, its team's dot dark, until a reload. So a quota refusal is
+ * waited out at the time the relay names (`withRateLimitRetry`), and any other
+ * failure the relay may change its mind about is read again on a backoff, from
+ * {@link FOLDERS_RETRY_FIRST_MS} doubling to {@link FOLDERS_RETRY_MAX_MS}, until
+ * one succeeds. `refused` and `not_a_member` are not retried: they will answer
+ * the same way.
+ *
+ * The first failure is still an empty list rather than an error: the rest of
+ * the navigation is unaffected, and "no folders" is what a signed-out viewer
+ * legitimately sees. A failure after a good read keeps the good one.
  */
 export function useFolders(): {
   /** `null` while the first read is in flight, or when signed out. */
@@ -182,21 +198,36 @@ export function useFolders(): {
   const { listFolders } = useForeignObjects()
   const [folders, setFolders] = useState<FolderSummary[] | null>(null)
   const [signedOut, setSignedOut] = useState(false)
+  /* Consecutive retryable failures. Each one is a new value, so the effect
+     below schedules exactly one re-read per failure, and a success ends it. */
+  const [failures, setFailures] = useState(0)
 
   const load = useCallback(async () => {
     try {
-      const next = await listFolders()
+      const next = await withRateLimitRetry(() => listFolders())
       // `null` is the seam saying "no viewer", which is not an empty workspace.
       setSignedOut(next === null)
       setFolders(next)
-    } catch {
-      setFolders([])
+      setFailures(0)
+    } catch (error: unknown) {
+      const kind = relayFailureKind(error)
+      if (isOutage(kind)) recordReadFailure(kind)
+      console.warn('[nostr] folder listing read failed:', error)
+      setFolders((held) => held ?? [])
+      if (kind === 'unreachable' || kind === 'rate_limited') setFailures((n) => n + 1)
     }
   }, [listFolders])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (failures === 0) return
+    const wait = Math.min(FOLDERS_RETRY_FIRST_MS * 2 ** (failures - 1), FOLDERS_RETRY_MAX_MS)
+    const timer = setTimeout(() => void load(), wait)
+    return () => clearTimeout(timer)
+  }, [failures, load])
 
   return { folders, signedOut, reload: load }
 }
