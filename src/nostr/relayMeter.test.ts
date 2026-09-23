@@ -28,6 +28,11 @@ describe('refusalOf', () => {
     expect(refusalOf(200, '[]')).toBeNull()
     expect(refusalOf(403, '{"error":"restricted: not a member"}')).toBeNull()
   })
+
+  it('never reads an answer as a refusal because of what the events in it say', () => {
+    const events = JSON.stringify([{ kind: 1111, content: 'rate-limited: shared admission unavailable, again' }])
+    expect(refusalOf(200, events)).toBeNull()
+  })
 })
 
 describe('relayReads', () => {
