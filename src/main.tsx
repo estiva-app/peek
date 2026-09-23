@@ -1,7 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
-import { ThemeProvider } from './lib/theme'
 import { DebugProvider } from './lib/debug'
 import { PeekDataProvider } from './api'
 import { AuthGate } from './auth/AuthGate'
@@ -23,34 +22,32 @@ createRoot(document.getElementById('root')!).render(
         fallback's colour is the page's own (`body`, --bg-base in index.css):
         the package's part takes only its room from here. */}
     <ErrorBoundary label="app" fallbackClassName="h-screen flex flex-col">
-      <ThemeProvider>
-        <DebugProvider>
-          <Routes>
-            {/* Outside PeekDataProvider and AuthGate on purpose (PEEK-104). You
-                land here holding a code and nothing else — the gate would bounce
-                you to sign-in mid-exchange, and the exchange is with Estiva ID,
-                so it needs no Convex client. */}
-            <Route path={CALLBACK_PATH} element={<EstivaIdCallback />} />
-            <Route
-              path="*"
-              element={
-                <PeekDataProvider>
-                  <AuthGate>
-                    <LastSelectionProvider>
-                      <ToastProvider>
-                        <TooltipProvider>
-                          <App />
-                        </TooltipProvider>
-                        <Analytics />
-                      </ToastProvider>
-                    </LastSelectionProvider>
-                  </AuthGate>
-                </PeekDataProvider>
-              }
-            />
-          </Routes>
-        </DebugProvider>
-      </ThemeProvider>
+      <DebugProvider>
+        <Routes>
+          {/* Outside PeekDataProvider and AuthGate on purpose (PEEK-104). You
+              land here holding a code and nothing else — the gate would bounce
+              you to sign-in mid-exchange, and the exchange is with Estiva ID,
+              so it needs no Convex client. */}
+          <Route path={CALLBACK_PATH} element={<EstivaIdCallback />} />
+          <Route
+            path="*"
+            element={
+              <PeekDataProvider>
+                <AuthGate>
+                  <LastSelectionProvider>
+                    <ToastProvider>
+                      <TooltipProvider>
+                        <App />
+                      </TooltipProvider>
+                      <Analytics />
+                    </ToastProvider>
+                  </LastSelectionProvider>
+                </AuthGate>
+              </PeekDataProvider>
+            }
+          />
+        </Routes>
+      </DebugProvider>
     </ErrorBoundary>
   </BrowserRouter>,
 )

@@ -1,0 +1,61 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as ConfirmDeleteStories from './ConfirmDelete.stories'
+
+<Meta of={ConfirmDeleteStories} />
+
+# ConfirmDelete
+
+The question asked before a deletion — a message, a reply, a huddle or a topic —
+on the package's `ConfirmDialog` (D56).
+
+**Seen in** — its own two stories, **A message** and **A topic**. What they
+show is Peek's words; the dialog shell itself is the package's `ConfirmDialog`
+and has its stories there.
+
+Until D56, **every Delete in Peek fired on the click** (PEEK-ADOPTION §13.7).
+
+## When
+
+- Before any delete a person can trigger: a message, a reply, a huddle, a topic.
+- Pass `replies` when deleting a message that has them, so the dialog can say
+  what will be left behind.
+
+## When not
+
+- For a destructive action that is not a delete. The words here are specifically
+  about asking a relay to delete something.
+- For a delete that cannot fail and leaves nothing behind. The value of this
+  dialog is the sentence, not the pause.
+- Reaching for the package's `ConfirmDialog` directly. That is the shell; these
+  are the words, and the words are the part that has to be true.
+
+## How
+
+```tsx
+import { ConfirmDelete } from '@/components/ConfirmDelete'
+
+<ConfirmDelete what="message" replies={3} onConfirm={remove} onClose={close} />
+```
+
+- `onConfirm` may return a promise; the dialog waits on it.
+
+## What it owns
+
+- **Words that are true about what happens** (CON-3). Peek *asks* the relay to
+  delete; the relay decides; copies held by other apps are untouched. A dialog
+  promising deletion would be promising something Peek cannot do.
+- **The extra sentence for a topic** — if the relay keeps it, Peek will say so,
+  and other apps can still read it until then.
+- **The count of replies left behind**, with its singular and plural, because
+  replies are separate events and survive the message they hang from.
+- **Escape and ✕ cancel; a press on the backdrop does not** (D20). A misplaced
+  click should not silently dismiss a question about deleting something.
+
+## Props
+
+| | |
+| --- | --- |
+| `what` | `message`, `reply`, `huddle` or `topic` — picks the noun |
+| `replies` | how many replies would be left behind; default 0 |
+| `onConfirm` | may return a promise |
+| `onClose` | required |

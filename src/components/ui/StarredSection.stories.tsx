@@ -9,7 +9,7 @@ const ITEMS: StarredItem[] = [
 ]
 
 const meta = {
-  title: 'Navigation/StarredSection',
+  title: 'Frame/StarredSection',
   component: StarredSection,
   render: args => (
     <div className="w-72">

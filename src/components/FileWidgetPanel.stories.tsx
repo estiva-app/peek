@@ -104,7 +104,7 @@ const MENTION: TopicActivityItem = {
 }
 
 const meta = {
-  title: 'Messages/FileWidgetPanel',
+  title: 'Folders/FileWidgetPanel',
   component: FileWidgetPanel,
   parameters: { layout: 'fullscreen' },
   decorators: [

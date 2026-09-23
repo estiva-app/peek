@@ -1,0 +1,76 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Frame/LastSelectionProvider" />
+
+# LastSelectionProvider
+
+Where you were, and where the next screen should land. It holds the last topic
+and the last person you had open, plus three **one-shot** intentions that a
+link sets and the screen that answers them clears.
+
+**Seen in** — nothing, and it cannot be: it draws no markup at all. It is a
+React context. `Frame/NavRail` and `Frame/AppShell` are the two stories that
+mount it, and what you see there is the rail lighting the row you were last in.
+
+## When
+
+- Wrapping the app, once, in `main.tsx`. There is one of these and it sits
+  above the router, because the whole point is that it outlives the screen that
+  set it.
+- When a link knows *which message* it means but not which screen shows it.
+  `/message/<id>` resolves to an event and a Folder; it cannot resolve Peek's
+  topic id or conversation id, and the topic view can. So `ObjectPage` sets
+  `pendingTopicMessage` and navigates, and the topic view opens the
+  conversation, scrolls to the message and clears the intention (RIC-16). The
+  launcher's message results and a file's comment thread answer the same way
+  (FOL-36, R13).
+- When the rail has to show where you are while you are somewhere else — the
+  Topics row stays lit on the topic you last had open.
+
+## When not
+
+- **For anything that should survive a reload.** This is `useState`, not
+  storage. Close the tab and it is gone, which is correct for "where you just
+  were" and wrong for a preference.
+- **To pass a value down one screen.** A prop does that, and a prop can be seen
+  in a story. Reach for this only when the setter and the reader are on
+  different screens.
+- **To remember more than one thing at a time.** Each one-shot is a single
+  slot. A second intention set before the first is answered replaces it.
+
+## How
+
+```tsx
+// Above the router, once.
+<LastSelectionProvider>
+  <App />
+</LastSelectionProvider>
+
+// Setting an intention from a link that cannot open the screen itself.
+const { setPendingTopicMessage } = useLastSelection()
+setPendingTopicMessage({ folder, eventId, reply })
+navigate(topicPath(folder))
+
+// Answering it — and clearing it, which is not optional.
+const { pendingTopicMessage, setPendingTopicMessage } = useLastSelection()
+useEffect(() => {
+  if (!pendingTopicMessage) return
+  openAndScrollTo(pendingTopicMessage)
+  setPendingTopicMessage(null)
+}, [pendingTopicMessage])
+```
+
+`useLastSelection` throws outside the provider rather than returning a default.
+A silent default here would look like "nothing was selected", which is a state
+the app really has, so the mistake would read as ordinary behaviour.
+
+## What it owns
+
+- **The last topic and the last person** you had open — two ids, nothing more.
+- **Three one-shot intentions**, each a single slot: an unopened DM thread, an
+  unopened topic thread, and a message to scroll to.
+- **The contract that the answering screen clears the slot.** Nothing here
+  expires an intention on its own, so a slot left set will fire again on the
+  next mount of that screen.
+- **Nothing visual.** No markup, no styling, no layout. That is why it has no
+  story and never will.

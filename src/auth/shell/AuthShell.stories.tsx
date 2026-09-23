@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { ThemeProvider } from '@/lib/theme'
 import { AuthShell } from './AuthShell'
 
 /**
@@ -15,14 +14,12 @@ import { AuthShell } from './AuthShell'
  * honest — editing the string here would only make them drift.
  */
 const meta = {
-  title: 'Entry/AuthShell',
+  title: 'Frame/AuthShell',
   component: AuthShell,
   parameters: { layout: 'fullscreen' },
   decorators: [
     Story => (
-      <ThemeProvider>
-        <Story />
-      </ThemeProvider>
+      <Story />
     ),
   ],
   args: {
@@ -32,6 +29,17 @@ const meta = {
 
 export default meta
 type Story = StoryObj<typeof meta>
+
+/**
+ * **The screen people actually see when they are not signed in.**
+ *
+ * Reached after a silent `prompt=none` probe comes back `login_required`. One
+ * affordance, no branding beyond the badge: the thing it must never look like
+ * is a sign-in page for an identity the person already holds.
+ */
+export const NoSession: Story = {
+  args: { state: { phase: 'authenticating', reason: 'no_session' } },
+}
 
 /**
  * The common case, and the one to get right: a boot that resolves before
@@ -45,17 +53,6 @@ export const Checking: Story = {
 /** Deliberately identical to `Checking` — two loading screens for one boot is the bug. */
 export const Entering: Story = {
   args: { state: { phase: 'entering' } },
-}
-
-/**
- * **The screen people actually see when they are not signed in.**
- *
- * Reached after a silent `prompt=none` probe comes back `login_required`. One
- * affordance, no branding beyond the badge: the thing it must never look like
- * is a sign-in page for an identity the person already holds.
- */
-export const NoSession: Story = {
-  args: { state: { phase: 'authenticating', reason: 'no_session' } },
 }
 
 /** The token died mid-session. Same affordance, copy that says what happened. */

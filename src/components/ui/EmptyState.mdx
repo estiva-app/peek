@@ -1,0 +1,54 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Primitives/EmptyState" />
+
+# EmptyState
+
+The package's empty state, carrying Peek's default words when none are given:
+*"No conversation selected"*. That default is the whole of what Peek adds
+(SHA-5, 2026-08-28).
+
+**Seen in** — *Folders/FileThreadView*, *Folders/FileTreeView*,
+*Folders/FolderContentsView*, *Folders/FolderTreeView*, *Messages/ForeignConversationView*,
+*Frame/StarredSection*, *Topics/FilesPanel*, and *To be removed/
+TopicActivity*. It is used in eighteen files; those eight have a story of their
+own, which is where to look at it.
+
+## When
+
+- Any list, panel or pane that can legitimately have nothing in it.
+- `scope="page"` when the empty thing fills the pane — an unselected
+  conversation. `scope="section"` when it is one block inside a page that has
+  other content — an empty ticket list beside a topic.
+
+## When not
+
+- For a read that **failed**. Empty and failed are different sentences, and an
+  error drawn as an empty state tells somebody their work is gone.
+- For a read still **in flight**. That is a skeleton; an empty state that turns
+  into content a moment later reads as a bug.
+- With no `message` when the surface is not a conversation pane. The default
+  words are specifically "No conversation selected" — everywhere else, say what
+  is actually empty.
+
+## How
+
+```tsx
+import { EmptyState } from '@/components/ui/EmptyState'
+
+<EmptyState scope="section" message="No tickets yet" />
+<EmptyState />   {/* only in the conversation pane */}
+```
+
+## What it owns
+
+- **The one default sentence**, so the conversation pane's words live in one
+  place rather than at each of its call sites.
+- **Nothing else.** The icon, the action slot and the two scopes are the
+  package's, and its page is where their rules are written.
+
+## Props
+
+`icon`, `scope` (`page` | `section`), `action`, `message`, `className` — the
+package's `EmptyStateProps`, with `message` made optional so the default can
+apply.

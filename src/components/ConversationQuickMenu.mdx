@@ -1,0 +1,65 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/ConversationQuickMenu" />
+
+# ConversationQuickMenu
+
+The strip that appears on a message when you hover it: React · Reply ·
+Resolve/Reopen · ⋯ — each drawn only when the card offers it.
+
+**Seen in** — *Overlays/Menus*, which stands the strip up on its own, and inside
+*Messages/ConversationCard*, *Messages/ReplyCard* and *Huddles/HuddleCard*,
+where it is what appears on hover.
+
+## When
+
+- On any card that carries a message a person can act on: a conversation, a
+  reply, a huddle.
+- Pass only the handlers that apply. Each button is drawn only when its handler
+  exists, so a card that cannot be replied to simply has no Reply.
+
+## When not
+
+- As a general toolbar. That is the package's `Toolbar`, which this is built on.
+- Drawing your own reaction picker. **The strip owns the picker** (D49, D30):
+  React opens the package's `ReactionPicker` in a popover above the strip, and
+  the card measures nothing and listens for no outside click.
+- Forgetting `onPickerOpenChange` on a card whose own look depends on it. A card
+  needs to keep its strip mounted, and leave a click on the message alone, while
+  the picker is open.
+
+## How
+
+```tsx
+import { ConversationQuickMenu } from '@/components/ConversationQuickMenu'
+
+<ConversationQuickMenu
+  isResolved={conversation.isResolved}
+  onReact={react}
+  onReply={openThread}
+  onResolve={resolve}
+  onPickerOpenChange={setPickerOpen}
+  more={<ConversationMoreMenu trigger={<ToolbarButton …/>} />}
+/>
+```
+
+- `more` is the ⋯ menu itself, not a handler. It owns its own button since
+  `@estiva-app/ui@0.10.0` — hand it a `ToolbarButton` as its trigger so the
+  whole strip stays **one Tab stop** (D29).
+
+## What it owns
+
+- **Which of Resolve and Reopen is shown**, from `isResolved`, so no call site
+  decides that twice.
+- **The reaction palette and its words** — the five emoji Peek offers, in Peek's
+  order, each with its meaning, read from the same map `Reaction` uses.
+- **Being one Tab stop with arrow keys along it** (§4.2, D29), which is the
+  package's `Toolbar` doing its job.
+- **The box itself.** This file used to draw its own, and two cards had re-typed
+  that class string (Peek scan F7).
+
+## Props
+
+Every handler is optional and each draws its button. `isResolved` picks between
+Resolve and Reopen. `more` is the menu element. `onPickerOpenChange` reports the
+reaction picker opening and closing.

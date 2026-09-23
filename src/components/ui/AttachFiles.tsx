@@ -23,14 +23,23 @@ import type { EditAttachmentChip } from '@/lib/useEditAttachments'
  * build has none, and an action is offered only where it can succeed. That is
  * also why it returns null rather than rendering disabled: there is nothing
  * to explain to somebody who will never have the option.
+ *
+ * **Storybook is the exception** (UIG-17, 2026-09-22). It has no storage
+ * either, so every composer was photographed with a hole where its paperclip
+ * goes — a picture of a toolbar that does not exist in the app. There it draws
+ * and does nothing, which is what Katerina asked for: *"show the iconbutton in
+ * the composer, without it working of course."* Nothing is faked to manage it —
+ * the picker simply is not rendered, so `inputRef.current` is null and the
+ * click is already a no-op.
  */
 export function AttachFileButton({ onPick }: { onPick: (files: File[]) => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  if (!hasConvex) return null
+  const drawOnly = !hasConvex && Boolean(import.meta.env.STORYBOOK)
+  if (!hasConvex && !drawOnly) return null
   return (
     <>
       {/* Clears itself, so the same file can be re-picked; calls onPick only when something was chosen. */}
-      <FilePicker ref={inputRef} multiple accept={FILE_ACCEPT_ATTR} onPick={onPick} />
+      {!drawOnly && <FilePicker ref={inputRef} multiple accept={FILE_ACCEPT_ATTR} onPick={onPick} />}
       <ToolbarButton tooltip="Attach file" aria-label="Attach file" onClick={() => inputRef.current?.click()}>
         <IconPaperclip size={16} stroke={1.5} />
       </ToolbarButton>

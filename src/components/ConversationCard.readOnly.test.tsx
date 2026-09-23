@@ -13,7 +13,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider, type ReactionData } from '@/api'
 import { ConversationCard } from './ConversationCard'
-import { ThreadReplyCard } from './ThreadReplyCard'
+import { ReplyCard } from './ReplyCard'
 
 function hover(node: React.ReactElement) {
   const { container } = render(
@@ -52,13 +52,13 @@ describe('a read-only message card', () => {
 
 describe('a read-only reply card', () => {
   it('draws no hover menu', () => {
-    hover(<ThreadReplyCard authorName="You" timestamp="10:24" body="Mine." readOnly />)
+    hover(<ReplyCard authorName="You" timestamp="10:24" body="Mine." readOnly />)
     expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
   })
 
   it('does not toggle a reaction', () => {
     const onReactionsChange = vi.fn()
-    hover(<ThreadReplyCard authorName="You" timestamp="10:24" body="Mine." reactions={reactions} onReactionsChange={onReactionsChange} readOnly />)
+    hover(<ReplyCard authorName="You" timestamp="10:24" body="Mine." reactions={reactions} onReactionsChange={onReactionsChange} readOnly />)
     fireEvent.click(screen.getByText('👍'))
     expect(onReactionsChange).not.toHaveBeenCalled()
   })

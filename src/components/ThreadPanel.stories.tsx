@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { REPLIES } from '@/api/fixtures'
 import type { ConversationData } from '@/api'
-import { ThreadPanel } from './ThreadPanel'
+import { ThreadPanel, ThreadPanelLoading } from './ThreadPanel'
 
 const conversation: ConversationData = {
   id: 't1_c1',
@@ -14,8 +14,10 @@ const conversation: ConversationData = {
 
 const replies = REPLIES['t1_c1']
 
+const noop = () => {}
+
 const meta = {
-  title: 'Messages/ThreadPanel',
+  title: 'Frame/ThreadPanel',
   component: ThreadPanel,
   parameters: { layout: 'fullscreen' },
   decorators: [
@@ -54,11 +56,21 @@ export const Resolved: Story = {
   args: { isResolved: true },
 }
 
-/** Huddle thread — lock icon + member pill in the header. */
+/**
+ * Huddle thread — lock icon + member pill in the header, and the button that
+ * jumps to the matching DM.
+ *
+ * That button is drawn only when a caller hands over `onOpenInDm`, which is
+ * the huddle side and nothing else. No story passed it, so it had never been
+ * drawn (23 September). `openInDmHref` comes with it on purpose: it is a real
+ * link, so a modified click opens the DM in a new tab (UIG-14, 4.13).
+ */
 export const Huddle: Story = {
   args: {
     huddleMembers: ['You', 'Daniel Stanton', 'Juan Foley'],
     huddleMemberCount: 3,
+    onOpenInDm: noop,
+    openInDmHref: '/app/people/alice',
   },
 }
 
@@ -75,4 +87,19 @@ export const PromotedLongTitle: Story = {
       dateLabel: 'Today',
     },
   },
+}
+
+/**
+ * **The panel while the thread you switched to is still arriving.**
+ *
+ * `ThreadPanelLoading`, which had no story at all until UIG-17. It is not a
+ * nicety: rendering `null` through that beat tears the column down and reads
+ * as the thread closing and reopening — and on a deployed build the beat
+ * happens on *every* switch, because remote-only messages have no local copy.
+ *
+ * Same chrome as the real panel, and the skeleton waits 200ms, so a fast
+ * switch shows nothing at all.
+ */
+export const Loading: StoryObj = {
+  render: () => <ThreadPanelLoading onClose={() => {}} />,
 }

@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { MemoryRouter } from 'react-router-dom'
-import { ThemeProvider } from '@/lib/theme'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
@@ -27,21 +26,19 @@ function ListPanel() {
 }
 
 const meta = {
-  title: 'Navigation/AppShell',
+  title: 'Frame/AppShell',
   component: AppShell,
   parameters: { layout: 'fullscreen' },
   decorators: [
     Story => (
       <MemoryRouter initialEntries={['/people']}>
-        <ThemeProvider>
-          <DebugProvider>
-            <PeekDataProvider>
-              <LastSelectionProvider>
-                <Story />
-              </LastSelectionProvider>
-            </PeekDataProvider>
-          </DebugProvider>
-        </ThemeProvider>
+        <DebugProvider>
+          <PeekDataProvider>
+            <LastSelectionProvider>
+              <Story />
+            </LastSelectionProvider>
+          </PeekDataProvider>
+        </DebugProvider>
       </MemoryRouter>
     ),
   ],

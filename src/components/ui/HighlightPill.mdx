@@ -1,0 +1,51 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as HighlightPillStories from './HighlightPill.stories'
+
+<Meta of={HighlightPillStories} />
+
+# HighlightPill
+
+The small label naming a message's highlight — Insight, Question, Decision —
+with its colour square in front.
+
+<Canvas of={HighlightPillStories.Default} />
+
+<Canvas of={HighlightPillStories.AllTypes} />
+
+## When
+
+- On a message that carries a highlight: in a conversation card, in a reply, and
+  on the pinned message at the top of a topic.
+
+## When not
+
+- In a menu, where the name is already written beside it. There you want the
+  square alone — `HighlightSwatch`, in this same file.
+- To *set* a highlight. This says what one is; `HighlightButton` is what changes
+  it.
+
+## How
+
+```tsx
+import { HighlightPill } from '@/components/ui/HighlightPill'
+
+<HighlightPill type={message.highlightType} />
+```
+
+- `type` is a `HighlightType`. There is no "none" — a message without a
+  highlight draws no pill, and that is the caller's condition, not this one's.
+
+## What it owns
+
+- **The label and the colour, both looked up rather than passed.** `HIGHLIGHT_META`
+  gives the word and `HIGHLIGHT_FILL_CLASSES` the square's fill, so no call site
+  writes either, and renaming a highlight changes one map.
+- **Surviving a tight row.** `whitespace-nowrap` and `shrink-0`: a pill in a
+  conversation header is the thing that would otherwise be squeezed into two
+  lines or clipped.
+- **The Signal voice** for the word — mono, small, semibold, wide tracking —
+  applied through `signal:` variants rather than at each call site.
+
+## Props
+
+<Controls of={HighlightPillStories.Default} />

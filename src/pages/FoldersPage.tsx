@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import {
   IconArrowUpRight,
   IconBell,
@@ -163,104 +163,20 @@ export function FoldersPage() {
   */
   return (
     <>
-    <AppShell
-      leftPanel={
-        <ListColumn
-          title="Folders"
-          collapsed={railClosed}
-          /*
-            Three actions in the header, and the create row is gone from above
-            the list (Miky, FOL-41) — the Topics column's shape (`TopicsPage`),
-            which is what this column replaces. One strip: one Tab stop, arrows
-            along it (UIG-14). Absent when signed out, because all three of them
-            act as somebody.
-          */
-          actions={
-            !signedOut && (
-              <Toolbar aria-label="Folder list actions" surface={false}>
-                <ToolbarButton
-                  tooltip="New folder"
-                  aria-label="New folder"
-                  onClick={() => setCreatingFolder(true)}
-                >
-                  <IconFolderPlus size={16} stroke={1.5} />
-                </ToolbarButton>
-                <ToolbarButton
-                  tooltip="New topic"
-                  aria-label="New topic"
-                  onClick={() => setStartingTopic({ choose: true })}
-                >
-                  <IconEdit size={16} stroke={1.5} />
-                </ToolbarButton>
-                <Menu
-                  align="right"
-                  trigger={
-                    /*
-                      Pressed while anything but `All` is chosen: the tree is
-                      hiding Folders, and nothing else on screen says so — a
-                      person who filters, navigates away and comes back would
-                      otherwise read a short column as a small workspace.
-                    */
-                    <ToolbarButton tooltip="Filter" aria-label="Filter folders" pressed={filter !== 'all'}>
-                      <IconFilter size={16} stroke={1.5} />
-                    </ToolbarButton>
-                  }
-                >
-                  {TREE_FILTERS.map((option) => (
-                    <MenuItem
-                      key={option.value}
-                      label={option.label}
-                      selected={filter === option.value}
-                      onClick={() => setFilter(option.value)}
-                    />
-                  ))}
-                </Menu>
-              </Toolbar>
-            )
-          }
-        >
-          {/*
-            Three states, not two. "Not signed in", "still loading" and "there
-            are genuinely none" are different sentences, and the first version
-            of this page told a signed-out viewer "No folders yet" about a
-            workspace holding eighty-one of them.
-          */}
-          {/*
-            The list scrolls, and it is the package's bar (D40). It had none at
-            all: `AppShell`'s list panel was `overflow-hidden`, so a workspace
-            of eighty-one Folders simply had the ones past the fold clipped
-            away, with nothing to scroll (Katerina, 2026-09-11). Step 6 could
-            not have caught it — that sweep converted regions that already had
-            a native bar, and a column that should scroll and never did has
-            none to find. The package's `ListColumn` scrolls its rows itself
-            now, with the insets every list column in Peek shares (UIG-14, N9).
-
-            The list column of a two-column page, so its empties are sections
-            (D51): the line alone, left, no icon. Loading is a skeleton, not a
-            sentence (§4.7).
-          */}
-          {/*
-            The same tree the Topics column draws (FOL-21), so the two rail
-            items navigate the same way: a Folder is a fold over its first
-            level, the one open on the right starts open, and a row opens its
-            file in three panes. The body rather than `FolderTree` because this
-            page already holds the Folder list — it re-reads it after a
-            create, a rename and a delete — and the create form sits between
-            the header and the list.
-          */}
-          <FolderTreeView
-            folders={topLevel}
-            signedOut={signedOut}
-            unread={teamUnread}
-            followed={teamFollowed}
-            filter={filter}
-            currentFolder={id}
-            onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
-            onOpenFolder={(folder) => navigate(folderPath(folder))}
-          />
-        </ListColumn>
-      }
-      rightPanel={
+      <FoldersPageView
+        railClosed={railClosed}
+        signedOut={signedOut}
+        folders={topLevel}
+        unread={teamUnread}
+        followed={teamFollowed}
+        filter={filter}
+        onFilterChange={setFilter}
+        onNewFolder={() => setCreatingFolder(true)}
+        onNewTopic={() => setStartingTopic({ choose: true })}
+        currentFolder={id}
+        onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
+        onOpenFolder={(folder: string) => navigate(folderPath(folder))}
+        rightPanel={
         id ? (
           <div className="flex h-full flex-col">
             {/*
@@ -394,17 +310,8 @@ export function FoldersPage() {
         ) : (
           <EmptyState message="Select a folder." />
         )
-      }
-      /*
-        No third pane here any more. A file's conversation is a page of its own
-        — `/topic/<address>`, FOL-19 — because a pane on this page could only
-        ever show a file this listing holds, and the files people most want to
-        open are the ones it does not: a Ship issue is its project's child,
-        resolved by address rather than found among peers. The three panes moved
-        wholesale to `FilePage`, which is why this one lost its conversation
-        rather than gaining a second way in.
-      */
-    />
+        }
+      />
 <>
           {creatingFolder && (
             <CreateFolderDialog onClose={() => setCreatingFolder(false)} onCreate={create} />
@@ -522,3 +429,134 @@ export function FoldersPage() {
   )
 }
 
+
+
+/**
+ * The Folders page's body, handed everything it draws — the half a story can
+ * show (UIG-17). `FoldersPage` above reads, creates, renames and routes; this
+ * one only draws, and takes the pane beside the list as a node.
+ *
+ * No third pane here any more. A file's conversation is a page of its own —
+ * `/topic/<address>`, FOL-19 — because a pane on this page could only ever show
+ * a file this listing holds, and the files people most want to open are the
+ * ones it does not: a Ship issue is its project's child, resolved by address
+ * rather than found among peers. The three panes moved wholesale to `FilePage`,
+ * which is why this one lost its conversation rather than gaining a second way
+ * in.
+ */
+export function FoldersPageView({
+  railClosed,
+  signedOut,
+  folders,
+  unread,
+  followed,
+  filter,
+  onFilterChange,
+  onNewFolder,
+  onNewTopic,
+  currentFolder,
+  onSelect,
+  onOpenFolder,
+  rightPanel,
+}: {
+  railClosed: boolean
+  /** Nobody is signed in. A different sentence from "still loading". */
+  signedOut: boolean
+  /** `null` while the first read is in flight, or when signed out. */
+  folders: ComponentProps<typeof FolderTreeView>['folders']
+  unread: ComponentProps<typeof FolderTreeView>['unread']
+  followed: ComponentProps<typeof FolderTreeView>['followed']
+  filter: TreeFilter
+  onFilterChange: (next: TreeFilter) => void
+  onNewFolder: () => void
+  onNewTopic: () => void
+  currentFolder?: string | null
+  onSelect: ComponentProps<typeof FolderTreeView>['onSelect']
+  onOpenFolder: ComponentProps<typeof FolderTreeView>['onOpenFolder']
+  rightPanel?: ReactNode
+}) {
+  return (
+    <AppShell
+      leftPanel={
+        <ListColumn
+          title="Folders"
+          collapsed={railClosed}
+          /*
+            Three actions in the header, and the create row is gone from above
+            the list (Miky, FOL-41) — the Topics column's shape (`TopicsPage`),
+            which is what this column replaces. One strip: one Tab stop, arrows
+            along it (UIG-14). Absent when signed out, because all three of them
+            act as somebody.
+          */
+          actions={
+            !signedOut && (
+              <Toolbar aria-label="Folder list actions" surface={false}>
+                <ToolbarButton tooltip="New folder" aria-label="New folder" onClick={onNewFolder}>
+                  <IconFolderPlus size={16} stroke={1.5} />
+                </ToolbarButton>
+                <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
+                  <IconEdit size={16} stroke={1.5} />
+                </ToolbarButton>
+                <Menu
+                  align="right"
+                  trigger={
+                    /*
+                      Pressed while anything but `All` is chosen: the tree is
+                      hiding Folders, and nothing else on screen says so — a
+                      person who filters, navigates away and comes back would
+                      otherwise read a short column as a small workspace.
+                    */
+                    <ToolbarButton tooltip="Filter" aria-label="Filter folders" pressed={filter !== 'all'}>
+                      <IconFilter size={16} stroke={1.5} />
+                    </ToolbarButton>
+                  }
+                >
+                  {TREE_FILTERS.map((option) => (
+                    <MenuItem
+                      key={option.value}
+                      label={option.label}
+                      selected={filter === option.value}
+                      onClick={() => onFilterChange(option.value)}
+                    />
+                  ))}
+                </Menu>
+              </Toolbar>
+            )
+          }
+        >
+          {/*
+            The same tree the Topics column draws (FOL-21), so the two rail
+            items navigate the same way: a Folder is a fold over its first
+            level, the one open on the right starts open, and a row opens its
+            file in three panes. The body rather than `FolderTree` because the
+            page above already holds the Folder list — it re-reads it after a
+            create, a rename and a delete.
+
+            Three states, not two: "not signed in", "still loading" and "there
+            are genuinely none" are different sentences, and the first version
+            of this page told a signed-out viewer "No folders yet" about a
+            workspace holding eighty-one of them.
+
+            The list scrolls, and it is the package's bar (D40). It had none at
+            all: `AppShell`'s list panel was `overflow-hidden`, so a workspace
+            of eighty-one Folders simply had the ones past the fold clipped
+            away, with nothing to scroll (Katerina, 2026-09-11). The package's
+            `ListColumn` scrolls its rows itself now, with the insets every list
+            column in Peek shares (UIG-14, N9).
+          */}
+          <FolderTreeView
+            folders={folders}
+            signedOut={signedOut}
+            unread={unread}
+            followed={followed}
+            filter={filter}
+            currentFolder={currentFolder}
+            onSelect={onSelect}
+            onOpenFolder={onOpenFolder}
+          />
+        </ListColumn>
+      }
+      rightPanel={rightPanel}
+    />
+  )
+}

@@ -1,0 +1,69 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Writing & text/Composer/AttachFileButton" />
+
+# AttachFileButton
+
+The paperclip, with the file picker it needs to mean anything.
+
+**Seen in** — *Writing & text/Composer/ComposeBox*, and the two message-edit boxes in
+*Messages/ConversationCard* and *Messages/ReplyCard*. In Storybook it
+draws but does nothing; see below.
+
+## When
+
+- In any box that can hold a file: the composer, and both edit boxes.
+- Together with `AttachmentChips`, which draws what the picker returns. The two
+  were written as a pair, in one file, for one reason — see below.
+
+## When not
+
+- Where uploads cannot succeed. It decides that for itself: without file
+  storage it returns **null** rather than rendering disabled, because there is
+  nothing to explain to somebody who will never have the option.
+- Wrapping it in your own storage check. That check is inside it.
+
+## How
+
+```tsx
+import { AttachFileButton, AttachmentChips } from '@/components/ui/AttachFiles'
+
+<Toolbar>
+  <AttachFileButton onPick={uploads.add} />
+</Toolbar>
+<AttachmentChips chips={uploads.chips} />
+```
+
+- `onPick` is called only when something was actually chosen. The input clears
+  itself, so the same file can be picked again.
+
+## What it owns
+
+- **Deciding whether to exist**, from whether there is anywhere to put a file.
+- **The picker that makes it mean something**, so no call site wires up a hidden
+  file input.
+- **Clearing the input after a pick**, which is what lets somebody re-attach the
+  same file after removing it.
+
+## In Storybook it draws, and does nothing
+
+Storybook has no file storage either, so this used to return null there — and
+every composer was photographed with a hole where its paperclip goes, which is
+a picture of a toolbar that does not exist in the app. Inside Storybook it now
+draws. Nothing is faked to manage that: the picker simply is not rendered, so
+there is nothing for the click to open (UIG-17, Katerina's call of 22
+September — *"show the iconbutton in the composer, without it working of
+course"*).
+
+## Why this and AttachmentChips share a file
+
+The composer had both written inline, and the two message-edit boxes had a
+paperclip with **no handler behind it at all** (COMPONENTS-PEEK F3, "ten
+controls render and do nothing"). Rather than write the working version twice
+more, the pair lives here once and all three call it.
+
+## Props
+
+| | |
+| --- | --- |
+| `onPick` | required — receives the chosen `File[]` |

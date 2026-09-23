@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { PersonRow } from './PersonRow'
 
 const meta = {
-  title: 'Navigation/PersonRow',
+  title: 'Frame/PersonRow',
   component: PersonRow,
   args: {
     name: 'Alice Johnson',

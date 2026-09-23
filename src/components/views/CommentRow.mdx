@@ -1,0 +1,61 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as CommentRowStories from './CommentRow.stories'
+
+<Meta of={CommentRowStories} />
+
+# CommentRow
+
+One comment, owned by whichever app wrote it — the row that the conversation
+pane and the thread pane both draw.
+
+<Canvas of={CommentRowStories.Default} />
+
+## When
+
+- For a comment on another app's object: a Ship issue, a file, anything Peek is
+  showing but does not own.
+- In **both** panes. A reply and the comment it answers have to be the same
+  object on screen — they are the same kind of thing, and drawing them
+  differently would say they are not. That is why FOL-19 lifted this out of
+  `ForeignConversationView` unchanged.
+
+## When not
+
+- For Peek's own message. That is `ReplyCard`, which is a tiptap editor,
+  reactions, attachments, resolutions and deletion — **none of which applies to
+  a comment this viewer cannot edit.** Offering those controls would be offering
+  actions that cannot succeed.
+- Putting a control in the header's right edge when it belongs to the message.
+  `below` is where what a message *has* goes, indented with the body; `actions`
+  is for what you can do to it, on the name's line. A thread belongs to the
+  message it hangs from, so it goes below (FOL-25).
+
+## How
+
+```tsx
+import { CommentRow } from '@/components/views/CommentRow'
+
+<CommentRow
+  comment={comment}
+  people={object.people}
+  actions={<ReplyButton />}
+  below={<ThreadSummary />}
+/>
+```
+
+- `comment` only needs an id, an author, a body and a `createdAt` in nostr
+  seconds. Both panes' own shapes already satisfy that.
+- `people` is absent in the states where nothing resolved, and the row then
+  renders shortened keys rather than failing.
+
+## What it owns
+
+- **Reusing `MessageBody`**, which is the part that genuinely is shared: the
+  body, its inline marks, and any `nostr:naddr…` it references.
+- **The two slots and what each means** — `actions` on the name's line for what
+  you can do, `below` under the body for what the message has.
+- **Falling back to a shortened key** when nobody has published a name.
+
+## Props
+
+<Controls of={CommentRowStories.Default} />

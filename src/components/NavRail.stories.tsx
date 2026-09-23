@@ -4,7 +4,7 @@ import { LastSelectionProvider } from '@/lib/lastSelection'
 import { NavRail } from './NavRail'
 
 const meta = {
-  title: 'Navigation/NavRail',
+  title: 'Frame/NavRail',
   component: NavRail,
   parameters: { layout: 'fullscreen' },
   decorators: [

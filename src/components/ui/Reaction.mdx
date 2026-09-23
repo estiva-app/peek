@@ -1,0 +1,74 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/Reaction" />
+
+# Reaction
+
+The package's reaction pill, plus the two things only Peek knows: which emoji it
+offers and what each one means, and how it says who reacted.
+
+**Seen in** — *Messages/ConversationCard* → **With reactions**, which draws both
+states side by side: the 🙏 is somebody else's and the 🚀 is the reader's own,
+pressed. Also *Messages/ReplyCard*. Those are both the places it is
+used.
+
+## When
+
+- Under a message or a reply, one per emoji that somebody has used.
+- `owner="yours"` when the reader is one of the reactors. That reaches assistive
+  technology as a pressed toggle, not merely as a different colour.
+
+## When not
+
+- To *offer* a reaction. This draws one that exists; the picker is its own
+  thing.
+- With an emoji outside `REACTION_NAMES`. It will render, but the hover label
+  and the accessible name fall back to the raw character, and a reaction nobody
+  can name is a reaction nobody can search for.
+- Importing `Reaction` from `@estiva-app/ui` directly. That one has no
+  vocabulary and no tooltip, and the call sites here speak Peek's words.
+
+## How
+
+```tsx
+import { Reaction } from '@/components/ui/Reaction'
+
+<Reaction emoji="🙏" count={3} owner="yours" names={reactorNames} onClick={toggle} />
+```
+
+- `names` is the reactors in reaction order, with the reader as "You". Without
+  it the label degrades to the reaction's name alone, which is what the static
+  fixtures get.
+
+## What it owns
+
+- **The vocabulary.** Five emoji with a meaning each — Makes sense, Agree, Thank
+  you, Let's go!, Congrats — in one map that the picker and the pill both read.
+- **The hover sentence**, built here: "Ana, Ben and You reacted with Thank you",
+  including the comma-and joining.
+- **The accessible name.** The emoji is decorative and the count is the only
+  visible text, so an unnamed control is announced as a bare number. Peek holds
+  the names, so Peek supplies it.
+- **Translating `owner` into `pressed`.** Peek's call sites say whose reaction it
+  is; the package says whether the toggle is on. That translation is the whole
+  reason this is a wrapper rather than a re-export.
+
+## A note on where this came from
+
+This file used to be the fork that UI-RULES §1 names by example: a hand-rolled
+button re-typing Chip's classes with a border added, written because nothing in
+the package could be a pill with a count that toggles. `@estiva-app/ui@0.7.0`
+added `Reaction`, and the drawing became the package's. What stayed is what only
+Peek knows — which is §6's rule working as intended: the app file shrinks rather
+than disappearing.
+
+## Props
+
+| | |
+| --- | --- |
+| `emoji` | required |
+| `count` | required |
+| `owner` | `yours` or `others`, default `others` |
+| `names` | reactors in order, reader as "You" |
+| `onClick` | toggles |
+| `className` | passed through |

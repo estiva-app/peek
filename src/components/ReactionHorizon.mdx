@@ -1,0 +1,65 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as ReactionHorizonStories from './ReactionHorizon.stories'
+
+<Meta of={ReactionHorizonStories} />
+
+# ReactionHorizon
+
+A quiet line under a conversation saying how many older messages' reactions were
+never checked — the reaction horizon, said out loud (SPEC §6.6, PEE-21).
+
+<Canvas of={ReactionHorizonStories.Fourteen} />
+
+Reactions are fetched addressed by target, and Peek asks about a fixed number of
+messages and replies per container. Past that cap, **a message with reactions
+looks exactly like a message nobody reacted to** — which is why §6.6 makes
+reporting the cap a MUST rather than a SHOULD.
+
+## When
+
+- Once per container, under the stream, whenever the last sync recorded that it
+  skipped some.
+- `container="topic"` under a topic, `container="conversation"` under a direct
+  message. A DM has its own cap since DMS-5, so the line has to be able to name
+  which it is talking about.
+
+## When not
+
+- As a warning. Nothing went wrong and there is nothing for the reader to do,
+  so it is the caption voice, not a `Banner` and not an error tone.
+- Behind your own zero check. At `omitted` of zero or less it draws nothing.
+- Per message. It is one line for the whole container; a note on each affected
+  message would be noise about something nobody can act on.
+
+## How
+
+```tsx
+import { ReactionHorizon } from '@/components/ReactionHorizon'
+
+<ReactionHorizon omitted={topic.reactionsOmitted} />
+<ReactionHorizon omitted={dm.reactionsOmitted} container="conversation" />
+```
+
+- `omitted` is what the last sync recorded on the container — `importChannel`
+  counts it, `topics.list` carries a topic's and `syncPlan` a DM's.
+
+## What it owns
+
+- **The wording, including the plural.** "one was" against "ones were", and the
+  cap read from `REACTION_TARGET_LIMIT` rather than typed into the sentence.
+- **Saying "older" without saying how the budget split.** Each side keeps its
+  newest, so "older" is true whichever way it went, and how it went is the
+  sync's business rather than the reader's.
+- **Matching Ship.** Ship draws the same line under an issue's thread from the
+  same two tokens, so somebody using both apps reads one explanation rather than
+  two.
+
+## A note on why this exists before it is needed
+
+On this workspace the cap has never been hit — the busiest container holds 77
+against a cap of 100. That is precisely the argument for the line existing now:
+the day it starts mattering, it is already there and already honest.
+
+## Props
+
+<Controls of={ReactionHorizonStories.Fourteen} />

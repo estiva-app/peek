@@ -178,8 +178,10 @@
  *
  * The shared tokens — every colour, the type ramp, radii, shadows — come from
  * @estiva-app/ui (`tokens.css`, imported above; SHA-5, 2026-08-28), value for
- * value what used to be here. Peek itself only ever renders Signal (see
- * `src/lib/theme.tsx`); `light` is the base every other theme overrides and
+ * value what used to be here. Peek itself only ever renders Signal — the
+ * `dark signal` classes sit on `<html>` in `index.html`, applied before the
+ * first paint rather than by a provider (UIG-17, 2026-09-22). `light` is the
+ * base every other theme overrides and
  * the palette the Estiva ID theme uses in Storybook. What remains in this
  * block is Peek's alone: the huddle register, the summary highlight, the
  * wordmark.

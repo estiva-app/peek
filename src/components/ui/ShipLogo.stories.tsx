@@ -10,7 +10,6 @@ import { ShipLogoMark } from './ShipLogo'
 const meta = {
   title: 'Primitives/ShipLogo',
   component: ShipLogoMark,
-  parameters: { layout: 'centered' },
   argTypes: { height: { control: { type: 'range', min: 16, max: 96, step: 4 } } },
 } satisfies Meta<typeof ShipLogoMark>
 

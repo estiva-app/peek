@@ -15,9 +15,11 @@ import { filterFilesItems, type FilesMenuItem } from './ui/filesMenuItems'
 import { MentionMenu } from './ui/MentionMenu'
 
 /**
- * Every menu Peek opens, on one page — the shape `Overlays/Dialogs` uses, and
- * the one Katerina asked for on 20 September. Each is the package's `Menu` or
- * `Popover` with Peek's rows in it.
+ * Every menu Peek opens, on one page. The dialogs went the other way on 23
+ * September — each to its own entry, under the place in the app it belongs to —
+ * and the menus stayed together, because a menu is a list of Peek's words and
+ * what is worth comparing is one list against the next. Each is the package's
+ * `Menu` or `Popover` with Peek's rows in it.
  */
 const meta = {
   title: 'Overlays/Menus',
@@ -63,6 +65,10 @@ function topicMore(props: Partial<ComponentProps<typeof TopicMoreMenu>>) {
         onOpenDetails={noop}
         onToggleOpenWork={noop}
         onDeleteTopic={noop}
+        /* Two more rows the app passes and no story did, so neither had ever
+           been drawn: Copy link, and Rename (23 September). */
+        onCopyLink={noop}
+        onRename={noop}
         openWorkAction="add"
         {...props}
       />
@@ -217,7 +223,6 @@ export const ConversationQuickBothStates: Story = {
  * open the menu (it portals so it can escape the Desk panel's clip).
  */
 export const ScreenerLater: Story = {
-  parameters: { layout: 'centered' },
   render: () => <ScreenerLaterMenu onPick={noop} />,
 }
 

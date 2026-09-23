@@ -1,0 +1,74 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Writing & text/Composer/SelectionToolbar" />
+
+# SelectionToolbar
+
+Bold, italic, underline and link, over text you have already selected
+(PEE-18, PEE-19).
+
+**Not drawn at rest in any story, and it cannot be.** It appears only after a
+real selection has stood still for 250ms in a real editor, and jsdom cannot
+select. Every editor story — *Writing & text/Composer/ComposeBox*,
+*Messages/ConversationCard* (editing), *Messages/ReplyCard* — will show
+it if you select a few words inside the box yourself. That is the honest
+instruction; a story that faked it would be a picture of something that does
+not happen.
+
+## When
+
+- Inside any Peek editor. It mounts itself with the editor and decides for
+  itself when to appear.
+
+## When not
+
+- In the `/` menu. Typing `/` replaces the selection, so by definition there is
+  nothing selected to apply a mark to. That is why these four are not there.
+- As a general floating toolbar. Its position arithmetic exists to centre it
+  over a text selection, which is not a shape anything else has.
+
+## How
+
+```tsx
+import { SelectionToolbar } from '@/components/ui/SelectionToolbar'
+
+<SelectionToolbar editor={editor} />
+```
+
+- `editor` is the Tiptap editor, or `null` before it exists. That is the whole
+  API: there is nothing to configure and nothing to place.
+
+## What it owns
+
+- **Two faces.** `marks` is the row of four buttons. `link` is a single text
+  field for the address — no open, no embed, no delete button. Katerina's call
+  on 7 September: the field is the whole control.
+- **What applies the address.** Enter, and clicking away — anywhere outside the
+  toolbar, the editor included. Enter on an empty field removes the link;
+  clicking away with an empty field changes nothing, because removing is
+  deliberate and leaving is not. Escape drops what was typed and puts the caret
+  back.
+- **Waiting before it shows.** Appearing on every selection change put the
+  toolbar under the pointer mid-drag and made it blink on a plain click —
+  ProseMirror restores the previous selection when the editor takes focus and
+  collapses it a tick later, so there is a real, non-empty range in between.
+  Both go away by refusing to appear while the pointer is down, and re-reading
+  the selection after it settles rather than trusting the event.
+- **Keeping the caret.** The chrome is the package's anchored `Popover`, not a
+  `Menu`: a menu takes roving focus and typeahead, which would fight the link
+  field this panel exists for. A popover takes no focus, so the caret stays in
+  the text.
+
+## One thing it is waiting on
+
+It is *centred* over the selection — Katerina's design, after Linear — and the
+package's `Popover` aligns left or right only. Base UI has `center`; the package
+does not expose it yet (ADOPTION **B21**). Until it does, this file keeps its own
+hand-measured size box and placement arithmetic. When `align="center"` arrives,
+all three go and the anchor becomes the selection's own rectangle.
+
+## Props
+
+| | |
+| --- | --- |
+| `editor` | required — the Tiptap editor, or `null` |

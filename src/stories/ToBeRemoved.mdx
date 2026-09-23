@@ -1,0 +1,66 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="To be removed/Why these are here" />
+
+# To be removed
+
+Stories that are on their way out wait here until they are deleted, instead of
+disappearing inside somebody else's pull request. Katerina's idea, 22 September
+2026: a thing waiting to go should be visible, not quietly rotting where it is.
+
+**Two different things wait here, and the table says which.** Most are
+components that stay — the app still draws them, and only the *story* is
+parked, because Katerina wanted to look at the picture again before deciding.
+One, `JoinTopicBanner`, is dead code: nothing in the app uses it, and it is
+here to be **deleted**, not to be reconsidered.
+
+The distinction matters when you clear this heading. Parking a story changes
+nothing a person can see; deleting the component changes the app. Read the
+**Why** column before you act on a row.
+
+## The rule
+
+Nothing goes under this heading without **a ticket number and the date it went
+in**, both written in the row below. A heading with no rule becomes a junk
+drawer, and a junk drawer is somewhere to lose things rather than somewhere to
+find them.
+
+It sorts last, under everything of Peek's own.
+
+## What is parked, and why
+
+| Story | Ticket | Parked | Why |
+| --- | --- | --- | --- |
+| `TopicActivity` | UIG-17 | 2026-09-22 | Her review, 22 September. |
+| `AttachmentChips` | UIG-17 | 2026-09-22 | Her review, 22 September. **See the cost below.** |
+| `HighlightButton` | UIG-17 | 2026-09-22 | Her review, 22 September. |
+| `ReadStatePanel` | UIG-17 | 2026-09-22 | A developer's readout, not a design. It was the only thing under a `Diagnostics` heading, which is gone with it. |
+| `JoinTopicBanner` | UIG-17 | 2026-09-23 | **Going, not parked — the component too.** Unused since CON-8: `ReadOnlyTopicBanner` took its place in `useTopicView`, and nothing else drew it. Katerina's call, 23 September. |
+
+## One cost, flagged rather than buried
+
+Parking `AttachmentChips` takes away the **only** picture anywhere of three
+things: a file part-way through uploading, a file that failed, and the line
+*"Other apps won't see this"*.
+
+Those three states have not been drawn anywhere else. They should come back
+inside the `ComposeBox` story rather than stay lost — that is not done yet.
+
+## Deleted outright, not parked
+
+`Layouts/App` and its `PeekApp` harness went on 22 September rather than waiting
+here, because Katerina asked for them to go now. They were the whole running app
+on three routes — Desk, Topics and People — fed by the invented data, which is
+the thing being got rid of; and being live, each could only ever show the one
+state the seed data put it in.
+
+Peek therefore has **no page-level stories at all** until Ship's shape replaces
+them: a presentational View fed a fixture, dropped into the shell, with a
+loading state beside it. That work is in this same pull request.
+
+`EditedMarker`'s story went on 23 September, and the component did not. Katerina
+ruled that a standalone primitive showing three words beside a time says nothing
+on an empty canvas: the marker is drawn where it means something, in
+*Messages/ConversationCard* → **Edited** and *Messages/ReplyCard* → **Edited**,
+and its rule page points at both. The same ruling ended its candidacy for the
+package.

@@ -1,0 +1,57 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as ThreadPanelStories from './ThreadPanel.stories'
+
+<Meta of={ThreadPanelStories} />
+
+# ThreadPanel
+
+The replies column beside a conversation: the first message at the top, the
+replies and the resolve history below it, and a box to write a reply.
+
+<Canvas of={ThreadPanelStories.Default} />
+
+## When
+
+- As the third column, when a conversation's thread is open.
+- For a topic, a direct message, a file thread or a huddle. The header adapts;
+  the panel does not change.
+
+## When not
+
+- While the conversation it is about is still arriving. That is
+  `ThreadPanelLoading`, in this same file, and the difference matters — see its
+  page.
+- For the main conversation list. This is the *replies* to one message.
+
+## How
+
+```tsx
+import { ThreadPanel } from '@/components/ThreadPanel'
+
+<ThreadPanel
+  conversation={conversation}
+  replies={replies}
+  sentReplies={pending}
+  isResolved={conversation.isResolved}
+  onClose={closeThread}
+/>
+```
+
+## What it owns
+
+- **Resolve history as a timeline, not a banner.** Katerina's ruling of 28 July:
+  bullets sitting chronologically among the replies, and the *full* history, so
+  resolve → reopen → resolve reads as a sequence. Consecutive events share one
+  block with a connecting line between the dots.
+- **That the bullets line up with the avatars.** The dot column mirrors the
+  reply cards' 40px avatar column, and the connector runs at 19.5px — the same
+  axis — with each disc masking it.
+- **Where a promotion divider falls**, through `partitionRepliesAroundPromotion`,
+  so replies written before a conversation became a topic sit above the line and
+  later ones below.
+- **Registering itself as the active conversation**, so what arrives while you
+  are reading lands in the right place.
+
+## Props
+
+<Controls of={ThreadPanelStories.Default} />

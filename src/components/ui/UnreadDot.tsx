@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
  * one replaces the other.
  *
  * This was the same two lines in four files — `PersonRow`, `ConversationCard`,
- * `ThreadReplyCard`, `HuddleCard` — before the Folder listing needed a fifth
+ * `ReplyCard`, `HuddleCard` — before the Folder listing needed a fifth
  * (FOL-16), which is the moment UI-RULES §1 says it is a component. The package
  * has nothing for it yet; when it does, this file becomes a re-export.
  *

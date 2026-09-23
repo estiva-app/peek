@@ -7,7 +7,7 @@
  * path asks — what is the list now.
  *
  * It exists as a hook, rather than as state in a card, because there are two
- * edit boxes (`ConversationCard` and `ThreadReplyCard`) and they are already
+ * edit boxes (`ConversationCard` and `ReplyCard`) and they are already
  * the same file written twice (COMPONENTS-PEEK F4). One hook and one chip row
  * is the version of this that does not make F4 worse.
  *

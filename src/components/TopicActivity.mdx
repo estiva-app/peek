@@ -1,0 +1,63 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as TopicActivityStories from './TopicActivity.stories'
+
+<Meta of={TopicActivityStories} />
+
+# TopicActivity
+
+The conversations of files *related* to this topic — the second list beside the
+stream (CON-9).
+
+<Canvas of={TopicActivityStories.Default} />
+
+## When
+
+- Beside a topic that has a Folder, for threads that belong to a different file
+  in it.
+
+## When not
+
+- For the topic's own conversation. That stays in the stream.
+
+## The one rule that decides which list a thread lands in
+
+**Identity merges; relation aggregates.**
+
+A topic and the project in its Folder are the *same file*, so the project's own
+comments stay in the stream. A comment on one of that project's **tickets** is a
+different file's conversation, and aggregates here.
+
+## Why the stream got quieter, and why that is the point
+
+Ship publishes a comment into the project's Folder, which **is** this topic's
+channel — that is "one container, many projections" working, and it is how every
+issue comment ever written has arrived in Peek. It arrived as an ordinary
+message, indistinguishable from somebody talking in the topic.
+
+Measured against production on 6 September 2026: **422 of 453 threads, 93%**.
+
+## How
+
+```tsx
+import { TopicActivity } from '@/components/TopicActivity'
+
+<TopicActivity items={activity} labelFor={labels} onOpenThread={openThread} />
+```
+
+## What it owns
+
+- **The words.** *"Mentioned in"* is SPEC §6.4's own phrase, kept rather than
+  reworded, so the app and the spec say the same thing.
+- **Naming the file each thread belongs to**, which is the whole difference
+  between this list and the stream.
+- **Routing on a click**, which is why any story that draws it needs a router —
+  two Files-panel stories were throwing for exactly that reason until UIG-17.
+
+## A note on its stories
+
+Parked under *To be removed* by Katerina's review of 22 September. The component
+stays.
+
+## Props
+
+<Controls of={TopicActivityStories.Default} />

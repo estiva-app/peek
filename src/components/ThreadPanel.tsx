@@ -4,7 +4,7 @@ import { Chip, ScrollArea } from '@estiva-app/ui'
 import { RouterLink } from './RouterLink'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
-import { ThreadReplyCard } from './ThreadReplyCard'
+import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { DateDivider } from './ui/DateDivider'
@@ -152,13 +152,13 @@ interface ThreadPanelProps {
   /** DM thread participants - shows You + the other person in the header pill */
   dmMembers?: string[]
   /** Reactions on the initial (pinned) message — needed when the panel renders the initial as a
-   *  ThreadReplyCard (huddle case) so reactions added on this side persist & mirror to the DM side. */
+   *  ReplyCard (huddle case) so reactions added on this side persist & mirror to the DM side. */
   initialReactions?: ReactionData[]
   onInitialReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   /** Highlight on the initial message — same purpose as reactions: mirror across DM and huddle. */
   initialHighlightType?: HighlightType
   onInitialHighlightChange?: (highlightType: HighlightType | undefined) => void
-  /** Id of the reply (if any) that triggered the parent's resolution. The matching ThreadReplyCard
+  /** Id of the reply (if any) that triggered the parent's resolution. The matching ReplyCard
    *  surfaces the resolution inline in edit mode so the user can update or remove it from the reply. */
   resolvedByReplyId?: string
   /** Current resolution message on the parent conv. Forwarded to the resolution-owning reply card. */
@@ -431,7 +431,7 @@ export function ThreadPanel({
         <div className="px-4 pt-4 pb-2" data-reply-id={conversation.id}>
           {huddleMemberCount != null ? (
             /* Huddle: show full message like a reply */
-            <ThreadReplyCard
+            <ReplyCard
               authorName={conversation.authorName}
               authorAvatarSrc={conversation.authorAvatarSrc}
               timestamp={rootTimestamp}
@@ -474,7 +474,7 @@ export function ThreadPanel({
               const reply = row.reply
               return (
                 <div key={reply.id} data-reply-id={reply.id}>
-                  <ThreadReplyCard
+                  <ReplyCard
                     authorName={reply.authorName}
                     authorAvatarSrc={reply.authorAvatarSrc}
                     timestamp={reply.timestamp}

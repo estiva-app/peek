@@ -2,62 +2,107 @@ import { Meta } from '@storybook/addon-docs/blocks'
 
 <Meta title="Docs/Introduction" />
 
-# Peek — Component Library
+# Peek
 
-This is the living component reference for **Peek**, the team-communication app
-(DMs, Topics, Huddles, Screener, Desk). Every component is documented here with
-its variants and states. Use the **Theme** toolbar (☾) to check light and dark —
-Peek is token-driven and **pixel-perfect**, so both must always look right.
+The Storybook for **Peek** — the app's own screens, and the parts they are built
+from.
 
-New here? Start with the colors, type, radius, and shadows every component is
-built from: **Docs → Design Tokens** in the package's Storybook (`npm run
-storybook` in estiva-ui, http://localhost:6008). Peek does not keep a copy of
-that page; a copy drifts from the tokens it describes. Peek's own few colours
-(the huddle register, the wordmark, the Summary highlight) are listed in
-`tailwind.config.js`.
+**The shared parts are not here.** `Button`, `Avatar`, `Chip`, `Tooltip`,
+`Dialog` and the rest belong to `@estiva-app/ui`, and their stories live in that
+package's Storybook — `npm run storybook` in `estiva-ui`,
+[http://localhost:6008](http://localhost:6008). Peek forwards twenty of them
+under its own names, and a forward gets no story here: a second story of the
+same part is a second thing to keep true.
 
-## How the sidebar is organized
+What *is* here is Peek's own — the conversation surface, topics, huddles, the
+screener and the desk, the frame, and the parts built for them.
 
-Generic building blocks sit at the top; everything else is grouped by the
-**product area** it belongs to (not by its source folder):
+Of everything Peek owns, **47 parts worth reusing** carry a written rule beside
+them: what it is, when to use it, when not to, how, and what it owns. The rest
+are one-offs, and a one-off keeps a purpose line and nothing more. That number
+is checked against the catalogue — if it is wrong here, `gates:status` says so.
+
+## One theme
+
+Peek ships one theme, **Signal**, and cannot switch it at runtime. So there is
+no theme picker. A component seen in any other theme would be a component in a
+state nobody can reach.
+
+Checking a *shared* part across themes is the package's Storybook's job, and it
+has the picker. (Katerina, 11 September 2026 — D58.)
+
+## The six rules
+
+These are the whole of how this sidebar is arranged. Katerina ruled them on 23
+September, after a review that found three different ideas of what a heading
+meant, all running at once.
+
+1. **One principle, stated here.** In an app, a heading is **a place in the
+   product**. In `@estiva-app/ui` a heading is a *kind of part*, because that is
+   a library. Never the two in one sidebar.
+2. **Three levels, never four** — Group / Component / Story. One source file
+   that exports several parts is still one entry.
+3. **An entry is its component's name**, in PascalCase. Plain English only for
+   a page that is not a component — this one, *In the shell*, *Why these are
+   here*.
+4. **Headings in a written order, everything inside them alphabetical.** The
+   order is a decision and lives in `.storybook/preview.tsx`. What sits inside
+   a heading is not a decision, so it sorts itself.
+5. **Docs first, then whole screens, then the parts.** Someone new reads
+   downwards: what this is, what it builds, what it is built from.
+6. **A status group is allowed, and carries a ticket and a date.** That is
+   *To be removed*, and nothing enters it without both.
+
+## Where things live
 
 | Section | What lives here |
 |---|---|
-| **Docs** | This intro and the Signal theme specimens. |
-| **Primitives** | Generic, reusable atoms — Button, IconButton, Avatar, Chip, Tooltip, Divider, DateDivider. |
-| **Feedback** | System/status surfaces — EmptyState, Toast. |
-| **Inputs** | Form controls — SearchInput, PersonChipInput. |
-| **Messages** | The conversation surface — ConversationCard, ThreadReplyCard, MessageBody, PinnedMessage, Reaction, ConversationHeader, ThreadPanel, plus **Composer** (ComposeBox, Mention/Files menus) and **Menus** (More/Quick/ReactionPicker). |
-| **Topics** | Topic domain — TopicState, HighlightPill, TopicMenu, CreateTopicDialog, ResolveDialog, NewTopicBanner. |
-| **Huddles** | HuddleCard, HuddleCreator (V3/inline only). |
-| **Screener & Desk** | Triage surfaces — ScreenerSection, ScreenerItem, StarredSection. |
-| **Navigation** | App frame + sidebar — AppShell, TopBar, NavRail/NavItem, PersonRow, SectionHeader, ContainerHeader, DebugMenu. |
+| **Docs** | This page. |
+| **Pages** | Peek's six screens, each a presentational view fed a fixture and dropped into the shell. |
+| **Frame** | Everything that wraps a screen — AppShell, AuthShell, Header, NavRail, PersonRow, StarredSection, ThreadPanel — and the two providers that sit above them all, which draw nothing and say so. |
+| **Primitives** | Peek's own atoms, and the package parts it uses often enough to have a rule of its own about — DateDivider, EditedMarker, UnreadDot, the two logos, Avatar, Person, EmptyState. |
+| **Messages** | The conversation surface — cards, replies, pinned messages, the reference widgets under **ForeignObject**. |
+| **Writing & text** | The body, what renders it, and the **Composer** you write it in. |
+| **Topics** | The topic domain — state, highlights, banners, reactions, the files panel, and every dialog a topic opens. |
+| **Folders** | The file and folder screens, the panels beside them, and the dialogs that make, move and describe a file. |
+| **Huddles** | The inline huddle card and the inline creator. The grid variant is V1/V2 and is not storied. |
+| **Screener & Desk** | The triage surfaces, and the picker that adds to Open work. |
+| **Overlays** | What is *not* about one place: the command launcher, the delete question, and every menu on one sheet. |
+| **To be removed** | A story on its way out, with the ticket and the date it was parked. Read that page before adding to it. |
+| **Estiva ID** | Another product's account screens, loaded from the `estiva-id` checkout beside this one. Closed by default. |
 
-## Conventions
+## How a story is written here
 
-- **CSF3, colocated.** Stories live next to their component as `X.stories.tsx`.
-  One story per meaningful variant axis, plus an `AllVariants` matrix where the
-  axes are enumerable. Exemplar: **Primitives/Button**.
-- **Tokens only.** Reuse existing primitives (Avatar / Chip / ListRow…); never
-  re-hand-roll markup or use raw hex. See the package's **Design Tokens**.
-- **Both themes.** Check every story in light *and* dark via the toolbar.
-- **Autodocs.** Each component has a **Docs** tab generated from its JSDoc and
-  `argTypes`.
+- **Beside its component**, as `X.stories.tsx`. CSF3.
+- **The first story is the picture.** The ordinary state, never a spinner —
+  everything that links to a component links to its first story.
+- **One story per state**, not per prop. A person reads states; the props table
+  already lists props.
+- **No real data.** Everything a story shows is invented for it.
+- **Peek's use, not the package's.** A part that wraps something from
+  `@estiva-app/ui` is shown in its place — inside the row, the card or the panel
+  it belongs to — rather than documented a second time.
+- **The story is args, not markup.** A story names its `component` and hands it
+  `args`; a wrapper every story needs is a decorator on the meta. Composition
+  written into a `render` is markup living in a story file, which is the thing
+  these pages exist to stop.
+- **A part that means nothing alone is drawn where it means something.**
+  `EditedMarker` is three words beside a time: its page draws the message that
+  carries them rather than an empty canvas.
 
-## Scope
+## What every story is already inside
 
-- **Huddles: V3 (inline) only** — `HuddleCard variant="inStream"`, the inline
-  huddle creator, the header start-huddle button, ThreadPanel huddle mode. V1/V2
-  grid/dialog/timeline surfaces are intentionally not storied.
-- **The command launcher is storied** (`Launcher/…`) — Ship and Peek as apps,
-  with object-creating actions drawn as forms (the Intelligence modal's first
-  half; publishing waits for the projection runtime). FigmaFindPanel was
-  removed with the mock third-party apps (2026-08-31). Still parked:
-  SelectionToolbar, agent rows, Figma attachments.
+The preview mounts what the app mounts, so a component deep in a tree finds what
+it reaches for:
 
-## Data & providers
+```
+DebugProvider → PeekDataProvider → TopicStoreProvider
+```
 
-Story data comes from the **`@/api`** data-access seam and purpose-built
-fixtures. Provider combinations (`MemoryRouter`, `TopicMutationsProvider`,
-`ThemeProvider`, `DebugProvider`, `LastSelectionProvider`) are applied through
-shared decorators, not inlined per story.
+Without them, 67 of 316 stories were silent error pages — measured, not
+guessed, on 1 September 2026. They are coming back out one story at a time, as
+each story learns to take props instead.
+
+`VITE_CONVEX_URL` is pinned to empty, so the data seam takes its static path
+rather than subscribing to queries that never resolve without a signed-in
+session.

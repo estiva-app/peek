@@ -1,0 +1,62 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as FolderTreeStories from './FolderTreeView.stories'
+
+<Meta of={FolderTreeStories} />
+
+# FolderTreeView
+
+The Folders column's body, handed everything it draws — the half of `FolderTree`
+a story can show.
+
+<Canvas of={FolderTreeStories.Folded} />
+
+## When
+
+- Whenever you want the Folders column without the data layer: a story, a test,
+  a page that has already done its own read.
+- Alongside `FolderTree` in the app, which is this plus the reading and the
+  routing.
+
+## When not
+
+- In the app, directly. `FolderTree` is the one that reads and navigates; this
+  one has no router and would not take you anywhere.
+- Expecting two states. **There are three**, and they are not
+  interchangeable: signed out, still loading, and there are none. `folders` is
+  `null` for the first two, which is why `signedOut` is a separate flag rather
+  than something to infer.
+
+<Canvas of={FolderTreeStories.SignedOut} />
+
+## How
+
+```tsx
+import { FolderTreeView } from '@/components/views/FolderTree'
+
+<FolderTreeView
+  folders={folders}
+  signedOut={false}
+  unread={unreadByFolder}
+  currentFolder={openFolderId}
+  onSelect={openFile}
+  onOpenFolder={openFolder}
+/>
+```
+
+- `unread` is one dot per Folder id (FOL-18). **A missing key means unjudged,
+  not read** — the two are different, and a component that treated them the same
+  would quietly mark things read.
+
+## What it owns
+
+- **Telling the three empty states apart**, and saying a different sentence for
+  each.
+- **The union dot per folder**, so a folder shows something new when anything
+  inside it does.
+- **Being the presentational half at all.** It is the split Ship's `Pages`
+  pattern needs everywhere and that Peek's six pages still lack — this column is
+  one of the few places Peek already has it.
+
+## Props
+
+<Controls of={FolderTreeStories.Folded} />

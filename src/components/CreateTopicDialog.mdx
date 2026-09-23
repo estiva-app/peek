@@ -1,0 +1,65 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as CreateTopicDialogStories from './CreateTopicDialog.stories'
+
+<Meta of={CreateTopicDialogStories} />
+
+# CreateTopicDialog
+
+The Start topic dialog: a title, people to invite, and a privacy note when a
+direct message is being turned into a private huddle.
+
+**Seen in** — its own three stories, **Empty**, **Prefilled** and **From a
+DM**. What they show is Peek's words and its two fields; the dialog shell
+itself is the package's and has its stories there.
+
+## When
+
+- Starting a topic from the topics page.
+- Promoting a message into a topic, with `defaultTitle` set from the message.
+- Turning a direct message into a private huddle — pass `dmContext` with the
+  participants, and the privacy note appears.
+
+## When not
+
+- Without `dmContext` when a DM is the origin. The note is the only thing that
+  tells somebody the conversation is about to change who can see it, and that
+  is not a detail to leave out.
+- For any other "name this thing" dialog. The invitee field and the privacy note
+  are the component; a bare title prompt is the package's `Dialog` with a
+  `Field`.
+
+## How
+
+```tsx
+import { CreateTopicDialog } from '@/components/CreateTopicDialog'
+
+<CreateTopicDialog
+  defaultTitle={message.body.slice(0, 60)}
+  dmContext={{ participants }}
+  confirmLabel="Start huddle"
+  onConfirm={start}
+  onCancel={close}
+/>
+```
+
+- `onConfirm` receives the title and the chosen `Person[]`.
+
+## What it owns
+
+- **That a title is required and whitespace is not a title.** Confirm stays
+  unavailable until `title.trim()` has something in it.
+- **The privacy note's condition** — drawn from `dmContext`, not from a flag a
+  caller could forget to set correctly.
+- **The people field being Peek's**, through `PersonChipInput`, so the same
+  faces and the same directory appear here as everywhere else.
+
+## Props
+
+| | |
+| --- | --- |
+| `defaultTitle` | prefills the title |
+| `defaultInvitees` | prefills the people |
+| `dmContext` | the participants; its presence draws the privacy note |
+| `confirmLabel` | default "Start topic" |
+| `onConfirm` | receives title and invitees |
+| `onCancel` | required |

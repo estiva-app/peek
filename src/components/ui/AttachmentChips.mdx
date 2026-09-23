@@ -1,0 +1,59 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as AttachmentChipsStories from './AttachmentChips.stories'
+
+<Meta of={AttachmentChipsStories} />
+
+# AttachmentChips
+
+The files under a message you are writing or editing, in the order they were
+attached.
+
+<Canvas of={AttachmentChipsStories.MessageFiles} />
+
+<Canvas of={AttachmentChipsStories.Mixed} />
+
+## When
+
+- Under the text in any box that can hold a file: the composer, and the two
+  message-edit boxes.
+- Always with the whole chip list. Each chip carries its own remove handler, so
+  the caller passes the list and nothing else.
+
+## When not
+
+- For a file that is already sent. These are *pending* — every card is drawn
+  with `pending`, which is what gives it its progress and its remove control.
+- With an empty list as a way of drawing an empty state. It renders nothing at
+  zero, deliberately.
+
+## How
+
+```tsx
+import { AttachmentChips } from '@/components/ui/AttachFiles'
+
+<AttachmentChips chips={uploads.chips} />
+```
+
+- Each chip is an `EditAttachmentChip`: a key, a name, a size, a content type,
+  a preview URL and its own `onRemove`.
+
+## What it owns
+
+- **The three states a pending file can be in** — uploading, failed, and
+  "other apps won't see this" — through `pendingAttachmentNote`, which turns a
+  chip's status into the note the card shows. These three are the **only**
+  place in Peek those states are drawn.
+- **Drawing nothing at zero**, so no call site guards it.
+- **The order**, which is the order they were attached and nothing else.
+
+## A note on its stories
+
+These stories are parked under *To be removed* by Katerina's review of 22
+September. The component stays. Parking them does lose the only picture of a
+file mid-upload, a failed file and the "other apps won't see this" line — which
+is flagged on the *To be removed* page, and the intent is that they come back
+inside the `ComposeBox` story rather than stay lost.
+
+## Props
+
+<Controls of={AttachmentChipsStories.MessageFiles} />

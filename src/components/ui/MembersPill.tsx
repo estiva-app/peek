@@ -6,7 +6,7 @@ import { Button } from './Button'
  * Who is in this conversation: up to three faces and the total, in a small
  * outlined pill.
  *
- * **One pill, two headers** (COMPONENTS-PEEK F12). `ConversationHeader` drew
+ * **One pill, two headers** (COMPONENTS-PEEK F12). `Header` drew
  * this and `ThreadPanel` re-typed it, down to the `pl-[2px] pr-2 py-[2px]` — and
  * the copy had drifted: it stacked its own faces in `size-6 rounded-sm
  * overflow-hidden border-2` boxes, which is the shape the package's

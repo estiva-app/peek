@@ -43,7 +43,7 @@ const ITEMS: TopicActivityItem[] = [
 ]
 
 const meta = {
-  title: 'Messages/FileActivityPanel',
+  title: 'Folders/FileActivityPanel',
   component: FileActivityPanelView,
   parameters: { layout: 'fullscreen' },
   decorators: [

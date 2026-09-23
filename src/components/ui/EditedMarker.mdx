@@ -1,0 +1,71 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as ConversationCardStories from '../ConversationCard.stories'
+import * as ReplyCardStories from '../ReplyCard.stories'
+
+<Meta title="Primitives/EditedMarker" />
+
+# EditedMarker
+
+"(edited)" beside a message's time — the marker RFC 0.4 §7.2.1 requires
+(CON-8). It is not decoration: it is the half of the edit contract that the
+reader sees.
+
+**Seen in** — *Messages/ConversationCard* → **Edited**, and
+*Messages/ReplyCard* → **Edited**. It has no story of its own, at Katerina's
+word on 23 September: three words beside a time mean nothing on an empty
+canvas, and everything in the message that carries them.
+
+<Canvas of={ConversationCardStories.Edited} />
+
+The same marker on a reply.
+
+<Canvas of={ReplyCardStories.Edited} />
+
+An edit on the relay is a `kind:40003` that every reader folds newest-wins. What
+makes that safe is that the reader is **told**. A body that silently changed
+under a reply written against the old text misattributes the reply.
+
+## When
+
+- Beside the time on any card that draws a message body — a conversation, a
+  reply, anything that arrives from the relay or from Peek's own store. Which
+  store the body came from makes no difference; that is why this is a part of
+  its own rather than a line inside one card.
+
+## When not
+
+- Behind a condition of your own. It draws nothing when `editedAt` is absent,
+  so `{message.editedAt && <EditedMarker .../>}` is a guard that repeats what
+  the component already does.
+- To show *when* something was edited in the layout. The time is in the tooltip
+  on purpose, so the message header stays one line.
+
+## How
+
+```tsx
+import { EditedMarker } from '@/components/ui/EditedMarker'
+
+<div className="flex items-baseline gap-1.5">
+  <time>{timestamp}</time>
+  <EditedMarker editedAt={message.editedAt} />
+</div>
+```
+
+- `editedAt` is a millisecond timestamp, or `undefined` when the message has
+  never been edited.
+
+## What it owns
+
+- **Drawing nothing when there was no edit**, so no call site needs a
+  conditional.
+- **The wording and the tooltip split** — "(edited)" inline, `Edited {time}` on
+  hover. One line in the header, the detail on demand.
+- **`shrink-0`**, so the marker is never the thing a tight header squeezes.
+
+## A note on where this lives
+
+It was the one part of Peek's the catalogue put forward for `@estiva-app/ui`.
+**Katerina ruled on 23 September that it is not promoted** — it stays Peek's,
+and it stops being a candidate. The component is unchanged and every edited
+message still carries it; what went is its standalone story, because a marker
+is only itself inside the message it marks.

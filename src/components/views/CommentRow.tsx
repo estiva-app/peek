@@ -23,7 +23,7 @@ export interface DrawableComment {
  * and the comment it answers must be the same object on screen: they are the
  * same kind of thing, and drawing them differently would say they are not.
  *
- * **Not `ThreadReplyCard`.** That component is Peek's own message — a tiptap
+ * **Not `ReplyCard`.** That component is Peek's own message — a tiptap
  * editor, reactions, attachments, resolutions, deletion. None of it applies to
  * a comment owned by another app, which this viewer cannot edit here and should
  * not be offered controls for ("only offer actions that can succeed"). So this

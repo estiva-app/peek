@@ -78,17 +78,8 @@ export function ObjectPage() {
     }
   }, [ref, placeForReference, setPendingTopicMessage])
 
-  // The page's own frame: a flex column the height of the window, so the
-  // page-scope empty state fills it as a flex child and centres (D46) — it
-  // used to sit near the top under a padding of its own.
-  if (state === 'looking') return <div className="flex min-h-screen flex-col"><EmptyState message="Opening…" /></div>
-  if (state === 'unopenable') {
-    return (
-      <div className="flex min-h-screen flex-col">
-        <EmptyState message="That link does not point at anything Peek can open." />
-      </div>
-    )
-  }
+  if (state === 'looking') return <ObjectPageView state="looking" />
+  if (state === 'unopenable') return <ObjectPageView state="unopenable" />
   /*
     A file opens at its own address — `/topic/<address>`, FOL-19.
 
@@ -112,4 +103,36 @@ export function ObjectPage() {
   // `/topic-old/<uuid>` without a slug: TopicsPage canonicalises the URL once the
   // topic resolves and it knows the title, exactly as it does for a legacy link.
   return <Navigate to={`/topic-old/${state.folder}`} replace />
+}
+
+/**
+ * The only two things this route ever draws — the half a story can show
+ * (UIG-17).
+ *
+ * `ObjectPage` above resolves a reference and hands off; it has no layout of
+ * its own beyond these two sentences, which is why this view is two lines
+ * rather than a page. They are here because **they are states nobody could
+ * see**: reaching the second one meant finding a reference Peek genuinely
+ * cannot open, and the first is gone in a blink.
+ *
+ * The frame is a flex column the height of the window, so a page-scope empty
+ * state fills it as a flex child and centres (D46). It used to sit near the top
+ * under a padding of its own.
+ */
+export function ObjectPageView({ state }: { state: 'looking' | 'unopenable' }) {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <EmptyState
+        message={
+          state === 'looking'
+            ? 'Opening…'
+            : // A reference Peek cannot open says so. Another app's `naddr` is a
+              // valid reference, and redirecting it somewhere arbitrary would be
+              // worse than an honest empty state — the same argument the widget
+              // layer makes about a blank card reading as "that app is broken".
+              'That link does not point at anything Peek can open.'
+        }
+      />
+    </div>
+  )
 }

@@ -13,7 +13,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { ConversationCard } from './ConversationCard'
-import { ThreadReplyCard } from './ThreadReplyCard'
+import { ReplyCard } from './ReplyCard'
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on
    text nodes, and ProseMirror calls them on every document change. */
@@ -59,13 +59,13 @@ describe('a message card', () => {
 
 describe('a reply card', () => {
   it('offers Edit and Delete on your own reply', async () => {
-    await openMore(<ThreadReplyCard authorName="You" timestamp="10:25" body="My reply." />)
+    await openMore(<ReplyCard authorName="You" timestamp="10:25" body="My reply." />)
     expect(screen.getByText('Edit message')).toBeTruthy()
     expect(screen.getByText('Delete')).toBeTruthy()
   })
 
   it("offers neither on somebody else's", async () => {
-    await openMore(<ThreadReplyCard authorName="Katerina Kelepouri" timestamp="10:25" body="Her reply." />)
+    await openMore(<ReplyCard authorName="Katerina Kelepouri" timestamp="10:25" body="Her reply." />)
     expect(screen.queryByText('Edit message')).toBeNull()
     expect(screen.queryByText('Delete')).toBeNull()
   })

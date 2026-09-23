@@ -1,0 +1,55 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as TopicStateStories from './TopicState.stories'
+
+<Meta of={TopicStateStories} />
+
+# TopicState
+
+The small icon before a name that says what it is: a topic open or resolved, a
+person's photo, a team, a group and its size, a huddle, a folder or a file.
+
+<Canvas of={TopicStateStories.Topic} />
+
+## When
+
+- Before the name of anything in a list or a header — a sidebar row, a
+  conversation header, a screener item, the command launcher, the files menu.
+- Always at 16px. The box is fixed so every row in a list lines up whatever is
+  in it.
+
+## When not
+
+- As a status on its own. `status` says whether a **topic** is resolved; for
+  another app's object that is `StatusPill`, which reads a colour the relay
+  sent.
+- To draw a person large. At `type="DM"` it is a 16px `Avatar`; anything bigger
+  wants `Avatar` directly.
+
+## How
+
+```tsx
+import { TopicState } from '@/components/ui/TopicState'
+
+<TopicState type="topic" status={topic.isResolved ? 'resolved' : 'unresolved'} />
+<TopicState type="DM" avatarSrc={person.avatar} />
+<TopicState type="group" memberCount={members.length} />
+```
+
+- `iconClassName` overrides the icon's colour for a selected row or a header.
+  **A resolved topic stays green regardless** — that one is not overridable,
+  because resolved is a fact rather than a style.
+
+## What it owns
+
+- **One glyph per kind, in one place.** A folder had no glyph of its own once,
+  so the Folders list fell through to the topic default and drew every row as a
+  dashed circle.
+- **That a group shows its size** rather than an icon: the count sits in a small
+  inset box, in the Signal mono voice, tabular so the box does not jump between
+  9 and 10.
+- **The resolved look** — a green check with the Signal glow — kept out of reach
+  of `iconClassName`.
+
+## Props
+
+<Controls of={TopicStateStories.Topic} />

@@ -9,7 +9,7 @@ import { SlashCommands } from './slashCommands'
  *
  * **Why this file exists.** Three editors write messages — the composer
  * (`ComposeBox`) and the two edit-in-place boxes (`ConversationCard`,
- * `ThreadReplyCard`) — and each used to spell its own `extensions` array. The
+ * `ReplyCard`) — and each used to spell its own `extensions` array. The
  * three arrays were the same seven entries, so nothing looked wrong, and then
  * `SlashCommands` was added to one of them. `/` worked in the composer and did
  * nothing when you edited a sent message, for months, because a list written

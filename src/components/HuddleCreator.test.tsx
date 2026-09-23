@@ -15,7 +15,6 @@ import userEvent from '@testing-library/user-event'
 import { TooltipProvider } from '@estiva-app/ui'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
-import { ThemeProvider } from '@/lib/theme'
 import { ToastProvider } from '@/lib/toast'
 import { HuddleCreator } from './HuddleCreator'
 
@@ -23,17 +22,15 @@ afterEach(cleanup)
 
 function renderCreator(onCancel = vi.fn(), onCreate = vi.fn()) {
   render(
-    <ThemeProvider>
-      <DebugProvider>
-        <PeekDataProvider>
-          <ToastProvider>
-            <TooltipProvider>
-              <HuddleCreator topicTitle="A topic" onCancel={onCancel} onCreate={onCreate} />
-            </TooltipProvider>
-          </ToastProvider>
-        </PeekDataProvider>
-      </DebugProvider>
-    </ThemeProvider>,
+    <DebugProvider>
+      <PeekDataProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <HuddleCreator topicTitle="A topic" onCancel={onCancel} onCreate={onCreate} />
+          </TooltipProvider>
+        </ToastProvider>
+      </PeekDataProvider>
+    </DebugProvider>,
   )
   return { onCancel, onCreate }
 }

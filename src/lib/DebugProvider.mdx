@@ -1,0 +1,68 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Frame/DebugProvider" />
+
+# DebugProvider
+
+The switches that let a person show Peek without its data, and the place the
+read-state comparison with the relay leaves its findings.
+
+**Seen in** — nothing directly, and it cannot be: it draws no markup. It is a
+React context. What it feeds is visible in *To be removed → ReadStatePanel*,
+which is the one part that reads the comparison it holds.
+
+## When
+
+- Wrapping the app, once, in `main.tsx`, above everything that draws the Desk
+  or the People list.
+- When the Desk has to be shown **without** a screener, or with one item
+  instead of two, or with Open work empty. Those are demo states, not app
+  states: the switches exist so a person can walk through Peek without waiting
+  for a workspace to be in the right shape.
+- When something long-running needs somewhere to put what it found.
+  `readStateDiff` is CRO-7's dual run — the merged relay read state computed
+  beside the Convex one, and where the two disagree.
+
+## When not
+
+- **For anything a user is meant to change.** These are not settings. They are
+  switches for showing the app, and nothing persists them.
+- **To hide a feature that is not finished.** A flag here does not gate a
+  release; it changes what one screen draws in one session.
+- **For a log line.** `readStateDiff` lives in state rather than the console on
+  purpose (CRO-7): a log scrolls away, and the disagreements worth seeing only
+  appear after the app has been idle for a while.
+- **In a story.** A story that needs the Desk empty should be handed empty
+  props. Mounting this to reach a state is reaching around the component.
+
+## How
+
+```tsx
+// Once, above the router.
+<DebugProvider>
+  <App />
+</DebugProvider>
+
+// Reading a switch.
+const { state: debug } = useDebug()
+if (!debug.desk.showScreener) return null
+
+// Recording what the dual run found, and reading it back in the panel.
+const { setReadStateDiff } = useDebug()
+setReadStateDiff(report)
+```
+
+`useDebug` throws outside the provider rather than returning defaults, so a
+screen that forgot the wrapper fails where the wrapper is missing instead of
+quietly drawing the default demo state.
+
+## What it owns
+
+- **Six Desk switches** — whether the screener and Urgent are shown, how many
+  items each has, and whether Open work and Starred have anything in them.
+- **Two unread switches**, for topics and for people. Unread is real now
+  (§4.3); the switches stay so Peek can be shown without dots.
+- **One read-state switch**, `dualRun`, on by default — it is a comparison, not
+  a behaviour change, and the point is to leave it running.
+- **The last comparison report**, or `null` before the first fetch.
+- **Nothing visual.** No markup, no styling. That is why it has no story.
