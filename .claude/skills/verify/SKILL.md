@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Build, launch, and drive the Peek app to verify a change end-to-end (Vite + live Convex dev deployment + headless Chromium via playwright-core, with a CDP virtual authenticator for passkey sign-in).
+description: Use to prove a Peek change works, either end to end in the running app (Vite + Convex + headless Chromium via playwright-core, with a CDP virtual authenticator for passkey sign-in) or by rendering and measuring a story in Storybook.
 ---
 
 # Verifying Peek changes at the running app
@@ -8,8 +8,11 @@ description: Build, launch, and drive the Peek app to verify a change end-to-end
 ## Launch
 
 - `npm run dev` (background) → http://localhost:5173. `.env.local` already
-  points at the live Convex dev deployment (`hallowed-stork-966`), so the
-  app runs in **Convex mode** with the seeded demo dataset.
+  points at the live Convex deployment (`honorable-guineapig-592`, the one
+  peek.estiva.app uses), so the app runs in **Convex mode** on the team's
+  real data. Convex labels it Development; it is still the live one.
+- **Never wipe, reseed or mutate the live deployment.** The seed and the
+  divergence trick below are for a deployment of your own only.
 - **It must be port 5173.** `redirect_uri` is compared exact-string against
   the app's registered list, so on 5174 the round trip dies at Estiva ID with
   `That redirect_uri is not registered for this app`. A stray earlier `vite`
@@ -43,6 +46,8 @@ description: Build, launch, and drive the Peek app to verify a change end-to-end
   `getByText` anchors (e.g. t1_c1 "Hey everyone, our CI/CD pipeline…").
 
 ## Server-side state divergence trick
+
+On a deployment of your own only — never `honorable-guineapig-592`.
 
 To prove remote-vs-mock precedence, mutate the deployment directly so the
 mock and the server disagree, then check which one renders:
@@ -134,12 +139,24 @@ Other consequences for driving the app:
   widgets — is inert without a token, and fails by rendering **nothing**
   rather than erroring. A quiet screen is the expected shape when unsigned,
   not a bug to chase.
-- **Reseed:** `npx convex run dev/seedDemo:seedAs '{"pubkey": "<64 hex>", "wipe": true}'`
+- **Reseed** (a deployment of your own only): `npx convex run dev/seedDemo:seedAs '{"pubkey": "<64 hex>", "wipe": true}'`
   seeds the demo dataset and stamps *your* pubkey on the seed user Cath, so
   signing in with Estiva ID lands you on her with the data behind you rather
   than as a new person in an empty workspace. Take the pubkey from the stored
   token (`sessionStorage`) or from your row in the `users` table.
   Plain `seed` still works and leaves Cath unclaimed.
+
+## Measure a story
+
+Render it in Peek's Storybook (`npm run storybook`, `:6006`) and compare
+against the package component it is built from on `:6008`: height, radius,
+padding, colour. The gitignored `.verify-*.mjs` scripts in this repository
+drive Chrome and compare computed styles; `.verify-shots/README.txt` explains
+the pixel diff. `scripts/render-story.mjs` renders a story from a static
+build and prints what it measures. "It looks right" is not a result.
+
+**Restart Storybook** after any change to Tailwind config, the package
+version, or a file you replaced with a re-export.
 
 ## Gotchas
 
