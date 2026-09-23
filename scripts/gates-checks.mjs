@@ -46,9 +46,9 @@ export default function define(h) {
     return parts.length ? test(parts) : h.FAIL("no reusable parts in the registry — rebuild it");
   };
   const storyFiles = () => h.listFiles("src", (name) => name.endsWith(".stories.tsx") || name.endsWith(".mdx"));
-  /** Every top-level heading the sidebar actually has. `Estiva ID` is prepended by main.ts, not by a title. */
+  /** Every top-level heading the sidebar actually has. */
   const sidebarHeadings = () => {
-    const real = new Set(["Estiva ID"]);
+    const real = new Set();
     for (const file of storyFiles()) {
       const text = h.read(file);
       const start = text.indexOf("const meta");
@@ -146,7 +146,6 @@ export default function define(h) {
         const intro = "src/stories/Introduction.mdx";
         if (!h.exists(intro)) return h.FAIL(`${intro} is missing`);
         const listed = new Set([...h.read(intro).matchAll(/^\|\s*\*\*([^*]+)\*\*\s*\|/gm)].map((m) => m[1].trim()));
-        // `Estiva ID` is prepended by .storybook/main.ts, not by any title here.
         const real = sidebarHeadings();
         const missing = [...real].filter((r) => !listed.has(r));
         const stale = [...listed].filter((l) => !real.has(l));
