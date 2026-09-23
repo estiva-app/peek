@@ -35,6 +35,7 @@ import {
   useTeamUnread,
   useTopics,
 } from '@/api'
+import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { ForeignObject } from '@estiva-app/interop'
 import { EditableText } from '@/components/ui/EditableText'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -331,7 +332,14 @@ export function FoldersPage() {
               parent={startingTopic.parent}
               onClose={() => setStartingTopic(null)}
               onCreate={async (title, chosen) => {
-                const folder = chosen ?? id
+                /*
+                  Under a topic, in that topic's team (SPEC §6.7, FOL-4): a
+                  sub-file is readable by exactly its parent's readers. The
+                  open Folder is the same team in every ordinary case; a topic
+                  placed here from another team is where the two differ.
+                */
+                const parent = startingTopic.parent
+                const folder = (parent?.kind === KIND_BARE_FILE ? parent.folder : undefined) ?? chosen ?? id
                 if (!folder) return false
                 /*
                   `hasState` from a read, never guessed — the same argument as

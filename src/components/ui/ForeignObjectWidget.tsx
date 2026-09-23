@@ -364,7 +364,13 @@ export function ForeignObjectCard({
    * slot and the action name the same fact, whatever the manifest called it.
    */
   const actions = object.actions.filter(
-    (action) => action.field && action.field !== object.slots.title?.field,
+    (action) =>
+      action.field &&
+      action.field !== object.slots.title?.field &&
+      // Nor the move (FOL-4): its value is an address, and a text box asking
+      // for `30840:<hex>:<uuid>` is not a control. The tree and the file's
+      // menu offer it, picking from the team.
+      action.field !== object.parentField,
   )
 
   /**

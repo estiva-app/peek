@@ -28,9 +28,17 @@ export interface FileControls {
   rename?: ResolvedAction
   /** The action to invoke for a deletion, or undefined when the manifest declares none. */
   delete?: ResolvedAction
+  /**
+   * The action that re-parents the file (FOL-4) — found, like the rename, by
+   * field: the one setting `parentField`. A bare file's manifest declares it;
+   * Ship's does not, so an issue offers no Move.
+   */
+  move?: ResolvedAction
 }
 
-export function fileControlsOf(file: Pick<ForeignObject, 'actions' | 'slots' | 'naddr'> | null | undefined): FileControls {
+export function fileControlsOf(
+  file: Pick<ForeignObject, 'actions' | 'slots' | 'naddr' | 'parentField'> | null | undefined,
+): FileControls {
   // No address, no actions: a change names its target with `a`, and the
   // runtime already resolves no actions for such an object. Said here too so a
   // caller holding a partial object gets the same answer.
@@ -38,10 +46,23 @@ export function fileControlsOf(file: Pick<ForeignObject, 'actions' | 'slots' | '
   const titleField = file.slots.title?.field
   const rename = titleField ? file.actions.find((a) => a.control === 'text' && a.field === titleField) : undefined
   const remove = file.actions.find((a) => a.control === 'confirm')
-  return { ...(rename ? { rename } : {}), ...(remove ? { delete: remove } : {}) }
+  const move = file.parentField ? file.actions.find((a) => a.field === file.parentField) : undefined
+  return { ...(rename ? { rename } : {}), ...(remove ? { delete: remove } : {}), ...(move ? { move } : {}) }
 }
 
 /** True when the file offers at least one control, so a menu is worth drawing. */
 export function hasFileControls(controls: FileControls): boolean {
-  return !!controls.rename || !!controls.delete
+  return !!controls.rename || !!controls.delete || !!controls.move
+}
+
+/**
+ * Whether a topic may be started inside this file (FOL-4, SPEC §6.7).
+ *
+ * Not a manifest question: a bare file may sit under a file of any kind, and
+ * the parent's owner neither declares nor needs to. What it does need is a team
+ * — the sub-file goes in its parent's — so a file resolved without one, a
+ * record with no `h`, offers nothing rather than guessing a team.
+ */
+export function canStartInside(file: Pick<ForeignObject, 'address' | 'folder'> | null | undefined): boolean {
+  return !!file?.address && !!file.folder
 }

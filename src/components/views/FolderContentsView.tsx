@@ -6,7 +6,7 @@ import {
   IconMessage,
   IconMessagePlus,
 } from '@tabler/icons-react'
-import { CONVERSATION_LIMIT } from '@estiva-app/interop'
+import { CONVERSATION_LIMIT, nestingOf } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
 import { useConversationBadges, useForeignChildren } from '@/api'
@@ -186,8 +186,9 @@ export function FolderContentsView({
  * the one this fixes.
  */
 export function peersOf(files: ForeignObject[]): ForeignObject[] {
-  const listed = new Set(files.map((file) => file.address).filter(Boolean) as string[])
-  return files.filter((file) => !(file.parentRef && listed.has(file.parentRef)))
+  // `nestingOf` since FOL-4: the same rule, and a file on a cycle — A under B
+  // under A — stays at the top instead of both vanishing (SPEC §6.7).
+  return nestingOf(files).roots
 }
 
 /**
@@ -206,8 +207,7 @@ export function peersOf(files: ForeignObject[]): ForeignObject[] {
  * whatever it names.
  */
 export function listedChildrenOf(parent: ForeignObject, files: ForeignObject[]): ForeignObject[] {
-  if (!parent.address) return []
-  return files.filter((file) => file.parentRef === parent.address && file.ref !== parent.ref)
+  return nestingOf(files).childrenOf(parent)
 }
 
 /**

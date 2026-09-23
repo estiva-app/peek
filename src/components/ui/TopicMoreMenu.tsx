@@ -53,6 +53,10 @@ export interface TopicMoreMenuProps {
   followAction?: 'follow' | 'unfollow'
   onToggleFollow?: () => void
   onDeleteTopic?: () => void
+  /** Adds "New topic inside" — a bare file whose parent is this one (FOL-4). */
+  onNewSubTopic?: () => void
+  /** Adds "Move…" — a file whose manifest declares a re-parent (FOL-4). */
+  onMove?: () => void
   /**
    * Hide a DM from this viewer's sidebar (DMS-6). The label says "hide", not
    * "close" or "delete", because that is all it does: the conversation, its
@@ -73,6 +77,8 @@ export function TopicMoreMenu({
   followAction,
   onToggleFollow,
   onDeleteTopic,
+  onNewSubTopic,
+  onMove,
   onHideDm,
 }: TopicMoreMenuProps) {
   return (
@@ -81,6 +87,8 @@ export function TopicMoreMenu({
     <Menu trigger={trigger} align="right" onOpenChange={onOpenChange}>
       {onOpenDetails && <MenuItem label="Topic details" onClick={onOpenDetails} />}
       {onRename && <MenuItem label="Rename" onClick={onRename} />}
+      {onNewSubTopic && <MenuItem label="New topic inside" onClick={onNewSubTopic} />}
+      {onMove && <MenuItem label="Move…" onClick={onMove} />}
       {onCopyLink && <MenuItem label="Copy link" onClick={onCopyLink} />}
       {openWorkAction && onToggleOpenWork && (
         <MenuItem

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, type ReactNode } from 'react'
+import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconBell, IconBellFilled, IconDotsVertical, IconX } from '@tabler/icons-react'
-import { ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
+import { Breadcrumb, ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
+import { nestingOf } from '@estiva-app/interop'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -17,6 +18,7 @@ import {
   useFileAddress,
   rememberFileAddress,
   useFileThreads,
+  useFolderContents,
   useFollows,
   useForeignConversation,
   useOpenWorkFiles,
@@ -26,8 +28,9 @@ import {
   type ForeignConversationState,
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
-import { fileControlsOf, hasFileControls } from '@/lib/fileControls'
-import { addressFromRef, identifierFromRef, shareableFileUrl, shortFilePath, topicPath } from '@/lib/objectUrl'
+import { canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
+import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath, topicPath } from '@/lib/objectUrl'
+import { useFolderPath } from '@/lib/useFolderPath'
 import { followInApp } from '@/lib/followInApp'
 import { referenceLink } from '@/lib/referenceLink'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -293,11 +296,50 @@ export function FilePage() {
     delete of some other file stays here — the person was not looking at it.
   */
   const controls = fileControlsOf(file)
+  const startsInside = canStartInside(file)
+
+  /*
+    Where the file sits (FOL-4): its team, then every file above it, each a
+    link. Walked in the team's listing (`nestingOf`), which is the one read
+    that knows a moved file's parent and which holds every ancestor — a
+    sub-file is in its parent's team — so the trail costs no request per level.
+    The tree's section for this team is handed the same read rather than
+    making its own. Drawn only for a file with something above it: a trail of
+    one says nothing the header's title does not.
+  */
+  const folderPath = useFolderPath()
+  const { state: team, reload: reloadTeam } = useFolderContents(file?.folder)
+  const teamFiles = typeof team === 'object' && 'files' in team ? team.files : undefined
+  const listedSelf = file && teamFiles?.find((candidate) => candidate.ref === file.ref)
+  const ancestors = listedSelf && teamFiles ? nestingOf(teamFiles).ancestorsOf(listedSelf) : []
+  const trail =
+    file?.folder && ancestors.length > 0
+      ? [
+          {
+            label: (typeof team === 'object' && 'name' in team ? team.name : undefined) ?? 'Team',
+            href: folderPath(file.folder),
+            onClick: (event: MouseEvent<HTMLAnchorElement>) => followInApp(event, () => navigate(folderPath(file.folder!))),
+          },
+          ...ancestors.map((above) => {
+            const path = filePath(above.address!, above.slots.title?.value)
+            return {
+              label: above.slots.title?.value ?? 'Untitled',
+              href: path,
+              onClick: (event: MouseEvent<HTMLAnchorElement>) => followInApp(event, () => navigate(path)),
+            }
+          }),
+        ]
+      : undefined
+
   const fileControls = useFileControls({
     onRenamed: () => void reloadConversation(),
     onDeleted: (deleted) => {
       if (deleted.folder && deleted.address === file?.address) navigate(`/app/folders/${deleted.folder}`, { replace: true })
     },
+    // The trail and the tree both draw the file's place, and both read the team.
+    onMoved: () => void Promise.all([reloadConversation(), reloadTeam()]),
+    // Into the new topic, as the header's New topic does: it is what was asked for.
+    onStarted: (created) => navigate(filePath(created.address, created.title)),
   })
 
   /*
@@ -358,6 +400,7 @@ export function FilePage() {
             selectedRef={file?.ref}
             selectedParent={file?.parentRef}
             onControl={fileControls.open}
+            currentContents={file?.folder ? team : undefined}
           />
         }
         rightPanel={
@@ -365,6 +408,7 @@ export function FilePage() {
           <ContainerHeader
             title={
               <div className="min-w-0">
+                {trail && <Breadcrumb items={trail} />}
                 <p className="truncate text-body-2-strong text-text-primary">{title}</p>
                 {/*
                   Whose file this is, said plainly. The page draws another app's
@@ -406,7 +450,7 @@ export function FilePage() {
                     a Ship issue's header has nothing to put here, and a button
                     that opens nothing would say otherwise.
                   */}
-                  {(hasFileControls(controls) || toggleOpenWork) && (
+                  {(hasFileControls(controls) || startsInside || toggleOpenWork) && (
                     <TopicMoreMenu
                       trigger={
                         <ToolbarButton tooltip="More actions" aria-label="More actions">
@@ -418,6 +462,8 @@ export function FilePage() {
                       openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
                       onToggleOpenWork={toggleOpenWork}
                       onRename={controls.rename ? () => fileControls.open('rename', file) : undefined}
+                      onNewSubTopic={startsInside && file ? () => fileControls.open('inside', file) : undefined}
+                      onMove={controls.move && file ? () => fileControls.open('move', file) : undefined}
                       onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
                     />
                   )}
