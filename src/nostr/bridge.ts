@@ -49,7 +49,7 @@ import {
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
-import { recordRelayRequest } from './relayMeter'
+import { recordRelayRequest, refusalOf } from './relayMeter'
 
 /**
  * Sign as the token's subject, over the package's round trip.
@@ -120,8 +120,8 @@ async function bridgePost(
   })
   const text = await res.text()
   // Counted once the relay has answered, so the answer says whether this one
-  // was refused for quota (PER-8, `window.__relayReads()`).
-  recordRelayRequest(path, payload, res.status === 429 || /rate-limited/i.test(text))
+  // was refused, and why (PER-8, `window.__relayReads()`).
+  recordRelayRequest(path, payload, refusalOf(res.status, text))
   return { status: res.status, text }
 }
 

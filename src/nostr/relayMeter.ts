@@ -27,13 +27,30 @@
  * the same meter and is not counted here.
  */
 
+/**
+ * Why the relay refused a request, when it did.
+ *
+ * Buzz says `rate-limited:` for two different things (`api/bridge.rs`
+ * `enforce_http_admission`): `429 … quota exceeded` when this pubkey spent its
+ * 300 in the window, and `503 … shared admission unavailable` when the relay
+ * could not reach its own counter. The first is traffic, the second an outage,
+ * and the meter used to count both as the first.
+ */
+export type Refusal = 'quota' | 'unavailable'
+
+/** The refusal an answer carries, or `null` for one the meter should not flag. */
+export function refusalOf(status: number, text: string): Refusal | null {
+  if (status === 429) return 'quota'
+  if (!/rate-limited/i.test(text)) return null
+  return status === 503 || /unavailable/i.test(text) ? 'unavailable' : 'quota'
+}
+
 /** One request, as the meter remembers it. */
 export interface RelayRequest {
   at: number
   path: string
   label: string
-  /** Refused for quota: a `429`, or the relay's `rate-limited:` sentence. */
-  limited: boolean
+  refusal: Refusal | null
 }
 
 /** What `window.__relayReads()` answers. */
@@ -44,8 +61,17 @@ export interface RelayReadsSnapshot {
   covered: boolean
   total: number
   perMinute: number
-  /** Refused for quota. */
+  /** Refused for quota: this pubkey's 300 a minute, spent by every client it signs. */
   rateLimited: number
+  /** Refused because the relay could not reach its own counter. */
+  unavailable: number
+  /**
+   * Every refused request, oldest first: the local time, why, and what it asked.
+   * The time is what lines a refusal up with a burst seen elsewhere — another
+   * tab, a script, the relay's counters — since this tab's own reads rarely
+   * reach 300 a minute on their own.
+   */
+  refused: { at: string; refusal: Refusal; shape: string }[]
   /** Busiest shape first. */
   byShape: { shape: string; count: number; perMinute: number }[]
 }
@@ -85,8 +111,8 @@ export function shapeOf(path: string, payload: unknown): string {
 }
 
 /** Called by `bridgePost` for every request it sends, whatever the answer. */
-export function recordRelayRequest(path: string, payload: unknown, limited: boolean, at: number = Date.now()): void {
-  log.push({ at, path, label: shapeOf(path, payload), limited })
+export function recordRelayRequest(path: string, payload: unknown, refusal: Refusal | null, at: number = Date.now()): void {
+  log.push({ at, path, label: shapeOf(path, payload), refusal })
   const floor = at - KEEP_MS
   let drop = 0
   while (drop < log.length && log[drop].at < floor) drop += 1
@@ -105,7 +131,11 @@ export function relayReads(minutes = 1, now: number = Date.now()): RelayReadsSna
     covered: startedAt <= since,
     total: inWindow.length,
     perMinute: perMinute(inWindow.length),
-    rateLimited: inWindow.filter((request) => request.limited).length,
+    rateLimited: inWindow.filter((request) => request.refusal === 'quota').length,
+    unavailable: inWindow.filter((request) => request.refusal === 'unavailable').length,
+    refused: inWindow.flatMap(({ at, refusal, label }) =>
+      refusal ? [{ at: new Date(at).toLocaleTimeString(), refusal, shape: label }] : [],
+    ),
     byShape: [...counts]
       .map(([shape, count]) => ({ shape, count, perMinute: perMinute(count) }))
       .sort((a, b) => b.count - a.count),
