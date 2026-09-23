@@ -134,7 +134,23 @@ export function useUploadActions() {
           console.warn('[nostr] attachment not uploaded to the relay:', error)
           throw new Error(`Upload failed — ${error instanceof Error ? error.message : String(error)}`)
         }
-        return { ...local, sha256: blob.sha256, mediaUrl: blob.url, thumbUrl: blob.thumb, dim: blob.dim }
+        /*
+          Size and type are the store's, not the picked file's. The store
+          canonicalizes an image before it keeps it — metadata goes — so the
+          bytes it holds can be a few dozen fewer than the ones picked, and
+          ingest refuses an `imeta` whose `size` or `m` disagrees with what it
+          stored: "invalid: imeta size (50361) does not match stored size
+          (50340)". The same lesson as DMS-7's republish.
+        */
+        return {
+          ...local,
+          size: blob.size,
+          contentType: blob.type || local.contentType,
+          sha256: blob.sha256,
+          mediaUrl: blob.url,
+          thumbUrl: blob.thumb,
+          dim: blob.dim,
+        }
       }
 
       if (!hasConvex) throw new Error('File uploads need the live app.')
