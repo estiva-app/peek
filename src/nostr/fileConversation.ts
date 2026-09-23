@@ -92,6 +92,74 @@ export interface FileConversation {
   /** Direct replies per root, oldest first. A root with none is absent. */
   replies: Record<string, ConversationEvent[]>
   decorations: CommentDecorations
+  /** Each edited root's or reply's edits, folded ({@link foldEdits}). A comment never edited is absent. */
+  edits: Record<string, EditFold>
+}
+
+/**
+ * A comment's `kind:40003`s, folded — RFC 0.4 §7.2.1 as amended 2026-09-23
+ * (CON-5). The body and the attachments fold separately, in the same order.
+ */
+export interface EditFold {
+  /** The body to show: the latest edit's content. */
+  body: string
+  /**
+   * When the body last changed, epoch seconds. An edit whose content is
+   * byte-identical to the body it replaces changes attachments only and is not
+   * an edit of the body, so it does not move this; absent when no edit did.
+   */
+  editedAt?: number
+  /**
+   * The `imeta` set of the latest edit that carries at least one. A set
+   * replaces, it does not append. Absent when no edit carries one — the
+   * comment's own attachments stand, since an edit with no `imeta` means
+   * "unchanged", never "none".
+   */
+  files?: RelayAttachment[]
+}
+
+/** An edit's order: `ts` when it agrees with `created_at` to the second, then `created_at`, then id (SPEC §6.3). */
+function editOrderMs(event: SignedEvent): number {
+  const raw = Number.parseInt(event.tags.find((t) => t[0] === 'ts')?.[1] ?? '', 10)
+  if (Number.isFinite(raw) && Math.abs(Math.floor(raw / 1000) - event.created_at) <= 1) return raw
+  return event.created_at * 1000
+}
+
+const byEditOrder = (a: SignedEvent, b: SignedEvent) => editOrderMs(a) - editOrderMs(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+/**
+ * Fold every `kind:40003` onto the comment it targets.
+ *
+ * The target is the first unmarked `e` naming one of `targets`, which is how
+ * interop's `commentDecorationsOf` reads it. Edits are replayed oldest first
+ * from the comment's own body, so "byte-identical to the body it replaces" is
+ * judged against the body as it stood, not the original.
+ */
+export function foldEdits(targets: readonly { id: string; body: string }[], events: readonly SignedEvent[]): Record<string, EditFold> {
+  const bodies = new Map(targets.map((t) => [t.id, t.body]))
+  const byTarget = new Map<string, SignedEvent[]>()
+  const seen = new Set<string>()
+  for (const event of events) {
+    if (event.kind !== KIND.MESSAGE_EDIT || seen.has(event.id)) continue
+    seen.add(event.id)
+    const target = event.tags.find((t) => t[0] === 'e' && !t[3] && bodies.has(t[1]))?.[1]
+    if (!target) continue
+    byTarget.set(target, [...(byTarget.get(target) ?? []), event])
+  }
+  const out: Record<string, EditFold> = {}
+  for (const [target, edits] of byTarget) {
+    let body = bodies.get(target)!
+    let editedAt: number | undefined
+    let files: RelayAttachment[] | undefined
+    for (const edit of [...edits].sort(byEditOrder)) {
+      if (edit.content !== body) editedAt = edit.created_at
+      body = edit.content
+      const attached = attachmentsOf(edit)
+      if (attached.length > 0) files = attached
+    }
+    out[target] = { body, ...(editedAt !== undefined ? { editedAt } : {}), ...(files ? { files } : {}) }
+  }
+  return out
 }
 
 /** An attachment the composer uploaded — what `UploadedFile` carries once the blob reached the relay. */
@@ -252,12 +320,18 @@ export async function fileConversationAsViewer(
   }
 
   const targets = [...roots, ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt }))
+  // The edits come back on the decorations read, but interop keeps only the
+  // newest one's body. The attachment fold (CON-5) needs every edit, so they
+  // are kept here as they pass through rather than asked for a second time.
+  const edits: SignedEvent[] = []
   const decorations = await commentDecorationsOf(targets, async (filters) => {
     const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+    for (const event of result.events) if (event.kind === KIND.MESSAGE_EDIT) edits.push(event)
     return result.events
   })
-  return { roots, replies, decorations }
+  const bodies = [...roots, ...Object.values(replies).flat()].map((e) => ({ id: e.id, body: e.body }))
+  return { roots, replies, decorations, edits: foldEdits(bodies, edits) }
 }
 
 /*

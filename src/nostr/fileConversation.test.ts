@@ -25,6 +25,7 @@ import {
   deleteEventAsViewer,
   editCommentAsViewer,
   fileConversationAsViewer,
+  foldEdits,
   isCommentOn,
   mentionTagsFor,
   referenceTagsFor,
@@ -207,6 +208,8 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     // A reply is a target too, so a reaction on it would be found.
     expect(found.decorations.byId[reply.id]).toEqual({ reactions: [], resolutions: [] })
     expect(found.decorations.reactionTargetsOmitted).toBe(0)
+    // The same edit, folded here for the body, the mark and the files (CON-5).
+    expect(found.edits).toEqual({ [root.id]: { body: 'First, corrected', editedAt: edit.created_at } })
   })
 
   it('drops a root that is a comment on another file naming this one — that is Activity, not the conversation', async () => {
@@ -413,5 +416,65 @@ describe('mentionTagsFor', () => {
   it('names each mentioned person once, and ignores anything that is not an npub', () => {
     const npub = encodeNpub(CATH)
     expect(mentionTagsFor(`hi nostr:${npub} and again nostr:${npub}, see nostr:nevent1qqs`)).toEqual([['p', CATH]])
+  })
+})
+
+describe('foldEdits — the body and the attachments fold separately (RFC 0.4 §7.2.1, amended 2026-09-23, CON-5)', () => {
+  const target = { id: 'f'.repeat(64), body: 'Original' }
+  const imeta = (x: string) => ['imeta', `url https://relay.test/media/${x}`, 'm image/png', `x ${x}`, 'size 10', `filename ${x}.png`]
+  const at = 1_800_000_000
+  const editOf = (id: string, content: string, created_at: number, extra: string[][] = []): TestEvent => ({
+    id: id.repeat(64).slice(0, 64),
+    sig: '',
+    pubkey: CATH,
+    created_at,
+    kind: 40003,
+    tags: [['h', FOLDER], ['e', target.id], ...extra],
+    content,
+  })
+  const shas = (fold: ReturnType<typeof foldEdits>) => fold[target.id]?.files?.map((f) => f.sha256)
+
+  it('a later edit carrying imeta replaces the set — it does not append', () => {
+    const first = editOf('1', 'Original', at, [imeta('aaa'), imeta('bbb')])
+    const second = editOf('2', 'Original', at + 5, [imeta('ccc')])
+    expect(shas(foldEdits([target], [second, first]))).toEqual(['ccc'])
+  })
+
+  it('an edit without imeta leaves the attachments as they were', () => {
+    const attach = editOf('1', 'Original', at, [imeta('aaa')])
+    const reword = editOf('2', 'Reworded', at + 5)
+    const fold = foldEdits([target], [attach, reword])[target.id]
+    expect(fold.body).toBe('Reworded')
+    expect(fold.files?.map((f) => f.sha256)).toEqual(['aaa'])
+    // And with no edit carrying any, there is no set: the comment's own stands.
+    expect(foldEdits([target], [reword])[target.id].files).toBeUndefined()
+  })
+
+  it('the latest edit carrying imeta wins, by ts then created_at then id', () => {
+    const early = editOf('1', 'Original', at, [imeta('aaa'), ['ts', String(at * 1000 + 900)]])
+    const late = editOf('2', 'Original', at, [imeta('bbb'), ['ts', String(at * 1000 + 100)]])
+    expect(shas(foldEdits([target], [late, early]))).toEqual(['aaa'])
+    // A ts that disagrees with created_at is ignored, so the id breaks the tie.
+    const lying = editOf('3', 'Original', at, [imeta('ccc'), ['ts', String((at + 3600) * 1000)]])
+    const other = editOf('4', 'Original', at, [imeta('ddd')])
+    expect(shas(foldEdits([target], [other, lying]))).toEqual(['ddd'])
+    // A newer edit without imeta does not take the set with it.
+    expect(shas(foldEdits([target], [early, late, editOf('5', 'Changed', at + 60)]))).toEqual(['aaa'])
+  })
+
+  it('an edit whose body is byte-identical to the one it replaces is not marked edited', () => {
+    const attachOnly = editOf('1', 'Original', at, [imeta('aaa')])
+    expect(foldEdits([target], [attachOnly])[target.id]).toEqual({ body: 'Original', files: [expect.objectContaining({ sha256: 'aaa' })] })
+    // The mark stays with the last edit that changed the body, judged against the body as it then stood.
+    const reword = editOf('2', 'Reworded', at + 5)
+    const reattach = editOf('3', 'Reworded', at + 10, [imeta('bbb')])
+    expect(foldEdits([target], [attachOnly, reword, reattach])[target.id].editedAt).toBe(at + 5)
+    const back = editOf('4', 'Original', at + 20)
+    expect(foldEdits([target], [reword, back])[target.id].editedAt).toBe(at + 20)
+  })
+
+  it('ignores an edit of something that is not one of the targets', () => {
+    const elsewhere = { ...editOf('1', 'Other', at), tags: [['h', FOLDER], ['e', 'e'.repeat(64)], imeta('aaa')] }
+    expect(foldEdits([target], [elsewhere])).toEqual({})
   })
 })
