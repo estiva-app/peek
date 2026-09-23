@@ -19,6 +19,7 @@ import {
   useFileConversation,
   useFollows,
   useWorkspaceDirectory,
+  UploadDestinationProvider,
   type ConversationContainer,
   type ConversationData,
   type ConversationEvent,
@@ -290,8 +291,11 @@ export function useFileConversationView({
     }
   }, [address, onOpenThread])
 
+  // A file's conversation lives only on the relay, so its attachments go to the
+  // blob store and nowhere else (REM-2): the composer, the thread panel and the
+  // cards' edit boxes all upload inside this.
   const conversationSlot = (
-    <>
+    <UploadDestinationProvider value="blobStore">
       <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
         <div className="flex-1 min-h-0" />
         <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
@@ -357,11 +361,12 @@ export function useFileConversationView({
           draftKey={container ? draftKeys.object(container.address) : undefined}
         />
       </div>
-    </>
+    </UploadDestinationProvider>
   )
 
   const threadPanel =
     openRoot && openView ? (
+      <UploadDestinationProvider value="blobStore">
       <ThreadPanel
         conversation={openView.data}
         replies={openView.replies}
@@ -380,6 +385,7 @@ export function useFileConversationView({
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyReactionsChange={(id, _next, _prev, emoji) => toggleReaction(id, emoji)}
       />
+      </UploadDestinationProvider>
     ) : undefined
 
   return { conversation: conversationSlot, threadPanel }

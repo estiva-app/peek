@@ -1,7 +1,9 @@
 /**
  * Drives the auth shell in Peek (PEEK-118).
  *
- * Mounted only when Convex reports the app unauthenticated. Its whole job is to
+ * Mounted only when the Estiva ID session reports signed out (REM-2; it was
+ * Convex's verdict until then, which is what the live-token branch below was
+ * written against). Its whole job is to
  * run `decideBoot` once and act on the answer — usually by leaving for Estiva ID
  * before anything is painted, which is why entry with a live session looks like
  * a loading screen rather than a sign-in.

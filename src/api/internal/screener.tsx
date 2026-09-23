@@ -77,6 +77,7 @@ import { screenerKey, type InstantMap } from '@/nostr/screener'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { foldFileScreenerRows, foldScreenerRows, type ScreenerFile } from '@/api/internal/screenerFold'
 import type { ScreenerItem } from '@/api/types'
+import { RELAY_URL } from '@/api/relayUrl'
 
 export interface ScreenerValue {
   /** The rows, newest screening event first. */
@@ -199,9 +200,8 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer)
   }, [])
 
-  // Where the relay lives — a query rather than a build-time variable, so the
-  // bundle and the backend cannot disagree about it (convex/nostr/config.ts).
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  // Where the relay lives — a build-time value since REM-2 (`@/api/relayUrl`).
+  const relayUrl = RELAY_URL
   const sync = useScreenerSync(relayUrl)
 
   const candidates = useQuery(api.screener.candidates, hasConvex ? {} : 'skip')

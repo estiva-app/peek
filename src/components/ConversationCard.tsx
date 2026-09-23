@@ -28,7 +28,7 @@ import { ConfirmDelete } from './ConfirmDelete'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useIsTopicResolved, useAvatarSrc, hasConvex, isCurrentUser } from '@/api'
+import { useIsTopicResolved, useAvatarSrc, useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -179,6 +179,7 @@ export function ConversationCard({
   // The files of the message being edited — PEE-16. Held here because the
   // paperclip, the paste and Save all need the same list.
   const editAttachments = useEditAttachments(files)
+  const canUpload = useCanUpload()
   // The paste handler is a closure from the editor's first render, so it
   // reads the current one through a ref. Assigned in an effect rather than
   // during render: a paste can only happen after the box is on screen.
@@ -207,7 +208,7 @@ export function ConversationCard({
          stays a table. Returning true keeps the picture out of the document:
          it belongs in a chip. See ComposeBox for the longer note. */
       handlePaste: (_view, event) => {
-        if (!hasConvex) return false
+        if (!canUpload) return false
         const images = pastedImages(event.clipboardData)
         if (images.length === 0) return false
         editAttachmentsRef.current.add(images)

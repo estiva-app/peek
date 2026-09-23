@@ -21,16 +21,16 @@
  * state: the caller keeps whatever fallback it had.
  */
 import { useEffect, useState } from 'react'
-import { useConvex, useQuery } from 'convex/react'
+import { useConvex } from 'convex/react'
 import type { RelayState } from '@estiva-app/protocol'
 import { api } from '../../convex/_generated/api'
 import { hasConvex } from '@/api/store'
 import { getLiveTopics, type LiveTopics } from './liveTopics'
+import { RELAY_URL } from '@/api/relayUrl'
 
 export function useLiveTopics(): { live: LiveTopics | null; relayState: RelayState } {
   const convex = useConvex()
-  const relayConfig = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')
-  const relayUrl = relayConfig?.relayUrl
+  const relayUrl = RELAY_URL
   const [live, setLive] = useState<LiveTopics | null>(null)
   const [relayState, setRelayState] = useState<RelayState>('connecting')
 

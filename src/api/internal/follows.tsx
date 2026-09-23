@@ -21,10 +21,8 @@
  * a throw, so the rows can be drawn on their own.
  */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
-import { useQuery } from 'convex/react'
-import { api } from '../../../convex/_generated/api'
 import { type FollowsState, useFollowsSync } from '@/nostr/useFollowsSync'
-import { hasConvex } from '@/api/store'
+import { RELAY_URL } from '@/api/relayUrl'
 
 export interface Follows {
   state: FollowsState
@@ -46,10 +44,9 @@ const INERT: Follows = {
 const FollowsContext = createContext<Follows | null>(null)
 
 export function FollowsProvider({ children }: { children: ReactNode }) {
-  // Where the relay lives — a query rather than a build-time variable, so the
-  // bundle and the backend cannot disagree about it (convex/nostr/config.ts).
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
-  const sync = useFollowsSync(relayUrl)
+  // Where the relay lives: a build-time value since REM-2, so following works
+  // with Convex unreachable.
+  const sync = useFollowsSync(RELAY_URL)
   const isFollowed = useCallback((key: string) => sync.followed.has(key), [sync.followed])
   const value = useMemo<Follows>(
     () => ({ state: sync.state, followed: sync.followed, isFollowed, setFollowed: sync.setFollowed }),

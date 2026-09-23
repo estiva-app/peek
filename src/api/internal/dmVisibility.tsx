@@ -31,6 +31,7 @@ import { useDmVisibilitySync } from '@/nostr/useDmVisibilitySync'
 import { publishDmHide } from '@/nostr/dmVisibility'
 import { publishDmChannel } from '@/nostr/dms'
 import { validToken } from '@/auth/estivaId'
+import { RELAY_URL } from '@/api/relayUrl'
 
 export interface DmVisibilityValue {
   /** Whether the relay has said what is hidden. `unknown` hides nothing. */
@@ -48,7 +49,7 @@ const DmVisibilityContext = createContext<DmVisibilityValue | null>(null)
 
 export function DmVisibilityProvider({ children }: { children: ReactNode }) {
   const convex = useConvex()
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  const relayUrl = RELAY_URL
   const channels = useQuery(api.nostr.outbox.dmChannels, hasConvex ? {} : 'skip')
   const { hidden, state, seam, applyHidden } = useDmVisibilitySync(relayUrl)
 

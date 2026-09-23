@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Authenticated, Unauthenticated, AuthLoading, useConvex, useMutation, useQuery } from 'convex/react'
+import { useConvex, useConvexAuth, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { hasConvex } from '@/api'
+import { RELAY_URL, hasConvex, hasRelay } from '@/api'
 import { validToken } from './estivaId'
+import { useEstivaIdSession } from './useEstivaIdSession'
 import { AuthShell } from './shell/AuthShell'
 import { markEntered, useAuthShell } from './shell/useAuthShell'
 import { syncStaleProfilesFromRelay } from '@/nostr/sync'
@@ -10,18 +11,18 @@ import { syncStaleProfilesFromRelay } from '@/nostr/sync'
 /**
  * Router-level auth gate.
  *
- * **One sign-in since PEEK-41.** This used to fan out three ways — the password
- * screen, a dev auto-login, or the Estiva ID redirect — and had to agree
- * exactly with the provider `@/api/store` had mounted, because disagreeing
- * rendered Convex Auth's screen under the wrong provider and took the app down.
- * There is nothing left to disagree about.
+ * **Estiva ID's session decides, not Convex (REM-2).** This used to render
+ * Convex's `<AuthLoading>` / `<Unauthenticated>` / `<Authenticated>`, and then
+ * hold everything on "entering" until `users.adoptIdentity` had made a row — so
+ * a Convex outage was a Peek outage, including for the Folder tree and a file's
+ * conversation, which read nothing from Convex at all. Now the app renders as
+ * soon as this tab holds an Estiva ID session, and the Convex bootstrap runs
+ * beside it for the screens that still read Convex (DMs, the Desk), which show
+ * their own loading state until `users.me` answers.
  *
- * Mock mode (tests, Storybook, a checkout with no deployment) has no identity
- * server at all, so the app stays signed in as CURRENT_USER_NAME — unchanged.
- *
- * The authenticated branch binds the identity to a Peek row before rendering:
- * a token Peek has no row for is authenticated but unknown, and every query
- * below would come back empty.
+ * Mock mode (tests, Storybook, a checkout with neither a deployment nor a
+ * relay) has no identity server at all, so the app stays signed in as
+ * CURRENT_USER_NAME — unchanged.
  *
  * **The signed-out branch is no longer a screen (PEEK-118).** It used to be a
  * "Sign in with Estiva ID" page, which is an app-specific login surface for an
@@ -30,18 +31,24 @@ import { syncStaleProfilesFromRelay } from '@/nostr/sync'
  * only asks for anything when it genuinely cannot.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
-  if (!hasConvex) return <>{children}</>
+  if (!hasConvex && !hasRelay) return <>{children}</>
+  return <SessionGate>{children}</SessionGate>
+}
+
+function SessionGate({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useEstivaIdSession()
+
+  // From here a token expiring is an interruption, not a cold boot, and the
+  // shell must ask before navigating away (PEEK-123).
+  useEffect(() => {
+    if (isAuthenticated) markEntered()
+  }, [isAuthenticated])
+
+  if (!isAuthenticated) return <AuthShellHost />
   return (
     <>
-      <AuthLoading>
-        <AuthShell state={{ phase: 'checking' }} onContinue={() => {}} />
-      </AuthLoading>
-      <Unauthenticated>
-        <AuthShellHost />
-      </Unauthenticated>
-      <Authenticated>
-        <AdoptIdentity>{children}</AdoptIdentity>
-      </Authenticated>
+      {hasConvex && <AdoptIdentity />}
+      {children}
     </>
   )
 }
@@ -53,41 +60,40 @@ function AuthShellHost() {
 }
 
 /**
- * Bind the signed-in pubkey to a Peek user row, once, before rendering the app.
+ * Bind the signed-in pubkey to a Peek user row, once, without holding up the
+ * app (REM-2). Draws nothing.
  *
  * `viewer()` runs inside queries and a query cannot write, so this is the only
- * place the row can be created or adopted. It gates rendering because the app
- * below assumes a viewer exists: an Estiva ID token Peek has no row for is
- * authenticated but unknown, and every query would return empty.
+ * place the row can be created or adopted. Until it has, `users.me` answers
+ * null and `useCurrentUser()` answers undefined, which every Convex-backed
+ * screen already reads as loading. Nothing relay-only waits for it.
+ *
+ * It waits for Convex to confirm the token rather than firing on mount: the
+ * provider hands the client its auth in an effect, and a child's effect runs
+ * before its parent's, so a mutation sent at mount could leave unauthenticated.
  *
  * Idempotent server-side, so a re-run costs a no-op mutation rather than a
  * duplicate person.
  */
-function AdoptIdentity({ children }: { children: ReactNode }) {
+function AdoptIdentity() {
   const adopt = useMutation(api.users.adoptIdentity)
   const convex = useConvex()
-  const relayUrl = useQuery(api.nostr.config.relayConfig, {})?.relayUrl
-  const [ready, setReady] = useState(false)
-  const [failed, setFailed] = useState<string | null>(null)
+  const { isAuthenticated: convexAuthenticated } = useConvexAuth()
   const [adopted, setAdopted] = useState(false)
   const ran = useRef(false)
   const syncRan = useRef(false)
 
   useEffect(() => {
-    if (ran.current) return
+    if (!convexAuthenticated || ran.current) return
     ran.current = true
     adopt({})
-      .then(() => {
-        setReady(true)
-        // From here a token expiring is an interruption, not a cold boot, and
-        // the shell must ask before navigating away (PEEK-123).
-        markEntered()
-        setAdopted(true)
-      })
+      .then(() => setAdopted(true))
       .catch((err: unknown) => {
-        setFailed(err instanceof Error ? err.message : 'Could not set up your account.')
+        // No longer a sign-in failure: the relay screens are unaffected, and
+        // the Convex ones stay on their loading state.
+        console.warn('[auth] could not bind the identity to a Peek row:', err)
       })
-  }, [adopt])
+  }, [adopt, convexAuthenticated])
 
   /*
     Re-read names and faces from Estiva ID (PEEK-72), for the whole roster
@@ -96,35 +102,23 @@ function AdoptIdentity({ children }: { children: ReactNode }) {
     is never revisited — they keep `nostr:<8 chars>`, and since SHA-22 they keep
     a picture URL that no longer loads.
 
-    **Its own effect, and this is the bug it fixes (SHA-22).** All of this used
-    to sit inside the `.then()` above, which latched `ran` on the very first
-    render. `relayUrl` comes from a `useQuery`, and a `useQuery` is `undefined`
-    until it resolves — so on a cold page load the closure captured `undefined`,
-    `!relayUrl` returned, and by the time the URL arrived the latch had already
-    closed. The sync therefore never ran on a real page load, only ever looking
-    like it worked because `importChannel` writes the same rows for anyone who
-    had just posted.
-
-    So the precondition is now checked *when it can be true* instead of once at
-    mount. `syncRan` still keeps it to a single run per load.
+    Its own effect, gated on the adoption having landed: both functions it calls
+    resolve the viewer and answer nothing without a row (SHA-22). `syncRan`
+    keeps it to a single run per load.
 
     Deliberately not awaited: a slow or unreachable relay must not hold up
-    sign-in, and a name is cosmetic until it arrives.
+    anything, and a name is cosmetic until it arrives.
   */
   useEffect(() => {
-    if (!adopted || !relayUrl || syncRan.current) return
+    if (!adopted || !RELAY_URL || syncRan.current) return
     const token = validToken()
     if (!token) return
     syncRan.current = true
-    void syncStaleProfilesFromRelay(relayUrl, token, {
+    void syncStaleProfilesFromRelay(RELAY_URL, token, {
       pubkeysToRefresh: () => convex.query(api.nostr.sync.pubkeysToRefresh, {}),
       recordProfiles: (args) => convex.action(api.nostr.sync.recordProfiles, args as never),
     }).catch((error) => console.warn('[nostr] profile sync failed:', error))
-  }, [adopted, relayUrl, convex])
+  }, [adopted, convex])
 
-  // Binding the identity to a row is app bootstrap, not authentication: the
-  // token was fine. `token_rejected` is the honest reason — signing in again
-  // would not change the outcome.
-  if (failed) return <AuthShell state={{ phase: 'failed', reason: 'token_rejected' }} onContinue={() => {}} />
-  return ready ? <>{children}</> : <AuthShell state={{ phase: 'entering' }} onContinue={() => {}} />
+  return null
 }

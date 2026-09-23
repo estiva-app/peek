@@ -59,11 +59,11 @@ vi.mock('convex/react', () => ({
     if (name.includes('candidates')) return candidates
     if (name.includes('screenerList')) return dmRows
     if (name.includes('topicSnoozes')) return topicSnoozes
-    if (name.includes('relayConfig')) return { relayUrl: 'https://relay.test' }
     return undefined
   },
   useMutation: () => vi.fn(),
 }))
+vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 let openWorkTopicIds = new Set<string>()
 let openWorkFileAddresses = new Set<string>()

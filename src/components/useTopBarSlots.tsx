@@ -6,7 +6,7 @@ import { IdentityMenu, MenuItem } from '@estiva-app/ui'
 import { ReadStatePanel } from './ReadStatePanel'
 import { IconButton } from './ui/IconButton'
 import { SearchInput } from './ui/SearchInput'
-import { hasConvex, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
+import { hasConvex, hasRelay, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
 
 export interface TopBarSlotsProps {
   onMenuToggle?: () => void
@@ -42,6 +42,7 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
      is needed. The anchor is the top bar's right cluster, which persists. */
 
   const displayName = me?.name ?? CURRENT_USER_NAME
+  const live = hasConvex || hasRelay
 
   return {
     menu: (
@@ -91,10 +92,13 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
           // degrades a signed-in face to initials (shipped 2026-09-02;
           // pinned by TopBar.avatar.test.tsx).
           me={{ name: displayName, picture: avatarSrcFor(CURRENT_USER_NAME) ?? undefined, email: me?.email }}
-          signedIn={hasConvex && me !== undefined}
+          // Signed in is Estiva ID's to say, and `AuthGate` renders none of
+          // this without a session (REM-2); `me` is Convex's and may still be
+          // loading, or unreachable. Mock mode has neither backend.
+          signedIn={live}
           relayUrl={relayUrl}
-          idBase={hasConvex ? PROFILE_EDIT_URL : undefined}
-          onSignOut={hasConvex ? () => void signOut() : undefined}
+          idBase={live ? PROFILE_EDIT_URL : undefined}
+          onSignOut={live ? () => void signOut() : undefined}
         >
           {/*
             Read state, on the real app only — there is nothing to compare

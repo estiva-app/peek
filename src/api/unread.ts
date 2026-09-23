@@ -15,6 +15,7 @@ import { topicHasUnread as mockTopicHasUnread } from '@/data/topicData'
 import { dmHasUnread as mockDmHasUnread } from '@/data/dmData'
 import { mockConvIdFor } from './directory'
 import { hasConvex } from './store'
+import { hasRelay } from './relayUrl'
 import { useTopicLookup, useTopics } from './topics'
 import { useTopicUnread } from './useTopicUnread'
 import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/useReadStateSync'
@@ -145,7 +146,8 @@ export function useReadActions() {
      * Folder's channel, whose general chat the person did not read.
      */
     markFileRead(address: string | null | undefined) {
-      if (!hasConvex) return
+      // Gated on the relay, not Convex (REM-2): Convex plays no part here.
+      if (!hasRelay) return
       recordFileRead(address, Date.now())
     },
   }

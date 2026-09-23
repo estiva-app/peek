@@ -57,6 +57,7 @@ import { usePeople } from '@/api/people'
 import { useTopics } from '@/api/topics'
 import { useStarsSync } from '@/nostr/useStarsSync'
 import type { TopicStateStatus } from '@/components/ui/TopicState'
+import { RELAY_URL } from '@/api/relayUrl'
 
 const entryLabel = (e: StarredEntry) => (e.kind === 'dm' ? e.name : e.title)
 const byLabel = (a: StarredEntry, b: StarredEntry) =>
@@ -118,9 +119,8 @@ export function StarredProvider({ children }: { children: ReactNode }) {
   // has whatever the person just clicked a star on.
   const [pending, setPending] = useState<Map<string, boolean>>(new Map())
 
-  // Where the relay lives — a query rather than a build-time variable, so the
-  // bundle and the backend cannot disagree about it (convex/nostr/config.ts).
-  const relayUrl = useQuery(api.nostr.config.relayConfig, hasConvex ? {} : 'skip')?.relayUrl
+  // Where the relay lives — a build-time value since REM-2 (`@/api/relayUrl`).
+  const relayUrl = RELAY_URL
   const stars = useStarsSync(relayUrl)
   const convexStars = useQuery(api.desk.starsList, hasConvex ? {} : 'skip')
   const toggleRemote = useMutation(api.desk.toggleStar)

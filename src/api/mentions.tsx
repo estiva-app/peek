@@ -18,7 +18,7 @@ import { TOPIC_KIND } from '@/nostr/manifest'
 import { useCurrentUser } from './currentUser'
 import { useRelayViewer } from './foreign'
 import { useMentionNames, usePeople } from './people'
-import { hasConvex } from './store'
+import { hasRelay } from './relayUrl'
 import { useTopics } from './topics'
 import type { Person, Topic } from './types'
 
@@ -192,7 +192,7 @@ export function TopicDirectorySync() {
     relay URL, and the read has to be tried again then.
   */
   useEffect(() => {
-    if (!hasConvex || relaySigningKey) return
+    if (!hasRelay || relaySigningKey) return
     const v = viewer()
     if (!v) return
     let cancelled = false

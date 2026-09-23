@@ -153,17 +153,17 @@ shared channel.
 
 ## Turning the Nostr side off
 
-Publishing is controlled by one setting. To stop Peek touching the relay at all:
+Publishing is controlled by one setting, a build-time one since REM-2:
+`VITE_RELAY_URL` in `.env.local`. To stop Peek touching the relay at all, remove
+the line and restart `npm run dev`; every relay path then takes its mock
+branch. To turn it back on:
 
 ```bash
-cd ~/peek-app && CONVEX_AGENT_MODE=anonymous npx convex env remove NOSTR_RELAY_URL
+VITE_RELAY_URL=http://localhost:3000
 ```
 
-Peek then behaves exactly as it did before this branch. To turn it back on:
-
-```bash
-CONVEX_AGENT_MODE=anonymous npx convex env set NOSTR_RELAY_URL http://localhost:3000
-```
+(It used to be the Convex env var `NOSTR_RELAY_URL`, read through
+`nostr.config.relayConfig`. Setting that now changes nothing in the browser.)
 
 ---
 

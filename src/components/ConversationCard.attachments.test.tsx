@@ -20,6 +20,7 @@ const deleted: string[] = []
 vi.mock('@/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api')>()),
   hasConvex: true,
+  useCanUpload: () => true,
   useUploadActions: () => ({
     deleteUpload: (storageId: string) => {
       deleted.push(storageId)
