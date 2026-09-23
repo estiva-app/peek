@@ -66,9 +66,29 @@ vi.mock('convex/react', () => ({
 }))
 
 let openWorkTopicIds = new Set<string>()
+let openWorkFileAddresses = new Set<string>()
 vi.mock('@/api/internal/openWork', () => ({
-  useOpenWork: () => ({ items: [], topicIds: openWorkTopicIds, isLoading: false }),
+  useOpenWork: () => ({ items: [], topicIds: openWorkTopicIds, fileAddresses: openWorkFileAddresses, isLoading: false }),
 }))
+
+/*
+  The file half (FOL-34). `unknown` by default, so every test above the file
+  ones sees a Screener with no followed files — which is what they assert.
+*/
+let followsState: 'unknown' | 'present' = 'unknown'
+let followed = new Set<string>()
+vi.mock('@/api/internal/follows', () => ({
+  useFollows: () => ({ state: followsState, followed, isFollowed: (k: string) => followed.has(k), setFollowed: vi.fn() }),
+}))
+const resolveObject = vi.fn(async (address: string) => ({
+  kind: 30840,
+  slots: { title: { value: `Title of ${address.slice(-1)}` } },
+  comments: [{ id: `c-${address}`, author: 'someone', body: `comment on ${address.slice(-1)}`, createdAt: 1_787_000_000 }],
+}))
+vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObject }) }))
+const FRONTIER = { ready: true, marker: () => 1_786_999_000 }
+vi.mock('@/nostr/useReadStateSync', () => ({ useReadFrontier: () => FRONTIER }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }) }))
 
 vi.mock('@/api/topics', () => ({
   useTopics: () => [
@@ -120,9 +140,38 @@ beforeEach(() => {
   dmRows = []
   topicSnoozes = []
   openWorkTopicIds = new Set()
+  openWorkFileAddresses = new Set()
+  followsState = 'unknown'
+  followed = new Set()
   syncState = 'present'
   asked = true
   relayBlob = { v: 1, updatedAt: 1_787_142_018_561, snoozed: {}, dismissed: {} }
+})
+
+describe('followed files (FOL-34)', () => {
+  const A = `30840:${'a'.repeat(64)}:a`
+  const B = `30840:${'a'.repeat(64)}:b`
+  const fileRows = (items: readonly ({ kind: string } & Partial<{ address: string }>)[]) =>
+    items.flatMap((i) => (i.kind === 'file' && i.address ? [i.address] : []))
+
+  it('opening one file keeps the others on screen, and does not re-read them', async () => {
+    // The flash Miky saw on production: "Open" puts the file in open work, the
+    // set of files asked about shrinks, and holding one answer per *set* blanked
+    // every file row until a fresh read of all of them came back.
+    candidates = { containers: [] }
+    followsState = 'present'
+    followed = new Set([A, B])
+    const { result, rerender } = await setup()
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([A, B].sort()))
+    expect(resolveObject).toHaveBeenCalledTimes(2)
+
+    openWorkFileAddresses = new Set([A])
+    rerender()
+    // Synchronously, with no read in between: B never left the screen.
+    expect(fileRows(result.current.items)).toEqual([B])
+    await act(async () => {})
+    expect(resolveObject).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('the fold renders from the relay answer', () => {
