@@ -69,3 +69,19 @@ export const NO_FILE_TARGET: Record<string, string> = {
     'of its own; publish it where its other 79 are.',
   ].join(' '),
 }
+
+/**
+ * Relay event id → why a message readable only under its topic channel is
+ * accepted without a file copy.
+ *
+ * `probe-con16-channel-vs-file.ts` subtracts these from its channel-only count
+ * and says so, the way the census nets off `DISCARDED`. An entry is a message
+ * the Convex-side migrations could never have seen: it has no Convex row.
+ */
+export const ACCEPTED_CHANNEL_ONLY: Record<string, string> = {
+  '690e0afbdd0acd8985068c5bdc6b54fa27b696f4461d81cc5ef0e9e3f48c5aa9': [
+    'Accepted (Miky, CON-7, 2026-09-23). A kind:9 reply by cb77583e in Estiva',
+    'Suits Updates, 2026-09-17, published straight to the relay with no Convex',
+    'row, so no migration copied it onto the file. Left in the channel.',
+  ].join(' '),
+}
