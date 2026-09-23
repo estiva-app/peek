@@ -23,14 +23,29 @@
  *
  * So a copy is retracted only if all of these hold:
  *
- *   1. it carries `['migration', 'fol25-remigrate']`;
- *   2. its `orig` names a `kind:9` that a Convex row records as its
- *      `nostrEventId`, so the Convex row it stands for is known;
- *   3. the same file carries a `shr8-migrate` copy of that same row, dated
- *      to the row's true time. That copy is the one a reader keeps;
+ *   1. it carries `['migration', 'fol25-remigrate']`, or it is a
+ *      `shr8-migrate` copy threaded under one (three were, measured
+ *      2026-09-23; retracting their root would hide them);
+ *   2. the Convex row it stands for is known: a FOL-25 copy's `orig` names a
+ *      `kind:9` some row records as its `nostrEventId`, a shr8 copy's names
+ *      the row;
+ *   3. the same file carries another `shr8-migrate` copy of that row, not
+ *      itself threaded under a FOL-25 copy, dated to the row's true time and
+ *      naming every attachment the row has. That copy is the one a reader keeps;
  *   4. no event other than another retraction candidate replies to it.
  *      Peek reads replies by `#e` on the root ids it has, so retracting a
  *      root that something else hangs off hides that reply too.
+ *
+ * ## Order
+ *
+ * On 2026-09-23 no FOL-25 copy had a twin: `shr8-migrate.ts` counted each as
+ * the row's copy, so each was the only one on its file. So the run is
+ * **republish, then retract** (Miky, 2026-09-23), with one key export:
+ *
+ *   shr8-migrate.ts plan --replace-fol25
+ *   shr8-migrate.ts migrate --replace-fol25 --keys <file>
+ *   con6-retract.ts --apply --keys <file>
+ *   con6-retract.ts verify
  *
  * A copy that fails any clause is printed and left alone. The pairing is
  * `shr8-migrate.ts`'s own {@link survey}, imported rather than restated, so a
@@ -62,6 +77,7 @@ const WRITE_GAP_MS = 6_000
 const remigrated = (e: SignedEvent) => e.tags.some((x) => x[0] === 'migration' && x[1] === REMIGRATE_MARK)
 /** Every event id this one threads under — NIP-22 `e`/`E`, and a legacy `e` reply. */
 const parentsOf = (e: SignedEvent) => e.tags.filter((x) => (x[0] === 'e' || x[0] === 'E') && x[1]).map((x) => x[1]!)
+const imetas = (e: SignedEvent) => e.tags.filter((x) => x[0] === 'imeta').length
 
 type Verdict =
   | { kind: 'retract'; copy: SignedEvent; keep: SignedEvent; surface: string; rowId: string }
@@ -96,19 +112,24 @@ async function buildPlan(query: ReturnType<typeof queryFn>, agent: string): Prom
   for (const s of surfaces) {
     if (!s.address) continue
     const conversation = await fileConversation(query, s.address)
-    const copies = conversation.filter(remigrated)
-    if (!copies.length) continue
+    const fol25Ids = new Set(conversation.filter(remigrated).map((e) => e.id))
+    if (!fol25Ids.size) continue
+    // The same test `shr8-migrate.ts --replace-fol25` supersedes by: a FOL-25
+    // copy, or a copy of its own threaded under one.
+    const stale = (e: SignedEvent) => fol25Ids.has(e.id) || (migrated(e) && parentsOf(e).some((p) => fol25Ids.has(p)))
+    const copies = conversation.filter(stale)
     const rowOfEvent = new Map<string, string>()
     for (const i of s.items) if (i.eventId) rowOfEvent.set(i.eventId, i.id)
     const itemById = new Map(s.items.map((i) => [i.id, i]))
     const shr8ByRow = new Map<string, SignedEvent>()
-    for (const e of conversation) if (migrated(e) && origOf(e)) shr8ByRow.set(origOf(e)!, e)
+    for (const e of conversation) if (migrated(e) && !stale(e) && origOf(e)) shr8ByRow.set(origOf(e)!, e)
     const candidateIds = new Set(copies.map((e) => e.id))
 
     for (const copy of copies) {
       seen.add(copy.id)
       const keep = (why: string) => verdicts.push({ kind: 'keep', copy, surface: s.title, why })
-      const rowId = rowOfEvent.get(origOf(copy) ?? '')
+      // A FOL-25 copy names the kind:9 it copied; a shr8 copy names the row.
+      const rowId = migrated(copy) ? origOf(copy) : rowOfEvent.get(origOf(copy) ?? '')
       if (!rowId) {
         keep(`orig ${short(origOf(copy) ?? '?')} is no Convex row's nostrEventId`)
         continue
@@ -126,6 +147,11 @@ async function buildPlan(query: ReturnType<typeof queryFn>, agent: string): Prom
         keep(`the shr8 copy ${short(twin.id)} is dated ${stamp(twin.created_at)}, the row ${stamp(trueSecs)}`)
         continue
       }
+      const files = itemById.get(rowId)!.attachments
+      if (imetas(twin) < files) {
+        keep(`the shr8 copy ${short(twin.id)} describes ${imetas(twin)} of the row's ${files} attachment(s)`)
+        continue
+      }
       if (dependents.length) {
         keep(`${dependents.length} event(s) reply to it: ${dependents.map((d) => short(d.id)).join(', ')}`)
         continue
@@ -141,7 +167,7 @@ function printPlan(p: Plan, agent: string) {
   const retract = p.verdicts.filter((v): v is Extract<Verdict, { kind: 'retract' }> => v.kind === 'retract')
   const keep = p.verdicts.filter((v): v is Extract<Verdict, { kind: 'keep' }> => v.kind === 'keep')
   console.log(`fol25-remigrate copies in the team Folders:   ${p.swept}`)
-  console.log(`  on a surveyed file:                         ${p.verdicts.length}`)
+  console.log(`candidates on surveyed files:                 ${p.verdicts.length}  (FOL-25 copies + shr8 copies threaded under one)`)
   console.log(`  unaccounted for (left alone):               ${p.unaccounted.length}`)
   console.log(`  → retract (a dated shr8 twin exists):       ${retract.length}`)
   console.log(`  → keep:                                     ${keep.length}`)
@@ -191,6 +217,7 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
   let copiesLeft = 0
   let duplicated = 0
   let misdated = 0
+  let undescribed = 0
   let rows = 0
   for (const s of surfaces) {
     if (!s.address) continue
@@ -217,13 +244,18 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
         misdated++
         console.log(`  ${s.title}: row ${short(i.id)} has no copy at its true time ${stamp(Math.floor(i.createdAt / 1000))}`)
       }
+      if (i.attachments && !on.some((e) => imetas(e) >= i.attachments)) {
+        undescribed++
+        console.log(`  ${s.title}: row ${short(i.id)} has ${i.attachments} attachment(s) and no copy describing them`)
+      }
     }
   }
   console.log(`rows with a copy on their file: ${rows}`)
   console.log(`  fol25-remigrate copies still answering: ${copiesLeft}`)
   console.log(`  rows with more than one copy:           ${duplicated}`)
   console.log(`  rows with no copy at their true time:   ${misdated}`)
-  process.exitCode = duplicated || misdated ? 1 : 0
+  console.log(`  rows whose attachments no copy names:   ${undescribed}`)
+  process.exitCode = copiesLeft || duplicated || misdated || undescribed ? 1 : 0
 }
 
 async function main() {

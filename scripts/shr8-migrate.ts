@@ -67,8 +67,8 @@
  *     would take the census's attachment line down without a byte having
  *     moved — the exact silent improvement this project exists to stop.
  */
-import { buildUnsignedAuthEvent, authorizationHeaderFor, publicKeyFromSecret, signEvent, toNostrSeconds } from '@estiva-app/protocol'
-import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { buildUnsignedAuthEvent, authorizationHeaderFor, imetaTag, publicKeyFromSecret, signEvent, toNostrSeconds } from '@estiva-app/protocol'
+import type { NostrTag, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { DISCARDED, NO_FILE_TARGET, TEAMS } from './con4-discarded.js'
@@ -86,10 +86,36 @@ const WRITE_GAP_MS = 6_000
  * CON-12: count a row as owed a copy when the *file* lacks it, not when the
  * relay has never heard of it. See the note at the top of this file.
  */
-const INCLUDE_PUBLISHED = process.argv.includes('--include-published')
+const INCLUDE_PUBLISHED = process.argv.includes('--include-published') || process.argv.includes('--replace-fol25')
 
-/** Is this row part of the population, before asking whether it is done? */
-const inScope = (i: Item) => INCLUDE_PUBLISHED || !i.eventId
+/**
+ * CON-6: a FOL-25 `remigrate` copy does not count as done.
+ *
+ * Those copies are late by 1–28 days, carry a `*date UTC*` prefix in their
+ * body and no `imeta`, and this script used to count each one as the row's
+ * copy — so 134 rows never got a true-dated one and CON-6 had nothing to
+ * retract them in favour of. Under this flag they are *superseded*: the row
+ * is written again, true-dated, with its attachments from CON-5's manifest,
+ * and `con6-retract.ts` hides the old copy afterwards.
+ *
+ * A copy of this script's own that threads under a superseded copy is
+ * superseded with it. Peek reads replies by `#e` on the roots it has, so
+ * once the root is retracted that reply would be unreadable.
+ */
+const REPLACE_FOL25 = process.argv.includes('--replace-fol25')
+const FOL25_MARK = 'fol25-remigrate'
+const fol25Copy = (e: SignedEvent) => e.tags.some((x) => x[0] === 'migration' && x[1] === FOL25_MARK)
+/** The manifest `con5-reupload-blobs.ts` wrote: every blob now on the relay, by Convex row. */
+const MANIFEST = process.env.CON5_MANIFEST ?? `${process.env.HOME}/con5-manifest.jsonl`
+
+/**
+ * Is this row part of the population, before asking whether it is done?
+ *
+ * Under `--replace-fol25`, only the rows a superseded copy stands for: the
+ * flag re-writes those and nothing else, so it cannot double as a second
+ * `--include-published` run over rows CON-6 was never about.
+ */
+const inScope = (i: Item, s: Surface) => (REPLACE_FOL25 ? s.replacing.has(i.id) : INCLUDE_PUBLISHED || !i.eventId)
 
 /**
  * Every published row's own event, filled by {@link survey}.
@@ -268,6 +294,10 @@ interface Surface {
   done: Map<string, SignedEvent>
   /** How many copies actually sit on the file, however they are keyed. */
   fileCopies: number
+  /** Under `--replace-fol25`, the copies on the file that are not counted as done. */
+  superseded: SignedEvent[]
+  /** The Convex rows those copies stand for — under the flag, the only rows written. */
+  replacing: Set<string>
   discarded?: string
   noFileTarget?: string
 }
@@ -395,6 +425,8 @@ async function survey(query: ReturnType<typeof queryFn>, agent: string): Promise
       done: new Map(),
       addressed: new Set(),
       fileCopies: 0,
+      superseded: [],
+      replacing: new Set(),
       discarded: DISCARDED[t.title],
       noFileTarget: NO_FILE_TARGET[t.title],
     }
@@ -436,11 +468,18 @@ async function survey(query: ReturnType<typeof queryFn>, agent: string): Promise
       {
         const rowOfEvent = new Map<string, string>()
         for (const i of s.items) if (i.eventId) rowOfEvent.set(i.eventId, i.id)
-        for (const e of await fileConversation(query, s.address)) {
+        const conversation = await fileConversation(query, s.address)
+        const fol25Ids = new Set(conversation.filter(fol25Copy).map((e) => e.id))
+        for (const e of conversation) {
           const o = origOf(e)
           if (!o) continue
           s.fileCopies++
           const rowId = rowOfEvent.get(o) ?? o
+          if (REPLACE_FOL25 && (fol25Ids.has(e.id) || e.tags.some((x) => x[0] === 'e' && fol25Ids.has(x[1]!)))) {
+            s.superseded.push(e)
+            s.replacing.add(rowId)
+            continue
+          }
           // If a row has both a FOL-25 copy and one of this script's, the
           // marked one is the copy `verify` is entitled to measure.
           if (!s.done.has(rowId) || migrated(e)) s.done.set(rowId, e)
@@ -520,7 +559,7 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
   const authorTally = new Map<string, number>()
 
   for (const s of surfaces) {
-    const gapItems = s.items.filter((i) => inScope(i) && !s.addressed.has(i.id))
+    const gapItems = s.items.filter((i) => inScope(i, s) && !s.addressed.has(i.id))
     if (!gapItems.length && !s.fileCopies) continue
     if (s.discarded) {
       console.log(`${('topic/' + s.title).slice(0, 44).padEnd(46)}${String(gapItems.length).padStart(5)}${''.padStart(7)}${''.padStart(9)}${''.padStart(6)}${''.padStart(8)}  DISCARDED (CON-4)`)
@@ -568,6 +607,16 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
   console.log(`\n— the run ———————————————————————————————`)
   console.log(`rows in scope (targets resolved):   ${total}`)
   console.log(`already migrated by an earlier run: ${total - writable}`)
+  if (REPLACE_FOL25) {
+    console.log(`superseded copies (con6-retract hides them after): ${surfaces.reduce((n, s) => n + s.superseded.length, 0)}`)
+    // What `--include-published` alone would still write: out of this flag's
+    // scope, printed so it is a known number rather than a surprise.
+    const outside = surfaces.flatMap((s) =>
+      s.target && !s.discarded ? s.items.filter((i) => !s.replacing.has(i.id) && !s.addressed.has(i.id) && !s.done.has(i.id)).map((i) => ({ s, i })) : [],
+    )
+    console.log(`rows with no copy on their file, not written by this flag: ${outside.length}`)
+    for (const { s, i } of outside) console.log(`   ${s.title}: ${i.kind} ${i.id} ${stamp(Math.floor(i.createdAt / 1000))} ${i.eventId ? 'published' : 'null'}`)
+  }
   console.log(`to write:                           ${writable}  (~${Math.ceil((writable * WRITE_GAP_MS) / 60_000)} min at ${WRITE_GAP_MS / 1000}s between writes)`)
 
   console.log(`\nauthors, and so the signers this needs:`)
@@ -590,7 +639,11 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
     console.log(`   can only be published top-level, which loses the thread the done-when names.`)
   }
 
-  if (attachmentHeld.length) {
+  if (attachmentHeld.length && REPLACE_FOL25) {
+    const blobs = attachmentHeld.reduce((n, i) => n + i.attachments, 0)
+    console.log(`\n${attachmentHeld.length} row(s) in scope carry ${blobs} attachment(s); each copy names them as \`imeta\``)
+    console.log(`   from ${MANIFEST} (CON-5 moved the bytes). \`migrate\` refuses a row the manifest does not cover.`)
+  } else if (attachmentHeld.length) {
     const blobs = attachmentHeld.reduce((n, i) => n + i.attachments, 0)
     console.log(`\n${attachmentHeld.length} row(s) in scope carry ${blobs} attachment(s) whose bytes are still in Convex storage.`)
     console.log(`   They are migrated anyway: the message text is what this ticket owes, and holding`)
@@ -602,7 +655,7 @@ async function plan(query: ReturnType<typeof queryFn>, agent: string) {
 
   const oldest = surfaces
     .filter((s) => s.target)
-    .flatMap((s) => s.items.filter((i) => inScope(i) && !s.addressed.has(i.id) && !s.done.has(i.id)))
+    .flatMap((s) => s.items.filter((i) => inScope(i, s) && !s.addressed.has(i.id) && !s.done.has(i.id)))
     .reduce((m, i) => Math.min(m, i.createdAt), Date.now())
   console.log(`\noldest row in scope: ${stamp(Math.floor(oldest / 1000))} UTC — ${Math.ceil((Date.now() - oldest) / 86_400_000)} days.`)
   console.log(`So BUZZ_CREATED_AT_FLOOR_SECS must be at least ${Math.ceil((Date.now() - oldest) / 1000)} for the run to keep its dates.`)
@@ -800,15 +853,31 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
   const problems: string[] = []
   let oldest = Date.now()
 
+  // Under `--replace-fol25` the attachments go on the copy itself. The bytes are
+  // already on the relay (CON-5), so this names them rather than moving any.
+  const blobsByRow = new Map<string, NostrTag[]>()
+  if (REPLACE_FOL25) {
+    for (const line of readFileSync(MANIFEST, 'utf8').split('\n').filter(Boolean)) {
+      const m = JSON.parse(line) as { rowId: string; name: string; blob: { url: string; type: string; sha256: string; size: number; dim?: string; thumb?: string } }
+      const b = m.blob
+      const tags = blobsByRow.get(m.rowId) ?? []
+      tags.push(imetaTag({ url: b.url, m: b.type, x: b.sha256, size: b.size, dim: b.dim, thumb: b.thumb, filename: m.name }))
+      blobsByRow.set(m.rowId, tags)
+    }
+  }
+
   for (const s of surfaces) {
     if (s.discarded || !s.target) continue
-    const gapItems = s.items.filter((i) => inScope(i) && !s.addressed.has(i.id) && !s.done.has(i.id))
+    const gapItems = s.items.filter((i) => inScope(i, s) && !s.addressed.has(i.id) && !s.done.has(i.id))
     if (!gapItems.length) continue
-    const gap = new Set(s.items.filter((i) => inScope(i) && !s.addressed.has(i.id)).map((i) => i.id))
+    const gap = new Set(s.items.filter((i) => inScope(i, s) && !s.addressed.has(i.id)).map((i) => i.id))
     for (const i of gapItems) {
       const pk = pubkeyFor(i, keys)
       if (!pk) problems.push(`${s.title}: no pubkey for author ${i.authorName}`)
       else if (!signers.has(pk)) problems.push(`${s.title}: no signer for ${short(pk)}… ${i.authorName}`)
+      if (REPLACE_FOL25 && i.attachments > (blobsByRow.get(i.id)?.length ?? 0)) {
+        problems.push(`${s.title}: row ${i.id} has ${i.attachments} attachment(s), the manifest ${blobsByRow.get(i.id)?.length ?? 0}`)
+      }
       if (i.kind === 'reply') {
         const a = anchorFor(i, s, gap, publishedEvents)
         if (a.kind !== 'in-run' && a.kind !== 'on-file') problems.push(`${s.title}: reply ${short(i.id)} has no parent on the file`)
@@ -882,6 +951,7 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
           // a re-run skips it and `verify` can match the two stores by id.
           ['orig', item.id, String(Math.floor(item.createdAt / 1000)), pk],
           ['migration', MARK],
+          ...(REPLACE_FOL25 ? (blobsByRow.get(item.id) ?? []) : []),
         ],
         content: item.body,
       }
