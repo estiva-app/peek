@@ -26,6 +26,7 @@ import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile, topicPath } from '@/lib/objectUrl'
+import { legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
@@ -490,12 +491,23 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
   const parentOptionsFor = (form: Extract<Level, { kind: 'form' }>): Record<string, VocabOption[]> => {
     const out: Record<string, VocabOption[]> = {}
+    /*
+      A retired topic's channel is never somewhere to start a conversation
+      (FOL-26): its conversation is on a file now, and a `kind:9` into it is
+      what FOL-25 has to be sure nothing can write before the channel goes.
+      The relay lists it among the newest `39000`s until then, so it is
+      dropped here, by the same table the old links redirect through.
+    */
+    const live39000 = (options: VocabOption[]) =>
+      options.filter((p) => !(p.value.startsWith('39000:') && legacyTopicByChannel(p.value.split(':')[2] ?? '')))
     if (form.app?.id === 'peek') {
-      out.topic = (topics ?? []).filter((t) => !t.isResolved).map((t) => ({ value: t.id, label: t.title }))
+      out.topic = (topics ?? [])
+        .filter((t) => !t.isResolved && !(t.folderId && legacyTopicByChannel(t.folderId)))
+        .map((t) => ({ value: t.id, label: t.title }))
     }
     const read = form.app ? live[form.app.id] : undefined
-    if (read?.state === 'ready') out[PARENT_FIELD] = read.parents
-    if (!form.app && form.entry) out[PARENT_FIELD] = form.entry.parents
+    if (read?.state === 'ready') out[PARENT_FIELD] = live39000(read.parents)
+    if (!form.app && form.entry) out[PARENT_FIELD] = live39000(form.entry.parents)
     return out
   }
 
@@ -544,6 +556,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const { parent, properties } = splitSubmission(values)
     if (!parent) {
       setSubmitError('Choose where this should go before creating it.')
+      return
+    }
+    // The pickers drop a retired topic's channel (FOL-26); a prefilled draft
+    // does not go through a picker, so the same rule holds here too.
+    if (parent.startsWith('39000:') && legacyTopicByChannel(parent.split(':')[2] ?? '')) {
+      setSubmitError('That topic has moved to a file. Open it from Topics and write there.')
       return
     }
     setSubmitting(true)

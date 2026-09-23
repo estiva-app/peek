@@ -55,94 +55,47 @@ describe('app smoke (seam wiring)', () => {
     expect(present('Greg Bothman')).toBeGreaterThan(0)
   })
 
-  it('renders a topic conversation and opens its thread panel', () => {
-    renderApp('/topics/3')
-    // Topic list + selected topic's messages (merged through useTopicMessages)
-    expect(present('Ongoing onboarding issues')).toBeGreaterThan(0)
-    const message = screen.getAllByText(/Funnel data is in/)[0]
-    // Open the thread panel (global useThread lookup)
-    fireEvent.click(message)
-    expect(present('Replies')).toBeGreaterThan(0)
-    expect(present(/41% drop-off is worse than I expected/)).toBeGreaterThan(0)
-  })
-
   /**
-   * PEE-21's done-when: a container past the reaction horizon says how many
-   * messages were not checked, once, and one under it says nothing. The number
-   * rides on the topic (`reactionTargetsOmitted`, recorded by the sync and
-   * carried by `topics.list`); this proves the view actually draws it.
-   */
-  it('says how many messages were past the reaction horizon', () => {
-    renderApp('/topics/7')
-    expect(present(/14 older ones were not checked/)).toBe(1)
-  })
-
-  it('says nothing about the horizon under the cap', () => {
-    renderApp('/topics/3')
-    expect(screen.queryByText(/were not checked/)).toBeNull()
-  })
-
-  /**
-   * PEE-14's done-when, exercised the way it is actually used: a cold load of a
-   * pasted URL in a fresh tab, through the real router and the real provider
-   * stack. Nothing here is carried over from a previous navigation — no
-   * remembered selection, no in-memory router history — which is the case a
-   * path-based object URL breaks first.
+   * FOL-26's done-when 1, through the real router: every old topic URL shape
+   * lands on the file its conversation moved to, and none of them renders the
+   * retired Topics view. The ids and uuids are production's, from
+   * `legacyTopicLinks`; nothing here is resolved through Convex.
    *
-   * The topic is mock '7', the one fixture with a channel uuid.
+   * A bare file's word is Peek's own, so it lands at its short form at once.
+   * No Ship manifest is readable here, so a project is written in its long
+   * form, `/topic/<address>` — `FilePage` shortens it once it resolves.
    */
-  describe('object URLs (PEE-14)', () => {
-    const UUID = 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91'
-    const CANONICAL = `/topic-old/updates-on-the-new-office-layout-${UUID}`
+  describe('old topic links land on files (FOL-26)', () => {
+    const CHANNEL = 'e83471a7-cd98-4a62-ac5a-f21e0daedd24'
+    const FILE = '/topic/folders-universal-navigation-concept-620929ad-2985-479b-a4b3-5d5d9cae9705'
+    const PROJECT = '/topic/30850:a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697:2a5b8f13-0364-4a84-bdd4-fc0a6ddc259c'
 
-    it('cold-loads a topic from its canonical URL', () => {
-      renderApp(CANONICAL)
-      expect(present('Updates on the new office layout')).toBeGreaterThan(0)
-      expect(currentUrl()).toBe(CANONICAL)
+    it.each([
+      ['/topics/<seedKey>', '/topics/t_1787038103126_1', FILE],
+      ['/topic-old/<slug>-<uuid>', `/topic-old/folders-universal-navigation-concept-${CHANNEL}`, FILE],
+      ['/topic-old/ with a stale slug', `/topic-old/whatever-it-used-to-be-${CHANNEL}?huddle=h1`, FILE],
+      ['/topic-old/<uuid>', `/topic-old/${CHANNEL}`, FILE],
+      ['the pre-FOL-37 /topic/<slug>-<uuid>', `/topic/folders-${CHANNEL}`, FILE],
+      ['a topic whose conversation is a Ship project', '/topic-old/feedback-on-peek-2303e8c1-c866-43b8-9b4c-e263f313a683', PROJECT],
+      ['For testing, discarded, to its team', '/topics/t_1788464201556_1', '/app/folders/fd03975a-eb00-49d6-a4b7-33ead1854672'],
+      ['/topics, the directory, to the Folder tree', '/topics', '/app/folders'],
+    ])('%s', (_label, from, to) => {
+      renderApp(from)
+      expect(currentUrl()).toBe(to)
     })
 
-    /** §7.2: a consumer MUST ignore everything before the final uuid — which is
-     *  what keeps a link working after the topic has been renamed. */
-    it('resolves a link whose slug is stale, and refreshes the slug', () => {
-      renderApp(`/topic-old/whatever-this-used-to-be-called-${UUID}`)
-      expect(present('Updates on the new office layout')).toBeGreaterThan(0)
-      expect(currentUrl()).toBe(CANONICAL)
-    })
-
-    it('resolves a bare uuid with no slug at all', () => {
-      renderApp(`/topic-old/${UUID}`)
-      expect(present('Updates on the new office layout')).toBeGreaterThan(0)
-      expect(currentUrl()).toBe(CANONICAL)
-    })
-
-    /** Old links are already in the wild and in every browser history; they keep
-     *  working, and they upgrade in place the first time they are opened. */
-    it('upgrades a legacy /topics/<peek-id> link to the canonical URL', () => {
-      renderApp('/topics/7')
-      expect(present('Updates on the new office layout')).toBeGreaterThan(0)
-      expect(currentUrl()).toBe(CANONICAL)
-    })
-
-    /** A topic with no channel uuid has no protocol identity to put in a URL.
-     *  The legacy path still works and is left alone rather than faked. */
-    it('leaves a topic that has no channel uuid on the legacy path', () => {
+    it('never draws the Topics view, even for a mock topic', () => {
       renderApp('/topics/3')
-      expect(present('Ongoing onboarding issues')).toBeGreaterThan(0)
-      expect(currentUrl()).toBe('/topics/3')
+      expect(screen.queryByText('Ongoing onboarding issues')).toBeNull()
+      expect(screen.queryByText(/Funnel data is in/)).toBeNull()
+      expect(present(/does not point at anything Peek can open/)).toBeGreaterThan(0)
     })
 
-    it('carries an open huddle through the canonical URL', () => {
-      renderApp(`${CANONICAL}?huddle=h1`)
-      expect(currentUrl()).toBe(`${CANONICAL}?huddle=h1`)
-    })
-
-    /** The short form was the Convex topic's until FOL-37 and is in the wild;
-     *  a link that names a channel uuid there opens the topic at its new prefix,
-     *  and carries its query along. */
-    it('sends an old /topic/<slug>-<channel-uuid> link to /topic-old/', () => {
-      renderApp(`/topic/whatever-this-used-to-be-called-${UUID}?huddle=h1`)
-      expect(present('Updates on the new office layout')).toBeGreaterThan(0)
-      expect(currentUrl()).toBe(`${CANONICAL}?huddle=h1`)
+    it('opens a Desk topic on its URL rather than beside the list', () => {
+      renderApp('/app/desk')
+      fireEvent.click(screen.getAllByText('Launch checklist for v2 of the mobile app')[0])
+      expect(currentUrl()).not.toBe('/app/desk')
+      expect(screen.queryByText(/Funnel data is in/)).toBeNull()
     })
 
     /** A short link whose uuid is no topic's is a file's, and stays on the file
@@ -152,14 +105,6 @@ describe('app smoke (seam wiring)', () => {
       renderApp('/topic/some-file-00000000-0000-4000-8000-000000000000')
       expect(currentUrl()).toBe('/topic/some-file-00000000-0000-4000-8000-000000000000')
       expect(screen.queryByText(/doesn't lead to a topic you can open/)).toBeNull()
-    })
-
-    /** A link that resolves to nothing says so, rather than quietly showing a
-     *  different conversation — which would leave somebody believing they were
-     *  reading what the link pointed to. */
-    it('says so when a link resolves to no topic', () => {
-      renderApp('/topic-old/deleted-topic-00000000-0000-4000-8000-000000000000')
-      expect(present(/doesn't lead to a topic you can open/)).toBeGreaterThan(0)
     })
   })
 
@@ -191,9 +136,9 @@ describe('app smoke (seam wiring)', () => {
       expect(screen.queryByText(/does not point at anything Peek can open/)).toBeNull()
     })
 
-    it('keeps /topics, /topic-old/, /o/ and /message/ at the root', () => {
-      renderApp('/topics')
-      expect(currentUrl()).toBe('/topics')
+    it('keeps /topic-old/ at the root, as a redirect', () => {
+      renderApp('/topic-old/00000000-0000-4000-8000-000000000000')
+      expect(currentUrl()).toBe('/app/folders/00000000-0000-4000-8000-000000000000')
     })
   })
 

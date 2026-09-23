@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { DeskPage } from './pages/DeskPage'
-import { TopicsPage } from './pages/TopicsPage'
+import { LegacyTopicRedirect } from './pages/LegacyTopicRedirect'
 import { PeoplePage } from './pages/PeoplePage'
 import { FoldersPage } from '@/pages/FoldersPage'
 import { FilePage } from '@/pages/FilePage'
@@ -28,8 +28,8 @@ function MovedUnderApp() {
  * so `peek.estiva.app/project/<d>` and `ship.estiva.app/project/<d>` are one
  * file. Everything of Peek's that is not a file lives under `/app/`, with the
  * old paths redirecting; what stays at the root is what other apps' links and
- * Peek's own manifest already name — `/topics`, `/o/`, `/message/`, and
- * `/topic-old/` for as long as the Convex topics last.
+ * Peek's own manifest already name — `/o/` and `/message/` — and `/topics`
+ * and `/topic-old/`, which only redirect since FOL-26.
  */
 function App() {
   // Asked once, here, so a link is the short form from the first render after
@@ -52,16 +52,14 @@ function App() {
       <Route path="/folders/:id" element={<MovedUnderApp />} />
       <Route path="/people" element={<MovedUnderApp />} />
       <Route path="/people/:id" element={<MovedUnderApp />} />
-      <Route path="/topics" element={<TopicsPage />} />
-      {/* One Convex channel topic: `/topic-old/<slug>-<channel-uuid>` — the
-          same grammar at the prefix FOL-37 moved the retiring topics to, so the
-          short form is free for what is being built. */}
-      <Route path="/topic-old/:ref" element={<TopicsPage />} />
-      {/* Legacy. The id here is Peek-private, so these links resolve nowhere
-          else — but they are already in the wild, and in every browser history
-          that has ever opened a topic. TopicsPage replaces the URL with the
-          canonical one once the topic resolves. */}
-      <Route path="/topics/:id" element={<TopicsPage />} />
+      {/* The retired Topics view (FOL-26). Its list is the Folder tree now, and
+          one topic is the file its conversation moved to — `/topic-old/<slug>-
+          <channel-uuid>` since FOL-37, and the Peek-private `/topics/<id>`
+          before it. These links are in the wild and in every browser history
+          that ever opened a topic, so they redirect rather than 404. */}
+      <Route path="/topics" element={<Navigate to="/app/folders" replace />} />
+      <Route path="/topic-old/:ref" element={<LegacyTopicRedirect />} />
+      <Route path="/topics/:id" element={<LegacyTopicRedirect />} />
       {/* What the NIP-89 manifest advertises: any consumer holding one of
           Peek's objects can open it here, whether it is addressed by naddr or
           named by nevent (PRO-11). */}
@@ -75,8 +73,8 @@ function App() {
           any file at all (FOL-19, FOL-37). Singular for an object, plural for
           the directory above (PEE-14). The static routes above rank ahead of
           this one, so a word of Peek's own never reaches it. A link that still
-          names a Convex topic's channel uuid here is sent on to `/topic-old/`
-          by `FilePage`. */}
+          names a Convex topic's channel uuid here is sent on to that topic's
+          file by `FilePage` (FOL-26). */}
       <Route path="/:word/:ref" element={<FilePage />} />
     </Routes>
   )
