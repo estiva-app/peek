@@ -43,7 +43,7 @@ fourth kind.
 If the component you need is missing or nearly fits: extend the package (a
 ticket in `estiva-ui`, a prop added there), never a fork here.
 
-**Pixel-perfect, no exceptions.**
+**Pixel-perfect to the package, no exceptions: measure, never eyeball.**
 
 ## Where the rest lives
 
