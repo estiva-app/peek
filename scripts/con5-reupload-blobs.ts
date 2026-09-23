@@ -46,6 +46,7 @@ import { homedir } from 'node:os'
 import { authorizationHeaderFor, buildUnsignedAuthEvent, fetchBlob, sha256Of, uploadBlob } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent, UploadedBlob } from '@estiva-app/protocol'
 import { DISCARDED } from './con4-discarded.js'
+import { sanitizeForRelay } from './con5-sanitize-media.js'
 
 const CONVEX = process.env.CONVEX_URL ?? 'https://honorable-guineapig-592.eu-west-1.convex.cloud'
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
@@ -248,7 +249,8 @@ async function main() {
       const signer = (unsigned: UnsignedEvent) => sign(unsigned, t.accessToken)
       const blob = await uploadBlob({
         relayUrl: RELAY_URL,
-        bytes,
+        // Three of the 62 were refused as-is (a udta, a trailing moov, an ICC profile).
+        bytes: sanitizeForRelay(bytes, c.file.contentType),
         contentType: c.file.contentType || undefined,
         filename: c.file.name,
         sign: signer,
