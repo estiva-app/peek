@@ -17,8 +17,7 @@
  *   `shareableMessageUrl`), a bare file at `/topic/<slug>-<d>` (`filePath`,
  *   FOL-37 — `/o/<naddr>` when it resolved without an address, which lands on
  *   the same page). These are in-app links, wired
- *   through the router by the chip so a click does not reload the app
- *   (UI-RULES §3).
+ *   through the router by the chip so a click does not reload the app.
  * - **Another app's object opens in that app**, at the URL its manifest's
  *   `web` template produced — `openUrl`, the same field the attachment card
  *   reads, so the chip and the card cannot disagree about where a thing lives.

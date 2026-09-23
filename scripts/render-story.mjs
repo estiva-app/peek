@@ -1,7 +1,8 @@
 /**
  * Render a story from a static Storybook build and say what it measures.
  *
- * UI-RULES §5: a story that exists but was never rendered is unreviewed, and
+ * The verify skill, "Measure a story": a story that exists but was never
+ * rendered is unreviewed, and
  * "it looks right" is not a result. This is the recipe that works here with
  * no Storybook dev server and no browser install — Chromium 1228 is already
  * in `~/.cache/ms-playwright/` and `playwright-core 1.61.1` matches it.

@@ -33,7 +33,7 @@ const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
 const RELAY_URL = (process.env.RELAY_URL ?? 'https://estiva.estiva.app').replace(/\/+$/, '')
 const CLIENT_ID = process.env.ESTIVA_ID_CLIENT_ID ?? ''
 const CLIENT_SECRET = process.env.ESTIVA_ID_CLIENT_SECRET ?? ''
-/** The deployed backend — `[Development]` by Convex's label, live by peek.estiva.app (CLAUDE.md). */
+/** The deployed backend — `[Development]` by Convex's label, live by peek.estiva.app (`.claude/rules/convex.md`). */
 const CONVEX_URL = process.env.CONVEX_URL ?? 'https://honorable-guineapig-592.eu-west-1.convex.cloud'
 /** Between writes: the relay's write quota trips after a handful in a row. */
 const WRITE_GAP_MS = 6_000

@@ -23,8 +23,8 @@ import { Field } from './ui/Field'
  *
  * **Not `AddToOpenWorkDialog`'s row list.** That is the nearest existing
  * pattern and it hand-rolls `role="option"` and uses `text-sm`, both of which
- * `UI-RULES.md` now rules out and explicitly says not to copy from the files
- * that predate it. One destination is a value, so a `Field` and a `Select` say
+ * the gate lint and the token lint now refuse; the files that predate them
+ * are not a pattern to copy. One destination is a value, so a `Field` and a `Select` say
  * it with components the package already owns.
  */
 export function MoveFileDialog({

@@ -5,7 +5,7 @@
  *
  * 1. Third-party integration mocks (files).
  *    These stay static by design — they mock integrations that are a
- *    separate, later project (see PRDs/Peek-Domain-Model.md §6).
+ *    separate, later project.
  *
  * 2. Presentation constants + non-reactive snapshots of app data
  *    (HIGHLIGHT_META, PEOPLE, TOPICS, avatarFor). The snapshots exist for

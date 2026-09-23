@@ -1,7 +1,8 @@
 /**
- * Convex schema — generated from PRDs/Peek-Domain-Model.md §2 (Phase 0).
- * Field-level rationale, derivation rules, and the coverage check against
- * the old mock shapes live in that document; keep the two in sync.
+ * Convex schema — first generated from Peek's domain-model spec, §2 (Phase 0).
+ * That spec held the field-level rationale, derivation rules, and the coverage
+ * check against the old mock shapes; it is not kept in this repository, so the
+ * comments here are where a field's reason lives now.
  *
  * Production starts EMPTY (decision 2026-07-08); convex/dev/seedDemo.ts is
  * the optional dev-only fixture.
@@ -319,7 +320,7 @@ export default defineSchema({
    * are now a *projection* folded from these rows rather than the truth. Every
    * existing reader keeps working while this becomes the source; retiring them
    * is a later sweep, because removing a field fails the entire Convex push for
-   * every row still carrying it (CLAUDE.md).
+   * every row still carrying it (`.claude/rules/convex.md`).
    *
    * Rows are never mutated or deleted. A reopen is another row, which is what
    * makes the history renderable at all — the single-slot columns could only

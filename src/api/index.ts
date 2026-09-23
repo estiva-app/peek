@@ -1,5 +1,5 @@
 /**
- * Peek data-access seam (see PRODUCTION-PLAN.md).
+ * Peek data-access seam (the rule: `.claude/rules/data-seam.md`).
  *
  * The ONLY module tree components and pages may read app data through.
  * Convex queries/mutations serve every entity when a deployment is

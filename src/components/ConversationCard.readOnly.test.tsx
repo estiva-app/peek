@@ -3,8 +3,8 @@
  * messages to Convex*.
  *
  * The mutations refuse topic writes; these pin the other half, that the page
- * does not offer an action that can only fail (CLAUDE.md, "Only offer actions
- * that can succeed"). Hovering draws no menu, and a reaction pill is not a
+ * does not offer an action that can only fail (`.claude/rules/peek-ui.md`,
+ * "Only offer actions that can succeed"). Hovering draws no menu, and a reaction pill is not a
  * button that toggles anything.
  */
 import { describe, expect, it, vi } from 'vitest'
