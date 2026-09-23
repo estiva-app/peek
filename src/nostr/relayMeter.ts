@@ -75,7 +75,9 @@ export function shapeOf(path: string, payload: unknown): string {
       .filter((key) => key.startsWith('#') || key === 'authors' || key === 'ids')
       .sort()
     const shape = [kinds, ...keys].join(' ')
-    const last = runs.at(-1)
+    // Not `.at(-1)`: `bridge.ts` is imported by Convex functions, whose typecheck
+    // (`tsc -p convex`) is ES2021.
+    const last = runs[runs.length - 1]
     if (last?.shape === shape) last.count += 1
     else runs.push({ shape, count: 1 })
   }
