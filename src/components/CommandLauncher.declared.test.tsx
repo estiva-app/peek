@@ -71,6 +71,7 @@ const liveStartConversation: ResolvedAction = {
 
 const TOPIC_AUTHOR = '8b75a34d06c8e4ee' + 'f'.repeat(48)
 const TOPIC_ID = '53e358c2-0ad7-482c-a951-6f9d48dc71eb'
+const RETIRED_CHANNEL = 'e83471a7-cd98-4a62-ac5a-f21e0daedd24'
 
 /*
   Typed by its signature rather than by a named parameter, so the assertions
@@ -100,7 +101,12 @@ const creatableUnder = vi.fn(async (parentKind: number) => {
   if (parentKind === 39000) {
     return {
       actions: [liveStartConversation],
-      parents: [{ address: `39000:${TOPIC_AUTHOR}:${TOPIC_ID}`, title: 'Intelligence in Peek' }],
+      parents: [
+        { address: `39000:${TOPIC_AUTHOR}:${TOPIC_ID}`, title: 'Intelligence in Peek' },
+        // A retired topic's channel, restored until FOL-25 deletes it — the
+        // relay still lists it among the newest `39000`s (FOL-26).
+        { address: `39000:${TOPIC_AUTHOR}:${RETIRED_CHANNEL}`, title: 'Folders: Universal navigation concept' },
+      ],
     }
   }
   // An app that declares nothing creatable. Null is what the runtime returns,
@@ -219,6 +225,16 @@ describe('an app is offered what it declares, and nothing else', () => {
 
     expect(await screen.findByLabelText(/topic/i)).toBeInTheDocument()
     expect(screen.queryByLabelText(/project/i)).not.toBeInTheDocument()
+  })
+
+  it('never offers a retired topic’s channel as somewhere to start one (FOL-26)', async () => {
+    // A `kind:9` into one of the restored channels is what FOL-25 must be sure
+    // nothing can write before it deletes them again.
+    await openLiveConversationForm()
+
+    await userEvent.click(screen.getByLabelText(/topic/i))
+    expect(await screen.findByRole('option', { name: 'Intelligence in Peek' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Folders: Universal navigation concept' })).not.toBeInTheDocument()
   })
 
   it('publishes a conversation into the topic that was picked', async () => {
