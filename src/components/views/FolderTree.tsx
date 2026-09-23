@@ -108,7 +108,7 @@ export function FolderTree({
     record channel is in `listFolders` too and is nobody's section:
     `topLevelFolders` says which are.
   */
-  const { unread } = useTeamUnread(folders)
+  const { unread, activity } = useTeamUnread(folders)
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
   const folderPath = useFolderPath()
 
@@ -135,6 +135,7 @@ export function FolderTree({
         folders={topLevel}
         signedOut={signedOut}
         unread={unread}
+        activity={activity}
         currentFolder={currentFolder}
         selectedRef={selectedRef}
         selectedParent={selectedParent}
@@ -153,6 +154,7 @@ export function FolderTreeView({
   folders,
   signedOut,
   unread,
+  activity = {},
   followed = {},
   filter = 'all',
   currentFolder,
@@ -167,6 +169,11 @@ export function FolderTreeView({
   signedOut: boolean
   /** The union dot per Folder id (FOL-18). Missing means unjudged. */
   unread: Record<string, boolean>
+  /**
+   * The socket's signal count per Folder id (FOL-44): an open section's rows
+   * re-read their dots when theirs changes. Missing means nothing said yet.
+   */
+  activity?: Record<string, number>
   /** Whether each Folder holds a followed stream (FOL-41). Missing means unjudged. */
   followed?: Record<string, boolean>
   /** What the column is showing — `all` unless the header says otherwise (FOL-41). */
@@ -213,6 +220,7 @@ export function FolderTreeView({
           folder={folder}
           /* `=== true`: an unjudged Folder draws no dot, not a dark one. */
           unread={unread[folder.id] === true}
+          activity={activity[folder.id] ?? 0}
           filter={filter}
           current={folder.id === currentFolder}
           selectedRef={selectedRef}
@@ -230,6 +238,7 @@ export function FolderTreeView({
 function FolderSection({
   folder,
   unread,
+  activity,
   filter,
   current,
   selectedRef,
@@ -240,6 +249,7 @@ function FolderSection({
 }: {
   folder: FolderSummary
   unread: boolean
+  activity: number
   filter: TreeFilter
   current: boolean
   selectedRef?: string
@@ -313,6 +323,13 @@ function FolderSection({
             filter={filter}
             selectedRef={selectedRef}
             expand={parentRow ? [parentRow.ref] : undefined}
+            /*
+              The rows' dots re-read on the team's signal (FOL-44). The
+              section's own dot was live and its rows were not: they stay
+              mounted while open, and their badge read was keyed only on the
+              listing, so a comment reached them on collapse and expand.
+            */
+            activity={activity}
             onSelect={onSelect}
             onControl={onControl}
           />

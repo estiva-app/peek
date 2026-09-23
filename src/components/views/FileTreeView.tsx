@@ -50,6 +50,7 @@ export function FileTreeView({
   filter = 'all',
   selectedRef,
   expand,
+  activity = 0,
   onSelect,
   onControl,
 }: {
@@ -67,6 +68,12 @@ export function FileTreeView({
    * a person who collapses a row keeps it collapsed.
    */
   expand?: readonly string[]
+  /**
+   * A number that changes when the socket reports something said in this
+   * Folder (FOL-44, `useTeamUnread`'s `activity`). Every level's dots re-read
+   * on it; without it they are read once per listing.
+   */
+  activity?: number
   onSelect: (file: ForeignObject) => void
   /**
    * A row's more-menu asked for its details, a rename or a deletion (FOL-33).
@@ -77,7 +84,7 @@ export function FileTreeView({
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
-  const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
+  const { unread } = useConversationBadges(files ? peersOf(files) : undefined, activity)
   /*
     The same set the rows' own follow controls read, so a row kept by the
     `Followed` filter and the bell drawn on it cannot disagree in one render.
@@ -137,6 +144,7 @@ export function FileTreeView({
           unread={unread}
           selectedRef={selectedRef}
           expand={[...(expand ?? []), ...openForChild]}
+          activity={activity}
           onSelect={onSelect}
           onControl={onControl}
         />
@@ -159,6 +167,7 @@ function TreeRow({
   unread,
   selectedRef,
   expand,
+  activity,
   onSelect,
   onControl,
   nested = false,
@@ -168,6 +177,7 @@ function TreeRow({
   unread?: Record<string, boolean>
   selectedRef?: string
   expand?: readonly string[]
+  activity?: number
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
   nested?: boolean
@@ -246,6 +256,7 @@ function TreeRow({
               exclude={listedChildren}
               selectedRef={selectedRef}
               expand={expand}
+              activity={activity}
               onSelect={onSelect}
               onControl={onControl}
             />
@@ -258,6 +269,7 @@ function TreeRow({
               unread={unread}
               selectedRef={selectedRef}
               expand={expand}
+              activity={activity}
               onSelect={onSelect}
               onControl={onControl}
               nested
@@ -275,6 +287,7 @@ function FetchedRows({
   exclude = [],
   selectedRef,
   expand,
+  activity,
   onSelect,
   onControl,
 }: {
@@ -282,13 +295,14 @@ function FetchedRows({
   exclude?: ForeignObject[]
   selectedRef?: string
   expand?: readonly string[]
+  activity?: number
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { state } = useForeignChildren(naddr)
   const drawn = new Set(exclude.map((file) => file.ref))
   const children = Array.isArray(state) ? state.filter((child) => !drawn.has(child.ref)) : []
-  const { unread } = useConversationBadges(Array.isArray(state) ? state : undefined)
+  const { unread } = useConversationBadges(Array.isArray(state) ? state : undefined, activity)
 
   if (state === 'loading') return <SkeletonRow />
   if (state === 'unresolved' || (!Array.isArray(state) && 'failed' in state)) {
@@ -306,6 +320,7 @@ function FetchedRows({
           unread={unread}
           selectedRef={selectedRef}
           expand={expand}
+          activity={activity}
           onSelect={onSelect}
           onControl={onControl}
           nested

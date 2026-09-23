@@ -49,8 +49,20 @@ import { fileHasUnread } from './fileUnread'
  * has no `unread` entry — not judged, like an unasked one — and the listing
  * draws nothing for it however new its talk is. `counts` is not gated: how
  * much a file holds is the file's fact, not the reader's subscription.
+ *
+ * ## When it re-reads
+ *
+ * On the set of addresses changing, and on `revision` changing — nothing else.
+ * The hook holds no socket of its own: a caller that has a live signal for
+ * the files' Folder passes its count (the tree passes `useTeamUnread`'s
+ * `activity`, FOL-44), and a caller that passes none reads once per set, as
+ * before. Without it, an open section's rows kept their first answer until the
+ * section was closed and opened again.
  */
-export function useConversationBadges(files: ForeignObject[] | undefined): {
+export function useConversationBadges(
+  files: ForeignObject[] | undefined,
+  revision = 0,
+): {
   counts: Record<string, number>
   unread: Record<string, boolean>
 } {
@@ -95,7 +107,7 @@ export function useConversationBadges(files: ForeignObject[] | undefined): {
     // `files` is deliberately not a dependency — `key` is its identity. Adding
     // it would restore the re-ask on every refresh that `key` exists to avoid.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, conversations])
+  }, [key, conversations, revision])
 
   /*
     Judged on every frontier change, not only when the messages arrive: the
