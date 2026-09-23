@@ -56,6 +56,12 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
    * judged, and a filter keeps it rather than hiding it on a guess.
    */
   followed: Record<string, boolean>
+  /**
+   * How many times the socket has reported something said in each Folder, or
+   * in a Folder it lists — a number that changes, for an open section's rows
+   * to re-read their dots on (FOL-44). See `activity` below.
+   */
+  activity: Record<string, number>
 } {
   const { channelStreams } = useForeignObjects()
   /*
@@ -134,6 +140,25 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     [ids, channelStreams],
   )
 
+  /*
+    Which Folders the socket said something about, counted per settle window
+    (FOL-44). The team's dot re-reads on the signal, and the rows inside an
+    open section did not: their badges are one read keyed on the listing's
+    addresses, so a comment changed nothing they depend on and the dot waited
+    for the section to be closed and opened again. This is the signal handed
+    on — no second subscription, and gathered in the same window as the read
+    below, so a flood of stored events on subscribe is one re-read per open
+    section rather than one per event.
+  */
+  const [signalled, setSignalled] = useState<Record<string, number>>({})
+  const bump = useCallback((touched: Iterable<string>) => {
+    setSignalled((held) => {
+      const next = { ...held }
+      for (const folder of touched) next[folder] = (next[folder] ?? 0) + 1
+      return next
+    })
+  }, [])
+
   const load = useCallback(
     (trigger: TeamUnreadTrigger) => {
       // Nothing to ask about. What is held is not cleared — the judge below only
@@ -144,7 +169,10 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       void read()
         .then((next) => {
           probe.current?.loadSettled('ok', { answered: Object.keys(next.streams).length })
-          return current.current === asked && setHeld(next)
+          if (current.current !== asked) return
+          setHeld(next)
+          // A socket back from being down may have missed anything, anywhere.
+          if (trigger === 'relay-live') bump(ids)
         })
       // A failed read costs the dots, never the list — and it leaves the last
       // answer standing rather than blanking every row on one bad request.
@@ -163,7 +191,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
           )
         })
     },
-    [ids, key, read],
+    [ids, key, read, bump],
   )
 
   useEffect(() => {
@@ -173,10 +201,12 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   useEffect(() => {
     if (!live || ids.length === 0) return
     let timer: ReturnType<typeof setTimeout> | undefined
+    const touched = new Set<string>()
     const settle = (folder: string) => {
       // Counted whether or not it schedules a read: `deliveries` beside
       // `loads` is what measured the flood below in the first place.
       probe.current?.delivered(folder)
+      touched.add(folder)
       /*
         The window opens on the first signal and is never pushed back by a
         later one (FOL-40). Restarting it is the ordinary debounce, and it is
@@ -198,6 +228,8 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       if (timer) return
       timer = setTimeout(() => {
         timer = undefined
+        bump([...touched])
+        touched.clear()
         load('socket')
       }, TEAM_UNREAD_SETTLE_MS)
     }
@@ -216,19 +248,38 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       if (timer) clearTimeout(timer)
       watch.stop()
     }
-  }, [live, ids, load])
+  }, [live, ids, load, bump])
 
   /*
     Connecting is not watching. A socket that goes live after the subscription
     was made delivers nothing about what was said while it was down, so the
     transition itself is a re-read — the same thing `useLiveFile` does, and the
-    reason a dot is not stale for thirty seconds after a laptop wakes.
+    reason a dot is not stale for thirty seconds after a laptop wakes. Every
+    Folder may have missed something, so every open section re-reads too —
+    `load` bumps them all once this read has answered.
   */
   const wasLive = useRef(relayState === 'live')
   useEffect(() => {
     if (relayState === 'live' && !wasLive.current) load('relay-live')
     wasLive.current = relayState === 'live'
   }, [relayState, load])
+
+  /*
+    A topic or a project's conversation channel is a Folder of its own placed
+    in its team (FOL-22, FOL-42), and the section drawn is the team's — so a
+    signal travels to every container that lists it, exactly as the dot does
+    below. Summed, so the container's number changes whichever of its streams
+    spoke.
+  */
+  const activity = useMemo(() => {
+    const out: Record<string, number> = { ...signalled }
+    for (const folder of folders ?? []) {
+      const own = signalled[folder.id]
+      if (!own || !folder.listedIn) continue
+      for (const container of folder.listedIn) out[container] = (out[container] ?? 0) + own
+    }
+    return out
+  }, [signalled, folders])
 
   useRefreshTriggers(() => load('refresh'), { enabled: ids.length > 0 })
 
@@ -312,5 +363,5 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     })
   }, [ids, folders, live, relayState, frontier, follows.state, follows.isFollowed, held, judged])
 
-  return judged
+  return useMemo(() => ({ ...judged, activity }), [judged, activity])
 }

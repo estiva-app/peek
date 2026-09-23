@@ -55,9 +55,13 @@ const file = foreign({
   slots: { title: { value: 'FOL-15 test topic 2' } },
 })
 
+/** A project's conversation channel, placed under the team (FOL-42). */
+const CONVERSATION = '2611db6d-0d4c-4a41-9b0e-6a2f1c3d4e5f'
+
 const folders: FolderSummary[] = [
   { id: TEAM, name: 'Peek', hasState: true },
   { id: OTHER, name: 'Zebra', hasState: true },
+  { id: CONVERSATION, hasState: false, listedIn: [TEAM] },
 ]
 
 /*
@@ -70,6 +74,8 @@ const seam = vi.hoisted(() => ({
   resolves: 0,
   resolveFolderContents: vi.fn(),
   resolveObject: vi.fn(),
+  /** Every badge read, by the addresses it asked about. */
+  conversations: vi.fn<(files: ForeignObject[]) => Promise<Record<string, never>>>(async () => ({})),
 }))
 /*
   Mocked where they are defined, not at the barrel: a hook inside `@/api`
@@ -86,7 +92,7 @@ vi.mock('@/api/foreign', () => {
   const objects = {
     listFolders: async () => folders,
     resolveFolderContents: seam.resolveFolderContents,
-    conversations: async () => ({}),
+    conversations: seam.conversations,
     channelStreams: async () => ({ [TEAM]: [], [OTHER]: [] }),
     resolveObject: seam.resolveObject,
     resolveFileFolder: async () => null,
@@ -162,6 +168,7 @@ beforeEach(() => {
 afterEach(() => {
   seam.resolveFolderContents.mockReset()
   seam.resolveObject.mockReset()
+  seam.conversations.mockClear()
   window.localStorage.clear()
   live.fire = undefined
 })
@@ -261,5 +268,65 @@ describe('a refresh keeps the rows it already has (FOL-40)', () => {
     expect(document.contains(row!)).toBe(true)
     expect(skeletons()).toHaveLength(0)
     expect(seam.reads).toBe(1)
+  })
+})
+
+describe("an open section's rows follow the socket (FOL-44)", () => {
+  /** The badge reads that asked about the team's first level. */
+  const rowReads = () =>
+    seam.conversations.mock.calls.filter(([asked]) =>
+      asked.some((object) => object.address === FILE_ADDRESS),
+    ).length
+
+  it("a comment in a project's channel under the team re-reads the open rows' dots, without a remount", async () => {
+    render(
+      <MemoryRouter initialEntries={['/folders']}>
+        <FolderTree currentFolder={TEAM} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('FOL-15 test topic 2')
+    await waitFor(() => expect(rowReads()).toBe(1))
+    const row = document.querySelector(`[data-file="${FILE_ADDRESS}"]`)
+
+    // The channel the comment lands in is not the team's: it is placed in it.
+    live.fire?.(CONVERSATION)
+    await waitFor(() => expect(rowReads()).toBe(2), { timeout: 3_000 })
+    expect(document.contains(row!)).toBe(true)
+    expect(skeletons()).toHaveLength(0)
+  })
+
+  it("an expanded row's children re-read on the same signal", async () => {
+    render(
+      <MemoryRouter initialEntries={['/folders']}>
+        <FolderTree currentFolder={TEAM} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Show what is in Folders: navigation for the whole suite' }),
+    )
+    await screen.findByText('The team dot does not follow the socket')
+    const childReads = () =>
+      seam.conversations.mock.calls.filter(([asked]) =>
+        asked.some((object) => object.address === issue.address),
+      ).length
+    await waitFor(() => expect(childReads()).toBe(1))
+
+    live.fire?.(TEAM)
+    await waitFor(() => expect(childReads()).toBe(2), { timeout: 3_000 })
+  })
+
+  it("a signal from another team re-reads nothing in this one's rows", async () => {
+    render(
+      <MemoryRouter initialEntries={['/folders']}>
+        <FolderTree currentFolder={TEAM} />
+      </MemoryRouter>,
+    )
+    await screen.findByText('FOL-15 test topic 2')
+    await waitFor(() => expect(rowReads()).toBe(1))
+
+    live.fire?.(OTHER)
+    // Past the settle window, so a read it caused would have gone out.
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    expect(rowReads()).toBe(1)
   })
 })
