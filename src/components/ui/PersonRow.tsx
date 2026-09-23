@@ -31,6 +31,9 @@ interface PersonRowProps {
   /** Adds "Rename" to the more-menu (FOL-33) — a bare-file row whose manifest
    *  declares one. See `TopicMoreMenu`. */
   onRename?: () => void
+  /** Adds "New topic inside" and "Move…" (FOL-4). See `TopicMoreMenu`. */
+  onNewSubTopic?: () => void
+  onMove?: () => void
   /** Adds an "Add to Open work" / "Remove from Open work" item to the
    *  more-menu — the label advertises which direction will succeed. */
   openWorkAction?: 'add' | 'remove'
@@ -65,6 +68,8 @@ export function PersonRow({
   onDeleteTopic,
   onOpenDetails,
   onRename,
+  onNewSubTopic,
+  onMove,
   openWorkAction,
   onToggleOpenWork,
   followAction,
@@ -76,6 +81,8 @@ export function PersonRow({
     !!onDeleteTopic ||
     !!onOpenDetails ||
     !!onRename ||
+    !!onNewSubTopic ||
+    !!onMove ||
     !!onHideDm ||
     !!(openWorkAction && onToggleOpenWork) ||
     !!(followAction && onToggleFollow)
@@ -154,6 +161,8 @@ export function PersonRow({
               onOpenChange={setMenuOpen}
               onOpenDetails={onOpenDetails}
               onRename={onRename}
+              onNewSubTopic={onNewSubTopic}
+              onMove={onMove}
               openWorkAction={openWorkAction}
               onToggleOpenWork={onToggleOpenWork}
               followAction={followAction}

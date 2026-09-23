@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
 import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
+import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
+import type { FolderContentsState } from '@/api'
 import { topLevelFolders, useFolderContents, useFolders, useTeamUnread } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -80,6 +82,7 @@ export function FolderTree({
   selectedParent,
   onNewTopic,
   onControl,
+  currentContents,
 }: {
   /** The Folder holding the open page. Its section starts open. */
   currentFolder?: string | null
@@ -95,6 +98,12 @@ export function FolderTree({
   onNewTopic?: () => void
   /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /**
+   * `currentFolder`'s listing, when the page has already read it (FOL-4): the
+   * file page reads its team for the breadcrumb, and the section drawing the
+   * same team uses that read instead of making a second one.
+   */
+  currentContents?: FolderContentsState
 }) {
   const railClosed = useRailClosed()
   const navigate = useNavigate()
@@ -144,6 +153,7 @@ export function FolderTree({
         }}
         onOpenFolder={(id) => navigate(folderPath(id))}
         onControl={onControl}
+        currentContents={currentContents}
       />
     </ListColumn>
   )
@@ -163,6 +173,7 @@ export function FolderTreeView({
   onSelect,
   onOpenFolder,
   onControl,
+  currentContents,
 }: {
   /** `null` while the first read is in flight, or when signed out. */
   folders: FolderSummary[] | null
@@ -184,6 +195,8 @@ export function FolderTreeView({
   onSelect: (file: ForeignObject) => void
   onOpenFolder: (folderId: string) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /** `currentFolder`'s listing, already read by the page — see `FolderTree`. */
+  currentContents?: FolderContentsState
 }) {
   /*
     Three states, not two: "not signed in", "still loading" and "there are
@@ -228,6 +241,7 @@ export function FolderTreeView({
           onSelect={onSelect}
           onOpen={() => onOpenFolder(folder.id)}
           onControl={onControl}
+          preloaded={folder.id === currentFolder ? currentContents : undefined}
         />
       ))}
     </>
@@ -246,6 +260,7 @@ function FolderSection({
   onSelect,
   onOpen,
   onControl,
+  preloaded,
 }: {
   folder: FolderSummary
   unread: boolean
@@ -257,6 +272,8 @@ function FolderSection({
   onSelect: (file: ForeignObject) => void
   onOpen: () => void
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /** This Folder's listing, already read by the page (FOL-4) — then this section reads nothing. */
+  preloaded?: FolderContentsState
 }) {
   /*
     Under a filter every section that survived it starts open (FOL-41). The
@@ -279,10 +296,27 @@ function FolderSection({
     — no request, no refresh trigger, no socket subscription — so a Folder
     nobody opened costs the column nothing beyond its dot.
   */
-  const { state } = useFolderContents(open ? folder.id : null)
+  const own = useFolderContents(open && !preloaded ? folder.id : null)
+  const state = preloaded ?? own.state
   const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
+  /*
+    Every row above the open file starts open, not only its parent (FOL-4): a
+    topic three levels down under a closed grandparent is a selected row nobody
+    can see. The chain is the listing's (`nestingOf`), so it costs no request;
+    a file the listing does not hold — an issue fetched under its project —
+    still opens its parent's chain.
+  */
+  const nesting = listed ? nestingOf(listed) : undefined
+  const selectedRow = listed?.find((candidate) => candidate.ref === selectedRef)
   const parentRow = selectedParent
     ? listed?.find((candidate) => candidate.address === selectedParent)
+    : undefined
+  const expand = nesting
+    ? selectedRow
+      ? nesting.ancestorsOf(selectedRow).map((row) => row.ref)
+      : parentRow
+        ? [...nesting.ancestorsOf(parentRow), parentRow].map((row) => row.ref)
+        : undefined
     : undefined
 
   return (
@@ -322,7 +356,7 @@ function FolderSection({
             state={state}
             filter={filter}
             selectedRef={selectedRef}
-            expand={parentRow ? [parentRow.ref] : undefined}
+            expand={expand}
             /*
               The rows' dots re-read on the team's signal (FOL-44). The
               section's own dot was live and its rows were not: they stay

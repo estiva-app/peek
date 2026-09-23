@@ -11,7 +11,7 @@ import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
-import { fileControlsOf } from '@/lib/fileControls'
+import { canStartInside, fileControlsOf } from '@/lib/fileControls'
 
 /**
  * A line where the tree's rows would be: empty, or unreadable. Level with the
@@ -188,12 +188,24 @@ function TreeRow({
   const open = toggled ?? !!expand?.includes(file.ref)
   const title = file.slots.title?.value ?? 'Untitled'
   const listedChildren = listedChildrenOf(file, listed)
-  const expandable = (!nested && file.listsChildren) || listedChildren.length > 0
+  /*
+    A bare file's children are all in this listing — a sub-file is in its
+    parent's team (SPEC §6.7) — and only the listing has them where they are
+    *now*: its declared `list` is read by `#a`, which still finds a sub-topic
+    moved away and never one moved in (FOL-4). So a topic's row draws the
+    listing and fetches nothing, and has a chevron only when something is under
+    it. Another kind's declared children (a project's issues) are not in a
+    team's listing, and are fetched as before.
+  */
+  const fetches = !nested && file.listsChildren && file.kind !== KIND_BARE_FILE
+  const expandable = fetches || listedChildren.length > 0
   // The row's menu, from the manifest and not from the kind (FOL-33): a bare
-  // file's declares rename and delete, a Ship issue's declares neither, and
+  // file's declares rename, move and delete, a Ship issue's declares none, and
   // the glyph below is the one place this file asks what kind a row is.
   const controls = onControl ? fileControlsOf(file) : {}
-  const offers = !!controls.rename || !!controls.delete
+  const inside = !!onControl && canStartInside(file)
+  // Details is the manifest's (FOL-33); a topic inside is the protocol's, and opens no details.
+  const offers = !!controls.rename || !!controls.delete || !!controls.move
   /*
     Follow / unfollow on the row (FOL-30): the same seam the dot is judged
     over, so a toggle here and the dot beside it agree in the same render. A
@@ -235,6 +247,8 @@ function TreeRow({
           onClick={() => onSelect(file)}
           onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
           onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
+          onNewSubTopic={inside ? () => onControl?.('inside', file) : undefined}
+          onMove={controls.move ? () => onControl?.('move', file) : undefined}
           openWorkAction={openWorkAction}
           onToggleOpenWork={
             followKey && openWorkAction
@@ -250,7 +264,7 @@ function TreeRow({
       </div>
       {open && (
         <div className="flex flex-col gap-0.5 pl-6" data-children-of={file.ref}>
-          {!nested && file.listsChildren && file.naddr && (
+          {fetches && file.naddr && (
             <FetchedRows
               naddr={file.naddr}
               exclude={listedChildren}

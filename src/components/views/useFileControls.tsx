@@ -1,14 +1,22 @@
 import { useCallback, useState, type ReactNode } from 'react'
+import { nestingOf } from '@estiva-app/interop'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
-import { useForeignObjects } from '@/api'
+import { useFollows, useForeignObjects } from '@/api'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
-import { fileControlsOf } from '@/lib/fileControls'
+import { MoveUnderDialog, type MoveTarget } from '@/components/MoveUnderDialog'
+import { StartTopicDialog } from '@/components/StartTopicDialog'
+import { canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { useToast } from '@/lib/toast'
 
-/** What a menu asks for on a file: its details, a rename, or a deletion. */
-export type FileControl = 'details' | 'rename' | 'delete'
+/**
+ * What a menu asks for on a file: its details, a rename, a deletion, a move
+ * under another file, or a new topic inside it (FOL-4).
+ */
+export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside'
+
+const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 
 /**
  * The dialogs behind a file's more-menu, wherever the menu is (FOL-33).
@@ -37,31 +45,122 @@ export type FileControl = 'details' | 'rename' | 'delete'
  * "Rename" and "Details → Rename" are one control reached two ways, so the
  * outcome has the same place to land either way: the dialog's own line under
  * the field, as the topic dialog does it.
+ *
+ * ## Move and "New topic inside" read the team first (FOL-4)
+ *
+ * Both are questions about the whole team, so both open on a fresh read of
+ * its listing — the one read that folds every `parent` change (SPEC §6.7) —
+ * rather than on whatever the tree last drew. Move offers
+ * `nestingOf(...).moveTargetsOf`, each as its path; a new topic goes in the
+ * parent's own team, which is the file's `h`, and `hasState` comes from the
+ * same read, for the reason the delete takes it fresh.
  */
 export function useFileControls({
   onRenamed,
   onDeleted,
+  onMoved,
+  onStarted,
 }: {
   /** The rename went through: re-read what shows the title. */
   onRenamed?: (file: ForeignObject) => void
   /** The delete went through, and the Folder is unlisted where it had to be. */
   onDeleted?: (file: ForeignObject) => void
+  /** The move went through: re-read what shows the file's place. */
+  onMoved?: (file: ForeignObject) => void
+  /** A topic was started inside `parent`. */
+  onStarted?: (created: { address: string; title: string }, parent: ForeignObject) => void
 } = {}): {
   /** Open the control the menu asked for, on this file. */
   open: (control: FileControl, file: ForeignObject) => void
   /** The dialogs, rendered by the page that owns them. */
   dialogs: ReactNode
 } {
-  const { renameFile, deleteFile, resolveFolderContents } = useForeignObjects()
+  const { renameFile, deleteFile, resolveFolderContents, applyAction, createTopic } = useForeignObjects()
+  const follows = useFollows()
   const { showToast } = useToast()
   const [dialog, setDialog] = useState<
-    { kind: 'details'; file: ForeignObject; editing: boolean } | { kind: 'confirm'; file: ForeignObject } | null
+    | { kind: 'details'; file: ForeignObject; editing: boolean }
+    | { kind: 'confirm'; file: ForeignObject }
+    | { kind: 'move'; file: ForeignObject; teamName: string; targets: MoveTarget[] }
+    | { kind: 'inside'; file: ForeignObject; team: string; teamName: string; hasState: boolean }
+    | null
   >(null)
 
-  const open = useCallback((control: FileControl, file: ForeignObject) => {
-    if (control === 'delete') setDialog({ kind: 'confirm', file })
-    else setDialog({ kind: 'details', file, editing: control === 'rename' })
-  }, [])
+  const refuse = useCallback(
+    (label: string) => showToast({ label, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' }),
+    [showToast],
+  )
+
+  const open = useCallback(
+    (control: FileControl, file: ForeignObject) => {
+      if (control === 'delete') return setDialog({ kind: 'confirm', file })
+      if (control !== 'move' && control !== 'inside') {
+        return setDialog({ kind: 'details', file, editing: control === 'rename' })
+      }
+      const team = file.folder
+      if (!team || (control === 'inside' && !canStartInside(file))) {
+        return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
+      }
+      void (async () => {
+        let contents: Awaited<ReturnType<typeof resolveFolderContents>>
+        try {
+          contents = await resolveFolderContents(team)
+        } catch {
+          refuse('The team could not be read. Try again.')
+          return
+        }
+        const teamName = contents.name ?? 'this team'
+        if (control === 'inside') {
+          setDialog({ kind: 'inside', file, team, teamName, hasState: contents.hasState })
+          return
+        }
+        const nesting = nestingOf(contents.files)
+        const here = contents.files.find((candidate) => candidate.ref === file.ref) ?? file
+        const targets = nesting.moveTargetsOf(here).map((target) =>
+          target ? { file: target, path: [...nesting.ancestorsOf(target), target].map(titleOf) } : { path: [] },
+        )
+        setDialog({ kind: 'move', file: here, teamName, targets })
+      })()
+    },
+    [refuse, resolveFolderContents],
+  )
+
+  const move = async (file: ForeignObject, parent: string): Promise<boolean> => {
+    const action = fileControlsOf(file).move
+    if (!action || !file.naddr) {
+      refuse('This file cannot be moved from here.')
+      return false
+    }
+    const result = await applyAction({ naddr: file.naddr, actionId: action.id, value: parent })
+    if (!result.ok) {
+      refuse(result.reason ?? 'The relay refused the move.')
+      return false
+    }
+    onMoved?.(file)
+    return true
+  }
+
+  const startInside = async (
+    parent: ForeignObject,
+    team: string,
+    hasState: boolean,
+    title: string,
+  ): Promise<boolean> => {
+    /*
+      The parent's team, never the page's (SPEC §6.7): a sub-file is readable by
+      exactly its parent's readers. For a bare parent that is its `h`, which is
+      `team` here; any other kind reached this dialog only with an `h` of its own.
+    */
+    const result = await createTopic({ folder: team, title, parent: parent.address, hasState })
+    if (!result.ok) {
+      showToast({ label: result.reason, type: 'error' })
+      return false
+    }
+    // You follow what you create (FOL-30), as the Folder page's start does.
+    void follows.setFollowed(result.address, true)
+    onStarted?.({ address: result.address, title }, parent)
+    return true
+  }
 
   const rename = async (file: ForeignObject, title: string): Promise<RenameOutcome> => {
     const action = fileControlsOf(file).rename
@@ -82,8 +181,6 @@ export function useFileControls({
 
   const runDelete = async (file: ForeignObject) => {
     const action = fileControlsOf(file).delete
-    const refuse = (label: string) =>
-      showToast({ label, type: 'warning', leadingIcon: false, durationMs: 0, actionLabel: 'Dismiss' })
     if (!action || !file.naddr || !file.address || !file.folder) {
       refuse('This file cannot be deleted from here.')
       return
@@ -107,6 +204,21 @@ export function useFileControls({
   const dialogs = dialog ? (
     dialog.kind === 'confirm' ? (
       <ConfirmDelete what="topic" onConfirm={() => void runDelete(dialog.file)} onClose={() => setDialog(null)} />
+    ) : dialog.kind === 'move' ? (
+      <MoveUnderDialog
+        file={dialog.file}
+        teamName={dialog.teamName}
+        targets={dialog.targets}
+        onMove={(parent) => move(dialog.file, parent)}
+        onClose={() => setDialog(null)}
+      />
+    ) : dialog.kind === 'inside' ? (
+      <StartTopicDialog
+        folderName={dialog.teamName}
+        parent={dialog.file}
+        onCreate={(title) => startInside(dialog.file, dialog.team, dialog.hasState, title)}
+        onClose={() => setDialog(null)}
+      />
     ) : (
       <FileDetailsDialog
         file={dialog.file}

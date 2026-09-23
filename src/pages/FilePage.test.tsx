@@ -106,6 +106,9 @@ const writes = vi.hoisted(() => ({
   resolveObject: vi.fn(async () => null),
   renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
   deleteFile: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
+  createTopic: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }>>(
+    async () => ({ ok: true, address: `30840:${'c'.repeat(64)}:new`, naddr: 'naddr1new' }),
+  ),
   // The short form's one read: the author of a `d`, off the fixtures (FOL-37).
   // The word is the seam's to turn into kinds; here every fixture answers.
   resolveFileAddress: vi.fn(async (_word: string, d: string) => Object.keys(objects.byAddress).find((a) => a.endsWith(`:${d}`)) ?? null),
@@ -936,9 +939,12 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   const bareFile = {
     ...topic,
     slots: { title: { value: 'FOL-15 test topic 2', field: 'title' } },
+    // interop 0.29.0 (FOL-4): `move` sets the field `parentField` names.
+    parentField: 'parent',
     actions: [
       { id: 'comment', label: 'Comment', control: 'text', effect: 'writes' },
       { id: 'rename', label: 'Rename', control: 'text', effect: 'writes', field: 'title' },
+      { id: 'move', label: 'Move', control: 'text', effect: 'writes', field: 'parent' },
       { id: 'delete', label: 'Delete', control: 'confirm', effect: 'destructive' },
     ],
   } as unknown as ForeignObject
@@ -960,7 +966,15 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   it('the header of a bare file has the menu: details, rename, delete', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(openHeaderMenu()).toEqual(['Topic details', 'Rename', 'Copy link', 'Add to Open work', 'Delete topic'])
+    expect(openHeaderMenu()).toEqual([
+      'Topic details',
+      'Rename',
+      'New topic inside',
+      'Move…',
+      'Copy link',
+      'Add to Open work',
+      'Delete topic',
+    ])
   })
 
   it('Copy link hands out the short form — the ticket’s done-when (FOL-37)', async () => {
@@ -979,7 +993,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     const middle = screen.getByTestId('middle')
     expect(within(middle).getByRole('link', { name: 'Open folder' })).toBeInTheDocument()
     // Open work is the reader's, not the manifest's: any addressable file can be put there.
-    expect(openHeaderMenu()).toEqual(['Add to Open work'])
+    // So is a topic inside it (FOL-4): any kind may hold one, and no manifest says so.
+    expect(openHeaderMenu()).toEqual(['New topic inside', 'Add to Open work'])
   })
 
   it('the tree row of a bare file has the same menu, and an issue’s row has only Open work and Follow', () => {
@@ -994,6 +1009,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'Topic details',
       'Rename',
+      'New topic inside',
+      'Move…',
       'Add to Open work',
       'Follow',
       'Delete topic',
@@ -1006,7 +1023,11 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
     hover(issueRow)
     fireEvent.click(within(issueRow).getByRole('button', { name: 'More options' }))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Add to Open work', 'Follow'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'New topic inside',
+      'Add to Open work',
+      'Follow',
+    ])
   })
 
   it('Rename opens the details dialog on the field, and saves through the manifest’s action', async () => {
@@ -1139,5 +1160,113 @@ describe('FilePage offers Follow on the header and the row (FOL-30)', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'More options' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Unfollow' }))
     expect(follows.setFollowed).toHaveBeenCalledWith(TOPIC_ADDRESS, false)
+  })
+})
+
+describe('A file may name a parent file — the trail, the tree, Move and New topic inside (FOL-4)', () => {
+  /*
+    A chain three deep in one team: project › brief › notes › the open topic.
+    The listing is the whole input for the trail — a moved file's parent is
+    only right there — so the fixtures carry `parentRef` as the listing folds
+    it, and nothing is resolved per level.
+  */
+  const bare = (d: string, title: string, parent?: string) =>
+    foreign({
+      ref: `30840:${CATH}:${d}`,
+      address: `30840:${CATH}:${d}`,
+      kind: 30840,
+      appName: 'File',
+      parentField: 'parent',
+      ...(parent ? { parentRef: parent } : {}),
+      slots: { title: { value: title, field: 'title' } },
+      actions: [
+        { id: 'comment', label: 'Comment', control: 'text', effect: 'writes' },
+        { id: 'move', label: 'Move', control: 'text', effect: 'writes', field: 'parent' },
+      ] as unknown as ForeignObject['actions'],
+    })
+  const brief = bare('brief', 'Brief', PROJECT_ADDRESS)
+  const notes = bare('notes', 'Notes', brief.address)
+  const deep = { ...bare(TOPIC_D, 'FOL-15 test topic 2', notes.address), comments: topic.comments }
+  const elsewhere = bare('elsewhere', 'Elsewhere')
+
+  beforeEach(() => {
+    objects.byAddress[TOPIC_ADDRESS] = deep
+    relay.files = [project, brief, notes, deep, elsewhere]
+    writes.applyAction.mockClear()
+    writes.createTopic.mockClear()
+  })
+
+  it('draws the team and every file above, outermost first, each a link', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const trail = within(screen.getByTestId('middle')).getByRole('navigation')
+    const crumbs = within(trail).getAllByRole('link')
+    expect(crumbs.map((crumb) => crumb.textContent)).toEqual([
+      'Folders',
+      'Folders: navigation for the whole suite',
+      'Brief',
+      'Notes',
+    ])
+    expect(crumbs[0]).toHaveAttribute('href', `/app/folders/${FOLDER}`)
+  })
+
+  it('draws no trail for a file at the top', () => {
+    objects.byAddress[TOPIC_ADDRESS] = { ...deep, parentRef: undefined }
+    relay.files = [project, { ...deep, parentRef: undefined }]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(within(screen.getByTestId('middle')).queryByRole('navigation')).toBeNull()
+  })
+
+  it('opens every row above the file in the tree, so the open file is visible', () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const left = screen.getByTestId('left')
+    const row = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`)
+    expect(row).not.toBeNull()
+    expect(left.querySelector(`[data-children-of="${notes.ref}"]`)?.contains(row)).toBe(true)
+  })
+
+  it('moves through the manifest’s action, offering only the team and never below itself', async () => {
+    writes.resolveFolderContents.mockResolvedValueOnce({
+      id: FOLDER,
+      name: 'Folders',
+      hasState: true,
+      source: 'state',
+      files: [project, brief, notes, deep, elsewhere],
+    } as never)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    const picker = await screen.findByRole('combobox', { name: 'Put it under' })
+    fireEvent.click(picker)
+    // The package's Select marks the chosen option with a check; the label is the rest.
+    const options = screen.getAllByRole('option').map((option) => option.textContent?.replace('✔️', ''))
+    // The top, then each place by its path; `Notes` is where it is already.
+    expect(options).toEqual([
+      'The top of Folders',
+      'Folders: navigation for the whole suite',
+      'Folders: navigation for the whole suite › Brief',
+      'Elsewhere',
+    ])
+    // The first choice is the top, and a move there is an empty `parent` — a move,
+    // not an absence (SPEC §6.7). jsdom cannot drive the package Select's pick.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
+    expect(writes.applyAction).toHaveBeenCalledWith({ naddr: deep.naddr, actionId: 'move', value: '' })
+  })
+
+  it('starts a topic inside the file, in the file’s own team, and opens it', async () => {
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New topic inside' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Transcripts' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
+    expect(writes.createTopic).toHaveBeenCalledWith({
+      folder: FOLDER,
+      title: 'Transcripts',
+      parent: TOPIC_ADDRESS,
+      hasState: true,
+    })
+    expect(follows.setFollowed).toHaveBeenCalledWith(`30840:${'c'.repeat(64)}:new`, true)
   })
 })
