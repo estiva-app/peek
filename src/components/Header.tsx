@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare, IconLayoutSidebarRight, IconLayoutSidebarRightFilled } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
@@ -76,13 +75,12 @@ interface HeaderProps {
   onDeleteTopic?: () => void
   /** Hide this DM from the viewer's sidebar (DMS-6) — see `TopicMoreMenu`. */
   onHideDm?: () => void
-  tabs?: ReactNode
   className?: string
 }
 
 /**
  * The bar above an open topic, huddle or direct message: its name, open and
- * resolved counts, members, a star and a more-actions menu, with tabs below.
+ * resolved counts, members, a star and a more-actions menu.
  */
 export function Header({
   avatarSrc,
@@ -103,7 +101,6 @@ export function Header({
   topicLink,
   onDeleteTopic,
   onHideDm,
-  tabs,
   className,
   folderId,
   onToggleFolderPanel,
@@ -247,13 +244,6 @@ export function Header({
           </Toolbar>
         </div>
       </div>
-
-      {/* Row 2: tabs */}
-      {tabs && (
-        <div className="pl-5 pr-4 pb-2">
-          {tabs}
-        </div>
-      )}
     </div>
   )
 }
