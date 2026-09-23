@@ -44,7 +44,7 @@ import {
   type FolderActivity,
   type LiveClient,
 } from '@estiva-app/platform'
-import { KIND, type RelayState } from '@estiva-app/protocol'
+import { KIND, type RelayState, type SignedEvent } from '@estiva-app/protocol'
 import {
   createLiveProjection,
   type ContainerRef,
@@ -111,11 +111,16 @@ export interface LiveTopics {
    * passes `[KIND.COMMENT]` alone (FOL-32), because a Folder's `h` also carries
    * its own `kind:9` chat and a re-read of a file for every line said in the
    * Folder would be the wide filter's cost with none of its point.
+   *
+   * The listener is handed the event too (PER-8, platform 0.2.0), for a reader
+   * that keeps what it has read and can apply it rather than re-read —
+   * `channelStore.ts`. `since` bounds what the REQ replays on subscribe and on
+   * every reconnect; a keeping reader passes it, a signal-only one need not.
    */
   watchChannels(
     channelUuids: readonly string[],
-    listener: (channelUuid: string) => void,
-    options?: { kinds?: readonly number[] },
+    listener: (channelUuid: string, event?: SignedEvent) => void,
+    options?: { kinds?: readonly number[]; since?: number },
   ): { stop(): void }
 }
 
@@ -411,11 +416,11 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
         })
         const watch = client.watchFolders(
           [...channelUuids],
-          (folder) => {
+          (folder, event) => {
             log.record(folder)
-            listener(folder)
+            listener(folder, event)
           },
-          { kinds },
+          { kinds, ...(options?.since !== undefined ? { since: options.since } : {}) },
         )
         return {
           stop: () => {

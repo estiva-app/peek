@@ -1,17 +1,60 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { StreamMessage } from '@/nostr/channelStreams'
+import type { ChannelStoreRead } from '@/platform/channelStore'
 
 /*
-  The seams, each pinned to the quietest answer: one relay read the test
-  scripts, a frontier the test moves, no socket, no refresh triggers, a viewer.
-  The judging itself is `teamUnread.test.ts`'s; this is the hook's contract —
-  one batched read for the listed Folders, nothing judged before the frontier
-  has landed, and a dot that goes out when the frontier moves without a read.
+  The seams, each pinned to the quietest answer: the tab's channel store (what
+  it holds is scripted here — how it reads is `useChannelStreams.test.tsx`'s
+  and `channelStore.test.ts`'s), a frontier the test moves, a viewer. The
+  judging itself is `teamUnread.test.ts`'s; this is the hook's contract — one
+  store call for the listed Folders, nothing judged before the frontier has
+  landed, a dot that goes out when the frontier moves, and a console probe that
+  still says what the reads were and why.
 */
-const relay = vi.hoisted(() => ({
-  channelStreams: vi.fn<(ids: readonly string[]) => Promise<Record<string, StreamMessage[]>>>(),
+const store = vi.hoisted(() => ({
+  asked: [] as string[][],
+  streams: {} as Record<string, StreamMessage[]>,
+  at: 0,
+  version: 0,
+  listeners: new Set<() => void>(),
+  reads: new Set<(read: ChannelStoreRead) => void>(),
+  deliveries: new Set<(channel: string) => void>(),
 }))
+vi.mock('./useChannelStreams', async () => {
+  const { useSyncExternalStore, useMemo, useEffect } = await import('react')
+  return {
+    useChannelStreams: (channels: readonly string[]) => {
+      const key = channels.join(',')
+      useEffect(() => {
+        store.asked.push(key ? key.split(',') : [])
+      }, [key])
+      const version = useSyncExternalStore(
+        (listener) => {
+          store.listeners.add(listener)
+          return () => store.listeners.delete(listener)
+        },
+        () => store.version,
+      )
+      return useMemo(() => {
+        const streams: Record<string, StreamMessage[]> = {}
+        for (const channel of key ? key.split(',') : []) {
+          if (store.streams[channel]) streams[channel] = store.streams[channel]
+        }
+        return { at: store.at, streams }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [key, version])
+    },
+    onChannelStoreRead: (listener: (read: ChannelStoreRead) => void) => {
+      store.reads.add(listener)
+      return () => store.reads.delete(listener)
+    },
+    onChannelStoreDelivery: (listener: (channel: string) => void) => {
+      store.deliveries.add(listener)
+      return () => store.deliveries.delete(listener)
+    },
+  }
+})
 const frontier = vi.hoisted(() => ({
   ready: false,
   markers: {} as Record<string, number>,
@@ -27,7 +70,6 @@ const follows = vi.hoisted(() => ({
 vi.mock('@/api', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')
   return {
-    useForeignObjects: () => ({ channelStreams: relay.channelStreams }),
     useFollows: () => {
       const version = useSyncExternalStore(
         (listener) => {
@@ -48,52 +90,10 @@ vi.mock('@/api', async () => {
   }
 })
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
-/*
-  The socket, present or absent — both are real states for this hook. What it
-  must hold is the wide filter (`watchChannels`, FOL-40), never
-  `onForeignActivity`: that one is fed by the projection and never fires for a
-  message kind, which is exactly what a comment is. So the fake offers only
-  the wide filter, and a hook reaching for the other would throw.
-*/
-const live = vi.hoisted(() => ({
-  present: true,
-  watched: [] as { ids: string[]; kinds?: readonly number[] }[],
-  stops: 0,
-  fire: undefined as ((channelUuid: string) => void) | undefined,
-}))
 vi.mock('@/nostr/useLiveTopics', () => {
-  // One client object, built once: a fresh one per render would re-run the
-  // subscription effect for ever ([[mock-use-relay-viewer-stably]]).
-  const client = {
-    watchChannels: (
-      ids: readonly string[],
-      listener: (id: string) => void,
-      options?: { kinds?: readonly number[] },
-    ) => {
-      live.watched.push({ ids: [...ids], kinds: options?.kinds })
-      live.fire = listener
-      return {
-        stop: () => {
-          live.stops++
-          live.fire = undefined
-        },
-      }
-    },
-  }
-  return {
-    useLiveTopics: () => ({
-      live: live.present ? client : null,
-      relayState: live.present ? 'live' : 'connecting',
-    }),
-  }
+  const client = {}
+  return { useLiveTopics: () => ({ live: client, relayState: 'live' }) }
 })
-/** Captured so a test can fire the fallback re-read by hand. */
-const refresh = vi.hoisted(() => ({ fire: undefined as (() => void) | undefined }))
-vi.mock('@/lib/useRefreshTriggers', () => ({
-  useRefreshTriggers: (fn: () => void, opts?: { enabled?: boolean }) => {
-    refresh.fire = opts?.enabled === false ? undefined : fn
-  },
-}))
 vi.mock('@/nostr/useReadStateSync', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')
   return {
@@ -118,10 +118,7 @@ vi.mock('@/nostr/useReadStateSync', async () => {
 })
 
 import { RelayReadError } from '@/nostr/relayRead'
-import {
-  type TeamUnreadSnapshot,
-  installTeamUnreadDiagnostic,
-} from './teamUnreadDiagnostic'
+import { type TeamUnreadSnapshot, installTeamUnreadDiagnostic } from './teamUnreadDiagnostic'
 import { TEAM_UNREAD_SETTLE_MS, useTeamUnread } from './useTeamUnread'
 
 /* The api barrel is mocked here, so the installer the app calls at module load
@@ -152,63 +149,94 @@ function advance(markers: Record<string, number>, ready = true) {
   })
 }
 
+/** The store answering, as it does once its first read lands. */
+function hold(streams: Record<string, StreamMessage[]>) {
+  act(() => {
+    store.streams = streams
+    store.at = NOW
+    store.version++
+    for (const listener of store.listeners) listener()
+  })
+}
+
+function read(partial: Partial<ChannelStoreRead>) {
+  const full: ChannelStoreRead = { reason: 'track', mode: 'sync', channels: 2, requests: 1, outcome: 'ok', ms: 5, ...partial }
+  act(() => {
+    for (const listener of store.reads) listener(full)
+  })
+}
+
+const HELD = {
+  // A: a sibling file nobody read, said an hour ago. B: nothing.
+  [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false }],
+  [FOLDER_B]: [],
+}
+
 beforeEach(() => {
   frontier.ready = false
   frontier.markers = {}
   follows.state = 'present'
   follows.keys = null
-  live.present = true
-  live.watched = []
-  live.stops = 0
-  live.fire = undefined
-  refresh.fire = undefined
-  relay.channelStreams.mockResolvedValue({
-    // A: a sibling file nobody read, said an hour ago. B: nothing.
-    [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false }],
-    [FOLDER_B]: [],
-  })
+  store.asked = []
+  store.streams = {}
+  store.at = 0
 })
 afterEach(() => {
-  relay.channelStreams.mockReset()
+  store.listeners.clear()
 })
 
 describe('useTeamUnread', () => {
-  it('reads every listed Folder in one call and judges nothing before the frontier lands', async () => {
+  it('asks the store for every listed Folder at once, and judges nothing before the frontier lands', async () => {
     const { result } = renderHook(() => useTeamUnread(folders))
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
-    expect(relay.channelStreams).toHaveBeenCalledWith([FOLDER_A, FOLDER_B])
+    hold(HELD)
+    expect(store.asked).toEqual([[FOLDER_A, FOLDER_B]])
     // Absent everywhere would read as "new everywhere": not judged, not dark.
     expect(result.current.unread).toEqual({})
   })
 
+  it('judges nothing for a Folder the store has not answered', async () => {
+    const { result } = renderHook(() => useTeamUnread(folders))
+    hold({ [FOLDER_B]: [] })
+    advance({})
+    expect(result.current.unread).toEqual({ [FOLDER_B]: false })
+  })
+
   it("lights the Folder with the unread file, and puts it out when that file's marker moves", async () => {
     const { result } = renderHook(() => useTeamUnread(folders))
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    hold(HELD)
     advance({})
     await waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: true, [FOLDER_B]: false }))
     // Reading the team's chat changes nothing about the file (§11.3).
     advance({ [FOLDER_A]: NOW })
     expect(result.current.unread[FOLDER_A]).toBe(true)
-    // Reading the file does — with no second read of the relay.
+    // Reading the file does.
     advance({ [FOL18]: NOW })
     expect(result.current.unread[FOLDER_A]).toBe(false)
-    expect(relay.channelStreams).toHaveBeenCalledTimes(1)
+  })
+
+  it('a message the socket delivers lights the team without the hook asking anything', async () => {
+    const { result } = renderHook(() => useTeamUnread(folders))
+    hold({ [FOLDER_A]: [], [FOLDER_B]: [] })
+    advance({})
+    expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false })
+    hold(HELD)
+    expect(result.current.unread[FOLDER_A]).toBe(true)
+    expect(store.asked).toHaveLength(1)
   })
 
   it("a topic placed in a team lights the team, and reading the topic's channel puts it out (FOL-22)", async () => {
     const TOPIC = '33333333-3333-4333-8333-333333333333'
-    relay.channelStreams.mockResolvedValue({
+    const { result } = renderHook(() =>
+      useTeamUnread([...folders, { id: TOPIC, name: 'A topic', hasState: false, listedIn: [FOLDER_B] }]),
+    )
+    hold({
       [FOLDER_A]: [],
       [FOLDER_B]: [],
       // The topic's own channel: a plain message, no `about`, said an hour ago.
       [TOPIC]: [{ id: 't', at: NOW - 3600, by: THEM, root: 't', about: [], urgent: false }],
     })
-    const { result } = renderHook(() =>
-      useTeamUnread([...folders, { id: TOPIC, name: 'A topic', hasState: false, listedIn: [FOLDER_B] }]),
-    )
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
-    // One read for the lot — the topic's channel is asked for with the teams'.
-    expect(relay.channelStreams).toHaveBeenCalledWith([FOLDER_A, FOLDER_B, TOPIC])
+    // One store call for the lot — the topic's channel is asked for with the teams'.
+    expect(store.asked).toEqual([[FOLDER_A, FOLDER_B, TOPIC]])
     advance({})
     await waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: true, [TOPIC]: true }))
     // Reading the team's own chat is not reading the topic.
@@ -222,14 +250,14 @@ describe('useTeamUnread', () => {
   it('asks nothing for an empty list', async () => {
     const { result } = renderHook(() => useTeamUnread([]))
     advance({})
-    expect(relay.channelStreams).not.toHaveBeenCalled()
+    expect(store.asked).toEqual([[]])
     expect(result.current.unread).toEqual({})
   })
 
   it('judges nothing while the followed set is unknown, and only followed files once it is known (FOL-30)', async () => {
     follows.state = 'unknown'
     const { result } = renderHook(() => useTeamUnread(folders))
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
+    hold(HELD)
     advance({})
     // An unknown set is not an empty one: no dot goes out, none comes on.
     expect(result.current.unread).toEqual({})
@@ -242,237 +270,71 @@ describe('useTeamUnread', () => {
     follows.keys = new Set()
     advance({})
     expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false })
-    expect(relay.channelStreams).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('the socket path (FOL-40)', () => {
-  it('watches every listed Folder through the wide filter, for both message kinds, and stops on unmount', async () => {
-    const { unmount } = renderHook(() => useTeamUnread(folders))
-    await waitFor(() => expect(live.watched).toHaveLength(1))
-    expect(live.watched[0]).toEqual({ ids: [FOLDER_A, FOLDER_B], kinds: [9, 1111] })
-    unmount()
-    expect(live.stops).toBe(1)
-  })
-
-  it('a comment on a followed file lights the team after the settle, and a burst is one re-read', async () => {
-    vi.useFakeTimers()
+describe('activity — the socket handed on to the rows (FOL-44)', () => {
+  it('counts a burst of deliveries once per window, folded into the team that lists the channel', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
-      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
-      const { result } = renderHook(() => useTeamUnread(folders))
-      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
-      advance({})
-      await vi.waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false }))
-
-      // Somebody comments three times on the followed file in A; the relay now holds them.
-      relay.channelStreams.mockResolvedValue({
-        [FOLDER_A]: [
-          { id: 'n', at: NOW - 1, by: THEM, root: 'n', about: [FOL18], urgent: false },
-          { id: 'o', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false },
-          { id: 'p', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false },
-        ],
-        [FOLDER_B]: [],
-      })
+      const TOPIC = '33333333-3333-4333-8333-333333333333'
+      const { result } = renderHook(() =>
+        useTeamUnread([...folders, { id: TOPIC, name: 'A topic', hasState: false, listedIn: [FOLDER_B] }]),
+      )
       act(() => {
-        live.fire?.(FOLDER_A)
-        live.fire?.(FOLDER_A)
-        live.fire?.(FOLDER_A)
+        for (let i = 0; i < 5; i += 1) for (const heard of store.deliveries) heard(TOPIC)
+        for (const heard of store.deliveries) heard('99999999-9999-4999-8999-999999999999')
       })
-      // Nothing yet: the settle window is still open, and no refresh trigger was needed.
-      expect(relay.channelStreams).toHaveBeenCalledTimes(1)
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
-      })
-      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
-      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
-      expect(result.current.unread[FOLDER_B]).toBe(false)
+      expect(result.current.activity).toEqual({})
+      await act(() => vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS))
+      expect(result.current.activity).toEqual({ [TOPIC]: 1, [FOLDER_B]: 1 })
+
+      // A reconnect's catch-up: anything may have been missed, anywhere.
+      read({ reason: 'relay-live' })
+      expect(result.current.activity).toEqual({ [FOLDER_A]: 1, [FOLDER_B]: 3, [TOPIC]: 2 })
+      // A failed one says nothing was learned.
+      read({ reason: 'relay-live', outcome: 'failed', requests: null, error: new Error('down') })
+      expect(result.current.activity[FOLDER_A]).toBe(1)
     } finally {
       vi.useRealTimers()
     }
   })
+})
 
-  it('a flood of signals cannot push the re-read past its window (FOL-40)', async () => {
-    /*
-      The shipped defect. The wide filter's listener fires for the relay's
-      stored events as well as live ones — a production tab took 1,081 signals
-      on an 81-Folder watch, 1,078 of them backfill — so a subscribe or a
-      reconnect delivers a run of them with no gap. A window that restarted on
-      each one was pushed along by its own backfill: the tab recorded the last
-      signal at 17:12:50 and the next read at 17:13:09, nineteen seconds later
-      and carrying `trigger: 'refresh'`. The socket had done its job and the
-      30-second fallback still got there first.
-    */
-    vi.useFakeTimers()
-    try {
-      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
-      renderHook(() => useTeamUnread(folders))
-      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
-
-      await act(async () => {
-        live.fire?.(FOLDER_A)
-        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 2)
-        // The signal that used to move the goalposts.
-        live.fire?.(FOLDER_A)
-        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 2)
-      })
-      // One window after the *first* signal, not one after the last.
-      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
-
-      // Still a ceiling rather than a read per event: a flood lasting ten
-      // windows costs about ten reads, not the six hundred it delivered.
-      await act(async () => {
-        for (let signal = 0; signal < 100; signal++) {
-          live.fire?.(FOLDER_A)
-          await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS / 10)
-        }
-      })
-      expect(relay.channelStreams.mock.calls.length).toBeLessThanOrEqual(13)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('waits out a quota refusal at the second the relay named, rather than dropping it', async () => {
-    /*
-      The shipped defect, and the last one in the chain. The wide filter was
-      registered and did fire — the console said so — but the re-read it
-      triggered came back `rate-limited: quota exceeded; retry in 8s`, which
-      classified as `unreachable` and fell into a `.catch(() => {})`. Nothing
-      retried, so the dot moved only when a later refresh tick happened to win,
-      which is the "long wait, then the sidebar reloads" Miky saw.
-    */
-    vi.useFakeTimers()
-    try {
-      relay.channelStreams.mockResolvedValue({ [FOLDER_A]: [], [FOLDER_B]: [] })
-      const { result } = renderHook(() => useTeamUnread(folders))
-      await vi.waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
-      advance({})
-      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(false))
-
-      relay.channelStreams
-        .mockRejectedValueOnce(new RelayReadError('rate-limited: quota exceeded; retry in 8s'))
-        .mockResolvedValue({
-          [FOLDER_A]: [{ id: 'n', at: NOW, by: THEM, root: 'n', about: [FOL18], urgent: false }],
-          [FOLDER_B]: [],
-        })
-      act(() => live.fire?.(FOLDER_A))
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
-      })
-      // Refused, and the dot has not moved — but the read is still alive.
-      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
-      expect(result.current.unread[FOLDER_A]).toBe(false)
-
-      // Not a moment sooner: the window the relay named has not rolled over.
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(7_000)
-      })
-      expect(relay.channelStreams).toHaveBeenCalledTimes(2)
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1_000)
-      })
-      expect(relay.channelStreams).toHaveBeenCalledTimes(3)
-      await vi.waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('subscribes to a socket that arrives after it mounted, and re-reads when it goes live', async () => {
-    // The shipped bug: the client was read once, at mount, and on a page where
-    // nothing else had connected it was null — so no subscription was ever
-    // made and the dot moved on the refresh triggers alone.
-    live.present = false
-    const { rerender } = renderHook(() => useTeamUnread(folders))
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
-    expect(live.watched).toEqual([])
-
-    live.present = true
-    rerender()
-    await waitFor(() => expect(live.watched).toHaveLength(1))
-    // Connecting is not watching: what was said while the socket was down is
-    // covered by one read on the transition into live.
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(2))
-  })
-
-  it('the refresh fallback stays armed, because a wide filter may silently not fan out', async () => {
-    renderHook(() => useTeamUnread(folders))
-    await waitFor(() => expect(live.watched).toHaveLength(1))
-    expect(refresh.fire).toBeDefined()
-  })
-
+describe('the console probe (FOL-40), fed by the store (PER-8)', () => {
   /*
     FOL-40's instrument. Production proved a delivery reached the socket while
-    the dot stayed dark, and every step between the two lives for one render:
-    the settle firing, the re-read, the gates, the judge. `__teamUnread()` is
-    those steps kept, so the question can be asked after the fact.
+    the dot stayed dark, and every step between the two lives for one render.
+    The reads are the store's now, so the probe hears them from the store — and
+    must still say what asked for each one and how it ended.
   */
-  it('hands the console the delivery, the re-read it caused, and the gates it was judged behind', async () => {
-    vi.useFakeTimers()
-    try {
-      const { unmount } = renderHook(() => useTeamUnread(folders))
-      await vi.waitFor(() =>
-        expect(teamUnread()[0]?.lastLoad).toMatchObject({
-          trigger: 'folders',
-          outcome: 'ok',
-          // What came back, not what was asked for: a read that answers for
-          // fewer Folders than it was given is a narrowing nobody would see.
-          answered: 2,
-        }),
-      )
-      expect(teamUnread()).toHaveLength(1)
-      expect(teamUnread()[0]).toMatchObject({
-        folders: 2,
-        live: true,
-        deliveries: 0,
-        // Nothing is judged yet — the frontier has not landed.
-        frontierReady: false,
-        lit: [],
-      })
+  it('hands the console the delivery, the read and why, and the gates it was judged behind', async () => {
+    const { unmount } = renderHook(() => useTeamUnread(folders))
+    read({ reason: 'track' })
+    hold(HELD)
+    await vi.waitFor(() =>
+      expect(teamUnread()[0]?.lastLoad).toMatchObject({ trigger: 'folders', outcome: 'ok', answered: 2 }),
+    )
+    expect(teamUnread()[0]).toMatchObject({ folders: 2, live: true, deliveries: 0, frontierReady: false, lit: [] })
 
-      act(() => live.fire?.(FOLDER_A))
-      // Recorded at the signal, not at the re-read: a settle that never fires
-      // and a read that never returns are different failures.
-      expect(teamUnread()[0]).toMatchObject({
-        deliveries: 1,
-        lastDelivery: { folder: FOLDER_A, listed: true },
-        lastLoad: { trigger: 'folders' },
-      })
+    act(() => {
+      for (const heard of store.deliveries) heard(FOLDER_A)
+      // Another reader's channel: not this sidebar's delivery.
+      for (const heard of store.deliveries) heard('99999999-9999-4999-8999-999999999999')
+    })
+    expect(teamUnread()[0]).toMatchObject({ deliveries: 1, lastDelivery: { folder: FOLDER_A, listed: true } })
 
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS)
-      })
-      await vi.waitFor(() =>
-        expect(teamUnread()[0].lastLoad).toMatchObject({ trigger: 'socket', outcome: 'ok' }),
-      )
+    read({ reason: 'relay-live' })
+    expect(teamUnread()[0].lastLoad).toMatchObject({ trigger: 'relay-live', outcome: 'ok' })
+    read({ reason: 'interval', outcome: 'failed', requests: null, error: new RelayReadError('rate-limited: quota exceeded; retry in 8s') })
+    expect(teamUnread()[0].lastLoad).toMatchObject({ trigger: 'refresh', outcome: 'failed', failure: 'rate_limited' })
 
-      advance({})
-      // With no argument it explains the Folder the socket last named, which
-      // is the one somebody at a console is asking about.
-      await vi.waitFor(() => expect(teamUnread()[0].frontierReady).toBe(true))
-      const folder = teamUnread()[0].folder
-      expect(folder).toMatchObject({ id: FOLDER_A, listed: true, read: true, unread: true })
-      expect(folder?.streams).toEqual([
-        expect.objectContaining({ key: FOL18, followed: true, marker: null, unread: true }),
-      ])
-
-      unmount()
-      // A stopped hook leaves nothing to read, in a tab as in a test.
-      expect(teamUnread()).toEqual([])
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('works with no socket at all — the refresh triggers still drive it', async () => {
-    live.present = false
-    const { result } = renderHook(() => useTeamUnread(folders))
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(1))
-    expect(live.watched).toEqual([])
     advance({})
-    await waitFor(() => expect(result.current.unread[FOLDER_A]).toBe(true))
-    act(() => refresh.fire?.())
-    await waitFor(() => expect(relay.channelStreams).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(teamUnread()[0].frontierReady).toBe(true))
+    expect(teamUnread()[0].folder).toMatchObject({ id: FOLDER_A, listed: true, read: true, unread: true })
+
+    unmount()
+    // A stopped hook leaves nothing to read, in a tab as in a test.
+    expect(teamUnread()).toEqual([])
   })
 })
