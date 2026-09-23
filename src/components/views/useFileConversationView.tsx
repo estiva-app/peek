@@ -88,6 +88,11 @@ interface ViewSlots {
  * CON-8's newest-wins rule, without which a reply written against the old
  * text reads as a non sequitur.
  *
+ * An edit may also carry `imeta` (RFC 0.4 §7.2.1, amended 2026-09-23, CON-5):
+ * the files drawn are the latest such edit's set, else the comment's own. An
+ * edit that only attaches — its content byte-identical to the body it replaces
+ * — is not marked edited, since the mark is about the body.
+ *
  * ## Live, the way a topic is (FOL-32)
  *
  * The read watches the file's Folder on the tab's one socket. A new root is
@@ -416,10 +421,12 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
 
   const decorate = (event: ConversationEvent) => {
     const decoration: CommentDecoration | undefined = conversation.decorations.byId[event.id]
+    const edit = conversation.edits[event.id]
     reactionsById[event.id] = decoration?.reactions ?? []
     return {
-      body: decoration?.edit?.body ?? event.body,
-      editedAt: decoration?.edit ? decoration.edit.at * 1000 : undefined,
+      body: edit?.body ?? event.body,
+      editedAt: edit?.editedAt !== undefined ? edit.editedAt * 1000 : undefined,
+      files: (edit?.files ?? event.files).map(asAttachment),
       reactions: groupReactions(decoration?.reactions ?? [], viewerPubkey, nameOf),
       resolutions: decoration?.resolutions ?? [],
     }
@@ -435,7 +442,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       body: d.body,
       editedAt: d.editedAt,
       createdAtMs: reply.createdAt * 1000,
-      files: reply.files.map(asAttachment),
+      files: d.files,
       nostrReferences: reply.references,
       nostrEventId: reply.id,
       reactions: d.reactions,
@@ -467,7 +474,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       isResolved,
       resolvedBy: isResolved ? nameOf(last.by) : undefined,
       resolutionMessage: isResolved ? last.message : undefined,
-      files: root.files.map(asAttachment),
+      files: d.files,
       nostrReferences: root.references,
       nostrEventId: root.id,
     }
