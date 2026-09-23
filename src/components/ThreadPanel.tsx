@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Chip, ScrollArea } from '@estiva-app/ui'
+import { Chip, ContainerHeader, ScrollArea } from '@estiva-app/ui'
 import { RouterLink } from './RouterLink'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
@@ -242,12 +242,14 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
   }, [])
   return (
     <div className="flex flex-col h-full">
-      <div className="h-12 shrink-0 flex items-center justify-between pl-5 pr-4 py-2 border-b border-border-subtle z-20 relative bg-bg-surface">
-        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-small signal:font-medium signal:uppercase signal:tracking-widest signal:text-text-interactive">Replies</span>
-        <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
-          <IconX size={16} stroke={1.5} />
-        </IconButton>
-      </div>
+      <ContainerHeader
+        title="Replies"
+        actions={
+          <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
+            <IconX size={16} stroke={1.5} />
+          </IconButton>
+        }
+      />
       <div className="flex-1 overflow-hidden px-4 pt-4">
         {showSkeleton && <SkeletonConversationList />}
       </div>
@@ -382,14 +384,15 @@ export function ThreadPanel({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="h-12 shrink-0 flex items-center justify-between pl-5 pr-4 py-2 border-b border-border-subtle z-20 relative bg-bg-surface">
-        <div className="flex items-center gap-2">
-          {huddleMemberCount != null && (
-            <IconLock size={16} stroke={1.5} className="text-text-secondary" />
-          )}
-          <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-small signal:font-medium signal:uppercase signal:tracking-widest signal:text-text-interactive">Replies</span>
-        </div>
-        <div className="flex items-center gap-2">
+      <ContainerHeader
+        title={
+            <div className="flex items-center gap-2">
+              {huddleMemberCount != null && <IconLock size={16} stroke={1.5} className="text-text-secondary" />}
+              <span className="text-body-2-strong text-text-primary">Replies</span>
+            </div>
+          }
+        actions={
+          <>
           {/* The package's Chip, success: it was a hand-made pill under Signal
               and bare green words elsewhere (UIG-14). */}
           {isResolved && <Chip type="success" label="Resolved" />}
@@ -421,8 +424,9 @@ export function ThreadPanel({
           <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
             <IconX size={16} stroke={1.5} />
           </IconButton>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Scrollable content */}
       <ScrollArea className="flex-1" viewportRef={scrollRef} contentClassName="flex flex-col">
