@@ -83,6 +83,25 @@ describe('resolveObjectsAsViewer', () => {
     expect(addresses.map((a) => objects[a]?.comments.map((c) => c.body))).toEqual(addresses.map((_, i) => [`On ${i}`]))
   })
 
+  it('still knows the manifest after five minutes, and asks again after an hour (PER-11)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
+      queryRelay.mockClear()
+
+      vi.setSystemTime(Date.now() + 6 * 60_000)
+      await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
+      expect(queryRelay).toHaveBeenCalledTimes(1)
+      queryRelay.mockClear()
+
+      vi.setSystemTime(Date.now() + 60 * 60_000)
+      await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
+      expect(queryRelay.mock.calls.length).toBeGreaterThan(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('throws a refused read rather than answering null, so a held row can stay', async () => {
     await resolveObjectsAsViewer(addresses, 'https://relay.test', token)
     queryRelay.mockResolvedValue({ ok: false, reason: 'rate_limited' })

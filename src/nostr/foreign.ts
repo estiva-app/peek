@@ -130,12 +130,20 @@ const cachedPeople = (query: QueryFn): PeopleFn => profiles.viaRelay(query)
  * 8, cold and warm identical, because every resolve re-fetched each app's
  * manifest — two POSTs per app, per call — against a meter of 300 a minute
  * (`scripts/probe-fol21-tree-cost.ts`). With this, the same fold is 3 and the
- * same row 2. Only the manifest is remembered, for interop's five minutes: the
- * object, its changes, its comments and its children are what a refresh
- * exists to notice. Cleared with the URL shapes after a manifest is
- * republished, which is the one moment a remembered manifest is wrong.
+ * same row 2. Only the manifest is remembered: the object, its changes, its
+ * comments and its children are what a refresh exists to notice.
+ *
+ * For an hour, not interop's five minutes (PER-11). Nothing in Peek clears
+ * this when a manifest is republished — `forgetUrlShapes` is called only by
+ * tests, and the live socket holds only events carrying a Folder's `h`, which
+ * a global `kind:31990` never does — so the TTL is the only thing that
+ * refreshes it. At five minutes it cost an idle Desk 12 of its 28 requests
+ * every five minutes, measured on production after PER-10: the recommendation
+ * and the manifest, for each of six apps, every window. At an hour that is the
+ * same 12 once an hour. The price is that another app's republished manifest
+ * can take an hour to reach an open tab; a reload picks it up at once.
  */
-const manifests = createProjectionCache()
+const manifests = createProjectionCache(60 * 60_000)
 
 /**
  * Resolve a `nostr:naddr…` into a renderable widget.
@@ -159,7 +167,7 @@ const manifests = createProjectionCache()
  */
 let shapesPromise: Promise<ReturnType<typeof urlPatternsOf>> | null = null
 
-/** Forget the cached shapes — for tests, and after a manifest is republished. */
+/** Forget the cached shapes and manifests. Only tests call it today. */
 export function forgetUrlShapes(): void {
   shapesPromise = null
   manifests.clear()
