@@ -50,14 +50,6 @@ jobs:
       - name: Typecheck the Convex functions
         run: npx tsc -p convex
 
-      # The token rules are a gate, on their own (D55, 2026-09-10). They are the
-      # ones that catch a class which compiles to nothing — the defect that
-      # shipped a transparent sign-in screen in Ship and an unfilled card in
-      # Peek's Folder panel. Zero errors on the day this landed, so it stays
-      # zero.
-      - name: Token lint
-        run: npm run lint:tokens
-
       - name: Test
         run: npm run test:run
 
@@ -85,6 +77,15 @@ jobs:
 
       - name: Gate lint
         run: npm run lint:rules
+
+      # The token rules are a gate, on their own (D55, 2026-09-10). They are the
+      # ones that catch a class which compiles to nothing — the defect that
+      # shipped a transparent sign-in screen in Ship and an unfilled card in
+      # Peek's Folder panel. Zero errors on the day this landed, so it stays
+      # zero. In `gate`, the one required check, since UIG-21: in `check` a
+      # token error stopped the deploy but not the merge.
+      - name: Token lint
+        run: npm run lint:tokens
 
       # Every part says in one line what it is for, so `npm run ui:find` can offer
       # it before someone builds it again (UIG-13). Built from the code; nothing kept.
