@@ -13,7 +13,7 @@
  * A skeleton means the view said "I have nothing", which is false the moment
  * anything has answered once.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
@@ -93,7 +93,6 @@ vi.mock('@/api/foreign', () => {
     listFolders: async () => folders,
     resolveFolderContents: seam.resolveFolderContents,
     conversations: seam.conversations,
-    channelStreams: async () => ({ [TEAM]: [], [OTHER]: [] }),
     resolveObject: seam.resolveObject,
     resolveFileFolder: async () => null,
   }
@@ -129,6 +128,43 @@ vi.mock('@/nostr/useLiveTopics', () => {
     },
   }
   return { useLiveTopics: () => ({ live: client, relayState: 'live' }) }
+})
+/**
+ * The dots' messages, from the tab's channel store (PER-8) — scripted, so a
+ * test can change what the dot sees without any read of the Folder's rows.
+ */
+const dots = vi.hoisted(() => ({
+  version: 0,
+  at: 0,
+  streams: {} as Record<string, unknown[]>,
+  listeners: new Set<() => void>(),
+  /** The store's deliveries — what the socket's signal is now (FOL-44 rides it). */
+  deliveries: new Set<(channel: string) => void>(),
+}))
+/** The socket delivering an event in `channel` to the store. */
+const deliver = (channel: string) => {
+  for (const heard of dots.deliveries) heard(channel)
+}
+vi.mock('@/api/useChannelStreams', async () => {
+  const { useSyncExternalStore, useMemo } = await import('react')
+  return {
+    useChannelStreams: () => {
+      const version = useSyncExternalStore(
+        (listener) => {
+          dots.listeners.add(listener)
+          return () => dots.listeners.delete(listener)
+        },
+        () => dots.version,
+      )
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      return useMemo(() => ({ at: dots.at, streams: { [TEAM]: [], [OTHER]: [], ...dots.streams } }), [version])
+    },
+    onChannelStoreRead: () => () => {},
+    onChannelStoreDelivery: (listener: (channel: string) => void) => {
+      dots.deliveries.add(listener)
+      return () => dots.deliveries.delete(listener)
+    },
+  }
 })
 
 import { FolderTree } from './FolderTree'
@@ -251,7 +287,7 @@ describe('a refresh keeps the rows it already has (FOL-40)', () => {
     expect(skeletons()).toHaveLength(0)
   })
 
-  it('the socket re-read is the same: the dot may change, the rows do not', async () => {
+  it('a message the socket delivers changes the dot, and neither reads nor redraws the rows', async () => {
     render(
       <MemoryRouter initialEntries={['/folders']}>
         <FolderTree currentFolder={TEAM} />
@@ -261,10 +297,13 @@ describe('a refresh keeps the rows it already has (FOL-40)', () => {
     await waitFor(() => expect(seam.reads).toBe(1))
     const row = document.querySelector(`[data-file="${FILE_ADDRESS}"]`)
 
-    // The team dot's own re-read fires no Folder-contents read at all: the two
-    // are separate reads on separate hooks, which is why one can be live.
-    live.fire?.(TEAM)
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The dot's messages come from the channel store, which applies what the
+    // socket delivers (PER-8): no Folder-contents read at all, and no remount.
+    act(() => {
+      dots.streams = { [TEAM]: [{ id: 'n', at: dots.at, by: 'd'.repeat(64), root: 'n', about: [], urgent: false }] }
+      dots.version++
+      for (const listener of dots.listeners) listener()
+    })
     expect(document.contains(row!)).toBe(true)
     expect(skeletons()).toHaveLength(0)
     expect(seam.reads).toBe(1)
@@ -289,7 +328,7 @@ describe("an open section's rows follow the socket (FOL-44)", () => {
     const row = document.querySelector(`[data-file="${FILE_ADDRESS}"]`)
 
     // The channel the comment lands in is not the team's: it is placed in it.
-    live.fire?.(CONVERSATION)
+    deliver(CONVERSATION)
     await waitFor(() => expect(rowReads()).toBe(2), { timeout: 3_000 })
     expect(document.contains(row!)).toBe(true)
     expect(skeletons()).toHaveLength(0)
@@ -311,7 +350,7 @@ describe("an open section's rows follow the socket (FOL-44)", () => {
       ).length
     await waitFor(() => expect(childReads()).toBe(1))
 
-    live.fire?.(TEAM)
+    deliver(TEAM)
     await waitFor(() => expect(childReads()).toBe(2), { timeout: 3_000 })
   })
 
@@ -324,7 +363,7 @@ describe("an open section's rows follow the socket (FOL-44)", () => {
     await screen.findByText('FOL-15 test topic 2')
     await waitFor(() => expect(rowReads()).toBe(1))
 
-    live.fire?.(OTHER)
+    deliver(OTHER)
     // Past the settle window, so a read it caused would have gone out.
     await new Promise((resolve) => setTimeout(resolve, 1_500))
     expect(rowReads()).toBe(1)
