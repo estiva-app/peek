@@ -1,6 +1,7 @@
 import { describeRelayFailure, type RelayFailureKind } from '@/nostr/relayRead'
 import { useCallback, useState } from 'react'
 import { IconChevronRight } from '@tabler/icons-react'
+import { ContainerHeader } from '@estiva-app/ui'
 import type { FolderProject, ForeignObject, ResolvedSlot } from '@estiva-app/interop'
 import { hasConvex, useForeignObjects } from '@/api'
 import type { FolderProjectState } from '@/api/useFolderProject'
@@ -48,11 +49,7 @@ const PANEL_INSET = 'p-3'
 function PanelShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full">
-      <div className="h-12 shrink-0 flex items-center pl-5 pr-4 py-2 border-b border-border-subtle">
-        <span className="text-body-2-strong text-text-primary signal:font-mono signal:text-small signal:font-medium signal:uppercase signal:tracking-widest signal:text-text-interactive">
-          Files
-        </span>
-      </div>
+      <ContainerHeader title="Files" />
       {children}
     </div>
   )
