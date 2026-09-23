@@ -53,12 +53,21 @@ import { RELAY_URL } from '@/api/relayUrl'
 /** How long the socket's activity is gathered before one re-read pays for all of it. */
 export const LIVE_FILE_SETTLE_MS = 300
 
+const FILE_KINDS: readonly number[] = [KIND.COMMENT]
+
 export function useLiveFile(
   /** The Folder the file is in — its `h`. Nothing is watched while null. */
   folder: string | null | undefined,
   /** Something was said about the file: re-read. Held in a ref, so an inline function is fine. */
   onActivity: () => void,
+  /**
+   * What to watch for. A file's comments by default; a channel's conversation
+   * (REM-1) passes its messages and what else carries its `h`. Read by value,
+   * so a fresh array each render does not re-subscribe.
+   */
+  kinds: readonly number[] = FILE_KINDS,
 ): { relayState: RelayState } {
+  const kindList = kinds.join(',')
   const convex = useConvex()
   const relayUrl = RELAY_URL
   const [relayState, setRelayState] = useState<RelayState>('connecting')
@@ -102,7 +111,7 @@ export function useLiveFile(
         if (next === 'live' && !wasLive) latest.current()
         wasLive = next === 'live'
       })
-      watch = live.watchChannels([folder], settle, { kinds: [KIND.COMMENT] })
+      watch = live.watchChannels([folder], settle, { kinds: kindList.split(',').map(Number) })
     } catch (error) {
       // A failure costs the live path and nothing else.
       console.warn('[nostr] live file subscription unavailable:', error)
@@ -112,7 +121,7 @@ export function useLiveFile(
       unsubscribe?.()
       watch?.stop()
     }
-  }, [folder, relayUrl, convex])
+  }, [folder, relayUrl, convex, kindList])
 
   return { relayState }
 }

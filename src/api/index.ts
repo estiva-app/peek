@@ -73,6 +73,7 @@ export {
 } from './useForeignConversation'
 export {
   useFileConversation,
+  conversationKeyOf,
   type FileConversationState,
   type FileConversationActions,
   type ConversationContainer,

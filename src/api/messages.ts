@@ -11,14 +11,13 @@ import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { TOPIC_CONVERSATIONS } from '@/data/topicData'
 import { DM_CONVERSATIONS } from '@/data/dmData'
-import { mockConvIdFor } from './directory'
 import { REPLIES } from '@/data/replyData'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { useTopicStore } from '@/api/internal/topicStore'
 import { useTopicLookup } from './topics'
 import { formatDateLabel, formatTimestamp, formatReplyTimestamp, formatLastReplyTimestamp, dayKey } from './format'
 import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
-import { hasConvex, useDmRuntime } from './store'
+import { hasConvex } from './store'
 import { useHuddleLookup } from './huddles'
 import type { ConversationData, ConvGroup, FileAttachment, Huddle, ReactionData, ReplyData } from './types'
 
@@ -474,64 +473,6 @@ export function useTopicMessages(topicId: string | null): TopicMessages {
   }
 }
 
-export interface DmMessages {
-  groups: ConvGroup[]
-  sent: ConversationData[]
-  /** True while the Convex query is in flight — render a skeleton, not an empty state. */
-  isLoading: boolean
-  /** True when messages older than the current window exist on the server. */
-  hasEarlier: boolean
-  /** Widen the window by another page of earlier messages. */
-  showEarlier: () => void
-}
-
-export function useDmMessages(dmId: string | null): DmMessages {
-  const o = useTopicMutations()
-  const { sentDmMessages, setSentDmMessages } = useDmRuntime()
-  const me = useCurrentUser()
-  const [limit, setLimit] = useState(MESSAGE_PAGE)
-  useEffect(() => setLimit(MESSAGE_PAGE), [dmId])
-  const remote = useQuery(
-    api.messages.list,
-    hasConvex && dmId != null ? { parentKind: 'dm', parentKey: String(dmId), limit } : 'skip',
-  )
-  const remoteRowIds = useMemo(() => (remote ? remote.rows.map((r) => r.id) : null), [remote])
-  usePruneConfirmed(dmId == null ? null : String(dmId), remoteRowIds, setSentDmMessages)
-  const showEarlier = () => setLimit((l) => l + MESSAGE_PAGE)
-  if (dmId == null) return { groups: [], sent: [], isLoading: false, hasEarlier: false, showEarlier: NOOP }
-
-  const sentLocal = sentDmMessages[dmId] ?? []
-  // The mock fixture stores DMs under legacy conversation numbers; the seam
-  // speaks person keys (§2.4).
-  const mockConvId = mockConvIdFor(dmId)
-  const mockGroups = mockConvId === undefined ? undefined : DM_CONVERSATIONS[mockConvId]
-  let groups: ConvGroup[]
-  let sent: ConversationData[]
-  let hasEarlier = false
-  if (hasConvex) {
-    if (remote === undefined || me === undefined) {
-      return { groups: [], sent: [], isLoading: true, hasEarlier: false, showEarlier: NOOP }
-    }
-    const mockById = mockMessagesById(mockGroups)
-    const rows = remote.rows.filter((r) => !o.deletedIds.has(r.id))
-    groups = groupRemoteByDay(rows, (r) => mergeConv(toConversationData(r, me.id), o, false))
-    const remoteIds = new Set(remote.rows.map((r) => r.id))
-    sent = sentLocal
-      .filter((c) => !remoteIds.has(c.id) && !o.deletedIds.has(c.id))
-      .map((c) => mergeConv(c, o))
-    hasEarlier = remote.hasMore
-  } else {
-    groups = (mockGroups ?? [])
-      .map((g) => ({
-        dateLabel: g.dateLabel,
-        convs: g.convs.filter((c) => !o.deletedIds.has(c.id)).map((c) => mergeConv(c, o)),
-      }))
-      .filter((g) => g.convs.length > 0)
-    sent = sentLocal.map((c) => mergeConv(c, o))
-  }
-  return { groups, sent, isLoading: false, hasEarlier, showEarlier }
-}
-
 /**
  * Merged top-level messages inside a huddle: seed conversation (if any),
  * static extras, and runtime-sent messages — in that order, as the huddle
@@ -563,7 +504,6 @@ export function useHuddleMessages(huddle: Huddle | null): ConversationData[] {
 export function useThread(messageId: string | null): ThreadData {
   const o = useTopicMutations()
   const { topics } = useTopicStore()
-  const { sentDmMessages } = useDmRuntime()
   const me = useCurrentUser()
   const huddleLookup = useHuddleLookup()
   // Refresh fallback: a message sent in an earlier session exists only in
@@ -597,10 +537,6 @@ export function useThread(messageId: string | null): ThreadData {
         const hit = g.convs.find((c) => c.id === messageId)
         if (hit) return hit
       }
-    }
-    for (const msgs of Object.values(sentDmMessages)) {
-      const hit = msgs.find((c) => c.id === messageId)
-      if (hit) return hit
     }
     // Huddle seed/extra/runtime messages (incl. runtime topics' huddles).
     for (const t of topics) {

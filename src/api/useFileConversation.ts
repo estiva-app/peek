@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRelayViewer } from './foreign'
+import { KIND } from '@estiva-app/protocol'
 import {
   commentAsViewer,
+  conversationAsViewer,
   deleteEventAsViewer,
   editCommentAsViewer,
-  fileConversationAsViewer,
   reactAsViewer,
   resolveAsViewer,
   type ConversationContainer,
@@ -24,6 +25,7 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useLiveFile } from '@/nostr/useLiveFile'
 
 export type { ConversationContainer, ConversationEvent, FileConversation, OutgoingAttachment, WriteResult }
+export { conversationKeyOf } from '@/nostr/fileConversation'
 
 /** What a file's conversation is, once asked: the events, or why not. */
 export type FileConversationState = FileConversation | 'loading' | { failed: RelayFailureKind }
@@ -41,7 +43,8 @@ export type FileConversationState = FileConversation | 'loading' | { failed: Rel
 export interface FileConversationActions {
   comment: (body: string, files?: readonly OutgoingAttachment[]) => Promise<WriteResult>
   reply: (parent: ConversationEvent, body: string, files?: readonly OutgoingAttachment[]) => Promise<WriteResult>
-  edit: (targetEventId: string, body: string) => Promise<WriteResult>
+  /** `files`, when given, is the whole attachment set after the edit — never empty. */
+  edit: (targetEventId: string, body: string, files?: readonly OutgoingAttachment[]) => Promise<WriteResult>
   remove: (targetEventId: string) => Promise<WriteResult>
   react: (targetEventId: string, emoji: string) => Promise<WriteResult>
   resolve: (
@@ -53,6 +56,8 @@ export interface FileConversationActions {
 }
 
 const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this conversation.' }
+
+const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION]
 
 /**
  * A file's conversation as Peek's own view reads it — FOL-31.
@@ -71,8 +76,10 @@ const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this c
  * The caller says *where* (`{ kind: 'file', address, h }`) and this file says
  * nothing about which comment kind that means: `threadsAsViewer` reads the
  * kinds off the owning app's manifest, and the decorations are addressed by
- * event id. FOL-35 adds `{ kind: 'channel', h }` to the container and a topic
- * reads through here with no change to the view.
+ * event id. `{ kind: 'channel', h }` (REM-1) is a channel's `kind:9` talk —
+ * a DM — and reads through here with no change to the view. A channel finds
+ * its own messages, so `rootIds` is a file's only, and a new message is
+ * re-read here rather than by the caller.
  *
  * ## Same shape as `useFileThreads`
  *
@@ -116,14 +123,19 @@ export function useFileConversation(
     failed?: RelayFailureKind
   }>()
   // The identity of the array changes every render; the comment ids do not.
-  const key = container ? `${container.address} ${container.h} ${rootIds.join(',')}` : ''
+  const key = !container
+    ? ''
+    : container.kind === 'file'
+      ? `file ${container.h} ${container.address} ${rootIds.join(',')}`
+      : `channel ${container.h}`
 
   const load = useCallback(async () => {
     if (!key) return
-    const [address, h, ids] = key.split(' ')
+    const [kind, h, address, ids] = key.split(' ')
     const v = viewer()
     if (!v) return
-    return fileConversationAsViewer({ kind: 'file', address, h }, ids ? ids.split(',') : [], v.relayUrl, v.token)
+    const where: ConversationContainer = kind === 'file' ? { kind: 'file', address, h } : { kind: 'channel', h }
+    return conversationAsViewer(where, ids ? ids.split(',') : [], v.relayUrl, v.token)
       .then((conversation) => ({ key, conversation }))
       .catch((error: unknown) => {
         const kind =
@@ -151,10 +163,16 @@ export function useFileConversation(
     }
   }, [key, load])
 
-  const live = useLiveFile(container?.h, () => {
-    onActivity?.()
-    if (key) void reload()
-  })
+  const live = useLiveFile(
+    container?.h,
+    () => {
+      onActivity?.()
+      if (key) void reload()
+    },
+    // A channel's messages, and what is done to them that carries its `h`. A
+    // reaction carries none, and arrives with the next re-read.
+    container?.kind === 'channel' ? CHANNEL_LIVE_KINDS : undefined,
+  )
 
   useRefreshTriggers(
     () => {
@@ -183,19 +201,20 @@ export function useFileConversation(
   )
 
   const actions: FileConversationActions = {
-    // A new root is not in `rootIds` until the object is re-resolved, so a
-    // re-read here would find nothing new; the caller re-resolves instead.
+    // A file's new root is not in `rootIds` until the object is re-resolved,
+    // so a re-read here would find nothing new; the caller re-resolves
+    // instead. A channel's is found by the channel read, so that one re-reads.
     comment: (body, files) =>
       container
-        ? write((url, token) => commentAsViewer({ container, body, files }, url, token), false)
+        ? write((url, token) => commentAsViewer({ container, body, files }, url, token), container.kind === 'channel')
         : Promise.resolve(SIGNED_OUT),
     reply: (parent, body, files) =>
       container
         ? write((url, token) => commentAsViewer({ container, body, parent, files }, url, token))
         : Promise.resolve(SIGNED_OUT),
-    edit: (targetEventId, body) =>
+    edit: (targetEventId, body, files) =>
       container
-        ? write((url, token) => editCommentAsViewer({ container, targetEventId, body }, url, token))
+        ? write((url, token) => editCommentAsViewer({ container, targetEventId, body, files }, url, token))
         : Promise.resolve(SIGNED_OUT),
     remove: (targetEventId) => write((url, token) => deleteEventAsViewer(targetEventId, url, token)),
     react: (targetEventId, emoji) => write((url, token) => reactAsViewer({ targetEventId, emoji }, url, token)),

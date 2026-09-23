@@ -197,15 +197,10 @@ describe('app smoke (seam wiring)', () => {
     })
   })
 
-  it('renders a DM conversation with merged reply counts', () => {
+  it('renders a DM with its partner in the header', () => {
     renderApp('/app/people/alice')  // DMs are keyed by the partner's person key (§2.4)
     expect(present('Alice Johnson')).toBeGreaterThan(0)
-    // Token-free line (reference chips like #48821 split text nodes)
-    expect(present(/EU completions dropped 28% in 5 days/)).toBeGreaterThan(0)
-    // dm1_c5 has 3 static replies — the thread panel shows them merged
-    const message = screen.getAllByText(/current export design assumes synchronous generation/)[0]
-    fireEvent.click(message)
-    expect(present('Replies')).toBeGreaterThan(0)
-    expect(present(/job queue approach makes more sense/)).toBeGreaterThan(0)
+    // The conversation itself is the relay's since REM-1 — there is no mock
+    // copy of it to render, and `useFileConversation.test.tsx` pins the read.
   })
 })

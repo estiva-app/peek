@@ -7,10 +7,19 @@
  * on the relay, read by `#a`. The view is the same set of components either
  * way; what differs is here, and this module is the only place a kind number
  * for a file's talk is written. `ConversationContainer` is the DMS-5
- * `containerKind`/`containerKey` idea with the file as a member: today it has
- * one shape, and FOL-35 adds `{ kind: 'channel', h }` for a team's general
- * `kind:9` chat, which reads by `#h` and writes with `buildMessage` — the
- * same view, one more branch in this file and nowhere else.
+ * `containerKind`/`containerKey` idea with the file as a member. REM-1 added
+ * its second shape, `{ kind: 'channel', h }`: a channel's `kind:9` talk, read
+ * by `#h` and written with `buildMessage` — a DM today, and a team's general
+ * chat when FOL-35 wants it. The same view, one more branch in this file.
+ *
+ * ## A channel
+ *
+ * `convex/nostr/sync.ts` is the specification of what folds into what, since
+ * it is what drew a DM until REM-1: a `kind:9` with an `e` is a reply to the
+ * message that `e` names ({@link replyTargetOf}), one without is a message, and
+ * a reply to something that is not a message here is dropped rather than
+ * guessed at. Edits, reactions and resolutions are the same `#e` read a file's
+ * comments get. A deleted message is simply not returned.
  *
  * ## Reads
  *
@@ -36,6 +45,7 @@
 import {
   buildDeletion,
   buildEdit,
+  buildMessage,
   buildReaction,
   buildResolution,
   decodeNaddr,
@@ -47,25 +57,37 @@ import {
   imetaTag,
   KIND,
   type NostrTag,
+  type PublishResult,
   type ResolutionAction,
   type SignedEvent,
+  type UnsignedEvent,
 } from '@estiva-app/protocol'
 import { commentDecorationsOf, type CommentDecorations } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
-import { RelayReadError } from './relayRead'
+import { RATE_LIMIT_MAX_WAIT_MS, RelayReadError, retryAfterMs } from './relayRead'
 import { applyActionAsViewer, threadsAsViewer, urlReferenceTagsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
 import { findUrls } from '@/lib/textParsing'
 
-/** Where a conversation lives. One shape today; see the module header. */
-export type ConversationContainer = {
-  kind: 'file'
-  /** The file's address — what its comments carry as `a`. */
-  address: string
-  /** The file's Folder — what every event written into this conversation carries as `h`. */
-  h: string
-}
+/** Where a conversation lives; see the module header. */
+export type ConversationContainer =
+  | {
+      kind: 'file'
+      /** The file's address — what its comments carry as `a`. */
+      address: string
+      /** The file's Folder — what every event written into this conversation carries as `h`. */
+      h: string
+    }
+  | {
+      kind: 'channel'
+      /** The channel — what every message in it carries as `h`, and all a read needs. */
+      h: string
+    }
+
+/** What names a conversation, whatever its kind: the file's address, or the channel. */
+export const conversationKeyOf = (container: ConversationContainer): string =>
+  container.kind === 'file' ? container.address : container.h
 
 /** An attachment as an `imeta` on the relay describes it — the shape `attachmentsOf` gives Convex. */
 export interface RelayAttachment {
@@ -295,7 +317,7 @@ export function isCommentOn(event: Pick<SignedEvent, 'kind' | 'content' | 'tags'
  * every read here: an unreadable conversation is not an empty one.
  */
 export async function fileConversationAsViewer(
-  container: ConversationContainer,
+  container: FileContainer,
   rootIds: readonly string[],
   relayUrl: string,
   token: StoredToken,
@@ -319,6 +341,95 @@ export async function fileConversationAsViewer(
     replies[rootId] = list.map((reply) => withTags(reply, raw.get(reply.id), container.address))
   }
 
+  return decorate(roots, replies, relayUrl, token)
+}
+
+type FileContainer = Extract<ConversationContainer, { kind: 'file' }>
+
+/** The conversation in a container, read the way its kind is read. `rootIds` is a file's; a channel finds its own. */
+export function conversationAsViewer(
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<FileConversation> {
+  return container.kind === 'file'
+    ? fileConversationAsViewer(container, rootIds, relayUrl, token)
+    : channelConversationAsViewer(container.h, relayUrl, token)
+}
+
+/** Buzz clamps `limit` at 1,000 per filter; a page that comes back full is followed by the next. */
+export const CHANNEL_PAGE = 1_000
+/** How many pages one read will follow — 20,000 messages, far past the busiest DM. */
+export const CHANNEL_PAGES = 20
+
+/**
+ * A channel's conversation — its messages, their replies, and what was done
+ * to each (REM-1). See the module header for the fold.
+ *
+ * The whole channel, every time. A DM is read to the end rather than a window
+ * because a window is exactly what the Convex projection had and what DMS-7's
+ * duplicates broke: an older message with no row was an older message nobody
+ * could see. Paged by `until` on the oldest `created_at` seen, inclusive, so a
+ * second that straddles two pages is read twice and deduplicated by id rather
+ * than skipped.
+ */
+export async function channelConversationAsViewer(h: string, relayUrl: string, token: StoredToken): Promise<FileConversation> {
+  const messages = new Map<string, SignedEvent>()
+  let until: number | undefined
+  for (let page = 0; page < CHANNEL_PAGES; page += 1) {
+    const filter = { kinds: [KIND.STREAM_MESSAGE], '#h': [h], limit: CHANNEL_PAGE, ...(until !== undefined ? { until } : {}) }
+    const result = await queryRelay(relayUrl, [filter], token.accessToken, token.pubkey)
+    if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+    const before = messages.size
+    for (const event of result.events) if (event.kind === KIND.STREAM_MESSAGE) messages.set(event.id, event)
+    if (result.events.length < CHANNEL_PAGE || messages.size === before) break
+    until = Math.min(...result.events.map((e) => e.created_at))
+  }
+
+  const asEvent = (event: SignedEvent): ConversationEvent => ({
+    id: event.id,
+    author: event.pubkey,
+    body: event.content,
+    createdAt: event.created_at,
+    kind: event.kind,
+    files: attachmentsOf(event),
+    references: referencesOf(event, ''),
+  })
+  const oldestFirst = (a: SignedEvent, b: SignedEvent) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1)
+  const sorted = [...messages.values()].sort(oldestFirst)
+  const roots = sorted.filter((e) => !replyTargetOf(e)).map(asEvent)
+  const rootIds = new Set(roots.map((r) => r.id))
+  const replies: Record<string, ConversationEvent[]> = {}
+  for (const event of sorted) {
+    const parent = replyTargetOf(event)
+    // A reply to a reply, or to a message this channel does not hold: the
+    // importer skipped these too, rather than strand one under the wrong root.
+    if (!parent || !rootIds.has(parent)) continue
+    ;(replies[parent] ??= []).push(asEvent(event))
+  }
+  return decorate(roots, replies, relayUrl, token)
+}
+
+/**
+ * The message a `kind:9` replies to, or null for a message — `convex/nostr/sync.ts`'s
+ * `replyTargetOf`, which is what put a DM's replies under their messages until REM-1.
+ * Buzz's direct reply carries one `e` marked `reply`; a nested one adds `root`.
+ */
+export function replyTargetOf(event: Pick<SignedEvent, 'tags'>): string | null {
+  const eTags = event.tags.filter((t) => t[0] === 'e' && typeof t[1] === 'string')
+  if (eTags.length === 0) return null
+  const marked = (marker: string) => eTags.find((t) => t[3] === marker)?.[1]
+  return marked('reply') ?? marked('root') ?? eTags[0][1] ?? null
+}
+
+/** What has been done to every root and reply: the third read, whichever container they came from. */
+async function decorate(
+  roots: ConversationEvent[],
+  replies: Record<string, ConversationEvent[]>,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<FileConversation> {
   const targets = [...roots, ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt }))
   // The edits come back on the decorations read, but interop keeps only the
   // newest one's body. The attachment fold (CON-5) needs every edit, so they
@@ -362,13 +473,74 @@ export type WriteResult = { ok: true; id: string } | { ok: false; reason: string
 const refused = (result: { ok: boolean; reason?: string; eventId?: string }, fallback: string): WriteResult =>
   result.ok && result.eventId ? { ok: true, id: result.eventId } : { ok: false, reason: result.reason ?? fallback }
 
-async function publish(unsigned: Parameters<typeof signViaEstivaId>[0], relayUrl: string, token: StoredToken, fallback: string): Promise<WriteResult> {
-  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  // The signed id is known before the relay answers; `eventId` is what the
-  // bridge reports when it parsed one, and the two are the same event.
-  return refused({ ...result, eventId: result.ok ? (result.eventId ?? signed.id) : undefined }, fallback)
+/** Tries per write, the first included. */
+export const PUBLISH_ATTEMPTS = 3
+/** The wait before the second try; doubled before each one after. */
+export const PUBLISH_BACKOFF_MS = 1_000
+
+const sleepFor = (ms: number) => new Promise<void>((done) => setTimeout(done, ms))
+
+/**
+ * How long to wait before trying again, or null when trying again cannot help.
+ *
+ * A quota refusal names its own wait (`retryAfterMs`). A failure that never
+ * reached a verdict — the request threw, the answer was a 5xx or a 408 — is
+ * worth another try after a backoff. Anything else is the relay's considered
+ * answer about this event (a 4xx, `accepted:false`), and asking again returns
+ * the same refusal.
+ */
+function retryWaitMs(result: PublishResult, threw: boolean, attempt: number): number | null {
+  const quota = retryAfterMs(result.reason ?? '')
+  if (quota !== null || result.httpStatus === 429) {
+    const wait = quota ?? PUBLISH_BACKOFF_MS
+    return wait > RATE_LIMIT_MAX_WAIT_MS ? null : wait
+  }
+  const status = result.httpStatus
+  if (threw || (status !== undefined && (status >= 500 || status === 408))) return PUBLISH_BACKOFF_MS * 2 ** (attempt - 1)
+  return null
 }
+
+/**
+ * Sign once, then publish until the relay has said yes or has said no — REM-1,
+ * and CON-7's third leg.
+ *
+ * The relay is the only store this conversation has, so a write that did not
+ * land is a write that did not happen, and success is reported only on the
+ * relay's acceptance. A transient failure is tried again rather than reported
+ * (see {@link retryWaitMs}); the same signed event every time, so a try whose
+ * answer was lost and that in fact landed comes back as the relay's
+ * `duplicate:`, which is acceptance. When every try fails the caller hears it
+ * and keeps what the person wrote.
+ */
+export async function publishConfirmed(
+  unsigned: UnsignedEvent,
+  relayUrl: string,
+  token: StoredToken,
+  fallback: string,
+  { sleep = sleepFor }: { sleep?: (ms: number) => Promise<void> } = {},
+): Promise<WriteResult> {
+  let signed: SignedEvent | undefined
+  for (let attempt = 1; ; attempt += 1) {
+    let result: PublishResult
+    let threw = false
+    try {
+      signed ??= await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+      result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+    } catch (error) {
+      threw = true
+      result = { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    }
+    // The signed id is known before the relay answers; `eventId` is what the
+    // bridge reports when it parsed one, and the two are the same event.
+    if (result.ok && signed) return { ok: true, id: result.eventId ?? signed.id }
+    const wait = attempt < PUBLISH_ATTEMPTS ? retryWaitMs(result, threw, attempt) : null
+    if (wait === null) return refused(result, fallback)
+    await sleep(wait)
+  }
+}
+
+const publish = (unsigned: UnsignedEvent, relayUrl: string, token: StoredToken, fallback: string): Promise<WriteResult> =>
+  publishConfirmed(unsigned, relayUrl, token, fallback)
 
 /**
  * Comment on the file, or reply under one of its comments — the owner's
@@ -390,6 +562,8 @@ export async function commentAsViewer(
   token: StoredToken,
 ): Promise<WriteResult> {
   const lowercase = new Set(['a', 'e', 'k', 'p'])
+  const { container } = args
+  const own = container.kind === 'file' ? container.address : ''
   /*
     A pasted app URL is indexed like a `nostr:naddr…` (FOL-38): an `a` for an
     object, a `q` for an event. Resolved before the event is built because the
@@ -397,14 +571,33 @@ export async function commentAsViewer(
     sources can name one object twice — a pointer and its link in the same
     sentence — so the union is by tag, not by source.
   */
-  const fromUrls = await urlReferenceTagsAsViewer(findUrls(args.body), args.container.address, relayUrl, token)
+  const fromUrls = await urlReferenceTagsAsViewer(findUrls(args.body), own, relayUrl, token)
   const seen = new Set<string>()
-  const references = [...referenceTagsFor(args.body, args.container.address), ...fromUrls].filter((tag) => {
+  const references = [...referenceTagsFor(args.body, own), ...fromUrls].filter((tag) => {
     const key = `${tag[0]}:${tag[1]}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
+
+  /*
+    A channel's message is a `kind:9` — `buildMessage`, as `convex/nostr/outbox.ts`
+    built a DM's until REM-1: a reply is the same event with Buzz's single
+    `reply`-marked `e`, since Peek's replies are always direct. Nothing is asked
+    of any app's manifest, because a channel is not an object.
+  */
+  if (container.kind === 'channel') {
+    const unsigned = buildMessage(token.pubkey, Date.now(), {
+      channelUuid: container.h,
+      content: args.body,
+      ...(args.parent ? { threadRef: { rootId: args.parent.id, parentId: args.parent.id } } : {}),
+      mentions: mentionTagsFor(args.body).map((tag) => tag[1]),
+      mediaTags: imetaTagsFor(args.files ?? []),
+    })
+    unsigned.tags.push(...references)
+    return publish(unsigned, relayUrl, token, 'The relay refused the message.')
+  }
+
   const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body), ...references]
   const transform = (event: UnsignedActionEvent): UnsignedActionEvent => {
     const parent = args.parent
@@ -419,7 +612,7 @@ export async function commentAsViewer(
     return { ...event, tags: [...tags, ...extra] }
   }
   const result: ActResult & { id?: string } = await applyActionAsViewer(
-    { naddr: args.container.address, actionId: 'comment', value: args.body },
+    { naddr: container.address, actionId: 'comment', value: args.body },
     relayUrl,
     token,
     transform,
@@ -427,9 +620,17 @@ export async function commentAsViewer(
   return result.ok && result.id ? { ok: true, id: result.id } : { ok: false, reason: result.reason ?? 'The relay refused the comment.' }
 }
 
-/** Edit a comment or a reply — `kind:40003`, newest wins for every reader (CON-8). */
+/**
+ * Edit a comment or a reply — `kind:40003`, newest wins for every reader (CON-8).
+ *
+ * `files`, when given, is the attachment set after the edit, as `imeta` — RFC
+ * 0.4 §7.2.1 as amended 2026-09-23 (CON-5), which {@link foldEdits} reads. A
+ * set replaces the one before it, and an edit carrying none leaves the
+ * attachments as they were, so an empty set cannot be said: the caller refuses
+ * it before it gets here.
+ */
 export async function editCommentAsViewer(
-  args: { container: ConversationContainer; targetEventId: string; body: string },
+  args: { container: ConversationContainer; targetEventId: string; body: string; files?: readonly OutgoingAttachment[] },
   relayUrl: string,
   token: StoredToken,
 ): Promise<WriteResult> {
@@ -438,6 +639,7 @@ export async function editCommentAsViewer(
     targetEventId: args.targetEventId,
     body: args.body,
   })
+  if (args.files) unsigned.tags.push(...imetaTagsFor(args.files))
   return publish(unsigned, relayUrl, token, 'The relay refused the edit.')
 }
 
