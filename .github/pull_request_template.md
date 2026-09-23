@@ -23,4 +23,4 @@ relay: layer 1 for anything another app reads, layer 2 (`kind:30078`,
 app-namespaced `d` tag, NIP-44) for anything the person would expect to own.
 
 The rule, the reasoning and the nine-field measurement behind it are in
-`CLAUDE.md` → *Convex takes no new state the relay already holds*.
+`.claude/rules/convex.md` → *Convex takes no new state the relay already holds*.
