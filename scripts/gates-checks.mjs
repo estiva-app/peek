@@ -23,28 +23,7 @@ import { appChecks } from '@estiva-app/ui/gates'
 export default function define(h) {
   const PROBE = "src/components/__gates_probe__.tsx";
   const GATES = "eslint.gates.config.js";
-  /*
-    The page contract, as it is actually written (Ship's UIG-18 set it): an
-    opening line that says what the part is, then four headings. "What it is"
-    is that opening line, not a heading of its own — a check that demanded five
-    headings would fail every page in the repo.
-  */
-  const fourSections = (mdx) => {
-    if (!h.exists(mdx)) return false;
-    const text = h.read(mdx);
-    const headed = ["When", "When not", "How", "What it owns"].every((s) => new RegExp(`^##\\s*${s}\\s*$`, "m").test(text));
-    const body = text.replace(/^import .*$/gm, "").replace(/^<Meta[^>]*\/>$/gm, "");
-    const opening = body.slice(body.indexOf("\n", body.indexOf("# ")), body.search(/^##\s/m));
-    return headed && opening.trim().length > 0;
-  };
   const registry = () => { try { return JSON.parse(h.read("registry.json")).entries ?? null; } catch { return null; } };
-  /** The set UIG-17 is about: reusable and promote-candidate, nothing else. */
-  const targets = (test) => {
-    const entries = registry();
-    if (!entries) return h.FAIL("registry.json has no entries — run `npm run registry`");
-    const parts = entries.filter((e) => ["reusable", "promote-candidate"].includes(e.app?.class));
-    return parts.length ? test(parts) : h.FAIL("no reusable parts in the registry — rebuild it");
-  };
   const storyFiles = () => h.listFiles("src", (name) => name.endsWith(".stories.tsx") || name.endsWith(".mdx"));
   /** Every top-level heading the sidebar actually has. */
   const sidebarHeadings = () => {
@@ -78,12 +57,9 @@ export default function define(h) {
         A check that reads the wrong field is worse than no check: it reports a
         problem in the thing it is checking rather than in itself.
       */
-      { what: "every reusable part has a usage page with the four sections", run: () => targets((parts) => {
-        const missing = parts.filter((e) => !e.docPage || !fourSections(e.docPage)).map((e) => e.name);
-        return missing.length === 0
-          ? h.PASS(`all ${parts.length} reusable parts have a page with When / When not / How / What it owns`)
-          : h.FAIL(`${parts.length - missing.length} of ${parts.length}; no page or an incomplete one: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? `, +${missing.length - 6}` : ""}`);
-      }) },
+      // The contract itself is the package's, run by `estiva-ui check` in CI's
+      // gate job (UIG-19); this repo kept its own copy until then.
+      { what: "every reusable part keeps the usage-page contract", run: () => h.contract(".") },
       /*
         This replaced a check that could not fail. "A usage page sits beside its
         component" is true by construction — the builder derives `docPage` as

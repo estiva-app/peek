@@ -1,0 +1,59 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as StartTopicDialogStories from './StartTopicDialog.stories'
+
+<Meta of={StartTopicDialogStories} />
+
+# StartTopicDialog
+
+Start a topic — a bare file inside a Folder: one title, and, when it was started
+from a row, the file it sits under.
+
+<Canvas of={StartTopicDialogStories.InAFolder} />
+
+## When
+
+- Starting a topic in the open Folder, or under a file row — pass `folderName`,
+  and `parent` when it sits under a file.
+- Starting one from the Folders column header, where no Folder is in hand — pass
+  `folders` and `defaultFolder`, and the dialog asks which with a `Select`.
+
+## When not
+
+- For a topic someone is invited to, or a DM turned into a huddle. That is
+  **CreateTopicDialog**, whose second field invites people. A bare file's
+  readers are its Folder's, so this dialog has no invitee field and could not
+  honour one.
+- For renaming or moving a file that already exists: those are the file's own
+  controls, not a new topic.
+
+## How
+
+```tsx
+import { StartTopicDialog } from '@/components/StartTopicDialog'
+
+<StartTopicDialog
+  folderName={folder.name}
+  parent={file}
+  onCreate={(title) => startTopic(folder.id, title, file)}
+  onClose={close}
+/>
+```
+
+- `onCreate` resolves `true` when the topic exists, and the dialog closes itself;
+  `false` keeps it open with the title still typed.
+- With `folders`, `onCreate` also receives the chosen Folder's id.
+
+## What it owns
+
+- **That a title is required and whitespace is not a title.** Start stays
+  unavailable until `title.trim()` has something in it, and, when it is asking,
+  until a Folder is chosen.
+- **Saying where the topic goes and who can read it**, in one sentence above the
+  field — the Folder by name, and under a file, that file and the app that shows
+  it as related.
+- **The empty case.** Asked to choose from no Folders, it says there is nowhere to
+  start one yet, rather than a field that can never be sent.
+- **Sending once.** The package `Form` sends on Enter and on Start alike, and a
+  second press while it is starting does nothing.
+
+<Controls />

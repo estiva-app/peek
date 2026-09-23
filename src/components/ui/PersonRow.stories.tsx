@@ -85,6 +85,19 @@ export const Unfollowed: Story = {
   args: { name: 'The file route', type: 'file', followAction: 'follow', onToggleFollow: () => {} },
 }
 
+/** A file in the Folders tree, as `FileTreeView` draws it: press the ⋮ for Details, Rename, New topic inside, Move and Delete. */
+export const FileWithControls: Story = {
+  args: {
+    name: 'The file route',
+    type: 'file',
+    onOpenDetails: () => {},
+    onRename: () => {},
+    onNewSubTopic: () => {},
+    onMove: () => {},
+    onDeleteTopic: () => {},
+  },
+}
+
 /** All row states side by side. */
 export const AllStates: Story = {
   parameters: { controls: { disable: true } },
