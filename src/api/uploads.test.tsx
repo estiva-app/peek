@@ -38,7 +38,16 @@ const file = () => new File([new Uint8Array([1, 2, 3])], 'notes.txt', { type: 't
 let fetchSpy: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
-  uploadBlob.mockResolvedValue({ sha256: 'ab'.repeat(32), url: 'https://relay.test/ab.txt', thumb: undefined, dim: undefined })
+  // The store canonicalizes, so what it holds is not what was picked: 2 bytes
+  // where the file had 3, and its own MIME. The imeta has to carry these.
+  uploadBlob.mockResolvedValue({
+    sha256: 'ab'.repeat(32),
+    url: 'https://relay.test/ab.txt',
+    size: 2,
+    type: 'text/plain; charset=utf-8',
+    thumb: undefined,
+    dim: undefined,
+  })
   fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     new Response(JSON.stringify({ storageId: 'stored' }), { status: 200 }),
   )
@@ -61,6 +70,15 @@ describe('a file conversation’s upload', () => {
     expect(uploaded).toMatchObject({ name: 'notes.txt', sha256: 'ab'.repeat(32), mediaUrl: 'https://relay.test/ab.txt' })
     expect(uploaded.storageId).toBeUndefined()
     expect(uploaded.shareError).toBeUndefined()
+  })
+
+  it('names the size and type the store holds, not the picked file’s', async () => {
+    // Ingest refuses a mismatch: "invalid: imeta size (50361) does not match
+    // stored size (50340)" was the first image attached on production.
+    const { result } = renderHook(() => useUploadActions(), { wrapper: inFileConversation })
+    const uploaded = await result.current.uploadFile(file())
+    expect(uploaded.size).toBe(2)
+    expect(uploaded.contentType).toBe('text/plain; charset=utf-8')
   })
 
   it('fails the attachment when the blob store refuses — there is no other copy', async () => {
