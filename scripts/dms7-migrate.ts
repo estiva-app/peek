@@ -133,9 +133,20 @@ function loadSigners(): Map<string, Signer> {
 async function bridge(path: '/query' | '/events', payload: unknown, s: Signer): Promise<{ status: number; text: string }> {
   const url = `${RELAY_URL}${path}`
   const body = JSON.stringify(payload)
-  const auth = await s.sign(buildUnsignedAuthEvent({ pubkey: s.pubkey, url, method: 'POST', body }))
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: authorizationHeaderFor(auth) }, body })
-  return { status: res.status, text: await res.text() }
+  // A network blip (`fetch failed`) killed the first production run mid-way.
+  // Retrying is safe: the body is the same signed event, and the relay dedupes
+  // an identical event by id. The auth is re-signed so its timestamp is fresh.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const auth = await s.sign(buildUnsignedAuthEvent({ pubkey: s.pubkey, url, method: 'POST', body }))
+      const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: authorizationHeaderFor(auth) }, body })
+      return { status: res.status, text: await res.text() }
+    } catch (e) {
+      if (attempt >= 5) throw e
+      console.log(`    ${path}: ${e instanceof Error ? e.message : e} — retry ${attempt}/4`)
+      await sleep(5_000 * attempt)
+    }
+  }
 }
 
 async function query(filters: Record<string, unknown>[], s: Signer): Promise<SignedEvent[]> {
@@ -238,7 +249,27 @@ json.dump({'users':t('users'),'dms':t('dmConversations'),'messages':msgs,'replie
   'reactions':[r for r in t('reactions') if r.get('messageId') in ids],
   'assertions':[a for a in t('resolutionAssertions') if a.get('messageId') in ids],'blobs':blobs},sys.stdout)
 `
-  type Doc = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+  /** The union of the fields read below, across the six tables. */
+  interface Doc {
+    _id: string
+    name?: string
+    nostrPubkey?: string
+    parentId: string
+    authorId: string
+    authorPubkey?: string
+    createdAt: number
+    body?: string
+    fileAttachments?: File[]
+    nostrEventId?: string
+    messageId: string
+    replyId?: string
+    userId: string
+    emoji: string
+    channelUuid?: string
+    action: 'resolved' | 'reopened'
+    rationale?: string
+    supportingReplyId?: string
+  }
   const raw = JSON.parse(execFileSync('python3', ['-c', PY, zip], { maxBuffer: 1 << 29 }).toString()) as Record<string, Doc[]> & { blobs: Record<string, string> }
   const people = new Map<string, { name: string; pubkey?: string }>(raw.users.map((u) => [u._id, { name: u.name ?? short(u._id), pubkey: u.nostrPubkey }]))
   const pk = (userId: string) => {
@@ -253,7 +284,7 @@ json.dump({'users':t('users'),'dms':t('dmConversations'),'messages':msgs,'replie
   ]
   return {
     people,
-    channels: new Map(raw.dms.filter((d) => d.channelUuid).map((d) => [d._id, d.channelUuid])),
+    channels: new Map(raw.dms.filter((d) => d.channelUuid).map((d) => [d._id, d.channelUuid!])),
     rows,
     reactions: raw.reactions.map((r) => ({ id: r._id, messageId: r.messageId, replyId: r.replyId, userId: r.userId, pubkey: pk(r.userId), emoji: r.emoji, createdAt: r.createdAt, nostrEventId: r.nostrEventId })),
     assertions: raw.assertions.map((a) => ({ id: a._id, messageId: a.messageId, authorId: a.authorId, pubkey: a.authorPubkey ?? pk(a.authorId), action: a.action, rationale: a.rationale, supportingReplyId: a.supportingReplyId, createdAt: a.createdAt, nostrEventId: a.nostrEventId })),
@@ -349,8 +380,25 @@ function readBlobManifest(): Map<string, BlobLine> {
 function imetaFor(f: File, uploaded: Map<string, BlobLine>): NostrTag {
   const up = f.storageId ? uploaded.get(f.storageId) : undefined
   if (up) return imetaTag({ url: up.blob.url, m: up.blob.type, x: up.blob.sha256, size: up.blob.size, dim: up.blob.dim, thumb: up.blob.thumb, filename: f.name })
-  // Already in the blob store: the row holds the relay's answers (outbox `imetaTagsFor`).
-  return imetaTag({ url: f.mediaUrl!, m: f.contentType, x: f.sha256!, size: f.size, dim: f.dim, thumb: f.thumbUrl, filename: f.name })
+  // Already in the blob store. The row's `size` is the browser's original, not
+  // what the relay stored after canonicalizing, and ingest refuses the
+  // difference ("imeta size (129682) does not match stored size (129661)") —
+  // so the size is the one read back off the store, in {@link storedSizes}.
+  const size = stored.get(f.sha256!)
+  if (size === undefined) throw new Error(`${f.name}: no stored size read for ${short(f.sha256!)}`)
+  return imetaTag({ url: f.mediaUrl!, m: f.contentType, x: f.sha256!, size, dim: f.dim, thumb: f.thumbUrl, filename: f.name })
+}
+
+/** sha256 → bytes the blob store actually holds, for files this run did not upload. */
+const stored = new Map<string, number>()
+
+async function storedSizes(files: File[], reader: Signer) {
+  for (const f of files) {
+    if (!(f.sha256 && f.mediaUrl) || stored.has(f.sha256)) continue
+    const back = await fetchBlob({ relayUrl: RELAY_URL, url: f.mediaUrl, sign: reader.sign, pubkey: reader.pubkey })
+    if (sha256Of(back.bytes) !== f.sha256) throw new Error(`${f.name}: the store's bytes do not hash to ${short(f.sha256)}`)
+    stored.set(f.sha256, back.bytes.byteLength)
+  }
 }
 
 async function migrate(s: Snapshot) {
@@ -377,6 +425,7 @@ async function migrate(s: Snapshot) {
 
   // ── 1. the bytes. Before any event: ingest refuses an `imeta` naming a blob the store lacks.
   const uploaded = readBlobManifest()
+  await storedSizes(rows.filter((r) => !done.has(r.id)).flatMap((r) => r.files), reader)
   for (const r of rows) {
     if (done.has(r.id)) continue
     for (const f of r.files) {
@@ -408,7 +457,9 @@ async function migrate(s: Snapshot) {
     await sleep(WRITE_GAP_MS)
     if (!r.ok) {
       refused++
-      const why = r.status === 400 ? 'the drift gate — BUZZ_MAX_TIMESTAMP_DRIFT_SECS' : r.status === 500 ? 'a bare 500 is the commit floor — BUZZ_CREATED_AT_FLOOR_SECS' : ''
+      // A 400 is also every ingest validation (an imeta mismatch was the first
+      // one met), so only name the drift gate when the reason is about time.
+      const why = r.status === 400 && /time|drift|created_at/i.test(r.reason ?? '') ? 'the drift gate — BUZZ_MAX_TIMESTAMP_DRIFT_SECS' : r.status === 500 ? 'a bare 500 is the commit floor — BUZZ_CREATED_AT_FLOOR_SECS' : ''
       console.log(`  ${short(origId)} by ${short(pubkey)} → REFUSED ${r.status} ${r.reason}${why ? ` (${why})` : ''}`)
       if (first) throw new Error('the first write was refused: the back-dating window is not open. Nothing else was attempted.')
       return
@@ -425,44 +476,62 @@ async function migrate(s: Snapshot) {
     if (table) pending.push({ table, id: origId, nostrEventId: r.id })
   }
 
-  const ordered = [...rows].sort((a, b) => (a.table === b.table ? a.createdAt - b.createdAt : a.table === 'messages' ? -1 : 1))
-  for (const r of ordered) {
-    if (done.has(r.id)) continue
-    const rootEvent = r.rootId ? copyOf(r.rootId) : undefined
-    if (r.rootId && !rootEvent) {
-      console.log(`  ${short(r.id)} — its root has no event after the roots' pass; skipped`)
-      refused++
-      continue
-    }
-    const unsigned = buildMessage(r.pubkey, r.createdAt, {
-      channelUuid: s.channels.get(r.dm)!,
-      content: r.body,
-      ...(rootEvent ? { threadRef: { rootId: rootEvent, parentId: rootEvent } } : { about: referencedAddresses(r.body) }),
-      mentions: mentionedPubkeys(r.body),
-      mediaTags: r.files.map((f) => imetaFor(f, uploaded)),
-    })
-    await write(r.id, r.pubkey, r.createdAt, unsigned, r.table)
-  }
-  for (const x of reactions) {
-    const target = copyOf(x.replyId ?? x.messageId)
-    if (done.has(x.id) || !target) continue
-    await write(x.id, x.pubkey, x.createdAt, buildReaction(x.pubkey, x.createdAt, { targetEventId: target, emoji: x.emoji }), 'reactions')
-  }
-  for (const a of assertions) {
-    const target = copyOf(a.messageId)
-    const root = s.rows.find((r) => r.id === a.messageId)!
-    if (done.has(a.id) || !target) continue
-    const supporting = a.supportingReplyId ? copyOf(a.supportingReplyId) : undefined
-    // No write-back: `resolutionAssertions` has no internal mark mutation, and
-    // the census does not count assertions. `verify` reads it off the relay.
-    await write(a.id, a.pubkey, a.createdAt, buildResolution(a.pubkey, a.createdAt, { channelUuid: s.channels.get(root.dm)!, targetEventId: target, action: a.action, supportingEventId: supporting, rationale: a.rationale }))
+  /*
+    The write-back list is every gap row with a copy on the relay — built from
+    `done`, which starts as what the relay already holds, not only from what
+    this run published. The first production run died on `fetch failed` after
+    one accepted write and before writing any list, so a list of this run's
+    publishes alone would have left that row null in Convex for ever. Written
+    in `finally` so a crash still leaves it.
+  */
+  const writebackList = () => {
+    const list = [
+      ...rows.filter((r) => done.has(r.id)).map((r) => ({ table: r.table, id: r.id, nostrEventId: done.get(r.id)!.id })),
+      ...reactions.filter((x) => done.has(x.id)).map((x) => ({ table: 'reactions' as const, id: x.id, nostrEventId: done.get(x.id)!.id })),
+    ]
+    writeFileSync(WRITEBACK, JSON.stringify(list, null, 2), { mode: 0o600 })
+    return list.length
   }
 
-  // Merged with an earlier interrupted run's list rather than overwriting it.
-  const prior = existsSync(WRITEBACK) ? (JSON.parse(readFileSync(WRITEBACK, 'utf8')) as typeof pending) : []
-  const merged = new Map([...prior, ...pending].map((p) => [p.id, p]))
-  writeFileSync(WRITEBACK, JSON.stringify([...merged.values()], null, 2), { mode: 0o600 })
-  console.log(`\npublished ${pending.length}, refused ${refused}. ${merged.size} write-back(s) in ${WRITEBACK}.`)
+  try {
+    const ordered = [...rows].sort((a, b) => (a.table === b.table ? a.createdAt - b.createdAt : a.table === 'messages' ? -1 : 1))
+    for (const r of ordered) {
+      if (done.has(r.id)) continue
+      const rootEvent = r.rootId ? copyOf(r.rootId) : undefined
+      if (r.rootId && !rootEvent) {
+        console.log(`  ${short(r.id)} — its root has no event after the roots' pass; skipped`)
+        refused++
+        continue
+      }
+      const unsigned = buildMessage(r.pubkey, r.createdAt, {
+        channelUuid: s.channels.get(r.dm)!,
+        content: r.body,
+        ...(rootEvent ? { threadRef: { rootId: rootEvent, parentId: rootEvent } } : { about: referencedAddresses(r.body) }),
+        mentions: mentionedPubkeys(r.body),
+        mediaTags: r.files.map((f) => imetaFor(f, uploaded)),
+      })
+      await write(r.id, r.pubkey, r.createdAt, unsigned, r.table)
+    }
+    for (const x of reactions) {
+      const target = copyOf(x.replyId ?? x.messageId)
+      if (done.has(x.id) || !target) continue
+      await write(x.id, x.pubkey, x.createdAt, buildReaction(x.pubkey, x.createdAt, { targetEventId: target, emoji: x.emoji }), 'reactions')
+    }
+    for (const a of assertions) {
+      const target = copyOf(a.messageId)
+      const root = s.rows.find((r) => r.id === a.messageId)!
+      if (done.has(a.id) || !target) continue
+      const supporting = a.supportingReplyId ? copyOf(a.supportingReplyId) : undefined
+      // No write-back: `resolutionAssertions` has no internal mark mutation, and
+      // the census does not count assertions. `verify` reads it off the relay.
+      await write(a.id, a.pubkey, a.createdAt, buildResolution(a.pubkey, a.createdAt, { channelUuid: s.channels.get(root.dm)!, targetEventId: target, action: a.action, supportingEventId: supporting, rationale: a.rationale }))
+    }
+  } finally {
+    writebackList()
+  }
+
+  const owed = writebackList()
+  console.log(`\npublished ${pending.length}, refused ${refused}. ${owed} write-back(s) in ${WRITEBACK}.`)
   console.log(`Now, before either of you opens Peek: scripts/dms7-migrate.ts writeback`)
   process.exitCode = refused ? 1 : 0
 }
