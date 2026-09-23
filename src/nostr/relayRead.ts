@@ -22,6 +22,7 @@
  * they are not in — and would light the connection indicator for a healthy
  * relay that answered correctly and promptly.
  */
+import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
 
 export type RelayFailureKind =
   /** No answer: the network, DNS, the origin. Retrying may work. */
@@ -84,7 +85,7 @@ export function classifyRelayFailure(reason: string): RelayFailureKind {
 }
 
 /** What to wait when the relay says it is limited but not for how long. */
-export const RATE_LIMIT_DEFAULT_MS = 10_000
+export { RATE_LIMIT_DEFAULT_MS }
 
 /**
  * The longest a read will sit waiting for a quota window.
@@ -149,18 +150,20 @@ export function relayFailureKind(error: unknown): RelayFailureKind {
 /**
  * Run a relay read, waiting out a quota rejection at the time the relay named.
  *
- * **Stateless, and owned by its caller** — no shared scheduler, no module-level
- * gate. Each read waits for its own refusal and nothing coordinates with
- * anything else, which is the whole reason this can be a plain wrapper around
- * the read a hook already had rather than a change to how hooks load.
+ * **It waits for the tab's pause, not only its own** (PER-13). This used to be
+ * stateless: each refused read slept for its own hint and asked again, so a
+ * refresh fan-out refused in one second retried in one second, into a window
+ * that another read — or another tab — had already learned was longer. Now:
+ *
+ * - a pause already in force is waited out *before* the first attempt, because
+ *   a read sent into it is refused for certain — 33 in one second on
+ *   2026-09-23 were exactly that;
+ * - a refusal is recorded in {@link relayBudget}, and the retry waits for
+ *   whichever is later, its own hint or the pause everybody has learned.
  *
  * Every other failure is rethrown untouched, on the first attempt: `refused`
  * and `not_a_member` will not change their minds, and `unreachable` is already
  * covered by the refresh triggers underneath every one of these hooks.
- *
- * Read volume — why the quota is being hit at all — is PER-8 and is not this.
- * This only stops a refusal that states its own recovery time from being
- * dropped as if it were a dead network.
  */
 export async function withRateLimitRetry<T>(
   read: () => Promise<T>,
@@ -168,17 +171,31 @@ export async function withRateLimitRetry<T>(
     attempts?: number
     maxWaitMs?: number
     sleep?: (ms: number) => Promise<void>
+    budget?: Pick<typeof relayBudget, 'noteRateLimited' | 'pausedForMs'>
   } = {},
 ): Promise<T> {
   const attempts = options.attempts ?? RATE_LIMIT_ATTEMPTS
   const maxWaitMs = options.maxWaitMs ?? RATE_LIMIT_MAX_WAIT_MS
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
+  const budget = options.budget ?? relayBudget
+
+  const pending = budget.pausedForMs()
+  if (pending > maxWaitMs) {
+    // Sending it would only be refused; saying so in the relay's own words
+    // keeps every caller's classification (`rate_limited`) unchanged.
+    throw new RelayReadError(`rate-limited: paused; retry in ${Math.ceil(pending / 1_000)}s`)
+  }
+  if (pending > 0) await sleep(pending)
+
   for (let waited = 0; ; waited += 1) {
     try {
       return await read()
     } catch (error) {
-      const wait = retryAfterMs(reasonOf(error))
-      if (wait === null || waited >= attempts || wait > maxWaitMs) throw error
+      const reason = reasonOf(error)
+      const hint = retryAfterMs(reason)
+      if (hint === null) throw error
+      const wait = Math.max(hint, budget.noteRateLimited(reason))
+      if (waited >= attempts || wait > maxWaitMs) throw error
       await sleep(wait)
     }
   }

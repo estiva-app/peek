@@ -7,7 +7,9 @@
  * not in, and would light the connection indicator for a relay that answered
  * correctly and promptly.
  */
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createRelayBudget } from '@estiva-app/platform'
+import { relayBudget } from './relayBudget'
 import {
   RATE_LIMIT_ATTEMPTS,
   RATE_LIMIT_DEFAULT_MS,
@@ -132,6 +134,9 @@ describe('a quota refusal', () => {
 })
 
 describe('waiting out a quota window', () => {
+  // The tab's pause outlives a test; every one starts without one.
+  beforeEach(() => relayBudget.reset())
+
   const limited = (seconds: number) =>
     new RelayReadError(`rate-limited: quota exceeded; retry in ${seconds}s`)
 
@@ -202,6 +207,50 @@ describe('waiting out a quota window', () => {
     const r = reader(0)
     await expect(r.run()).resolves.toBe('answered')
     expect(r.calls()).toBe(1)
+  })
+
+  describe('the tab\'s pause, not only its own (PER-13)', () => {
+    it('waits out a pause already in force before asking at all', async () => {
+      // A read sent into a pause is refused for certain: 33 in one second on
+      // 2026-09-23 were a whole fan-out doing exactly that.
+      const budget = createRelayBudget({ now: () => 0 })
+      budget.noteRateLimited('rate-limited: quota exceeded; retry in 12s')
+      const r = reader(0)
+      await expect(r.run({ budget })).resolves.toBe('answered')
+      expect(r.waits).toEqual([12_000])
+      expect(r.calls()).toBe(1)
+    })
+
+    it('does not send one it would have to hold longer than it is worth', async () => {
+      const budget = createRelayBudget({ now: () => 0 })
+      budget.noteRateLimited(`rate-limited: quota exceeded; retry in ${RATE_LIMIT_MAX_WAIT_MS / 1_000 + 1}s`)
+      const r = reader(0)
+      const failure = await r.run({ budget }).catch((error: unknown) => error)
+      expect(relayFailureKind(failure)).toBe('rate_limited')
+      expect(r.calls()).toBe(0)
+    })
+
+    it('retries after the longest pause anybody learned, not its own shorter hint', async () => {
+      // Another read — or another tab — was told 20 s; this one was told 8 s.
+      // Asking at 8 s spends the next refusal.
+      const budget = createRelayBudget({ now: () => 0 })
+      budget.noteRateLimited('rate-limited: quota exceeded; retry in 20s')
+      let calls = 0
+      const waits: number[] = []
+      const read = () => (++calls === 1 ? Promise.reject(limited(8)) : Promise.resolve('answered'))
+      // The pause is already in force, so the first wait is the pre-wait; the
+      // clock does not move in this budget, so the retry waits it again.
+      await expect(
+        withRateLimitRetry(read, { budget, sleep: async (ms) => void waits.push(ms) }),
+      ).resolves.toBe('answered')
+      expect(waits).toEqual([20_000, 20_000])
+    })
+
+    it('records its refusal where the refresh triggers will see it', async () => {
+      const r = reader(1, () => limited(8))
+      await r.run()
+      expect(relayBudget.pausedForMs()).toBeGreaterThan(7_000)
+    })
   })
 })
 

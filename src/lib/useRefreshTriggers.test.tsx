@@ -7,6 +7,7 @@
  */
 import { render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { relayBudget } from '@/nostr/relayBudget'
 import { REFRESH_INTERVAL_MS, useRefreshTriggers } from './useRefreshTriggers'
 
 function Probe(props: Parameters<typeof useRefreshTriggers>[1] & { onRefresh: () => void }) {
@@ -23,6 +24,7 @@ function setVisibility(state: 'visible' | 'hidden') {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  relayBudget.reset()
   setVisibility('visible')
 })
 
@@ -91,8 +93,38 @@ describe('focus and visibility', () => {
 
     window.dispatchEvent(new Event('focus'))
     setVisibility('hidden')
+    vi.advanceTimersByTime(1_000)
     setVisibility('visible')
     expect(onRefresh).toHaveBeenCalledTimes(2)
+  })
+
+  it('a tab switch is one read, not two (PER-13)', () => {
+    // Switching to a tab raises `visibilitychange` and `focus` together. Each
+    // used to fire every read in the tab, so every switch sent everything twice
+    // — the doubled seconds in buzz's log.
+    const onRefresh = vi.fn()
+    render(<Probe onRefresh={onRefresh} interval={false} />)
+
+    setVisibility('hidden')
+    vi.advanceTimersByTime(60_000)
+    setVisibility('visible')
+    window.dispatchEvent(new Event('focus'))
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds off while the relay has asked the tab to wait', () => {
+    const onRefresh = vi.fn()
+    render(<Probe onRefresh={onRefresh} />)
+
+    relayBudget.noteRateLimited('rate-limited: quota exceeded; retry in 10s')
+    window.dispatchEvent(new Event('focus'))
+    vi.advanceTimersByTime(9_000)
+    window.dispatchEvent(new Event('focus'))
+    expect(onRefresh).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(1_000)
+    window.dispatchEvent(new Event('focus'))
+    expect(onRefresh).toHaveBeenCalledTimes(1)
   })
 })
 
