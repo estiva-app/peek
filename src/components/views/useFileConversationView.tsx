@@ -14,6 +14,7 @@ import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener
 import { useToast } from '@/lib/toast'
 import {
   CURRENT_USER_NAME,
+  conversationKeyOf,
   formatDateLabel,
   formatReplyTimestamp,
   useFileConversation,
@@ -38,7 +39,7 @@ import { formatTimestamp } from '@/api/format'
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
   container: ConversationContainer | null
-  /** The root comments' ids, off the resolved file. */
+  /** The root comments' ids, off the resolved file. A channel finds its own; pass none. */
   rootIds: readonly string[]
   /** Which thread is open — the page owns it, because it is in the URL. */
   openThreadId: string | undefined
@@ -46,11 +47,17 @@ interface UseFileConversationViewArgs {
   /** What the composer says it is writing to. */
   title: string
   /**
-   * A new root comment landed. The roots come off the object's own read, not
-   * this one, so the page re-resolves the object; the changed root ids then
-   * re-read the conversation through the key.
+   * A new root comment landed. A file's roots come off the object's own read,
+   * not this one, so the page re-resolves the object; the changed root ids
+   * then re-read the conversation through the key. A channel re-reads itself.
    */
-  onCommented: () => Promise<void>
+  onCommented?: () => Promise<void>
+  /** Where the composer keeps its draft. A file's address by default. */
+  draftKey?: string
+  /** What an empty conversation shows. "Nobody has commented yet." by default. */
+  empty?: ReactNode
+  /** Who is in the conversation, for the thread's members pill — a DM's two people. */
+  threadMembers?: string[]
 }
 
 interface ViewSlots {
@@ -100,6 +107,13 @@ interface ViewSlots {
  * not in `rootIds` until the object is re-resolved, which is `onCommented`'s
  * job already — so it is handed down as what to do when the socket says
  * something was said about the file.
+ *
+ * ## A channel, too (REM-1)
+ *
+ * A DM is a channel container: its `kind:9` messages, read and written here
+ * exactly as a file's comments are, with the same cards and the same rule —
+ * nothing on screen that the relay does not hold. The DM view puts its own
+ * header above this and nothing else.
  */
 export function useFileConversationView({
   container,
@@ -108,9 +122,12 @@ export function useFileConversationView({
   onOpenThread,
   title,
   onCommented,
+  draftKey,
+  empty,
+  threadMembers,
 }: UseFileConversationViewArgs): ViewSlots {
   const { state, actions, viewerPubkey } = useFileConversation(container, rootIds, {
-    onActivity: () => void onCommented(),
+    onActivity: () => void onCommented?.(),
   })
   const people = useWorkspaceDirectory()
   const { showToast } = useToast()
@@ -123,7 +140,7 @@ export function useFileConversationView({
   */
   const follows = useFollows()
   const followAfterWrite = () => {
-    if (container?.address) void follows.setFollowed(container.address, true)
+    if (container?.kind === 'file') void follows.setFollowed(container.address, true)
   }
 
   const isLoading = state === 'loading'
@@ -153,7 +170,41 @@ export function useFileConversationView({
   const setResolution = (targetEventId: string, resolved: boolean, message?: string, supportingEventId?: string) =>
     void actions.resolve(targetEventId, resolved ? 'resolved' : 'reopened', message, supportingEventId).then(refuse)
 
-  const editBody = (targetEventId: string, body: string) => void actions.edit(targetEventId, body).then(refuse)
+  /*
+    One edit per save. A card's save reports the body and then, when they
+    changed, the files — two calls in the same handler — and two `kind:40003`s
+    would race: the files' edit, built with the body as it stood, could land
+    last and put the old text back. So the two are gathered until the handler
+    has returned and published as one event: the new body, and the new set as
+    `imeta` (CON-5).
+  */
+  const pendingEdits = useRef(new Map<string, { body?: string; files?: FileAttachment[] }>())
+  const queueEdit = (targetEventId: string, change: { body?: string; files?: FileAttachment[] }) => {
+    const pending = pendingEdits.current
+    const first = !pending.has(targetEventId)
+    pending.set(targetEventId, { ...pending.get(targetEventId), ...change })
+    if (!first) return
+    queueMicrotask(() => {
+      const edit = pending.get(targetEventId)
+      pending.delete(targetEventId)
+      const body = edit?.body ?? (conversation ? currentBody(conversation, targetEventId) : undefined)
+      if (body === undefined) return
+      let files: OutgoingAttachment[] | undefined
+      if (edit?.files) {
+        // An edit carrying no `imeta` means "unchanged", so there is no event
+        // that takes the last file off; the body still travels.
+        if (edit.files.length === 0) {
+          showToast({ label: 'The last attachment cannot be removed from a message yet.', type: 'error' })
+        } else {
+          files = outgoing(edit.files) ?? undefined
+          if (!files) return
+        }
+      }
+      void actions.edit(targetEventId, body, files).then(refuse)
+    })
+  }
+  const editBody = (targetEventId: string, body: string) => queueEdit(targetEventId, { body })
+  const editFiles = (targetEventId: string, files: FileAttachment[]) => queueEdit(targetEventId, { files })
 
   const remove = (targetEventId: string, what: 'Comment' | 'Reply') =>
     void actions.remove(targetEventId).then((result) => {
@@ -167,7 +218,7 @@ export function useFileConversationView({
     bytes, so a file the relay does not hold cannot be attached here — said
     before the text is lost, by returning false so the composer keeps it.
   */
-  const outgoing = (files: UploadedFile[] | undefined): OutgoingAttachment[] | null => {
+  const outgoing = (files: readonly (FileAttachment & Pick<UploadedFile, 'shareError'>)[] | undefined): OutgoingAttachment[] | null => {
     const missing = (files ?? []).find((f) => !f.sha256 || !f.mediaUrl)
     if (missing) {
       showToast({
@@ -192,7 +243,7 @@ export function useFileConversationView({
     const result = await actions.comment(text, attachments)
     if (!refuse(result)) return false
     followAfterWrite()
-    await onCommented()
+    await onCommented?.()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
     // Your own comment always brings you down to it.
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -226,9 +277,10 @@ export function useFileConversationView({
   }
 
   // Opening a file lands at the bottom, before the paint — once per file, and
-  // once the comments are there rather than when the address changes.
+  // once the comments are there rather than when the address changes. A
+  // channel's "address" is the channel.
   const pinnedFor = useRef<string | null>(null)
-  const address = container?.address ?? null
+  const address = container ? conversationKeyOf(container) : null
   useLayoutEffect(() => {
     if (!address || isLoading) return
     if (pinnedFor.current === address) return
@@ -276,11 +328,14 @@ export function useFileConversationView({
     return unregisterTopicConversation
   }, [conversation, viewerPubkey, people])
 
-  // And how to open one of its threads, for a citation into one that is closed (INT-8).
+  // And how to open one of its threads, for a citation into one that is closed
+  // (INT-8) — only while there is a conversation: the Desk runs the DM view's
+  // hooks with nothing selected, beside a topic that owns the opener.
   useEffect(() => {
+    if (!address) return
     registerThreadOpener(onOpenThread)
     return unregisterThreadOpener
-  }, [onOpenThread])
+  }, [address, onOpenThread])
 
   // Close the thread when the file changes.
   const prevAddress = useRef(address)
@@ -305,14 +360,16 @@ export function useFileConversationView({
               scope="section"
               message={
                 failed === 'not_a_member'
-                  ? 'You are not a member of the folder this file is in.'
+                  ? container?.kind === 'channel'
+                    ? 'You are not a member of this conversation.'
+                    : 'You are not a member of the folder this file is in.'
                   : failed === 'refused'
                     ? 'The relay refused to show this conversation.'
                     : 'The relay could not be reached.'
               }
             />
           )}
-          {view && groups.length === 0 && <EmptyState scope="section" message="Nobody has commented yet." />}
+          {view && groups.length === 0 && (empty ?? <EmptyState scope="section" message="Nobody has commented yet." />)}
           {groups.map((group) => (
             <div key={group.dateLabel} className="flex flex-col gap-2">
               <DateDivider label={group.dateLabel} className="sticky top-0 z-10 bg-bg-surface" />
@@ -338,6 +395,7 @@ export function useFileConversationView({
                   onResolvedChange={(resolved, _by, message) => setResolution(c.id, resolved, message)}
                   onReactionsChange={(_next, emoji) => toggleReaction(c.id, emoji)}
                   onBodyChange={(b) => editBody(c.id, b)}
+                  onFilesChange={(f) => editFiles(c.id, f)}
                   onClick={() => onOpenThread(c.id)}
                   onReply={() => onOpenThread(c.id)}
                   onDelete={() => remove(c.id, 'Comment')}
@@ -358,7 +416,7 @@ export function useFileConversationView({
         <ComposeBox
           onSend={handleSend}
           contextLabel={title}
-          draftKey={container ? draftKeys.object(container.address) : undefined}
+          draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
         />
       </div>
     </UploadDestinationProvider>
@@ -373,16 +431,19 @@ export function useFileConversationView({
         sentReplies={[]}
         resolutionEvents={openView.resolutionEvents}
         isResolved={openView.data.isResolved ?? false}
+        dmMembers={threadMembers}
         resolvedByReplyId={openView.resolvedByReplyId}
         resolutionMsg={openView.data.resolutionMessage}
         initialReactions={openView.data.reactions}
         onInitialReactionsChange={(_next, emoji) => toggleReaction(openRoot.id, emoji)}
         onInitialBodyChange={(b) => editBody(openRoot.id, b)}
+        onInitialFilesChange={(f) => editFiles(openRoot.id, f)}
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
         onDeleteReply={(id) => remove(id, 'Reply')}
         onReplyBodyChange={(id, b) => editBody(id, b)}
+        onReplyFilesChange={(id, f) => editFiles(id, f)}
         onReplyReactionsChange={(id, _next, _prev, emoji) => toggleReaction(id, emoji)}
       />
       </UploadDestinationProvider>
@@ -516,6 +577,12 @@ function groupReactions(reactions: readonly CommentReaction[], viewerPubkey: str
     byEmoji.set(r.emoji, pill)
   }
   return [...byEmoji.values()]
+}
+
+/** A root's or a reply's body as it stands — its latest edit's, else its own. */
+function currentBody(conversation: FileConversation, id: string): string | undefined {
+  const event = [...conversation.roots, ...Object.values(conversation.replies).flat()].find((e) => e.id === id)
+  return event ? (conversation.edits[id]?.body ?? event.body) : undefined
 }
 
 const asAttachment = (f: ConversationEvent['files'][number]): FileAttachment => ({

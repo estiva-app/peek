@@ -11,14 +11,13 @@ import { api } from '../../convex/_generated/api'
 import { useTopicMutations } from '@/api/internal/topicMutations'
 import { useOpenWork } from '@/api/internal/openWork'
 import { fileAddressFromScreenerRowId, topicIdFromScreenerRowId, useScreener } from '@/api/internal/screener'
-import { hasConvex, useDmRuntime } from './store'
+import { hasConvex } from './store'
 import { RELAY_URL } from './relayUrl'
 import { validToken } from '@/auth/estivaId'
 import { buildDeletion } from '@estiva-app/protocol'
 import type { UnsignedEvent } from '@estiva-app/protocol'
 import type { Id } from '../../convex/_generated/dataModel'
 import { publishSigned, signViaEstivaId } from '@/nostr/bridge'
-import { publishDmChannel } from '@/nostr/dms'
 import { CURRENT_USER_NAME } from './currentUser'
 import type { UploadedFile } from './uploads'
 import type { ConversationData, FileAttachment, HighlightType, Huddle, ReactionData, ReplyData } from './types'
@@ -117,7 +116,6 @@ export function usePeekActions(
   const screener = useScreener()
   // One-shot reads. `useQuery` is reactive and cannot be called mid-action.
   const convex = useConvex()
-  const { setSentDmMessages } = useDmRuntime()
   // Convex double-writes (no-ops without a deployment): the optimistic local
   // copy renders instantly; the record shares its id via seedKey so the
   // reactive read dedupes when it catches up.
@@ -277,39 +275,6 @@ export function usePeekActions(
   }
 
   /**
-   * Give this DM its channel before a message tries to hang off one — DMS-4.
-   *
-   * The first message to somebody new is the case: `messages.send` creates the
-   * `dmConversations` row, and only then does `useEnsureDmChannel`'s reactive
-   * query flip to `ok` and open the channel. The mirror below starts in the
-   * same tick, so it would ask for an unsigned event while the row still has no
-   * `channelUuid`, be refused — correctly, since an `h`-less `kind:9` is a
-   * private message on nothing — and never be retried. The message would sit in
-   * Convex, visible in Peek and nowhere else, for ever.
-   *
-   * So the order is made explicit here rather than left to two reactive things
-   * racing. Every later message pays one query for it, which answers
-   * `already has a channel` and publishes nothing: opening is keyed by the
-   * participant set at the relay, so asking twice is not a second channel
-   * (DMS-3). The hook stays as it is — it is what opens a channel for a
-   * conversation nobody has spoken in yet.
-   */
-  const ensureDmChannel = async (dmKey: string): Promise<void> => {
-    const relay = RELAY_URL
-    if (!relay) return
-    // At call time, never a snapshot — `tokenForPublish` says why.
-    const token = validToken()
-    if (!token) return
-    const result = await publishDmChannel(dmKey, relay, token, {
-      unsignedDmOpen: (args) => convex.query(api.nostr.outbox.unsignedDmOpen, args as never),
-      recordDmChannel: async (args) => {
-        await convex.mutation(api.nostr.outbox.recordDmChannel, args as never)
-      },
-    })
-    if (!result.ok && !result.expected) console.warn('[nostr] DM channel not opened:', result.reason)
-  }
-
-  /**
    * Write the message, then mirror it to the relay.
    *
    * **Returns whether CONVEX took it** — CON-10. That is the seam the draft
@@ -322,7 +287,7 @@ export function usePeekActions(
    * anywhere, and without this the typed text was already gone.
    */
   const persistMessage = (
-    parentKind: 'topic' | 'dm' | 'huddle',
+    parentKind: 'topic' | 'huddle',
     parentKey: string,
     msg: ConversationData,
     files?: UploadedFile[],
@@ -367,9 +332,6 @@ export function usePeekActions(
       void (async () => {
         const token = tokenForPublish('message')
         if (!token) return
-        // Before the event is built, because a DM with no channel yet has no
-        // `h` to be built against (DMS-4).
-        if (parentKind === 'dm') await ensureDmChannel(parentKey)
         const built = await convex.query(api.nostr.outbox.unsignedMessage, { messageId })
         if (!built.ok) {
           // Includes the ordinary cases — already published, a huddle, outside
@@ -505,20 +467,6 @@ export function usePeekActions(
       return Promise.resolve(true)
     },
 
-    /** `dmId` is the partner's person key — the server resolves the pair (§2.4). */
-    sendDmMessage(dmId: string, payload: SendMessagePayload): Promise<boolean> {
-      if (payload.text || payload.files?.length) {
-        const newMsg = buildMessage(payload)
-        setSentDmMessages((prev) => ({ ...prev, [dmId]: [...(prev[dmId] ?? []), newMsg] }))
-        return persistMessage('dm', dmId, newMsg, payload.files)
-      }
-      if (payload.resolution) {
-        const message = payload.resolution.message
-        setSentDmMessages((prev) => ({ ...prev, [dmId]: resolveLastSent(prev[dmId] ?? [], message) }))
-      }
-      return Promise.resolve(true)
-    },
-
     /** Top-level message posted inside a huddle (V2 huddle main view). */
     sendHuddleMessage(huddleId: string, text: string) {
       if (!text) return
@@ -535,13 +483,6 @@ export function usePeekActions(
 
     deleteTopicMessage(topicId: string, messageId: string): Promise<DeleteOutcome> {
       m.setSentMessages((prev) => ({ ...prev, [topicId]: (prev[topicId] ?? []).filter((msg) => msg.id !== messageId) }))
-      m.setDeletedIds((prev) => new Set([...prev, messageId]))
-      if (!hasConvex) return Promise.resolve({ kept: false })
-      return publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))
-    },
-
-    deleteDmMessage(dmId: string, messageId: string): Promise<DeleteOutcome> {
-      setSentDmMessages((prev) => ({ ...prev, [dmId]: (prev[dmId] ?? []).filter((msg) => msg.id !== messageId) }))
       m.setDeletedIds((prev) => new Set([...prev, messageId]))
       if (!hasConvex) return Promise.resolve({ kept: false })
       return publishDeletions(removeRemote({ key: messageId }), () => unhide(messageId))

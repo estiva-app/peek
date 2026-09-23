@@ -21,8 +21,12 @@ const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 
 import {
+  CHANNEL_PAGE,
+  PUBLISH_ATTEMPTS,
+  channelConversationAsViewer,
   commentAsViewer,
   deleteEventAsViewer,
+  publishConfirmed,
   editCommentAsViewer,
   fileConversationAsViewer,
   foldEdits,
@@ -477,4 +481,193 @@ describe('foldEdits — the body and the attachments fold separately (RFC 0.4 §
     const elsewhere = { ...editOf('1', 'Other', at), tags: [['h', FOLDER], ['e', 'e'.repeat(64)], imeta('aaa')] }
     expect(foldEdits([target], [elsewhere])).toEqual({})
   })
+})
+
+/*
+  REM-1 — a DM is a channel container: its `kind:9` messages, read by `#h` and
+  written with `buildMessage`. `convex/nostr/sync.ts` is the specification of
+  the fold, since it is what drew a DM until now.
+*/
+describe('a channel conversation (REM-1)', () => {
+  const DM = '3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f'
+  const dmContainer: ConversationContainer = { kind: 'channel', h: DM }
+  const hello = event({ kind: 9, pubkey: MIKY, content: 'Hello', tags: [['h', DM]] })
+  const picture = event({
+    kind: 9,
+    content: 'Here it is',
+    tags: [['h', DM], ['imeta', 'url https://relay.test/media/def', 'm image/jpeg', 'x def456', 'size 4096', 'filename photo.jpg']],
+  })
+  const answer = event({ kind: 9, content: 'Hi!', tags: [['h', DM], ['e', hello.id, '', 'reply']] })
+  /** A reply to a reply: the importer never had a row to hang it from, and neither does this. */
+  const nested = event({ kind: 9, pubkey: MIKY, content: 'deep', tags: [['h', DM], ['e', hello.id, '', 'root'], ['e', answer.id, '', 'reply']] })
+  /** Another channel's message: `#h` is the whole membership of the read. */
+  const elsewhere = event({ kind: 9, content: 'not here', tags: [['h', FOLDER]] })
+  const helloEdited = event({ kind: 40003, pubkey: MIKY, content: 'Hello there', tags: [['h', DM], ['e', hello.id]] })
+  const liked = event({ kind: 7, content: '❤️', tags: [['e', answer.id]] })
+  const done = event({ kind: 9101, content: '', tags: [['h', DM], ['e', hello.id], ['t', 'resolution'], ['action', 'resolved']] })
+
+  beforeEach(() => {
+    queryRelay.mockClear()
+    queryRelay.mockImplementation(relayOver([hello, picture, answer, nested, elsewhere, helloEdited, liked, done]))
+  })
+
+  it('reads the messages by #h, puts each reply under its message, and folds what was done to them', async () => {
+    const found = await channelConversationAsViewer(DM, 'https://relay.test', token)
+    expect(found.roots.map((r) => r.body)).toEqual(['Hello', 'Here it is'])
+    expect(found.replies[hello.id]?.map((r) => r.body)).toEqual(['Hi!'])
+    expect(Object.keys(found.replies)).toEqual([hello.id])
+    expect(found.roots[1].files).toEqual([
+      { name: 'photo.jpg', contentType: 'image/jpeg', size: 4096, sha256: 'def456', mediaUrl: 'https://relay.test/media/def' },
+    ])
+    expect(found.edits[hello.id]?.body).toBe('Hello there')
+    expect(found.decorations.byId[answer.id].reactions.map((r) => r.emoji)).toEqual(['❤️'])
+    expect(found.decorations.byId[hello.id].resolutions.map((r) => r.action)).toEqual(['resolved'])
+    // A kind list on every `#h` read: a kindless one is refused outright.
+    const first = queryRelay.mock.calls[0][1] as Record<string, unknown>[]
+    expect(first).toEqual([{ kinds: [9], '#h': [DM], limit: CHANNEL_PAGE }])
+  })
+
+  it('reads the whole channel: a full page is followed by the next, until a short one', async () => {
+    const many = Array.from({ length: CHANNEL_PAGE + 5 }, (_, i) =>
+      event({ kind: 9, content: `m${i}`, created_at: 1_600_000_000 + i, tags: [['h', DM]] }),
+    )
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
+      const f = filters[0]
+      if (!(f.kinds as number[]).includes(9)) return { ok: true as const, events: [] }
+      const until = f.until as number | undefined
+      const events = many
+        .filter((e) => until === undefined || e.created_at <= until)
+        .sort((a, b) => b.created_at - a.created_at)
+        .slice(0, f.limit as number)
+      return { ok: true as const, events }
+    })
+    const found = await channelConversationAsViewer(DM, 'https://relay.test', token)
+    expect(found.roots).toHaveLength(CHANNEL_PAGE + 5)
+    expect(found.roots[0].body).toBe('m0')
+  })
+
+  it('reports a refused read as a failure, never as an empty conversation', async () => {
+    queryRelay.mockResolvedValueOnce({ ok: false, reason: 'restricted: relay_membership_required' })
+    await expect(channelConversationAsViewer(DM, 'https://relay.test', token)).rejects.toThrow()
+  })
+
+  it('a message is a kind:9 in the channel, its attachment as imeta and its mention as p — no Convex row, no 1111', async () => {
+    const body = `For you nostr:${encodeNpub(CATH)}`
+    const result = await commentAsViewer(
+      {
+        container: dmContainer,
+        body,
+        files: [{ name: 'photo.jpg', contentType: 'image/jpeg', size: 4096, sha256: 'def456', mediaUrl: 'https://relay.test/media/def' }],
+      },
+      'https://relay.test',
+      token,
+    )
+    expect(result).toEqual({ ok: true, id: 'signed'.padEnd(64, '0') })
+    const published = signed()
+    expect(published.kind).toBe(9)
+    expect(published.content).toBe(body)
+    expect(published.tags[0]).toEqual(['h', DM])
+    expect(published.tags).toContainEqual(['p', CATH])
+    const imeta = published.tags.find((t) => t[0] === 'imeta')
+    expect(imeta).toContain('size 4096')
+    expect(imeta).toContain('x def456')
+    expect(published.tags.some((t) => t[0] === 'A' || t[0] === 'e')).toBe(false)
+  })
+
+  it('a reply is the same kind:9 with Buzz’s single reply-marked e', async () => {
+    const parent = { id: hello.id, author: MIKY, body: 'Hello', createdAt: hello.created_at, kind: 9 }
+    await commentAsViewer({ container: dmContainer, body: 'Hi!', parent }, 'https://relay.test', token)
+    const published = signed()
+    expect(published.kind).toBe(9)
+    expect(published.tags.filter((t) => t[0] === 'e')).toEqual([['e', hello.id, '', 'reply']])
+    expect(published.tags).toContainEqual(['h', DM])
+  })
+
+  it('an edit that changes the attachments carries the whole new set as imeta (CON-5)', async () => {
+    await editCommentAsViewer(
+      {
+        container: dmContainer,
+        targetEventId: picture.id,
+        body: 'Here it is',
+        files: [{ name: 'other.png', contentType: 'image/png', size: 10, sha256: 'fff', mediaUrl: 'https://relay.test/media/fff' }],
+      },
+      'https://relay.test',
+      token,
+    )
+    const published = signed()
+    expect(published.kind).toBe(40003)
+    expect(published.tags).toContainEqual(['h', DM])
+    expect(published.tags.filter((t) => t[0] === 'imeta')).toHaveLength(1)
+    expect(published.tags.find((t) => t[0] === 'imeta')).toContain('x fff')
+  })
+})
+
+/*
+  CON-7's third leg, landed with REM-1: a DM send reports success only when the
+  relay has accepted the event, and a failure that may be transient is tried
+  again rather than reported. These fail if the write ever goes back to
+  fire-and-forget.
+*/
+describe('publishConfirmed — success is the relay’s acceptance, and a transient failure is retried', () => {
+  const unsigned = { kind: 9, pubkey: MIKY, created_at: 1_700_000_000, tags: [['h', 'x']], content: 'hi' }
+  const waits: number[] = []
+  const sleep = async (ms: number) => {
+    waits.push(ms)
+  }
+  beforeEach(() => {
+    waits.length = 0
+    publishSigned.mockReset()
+  })
+
+  it('reports the event only once the relay accepted it', async () => {
+    publishSigned.mockResolvedValueOnce({ ok: true, eventId: 'a'.repeat(64), httpStatus: 200 } as never)
+    await expect(publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })).resolves.toEqual({ ok: true, id: 'a'.repeat(64) })
+  })
+
+  it('never reports success when the relay did not accept it', async () => {
+    publishSigned.mockResolvedValue({ ok: false, reason: 'relay unavailable', httpStatus: 503 } as never)
+    const result = await publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })
+    expect(result).toEqual({ ok: false, reason: 'relay unavailable' })
+    expect(publishSigned).toHaveBeenCalledTimes(PUBLISH_ATTEMPTS)
+  })
+
+  it('a request that threw is tried again, with the same signed event, and its success is reported', async () => {
+    publishSigned
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ok: true, eventId: 'b'.repeat(64), httpStatus: 200 } as never)
+    const result = await publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })
+    expect(result).toEqual({ ok: true, id: 'b'.repeat(64) })
+    expect(publishSigned).toHaveBeenCalledTimes(2)
+    const calls = publishSigned.mock.calls as unknown as unknown[][]
+    expect(calls[0][1]).toBe(calls[1][1])
+    expect(waits).toHaveLength(1)
+  })
+
+  it('a quota refusal waits the time the relay named, then tries again', async () => {
+    publishSigned
+      .mockResolvedValueOnce({ ok: false, reason: 'rate-limited: quota exceeded; retry in 7s', httpStatus: 429 } as never)
+      .mockResolvedValueOnce({ ok: true, eventId: 'c'.repeat(64), httpStatus: 200 } as never)
+    const result = await publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })
+    expect(result).toEqual({ ok: true, id: 'c'.repeat(64) })
+    expect(waits).toEqual([7_000])
+  })
+
+  it('a considered refusal is reported at once — asking again returns the same no', async () => {
+    publishSigned.mockResolvedValue({ ok: false, reason: 'invalid: imeta size (129682) does not match stored size (129661)', httpStatus: 400 } as never)
+    const result = await publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })
+    expect(result).toEqual({ ok: false, reason: 'invalid: imeta size (129682) does not match stored size (129661)' })
+    expect(publishSigned).toHaveBeenCalledTimes(1)
+  })
+
+  it('the relay already holding the event — a lost answer to an earlier try — is acceptance', async () => {
+    publishSigned.mockResolvedValueOnce({ ok: true, duplicate: true, eventId: 'd'.repeat(64), httpStatus: 200 } as never)
+    await expect(publishConfirmed(unsigned, 'https://relay.test', token, 'refused', { sleep })).resolves.toEqual({ ok: true, id: 'd'.repeat(64) })
+  })
+
+  it('a DM send goes through it: a relay that never accepts is a send that failed', async () => {
+    publishSigned.mockResolvedValue({ ok: false, reason: 'relay unavailable', httpStatus: 502 } as never)
+    const result = await commentAsViewer({ container: { kind: 'channel', h: 'x' }, body: 'hi' }, 'https://relay.test', token)
+    expect(result.ok).toBe(false)
+    expect(publishSigned).toHaveBeenCalledTimes(PUBLISH_ATTEMPTS)
+  }, 15_000)
 })

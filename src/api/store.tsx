@@ -10,13 +10,13 @@
  *   - TopicStoreProvider     (runtime topics + DM-promoted huddles)
  *   - StarredProvider        (stars; inside TopicStoreProvider — see below)
  *   - TopicMutationsProvider (the message/reply/huddle override layers)
- *   - DmRuntimeProvider      (DM sent messages — lifted here from
- *     useDmConversationView's hook-local state so DM sends survive
- *     navigation, matching topic behavior and the future backend)
+ *
+ * DMs have no store here since REM-1: a DM is read from its channel on the
+ * relay, and nothing is held between a send and the re-read.
  *
  * Nothing outside src/api may import the underlying providers directly.
  */
-import { createContext, useContext, useState, useMemo, type ReactNode, type Dispatch, type SetStateAction } from 'react'
+import type { ReactNode } from 'react'
 import { ConvexProvider, ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
 import { EstivaIdSessionProvider } from '@/auth/EstivaIdSession'
 import { useEstivaIdSession } from '@/auth/useEstivaIdSession'
@@ -30,7 +30,6 @@ import { DmVisibilityProvider } from '@/api/internal/dmVisibility'
 import { FollowsProvider } from '@/api/internal/follows'
 import { AvatarRegistryProvider } from './avatars'
 import { MentionDirectorySync, TopicDirectorySync } from './mentions'
-import type { ConversationData } from './types'
 
 // Convex client — present only when a deployment is configured
 // (`npx convex dev` writes VITE_CONVEX_URL to .env.local). Absent in unit
@@ -44,27 +43,6 @@ const CONVEX_URL =
 // unconditionally (rules of hooks); without a deployment every query passes
 // 'skip' (gated on hasConvex), so the placeholder client never connects.
 const convexClient = new ConvexReactClient(CONVEX_URL ?? 'https://peek-no-deployment.convex.cloud')
-
-interface DmRuntimeValue {
-  /** Runtime-sent DM messages, keyed by dmId. */
-  sentDmMessages: Record<string, ConversationData[]>
-  setSentDmMessages: Dispatch<SetStateAction<Record<string, ConversationData[]>>>
-}
-
-const DmRuntimeContext = createContext<DmRuntimeValue | null>(null)
-
-function DmRuntimeProvider({ children }: { children: ReactNode }) {
-  const [sentDmMessages, setSentDmMessages] = useState<Record<string, ConversationData[]>>({})
-  const value = useMemo(() => ({ sentDmMessages, setSentDmMessages }), [sentDmMessages])
-  return <DmRuntimeContext.Provider value={value}>{children}</DmRuntimeContext.Provider>
-}
-
-/** Seam-internal. Components never call this. */
-export function useDmRuntime(): DmRuntimeValue {
-  const ctx = useContext(DmRuntimeContext)
-  if (!ctx) throw new Error('useDmRuntime must be used within PeekDataProvider')
-  return ctx
-}
 
 /**
  * Mounts every store Peek's pages read from — people's pictures, topics,
@@ -97,11 +75,9 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
                   reads the open-work list, so open work has to be above it. */}
               <OpenWorkProvider>
                 <ScreenerProvider>
-                  <DmRuntimeProvider>
-                    {/* Hidden DMs (DMS-6): the relay's set, joined to rows through Convex.
-                        It reads nothing from the stores above, so it sits innermost. */}
-                    <DmVisibilityProvider>{children}</DmVisibilityProvider>
-                  </DmRuntimeProvider>
+                  {/* Hidden DMs (DMS-6): the relay's set, joined to rows through Convex.
+                      It reads nothing from the stores above, so it sits innermost. */}
+                  <DmVisibilityProvider>{children}</DmVisibilityProvider>
                 </ScreenerProvider>
               </OpenWorkProvider>
             </FollowsProvider>
