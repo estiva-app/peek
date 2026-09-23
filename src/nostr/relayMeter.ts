@@ -40,6 +40,12 @@ export type Refusal = 'quota' | 'unavailable'
 
 /** The refusal an answer carries, or `null` for one the meter should not flag. */
 export function refusalOf(status: number, text: string): Refusal | null {
+  // An answer is not a refusal, whatever it says. The body of a 200 is events,
+  // and events are people's words: PER-12's own issue and comments say
+  // "rate-limited" and "unavailable", so every read that returned them was
+  // counted as refused — 17 of them in one 15-minute window, at seconds when
+  // the relay's log shows nothing but 200s.
+  if (status >= 200 && status < 300) return null
   if (status === 429) return 'quota'
   if (!/rate-limited/i.test(text)) return null
   return status === 503 || /unavailable/i.test(text) ? 'unavailable' : 'quota'
