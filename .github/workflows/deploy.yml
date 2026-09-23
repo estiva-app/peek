@@ -78,7 +78,7 @@ jobs:
       - name: Gate lint
         run: npm run lint:rules
 
-      # The token rules are a gate, on their own (D55, 2026-09-10). They are the
+      # The token rules are a gate, on their own (2026-09-10). They are the
       # ones that catch a class which compiles to nothing — the defect that
       # shipped a transparent sign-in screen in Ship and an unfilled card in
       # Peek's Folder panel. Zero errors on the day this landed, so it stays
