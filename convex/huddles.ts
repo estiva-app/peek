@@ -10,7 +10,7 @@
  */
 import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
-import { aggregateReactions, findDmForPair, resolveUserKey, shape, unreadFlags, userFaces } from './messages'
+import { aggregateReactions, findDmForPair, refuseReadOnlyWrite, resolveUserKey, shape, unreadFlags, userFaces } from './messages'
 import { watermarks } from './readState'
 import { viewerId, viewerOrThrow } from './users'
 import type { Doc } from './_generated/dataModel'
@@ -121,6 +121,8 @@ export const create = mutation({
     firstMessage: v.optional(v.object({ seedKey: v.string(), body: v.string() })),
   },
   handler: async (ctx, { topicKey, seedKey, memberNames, firstMessage }) => {
+    // Disabled until huddles are rebuilt on the relay — see `refuseReadOnlyWrite`.
+    refuseReadOnlyWrite({ parentKind: 'huddle' })
     const topics = await ctx.db.query('topics').collect()
     const topic = topics.find((t) => t.seedKey === topicKey || (t._id as string) === topicKey)
     if (!topic) throw new Error(`Unknown topic '${topicKey}'`)
@@ -164,6 +166,7 @@ export const createFromDm = mutation({
     memberNames: v.array(v.string()),
   },
   handler: async (ctx, { topicKey, seedKey, originDmKey, seedMessageKey, memberNames }) => {
+    refuseReadOnlyWrite({ parentKind: 'huddle' })
     const topics = await ctx.db.query('topics').collect()
     const topic = topics.find((t) => t.seedKey === topicKey || (t._id as string) === topicKey)
     if (!topic) throw new Error(`Unknown topic '${topicKey}'`)
