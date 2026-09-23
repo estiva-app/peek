@@ -114,8 +114,8 @@ jobs:
 
       # Pushes the Convex backend *and* injects the matching VITE_CONVEX_URL
       # into the frontend build, in one step, so the two halves cannot drift.
-      # This is what removes the "backend changes additionally need
-      # `npx convex deploy`" footgun from HOW-TO-RUN.md — nobody has to remember.
+      # This is what removes the old "backend changes additionally need
+      # `npx convex deploy`" footgun — nobody has to remember.
       #
       # It runs before the image build because the image is only an envelope for
       # dist/; building without this produces a bundle pointed at nothing.

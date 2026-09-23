@@ -1,98 +1,88 @@
 # How to run Peek (simple guide)
 
-*Written 2026-07-08, updated 2026-07-09 after Phase 3 sign-in landed —
+*Written 2026-07-08, checked against the code 2026-09-23 —
 if something here doesn't match what you see, ask Claude to update it.*
 
 ## The picture in plain words
 
 - The app you see in the browser is the **storefront**.
-- The **database** (a service called Convex, running in the cloud) is the
-  **storage room** where everything lives permanently.
-- **As of today the storefront reads from the storage room** — people,
-  topics, messages, replies, resolutions, reactions, huddles, and your
-  starred/screener/open-work lists all come from the database, and the
-  things you do (send, reply, resolve, react, star, dismiss) are **really
-  saved**. Refresh, restart, come back tomorrow: still there.
-- **Sign-in exists now (Phase 3).** Sign up with name + email + password
-  and you're in immediately — no verification email, nothing external.
-  Everything you see and send belongs to the account you're signed in as.
-- **Your profile** lives behind your avatar (top right) → **Edit profile**:
-  change your name and role, and upload a photo (up to 5 MB). It appears
-  on your messages and in other people's People list straight away.
-  Without a photo you get a neutral silhouette. **Sign out** is in the
-  same menu.
+- The **relay** (the Estiva relay) is where messages live. It is the source
+  of truth: other Estiva apps read the same messages.
+- **Convex** (a database in the cloud) is a **storage room** beside it. It
+  keeps copies and lists Peek needs to be quick.
+- **Sign-in is Estiva ID, with a passkey.** There is no password and no
+  login of Peek's own. When you are already signed in to Estiva ID, Peek
+  lets you in by itself; otherwise it shows one button to use your passkey.
 
 ## Running the app
 
-1. Terminal 1: `npx convex dev` (the "phone line" to the database — leave
-   it running)
-2. Terminal 2: `npm run dev` (the app)
-3. Open the address it prints (usually http://localhost:5173).
+1. `npm run dev` (the app)
+2. Open http://localhost:5173.
 
-The app shows whatever is **in the database**:
+**It must be port 5173.** Estiva ID only sends you back to addresses it
+knows, and it knows `localhost:5173`, not `5174`. If something else already
+holds 5173, stop it first.
 
-| What you want | Command |
-|---|---|
-| Look inside the database (opens a website) | `npx convex dashboard` |
-| A brand-new, **empty** workspace (what real customers see on day one) | `npx convex run dev/seedDemo:wipe` |
-| The familiar **demo dataset** (sample conversations) | `npx convex run dev/seedDemo:seedWithLogin '{"wipe": true}'` |
+## Which backend it talks to
 
-Switch between the two freely — it's the same app, just different contents
-in the storage room. The demo dataset comes with a ready-made login —
-**demo@peek.dev / Peek-demo-1** — sign in as that to be "Cath", the person
-the sample conversations belong to.
+The app reads three settings from `.env.local` (restart `npm run dev` after
+you change it):
+
+| Setting | What it is | When it is empty |
+|---|---|---|
+| `VITE_CONVEX_URL` | the Convex deployment | no Convex |
+| `VITE_RELAY_URL` | the relay | no relay |
+| `VITE_ESTIVA_ID_ORIGIN` | where you sign in | `https://id.estiva.app` |
+
+- **The live backends:** `VITE_CONVEX_URL` is
+  `https://honorable-guineapig-592.eu-west-1.convex.cloud` and
+  `VITE_RELAY_URL` is `https://estiva.estiva.app`. That is the team's real
+  data. Look, don't wipe.
+- **No backend at all:** leave both `VITE_CONVEX_URL` and `VITE_RELAY_URL`
+  empty. There is no sign-in, and the app shows the sample data from
+  `src/data/`. The quickest way to look at the screens.
+
+Since 23 September the relay address is set here, not read from Convex.
+Without `VITE_RELAY_URL`, everything that reads the relay stays empty.
 
 ## The demo dataset is kept forever (decision 2026-07-08)
 
 The sample data is preserved in two places and will never be deleted:
 
-- `src/data/` — the sample conversations as code (also the visual
-  reference the pixel-perfect rule checks against, and what tests and
+- `src/data/` — the sample conversations as code (also what tests and
   Storybook use).
-- `convex/dev/seedDemo.ts` — the loader that fills any database
-  deployment with that sample data.
+- `convex/dev/seedDemo.ts` — the loader that fills a Convex deployment
+  with that sample data.
 
-## The two public instances (decision 2026-07-09)
+**Only ever run it against a deployment of your own, never the live one.**
 
-| | **peek-demo** | **peek-develop** |
-|---|---|---|
-| What it is | The prototype: opens straight into the demo data, **no login** | The real app: sign up, sign in, communicate |
-| Backend | **None** — the demo data is baked into the app itself; anything you do lasts until you refresh | Convex **production** deployment `patient-grouse-611` (already created and configured; starts empty) |
-| Cost | Free (a static site) | Free (Convex free plan) |
+| What you want | Command |
+|---|---|
+| Look inside the database (opens a website) | `npx convex dashboard` |
+| A brand-new, **empty** workspace | `npx convex run dev/seedDemo:wipe` |
+| The **demo dataset**, with you as "Cath" | `npx convex run dev/seedDemo:seedAs '{"pubkey": "<64 hex>", "wipe": true}'` |
 
-### Publishing them on Vercel (one-time, ~5 minutes)
+`seedAs` puts your Estiva ID key on Cath, the person the sample
+conversations belong to, so signing in lands you on her.
 
-Both are Vercel projects on the same GitHub repo — the only difference is
-one environment variable.
+`npx convex dev` pushes this folder's `convex/` code to the deployment it is
+set up for. Never let it point at the live one.
 
-1. Go to https://vercel.com/new and import the `Peek` repo → name the
-   project **peek-demo** → **do not add any environment variables** →
-   Deploy. Done: `peek-demo.vercel.app` is the no-login prototype.
-2. https://vercel.com/new again, same repo → name it **peek-develop** →
-   add one environment variable:
-   `VITE_CONVEX_URL` = `https://patient-grouse-611.convex.cloud`
-   → Deploy. Done: `peek-develop.vercel.app` is the real app — sign up
-   and you're the first user.
+## Where it runs
 
-After that, every `git push` updates both automatically. Backend changes
-(anything in `convex/`) additionally need `npx convex deploy` once per
-change (ask Claude — it's part of finishing any backend work).
-
-## LATER — what the next phases add
-
-**Phase 4 (multi-user):** unread state goes live per person, the Screener
-fills itself from incoming messages, and two browsers see each other's
-messages instantly (already free with Convex).
-
-**Phase 5 (hardening):** verification/password-reset emails (needs an
-email service + domain), file uploads, error screens, pagination.
+- **peek.estiva.app** is the real app. A push to `main` deploys it by
+  itself (`.github/workflows/deploy.yml`): the Convex backend first, then
+  the app, and the server picks it up within two minutes. Nobody runs
+  `npx convex deploy` by hand.
+- Two older Vercel copies still answer, **peek-demo.vercel.app** and
+  **peek-develop.vercel.app**. Neither is the real app, and peek-develop
+  talks to an old Convex deployment (`patient-grouse-611`).
 
 ## Cheat sheet
 
 | I want to… | How |
 |---|---|
-| See the app with sample data locally | fill DB, run both terminals, sign in as demo@peek.dev / Peek-demo-1 |
-| See a fresh empty workspace locally | empty DB, run both terminals, sign up |
-| Show someone the prototype | send them the peek-demo link (no login) |
-| Use the real app | the peek-develop link — sign up once, sign in ever after |
-| Keep my changes after refresh | yes — everything is saved under your account (demo instance: session-only) |
+| See the screens with sample data | both backend settings empty, `npm run dev` |
+| Use the real app | https://peek.estiva.app |
+| Run the real app locally | the live backend settings, `npm run dev`, sign in with your passkey |
+| Look at the parts | `npm run storybook` → http://localhost:6006 |
