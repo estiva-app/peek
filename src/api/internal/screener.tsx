@@ -59,7 +59,7 @@
  * `everOpened` is false, so opening a topic retires its row on the next read,
  * with no write at all. That is the free thing SHR-7 §5 predicted.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { SCREENER_ITEMS } from '@/data/screenerData'
@@ -115,37 +115,67 @@ const FILE_REFRESH_MS = 60_000
  */
 function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
   const { resolveObject } = useForeignObjects()
-  const [held, setHeld] = useState<{ key: string; files: ScreenerFile[] }>({ key: '', files: [] })
+  /*
+    Held per address, not per set. The set changes whenever a file enters or
+    leaves open work — "Open" on a Screener row does exactly that — and holding
+    one answer for the whole set meant every other file row vanished until a
+    fresh read of all of them came back: the Screener flashed on every Open.
+    Now a change to the set asks only about addresses not yet held, and an
+    address that left the set is simply not returned.
+  */
+  const [held, setHeld] = useState<Record<string, ScreenerFile | null>>({})
+  const heldRef = useRef(held)
+  useEffect(() => {
+    heldRef.current = held
+  }, [held])
   const key = addresses.join('\u0000')
 
-  const load = useCallback(() => {
-    if (!hasConvex || !key) return
-    const asked = key
-    void Promise.all(
-      asked.split('\u0000').map((address) =>
-        resolveObject(address)
-          .then((object): ScreenerFile | null =>
-            object
-              ? {
-                  address,
-                  kind: object.kind,
-                  title: object.slots.title?.value ?? 'File',
-                  comments: object.comments,
-                }
-              : null,
-          )
-          .catch(() => null),
-      ),
-    ).then((files) => setHeld({ key: asked, files: files.filter((f): f is ScreenerFile => f !== null) }))
-  }, [key, resolveObject])
+  const read = useCallback(
+    (asked: readonly string[]) => {
+      if (!hasConvex || asked.length === 0) return
+      void Promise.all(
+        asked.map((address) =>
+          resolveObject(address)
+            .then((object): [string, ScreenerFile | null] => [
+              address,
+              object
+                ? {
+                    address,
+                    kind: object.kind,
+                    title: object.slots.title?.value ?? 'File',
+                    comments: object.comments,
+                  }
+                : null,
+            ])
+            // A failed read keeps what was held for the address rather than
+            // blanking its row on one bad request.
+            .catch((): [string, undefined] => [address, undefined]),
+        ),
+      ).then((answers) =>
+        setHeld((prev) => {
+          const next = { ...prev }
+          for (const [address, file] of answers) if (file !== undefined) next[address] = file
+          return next
+        }),
+      )
+    },
+    [resolveObject],
+  )
 
+  // The set changed: ask only about what is not held yet.
   useEffect(() => {
-    load()
-  }, [load])
-  useRefreshTriggers(load, { enabled: hasConvex && !!key, intervalMs: FILE_REFRESH_MS })
+    read(key ? key.split('\u0000').filter((address) => !(address in heldRef.current)) : [])
+  }, [key, read])
+  // A refresh re-reads everything in the set — that is how new comments arrive.
+  useRefreshTriggers(() => read(key ? key.split('\u0000') : []), {
+    enabled: hasConvex && !!key,
+    intervalMs: FILE_REFRESH_MS,
+  })
 
-  // An answer for a set that is no longer the one asked about is not drawn.
-  return held.key === key ? held.files : []
+  return useMemo(
+    () => addresses.flatMap((address) => (held[address] ? [held[address]] : [])),
+    [addresses, held],
+  )
 }
 
 const ScreenerContext = createContext<ScreenerValue | null>(null)
