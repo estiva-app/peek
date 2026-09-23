@@ -35,13 +35,24 @@
  * every raw total here, and netted off in one line, so the done-when's 0 stays
  * a measurement and nobody has to be told by hand why 23 of the gap is fine.
  *
- * DMs are counted only if a viewer is available, and normally are not: Convex's
- * DM queries resolve through `viewerId(ctx)`, which is null for an
- * unauthenticated caller. Their size is a question for the DM track, and this
- * prints what it can rather than implying zero.
+ * **DMs are counted from a snapshot — CON-9.** Convex's DM queries resolve
+ * through `viewerId(ctx)`, so a public query sees none, and a signed-in viewer's
+ * token sees only the pairs that viewer is in. `convex export` has no viewer, so
+ * `--snapshot <export.zip>` reads every pair out of it (take one from a worktree
+ * with `--deployment honorable-guineapig-592`; `~/peek-app/.env.local` points at
+ * a local backend and exports nearly nothing). Without it the DM arm says it did
+ * not run rather than printing a zero.
+ *
+ * Whether a recorded DM id is *readable* is the half the agent cannot answer:
+ * a DM channel is private, so the agent's `/query` returns nothing and every id
+ * would read as gone. `--as <token file>` (a participant's
+ * `peek.estivaId.token`) checks that participant's pairs; CON-9 checked all of
+ * them with a read-only query on the relay's database instead.
  */
 import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { DISCARDED, NO_FILE_TARGET, TEAMS } from './con4-discarded.js'
 
 const CONVEX = process.env.CONVEX_URL ?? 'https://honorable-guineapig-592.eu-west-1.convex.cloud'
@@ -337,8 +348,107 @@ async function main() {
   console.log(`\nmigration's population:             ${noId.length + gone.length - dropped.length}  (${noId.length + gone.length} − ${dropped.length} discarded)`)
   console.log(`attachments to re-upload:           ${attachTotal - attachDescribed - droppedAttach}  (${attachTotal - attachDescribed} − ${droppedAttach} discarded)`)
 
-  console.log(`\nDMs are not counted: Convex's DM queries resolve through viewerId(), which is null here.`)
   console.log(`done-when is 0 with no relay event; currently ${noId.length + gone.length}, of which ${dropped.length} discarded → ${noId.length + gone.length - dropped.length} to migrate.`)
+
+  await dmArm()
+}
+
+const argValue = (flag: string) => {
+  const i = process.argv.indexOf(flag)
+  return i >= 0 ? process.argv[i + 1] : undefined
+}
+
+/**
+ * The tables the DM arm needs, out of a `convex export` zip. Node has no
+ * archive reader and this machine has no `unzip`, so python3 opens it, as in
+ * `shr8-migrate.ts`. Only the fields counted here cross over — never a body.
+ */
+function readSnapshot(zip: string) {
+  const PY = `
+import json,sys,zipfile
+z=zipfile.ZipFile(sys.argv[1])
+def t(n):
+    p=n+'/documents.jsonl'
+    if p not in z.namelist(): raise SystemExit('missing entry: '+p)
+    return [json.loads(l) for l in z.read(p).decode('utf-8').splitlines() if l.strip()]
+keep=('_id','parentKind','parentId','messageId','authorId','createdAt','nostrEventId','userLowId','userHighId','channelUuid','name')
+slim=lambda rows:[{k:(len(v) if k=='fileAttachments' else v) for k,v in r.items() if k in keep+('fileAttachments',)} for r in rows]
+json.dump({n:slim(t(n)) for n in ('users','dmConversations','messages','replies')},sys.stdout)
+`
+  type Doc = {
+    _id: string
+    parentKind?: string
+    parentId?: string
+    messageId?: string
+    authorId?: string
+    createdAt?: number
+    nostrEventId?: string
+    fileAttachments?: number
+    userLowId?: string
+    userHighId?: string
+    channelUuid?: string
+    name?: string
+  }
+  const out = execFileSync('python3', ['-c', PY, zip], { maxBuffer: 1 << 28 }).toString()
+  return JSON.parse(out) as Record<'users' | 'dmConversations' | 'messages' | 'replies', Doc[]>
+}
+
+/** CON-9: the same three counts for `parentKind: 'dm'`, from a snapshot. */
+async function dmArm() {
+  console.log(`\n— DMs ——————————————————————————————————`)
+  const zip = argValue('--snapshot')
+  if (!zip) {
+    console.log(`not counted: pass --snapshot <convex export zip>. Convex's DM queries resolve through viewerId(), which is null here.`)
+    return
+  }
+  const s = readSnapshot(zip)
+  const who = new Map(s.users.map((u) => [u._id, u.name ?? u._id.slice(0, 8)]))
+  const dms = new Map(s.dmConversations.map((d) => [d._id, d]))
+  const roots = s.messages.filter((m) => m.parentKind === 'dm')
+  const rootById = new Map(roots.map((m) => [m._id, m]))
+  const items = [
+    ...roots.map((m) => ({ kind: 'root' as const, row: m, dm: m.parentId! })),
+    ...s.replies.filter((r) => rootById.has(r.messageId!)).map((r) => ({ kind: 'reply' as const, row: r, dm: rootById.get(r.messageId!)!.parentId! })),
+  ]
+  const label = (dm: string) => {
+    const d = dms.get(dm)
+    return d ? `${who.get(d.userLowId!)} ↔ ${who.get(d.userHighId!)}` : `unknown ${dm.slice(0, 8)}`
+  }
+  const noId = items.filter((i) => !i.row.nostrEventId)
+  const recorded = items.filter((i) => i.row.nostrEventId)
+  const distinct = new Set(recorded.map((i) => i.row.nostrEventId!))
+  const files = (xs: typeof items) => xs.reduce((n, i) => n + (i.row.fileAttachments ?? 0), 0)
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+
+  console.log(`snapshot: ${zip}`)
+  console.log(`DM conversations: ${dms.size}  (${[...dms.values()].filter((d) => d.channelUuid).length} with a relay channel)`)
+  console.log(`DM messages in Convex:              ${items.length}  (${roots.length} roots, ${items.length - roots.length} replies)`)
+  console.log(`  never published (null id):        ${noId.length}  (${noId.filter((i) => i.kind === 'root').length} roots, ${noId.filter((i) => i.kind === 'reply').length} replies)`)
+  console.log(`  id recorded:                      ${recorded.length}  (${distinct.size} distinct events — ${recorded.length - distinct.size} row(s) share one)`)
+  console.log(`attachments on DM messages:         ${files(items)}  (${files(noId)} on a never-published message, so no imeta anywhere)`)
+  if (noId.length) {
+    const ts = noId.map((i) => i.row.createdAt!)
+    console.log(`never-published span:               ${day(Math.min(...ts))} → ${day(Math.max(...ts))}`)
+  }
+
+  const byDm = new Map<string, typeof items>()
+  for (const i of items) byDm.set(i.dm, [...(byDm.get(i.dm) ?? []), i])
+  for (const [dm, rows] of byDm) {
+    const gap = rows.filter((i) => !i.row.nostrEventId)
+    const authors = new Map<string, number>()
+    for (const i of gap) authors.set(who.get(i.row.authorId!) ?? '?', (authors.get(who.get(i.row.authorId!) ?? '?') ?? 0) + 1)
+    console.log(`  ${label(dm)}: ${rows.length} rows, ${gap.length} never published${gap.length ? ` (${[...authors].map(([a, n]) => `${a} ${n}`).join(', ')})` : ''}`)
+  }
+
+  const asFile = argValue('--as')
+  if (!asFile) {
+    console.log(`relay leg not run: DM channels are private to their participants, so the agent's /query would report every id as gone. Pass --as <token file>.`)
+    return
+  }
+  const as = JSON.parse(readFileSync(asFile, 'utf8')) as Token
+  const { found, refusals } = await reachableOnRelay([...distinct], as)
+  for (const r of refusals) console.log(`⚠  /query refused a batch: ${r}`)
+  console.log(`relay, as ${as.pubkey.slice(0, 8)}: ${found.size} of ${distinct.size} recorded ids readable — a pair that pubkey is not in reads as missing.`)
 }
 
 main().catch((e) => {
