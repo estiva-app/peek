@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { StorybookConfig } from '@storybook/react-vite'
+import remarkGfm from 'remark-gfm'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const peekRoot = resolve(here, '..')
@@ -38,7 +39,20 @@ const config: StorybookConfig = {
       titlePrefix: 'Estiva ID',
     },
   ],
-  addons: ['@storybook/addon-docs'],
+  addons: [
+    {
+      /*
+        remark-gfm: MDX alone has no pipe tables. Peek had none of this, so
+        every table in every `.mdx` rendered as a run of literal pipes —
+        seventeen pages of fifty, including the Introduction's map of the
+        sidebar and the register of what is parked (Katerina, 23 September).
+        The package has carried this since its own docs pages needed it; Peek
+        simply never did.
+      */
+      name: '@storybook/addon-docs',
+      options: { mdxPluginOptions: { mdxCompileOptions: { remarkPlugins: [remarkGfm] } } },
+    },
+  ],
   viteFinal: (viteConfig) => {
     // Stories must be deterministic: blank out the Convex deployment URL so
     // the data seam takes its static-mock path (hasConvex = false) instead of
