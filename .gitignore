@@ -26,8 +26,6 @@ grant-pitch-review.md
 scenario-review.md
 
 # Internal product docs — kept locally, not published
-PRDs/
-PROTOTYPE.md
 # `docs/*` rather than `docs/` so the negation below can take effect — git does
 # not descend into an excluded directory, so `!docs/buzz-compat/` would be
 # ignored if the parent were excluded outright.

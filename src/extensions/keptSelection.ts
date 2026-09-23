@@ -14,8 +14,8 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
  * mapped through edits and cleared when the field closes.
  *
  * A decoration rather than a second selection, because a document has one
- * and the field needs it. Editor-internal by design (UI-RULES §3: the editor
- * owns its own drawing); nothing here floats, focuses or handles a key.
+ * and the field needs it. Editor-internal by design (the editor owns its own
+ * drawing); nothing here floats, focuses or handles a key.
  */
 
 export interface KeptRange {

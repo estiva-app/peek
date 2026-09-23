@@ -5,14 +5,15 @@ import { WithTooltip } from './WithTooltip'
  * Peek's reaction: the shared pill, plus the vocabulary and the hover label
  * that are Peek's.
  *
- * **This file used to be the fork `UI-RULES` §1 names by example** — a
+ * **This file used to be the recorded example of a fork** — a
  * hand-rolled `<button>` re-typing Chip's class list with a border added,
  * written because nothing in the package could be a pill with a count that
  * toggles. `@estiva-app/ui@0.7.0` added `Reaction`, so the drawing is the
  * package's now and what stays here is what only Peek knows: which emoji it
  * offers, what each one means, and how it says who reacted.
  *
- * That split is §6's rule working — the app file shrinks rather than
+ * That split is the rule in `.claude/rules/peek-ui.md` working — the app
+ * file shrinks rather than
  * disappearing. It is not a one-line re-export because the call sites speak
  * Peek's language (`owner`, `names`), and translating those is exactly what a
  * wrapper is for.

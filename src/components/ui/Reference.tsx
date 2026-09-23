@@ -74,7 +74,7 @@ function shortKey(pubkey: string): string {
  * lands on it, and another app's object opens in that app — `referenceLink`
  * decides which from what resolved. The anchor is real, so open-in-new-tab and
  * copy-link work; a plain left click is intercepted and routed in place, the
- * way `NavItem` does it (UI-RULES §3), because a bare anchor would reload the
+ * way `NavItem` does it, because a bare anchor would reload the
  * app. Outside a router — a story, a test — it stays a plain anchor.
  *
  * A click on a chip is a click on the chip, not on the card under it: the card

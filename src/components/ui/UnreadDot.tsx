@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils'
  *
  * This was the same two lines in four files — `PersonRow`, `ConversationCard`,
  * `ReplyCard`, `HuddleCard` — before the Folder listing needed a fifth
- * (FOL-16), which is the moment UI-RULES §1 says it is a component. The package
+ * (FOL-16), which is the moment `.claude/rules/peek-ui.md` says it is a
+ * component. The package
  * has nothing for it yet; when it does, this file becomes a re-export.
  *
  * Purely visual: the row that draws it says "unread" in its own accessible

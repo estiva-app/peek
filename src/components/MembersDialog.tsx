@@ -128,8 +128,8 @@ export function MembersDialog({
     >
       {canAdd && (
         /*
-          A real button, not a `role="button"` div — 13.3, and `UI-RULES.md` §3
-          forbids the div by name. It was reachable by pointer only: no Tab stop,
+          A real button, not a `role="button"` div — 13.3, and the gate lint
+          (`estiva/no-rebuilt-behaviour`) refuses the div. It was reachable by pointer only: no Tab stop,
           no Enter, no Space.
 
           The package's `MenuItem` (UIG-3, Katerina's pick of 15 September).
