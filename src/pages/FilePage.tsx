@@ -22,14 +22,14 @@ import {
   useFollows,
   useForeignConversation,
   useOpenWorkFiles,
-  useTopics,
   useWorkspaceDirectory,
   type ConversationContainer,
   type ForeignConversationState,
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
-import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath, topicPath } from '@/lib/objectUrl'
+import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath } from '@/lib/objectUrl'
+import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useFolderPath } from '@/lib/useFolderPath'
 import { followInApp } from '@/lib/followInApp'
 import { referenceLink } from '@/lib/referenceLink'
@@ -78,11 +78,10 @@ import { KIND_TOPIC } from '@/nostr/foreign'
  * not checked here: one nobody declares resolves over every declared kind,
  * so a link with a word Peek has not heard of still opens the file it names.
  *
- * The short form used to be the Convex channel topic's. Those now live at
- * `/topic-old/`, and a link that still names one — its uuid is a channel's, and
- * `TOPICS` holds it as a `folderId` — is sent there rather than resolved as a
- * file it can never be: a migrated topic's file got a fresh uuid (FOL-25), so
- * no `d` is both.
+ * The short form used to be the Convex channel topic's. A link that still names
+ * one — its uuid is a channel's, and `legacyTopicLinks` holds it — is sent on
+ * to that topic's file (FOL-26) rather than resolved as a file it can never be:
+ * a migrated topic's file got a fresh uuid (FOL-25), so no `d` is both.
  *
  * ## Reading marks the file, and nothing else
  *
@@ -99,20 +98,19 @@ export function FilePage() {
     A topic is not a file page. A `39000:` address resolves — it is a real
     addressable event — but its conversation is `kind:9` messages carrying `h`
     and no `a`, so this page would draw it as a file nobody has said anything
-    about. `/topic-old/<uuid>` is where a topic is read, and `TopicsPage`
-    canonicalises the URL once it knows the title. Decided before the read, so
-    the redirect costs no round trip.
+    about. A retired topic's channel lands on the file its conversation moved
+    to, and any other channel — a team — on its Folder (FOL-26). Decided before
+    the read, so the redirect costs no round trip.
   */
   const topicIdentifier = address?.startsWith(`${KIND_TOPIC}:`) ? address.split(':')[2] : null
   /*
     The short form: a `d` and nothing else (FOL-37). A Convex topic's link
     carried a channel uuid in the same position, so the uuid is first tried
-    against the topics list — in memory already, no read — and only a uuid no
-    topic owns is looked up as a file.
+    against the retired topics' table — in the bundle, no read — and only a
+    uuid no topic owned is looked up as a file.
   */
   const identifier = ref && !address ? identifierFromRef(ref) : null
-  const topics = useTopics()
-  const legacyTopic = identifier ? topics?.find((t) => t.folderId === identifier) : undefined
+  const legacyTopic = identifier ? legacyTopicByChannel(identifier) : undefined
   const shortForm = useFileAddress(word, legacyTopic ? null : identifier)
   const fileAddress = topicIdentifier
     ? null
@@ -378,9 +376,9 @@ export function FilePage() {
     ? () => (inOpenWork ? openWorkFiles.remove(file.address!) : openWorkFiles.add(file.address!))
     : undefined
 
-  if (topicIdentifier) return <Navigate to={`/topic-old/${topicIdentifier}`} replace />
-  // A Convex topic's old short link: the same page it always opened, at its new prefix.
-  if (legacyTopic) return <Navigate to={`${topicPath(legacyTopic)}${location.search}`} replace />
+  if (topicIdentifier) return <Navigate to={channelDestination(topicIdentifier)} replace />
+  // A Convex topic's old short link: the file its conversation moved to.
+  if (identifier && legacyTopic) return <Navigate to={channelDestination(identifier)} replace />
 
   if (!address && !identifier) {
     return (

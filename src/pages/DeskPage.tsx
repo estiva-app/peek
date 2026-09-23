@@ -60,7 +60,6 @@ export function DeskPage() {
   const { entries: starredAll, isDmStarred, isTopicStarred, toggleDm, toggleTopic, isLoading: starredLoading } = useStarred()
   const deskLoading = useDeskLoading()
   const actions = usePeekActions()
-  const TOPICS = useTopics()
   const createTopicFromDm = useCreateTopicFromDm()
   const isTopicResolved = useIsTopicResolved()
   const allScreenerItems = useScreenerItems()
@@ -176,11 +175,13 @@ export function DeskPage() {
     actions.snoozeScreenerItem(id, untilMs)
   }
 
-  const selectTopic = (topicId: string, section: SectionKey) => {
-    const topic = TOPICS?.find((t) => t.id === topicId)
-    if (!topic) return
-    setSelected({ kind: 'topic', topicId, topicTitle: topic.title, topicResolved: isTopicResolved(topicId), section })
-  }
+  /*
+    A topic opens on the file its conversation moved to (FOL-26), not beside
+    the list: the Topics view is retired, and it was the one surface here that
+    could still reach a topic's rename, delete, member and huddle writes.
+    `pathForTopic` goes by `/topic-old/`, which redirects to the file.
+  */
+  const selectTopic = (topicId: string) => navigate(pathForTopic(topicId))
   const selectDm = (dmId: string, fallbackName: string, section: SectionKey) => {
     const dmName = dmNameById(dmId) ?? fallbackName
     setSelected({ kind: 'dm', dmId, dmName, section })
@@ -335,7 +336,7 @@ export function DeskPage() {
                 isUnread: true,
                 isUrgent: true,
                 isSelected: selectionAnchor === 'urgent' && selected?.kind === 'topic' && selected.topicId === item.topicId,
-                onClick: () => selectTopic(item.topicId, 'urgent'),
+                onClick: () => selectTopic(item.topicId),
               },
         )}
         openWork={openWorkItems.map((item) =>
@@ -370,7 +371,7 @@ export function DeskPage() {
                 isResolved: isTopicResolved(item.topicId),
                 isUnread: (showTopicUnreads && topicHasUnread(item.topicId)) || Boolean(item.isUnread),
                 isSelected: selectionAnchor === 'openWork' && selected?.kind === 'topic' && selected.topicId === item.topicId,
-                onClick: () => selectTopic(item.topicId, 'openWork'),
+                onClick: () => selectTopic(item.topicId),
                 onRemove: () => dismissOpenWork(item.id),
               },
         )}
@@ -392,7 +393,7 @@ export function DeskPage() {
                 isResolved: isTopicResolved(entry.topicId),
                 isUnread: (showTopicUnreads && topicHasUnread(entry.topicId)) || Boolean(entry.isUnread),
                 isSelected: selectionAnchor === 'starred' && selected?.kind === 'topic' && selected.topicId === entry.topicId,
-                onClick: () => selectTopic(entry.topicId, 'starred'),
+                onClick: () => selectTopic(entry.topicId),
               },
         )}
         onAddToOpenWork={() => setShowAddToOpenWork(true)}

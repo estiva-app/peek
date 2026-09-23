@@ -5,6 +5,7 @@ import { useForeignObjects } from '@/api'
 import type { ReferencePlace } from '@/nostr/foreign'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
+import { channelDestination } from '@/lib/legacyTopicLinks'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 /**
@@ -16,9 +17,9 @@ import { EmptyState } from '@/components/ui/EmptyState'
  * failure mode §13.6 describes: *renders fine, quietly does less.*
  *
  * This route exists to make the claim true. It resolves the reference to a
- * place and hands off to the page that owns it — the canonical topic URL for
- * a Topic or a Message, which `TopicsPage` already owns; the file's own page
- * for anything else (FOL-19), which `FilePage` owns. It deliberately renders
+ * place and hands off to the page that owns it — the file's own page (FOL-19),
+ * which `FilePage` owns, and for a channel or a message said in one, the file a
+ * retired topic moved to or else the channel's Folder (FOL-26). It deliberately renders
  * nothing of its own beyond the two states a person needs to tell apart.
  *
  * **A reference Peek cannot open says so.** Another app's `naddr` is a valid
@@ -100,9 +101,9 @@ export function ObjectPage() {
     const thread = state.thread ? `?thread=${encodeURIComponent(state.thread)}` : ''
     return <Navigate to={`${filePath(state.file)}${thread}`} replace />
   }
-  // `/topic-old/<uuid>` without a slug: TopicsPage canonicalises the URL once the
-  // topic resolves and it knows the title, exactly as it does for a legacy link.
-  return <Navigate to={`/topic-old/${state.folder}`} replace />
+  // A channel, or something said in one: a retired topic's lands on the file its
+  // conversation moved to, and a team's on its Folder (FOL-26).
+  return <Navigate to={channelDestination(state.folder)} replace />
 }
 
 /**

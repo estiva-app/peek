@@ -357,11 +357,20 @@ describe('FilePage opens a file by address, not against the listing', () => {
     expect(screen.getByText('That link does not point at anything Peek can open.')).toBeInTheDocument()
   })
 
-  it('sends a topic address to the topic page rather than drawing it as a file', () => {
+  it('sends a retired topic’s channel address to the file its conversation moved to', () => {
     // A `39000:` resolves — it is a real event — but its conversation is
-    // `kind:9` under `h`, which no `#a` read returns. It has its own page.
+    // `kind:9` under `h`, which no `#a` read returns. Drawn as a file it would
+    // be an empty one; FOL-26 sends it where the conversation is.
     mount(`/topic/39000:${CATH}:${FOLDER}`)
-    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/${FOLDER}`)
+    expect(screen.getByTestId('url').textContent).toBe(
+      '/topic/30850:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:f3652427-fcf5-4777-86a2-1dd4ee1f3808',
+    )
+  })
+
+  it('sends any other channel address — a team — to its Folder', () => {
+    const PEEK_TEAM = 'fd03975a-eb00-49d6-a4b7-33ead1854672'
+    mount(`/topic/39000:${CATH}:${PEEK_TEAM}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${PEEK_TEAM}`)
   })
 })
 
@@ -406,10 +415,14 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     expect(screen.queryByText('That link does not point at anything Peek can open.')).toBeNull()
   })
 
-  it('sends an old /topic/<slug>-<channel-uuid> link — a Convex topic — to /topic-old/', () => {
-    convexTopics.list = [{ id: '7', title: 'Office layout', folderId: FOLDER }]
+  it('sends an old /topic/<slug>-<channel-uuid> link — a retired topic — to its file, without Convex', () => {
+    // FOLDER is "Claude on Estiva / Estiva Steer", whose conversation is on the
+    // Ship project in its channel (FOL-26's table). Convex's topic list is
+    // empty here, so this is answered from the bundle.
     mount(`/topic/whatever-${FOLDER}?huddle=h1`)
-    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/office-layout-${FOLDER}?huddle=h1`)
+    expect(screen.getByTestId('url').textContent).toBe(
+      '/topic/30850:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:f3652427-fcf5-4777-86a2-1dd4ee1f3808',
+    )
     expect(writes.resolveFileAddress).not.toHaveBeenCalled()
   })
 })
