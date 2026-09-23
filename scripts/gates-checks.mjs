@@ -134,7 +134,9 @@ export default function define(h) {
       // The adoption deleted these; the checks keep them deleted.
       { what: "Peek's own inline chip is gone", run: () => h.exists("src/components/ui/inlineChip.ts") ? h.FAIL("src/components/ui/inlineChip.ts is back: use the package's InlineChip") : h.PASS("src/components/ui/inlineChip.ts is gone") },
       { what: "Peek's own pending attachment chip is gone", run: () => h.exists("src/components/ui/PendingAttachmentChip.tsx") ? h.FAIL("src/components/ui/PendingAttachmentChip.tsx is back: use the package's AttachmentCard") : h.PASS("src/components/ui/PendingAttachmentChip.tsx is gone") },
-      { what: "a posted file is the package's AttachmentCard", run: () => h.contains("src/components/ui/FileAttachmentCard.tsx", /\bAttachmentCard\b/, "FileAttachmentCard.tsx draws AttachmentCard") },
+      // UIG-35 deleted FileAttachmentCard.tsx, and the card is drawn where it was
+      // wrapped: a check naming the deleted file could only ever fail.
+      { what: "a posted file is the package's AttachmentCard", run: () => h.contains("src/components/ConversationCard.tsx", /<AttachmentCard\b/, "ConversationCard draws the package's AttachmentCard") },
     ] },
     { ref: "UIG-29", title: "CommandLauncher — 1,655 lines that will fail almost every lint rule", owner: true, checks: [
       { what: "CommandLauncher passes the gate lint, with no escape still naming UIG-29", run: async () => {
