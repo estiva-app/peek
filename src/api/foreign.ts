@@ -39,6 +39,7 @@ import {
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
   resolveObjectAsViewer,
+  resolveObjectsAsViewer,
   searchMessagesAsViewer,
   threadsAsViewer,
   replyToCommentAsViewer,
@@ -107,6 +108,21 @@ export function useForeignObjects() {
     async (naddr: string): Promise<ForeignObject | null> => {
       const v = viewer()
       return v ? resolveObjectAsViewer(naddr, v.relayUrl, v.token) : null
+    },
+    [viewer],
+  )
+
+  /**
+   * Many references for one request (PER-10) — see `resolveObjectsAsViewer`.
+   * Every reference is a key; signed out, each is null, as `resolveObject`
+   * answers. Rejects when the relay refuses the read.
+   */
+  const resolveObjects = useCallback(
+    async (references: readonly string[]): Promise<Record<string, ForeignObject | null>> => {
+      const v = viewer()
+      return v
+        ? resolveObjectsAsViewer(references, v.relayUrl, v.token)
+        : Object.fromEntries(references.map((reference) => [reference, null]))
     },
     [viewer],
   )
@@ -339,6 +355,7 @@ export function useForeignObjects() {
 
   return {
     resolveObject,
+    resolveObjects,
     resolveFileAddress,
     resolveFileFolder,
     resolveFolderProject,
@@ -379,11 +396,15 @@ export function useForeignObjects() {
  * Nothing is asked for at all without a relay and a token (`hasConvex`, the
  * viewer), so tests, Storybook and no-backend checkouts settle immediately on
  * "resolved to nothing" rather than hanging on a request that cannot be made.
+ *
+ * One read for the whole list (PER-10), which matters more for Open work's
+ * files than for a body's two mentions: every address shares a POST. A refused
+ * read answers null for all of them, as a failed resolve did for each.
  */
 export function useResolvedReferences(
   references: readonly string[],
 ): Record<string, ForeignObject | null> {
-  const { resolveObject } = useForeignObjects()
+  const { resolveObjects } = useForeignObjects()
   const [objects, setObjects] = useState<Record<string, ForeignObject | null>>({})
   // The identity of the array changes on every render; the list of references
   // in a message does not. Keying the effect on the contents rather than the
@@ -395,19 +416,15 @@ export function useResolvedReferences(
     const refs = key ? key.split('\u0000') : []
     if (!refs.length) return
     let cancelled = false
-    Promise.all(
-      refs.map((ref) =>
-        resolveObject(ref)
-          .catch(() => null)
-          .then((object) => [ref, object] as const),
-      ),
+    resolveObjects(refs)
+      .catch(() => Object.fromEntries(refs.map((ref) => [ref, null])))
       // One setState for the whole body rather than one per reference: a
       // message with four mentions should not lay out four times.
-    ).then((entries) => !cancelled && setObjects(Object.fromEntries(entries)))
+      .then((objects) => !cancelled && setObjects(objects))
     return () => {
       cancelled = true
     }
-  }, [key, resolveObject])
+  }, [key, resolveObjects])
 
   /*
     Demo mode is derived, not set. There is no relay to ask without a

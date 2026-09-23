@@ -96,10 +96,11 @@ export interface ScreenerValue {
 /**
  * How often the file half re-reads while the Desk is visible (FOL-34).
  *
- * Slower than `REFRESH_INTERVAL_MS` because it costs one relay request per
- * followed file — `resolveObject` has no batched form — against a quota of 300
- * a minute per person that every open tab shares. Focus and visibility still
- * re-read at once, which is the moment somebody actually looks.
+ * Slower than `REFRESH_INTERVAL_MS` because it was one relay request per
+ * followed file, against a quota of 300 a minute per person that every open
+ * tab shares. Since PER-10 the whole set is one request, so this could come
+ * down; it has not, because nothing asked for fresher file rows. Focus and
+ * visibility still re-read at once, which is the moment somebody actually looks.
  */
 const FILE_REFRESH_MS = 60_000
 
@@ -107,14 +108,14 @@ const FILE_REFRESH_MS = 60_000
  * The followed files the Screener judges, read from the relay (FOL-34).
  *
  * A file's conversation never enters Convex, so this half has no server-side
- * candidates to fold: it asks the relay for each followed file directly — the
- * title and the top-level comments come back together from one read — and
- * `foldFileScreenerRows` decides which of them screen. `[]` until asked and
- * after a failed read: a missing file row is the quiet failure, and a Desk held
- * under a skeleton for a relay that is down is the loud one.
+ * candidates to fold: it asks the relay for the followed files directly — every
+ * file's title and top-level comments in one read (PER-10) — and
+ * `foldFileScreenerRows` decides which of them screen. `[]` until asked: a
+ * missing file row is the quiet failure, and a Desk held under a skeleton for a
+ * relay that is down is the loud one.
  */
 function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
-  const { resolveObject } = useForeignObjects()
+  const { resolveObjects } = useForeignObjects()
   /*
     Held per address, not per set. The set changes whenever a file enters or
     leaves open work — "Open" on a Screener row does exactly that — and holding
@@ -133,33 +134,25 @@ function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
   const read = useCallback(
     (asked: readonly string[]) => {
       if (!hasConvex || asked.length === 0) return
-      void Promise.all(
-        asked.map((address) =>
-          resolveObject(address)
-            .then((object): [string, ScreenerFile | null] => [
-              address,
-              object
-                ? {
-                    address,
-                    kind: object.kind,
-                    title: object.slots.title?.value ?? 'File',
-                    comments: object.comments,
-                  }
-                : null,
-            ])
-            // A failed read keeps what was held for the address rather than
-            // blanking its row on one bad request.
-            .catch((): [string, undefined] => [address, undefined]),
-        ),
-      ).then((answers) =>
-        setHeld((prev) => {
-          const next = { ...prev }
-          for (const [address, file] of answers) if (file !== undefined) next[address] = file
-          return next
-        }),
+      resolveObjects(asked).then(
+        (objects) =>
+          setHeld((prev) => {
+            const next = { ...prev }
+            for (const address of asked) {
+              const object = objects[address]
+              next[address] = object
+                ? { address, kind: object.kind, title: object.slots.title?.value ?? 'File', comments: object.comments }
+                : null
+            }
+            return next
+          }),
+        // A refused read keeps what was held rather than blanking every file
+        // row at once. Before PER-10 each resolve swallowed its own refusal as
+        // "no such file", so a rate-limited minute emptied the rows it hit.
+        () => {},
       )
     },
-    [resolveObject],
+    [resolveObjects],
   )
 
   // The set changed: ask only about what is not held yet.

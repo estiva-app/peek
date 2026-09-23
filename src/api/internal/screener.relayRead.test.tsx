@@ -80,12 +80,19 @@ let followed = new Set<string>()
 vi.mock('@/api/internal/follows', () => ({
   useFollows: () => ({ state: followsState, followed, isFollowed: (k: string) => followed.has(k), setFollowed: vi.fn() }),
 }))
-const resolveObject = vi.fn(async (address: string) => ({
+const fileObject = (address: string) => ({
   kind: 30840,
   slots: { title: { value: `Title of ${address.slice(-1)}` } },
   comments: [{ id: `c-${address}`, author: 'someone', body: `comment on ${address.slice(-1)}`, createdAt: 1_787_000_000 }],
-}))
-vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObject }) }))
+})
+let refuseReads = false
+const resolveObjects = vi.fn(async (addresses: readonly string[]) => {
+  if (refuseReads) throw new Error('rate_limited')
+  return Object.fromEntries(addresses.map((address) => [address, fileObject(address)]))
+})
+/** How many files were asked about, over every read — the cost PER-10 moved. */
+const filesAsked = () => resolveObjects.mock.calls.reduce((n, [addresses]) => n + addresses.length, 0)
+vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObjects }) }))
 const FRONTIER = { ready: true, marker: () => 1_786_999_000 }
 vi.mock('@/nostr/useReadStateSync', () => ({ useReadFrontier: () => FRONTIER }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }) }))
@@ -136,6 +143,7 @@ async function setup() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  refuseReads = false
   candidates = { containers: [screening('t1')] }
   dmRows = []
   topicSnoozes = []
@@ -163,14 +171,44 @@ describe('followed files (FOL-34)', () => {
     followed = new Set([A, B])
     const { result, rerender } = await setup()
     await waitFor(() => expect(fileRows(result.current.items)).toEqual([A, B].sort()))
-    expect(resolveObject).toHaveBeenCalledTimes(2)
+    expect(filesAsked()).toBe(2)
 
     openWorkFileAddresses = new Set([A])
     rerender()
     // Synchronously, with no read in between: B never left the screen.
     expect(fileRows(result.current.items)).toEqual([B])
     await act(async () => {})
-    expect(resolveObject).toHaveBeenCalledTimes(2)
+    expect(filesAsked()).toBe(2)
+  })
+
+  it('asks about every followed file in one read, not one each (PER-10)', async () => {
+    candidates = { containers: [] }
+    followsState = 'present'
+    const many = Array.from({ length: 12 }, (_, i) => `30840:${'a'.repeat(64)}:${i.toString(16)}`)
+    followed = new Set(many)
+    const { result } = await setup()
+    await waitFor(() => expect(fileRows(result.current.items)).toHaveLength(12))
+    expect(resolveObjects).toHaveBeenCalledTimes(1)
+    expect([...resolveObjects.mock.calls[0][0]].sort()).toEqual([...many].sort())
+
+    // A refresh is one more read for the whole set.
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    await waitFor(() => expect(resolveObjects).toHaveBeenCalledTimes(2))
+    expect(resolveObjects.mock.calls[1][0]).toHaveLength(12)
+  })
+
+  it('a refused refresh keeps the rows it held rather than blanking them', async () => {
+    candidates = { containers: [] }
+    followsState = 'present'
+    followed = new Set([A, B])
+    const { result } = await setup()
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([A, B].sort()))
+
+    refuseReads = true
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    await waitFor(() => expect(resolveObjects).toHaveBeenCalledTimes(2))
+    await act(async () => {})
+    expect(fileRows(result.current.items)).toEqual([A, B].sort())
   })
 })
 

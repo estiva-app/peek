@@ -55,6 +55,7 @@ import {
   listFolders,
   resolveForeignEvent,
   resolveForeignObject,
+  resolveForeignObjects,
   resolveManifest,
   type FolderContents,
   type FolderSummary,
@@ -382,6 +383,41 @@ export async function resolveObjectAsViewer(
     if (error instanceof RelayReadError) return null
     throw error
   }
+}
+
+/**
+ * A set of references in one read — PER-10.
+ *
+ * `resolveObjectAsViewer` is a request per reference, and the sets Peek keeps
+ * live re-read on every refresh: the Screener asked once per followed file,
+ * every minute, and that was 144 of an idle Desk's 194 requests in five
+ * minutes against a meter of 300 a minute that every tab shares. The addresses
+ * here go to interop's `resolveForeignObjects` together — one POST for the set
+ * and one people lookup. A pasted URL or an event reference has no address to
+ * pool, so each keeps the single path, where a failure loses only its own
+ * answer.
+ *
+ * **Throws `RelayReadError` when the pooled read is refused**, where the single
+ * form answers null. A set re-read on a timer must be able to keep what it held
+ * rather than blank every row at once; a caller that wants null catches it.
+ */
+export async function resolveObjectsAsViewer(
+  references: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<Record<string, ForeignObject | null>> {
+  const single = (reference: string) => /^https?:\/\//i.test(reference) || isEventReference(reference)
+  const addresses = references.filter((reference) => !single(reference))
+  const query = viewerQuery(relayUrl, token)
+  const [pooled, singles] = await Promise.all([
+    addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests) : {},
+    Promise.all(
+      references
+        .filter(single)
+        .map(async (reference) => [reference, await resolveObjectAsViewer(reference, relayUrl, token).catch(() => null)] as const),
+    ),
+  ])
+  return { ...pooled, ...Object.fromEntries(singles) }
 }
 
 /** `nostr:nevent1…`, `nostr:note1…`, or a bare 64-hex event id. */
