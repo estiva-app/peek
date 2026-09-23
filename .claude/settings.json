@@ -23,7 +23,11 @@
       "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(item.get\\('text',''\\)[:3000]\\) for item in data if item.get\\('type'\\)=='text']\")",
       "Bash(python3 -c \" import sys, json data = json.load\\(sys.stdin\\) for item in data: t = item.get\\('type',''\\) text = item.get\\('text',''\\) if t == 'text' and len\\(text\\) > 100: print\\(text[:5000]\\) print\\('---BREAK---'\\) \")",
       "Bash(python3 -c ':*)",
-      "Bash(wc -l /k/PeekApp/peek-app/src/data/*.ts)"
+      "Bash(wc -l /k/PeekApp/peek-app/src/data/*.ts)",
+      "Bash(npm run ui:find *)",
+      "Bash(npm --prefix * run ui:find *)",
+      "PowerShell(npm run ui:find *)",
+      "PowerShell(npm --prefix * run ui:find *)"
     ]
   },
   "hooks": {
