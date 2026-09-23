@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { JoinTopicBanner } from './JoinTopicBanner'
 
 const meta = {
-  title: 'Topics/JoinTopicBanner',
+  title: 'To be removed/JoinTopicBanner',
   component: JoinTopicBanner,
   decorators: [
     Story => (

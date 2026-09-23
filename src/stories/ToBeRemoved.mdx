@@ -8,8 +8,15 @@ Stories that are on their way out wait here until they are deleted, instead of
 disappearing inside somebody else's pull request. Katerina's idea, 22 September
 2026: a thing waiting to go should be visible, not quietly rotting where it is.
 
-**The components themselves all stay.** Nothing under this heading has been
-deleted from the app. Only its *story* is parked.
+**Two different things wait here, and the table says which.** Most are
+components that stay — the app still draws them, and only the *story* is
+parked, because Katerina wanted to look at the picture again before deciding.
+One, `JoinTopicBanner`, is dead code: nothing in the app uses it, and it is
+here to be **deleted**, not to be reconsidered.
+
+The distinction matters when you clear this heading. Parking a story changes
+nothing a person can see; deleting the component changes the app. Read the
+**Why** column before you act on a row.
 
 ## The rule
 
@@ -28,6 +35,7 @@ It sorts last, under everything of Peek's own.
 | `AttachmentChips` | UIG-17 | 2026-09-22 | Her review, 22 September. **See the cost below.** |
 | `HighlightButton` | UIG-17 | 2026-09-22 | Her review, 22 September. |
 | `ReadStatePanel` | UIG-17 | 2026-09-22 | A developer's readout, not a design. It was the only thing under a `Diagnostics` heading, which is gone with it. |
+| `JoinTopicBanner` | UIG-17 | 2026-09-23 | **Going, not parked — the component too.** Unused since CON-8: `ReadOnlyTopicBanner` took its place in `useTopicView`, and nothing else drew it. Katerina's call, 23 September. |
 
 ## One cost, flagged rather than buried
 
