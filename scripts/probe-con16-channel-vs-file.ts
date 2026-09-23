@@ -13,6 +13,7 @@
  */
 import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
+import { ACCEPTED_CHANNEL_ONLY } from './con4-discarded.js'
 
 const CONVEX = process.env.CONVEX_URL ?? 'https://honorable-guineapig-592.eu-west-1.convex.cloud'
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
@@ -174,6 +175,7 @@ async function main() {
     'topic'.padEnd(46) + 'chan  onRelay  copies  file?  ORPHANED-IF-DELETED',
   )
   let orphanTotal = 0
+  let acceptedTotal = 0
   const rowsOut: Array<[string, number]> = []
   for (const tp of topics.slice().sort((a, b) => a.title.localeCompare(b.title))) {
     const h = tp.channelUuid
@@ -190,6 +192,7 @@ async function main() {
     const hasFile = fileTitles.has(tp.title.trim().toLowerCase())
     const orphan = Math.max(0, events.length - copies)
     orphanTotal += orphan
+    acceptedTotal += Math.min(orphan, events.filter((e) => ACCEPTED_CHANNEL_ONLY[e.id]).length)
     rowsOut.push([tp.title, orphan])
     console.log(
       tp.title.slice(0, 44).padEnd(46) +
@@ -205,6 +208,10 @@ async function main() {
     `\nPublished messages readable ONLY under a topic channel (no file copy): ${orphanTotal}\n` +
       `These are already "in Buzz", so the census scores them 0 — but deleting the channel\n` +
       `(FOL-25 delete mode) or retiring the only view that reads them (FOL-26) loses them.\n`,
+  )
+  for (const [id, why] of Object.entries(ACCEPTED_CHANNEL_ONLY)) console.log(`accepted ${id.slice(0, 8)}: ${why}`)
+  console.log(
+    `channel-only, accepted excluded:   ${orphanTotal - acceptedTotal}  (${orphanTotal} − ${acceptedTotal} accepted)\n`,
   )
   console.log('worst first:')
   for (const [title, n] of rowsOut.sort((a, b) => b[1] - a[1]).slice(0, 10)) {
