@@ -160,9 +160,9 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
 
   /*
     A file's row is rendered from the relay, not from a workspace index: it has
-    no Convex id and no Convex copy (FOL-34). One `resolveObject` per file, once
-    per change to the set — a title is not something that needs a refresh, and
-    the unread badge is read separately, by the Desk, where it is drawn.
+    no Convex id and no Convex copy (FOL-34). One read for every file (PER-10),
+    once per change to the set — a title is not something that needs a refresh,
+    and the unread badge is read separately, by the Desk, where it is drawn.
   */
   const fileAddresses = useMemo(
     () => new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'file' ? [e.address] : []))),
