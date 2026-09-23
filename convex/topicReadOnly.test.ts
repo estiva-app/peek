@@ -94,13 +94,38 @@ describe('a topic is read-only in Convex', () => {
     })
   }
 
-  it('still takes a huddle message', async () => {
-    const t = convexTest(schema, modules)
-    await seed(t)
-    await t.withIdentity(asAda).mutation(api.messages.send, { parentKind: 'huddle', parentKey: 'h-1', seedKey: 'hm', body: 'hi' })
-    const rows = await t.run(async (ctx) => await ctx.db.query('messages').collect())
-    expect(rows.some((m) => m.seedKey === 'hm' && m.parentKind === 'huddle')).toBe(true)
-  })
+  /*
+    Huddles are disabled as well (Miky, 2026-09-23): nothing of a huddle is on
+    the relay, so each new row would be Convex's only copy.
+  */
+  const huddleRefused: [string, (t: ReturnType<typeof convexTest>) => Promise<unknown>][] = [
+    ['a huddle message', (t) =>
+      t.withIdentity(asAda).mutation(api.messages.send, { parentKind: 'huddle', parentKey: 'h-1', seedKey: 'hm', body: 'hi' })],
+    ['a new huddle', (t) =>
+      t.withIdentity(asAda).mutation(api.huddles.create, { topicKey: 'planning', seedKey: 'h-2', memberNames: ['Bea'] })],
+    ['a huddle promoted from a DM', (t) =>
+      t.withIdentity(asAda).mutation(api.huddles.createFromDm, { topicKey: 'planning', seedKey: 'h-3', originDmKey: 'bea', seedMessageKey: 'msg-1', memberNames: ['Bea'] })],
+  ]
+
+  for (const [what, write] of huddleRefused) {
+    it(`refuses ${what} and writes nothing`, async () => {
+      const t = convexTest(schema, modules)
+      await seed(t)
+      const before = await t.run(async (ctx) => ({
+        messages: await ctx.db.query('messages').collect(),
+        huddles: await ctx.db.query('huddles').collect(),
+        huddleMembers: await ctx.db.query('huddleMembers').collect(),
+      }))
+      await expect(write(t)).rejects.toThrow(/huddles are disabled/)
+      expect(
+        await t.run(async (ctx) => ({
+          messages: await ctx.db.query('messages').collect(),
+          huddles: await ctx.db.query('huddles').collect(),
+          huddleMembers: await ctx.db.query('huddleMembers').collect(),
+        })),
+      ).toEqual(before)
+    })
+  }
 
   it('still takes a DM', async () => {
     const t = convexTest(schema, modules)

@@ -347,7 +347,10 @@ export function useDmConversationView({
                   resolutionMessage={c.resolutionMessage}
                   nostrReferences={c.nostrReferences}
                   isSelected={threadConvId === c.id}
-                  showCreateTopic={!huddleContextByMessageId.has(c.id)}
+                  // "Start topic" promotes the DM into a Convex topic's huddle,
+                  // and both are disabled since CON-8 — the item would lead to
+                  // a topic nobody can post in.
+                  showCreateTopic={false}
                   dmContext={dmContext}
                   huddleContext={huddleContextByMessageId.get(c.id)}
                   onStartTopicFromDm={makeStartTopicHandler(c.id)}
@@ -385,7 +388,7 @@ export function useDmConversationView({
                   resolutionMessage={m.resolutionMessage}
                   nostrReferences={m.nostrReferences}
                   isSelected={threadConvId === m.id}
-                  showCreateTopic={!huddleContextByMessageId.has(m.id)}
+                  showCreateTopic={false}
                   dmContext={dmContext}
                   huddleContext={huddleContextByMessageId.get(m.id)}
                   onStartTopicFromDm={makeStartTopicHandler(m.id)}
