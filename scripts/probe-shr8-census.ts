@@ -268,11 +268,31 @@ async function main() {
   // An attachment is on the relay only if its message's event actually carries
   // an `imeta` describing it. Counting attachments on published messages would
   // report the mirror as working when no imeta was ever written.
+  //
+  // Since RFC 0.4 §7.2.1's 2026-09-23 amendment an edit may carry the set: the
+  // message's attachments are those of its author's latest `kind:40003` that
+  // carries any `imeta`, else its own. CON-5 repaired 62 that way, so reading
+  // only the original event would report every one of them as still missing.
+  const withFiles = items.filter((i) => i.attachments > 0 && i.eventId && found.has(i.eventId)).map((i) => i.eventId as string)
+  const edits: SignedEvent[] = []
+  for (const batch of chunk(withFiles, IDS_PER_FILTER)) {
+    const res = await query([{ kinds: [40003], '#e': batch, limit: 5000 }], t)
+    if (res.status !== 200) throw new Error(`/query edits: ${res.status} ${res.text.slice(0, 120)}`)
+    edits.push(...res.events)
+  }
+  const orderKey = (e: SignedEvent) => {
+    const ts = Number(e.tags.find((x) => x[0] === 'ts')?.[1])
+    return Number.isFinite(ts) && Math.floor(ts / 1000) === e.created_at ? ts : e.created_at * 1000
+  }
+  const imetaCount = (e: SignedEvent) => e.tags.filter((tag) => tag[0] === 'imeta').length
   const attachDescribed = items.reduce((n, i) => {
     if (i.attachments === 0 || !i.eventId) return n
     const e = found.get(i.eventId)
     if (!e) return n
-    return n + Math.min(i.attachments, e.tags.filter((tag) => tag[0] === 'imeta').length)
+    const latest = edits
+      .filter((x) => x.pubkey === e.pubkey && x.tags.some((tag) => tag[0] === 'e' && tag[1] === e.id) && imetaCount(x) > 0)
+      .sort((a, b) => orderKey(b) - orderKey(a) || (a.id < b.id ? 1 : -1))[0]
+    return n + Math.min(i.attachments, imetaCount(latest ?? e))
   }, 0)
   const attachOnRelay = items.filter(onRelay).reduce((n, i) => n + i.attachments, 0)
 
