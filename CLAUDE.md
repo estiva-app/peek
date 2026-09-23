@@ -1,7 +1,7 @@
 # Peek — the real app
 
 Peek is a team-communication app (DMs, Topics, Huddles, Screener, Desk).
-It runs at peek.estiva.app. How to run it here: `HOW-TO-RUN.md`.
+It runs at peek.estiva.app. How to run and check it: `README.md`.
 
 **The UI Guardrails project:** where it stands is `docs/GATES.md` §0 in the `estiva-ui` checkout beside this repository.
 `npm run gates:status` here shows Peek's part of it, read from the code.

@@ -14,8 +14,6 @@ npm run dev          # the app on http://localhost:5173
 npm run storybook    # the parts on http://localhost:6006
 ```
 
-`HOW-TO-RUN.md` says which backend the app talks to, and how to switch.
-
 ## Check it
 
 ```bash
