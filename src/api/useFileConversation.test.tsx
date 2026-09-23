@@ -48,6 +48,7 @@ const empty: FileConversation = {
   roots: [],
   replies: {},
   decorations: { byId: {}, reactionTargetsOmitted: 0 },
+  edits: {},
 } as unknown as FileConversation
 
 beforeEach(() => {

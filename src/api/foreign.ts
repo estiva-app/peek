@@ -28,7 +28,6 @@ import {
   type ReferencePlace,
   directoryAsViewer,
   conversationsAsViewer,
-  channelStreamsAsViewer,
   createFolderAsViewer,
   createTopicAsViewer,
   deleteFileAsViewer,
@@ -48,7 +47,7 @@ import {
   type FileThreads,
 } from '@/nostr/foreign'
 import { relayFailureKind } from '@/nostr/relayRead'
-import { rootOf, type StreamMessage } from '@/nostr/channelStreams'
+import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
@@ -169,18 +168,6 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  /**
-   * Every stream of every Folder listed — the read behind a team's dot
-   * (FOL-18). `{}` signed out, on the same terms as `conversations`: a Folder
-   * absent from the answer was not asked about, which is not "nothing new".
-   */
-  const channelStreams = useCallback(
-    async (folderIds: readonly string[]): Promise<Record<string, StreamMessage[]>> => {
-      const v = viewer()
-      return v ? channelStreamsAsViewer(folderIds, v.relayUrl, v.token) : {}
-    },
-    [viewer],
-  )
 
   const resolveFolderContents = useCallback(
     async (folder: string): Promise<FolderContents> => {
@@ -357,7 +344,6 @@ export function useForeignObjects() {
     resolveFolderProject,
     resolveFolderContents,
     conversations,
-    channelStreams,
     listFolders,
     createFolder,
     createTopic,

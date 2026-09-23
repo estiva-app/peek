@@ -38,6 +38,7 @@ const conversation = (over: Partial<FileConversation> = {}): FileConversation =>
   roots: [rootB, rootA],
   replies: { [rootA.id]: [reply] },
   decorations: { byId: {}, reactionTargetsOmitted: 0 },
+  edits: {},
   ...over,
 })
 
@@ -52,19 +53,26 @@ describe('project', () => {
   })
 
   it('shows the newest edit as the body and tells the card when it happened', () => {
-    const view = project(
-      conversation({
-        decorations: {
-          byId: { [rootA.id]: { edit: { body: 'First, corrected', at: T + 30, by: CATH }, reactions: [], resolutions: [] } },
-          reactionTargetsOmitted: 0,
-        },
-      }),
-      ME,
-      people,
-    )
+    const view = project(conversation({ edits: { [rootA.id]: { body: 'First, corrected', editedAt: T + 30 } } }), ME, people)
     expect(view.roots[0].body).toBe('First, corrected')
     expect(view.roots[0].editedAt).toBe((T + 30) * 1000)
     expect(view.roots[1].editedAt).toBeUndefined()
+  })
+
+  it("draws an edit's attachment set in place of the comment's own, and an attach-only edit unmarked (CON-5)", () => {
+    const own = { name: 'old.png', contentType: 'image/png', size: 1, sha256: 'old', mediaUrl: 'https://m/old' }
+    const added = { name: 'new.png', contentType: 'image/png', size: 2, sha256: 'new', mediaUrl: 'https://m/new' }
+    const withFile = { ...rootA, files: [own] }
+    const view = project(
+      conversation({ roots: [withFile, rootB], replies: { [rootA.id]: [reply] }, edits: { [rootA.id]: { body: 'First', files: [own, added] }, [reply.id]: { body: 'Agreed' } } }),
+      ME,
+      people,
+    )
+    expect(view.roots[0].files?.map((f) => f.sha256)).toEqual(['old', 'new'])
+    expect(view.roots[0].editedAt).toBeUndefined()
+    // An edit fold with no set leaves the comment's own files.
+    expect(view.byId[rootA.id].replies[0].files).toEqual([])
+    expect(project(conversation({ roots: [withFile] }), ME, people).roots[0].files?.map((f) => f.sha256)).toEqual(['old'])
   })
 
   it('groups reactions per emoji, marks the pill the viewer is in, and keeps every reaction for the toggle', () => {
