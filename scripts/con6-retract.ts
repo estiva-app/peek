@@ -246,7 +246,7 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
       }
       if (i.attachments && !on.some((e) => imetas(e) >= i.attachments)) {
         undescribed++
-        console.log(`  ${s.title}: row ${short(i.id)} has ${i.attachments} attachment(s) and no copy describing them`)
+        console.log(`  ${s.title}: row ${i.id} has ${i.attachments} attachment(s) and no copy describing them`)
       }
     }
   }
@@ -254,8 +254,11 @@ async function verify(query: ReturnType<typeof queryFn>, agent: string) {
   console.log(`  fol25-remigrate copies still answering: ${copiesLeft}`)
   console.log(`  rows with more than one copy:           ${duplicated}`)
   console.log(`  rows with no copy at their true time:   ${misdated}`)
-  console.log(`  rows whose attachments no copy names:   ${undescribed}`)
-  process.exitCode = copiesLeft || duplicated || misdated || undescribed ? 1 : 0
+  // Informational only: CON-5 described most attachments with kind:40003 edits,
+  // which this does not fold (the census does). `--apply` already refused to
+  // retract a copy whose replacement lacked an inline imeta for every file.
+  console.log(`  rows with no inline imeta for every attachment: ${undescribed}  (edits not folded; see probe-shr8-census.ts)`)
+  process.exitCode = copiesLeft || duplicated || misdated ? 1 : 0
 }
 
 async function main() {

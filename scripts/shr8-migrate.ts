@@ -967,12 +967,15 @@ async function migrate(agent: Signer, query: ReturnType<typeof queryFn>) {
 
       const accessToken = tokens.get(pk)
       // A row that already names an event names its `kind:9` in the channel.
-      // That pointer is what matches the two stores; a copy does not replace it.
-      if (accessToken && !item.eventId) {
+      // That pointer is what matches the two stores; a copy does not replace it
+      // — unless the event it names is a superseded copy, which con6-retract
+      // hides. CON-6 missed this for reply_1788446268359 and it went to bucket 3.
+      const owed = !item.eventId || s.superseded.some((e) => e.id === item.eventId)
+      if (accessToken && owed) {
         const err = await writeBack(item, r.id, accessToken)
         if (err) console.log(`    ${short(item.id)} → published ${short(r.id)} but the write-back errored: ${err}`)
       }
-      if (!item.eventId) pending.push({ item, eventId: r.id })
+      if (owed) pending.push({ item, eventId: r.id })
       else copiedOnly++
       await sleep(WRITE_GAP_MS)
     }
