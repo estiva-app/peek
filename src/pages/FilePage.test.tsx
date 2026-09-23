@@ -106,6 +106,8 @@ const writes = vi.hoisted(() => ({
   resolveObject: vi.fn(async () => null),
   renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
   deleteFile: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
+  // A record channel placed under its team (interop 0.28 `listedIn`), for FOL-4's typed-parent case.
+  listFolders: vi.fn(async () => [{ id: 'record-channel', listedIn: [FOLDER] }, { id: FOLDER, name: 'Folders', hasState: true }]),
   createTopic: vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }>>(
     async () => ({ ok: true, address: `30840:${'c'.repeat(64)}:new`, naddr: 'naddr1new' }),
   ),
@@ -1268,5 +1270,23 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
       hasState: true,
     })
     expect(follows.setFollowed).toHaveBeenCalledWith(`30840:${'c'.repeat(64)}:new`, true)
+  })
+
+  it('starts a topic inside a Ship project in the team that lists it, not in the project’s record channel', async () => {
+    /*
+      Production, "Conversation standard": the project's Folder is its own
+      `buzz-channel`, which has no state and is listed under Estiva HQ. The
+      first topic started there went into the record channel, where neither
+      the team's tree nor Ship's Related shows it.
+    */
+    objects.byAddress[PROJECT_ADDRESS] = { ...project, folder: 'record-channel' }
+    mount(`/topic/${PROJECT_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New topic inside' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Sub A' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
+    expect(writes.resolveFolderContents).toHaveBeenCalledWith(FOLDER)
+    expect(writes.createTopic).toHaveBeenCalledWith({ folder: FOLDER, title: 'Sub A', parent: PROJECT_ADDRESS, hasState: true })
   })
 })

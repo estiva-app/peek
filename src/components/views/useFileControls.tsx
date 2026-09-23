@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react'
-import { nestingOf } from '@estiva-app/interop'
+import { KIND_BARE_FILE, nestingOf } from '@estiva-app/interop'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { useFollows, useForeignObjects } from '@/api'
@@ -75,7 +75,7 @@ export function useFileControls({
   /** The dialogs, rendered by the page that owns them. */
   dialogs: ReactNode
 } {
-  const { renameFile, deleteFile, resolveFolderContents, applyAction, createTopic } = useForeignObjects()
+  const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic } = useForeignObjects()
   const follows = useFollows()
   const { showToast } = useToast()
   const [dialog, setDialog] = useState<
@@ -97,13 +97,27 @@ export function useFileControls({
       if (control !== 'move' && control !== 'inside') {
         return setDialog({ kind: 'details', file, editing: control === 'rename' })
       }
-      const team = file.folder
-      if (!team || (control === 'inside' && !canStartInside(file))) {
+      const own = file.folder
+      if (!own || (control === 'inside' && !canStartInside(file))) {
         return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
       }
       void (async () => {
         let contents: Awaited<ReturnType<typeof resolveFolderContents>>
+        let team = own
         try {
+          /*
+            A bare file's `h` is its team. Another kind's may not be: a Ship
+            project's Folder is its own record channel (its `buzz-channel`),
+            which has no state and is listed under the team that holds the
+            project (`listedIn`, interop 0.28). A topic started there went
+            into the record channel, where neither the team's tree nor Ship's
+            Related lists it — found on production on "Conversation standard"
+            (FOL-4). The team is the Folder that lists it, as SPEC §6.7 says.
+          */
+          if (file.kind !== KIND_BARE_FILE) {
+            const summary = (await listFolders())?.find((folder) => folder.id === own)
+            team = summary?.listedIn?.[0] ?? own
+          }
           contents = await resolveFolderContents(team)
         } catch {
           refuse('The team could not be read. Try again.')
@@ -122,7 +136,7 @@ export function useFileControls({
         setDialog({ kind: 'move', file: here, teamName, targets })
       })()
     },
-    [refuse, resolveFolderContents],
+    [refuse, resolveFolderContents, listFolders],
   )
 
   const move = async (file: ForeignObject, parent: string): Promise<boolean> => {
