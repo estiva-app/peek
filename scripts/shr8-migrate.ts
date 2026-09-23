@@ -70,6 +70,7 @@
 import { buildUnsignedAuthEvent, authorizationHeaderFor, publicKeyFromSecret, signEvent, toNostrSeconds } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import { DISCARDED, NO_FILE_TARGET, TEAMS } from './con4-discarded.js'
 
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
@@ -1201,9 +1202,14 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e instanceof Error ? e.message : e)
-  process.exit(1)
-})
+// Only when run, not when imported: `con6-retract.ts` reuses `survey` so that
+// it pairs copies exactly the way this script decided what was already done.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e instanceof Error ? e.message : e)
+    process.exit(1)
+  })
+}
 
-export { publish, sleep, stamp, MARK, migrated, origOf, tag, short, keySigner, tokenSigner }
+export { publish, sleep, stamp, MARK, migrated, origOf, tag, short, keySigner, tokenSigner, token, queryFn, survey, fileConversation, loadSigners }
+export type { Signer, Surface, Item }
