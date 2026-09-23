@@ -38,6 +38,11 @@ installWideFilterDiagnostic()
    sidebar did with a delivery `__wideFilters()` proved arrived. */
 import { installTeamUnreadDiagnostic } from '@/api/teamUnreadDiagnostic'
 installTeamUnreadDiagnostic()
+
+/* `window.__relayReads()` — see src/nostr/relayMeter.ts (PER-8): how many
+   requests this tab spent against the relay's per-minute meter, by shape. */
+import { installRelayReadsDiagnostic } from '@/nostr/relayMeter'
+installRelayReadsDiagnostic()
 export * from './huddles'
 export * from './messages'
 export * from './actions'
