@@ -25,12 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - run: npm ci
+      # Node and node_modules, from the cache when the lockfile is unchanged
+      # (PER-15). The checkout has to come first: the action is in the repo.
+      - uses: ./.github/actions/install
 
       # `npm run lint` is deliberately not a gate: it currently reports 79
       # pre-existing errors (mostly react-refresh/only-export-components), so
@@ -67,12 +64,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - run: npm ci
+      # Node and node_modules, from the cache when the lockfile is unchanged
+      # (PER-15). The checkout has to come first: the action is in the repo.
+      - uses: ./.github/actions/install
 
       - name: Test (shard ${{ matrix.shard }} of 4)
         run: npx vitest run --shard=${{ matrix.shard }}/4
@@ -92,12 +86,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - run: npm ci
+      # Node and node_modules, from the cache when the lockfile is unchanged
+      # (PER-15). The checkout has to come first: the action is in the repo.
+      - uses: ./.github/actions/install
 
       - name: Gate lint
         run: npm run lint:rules
@@ -130,12 +121,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - run: npm ci
+      # Node and node_modules, from the cache when the lockfile is unchanged
+      # (PER-15). The checkout has to come first: the action is in the repo.
+      - uses: ./.github/actions/install
 
       # Pushes the Convex backend *and* injects the matching VITE_CONVEX_URL
       # into the frontend build, in one step, so the two halves cannot drift.
