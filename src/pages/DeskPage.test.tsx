@@ -44,6 +44,12 @@ vi.mock('@/components/views/useDmConversationView', () => ({
   }),
 }))
 const openWork = vi.hoisted(() => ({ remove: vi.fn() }))
+/** A second Open work file, for the order test. */
+const SECOND = '30851:aa:issue-2'
+const desk = vi.hoisted(() => ({
+  openWork: [] as unknown[],
+  unread: {} as Record<string, boolean>,
+}))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   useUnread: () => ({ dmHasUnread: () => false }),
@@ -54,14 +60,9 @@ vi.mock('@/api', async () => ({
     isLoading: false,
   }),
   useDeskLoading: () => false,
-  useDeskItems: () => ({
-    openWork: [
-      { id: 'ow-issue', kind: 'file', address: ISSUE, title: 'Issue one', object: { ref: ISSUE, kind: 30851 } },
-    ],
-    urgent: [],
-  }),
+  useDeskItems: () => ({ openWork: desk.openWork, urgent: [] }),
   useScreenerItems: () => [],
-  useConversationBadges: () => ({ counts: {}, unread: {} }),
+  useLiveConversationBadges: () => ({ counts: {}, unread: desk.unread }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
   usePeekActions: () => ({ removeDmFromOpenWork: vi.fn() }),
 }))
@@ -96,9 +97,32 @@ function mount(url = '/app/desk') {
 const url = () => screen.getByTestId('url').textContent
 const deskWith = (address: string) => `/app/desk?${new URLSearchParams({ open: address })}`
 
+const openWorkFile = (address: string, title: string) => ({
+  id: `ow_file_${address}`,
+  kind: 'file',
+  address,
+  title,
+  object: { ref: address, kind: 30851 },
+})
+
 beforeEach(() => {
   pane.asked = []
   openWork.remove.mockClear()
+  desk.openWork = [openWorkFile(ISSUE, 'Issue one')]
+  desk.unread = {}
+})
+
+describe('Open work keeps the person’s order', () => {
+  it('does not move an unread file ahead of a read one, so reading it moves nothing', () => {
+    // It used to sort unread first: a file opened from the Screener drew first
+    // and dropped to last the moment it was read.
+    desk.openWork = [openWorkFile(ISSUE, 'Issue one'), openWorkFile(SECOND, 'Issue two')]
+    desk.unread = { [SECOND]: true }
+    mount()
+    const left = screen.getByTestId('left').textContent ?? ''
+    expect(left.indexOf('Issue one')).toBeGreaterThanOrEqual(0)
+    expect(left.indexOf('Issue one')).toBeLessThan(left.indexOf('Issue two'))
+  })
 })
 
 describe('Desk opens a file beside its lists (SID-3)', () => {

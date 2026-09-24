@@ -5,6 +5,7 @@ import { validToken } from '@/auth/estivaId'
 import { fileContext, PEEK_HORIZON_DAYS, threadContext } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { fileHasUnread } from './fileUnread'
+import { useChannelStreams } from './useChannelStreams'
 
 /**
  * The badges on a list of files: how many messages each conversation holds,
@@ -144,4 +145,35 @@ export function useConversationBadges(
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [held, frontier, follows.state, follows.isFollowed, key])
+}
+
+/**
+ * {@link useConversationBadges} for a list with no Folder of its own to take a
+ * signal from — the Desk's Open work, whose files come from anywhere.
+ *
+ * Without a `revision` the badges read once per set, so a comment that arrived
+ * after the Desk loaded never lit its row: the row looked read, and removing it
+ * from open work handed it to the Screener, which re-reads every minute and
+ * said, correctly, that it was not. The revision here is the newest message the
+ * tab's channel store holds for the files' Folders — the store the Folder dots
+ * already keep current from the socket and the catch-up — so a row re-reads
+ * exactly when something was said where it lives, and not on every store tick.
+ */
+export function useLiveConversationBadges(files: ForeignObject[] | undefined): {
+  counts: Record<string, number>
+  unread: Record<string, boolean>
+} {
+  const folders = useMemo(
+    () => [...new Set((files ?? []).flatMap((f) => (f.folder ? [f.folder] : [])))],
+    [files],
+  )
+  const { streams } = useChannelStreams(folders)
+  const revision = useMemo(() => {
+    let newest = 0
+    for (const messages of Object.values(streams)) {
+      for (const message of messages) if (message.at > newest) newest = message.at
+    }
+    return newest
+  }, [streams])
+  return useConversationBadges(files, revision)
 }
