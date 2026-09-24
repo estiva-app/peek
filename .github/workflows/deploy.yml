@@ -26,8 +26,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # Node and node_modules, from the cache when the lockfile is unchanged
-      # (PER-15). The checkout has to come first: the action is in the repo.
-      - uses: ./.github/actions/install
+      # (PER-15). estiva-foundation's action since PER-16, shared with Ship.
+      - uses: estiva-app/estiva-foundation/.github/actions/install@d4bfce573e813925d00f63be087555ea3dc76596
 
       # `npm run lint` is deliberately not a gate: it currently reports 79
       # pre-existing errors (mostly react-refresh/only-export-components), so
@@ -65,8 +65,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # Node and node_modules, from the cache when the lockfile is unchanged
-      # (PER-15). The checkout has to come first: the action is in the repo.
-      - uses: ./.github/actions/install
+      # (PER-15). estiva-foundation's action since PER-16, shared with Ship.
+      - uses: estiva-app/estiva-foundation/.github/actions/install@d4bfce573e813925d00f63be087555ea3dc76596
 
       - name: Test (shard ${{ matrix.shard }} of 4)
         run: npx vitest run --shard=${{ matrix.shard }}/4
@@ -87,8 +87,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # Node and node_modules, from the cache when the lockfile is unchanged
-      # (PER-15). The checkout has to come first: the action is in the repo.
-      - uses: ./.github/actions/install
+      # (PER-15). estiva-foundation's action since PER-16, shared with Ship.
+      - uses: estiva-app/estiva-foundation/.github/actions/install@d4bfce573e813925d00f63be087555ea3dc76596
 
       - name: Gate lint
         run: npm run lint:rules
@@ -122,8 +122,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # Node and node_modules, from the cache when the lockfile is unchanged
-      # (PER-15). The checkout has to come first: the action is in the repo.
-      - uses: ./.github/actions/install
+      # (PER-15). estiva-foundation's action since PER-16, shared with Ship.
+      - uses: estiva-app/estiva-foundation/.github/actions/install@d4bfce573e813925d00f63be087555ea3dc76596
 
       # Pushes the Convex backend *and* injects the matching VITE_CONVEX_URL
       # into the frontend build, in one step, so the two halves cannot drift.

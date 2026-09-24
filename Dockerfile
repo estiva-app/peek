@@ -1,6 +1,6 @@
 # Estiva Peek — production image.
 #
-# Unlike Estiva Ship, the build does **not** happen here. Peek's bundle is
+# The build does **not** happen here (nor, since PER-16, in Ship's). Peek's bundle is
 # produced by `npx convex deploy --cmd 'npm run build'`, which pushes the Convex
 # backend and injects the matching `VITE_CONVEX_URL` into the frontend in one
 # step — so the two halves cannot drift. That needs `CONVEX_DEPLOY_KEY` and
