@@ -5,7 +5,6 @@ import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { CURRENT_USER_NAME, useStarred, useDmChannels, useDmVisibility } from '@/api'
-import type { StartTopicResult } from '@/components/CreateTopicDialog'
 import { useFileConversationView } from './useFileConversationView'
 
 interface UseDmConversationViewArgs {
@@ -18,12 +17,6 @@ interface UseDmConversationViewArgs {
    * Convex rows; the relay read has none until read state is the blob (REM-5).
    */
   showUnreads?: boolean
-  /**
-   * Unused since REM-1: "Start topic" was hidden in DMs by CON-8 and the
-   * promoted-huddle context went with the Convex read. FOL-23 deletes the
-   * handlers that still pass it.
-   */
-  onStartTopicFromDm?: (dmId: string, dmName: string, seedMessageId: string, data: StartTopicResult) => void
   /**
    * Hide this DM from the viewer's sidebar (DMS-6). The page owns it because
    * hiding what you are looking at is followed by leaving it, and only the
@@ -63,7 +56,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
 
   // Opening the DM clears new-message state; opening a thread clears that
   // thread's new-reply state (§4.3).
-  useMarkRead('dm', dmId, threadConvId)
+  useMarkRead(dmId, threadConvId)
   /*
     Opening the DM also gives it a channel on the relay if it has none (DMS-3):
     a DM is a channel, so there is nowhere to send the first message until the

@@ -1,7 +1,9 @@
 /**
- * SID-3: a topic or a file on the Desk opens beside the lists, and the Desk
- * stays the page. Since FOL-26 a click had navigated through `/topic-old/` to
- * the file's page, which lit Topics on the rail and remounted the shell.
+ * SID-3: a file on the Desk opens beside the lists, and the Desk stays the
+ * page. Since FOL-26 a click had navigated to the file's page, which lit
+ * another app on the rail and remounted the shell. A Convex topic row opened
+ * the same way until FOL-23 took the topic rows away: a topic in somebody's
+ * stars or open work draws nothing now (`internal/starred.tsx`).
  *
  * The pane is `useFileView`, the relay conversation `FilePage` draws, and is
  * stood in for here: its own behaviour is `FilePage.test.tsx`'s. What this pins
@@ -15,8 +17,7 @@ import { DebugProvider } from '@/lib/debug'
 import { filePath } from '@/lib/objectUrl'
 import { DeskPage } from './DeskPage'
 
-/** "Widgets", a retired topic whose conversation moved to this file (the bundled table). */
-const WIDGETS_TOPIC = 't_1788532283888_1'
+/** "Widgets", a bare-file topic. */
 const WIDGETS_FILE = '30840:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:7a384136-31a6-4d91-80ac-1d599464d2f2'
 /** A file in Open work, a Ship issue say. */
 const ISSUE = '30851:aa:issue-1'
@@ -45,13 +46,9 @@ vi.mock('@/components/views/useDmConversationView', () => ({
 const openWork = vi.hoisted(() => ({ remove: vi.fn() }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
-  useUnread: () => ({ topicHasUnread: () => false, dmHasUnread: () => false }),
+  useUnread: () => ({ dmHasUnread: () => false }),
   useStarred: () => ({
-    entries: [
-      { id: 'star-widgets', kind: 'topic', topicId: WIDGETS_TOPIC, title: 'Widgets', topicStatus: 'unresolved' },
-      { id: 'star-ghost', kind: 'topic', topicId: 't_never_a_topic', title: 'Ghost', topicStatus: 'unresolved' },
-      { id: 'star-dm', kind: 'dm', dmId: 'dm-1', name: 'Ana' },
-    ],
+    entries: [{ id: 'star-dm', kind: 'dm', dmId: 'dm-1', name: 'Ana' }],
     isDmStarred: () => true,
     toggleDm: vi.fn(),
     isLoading: false,
@@ -66,12 +63,8 @@ vi.mock('@/api', async () => ({
   useScreenerItems: () => [],
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
-  usePeekActions: () => ({ removeTopicFromOpenWork: vi.fn(), removeDmFromOpenWork: vi.fn() }),
-  useIsTopicResolved: () => () => false,
-  useCreateTopicFromDm: () => () => ({ topicId: '' }),
-  useTopicLookup: () => () => undefined,
+  usePeekActions: () => ({ removeDmFromOpenWork: vi.fn() }),
 }))
-vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 vi.mock('@/layouts/AppShell', () => ({
   AppShell: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
     <div>
@@ -108,20 +101,13 @@ beforeEach(() => {
   openWork.remove.mockClear()
 })
 
-describe('Desk opens a topic or a file beside its lists (SID-3)', () => {
-  it('opens a starred topic on its file, in place, with a composer', () => {
-    mount()
-    fireEvent.click(screen.getByText('Widgets'))
-    expect(url()).toBe(deskWith(WIDGETS_FILE))
-    expect(screen.getByTestId('file-pane').dataset.address).toBe(WIDGETS_FILE)
-    expect(screen.getByLabelText('Composer')).toBeTruthy()
-  })
-
-  it('opens an Open work file in place rather than on its own page', () => {
+describe('Desk opens a file beside its lists (SID-3)', () => {
+  it('opens an Open work file in place, with a composer, rather than on its own page', () => {
     mount()
     fireEvent.click(screen.getByText('Issue one'))
     expect(url()).toBe(deskWith(ISSUE))
     expect(screen.getByTestId('file-pane').dataset.address).toBe(ISSUE)
+    expect(screen.getByLabelText('Composer')).toBeTruthy()
   })
 
   it('keeps the file open across a reload of the Desk URL', () => {
@@ -152,11 +138,5 @@ describe('Desk opens a topic or a file beside its lists (SID-3)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove from list' }))
     expect(openWork.remove).toHaveBeenCalledWith(ISSUE)
     expect(url()).toBe('/app/desk')
-  })
-
-  it('a topic id the table does not hold still goes where its old link lands', () => {
-    mount()
-    fireEvent.click(screen.getByText('Ghost'))
-    expect(url()).not.toMatch(/^\/app\/desk/)
   })
 })

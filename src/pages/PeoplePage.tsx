@@ -1,6 +1,6 @@
 import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, type ReactNode } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { useRailClosed } from '@/layouts/railClosed'
@@ -11,7 +11,6 @@ import { useDmConversationView } from '@/components/views/useDmConversationView'
 import {
   hasRelay,
   isPersonKey,
-  useCreateTopicFromDm,
   useDmChannels,
   useDmVisibility,
   useStarred,
@@ -21,10 +20,7 @@ import {
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
-import { useToast } from '@/lib/toast'
-import { useTopicPath } from '@/lib/useTopicPath'
 import { rememberRecent } from '@/lib/recents'
-import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
 /**
  * The People page: starred people and everyone in the workspace on the left,
@@ -34,10 +30,6 @@ export function PeoplePage() {
   const railClosed = useRailClosed()
   const { dmHasUnread, dmIsUrgent } = useUnread()
   const navigate = useNavigate()
-  const pathForTopic = useTopicPath()
-  const location = useLocation()
-  const { showToast } = useToast()
-  const createTopicFromDm = useCreateTopicFromDm()
   const { dmId: lastDmId, setLastDmId } = useLastSelection()
   const { id: routeId } = useParams<{ id: string }>()
   const { entries: starredEntries, isLoading: starredLoading } = useStarred()
@@ -63,23 +55,6 @@ export function PeoplePage() {
 
   const handleSelect = (id: string) => {
     navigate(`/app/people/${id}`)
-  }
-
-  const handleStartTopicFromDm = (dmId: string, dmName: string, seedMessageId: string, data: StartTopicResult) => {
-    const { topicId } = createTopicFromDm({
-      title: data.title,
-      dmId,
-      dmName,
-      invitees: data.invitees,
-      seedMessageId,
-    })
-    const previousPath = `${location.pathname}${location.search}`
-    navigate(pathForTopic(topicId))
-    showToast({
-      label: 'Topic created',
-      actionLabel: 'Back to conversation',
-      onAction: () => navigate(previousPath),
-    })
   }
 
   const starredDmItems: StarredItem[] = starredEntries
@@ -149,7 +124,6 @@ export function PeoplePage() {
     dmId: isDm ? selectedId : null,
     dmName: isDm ? selectedItem?.name : undefined,
     showUnreads,
-    onStartTopicFromDm: handleStartTopicFromDm,
     onHideDm: isDm && canHideDm(selectedId) ? () => hideDm(selectedId) : undefined,
   })
 

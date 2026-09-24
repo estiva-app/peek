@@ -206,11 +206,11 @@ describe('nothing PEE-4 built has changed (INT-2)', () => {
     // Results coexist with the offer — asking is a choice, not a mode you fall
     // into, and the search must still work while it is available.
     open()
-    await userEvent.type(input(), 'pipeline')
+    await userEvent.type(input(), 'designer')
 
     expect(await askRow()).toBeInTheDocument()
-    expect(screen.getByText('Topics')).toBeInTheDocument()
-    expect(screen.getByText('CI/CD pipeline stuck during build stage')).toBeInTheDocument()
+    expect(screen.getByText('People')).toBeInTheDocument()
+    expect(screen.getByText('Alice Johnson')).toBeInTheDocument()
   })
 
   it('never fires on its own when a search finds nothing', async () => {

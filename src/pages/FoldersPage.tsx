@@ -33,7 +33,6 @@ import {
   useFollows,
   useForeignObjects,
   useTeamUnread,
-  useTopics,
 } from '@/api'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -44,18 +43,17 @@ import { MoveFileDialog } from '@/components/MoveFileDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { TREE_FILTERS, type TreeFilter } from '@/components/views/treeFilter'
 import { useToast } from '@/lib/toast'
-import { filePath, topicPath } from '@/lib/objectUrl'
+import { filePath } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
 import { useFolderPath } from '@/lib/useFolderPath'
+import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 
 /**
  * `/app/folders` and `/app/folders/:id` — navigation by Folder (RFC 0.4 §4).
  *
- * **Added beside the topic model, not on top of it.** Peek's topic routes,
- * `useTopicPath` and the whole `@/api` topic seam are untouched: a Folder is a
- * second way into the same relay, and RFC 0.4 §11.1 is explicit that turning
- * topics into files under Folders is a separate and much larger change. This
- * page reads Folders and draws what is in them; nothing about a topic moves.
+ * It was added beside the Convex topic model; that model is gone (FOL-26
+ * retired its view, FOL-23 its code), and a topic is a file under a Folder
+ * (RFC 0.4 §11.1). This page reads Folders and draws what is in them.
  *
  * The left pane lists Folders by name; the right draws one Folder's contents,
  * whichever apps own them.
@@ -112,20 +110,19 @@ export function FoldersPage() {
 
   const selected = folders?.find((folder) => folder.id === id)
   /*
-    The Folder that is one of this Peek's topics.
+    The Folder that was one of Peek's old topics.
 
-    A topic's channel *is* its Folder (`Topic.folderId`), so every topic is in
-    the list on the left beside the Folders people made on purpose — and the
-    relay cannot tell them apart. Renaming or deleting it here reaches only the
-    relay: the Convex twin keeps the old name, or keeps the whole topic, which
-    then looks alive in Peek while every publish into it is refused and none
-    of its messages can be read by pointer. Fourteen topics were lost that way
-    in the two days after the delete shipped, and the dialog had promised that
-    nothing in the folder would be. So a topic's Folder is managed from the
-    topic, where the rename and the delete do both halves.
+    A topic's channel *is* its Folder, so the channels that outlived the topics
+    — the project channels and two test ones FOL-25 kept — are in the list on
+    the left beside the Folders people made on purpose, and the relay cannot
+    tell them apart. Renaming or deleting one here used to reach only the
+    relay while the Convex twin kept the topic, and fourteen topics were lost
+    that way. The twin is gone (FOL-23), but the channel still holds that
+    topic's conversation and a file now carries it, so it stays managed from
+    there: its name is shown rather than edited, and "Open" leads to where its
+    conversation went. `legacyTopicLinks` says which channels those are.
   */
-  const topics = useTopics()
-  const topic = topics?.find((t) => t.folderId === id)
+  const topic = id ? legacyTopicByChannel(id) : undefined
 
   /*
     Follow / unfollow the Folder itself (FOL-30): that is its general stream —
@@ -194,10 +191,9 @@ export function FoldersPage() {
               title={
                 topic ? (
                   /*
-                    A topic's name is the topic's to change: its rename writes
-                    Convex and the relay together, and a rename here would move
-                    only the relay's half. A string title wears the same
-                    `text-body-2-strong` as the editable one below.
+                    An old topic's name is not changed here — see `topic`
+                    above. A string title wears the same `text-body-2-strong`
+                    as the editable one below.
                   */
                   topic.title
                 ) : (
@@ -260,11 +256,9 @@ export function FoldersPage() {
                   )}
                   {topic ? (
                     /*
-                      Not a delete. Deleting a topic is the topic's own action,
-                      which removes its rows and then its channel; a channel
-                      delete from here would leave the topic standing in Peek
-                      with its relay half gone. The way to that action is the
-                      only thing offered.
+                      Not a delete: the channel holds an old topic's
+                      conversation — see `topic` above. Where that
+                      conversation went is the only thing offered.
 
                       A link that looks like the strip's buttons (UIG-14, F3):
                       a new tab works, and the arrow keys still reach it.
@@ -272,8 +266,8 @@ export function FoldersPage() {
                     <ToolbarLink
                       tooltip="Open topic"
                       aria-label="Open this folder's topic"
-                      href={topicPath(topic)}
-                      onClick={(event) => followInApp(event, () => navigate(topicPath(topic)))}
+                      href={channelDestination(topic.channel)}
+                      onClick={(event) => followInApp(event, () => navigate(channelDestination(topic.channel)))}
                     >
                       <IconArrowUpRight size={16} stroke={1.5} />
                     </ToolbarLink>

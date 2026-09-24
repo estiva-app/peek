@@ -8,7 +8,7 @@ import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
-import { hasConvex, useIsTopicResolved } from '@/api'
+import { hasConvex } from '@/api'
 import { previewText } from '@/lib/textParsing'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
 
@@ -31,22 +31,18 @@ interface ScreenerItemProps {
 /** A single incoming item in the Desk Screener: who/what it is, a two-line preview,
  *  and the Open / Later / ✕ Dismiss triage actions. Rendered by ScreenerSection. */
 export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: ScreenerItemProps) {
-  const isTopicResolved = useIsTopicResolved()
-
   const row = (
     <div className="flex flex-col p-2 rounded-lg transition-colors hover:bg-bg-hover has-[button:hover]:bg-transparent">
       {/* Item header */}
       <div className="flex items-center gap-2">
-        {item.kind === 'topic' ? (
-          <TopicState type="topic" status={isTopicResolved(item.topicId) ? 'resolved' : 'unresolved'} />
-        ) : item.kind === 'file' ? (
+        {item.kind === 'file' ? (
           // The tree's glyph rule: a bare-file topic draws as a topic, anything else as a file.
           <TopicState type={item.fileKind === KIND_BARE_FILE ? 'topic' : 'file'} />
         ) : (
           <Avatar size={16} src={item.authorAvatarSrc} alt={item.authorName} />
         )}
         <span className="text-body-2-strong text-text-primary truncate">
-          {item.kind === 'topic' ? item.topicTitle : item.kind === 'file' ? item.title : item.authorName}
+          {item.kind === 'file' ? item.title : item.authorName}
         </span>
       </div>
 

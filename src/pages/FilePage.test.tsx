@@ -21,6 +21,7 @@ import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } from '@/lib/lastSelection'
 import { resetRecentsForTests } from '@/lib/recents'
 import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
+import { channelDestination } from '@/lib/legacyTopicLinks'
 import { FilePage } from './FilePage'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -123,8 +124,6 @@ const writes = vi.hoisted(() => ({
   resolveFolderContents: vi.fn(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] })),
 }))
 const toasts = vi.hoisted(() => ({ shown: [] as { label: string; type?: string }[] }))
-/** The Convex topics still on the listing — none unless a test says so. */
-const convexTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; folderId: string }[] }))
 /**
  * The short form's seam, stood in for (FOL-37): the addresses the page has
  * remembered, and a hook that asks `writes.resolveFileAddress` for the rest.
@@ -218,11 +217,7 @@ vi.mock('@/api', async () => ({
     isFollowed: (key: string) => follows.keys.has(key),
     setFollowed: follows.setFollowed,
   }),
-  // The tree's "Open folder" asks whether a Folder is one of Peek's topics;
-  // the page asks whether a short link's uuid is one's channel (FOL-37).
-  useTopics: () => convexTopics.list,
   useWorkspaceDirectory: () => undefined,
-  useIsTopicResolved: () => () => false,
   // The Activity column names the file a mention was said on by resolving it.
   useResolvedReferences: (refs: readonly string[]) =>
     Object.fromEntries(refs.map((ref) => [ref, objects.byAddress[ref] ?? null])),
@@ -339,7 +334,6 @@ beforeEach(() => {
   writes.resolveFileAddress.mockClear()
   writes.resolveObject.mockClear()
   shortForm.known.clear()
-  convexTopics.list = []
   toasts.shown = []
   peekView.args = []
   mentions.byAddress = {}
@@ -1305,7 +1299,9 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
       'Brief',
       'Notes',
     ])
-    expect(crumbs[0]).toHaveAttribute('href', `/app/folders/${FOLDER}`)
+    // `FOLDER` is a retired topic's channel, so its crumb leads where the
+    // topic went, as every link to that channel does (FOL-26).
+    expect(crumbs[0]).toHaveAttribute('href', channelDestination(FOLDER))
   })
 
   it('draws no trail for a file at the top', () => {

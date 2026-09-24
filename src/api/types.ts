@@ -23,3 +23,13 @@ export type {
   DocumentFile,
   FileItem,
 } from '@/data/filesData'
+
+/**
+ * What came of a rename.
+ *
+ * `null` is clean. The two failures are **not** the same thing and must not
+ * look the same: an `error` means nothing changed, and a `warning` means the
+ * object *was* renamed but not everywhere. Collapsing them showed a red message
+ * under a rename that had plainly worked (Katerina, 2026-08-20).
+ */
+export type RenameOutcome = null | { kind: 'error' | 'warning'; message: string }

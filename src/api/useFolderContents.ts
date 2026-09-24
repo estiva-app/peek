@@ -8,7 +8,6 @@ import {
   type RelayFailureKind,
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
-import { peekLiveTopics } from '@/nostr/liveTopics'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
@@ -34,8 +33,9 @@ import { useListing } from '@/platform/useListing'
  *
  * Same shape as `useFolderProject` and for the same reason: this reads a relay
  * over HTTP, which Convex's reactive layer cannot do, so it reflects the moment
- * it resolved. The socket drives a re-read and the refresh triggers are the
- * fallback.
+ * it resolved. The refresh triggers re-read it. A socket signal used to as
+ * well, but it came from the Convex live projection, which only ever watched a
+ * topic's channel, and went with it in FOL-23.
  */
 export type FolderContentsState =
   | FolderContents
@@ -113,13 +113,6 @@ export function useFolderContents(folder: string | null | undefined): {
   useEffect(() => {
     if (folder) void folderContentsCache.revalidate(folder, () => load(folder))
   }, [folder, load])
-
-  useEffect(() => {
-    if (!folder) return
-    const live = peekLiveTopics()
-    if (!live) return
-    return live.onForeignActivity(folder, () => void reload())
-  }, [folder, reload])
 
   useRefreshTriggers(() => {
     if (folder) void reload()

@@ -6,7 +6,7 @@
  * the app.
  */
 import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
@@ -49,9 +49,10 @@ describe('app smoke (seam wiring)', () => {
     expect(present('Desk')).toBeGreaterThan(0)
     expect(present('Open work')).toBeGreaterThan(0)
     expect(present('Starred')).toBeGreaterThan(0)
-    // Screener item (seeded) + Open work topics + a starred DM
-    expect(present('Updates on the new office layout')).toBeGreaterThan(0)
-    expect(present('Launch checklist for v2 of the mobile app')).toBeGreaterThan(0)
+    // A Screener DM, an Urgent DM and a starred DM — every row is a person's
+    // or a file's since the Convex topics went (FOL-23).
+    expect(present('Amie Miles')).toBeGreaterThan(0)
+    expect(present('Daniel Stanton')).toBeGreaterThan(0)
     expect(present('Greg Bothman')).toBeGreaterThan(0)
   })
 
@@ -89,13 +90,6 @@ describe('app smoke (seam wiring)', () => {
       expect(screen.queryByText('Ongoing onboarding issues')).toBeNull()
       expect(screen.queryByText(/Funnel data is in/)).toBeNull()
       expect(present(/does not point at anything Peek can open/)).toBeGreaterThan(0)
-    })
-
-    it('opens a Desk topic on its URL rather than beside the list', () => {
-      renderApp('/app/desk')
-      fireEvent.click(screen.getAllByText('Launch checklist for v2 of the mobile app')[0])
-      expect(currentUrl()).not.toBe('/app/desk')
-      expect(screen.queryByText(/Funnel data is in/)).toBeNull()
     })
 
     /** A short link whose uuid is no topic's is a file's, and stays on the file

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import type { People } from '@estiva-app/interop'
-import { useIsTopicResolved } from '@/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { WithTooltip } from '@estiva-app/ui'
 import { MessageBody } from '@/components/ui/MessageBody'
@@ -51,7 +50,6 @@ export function CommentRow({
   below?: ReactNode
   className?: string
 }) {
-  const isTopicResolved = useIsTopicResolved()
   const profile = people?.[comment.author]
   /*
     A shortened key, not "Unknown". Whoever wrote this has an identity even when
@@ -83,7 +81,7 @@ export function CommentRow({
             </WithTooltip>
             {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
           </header>
-          <MessageBody body={comment.body} isTopicResolved={isTopicResolved} />
+          <MessageBody body={comment.body} />
           {below && <div className="mt-1 flex items-center gap-2">{below}</div>}
         </div>
       </div>

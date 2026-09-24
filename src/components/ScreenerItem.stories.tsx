@@ -30,7 +30,7 @@ const meta = {
       the conversation, which needs a backend, so a story that hands over
       nothing shows nothing on hover and reads as a broken behaviour.
     */
-    preview: <ScreenerPreviewCardView isTopicResolved={() => false} rows={SCREENER_PREVIEW_ROWS} />,
+    preview: <ScreenerPreviewCardView rows={SCREENER_PREVIEW_ROWS} />,
   },
   argTypes: {
     item: { control: false },

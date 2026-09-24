@@ -4,10 +4,9 @@ import type { RelayState } from '@estiva-app/protocol'
 
 /*
   FOL-32 — a file page re-reads when the socket says something was said about
-  the file, and its interval idles while the socket is live. The socket is the
-  seam `useTopicUnread.test.tsx` fakes, one level down: `getLiveTopics` rather
-  than `peekLiveTopics`, because a file page opened from a link may be the first
-  thing in the tab to want the connection.
+  the file, and its interval idles while the socket is live. The socket is
+  faked at `getLiveTopics`, because a file page opened from a link may be the
+  first thing in the tab to want the connection.
 */
 const live = vi.hoisted(() => ({
   state: 'connecting' as RelayState,
@@ -35,12 +34,7 @@ vi.mock('./liveTopics', () => ({
     },
   }),
 }))
-vi.mock('@/api/store', () => ({ hasConvex: true }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
-vi.mock('convex/react', () => ({
-  useConvex: () => ({ action: vi.fn() }),
-  useQuery: () => ({ relayUrl: 'https://relay.test' }),
-}))
 
 import { LIVE_FILE_SETTLE_MS, useLiveFile } from './useLiveFile'
 

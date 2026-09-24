@@ -11,8 +11,7 @@ description: Use to prove a Peek change works, either end to end in the running 
   points at the live Convex deployment (`honorable-guineapig-592`, the one
   peek.estiva.app uses), so the app runs in **Convex mode** on the team's
   real data. Convex labels it Development; it is still the live one.
-- **Never wipe, reseed or mutate the live deployment.** The seed and the
-  divergence trick below are for a deployment of your own only.
+- **Never wipe, reseed or mutate the live deployment.**
 - **It must be port 5173.** `redirect_uri` is compared exact-string against
   the app's registered list, so on 5174 the round trip dies at Estiva ID with
   `That redirect_uri is not registered for this app`. A stray earlier `vite`
@@ -40,25 +39,13 @@ description: Use to prove a Peek change works, either end to end in the running 
 - Put the driver script **inside the repo** (e.g. `.verify-drive.mjs`,
   delete after) — Node resolves `playwright-core` from the script's dir,
   not cwd.
-- URL routing: `/app/desk`, `/topics`, `/topics/:id`, `/app/people`, `/app/people/:id`; every file at `/<word>/<slug>-<d>` (FOL-39).
+- URL routing: `/app/desk`, `/app/folders`, `/app/people`, `/app/people/:id`; every file at `/<word>/<slug>-<d>` (FOL-39). `/topics` and `/topics/:id` only redirect (FOL-26).
 - Clicking a message card opens the thread panel (the card body is the
-  click target). Seeded bodies in `src/data/topicData.ts` make good
-  `getByText` anchors (e.g. t1_c1 "Hey everyone, our CI/CD pipeline…").
+  click target).
 
-## Server-side state divergence trick
-
-On a deployment of your own only — never `honorable-guineapig-592`.
-
-To prove remote-vs-mock precedence, mutate the deployment directly so the
-mock and the server disagree, then check which one renders:
-
-```
-npx convex run messages:editBody '{"key":"t1_c1","body":"MARKER …"}'
-```
-
-Always revert afterwards (original bodies are in `src/data/*`), or reseed:
-`npx convex run dev/seedDemo:seed '{"wipe": true}'` (dev-only; also resets
-any test topics/messages created while driving).
+The demo seed (`dev/seedDemo`) and the "mutate a message on the deployment"
+divergence trick that used to be here went with the Convex topics (FOL-23):
+both were built on topic rows.
 
 ## Auth (Estiva ID only, since PEEK-41)
 
@@ -139,12 +126,6 @@ Other consequences for driving the app:
   widgets — is inert without a token, and fails by rendering **nothing**
   rather than erroring. A quiet screen is the expected shape when unsigned,
   not a bug to chase.
-- **Reseed** (a deployment of your own only): `npx convex run dev/seedDemo:seedAs '{"pubkey": "<64 hex>", "wipe": true}'`
-  seeds the demo dataset and stamps *your* pubkey on the seed user Cath, so
-  signing in with Estiva ID lands you on her with the data behind you rather
-  than as a new person in an empty workspace. Take the pubkey from the stored
-  token (`sessionStorage`) or from your row in the `users` table.
-  Plain `seed` still works and leaves Cath unclaimed.
 
 ## Measure a story
 
@@ -160,6 +141,4 @@ version, or a file you replaced with a re-export.
 
 ## Gotchas
 
-- The seeded dataset may have accumulated extra records from earlier
-  manual testing (e.g. stray topics) — reseed if a clean baseline matters.
 - Screenshots: 1600×950 viewport matches the design reference well.

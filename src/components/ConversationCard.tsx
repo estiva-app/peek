@@ -8,25 +8,20 @@ import {
   IconAlertSquareRounded,
   IconChecks,
   IconArrowNarrowRight,
-  IconCircleDashed,
-  IconCircleCheck,
   IconDotsVertical,
 } from '@tabler/icons-react'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
 import { AttachmentCard, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { RouterLink } from './RouterLink'
 import { RepliesRow } from './ui/RepliesRow'
 import { Reaction as ReactionPill } from './ui/Reaction'
-import { TopicState } from './ui/TopicState'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ResolveDialog } from './ResolveDialog'
 import { ConfirmDelete } from './ConfirmDelete'
-import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
-import { PEOPLE, type Person } from '@/api'
+import { PEOPLE } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useIsTopicResolved, useCanUpload, isCurrentUser } from '@/api'
+import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -35,7 +30,6 @@ import { EditedMarker } from './ui/EditedMarker'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
-import { useTopicPath } from '@/lib/useTopicPath'
 import { useEditAttachments } from '@/lib/useEditAttachments'
 import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
@@ -66,8 +60,6 @@ interface ConversationCardProps {
   isResolved?: boolean
   resolvedBy?: string
   resolutionMessage?: string
-  isTopic?: boolean
-  topicTitle?: string
   highlightType?: HighlightType
   nostrReferences?: string[]
   /** Which block of the referenced object this is about — SPEC §13.6. */
@@ -77,14 +69,6 @@ interface ConversationCardProps {
   /** The message's files after an edit added or removed some — PEE-16. The
    *  whole list, and only when this edit changed it. */
   onFilesChange?: (files: FileAttachment[]) => void
-  showCreateTopic?: boolean
-  /** When set, the Start-topic dialog renders the DM-to-huddle privacy banner and pre-fills invite chips with these participants. */
-  dmContext?: { participants: Person[] }
-  /** When set, the topic-anchor block renders as a huddle anchor (lock icon + "Huddle in [Topic]" link) above the message.
-   *  `topicResolved` flips the dashed-circle icon to the green checkmark when every conv in that topic is resolved. */
-  huddleContext?: { topicId: string; topicTitle: string; topicResolved?: boolean }
-  /** Called when user confirms Start topic from a DM context. When provided, supersedes the in-place isTopic flip. */
-  onStartTopicFromDm?: (data: StartTopicResult) => void
   onResolvedChange?: (resolved: boolean, resolvedBy?: string, message?: string) => void
   onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   onDelete?: () => void
@@ -122,18 +106,12 @@ export function ConversationCard({
   isResolved: initialResolved = false,
   resolvedBy: initialResolvedBy = '',
   resolutionMessage: initialResolutionMessage = '',
-  isTopic: initialIsTopic = false,
   nostrReferences,
   nostrBlockId,
-  topicTitle: initialTopicTitle = '',
   highlightType,
   onHighlightChange,
   onBodyChange,
   onFilesChange,
-  showCreateTopic = true,
-  dmContext,
-  huddleContext,
-  onStartTopicFromDm,
   onResolvedChange,
   onReactionsChange,
   onDelete,
@@ -146,7 +124,6 @@ export function ConversationCard({
   className,
 }: ConversationCardProps) {
   const [isHovered, setIsHovered] = useState(false)
-  const pathForTopic = useTopicPath()
   // The ⋯ menu: the quick-menu's measured rect, or closed. The shared Menu
   // shell owns placement and every exit (2026-09-03).
   /* Not a rect any more, only whether the menu is open: the ⋯ menu owns its
@@ -350,15 +327,6 @@ export function ConversationCard({
     setResolutionMsg(initialResolutionMessage)
   }, [initialResolutionMessage])
 
-  // Topic state
-  const [isTopic, setIsTopic] = useState(initialIsTopic)
-  const [topicTitle, setTopicTitle] = useState(initialTopicTitle)
-  const [showTopicDialog, setShowTopicDialog] = useState(false)
-
-  // Resolved-state of any *referenced* topic (for inline [Topic] mentions and the
-  // topic-anchor icon). Reads runtime mutations so the icon reflects user changes.
-  const isTopicResolved = useIsTopicResolved()
-  /** Reply authors' faces, resolved as Peek's Avatar wrapper resolves any other. */
 
 
   const handleResolveConfirm = (message: string) => {
@@ -457,25 +425,6 @@ export function ConversationCard({
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
 
-  const openCreateTopic = () => {
-    setShowTopicDialog(true)
-  }
-
-  const handleTopicConfirm = (data: StartTopicResult) => {
-    setShowTopicDialog(false)
-    if (dmContext && onStartTopicFromDm) {
-      onStartTopicFromDm(data)
-      return
-    }
-    setIsTopic(true)
-    setTopicTitle(data.title)
-  }
-
-  const handleRevertToConversation = () => {
-    setIsTopic(false)
-    setTopicTitle('')
-  }
-
   const handleReact = (emoji: string) => {
     // Computed from the state in hand, not inside a state updater: React runs
     // updaters during render, and telling the parent from there set state in
@@ -526,7 +475,7 @@ export function ConversationCard({
             ? (e) => {
                 if (isEditing) return
                 // Don't open thread when any overlay is active
-                if (moreMenuOpen || showResolveDialog || showTopicDialog || pickerOpen || confirmingDelete) return
+                if (moreMenuOpen || showResolveDialog || pickerOpen || confirmingDelete) return
                 // Don't open thread when clicking interactive children
                 const target = e.target as HTMLElement
                 if (target.closest('button, [role="button"], [data-interactive]')) return
@@ -540,68 +489,6 @@ export function ConversationCard({
           setIsHovered(false)
         }}
       >
-
-        {/* ── Topic anchor header (existing isTopic) - hidden while editing ── */}
-        {isTopic && !huddleContext && !isEditing && (
-          <div className="flex items-start gap-2 px-2 py-3 pb-2">
-            <div className="flex flex-col items-center gap-1 w-6 shrink-0">
-              <TopicState
-                type="topic"
-                status={resolved ? 'resolved' : 'unresolved'}
-              />
-              <div className="w-px bg-border-default flex-1 min-h-[24px]" />
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col">
-              <div className="h-4 flex items-center gap-1.5">
-                <span className="text-h5 text-text-secondary shrink-0">Huddle in</span>
-                <span className="text-h5 text-text-primary truncate">{topicTitle}</span>
-              </div>
-              {resolved && (
-                <div className="flex items-center gap-2 mt-1 py-1">
-                  <IconChecks size={16} stroke={1.5} className="text-success-default shrink-0" />
-                  <span className="text-menu text-success-default whitespace-nowrap">
-                    {resolvedBy || 'Someone'} resolved
-                  </span>
-                  {resolutionMsg && (
-                    <>
-                      <IconArrowNarrowRight size={12} stroke={1.5} className="text-text-primary shrink-0" />
-                      <span className="text-menu text-text-primary truncate">{resolutionMsg}</span>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Huddle anchor header - hidden while editing ── */}
-        {huddleContext && !isEditing && (
-          <div className="flex items-start gap-1 px-2 py-3 pb-1">
-            <div className="flex flex-col items-center gap-1 w-6 shrink-0">
-              {huddleContext.topicResolved ? (
-                <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
-              ) : (
-                <IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />
-              )}
-              <div className="w-px bg-border-default flex-1 min-h-[16px]" />
-            </div>
-            <div className="flex-1 min-w-0 flex items-center gap-1.5 h-4">
-              <span className="text-h5 text-text-secondary shrink-0">Huddle in</span>
-              {/* The title's size and colour on a box around the link, which takes them from it (UIG-9). */}
-              <span className="contents text-h5 text-text-primary">
-                <RouterLink
-                  href={pathForTopic(huddleContext.topicId)}
-                  variant="quiet"
-                  truncate
-                  data-interactive
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {huddleContext.topicTitle}
-                </RouterLink>
-              </span>
-            </div>
-          </div>
-        )}
 
         {/* ── Message box ── */}
         {isEditing ? (
@@ -660,7 +547,7 @@ export function ConversationCard({
           </div>
         ) : (
         /* Normal layout: header + body + reactions + replies */
-        <div className={cn('flex flex-col items-start pt-2 px-2', isTopic && 'pt-0')}>
+        <div className="flex flex-col items-start pt-2 px-2">
           {/* Header */}
           <div className={cn('flex items-center gap-2 w-full', hasNewMessage && 'justify-between')}>
             <div className="flex items-center gap-2 shrink-0">
@@ -681,7 +568,7 @@ export function ConversationCard({
           </div>
 
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
-            <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} />
+            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} />
           </div>
 
           {/* Uploaded files — image thumbnails / file chips.
@@ -715,7 +602,7 @@ export function ConversationCard({
         {/* ── Resolution banner - bottom, hidden while editing ──
             signal:ml-10 = card px-2 (8) + reply-row pl-8 (32): the banner's box
             edge lines up with the reply pill's hover background above it. */}
-        {!isTopic && resolved && !isEditing && (
+        {resolved && !isEditing && (
           <div className="flex items-center gap-2 pl-10 pr-3 pb-2 signal:ml-10 signal:mr-3 signal:mb-2 signal:pl-3 signal:pr-3 signal:py-2.5 signal:rounded-lg signal:border signal:border-success-outline signal:bg-success-wash">
             <IconChecks size={16} stroke={1.5} className="text-success-default shrink-0 signal:drop-shadow-glow-success" />
             <span className="text-h5 text-success-default whitespace-nowrap">
@@ -751,17 +638,13 @@ export function ConversationCard({
                     setMoreMenuOpen(next)
                     if (next) onMore?.()
                   }}
-                  isTopic={isTopic}
                   isResolved={resolved}
-                  showCreateTopic={showCreateTopic}
                   currentHighlight={highlightState}
                   onHighlight={handleConvHighlight}
-                  onCreateTopic={openCreateTopic}
-                  onRevertToConversation={handleRevertToConversation}
                   onResolve={() => setShowResolveDialog(true)}
                   onReopen={handleReopen}
                   isOwnMessage={isOwnMessage}
-                  onEditMessage={!isTopic && isOwnMessage ? handleEditStart : undefined}
+                  onEditMessage={isOwnMessage ? handleEditStart : undefined}
                   onDelete={isOwnMessage ? handleDelete : undefined}
                 />
               }
@@ -784,16 +667,6 @@ export function ConversationCard({
         <ResolveDialog
           onResolve={handleResolveConfirm}
           onCancel={() => setShowResolveDialog(false)}
-        />
-      )}
-
-      {showTopicDialog && (
-        <CreateTopicDialog
-          defaultTitle={isTopic ? topicTitle : ''}
-          defaultInvitees={dmContext?.participants ?? []}
-          dmContext={dmContext}
-          onConfirm={handleTopicConfirm}
-          onCancel={() => setShowTopicDialog(false)}
         />
       )}
 

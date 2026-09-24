@@ -120,14 +120,14 @@ vi.mock('@/nostr/liveTopics', () => ({
   // module owes them even though nothing here calls one.
   installWideFilterDiagnostic: () => {},
 }))
-vi.mock('@/nostr/useLiveTopics', () => {
+vi.mock('@/nostr/useLiveClient', () => {
   const client = {
     watchChannels: (_ids: readonly string[], listener: (id: string) => void) => {
       live.fire = listener
       return { stop: () => {} }
     },
   }
-  return { useLiveTopics: () => ({ live: client, relayState: 'live' }) }
+  return { useLiveClient: () => ({ live: client, relayState: 'live' }) }
 })
 /**
  * The dots' messages, from the tab's channel store (PER-8) — scripted, so a

@@ -2,31 +2,27 @@ import { useEffect } from 'react'
 import { READ_DWELL_MS, useReadActions } from '@/api'
 
 /**
- * Mark a conversation and/or an open thread as read once it's been on screen
- * for a moment (§4.3, ruling 2026-07-09):
+ * Mark a DM and/or an open thread as read once it's been on screen for a
+ * moment (§4.3, ruling 2026-07-09):
  *
- *   - opening a topic/DM clears its NEW MESSAGE state
+ *   - opening a DM clears its NEW MESSAGE state
  *   - opening a message's thread panel clears THAT thread's NEW REPLY state
  *
  * The dwell matters: without it, arrowing through a list would silently burn
  * every conversation's unread state. The timer restarts whenever the target
  * changes, so only what you actually settled on is marked read.
  */
-export function useMarkRead(
-  parentKind: 'topic' | 'dm' | 'huddle',
-  parentKey: string | null,
-  openThreadId: string | null,
-) {
+export function useMarkRead(dmId: string | null, openThreadId: string | null) {
   const { markContainerRead, markThreadRead } = useReadActions()
 
   useEffect(() => {
-    if (!parentKey) return
-    const t = setTimeout(() => markContainerRead(parentKind, parentKey), READ_DWELL_MS)
+    if (!dmId) return
+    const t = setTimeout(() => markContainerRead(dmId), READ_DWELL_MS)
     return () => clearTimeout(t)
     // markContainerRead is recreated each render (fresh mutation binding); the
     // dwell should depend only on WHAT is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parentKind, parentKey])
+  }, [dmId])
 
   useEffect(() => {
     if (!openThreadId) return

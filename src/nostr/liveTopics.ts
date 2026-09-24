@@ -13,20 +13,16 @@
  *
  * What stays is the wiring only Peek can do:
  *
- * - **`liveProjection`**, which is Convex-shaped. `LiveProjectionApi` is
- *   `importChannel` / `importReactions` / `importResolutions`, and putting that
- *   in a shared package would have baked Peek's backend into something Ship
- *   depends on.
  * - **`freshness.ts`**, whose four states and their copy are product voice. The
  *   package is *told* what happened through `observe` and holds none of it.
  * - **The single module binding.** `createLiveClientHolder()` is the mechanism;
  *   keeping the one instance is the app's job, because a module-level global in
  *   the package is the exact constraint-2 failure it exists to stop repeating.
  *
- * The public shape of this file is unchanged, deliberately: `useTopicView`,
- * `LiveWorkingSet`, `useFolderContents` and `useFolderProject` are untouched by
- * this migration, so a regression shows up as those features breaking rather
- * than as a large diff to read.
+ * There was a third, `liveProjection`, which imported every watched topic and
+ * DM channel into Convex (`nostr.sync.import*`). It went with the Convex topics
+ * in FOL-23, and with it `watch` and `onForeignActivity`, the two halves of
+ * this interface only the projection could feed. Nothing here needs Convex now.
  *
  * ## Token rotation still needs nothing
  *
@@ -37,21 +33,8 @@
  * the next connect — and `getCredential` below is read then, never captured.
  */
 import { validToken } from '@/auth/estivaId'
-import {
-  browserOnlineSource,
-  createFolderActivity,
-  createLiveClientHolder,
-  type FolderActivity,
-  type LiveClient,
-} from '@estiva-app/platform'
+import { browserOnlineSource, createLiveClientHolder, type LiveClient } from '@estiva-app/platform'
 import { KIND, type RelayState, type SignedEvent } from '@estiva-app/protocol'
-import {
-  createLiveProjection,
-  type ContainerRef,
-  type LiveProjection,
-  type LiveProjectionApi,
-  type WatchHandle,
-} from './liveProjection'
 import { signViaEstivaId } from './bridge'
 import {
   reasonForSignFailure,
@@ -62,44 +45,17 @@ import {
 } from './freshness'
 
 export interface LiveTopics {
-  /**
-   * Watch one container's channel — a topic or a DM (DMS-5). Refcounted, so it
-   * is safe to call twice for one container.
-   */
-  watch(args: ContainerRef & { channelUuid: string }): WatchHandle
   state(): RelayState
   /** Subscribe to connection-state changes. Returns an unsubscribe. PEE-9 consumes this. */
   onState(listener: (state: RelayState) => void): () => void
   /**
-   * Watch one Folder for *another app's* records changing — a Ship issue moved,
-   * a project renamed. Returns an unsubscribe.
-   *
-   * The socket already delivers these because the subscription is kindless;
-   * they were dropped for want of anywhere to put them. This is that place, and
-   * it carries no event: Peek does not store other apps' records, so the useful
-   * signal is "re-read now".
-   *
-   * Fed by `liveProjection` rather than by the client's own `watchFolders`,
-   * because the projection is what knows which events it did *not* project. A
-   * workspace reader with no projection — Ship — uses the other path.
-   */
-  onForeignActivity(folder: string, listener: () => void): () => void
-  /**
    * Watch many channels for *anything said in them*, in one REQ per 128
    * (SHR-5). `stop()` closes the REQs and forgets the listener.
    *
-   * The half `onForeignActivity` cannot cover, and the reason both exist. That
-   * one is fed by the projection and reports only what it did **not** take,
-   * which is right for another app's records and useless for a topic's own
-   * `kind:9` — precisely what the projection does take. And {@link watch} is
-   * per channel and refcounted, so a sidebar's worth of topics would be a REQ
-   * each: `REQ` is metered on `LimitType::WsEvents` and 50 unpaced ones are
-   * refused (LIV-1).
-   *
-   * So this is the client's own `watchFolders`: a wide filter, one frame, told
-   * which channel changed rather than what changed. Nothing is projected for
-   * the channels watched this way — the listener is a "re-read now" signal
-   * carrying no event, which is all an unread dot needs.
+   * A per-channel REQ each would not do: `REQ` is metered on
+   * `LimitType::WsEvents` and 50 unpaced ones are refused (LIV-1). So this is
+   * the client's own `watchFolders`: a wide filter, one frame, told which
+   * channel changed rather than what changed.
    *
    * **It depends on the deployed relay, not on this code.** The plural
    * `extract_channel_ids_from_filters` is what makes a wide filter fan out;
@@ -296,14 +252,12 @@ export function installWideFilterDiagnostic(): void {
 interface Wiring {
   relayUrl: string
   client: LiveClient
-  projection: LiveProjection
-  activity: FolderActivity
   topics: LiveTopics
 }
 
 let wiring: Wiring | null = null
 
-function build(relayUrl: string, api: LiveProjectionApi): Wiring {
+function build(relayUrl: string): Wiring {
   const client = holder.get({
     relayUrl,
     // Fresh on every connect attempt — see the header.
@@ -330,27 +284,12 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
     log: relayLog,
   })
 
-  const activity = createFolderActivity()
-
-  const projection = createLiveProjection({
-    subscriptions: client.subscriptions,
-    api,
-    log: (message, detail) => console.warn('[relay]', message, detail ?? ''),
-    // A channel uuid *is* the Folder id (RFC 0.4 §5.2, measured across all 50
-    // production channels), so no translation is needed here.
-    onForeignActivity: (channelUuid) => activity.notify(channelUuid),
-  })
-
   return {
     relayUrl,
     client,
-    projection,
-    activity,
     topics: {
-      watch: (args) => projection.watch(args),
       state: () => client.state(),
       onState: (listener) => client.onState(listener),
-      onForeignActivity: (folder, listener) => activity.watch(folder, listener),
       // `kinds` rather than kindless on purpose: a kindless wide filter is
       // refused outright on some builds with `restricted: p-gated events
       // require #p matching your pubkey`. Both message kinds, because a
@@ -434,43 +373,18 @@ function build(relayUrl: string, api: LiveProjectionApi): Wiring {
   }
 }
 
-/**
- * The tab's live client, built on first use.
- *
- * `api` is only read when the wiring is built; the Convex client it closes over
- * is stable for the life of the page, so a later caller passing a fresh object
- * does not rebuild anything.
- */
-export function getLiveTopics(relayUrl: string, api: LiveProjectionApi): LiveTopics {
+/** The tab's live client, built on first use. */
+export function getLiveTopics(relayUrl: string): LiveTopics {
   if (wiring && wiring.relayUrl === relayUrl) return wiring.topics
   // A changed relay origin means a different deployment — tear down rather than
   // leaving a socket pointed at the old one. Not expected in a page's lifetime.
-  // The holder closes the old client; the projection is ours to stop.
-  wiring?.projection.stopAll()
-  wiring = build(relayUrl, api)
+  // The holder closes the old client.
+  wiring = build(relayUrl)
   return wiring.topics
-}
-
-/**
- * The live client if one exists, without building it.
- *
- * `getLiveTopics` needs the Convex actions because it may have to *construct*
- * the projection. A consumer that only wants to listen — the project panel
- * watching for another app's records — has no business holding those, and
- * making it pass them would put Convex in the dependency list of a component
- * that reads the relay directly.
- *
- * Returns null before the topic view has connected, which is a real state
- * rather than an error: the panel falls back to its timer, which is what it did
- * for everything until now.
- */
-export function peekLiveTopics(): LiveTopics | null {
-  return wiring?.topics ?? null
 }
 
 /** Test seam. Drops the instance so the next `getLiveTopics` builds a new one. */
 export function resetLiveTopicsForTests(): void {
-  wiring?.projection.stopAll()
   wiring = null
   holder.reset()
 }

@@ -2,15 +2,12 @@ import type { FC, ReactNode } from 'react'
 import { Reference } from './Reference'
 import { CommentAnchor } from './CommentAnchor'
 import {
-  IconCircleCheck,
-  IconCircleDashed,
   IconFile,
   IconFileTypePdf,
   IconPhoto,
   IconTable,
   IconPresentation,
 } from '@tabler/icons-react'
-import { TOPICS } from '@/api'
 import { DOCUMENT_FILES } from '@/api'
 import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsing'
 import { cn } from '@/lib/utils'
@@ -29,8 +26,7 @@ import {
 import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protocol'
 
 // Inline token renderer shared by ConversationCard and ReplyCard: turns
-// [Topic]/[File] refs into chips (with live topic status icons), @/!@ mentions
-// into pills.
+// [File] refs into chips, @/!@ mentions into pills.
 
 /**
  * Tokens inside one run of text that carries no `code` mark.
@@ -58,7 +54,7 @@ function BodyLink({ href, breakAll, children }: { href: string; breakAll?: boole
   )
 }
 
-function renderTokens(text: string, isTopicResolved: (id: string) => boolean): ReactNode {
+function renderTokens(text: string): ReactNode {
   const parts = text.split(INLINE_TOKEN_RE)
   if (parts.length === 1) return text
   return (
@@ -88,25 +84,8 @@ function renderTokens(text: string, isTopicResolved: (id: string) => boolean): R
         }
         if (part.startsWith('[') && part.endsWith(']') && part.length > 2) {
           const title = part.slice(1, -1)
-          const topic = TOPICS.find((t) => t.title === title)
-          if (topic) {
-            const resolved = isTopicResolved(topic.id)
-            return (
-              <InlineChip
-                key={i}
-                icon={
-                  resolved ? (
-                    <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
-                  ) : (
-                    <IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />
-                  )
-                }
-              >
-                <span>{title}</span>
-              </InlineChip>
-            )
-          }
-          // A document. There used to be a second kind — an "app" file, which
+          // A document. A `[Topic]` chip, matched against the topic list with
+          // its resolved icon, went with the Convex topics (FOL-23). There used to be a second kind — an "app" file, which
           // was only ever Figma and carried its own SVG icon; it went with the
           // rest of that mock on 2026-09-11, and the <img> branch with it.
           const docFile = DOCUMENT_FILES.find((f) => f.title === title)
@@ -368,7 +347,7 @@ export function RenderBlocks({
  * The text of a message or reply, formatted, with its mentions and links, and a
  * card below for each item from another app it mentions.
  */
-export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlockId, resolvedObjects }: { body: string; isTopicResolved: (id: string) => boolean; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject> }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject> }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
@@ -471,7 +450,7 @@ export function MessageBody({ body, isTopicResolved, nostrReferences, nostrBlock
       <RenderBlocks
         value={body}
         format="marker"
-        renderRun={(run) => renderTokens(run, isTopicResolved)}
+        renderRun={(run) => renderTokens(run)}
         resolved={resolved}
         hideStandalone
       />

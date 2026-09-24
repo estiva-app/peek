@@ -10,8 +10,10 @@
  * The first is the trap the ticket named: the publish is last-write-wins, so a
  * set assembled before its source has settled is a permanent loss, not a
  * flicker. The second is the one the flip introduces: rendering a star needs
- * `useTopics`/`usePeople` to resolve an id, and deriving the *publish* from the
- * rendered rows would drop every star the index was a beat behind on.
+ * `usePeople` to resolve an id, and deriving the *publish* from the rendered
+ * rows would drop every star the index was a beat behind on. FOL-23 made that
+ * case permanent for a starred topic, which never renders again and must still
+ * never be dropped.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -36,16 +38,11 @@ vi.mock('convex/react', () => ({
 }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
-let topics: unknown = [
-  { id: 't1', title: 'CI/CD pipeline stuck', isResolved: false },
-  { id: 't2', title: 'Auth rollout', isResolved: true },
-]
-vi.mock('@/api/topics', () => ({ useTopics: () => topics }))
-
-let people: unknown = [
+const PEOPLE = [
   { id: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' },
   { id: JUAN, name: 'Juan Foley', avatarSrc: 'juan.png' },
 ]
+let people: unknown = PEOPLE
 vi.mock('@/api/people', async (importOriginal) => ({
   isPersonKey: (await importOriginal<typeof import('@/api/people')>()).isPersonKey,
   useWorkspacePeople: () => people,
@@ -76,34 +73,18 @@ beforeEach(() => {
   vi.clearAllMocks()
   syncState = 'present'
   relayBlob = undefined
-  topics = [
-    { id: 't1', title: 'CI/CD pipeline stuck', isResolved: false },
-    { id: 't2', title: 'Auth rollout', isResolved: true },
-  ]
-  people = [
-    { id: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' },
-    { id: JUAN, name: 'Juan Foley', avatarSrc: 'juan.png' },
-  ]
+  people = PEOPLE
 })
 
 describe('the set comes from the relay', () => {
-  it('renders a starred topic the relay holds', async () => {
-    relayBlob = aBlob(['t1'], [])
-    const { result } = await setup()
-    expect(result.current.entries).toEqual([
-      { id: 'star_topic_t1', kind: 'topic', topicId: 't1', title: 'CI/CD pipeline stuck', topicStatus: 'unresolved' },
-    ])
-    expect(result.current.isTopicStarred('t1')).toBe(true)
-    expect(result.current.isLoading).toBe(false)
-  })
-
-  it('renders a starred person the same way, which is the half the ticket had excluded', async () => {
+  it('renders a starred person the relay holds', async () => {
     relayBlob = aBlob([], [GREG])
     const { result } = await setup()
     expect(result.current.entries).toEqual([
       { id: `star_dm_${GREG}`, kind: 'dm', dmId: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' },
     ])
     expect(result.current.isDmStarred(GREG)).toBe(true)
+    expect(result.current.isLoading).toBe(false)
   })
 
   it('moves a star written under the old Peek key to the pubkey stored beside it (REM-3)', async () => {
@@ -122,44 +103,33 @@ describe('the set comes from the relay', () => {
     expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't1' }], people: [{ key: JUAN, pubkey: JUAN }] })
   })
 
-  it('takes the resolved state from the workspace index, since the blob carries none', async () => {
-    relayBlob = aBlob(['t2'], [])
+  it('sorts people by name', async () => {
+    relayBlob = aBlob([], [JUAN, GREG])
     const { result } = await setup()
-    expect(result.current.entries[0]).toMatchObject({ topicId: 't2', topicStatus: 'resolved' })
-  })
-
-  it('sorts people and topics together by label, as it did when Convex served them', async () => {
-    relayBlob = aBlob(['t1', 't2'], [GREG, JUAN])
-    const { result } = await setup()
-    expect(result.current.entries.map((e) => (e.kind === 'dm' ? e.name : e.title))).toEqual([
-      'Auth rollout',
-      'CI/CD pipeline stuck',
-      'Greg Bothman',
-      'Juan Foley',
-    ])
-  })
-
-  it('hands the live working set the set, including what has no row yet', async () => {
-    relayBlob = aBlob(['t1', 't9'], [GREG])
-    const { result } = await setup()
-    expect(result.current.set).toEqual({ topics: ['t1', 't9'], people: [GREG] })
+    expect(result.current.entries.map((e) => e.name)).toEqual(['Greg Bothman', 'Juan Foley'])
   })
 })
 
 describe('what is published is the set, never the rows that could be drawn', () => {
-  it('keeps a star whose topic the index cannot resolve, and publishes it', async () => {
-    // The flip's own trap. `t9` is starred and not in `useTopics()` — slow
-    // index, or a topic this viewer cannot see. It has no row, and dropping it
-    // from the publish would delete it from the person's set for good.
-    relayBlob = aBlob(['t1', 't9'], [])
+  it('keeps a starred topic, which draws nothing since FOL-23, and publishes it back', async () => {
+    relayBlob = aBlob(['t1', 't9'], [GREG])
     const { result } = await setup()
-    expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t1'])
-    expect(result.current.isTopicStarred('t9')).toBe(true)
+    expect(result.current.entries.map((e) => e.id)).toEqual([`star_dm_${GREG}`])
     await waitFor(() => expect(publish).toHaveBeenCalled())
     expect(publish.mock.calls.at(-1)?.[0]).toEqual({
       topics: [{ id: 't1' }, { id: 't9' }],
-      people: [],
+      people: [{ key: GREG, pubkey: GREG }],
     })
+  })
+
+  it('keeps a person the index cannot resolve yet, and publishes them', async () => {
+    people = PEOPLE.filter((p) => p.id !== JUAN)
+    relayBlob = aBlob([], [GREG, JUAN])
+    const { result } = await setup()
+    expect(result.current.entries.map((e) => e.id)).toEqual([`star_dm_${GREG}`])
+    expect(result.current.isDmStarred(JUAN)).toBe(true)
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    expect(publish.mock.calls.at(-1)?.[0].people.map((p) => p.key)).toEqual([GREG, JUAN])
   })
 
   it('renders and publishes nothing while the relay has not answered — there is no fallback', async () => {
@@ -170,8 +140,7 @@ describe('what is published is the set, never the rows that could be drawn', () 
     const { result } = await setup()
     expect(result.current.isLoading).toBe(true)
     expect(result.current.entries).toEqual([])
-    expect(result.current.set).toBeUndefined()
-    act(() => result.current.toggleTopic({ topicId: 't1', title: 'CI/CD', topicStatus: 'unresolved' }))
+    act(() => result.current.toggleDm({ dmId: GREG, name: 'Greg Bothman' }))
     await act(async () => {})
     expect(publish).not.toHaveBeenCalled()
   })
@@ -196,12 +165,14 @@ describe('what is published is the set, never the rows that could be drawn', () 
 
 describe('toggling', () => {
   it('drops a star from the rendered set and from what is published', async () => {
-    relayBlob = aBlob(['t1', 't2'], [])
+    relayBlob = aBlob(['t1'], [GREG, JUAN])
     const { result } = await setup()
-    act(() => result.current.toggleTopic({ topicId: 't1', title: 'CI/CD pipeline stuck', topicStatus: 'unresolved' }))
-    expect(result.current.isTopicStarred('t1')).toBe(false)
-    expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t2'])
-    await waitFor(() => expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't2' }], people: [] }))
+    act(() => result.current.toggleDm({ dmId: GREG, name: 'Greg Bothman' }))
+    expect(result.current.isDmStarred(GREG)).toBe(false)
+    expect(result.current.entries.map((e) => e.id)).toEqual([`star_dm_${JUAN}`])
+    await waitFor(() =>
+      expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't1' }], people: [{ key: JUAN, pubkey: JUAN }] }),
+    )
   })
 
   it('adds a person optimistically, over a relay set that does not have them yet', async () => {

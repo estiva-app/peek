@@ -8,7 +8,6 @@ import { SCREENER_ITEMS, SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
 import { ScreenerPreviewCardView } from '@/components/ScreenerPreviewCard'
 import type { StarredItem } from '@/components/ui/StarredSection'
 import { PeoplePageView, type PeopleListItem } from './PeoplePage'
-import { TopicsPageView, type TopicListItem } from './TopicsPage'
 import { DeskPageView, type DeskRow } from './DeskPage'
 import { FoldersPageView } from './FoldersPage'
 import { FilePageView } from './FilePage'
@@ -22,40 +21,31 @@ const STARRED: StarredItem[] = [
   { id: 'daniel', name: 'Daniel Stanton', type: 'DM', isUnread: false, isUrgent: false },
 ]
 
-const TOPICS: TopicListItem[] = [
-  { id: 't1', title: 'CI/CD pipeline stuck during build stage', isResolved: false, isUnread: true, isUrgent: true, isMember: true, inOpenWork: true },
-  { id: 't2', title: 'Launch checklist for v2 of the mobile app', isResolved: false, isUnread: true, isUrgent: false, isMember: true, inOpenWork: false },
-  { id: 't3', title: 'Ongoing onboarding issues', isResolved: false, isUnread: false, isUrgent: false, isMember: true, inOpenWork: false },
-  { id: 't4', title: 'Remote work policy clarifications', isResolved: true, isUnread: false, isUrgent: false, isMember: true, inOpenWork: false },
-  { id: 't5', title: 'Usability test results for the dashboard redesign', isResolved: true, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
-  { id: 't6', title: 'Pricing page copy', isResolved: false, isUnread: false, isUrgent: false, isMember: false, inOpenWork: false },
-]
-
 /** The hover card a Screener row opens, from the one fixture every Screener
  *  story uses. The real one reads the conversation, which needs a backend. */
-const screenerPreview = () => <ScreenerPreviewCardView isTopicResolved={() => false} rows={SCREENER_PREVIEW_ROWS} />
+const screenerPreview = () => <ScreenerPreviewCardView rows={SCREENER_PREVIEW_ROWS} />
 
 const row = (
   id: string,
-  kind: 'dm' | 'topic',
+  kind: DeskRow['kind'],
   name: string,
   extra: Partial<DeskRow> = {},
 ): DeskRow => ({ id, kind, name, isUnread: false, isSelected: false, onClick: noop, ...extra })
 
 const URGENT: DeskRow[] = [
-  row('u1', 'topic', 'CI/CD pipeline stuck during build stage', { isUnread: true, isUrgent: true, isSelected: true }),
+  row('u1', 'dm', 'Hallie Pratt', { isUnread: true, isUrgent: true, isSelected: true }),
   row('u2', 'dm', 'Alice Johnson', { isUnread: true, isUrgent: true }),
 ]
 
 const OPEN_WORK: DeskRow[] = [
-  row('o1', 'topic', 'Launch checklist for v2 of the mobile app', { isUnread: true, onRemove: noop }),
-  row('o2', 'topic', 'Remote work policy clarifications', { isResolved: true, onRemove: noop }),
+  row('o1', 'file', 'Launch checklist for v2 of the mobile app', { isUnread: true, isBareFile: true, onRemove: noop }),
+  row('o2', 'file', 'Remote work policy clarifications', { onRemove: noop }),
   row('o3', 'dm', 'Daniel Stanton', { onRemove: noop }),
 ]
 
 const STARRED_ROWS: DeskRow[] = [
   row('s1', 'dm', 'Amie Miles', { isUnread: true }),
-  row('s2', 'topic', 'Ongoing onboarding issues'),
+  row('s2', 'dm', 'Juan Foley'),
 ]
 
 /** The five team Folders FOL-20 leaves on production — the same fixture
@@ -170,64 +160,6 @@ export const PeopleLoading: Story = {
 }
 
 /**
- * The Topics page, with topics the reader is **not** a member of present — so
- * the list splits into "Your topics" and "Other topics" (QA #2.7).
- */
-export const Topics: Story = {
-  render: () => (
-    <TopicsPageView
-      railClosed={false}
-      loading={false}
-      topics={TOPICS}
-      selectedId="t1"
-      onSelect={noop}
-      onDeleteTopic={noop}
-      onOpenDetails={noop}
-      onToggleOpenWork={noop}
-      rightPanel={<EmptyState />}
-    />
-  ),
-}
-
-/**
- * The same page where the reader is a member of everything: **one flat list**,
- * no sections at all. Which of the two you get is decided by the topics, not by
- * a setting, and this is the first story that shows both shapes exist.
- */
-export const TopicsFlat: Story = {
-  render: () => (
-    <TopicsPageView
-      railClosed={false}
-      loading={false}
-      topics={TOPICS.filter((t) => t.isMember)}
-      selectedId="t3"
-      onSelect={noop}
-      onDeleteTopic={noop}
-      onOpenDetails={noop}
-      onToggleOpenWork={noop}
-      rightPanel={<EmptyState />}
-    />
-  ),
-}
-
-/** Topics, first read in flight. */
-export const TopicsLoading: Story = {
-  render: () => (
-    <TopicsPageView
-      railClosed={false}
-      loading
-      topics={[]}
-      selectedId={null}
-      onSelect={noop}
-      onDeleteTopic={noop}
-      onOpenDetails={noop}
-      onToggleOpenWork={noop}
-      rightPanel={<div className="flex-1 h-full" />}
-    />
-  ),
-}
-
-/**
  * The Desk, with every section carrying something: the screener, Urgent, Open
  * work and Starred.
  */
@@ -244,7 +176,6 @@ export const Desk: Story = {
       urgent={URGENT}
       openWork={OPEN_WORK}
       starred={STARRED_ROWS}
-      onAddToOpenWork={noop}
       rightPanel={<EmptyState />}
     />
   ),
@@ -270,7 +201,6 @@ export const DeskEmpty: Story = {
       urgent={[]}
       openWork={[]}
       starred={[]}
-      onAddToOpenWork={noop}
       rightPanel={<EmptyState />}
     />
   ),
@@ -289,7 +219,6 @@ export const DeskLoading: Story = {
       urgent={[]}
       openWork={[]}
       starred={[]}
-      onAddToOpenWork={noop}
       rightPanel={<div className="flex-1 h-full" />}
     />
   ),

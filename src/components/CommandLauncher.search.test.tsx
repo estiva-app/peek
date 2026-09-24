@@ -2,11 +2,11 @@
  * PEE-4 — Cmd+K finds things, driven from the outside.
  *
  * `launcherSearch.test.ts` proves the matching and the wording. This proves the
- * launcher actually renders them: that typing part of a topic or a person's
- * name surfaces a row, that selecting it goes somewhere, and that the message
- * section says which of the two silences it is in.
+ * launcher actually renders them: that typing part of a person's name surfaces
+ * a row, and that the message section says which of the two silences it is in.
+ * The topic search went with the Convex topics (FOL-23).
  *
- * Topics and people come from the mock dataset here, which is the real code
+ * People come from the mock dataset here, which is the real code
  * path — the test env has no `VITE_CONVEX_URL`, so `hasConvex` is false and
  * the seam answers from `src/data`. Message search is the one thing that
  * cannot work in mock mode (there is no relay to ask), so its states are
@@ -73,17 +73,9 @@ async function type(text: string) {
   await userEvent.type(document.querySelector<HTMLInputElement>('[data-command-palette-field]')!, text)
 }
 
-describe('Cmd+K finds a topic and a person by typing part of them (PEE-4)', () => {
+describe('Cmd+K finds a person by typing part of them (PEE-4)', () => {
   beforeEach(() => {
     messageSearch.mockReturnValue({ state: { kind: 'idle' }, hits: [] })
-  })
-
-  it('finds a topic from a fragment of its title', async () => {
-    open()
-    await type('pipeline')
-
-    expect(await screen.findByText('Topics')).toBeInTheDocument()
-    expect(screen.getByText('CI/CD pipeline stuck during build stage')).toBeInTheDocument()
   })
 
   it('finds a person by name, and by role', async () => {
@@ -96,21 +88,8 @@ describe('Cmd+K finds a topic and a person by typing part of them (PEE-4)', () =
     expect(screen.getByText('Alice Johnson')).toBeInTheDocument()
   })
 
-  it('goes to the topic and closes when a result is chosen', async () => {
-    const { onClose } = open()
-    await type('pipeline')
-    await userEvent.click(await screen.findByText('CI/CD pipeline stuck during build stage'))
-
-    // Mock topics have no folderId, so this is the legacy `/topics/<id>`
-    // shape — which `topicPath` returns deliberately rather than inventing a
-    // protocol identity the object does not have.
-    expect(screen.getByTestId('where').textContent).toBe('/topics/1')
-    expect(onClose).toHaveBeenCalled()
-  })
-
   it('shows no sections at all before anything is typed', async () => {
     open()
-    expect(screen.queryByText('Topics')).not.toBeInTheDocument()
     expect(screen.queryByText('People')).not.toBeInTheDocument()
     // The apps are still listed — that is the launcher's resting state.
     expect(await screen.findByText('Apps')).toBeInTheDocument()

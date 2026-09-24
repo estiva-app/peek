@@ -1,4 +1,4 @@
-import { useIsTopicResolved, useScreenerPreview, type ScreenerPreviewRow } from '@/api'
+import { useScreenerPreview, type ScreenerPreviewRow } from '@/api'
 import { Avatar } from './ui/Avatar'
 import { MessageBody } from './ui/MessageBody'
 import { SkeletonBar } from './ui/Skeleton'
@@ -18,11 +18,9 @@ import { MetaText } from '@/components/ui/MetaText'
  */
 export function ScreenerPreviewCardView({
   rows,
-  isTopicResolved,
 }: {
   /** `undefined` = loading (renders the skeleton); otherwise the rows to show. */
   rows: ScreenerPreviewRow[] | undefined
-  isTopicResolved: (topicId: string) => boolean
 }) {
   return (
     <>
@@ -41,7 +39,7 @@ export function ScreenerPreviewCardView({
               <MetaText size="chip" className="leading-tight">{r.timestamp}</MetaText>
             </div>
             <div className="text-caption leading-normal text-text-secondary line-clamp-4">
-              <MessageBody body={r.body} isTopicResolved={isTopicResolved} />
+              <MessageBody body={r.body} />
             </div>
           </div>
         ))
@@ -60,6 +58,5 @@ export function ScreenerPreviewCardView({
  */
 export function ScreenerPreviewContent({ itemId }: { itemId: string }) {
   const rows = useScreenerPreview(itemId)
-  const isTopicResolved = useIsTopicResolved()
-  return <ScreenerPreviewCardView rows={rows} isTopicResolved={isTopicResolved} />
+  return <ScreenerPreviewCardView rows={rows} />
 }

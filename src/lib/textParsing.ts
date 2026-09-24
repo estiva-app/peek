@@ -1,7 +1,8 @@
 import { PEOPLE } from '@/data/peopleData'
 import { addrToNaddr, decodeNevent, decodeNpub, encodeNpub, referenceToPointer } from '@estiva-app/protocol'
-import { personByPubkey, topicByFolderId } from '@/api/mentions'
+import { personByPubkey } from '@/api/mentions'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
+import { legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { TOPIC_KIND } from '@/nostr/manifest'
 import { TOPICS } from '@/data/topicData'
 import { DOCUMENT_FILES } from '@/data/filesData'
@@ -251,21 +252,20 @@ function shortUri(uri: string): string {
 }
 
 /**
- * The topic a `nostr:naddr…` names, when it is one this workspace holds —
+ * The topic a `nostr:naddr…` names, when it is one of the old Convex topics —
  * with the address it was written as, so the chip serialises back to it.
+ *
+ * Read from the bundled table (FOL-26), not from Convex: the topics are gone
+ * (FOL-23), and a mention of one written before then still loads back as the
+ * chip it was picked from.
  */
-function topicForAddress(uri: string): { id: string; title: string; isResolved: boolean; address: string } | null {
+function topicForAddress(uri: string): { id: string; title: string; address: string } | null {
   try {
     const pointer = referenceToPointer(uri)
     if (pointer.kind !== TOPIC_KIND || !pointer.identifier) return null
-    const topic = topicByFolderId(pointer.identifier)
+    const topic = legacyTopicByChannel(pointer.identifier)
     if (!topic) return null
-    return {
-      id: topic.id,
-      title: topic.title,
-      isResolved: topic.isResolved,
-      address: `${pointer.kind}:${pointer.pubkey}:${pointer.identifier}`,
-    }
+    return { id: topic.id, title: topic.title, address: `${pointer.kind}:${pointer.pubkey}:${pointer.identifier}` }
   } catch {
     return null
   }
@@ -307,29 +307,21 @@ export function parseInlineContent(line: string): Record<string, unknown>[] {
       })
     } else if (/^nostr:naddr1/i.test(part)) {
       /*
-        An address — a topic's, when it is one of ours (RIC-11).
+        An address — an old topic's, when it is in the bundled table (RIC-11,
+        FOL-23). `39000:<relay>:<uuid>` names a channel, so a topic mention
+        loads back as the chip it was picked from, and the address is what the
+        chip serialises to again.
 
-        `39000:<relay>:<uuid>` names a channel, and the uuid is the `folderId`
-        Peek holds on the topic row, so a topic in this workspace loads back
-        as the chip it was picked from, wearing its *current* title. The
-        address is what the chip serialises to again, so a topic that has
-        since been renamed is written back unchanged and keeps resolving.
-
-        Any other address — another app's object, or a topic this workspace
-        does not hold — stays as the text it was, and is written back as the
-        same text. The editor has no chip that would say more than the URI
-        does, and inventing one would put a label on an object it cannot name.
+        Any other address — another app's object, or a channel that was never a
+        topic — stays as the text it was, and is written back as the same text.
+        The editor has no chip that would say more than the URI does, and
+        inventing one would put a label on an object it cannot name.
       */
       const topic = topicForAddress(part)
       if (topic) {
         content.push({
           type: 'topicMention',
-          attrs: {
-            id: topic.id,
-            label: topic.title,
-            isResolved: topic.isResolved,
-            address: topic.address,
-          },
+          attrs: { id: topic.id, label: topic.title, isResolved: false, address: topic.address },
         })
       } else {
         content.push({ type: 'text', text: part })

@@ -90,9 +90,9 @@ vi.mock('@/api', async () => {
   }
 })
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
-vi.mock('@/nostr/useLiveTopics', () => {
+vi.mock('@/nostr/useLiveClient', () => {
   const client = {}
-  return { useLiveTopics: () => ({ live: client, relayState: 'live' }) }
+  return { useLiveClient: () => ({ live: client, relayState: 'live' }) }
 })
 vi.mock('@/nostr/useReadStateSync', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')

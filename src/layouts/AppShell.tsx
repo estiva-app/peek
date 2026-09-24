@@ -1,4 +1,3 @@
-import { LiveWorkingSet } from '@/components/LiveWorkingSet'
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { AppShell as Frame, ErrorBoundary } from '@estiva-app/ui'
 import { useTopBarSlots } from '@/components/useTopBarSlots'
@@ -74,11 +73,6 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
           >
             <div className="transition-opacity duration-300 ease-in-out" style={{ opacity: collapsed ? 0 : 1 }}>
               <NavRail />
-              {/* Renders nothing. Holds the live subscriptions for the channels the
-                  Desk and inbox are showing — see LiveWorkingSet. Here rather than
-                  on a page because the working set belongs to the person, and
-                  navigating between pages must not tear it down. */}
-              <LiveWorkingSet />
             </div>
           </div>
         }

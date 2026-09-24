@@ -14,12 +14,14 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { FolderTree } from './FolderTree'
+import { channelDestination } from '@/lib/legacyTopicLinks'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
 const TEAM = '925897ad-796e-4bc6-999c-ca19df26c4aa'
-const OTHER = '3789d2ca-103c-40e5-906f-0490782db5fd'
-const TOPIC_FOLDER = '0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
+const OTHER = '5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a'
+/** An old topic's channel, from the bundled table (FOL-26). */
+const TOPIC_FOLDER = '2303e8c1-c866-43b8-9b4c-e263f313a683'
 const PROJECT_ADDRESS = `30850:${SHIP}:0ebd5fdd-c58a-416e-b8a7-cbdcec77b77f`
 const FILE_ADDRESS = `30840:${CATH}:7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f`
 
@@ -104,8 +106,6 @@ vi.mock('@/api', async () => ({
   },
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useTeamUnread: () => ({ unread: dots.unread }),
-  // One of the Folders is one of Peek's own topics.
-  useTopics: () => [{ id: '7', title: 'A topic of ours', folderId: TOPIC_FOLDER }],
 }))
 
 function Probe() {
@@ -273,10 +273,12 @@ describe('where things lead', () => {
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f')
   })
 
-  it("a Folder that is one of Peek's topics opens as the topic", () => {
+  it("a Folder that was one of Peek's topics opens where the topic went (FOL-23)", () => {
     mount()
     fireEvent.click(within(section(TOPIC_FOLDER)).getByRole('button', { name: 'Open folder' }))
-    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/a-topic-of-ours-${TOPIC_FOLDER}`)
+    const url = screen.getByTestId('url').textContent
+    expect(url).toBe(channelDestination(TOPIC_FOLDER))
+    expect(url).not.toContain('/app/folders/')
   })
 
   it('any other Folder opens on the Folders page, for now', () => {

@@ -14,7 +14,6 @@ export * from './unread'
 export * from './desk'
 export * from './currentUser'
 export * from './people'
-export * from './topics'
 export { useDmChannels, useDmVisibility } from '@/api/internal/dms'
 /* `window.__readState()` — see src/nostr/useReadStateSync.ts (CRO-14). At module
    scope so it exists before anything asks, including on a cold URL load. */
@@ -43,7 +42,6 @@ installTeamUnreadDiagnostic()
    requests this tab spent against the relay's per-minute meter, by shape. */
 import { installRelayReadsDiagnostic } from '@/nostr/relayMeter'
 installRelayReadsDiagnostic()
-export * from './huddles'
 export * from './messages'
 export * from './actions'
 export * from './profile'
@@ -52,9 +50,8 @@ export * from './screener'
 export { useForeignObjects, useResolvedReferences, useRouteWords, useWorkspaceDirectory, useMessageSearch, type MessageHit } from './foreign'
 export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
-export { mentionPeople, mentionTopics } from './mentions'
+export { mentionPeople } from './mentions'
 export { useStarred } from '@/api/internal/starred'
-export { useWorkingSetChannels, type WorkingSetChannel } from '@/api/internal/workingSet'
 export { useFollows, type Follows } from '@/api/internal/follows'
 export { PeekDataProvider, hasConvex } from './store'
 export { RELAY_URL, hasRelay } from './relayUrl'

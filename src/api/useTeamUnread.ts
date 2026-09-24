@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FolderSummary } from '@estiva-app/interop'
 import { useFollows } from '@/api'
 import { validToken } from '@/auth/estivaId'
-import { useLiveTopics } from '@/nostr/useLiveTopics'
+import { useLiveClient } from '@/nostr/useLiveClient'
 import { relayFailureKind } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
@@ -73,7 +73,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   const frontier = useReadFrontier()
   const follows = useFollows()
   // For the probe only: the store holds the socket now, and this says what it is doing.
-  const { live, relayState } = useLiveTopics()
+  const { live, relayState } = useLiveClient()
 
   /*
     Keyed on the ids, not the array. `useFolders` reads once, but a caller may

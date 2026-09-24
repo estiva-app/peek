@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom'
 import { ScrollArea } from '@estiva-app/ui'
-import type { ActivityRelation } from '@/api/useFolderProject'
 import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -51,6 +50,12 @@ import type { ConversationData } from '@/api'
  * where the message can be read in place and replied to — the same rule, with
  * the destination one page away instead of one column.
  */
+/**
+ * How a row relates to the file it is shown on — the related file's own
+ * conversation (a sub-file) or a mention of it somewhere else (SPEC §6.4).
+ */
+export type ActivityRelation = 'sub-file' | 'mention'
+
 export interface TopicActivityItem {
   conv: ConversationData
   /** Which related file this conversation belongs to — a sub-file's address,
@@ -141,7 +146,6 @@ export function TopicActivity({
             resolutionMessage={conv.resolutionMessage}
             nostrReferences={conv.nostrReferences}
             nostrBlockId={conv.nostrBlockId}
-            showCreateTopic={false}
             subdued={words.muted}
             isSelected={selectedId === conv.id}
             onClick={open}

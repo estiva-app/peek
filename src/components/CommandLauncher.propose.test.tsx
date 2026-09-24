@@ -87,7 +87,6 @@ vi.mock('@/api', async () => {
       creatableUnder,
     }),
     useMessageSearch: () => ({ state: { kind: 'idle' as const }, hits: [] }),
-    useTopics: () => [],
   }
 })
 

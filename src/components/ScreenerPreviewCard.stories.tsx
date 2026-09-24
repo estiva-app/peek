@@ -26,8 +26,7 @@ const meta = {
       </MenuPanel>
     ),
   ],
-  args: { isTopicResolved: () => false },
-  argTypes: { isTopicResolved: { control: false }, rows: { control: false } },
+  argTypes: { rows: { control: false } },
 } satisfies Meta<typeof ScreenerPreviewCardView>
 
 export default meta

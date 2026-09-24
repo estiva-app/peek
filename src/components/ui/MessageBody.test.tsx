@@ -30,7 +30,7 @@ vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 import { MessageBody } from './MessageBody'
 
 const show = (body: string) =>
-  render(<MessageBody body={body} isTopicResolved={() => false} />).container
+  render(<MessageBody body={body} />).container
 
 describe('MessageBody renders the code mark', () => {
   it('puts a backtick span in a <code> element', () => {

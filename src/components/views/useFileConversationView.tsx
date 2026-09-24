@@ -391,7 +391,6 @@ export function useFileConversationView({
                   resolutionMessage={c.resolutionMessage}
                   nostrReferences={c.nostrReferences}
                   isSelected={openThreadId === c.id}
-                  showCreateTopic={false}
                   onResolvedChange={(resolved, _by, message) => setResolution(c.id, resolved, message)}
                   onReactionsChange={(_next, emoji) => toggleReaction(c.id, emoji)}
                   onBodyChange={(b) => editBody(c.id, b)}

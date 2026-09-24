@@ -47,14 +47,6 @@ const MESSAGE_OBJECT = {
 const meta = {
   title: 'Writing & text/MessageBody',
   component: MessageBody,
-  args: {
-    // MessageBody takes the resolved-lookup from its caller (useTopicMutations);
-    // the story supplies a stub so [Topic] chips can be shown resolved/unresolved.
-    isTopicResolved: (): boolean => false,
-  },
-  argTypes: {
-    isTopicResolved: { control: false },
-  },
   decorators: [
     Story => (
       <div className="w-[480px] bg-bg-surface p-3 rounded-lg">
@@ -90,8 +82,8 @@ export const NumberedList: Story = {
 }
 
 /**
- * Inline chips: `@`/`!@` mentions, a `[Topic]` ref (live status icon), a `[File]`
- * ref (app icon), and a bare URL (auto-linked).
+ * Inline chips: `@`/`!@` mentions, a `[File]` ref (file icon), and a bare URL
+ * (auto-linked).
  */
 export const InlineTokens: Story = {
   args: {
@@ -109,14 +101,6 @@ export const EmailAddressesAreNotMentions: Story = {
       'It would be nice to see katerina@estiva.estiva.app instead of my public key.\n' +
       'Others that used to break: first.last@estiva.app, support@peek-app.io, kat+peek@estiva.app, user@localhost.\n' +
       'Still a mention: @backend-team, and @Daniel Stanton — plus @testing-library/react, which was always plain.',
-  },
-}
-
-/** The same `[Topic]` chip when the topic is resolved — dashed circle → green check. */
-export const ResolvedTopicChip: Story = {
-  args: {
-    body: 'Closing out [Ongoing onboarding issues] now — outcome captured in the resolution above.',
-    isTopicResolved: () => true,
   },
 }
 
