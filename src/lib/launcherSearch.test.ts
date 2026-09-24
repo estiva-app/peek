@@ -8,22 +8,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Person } from '@/data/peopleData'
-import type { Topic } from '@/data/topicData'
 import {
   hasCompleteWord,
   snippetAround,
   matchPeople,
-  matchTopics,
   messageEmptyState,
   normalizeQuery,
   type MessageSearchState,
 } from './launcherSearch'
-
-const TOPICS: Topic[] = [
-  { id: '1', title: 'CI/CD pipeline stuck during build stage', isResolved: false },
-  { id: '2', title: 'Launch checklist for v2 of the mobile app', isResolved: false },
-  { id: '4', title: 'Remote work policy clarifications', isResolved: true },
-]
 
 const PEOPLE: Person[] = [
   { id: 'alice', name: 'Alice Johnson', role: 'Product Designer' },
@@ -34,29 +26,6 @@ const PEOPLE: Person[] = [
 describe('normalizeQuery', () => {
   it('trims and lowercases, so every matcher agrees on the term', () => {
     expect(normalizeQuery('  Pipeline  ')).toBe('pipeline')
-  })
-})
-
-describe('matchTopics', () => {
-  it('matches a fragment anywhere in the title, not only a prefix', () => {
-    // The point of doing topics locally: the relay cannot do this, and the
-    // rest of this app already means substring by "matching".
-    expect(matchTopics(TOPICS, 'pipe').map((t) => t.id)).toEqual(['1'])
-    expect(matchTopics(TOPICS, 'mobile').map((t) => t.id)).toEqual(['2'])
-  })
-
-  it('is case-insensitive', () => {
-    expect(matchTopics(TOPICS, 'REMOTE').map((t) => t.id)).toEqual(['4'])
-  })
-
-  it('returns nothing for an empty query rather than everything', () => {
-    // A launcher that lists every topic the moment it opens is a different
-    // feature, and a worse one.
-    expect(matchTopics(TOPICS, '   ')).toEqual([])
-  })
-
-  it('caps the list', () => {
-    expect(matchTopics(TOPICS, 'e', 2)).toHaveLength(2)
   })
 })
 

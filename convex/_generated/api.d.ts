@@ -10,10 +10,6 @@
 
 import type * as crons from "../crons.js";
 import type * as desk from "../desk.js";
-import type * as dev_bulk from "../dev/bulk.js";
-import type * as dev_seedDates from "../dev/seedDates.js";
-import type * as dev_seedDemo from "../dev/seedDemo.js";
-import type * as huddles from "../huddles.js";
 import type * as messages from "../messages.js";
 import type * as nostr_config from "../nostr/config.js";
 import type * as nostr_data from "../nostr/data.js";
@@ -23,9 +19,7 @@ import type * as nostr_resolution from "../nostr/resolution.js";
 import type * as nostr_sync from "../nostr/sync.js";
 import type * as people from "../people.js";
 import type * as readState from "../readState.js";
-import type * as replies from "../replies.js";
 import type * as screener from "../screener.js";
-import type * as topics from "../topics.js";
 import type * as unread from "../unread.js";
 import type * as users from "../users.js";
 
@@ -38,10 +32,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   desk: typeof desk;
-  "dev/bulk": typeof dev_bulk;
-  "dev/seedDates": typeof dev_seedDates;
-  "dev/seedDemo": typeof dev_seedDemo;
-  huddles: typeof huddles;
   messages: typeof messages;
   "nostr/config": typeof nostr_config;
   "nostr/data": typeof nostr_data;
@@ -51,9 +41,7 @@ declare const fullApi: ApiFromModules<{
   "nostr/sync": typeof nostr_sync;
   people: typeof people;
   readState: typeof readState;
-  replies: typeof replies;
   screener: typeof screener;
-  topics: typeof topics;
   unread: typeof unread;
   users: typeof users;
 }>;

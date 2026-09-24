@@ -2,17 +2,13 @@
  * Seam-internal runtime stores.
  *
  * `PeekDataProvider` is the single provider the app (and story decorators)
- * mount; it composes the runtime override stores. These are permanent
- * dual-role infrastructure (Phase 2 close-out ruling): without a Convex
- * deployment they are the full source of truth over the static mocks
- * (tests, Storybook, demo instance); with one they cover only the
- * optimistic window until the reactive queries catch up.
- *   - TopicStoreProvider     (runtime topics + DM-promoted huddles)
- *   - StarredProvider        (stars; inside TopicStoreProvider — see below)
- *   - TopicMutationsProvider (the message/reply/huddle override layers)
+ * mount; it composes the runtime stores: stars, follows, open work, the
+ * Screener and DM channels.
  *
- * DMs have no store here since REM-1: a DM is read from its channel on the
- * relay, and nothing is held between a send and the re-read.
+ * DMs have no message store here since REM-1: a DM is read from its channel on
+ * the relay, and nothing is held between a send and the re-read. The topic
+ * store and the message/reply/huddle override layers went with the Convex
+ * topics in FOL-23.
  *
  * Nothing outside src/api may import the underlying providers directly.
  */
@@ -22,14 +18,12 @@ import { EstivaIdSessionProvider } from '@/auth/EstivaIdSession'
 import { useEstivaIdSession } from '@/auth/useEstivaIdSession'
 import { StarredProvider } from '@/api/internal/starred'
 import { ReadStateSync } from '@/nostr/useReadStateSync'
-import { TopicStoreProvider } from '@/api/internal/topicStore'
-import { TopicMutationsProvider } from '@/api/internal/topicMutations'
 import { OpenWorkProvider } from '@/api/internal/openWork'
 import { ScreenerProvider } from '@/api/internal/screener'
 import { DmsProvider } from '@/api/internal/dms'
 import { FollowsProvider } from '@/api/internal/follows'
 import { AvatarRegistryProvider } from './avatars'
-import { MentionDirectorySync, TopicDirectorySync } from './mentions'
+import { MentionDirectorySync } from './mentions'
 
 // Convex client — present only when a deployment is configured
 // (`npx convex dev` writes VITE_CONVEX_URL to .env.local). Absent in unit
@@ -45,46 +39,35 @@ const CONVEX_URL =
 const convexClient = new ConvexReactClient(CONVEX_URL ?? 'https://peek-no-deployment.convex.cloud')
 
 /**
- * Mounts every store Peek's pages read from — people's pictures, topics,
- * starred, read state and the rest — once, in the order they depend on each other.
+ * Mounts every store Peek's pages read from — people's pictures, starred, read
+ * state and the rest — once, in the order they depend on each other.
  */
 export function PeekDataProvider({ children }: { children: ReactNode }) {
   // AvatarRegistryProvider is outermost of the runtime stores: it only needs
   // the Convex queries above it, and the stores below resolve avatars through
   // it.
-  //
-  // StarredProvider sits **inside** TopicStoreProvider, and did not used to
-  // (SHR-6). Its set now comes from the relay as bare ids, so it resolves them
-  // to rows through `useTopics()` — and that reads the runtime topic store, for
-  // the optimistic window on a rename or a delete. Mounted above it, the
-  // provider throws on first render.
   const tree = (
     <AvatarRegistryProvider>
       <MentionDirectorySync />
       <ReadStateSync />
-      <TopicStoreProvider>
-        <TopicDirectorySync />
-        <StarredProvider>
-          <TopicMutationsProvider>
-            {/* The followed set (FOL-30): the relay's blob alone, read by the
-                unread hooks and the follow controls. Reads no store above it,
-                and sits above the Screener, whose file half is judged over it
-                (FOL-34). */}
-            <FollowsProvider>
-              {/* Inside OpenWorkProvider: the Screener's PEE-6 de-duplication
-                  reads the open-work list, so open work has to be above it. */}
-              <OpenWorkProvider>
-                <ScreenerProvider>
-                  {/* DM channels and hidden DMs (DMS-6, REM-3): the relay's, keyed
-                      by pubkey. It reads nothing from the stores above, so it
-                      sits innermost. */}
-                  <DmsProvider>{children}</DmsProvider>
-                </ScreenerProvider>
-              </OpenWorkProvider>
-            </FollowsProvider>
-          </TopicMutationsProvider>
-        </StarredProvider>
-      </TopicStoreProvider>
+      <StarredProvider>
+        {/* The followed set (FOL-30): the relay's blob alone, read by the
+            unread hooks and the follow controls. Reads no store above it,
+            and sits above the Screener, whose file half is judged over it
+            (FOL-34). */}
+        <FollowsProvider>
+          {/* Inside OpenWorkProvider: the Screener's PEE-6 de-duplication
+              reads the open-work list, so open work has to be above it. */}
+          <OpenWorkProvider>
+            <ScreenerProvider>
+              {/* DM channels and hidden DMs (DMS-6, REM-3): the relay's, keyed
+                  by pubkey. It reads nothing from the stores above, so it
+                  sits innermost. */}
+              <DmsProvider>{children}</DmsProvider>
+            </ScreenerProvider>
+          </OpenWorkProvider>
+        </FollowsProvider>
+      </StarredProvider>
     </AvatarRegistryProvider>
   )
   // Exactly ONE provider owns the client's auth (PEEK-104). Both of these call

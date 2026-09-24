@@ -6,24 +6,17 @@
  * "Because then it feels like duplicate. You're trying to open item that is
  * already open."
  *
- * The rule used to be enforced in three server-side places, and this file
- * pinned all three. SHR-10 folded the topic half onto the device, so the rule
- * now lives in two places and this file covers the one that is still here:
- * **the DM half**. The topic half's PEE-6 is a `Set` intersection in
- * `src/api/internal/screener.tsx`, pinned by `src/api/screenerFold.test.ts`.
- *
- * The fourth test below is the one that would otherwise be missing: it is not
- * about PEE-6 at all, it is the proof that topics stopped writing rows. Without
- * it, "no duplicate row" and "no row at all" look identical from here, and a
- * regression that re-enabled the fan-out would pass every other test in the file.
+ * What is left of the rule on this side is read-time: `screenerList` skips a
+ * DM row whose conversation is in Open work. The write-time half ran in the
+ * Screener fan-out, which went with the last Convex message write (FOL-23), and
+ * the topic half went with the Convex topics.
  */
 import { convexTest } from 'convex-test'
 import { describe, expect, it } from 'vitest'
 import { api } from './_generated/api'
 import schema from './schema'
 import { ESTIVA_ID_ISSUER } from './users'
-import { screenMessage } from './screener'
-import type { Doc, Id } from './_generated/dataModel'
+import type { Id } from './_generated/dataModel'
 
 const modules = import.meta.glob('./**/*.ts')
 
@@ -31,13 +24,8 @@ const PUBKEY = 'a'.repeat(64)
 const asUser = (pubkey: string) => ({ issuer: ESTIVA_ID_ISSUER, subject: pubkey })
 
 /**
- * Ada (the viewer) and Bob, with two DM conversations between them and two
- * topics they are both in.
- *
- * Two DMs between the same pair is not a shape production has — `dmConversations`
- * is keyed by the ordered pair — but PEE-6 needs a held conversation and a free
- * one, and the rows this exercises are keyed by `targetId` alone. The second
- * partner is Cy, so the pairs are genuinely distinct.
+ * Ada (the viewer) with a DM each to Bob and Cy, and a topic row left over
+ * from before FOL-23.
  */
 async function seed(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => {
@@ -51,65 +39,13 @@ async function seed(t: ReturnType<typeof convexTest>) {
         (ada as string) < (partner as string) ? [ada, partner] : [partner, ada]
       dms.push(await ctx.db.insert('dmConversations', { userLowId, userHighId, createdAt: 1 }))
     }
-
-    const topics: Id<'topics'>[] = []
-    for (const title of ['Committed to', 'Fresh']) {
-      const topicId = await ctx.db.insert('topics', { title, creatorId: bob, createdAt: 1 })
-      for (const userId of [ada, bob]) {
-        await ctx.db.insert('topicMembers', { topicId, userId, addedAt: 1 })
-      }
-      topics.push(topicId)
-    }
-    return { ada, bob, cy, dms, topics }
+    const topic = await ctx.db.insert('topics', { title: 'Legacy', creatorId: bob, createdAt: 1 })
+    return { ada, bob, cy, dms, topic }
   })
 }
-
-async function post(
-  t: ReturnType<typeof convexTest>,
-  authorId: Id<'users'>,
-  parent: { kind: 'dm' | 'topic'; id: string },
-  body: string,
-) {
-  await t.run(async (ctx) => {
-    const messageId = await ctx.db.insert('messages', {
-      parentKind: parent.kind,
-      parentId: parent.id,
-      authorId,
-      body,
-      createdAt: Date.now(),
-    })
-    const message = (await ctx.db.get(messageId)) as Doc<'messages'>
-    await screenMessage(ctx, message)
-  })
-}
-
-const screenerRowsFor = (t: ReturnType<typeof convexTest>, userId: Id<'users'>) =>
-  t.run(async (ctx) =>
-    (await ctx.db.query('screenerItems').collect()).filter((r) => r.userId === userId),
-  )
 
 describe('open work silences the screener (the DM half)', () => {
-  it('new activity in a held DM does not screen — a fresh one still does', async () => {
-    const t = convexTest(schema, modules)
-    const { ada, bob, cy, dms } = await seed(t)
-    await t.run(async (ctx) => {
-      await ctx.db.insert('deskOpenWork', {
-        userId: ada,
-        kind: 'dm',
-        targetId: dms[0] as string,
-        addedAt: 1,
-      })
-    })
-
-    await post(t, bob, { kind: 'dm', id: dms[0] as string }, 'a DM Ada already has open')
-    await post(t, cy, { kind: 'dm', id: dms[1] as string }, 'a DM Ada has not')
-
-    const rows = await screenerRowsFor(t, ada)
-    // The un-held DM screens; the held one is silent.
-    expect(rows.map((r) => r.targetId)).toEqual([dms[1] as string])
-  })
-
-  it('a stale row is healed at read time', async () => {
+  it('a row whose DM is in Open work is not listed', async () => {
     const t = convexTest(schema, modules)
     const { ada, dms } = await seed(t)
     await t.run(async (ctx) => {
@@ -133,113 +69,69 @@ describe('open work silences the screener (the DM half)', () => {
     })
 
     const listed = await t.withIdentity(asUser(PUBKEY)).query(api.desk.screenerList, {})
-    expect(listed.map((item) => (item.kind === 'dm' ? item.authorName : null))).toEqual(['Cy'])
+    expect(listed.map((item) => item.authorName)).toEqual(['Cy'])
   })
 
-  it('a legacy topic row is never listed, held or not', async () => {
+  it('a legacy topic row is never listed', async () => {
     const t = convexTest(schema, modules)
-    const { ada, topics } = await seed(t)
+    const { ada, topic } = await seed(t)
     await t.run(async (ctx) => {
-      // Written before SHR-10 shipped. Nothing creates one now, nothing sweeps
-      // it, and `screenerList` must not draw it — the fold owns topics, and a
-      // row from both sources is the duplicate PEE-6 is about.
-      for (const [i, topicId] of topics.entries()) {
-        await ctx.db.insert('screenerItems', {
-          userId: ada,
-          kind: 'topic',
-          targetId: topicId as string,
-          preview: `stale ${i}`,
-          createdAt: i,
-        })
-      }
+      await ctx.db.insert('screenerItems', {
+        userId: ada,
+        kind: 'topic',
+        targetId: topic as string,
+        preview: 'stale',
+        createdAt: 1,
+      })
     })
 
     const listed = await t.withIdentity(asUser(PUBKEY)).query(api.desk.screenerList, {})
     expect(listed).toEqual([])
   })
-
-  it('the Desk "+" picker clears the screener row it obsoletes', async () => {
-    const t = convexTest(schema, modules)
-    const { ada, topics } = await seed(t)
-    await t.run(async (ctx) => {
-      await ctx.db.insert('screenerItems', {
-        userId: ada,
-        kind: 'topic',
-        targetId: topics[0] as string,
-        preview: 'wants attention',
-        createdAt: 1,
-      })
-    })
-
-    await t
-      .withIdentity(asUser(PUBKEY))
-      .mutation(api.desk.addTopicsToOpenWork, { topicKeys: [topics[0] as string] })
-
-    expect(await screenerRowsFor(t, ada)).toEqual([])
-    const open = await t.run(async (ctx) => await ctx.db.query('deskOpenWork').collect())
-    expect(open.map((w) => w.targetId)).toEqual([topics[0] as string])
-  })
 })
 
-describe('the topic half no longer writes rows (SHR-10)', () => {
-  it('a message in a topic Ada was added to and never opened screens nothing', async () => {
-    const t = convexTest(schema, modules)
-    const { ada, bob, topics } = await seed(t)
-
-    // Rule 2 at its strongest: Ada is a member, has never opened it, and the
-    // topic is not in her open work. Under the old writer this was one row.
-    await post(t, bob, { kind: 'topic', id: topics[1] as string }, 'news in a topic Ada never touched')
-    expect(await screenerRowsFor(t, ada)).toEqual([])
-  })
-
-  it('an @mention in a topic screens nothing either — that rule moved too', async () => {
-    const t = convexTest(schema, modules)
-    const { ada, bob, topics } = await seed(t)
-
-    await post(t, bob, { kind: 'topic', id: topics[0] as string }, 'over to @Ada on this one')
-    expect(await screenerRowsFor(t, ada)).toEqual([])
-  })
-
-  it('an @mention in a DM still screens — the DM half is untouched', async () => {
+describe('the hover preview', () => {
+  it('falls back to the conversation’s newest three messages', async () => {
     const t = convexTest(schema, modules)
     const { ada, bob, dms } = await seed(t)
-
-    await post(t, bob, { kind: 'dm', id: dms[0] as string }, 'over to @Ada on this one')
-    const rows = await screenerRowsFor(t, ada)
-    expect(rows.map((r) => r.kind)).toEqual(['dm'])
-  })
-})
-
-describe('the hover preview answers a folded row (SHR-10)', () => {
-  it('returns the conversation by topic, where a row id would resolve to nothing', async () => {
-    const t = convexTest(schema, modules)
-    const { bob, topics } = await seed(t)
-    await t.run(async (ctx) => {
-      // Explicit instants: the preview takes the newest three, and deriving a
-      // timestamp from the body made 'third' older than 'second'.
+    const itemId = await t.run(async (ctx) => {
+      // Explicit instants: the preview takes the newest three.
       for (const [i, body] of ['first', 'second', 'third', 'fourth'].entries()) {
         await ctx.db.insert('messages', {
-          parentKind: 'topic',
-          parentId: topics[0] as string,
+          parentKind: 'dm',
+          parentId: dms[0] as string,
           authorId: bob,
           body,
           createdAt: 1_000 + i,
         })
       }
+      return await ctx.db.insert('screenerItems', {
+        userId: ada,
+        kind: 'dm',
+        targetId: dms[0] as string,
+        preview: 'fourth',
+        createdAt: 1,
+      })
     })
 
-    const byTopic = await t
-      .withIdentity(asUser(PUBKEY))
-      .query(api.screener.preview, { topicKey: topics[0] as string })
-    expect(byTopic?.map((r) => r.body)).toEqual(['second', 'third', 'fourth'])
+    const rows = await t.withIdentity(asUser(PUBKEY)).query(api.screener.preview, { itemId })
+    expect(rows?.map((r) => r.body)).toEqual(['second', 'third', 'fourth'])
+  })
 
-    // The control, and the reason this test exists: the folded row's own id is
-    // not a `screenerItems` id, so the old single-argument path answers null —
-    // which the card renders as an empty box, indistinguishable from a
-    // conversation with nothing in it.
-    const byRowId = await t
-      .withIdentity(asUser(PUBKEY))
-      .query(api.screener.preview, { itemId: `sc_topic_${topics[0] as string}` })
-    expect(byRowId).toBeNull()
+  it('answers nobody else’s inbox', async () => {
+    const t = convexTest(schema, modules)
+    const { bob, dms } = await seed(t)
+    const itemId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert('screenerItems', {
+          userId: bob,
+          kind: 'dm',
+          targetId: dms[0] as string,
+          preview: 'Bob’s',
+          createdAt: 1,
+        }),
+    )
+
+    expect(await t.withIdentity(asUser(PUBKEY)).query(api.screener.preview, { itemId })).toBeNull()
   })
 })

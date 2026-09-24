@@ -6,7 +6,6 @@
  * here: which rows exist where, in which order, and where they lead — the
  * design's C2, C3, C4, R6, R12, R13 and the bugs F2 and F9.
  */
-import { useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -17,6 +16,7 @@ import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
+import { channelDestination } from '@/lib/legacyTopicLinks'
 import { resetRecentsForTests } from '@/lib/recents'
 import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
@@ -72,13 +72,6 @@ function Probe() {
   )
 }
 
-/** The page a topic view marks as open, the way TopicsPage does. */
-function OnTopic({ id }: { id: string }) {
-  const { setLastTopicId } = useLastSelection()
-  useEffect(() => setLastTopicId(id), [id, setLastTopicId])
-  return null
-}
-
 function open(context: LauncherContext = {}, props: { initialAppId?: string } = {}, route = '/desk') {
   render(
     <MemoryRouter initialEntries={[route]}>
@@ -87,7 +80,6 @@ function open(context: LauncherContext = {}, props: { initialAppId?: string } = 
           <LastSelectionProvider>
             <ToastProvider>
               <Probe />
-              {route.startsWith('/topics/') && <OnTopic id={route.slice('/topics/'.length)} />}
               <CommandLauncher context={context} onClose={vi.fn()} {...props} />
             </ToastProvider>
           </LastSelectionProvider>
@@ -111,12 +103,12 @@ beforeEach(() => {
 describe('the first level, by what was typed', () => {
   it('puts Ask, Draft and Make first for a sentence, and last for a word (C2)', async () => {
     open(inThread)
-    await userEvent.type(field(), 'pipeline')
+    await userEvent.type(field(), 'designer')
     await waitFor(() => expect(groupNames().at(-1)).toBe('Ask'))
-    expect(groupNames()[0]).toBe('Topics')
+    expect(groupNames()[0]).toBe('People')
 
     await userEvent.clear(field())
-    await userEvent.type(field(), 'pipeline stuck')
+    await userEvent.type(field(), 'product designer')
     await waitFor(() => expect(groupNames()[0]).toBe('Ask'))
   })
 
@@ -144,30 +136,38 @@ describe('the first level, by what was typed', () => {
 })
 
 describe('recents (C3)', () => {
+  const FILE = '30840:' + 'c'.repeat(64) + ':0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
   beforeEach(() => {
     window.localStorage.setItem(
       'estiva-peek:recents',
       JSON.stringify([
-        { kind: 'topic', id: '1' },
+        { kind: 'file', id: FILE, title: 'FOL-15 test topic 2' },
         { kind: 'person', id: 'amie' },
       ]),
     )
     resetRecentsForTests()
   })
 
-  it('lists the topics and people opened last, before anything is typed', async () => {
+  it('lists the files and people opened last, before anything is typed', async () => {
     open()
     const recent = await screen.findByRole('group', { name: 'Recent' })
-    expect(recent).toHaveTextContent('CI/CD pipeline stuck during build stage')
+    expect(recent).toHaveTextContent('FOL-15 test topic 2')
     expect(recent).toHaveTextContent('Amie Miles')
     expect(recent).toHaveTextContent('Clear recent')
   })
 
-  it('leaves out the topic you are already in', async () => {
-    open({}, {}, '/topics/1')
+  it('skips a recent Convex topic, which has nowhere to open since FOL-23', async () => {
+    window.localStorage.setItem(
+      'estiva-peek:recents',
+      JSON.stringify([{ kind: 'topic', id: '1' }, { kind: 'person', id: 'amie' }]),
+    )
+    resetRecentsForTests()
+    open()
     const recent = await screen.findByRole('group', { name: 'Recent' })
-    await waitFor(() => expect(recent).not.toHaveTextContent('CI/CD pipeline stuck during build stage'))
-    expect(recent).toHaveTextContent('Amie Miles')
+    expect(within(recent).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      expect.stringContaining('Amie Miles'),
+      expect.stringContaining('Clear recent'),
+    ])
   })
 
   it('forgets the one you are on with Ctrl+Backspace', async () => {
@@ -175,7 +175,7 @@ describe('recents (C3)', () => {
     await screen.findByRole('group', { name: 'Recent' })
     await waitFor(() => expect(document.activeElement).toBe(field()))
     await userEvent.keyboard('{Control>}{Backspace}{/Control}')
-    await waitFor(() => expect(screen.getByRole('group', { name: 'Recent' })).not.toHaveTextContent('CI/CD pipeline'))
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Recent' })).not.toHaveTextContent('FOL-15 test topic 2'))
     expect(JSON.parse(window.localStorage.getItem('estiva-peek:recents')!)).toEqual([{ kind: 'person', id: 'amie' }])
   })
 
@@ -187,30 +187,16 @@ describe('recents (C3)', () => {
   })
 
   /*
-    A file opened on its page is recent too (FOL-36) — a topic started since
-    #194 is one — and shares the topic slots in the order things were opened.
-    Its title is the stored one; it opens at `/topic/<slug>-<d>` (FOL-37); and, like a
-    topic, the file you are on is not somewhere to go.
+    A file opened on its page is recent (FOL-36) — a topic started since #194
+    is one. Its title is the stored one; it opens at `/topic/<slug>-<d>`
+    (FOL-37); and the file you are on is not somewhere to go.
   */
   describe('a file (FOL-36)', () => {
-    const FILE = '30840:' + 'c'.repeat(64) + ':0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
-    beforeEach(() => {
-      window.localStorage.setItem(
-        'estiva-peek:recents',
-        JSON.stringify([
-          { kind: 'file', id: FILE, title: 'FOL-15 test topic 2' },
-          { kind: 'topic', id: '1' },
-        ]),
-      )
-      resetRecentsForTests()
-    })
-
-    it('is listed by its stored title, newest first, and opens on the file page', async () => {
+    it('is listed by its stored title and opens on the file page', async () => {
       open()
       const recent = await screen.findByRole('group', { name: 'Recent' })
       const names = within(recent).getAllByRole('option').map((o) => o.textContent)
       expect(names[0]).toContain('FOL-15 test topic 2')
-      expect(names[1]).toContain('CI/CD pipeline stuck during build stage')
       await userEvent.click(within(recent).getByRole('option', { name: /FOL-15 test topic 2/ }))
       // A bare file's link is its short form (FOL-37): the slug and the d.
       expect(screen.getByTestId('where')).toHaveTextContent('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
@@ -219,14 +205,14 @@ describe('recents (C3)', () => {
     it('is left out when its page is the one you are on', async () => {
       open({}, {}, `/topic/${FILE}`)
       const recent = await screen.findByRole('group', { name: 'Recent' })
-      await waitFor(() => expect(recent).toHaveTextContent('CI/CD pipeline stuck during build stage'))
+      await waitFor(() => expect(recent).toHaveTextContent('Amie Miles'))
       expect(recent).not.toHaveTextContent('FOL-15 test topic 2')
     })
 
     it('…and when that page is at its short form, whatever the slug says (FOL-37)', async () => {
       open({}, {}, '/topic/some-old-name-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
       const recent = await screen.findByRole('group', { name: 'Recent' })
-      await waitFor(() => expect(recent).toHaveTextContent('CI/CD pipeline stuck during build stage'))
+      await waitFor(() => expect(recent).toHaveTextContent('Amie Miles'))
       expect(recent).not.toHaveTextContent('FOL-15 test topic 2')
     })
   })
@@ -251,9 +237,10 @@ describe('inside an app', () => {
 })
 
 describe('a message result (R13)', () => {
-  const FOLDER = 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91' // topic 7's Folder in the mock data
+  // An old topic's channel, from the bundled table (FOL-26): *Feedback on Peek*.
+  const FOLDER = '2303e8c1-c866-43b8-9b4c-e263f313a683'
 
-  it('opens its topic at the message', async () => {
+  it('opens where its old topic went, at the message', async () => {
     messageSearch.mockImplementation((query) =>
       query ? { state: { kind: 'done', count: 1 }, hits: [{ id: 'e1', content: 'the office **layout** is done', pubkey: 'p', createdAt: 1_758_000_000, folder: FOLDER }] } : { state: { kind: 'idle' }, hits: [] },
     )
@@ -262,7 +249,7 @@ describe('a message result (R13)', () => {
     // Words, never markdown.
     const row = await screen.findByRole('option', { name: /the office layout is done/ })
     await userEvent.click(row)
-    expect(screen.getByTestId('where').textContent).toMatch(/^\/topic-old\//)
+    expect(screen.getByTestId('where').textContent).toBe(channelDestination(FOLDER))
     expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: FOLDER, eventId: 'e1' })
   })
 

@@ -1,11 +1,7 @@
+/*
+  A DM or a followed file. A Convex topic was the third kind until FOL-23.
+*/
 export type ScreenerItem =
-  | {
-      id: string
-      kind: 'topic'
-      topicId: string
-      topicTitle: string
-      preview: string
-    }
   | {
       id: string
       kind: 'dm'
@@ -29,14 +25,6 @@ export type ScreenerItem =
 
 // No file rows: a file resolves from the relay, which mock mode has none of.
 export const SCREENER_ITEMS: Exclude<ScreenerItem, { kind: 'file' }>[] = [
-  {
-    id: 'sc_1',
-    kind: 'topic',
-    topicId: '7',
-    topicTitle: 'Updates on the new office layout',
-    preview:
-      'Facilities shared the Q3 floor plan and is asking each team for desk allocations by Friday. Worth a look before the deadline so design gets the corner cluster we discussed.',
-  },
   {
     id: 'sc_2',
     kind: 'dm',

@@ -143,14 +143,6 @@ export const Selected: Story = {
   args: { isSelected: true },
 }
 
-/** DM message that seeded a huddle — status-circle "Huddle in [Topic]" anchor (links to the topic). */
-export const HuddleAnchor: Story = {
-  args: {
-    huddleContext: { topicId: '3', topicTitle: 'Ongoing onboarding issues' },
-    authorName: 'You',
-  },
-}
-
 /** Inline chips: `@`/`!@` mentions, `[Topic]`/`[File]` refs, auto-linked references. */
 export const InlineTokens: Story = {
   args: {

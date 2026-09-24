@@ -2,7 +2,7 @@ import { useCallback, useState, type ComponentProps, type ReactNode } from 'reac
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { IconDotsVertical } from '@tabler/icons-react'
 import { ToolbarButton } from '@estiva-app/ui'
-import { PEOPLE, TOPICS, PeekDataProvider } from '@/api'
+import { PEOPLE, PeekDataProvider } from '@/api'
 import { SuggestionPopover } from '@/extensions/SuggestionPopover'
 import type { ConversationMessage } from '@/lib/conversationRegistry'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
@@ -122,12 +122,8 @@ function conversationMore(props: Partial<ComponentProps<typeof ConversationMoreM
   return (
     <ConversationMoreMenu
       open
-      isTopic={false}
       isResolved={false}
-      showCreateTopic
       onHighlight={noop}
-      onCreateTopic={noop}
-      onRevertToConversation={noop}
       onResolve={noop}
       onReopen={noop}
       onOpenWork={noop}
@@ -140,9 +136,9 @@ function conversationMore(props: Partial<ComponentProps<typeof ConversationMoreM
 }
 
 /**
- * Somebody else's DM message that hasn't seeded a topic yet: Start topic ·
- * Resolve · Open work · Mark as Highlight, then View details — no Edit, no
- * Delete. Hover "Mark as Highlight" to open the 5-type submenu.
+ * Somebody else's DM message: Resolve · Open work · Mark as Highlight, then
+ * View details — no Edit, no Delete. Hover "Mark as Highlight" to open the
+ * 5-type submenu. "Start topic" went with the Convex topics (FOL-23).
  */
 export const ConversationMoreDmMessage: Story = { render: () => conversationMore({}) }
 
@@ -153,14 +149,6 @@ export const ConversationMoreDmMessage: Story = { render: () => conversationMore
  * succeed on anybody else's message.
  */
 export const ConversationMoreOwnMessage: Story = { render: () => conversationMore({ isOwnMessage: true }) }
-
-/** A message that already started a topic drops "Start topic". */
-export const ConversationMoreAlreadySeeded: Story = {
-  render: () => conversationMore({ showCreateTopic: false }),
-}
-
-/** Inside a topic the top action becomes "Revert to conversation". */
-export const ConversationMoreTopicMessage: Story = { render: () => conversationMore({ isTopic: true }) }
 
 /** When resolved, "Resolve →" becomes "Reopen". */
 export const ConversationMoreResolved: Story = { render: () => conversationMore({ isResolved: true }) }
@@ -261,19 +249,16 @@ function CaretAlone() {
   )
 }
 
-// Exactly what the `[` extension offers (mention.tsx): the topics, and the
-// messages on screen (RIC-11). The Apps and Documents sections were mock rows
-// and were retired on 2026-09-05 — a story that shows them would be showing a
-// menu the app has never rendered.
+// Exactly what the `[` extension offers (mention.tsx): the messages on screen
+// (RIC-11). The Apps and Documents sections were mock rows and were retired on
+// 2026-09-05 — a story that shows them would be showing a menu the app has
+// never rendered — and topics went with Convex (FOL-23).
 const MESSAGES: ConversationMessage[] = [
   { id: 'm1', author: 'Ada Lovelace', timestamp: '9:41 AM', body: 'Build **#4821** failed again on the same step.', eventId: 'a'.repeat(64) },
   { id: 'm2', author: 'Grace Hopper', timestamp: '9:44 AM', body: 'Reverted the runner image; re-running now.', eventId: 'b'.repeat(64) },
   { id: 'm3', author: 'Ada Lovelace', timestamp: '9:52 AM', body: 'Green. Leaving the pin in place until Monday.', eventId: 'c'.repeat(64) },
 ]
-const ITEMS: FilesMenuItem[] = [
-  ...TOPICS.map<FilesMenuItem>((t) => ({ kind: 'topic', data: t })),
-  ...MESSAGES.map<FilesMenuItem>((m) => ({ kind: 'message', data: m })),
-]
+const ITEMS: FilesMenuItem[] = MESSAGES.map<FilesMenuItem>((m) => ({ kind: 'message', data: m }))
 
 /* The shell opens only when there is something to draw, exactly as the `[`
    extension does: a `Popover` wrapped around a menu that returned null is an
@@ -293,23 +278,14 @@ function files(items: FilesMenuItem[], query: string) {
 }
 
 /**
- * What `[` offers: the topics you can reference, each with its live status
- * icon, and below them the last few messages on screen, each as who said it
- * and how it opens. Rows are the shared `MenuItem` at its default size — one
+ * What `[` offers: the last few messages on screen, each as who said it and
+ * how it opens. Rows are the shared `MenuItem` at its default size — one
  * line of text beside a 16px icon — so a message is cut to a line too.
  */
 export const Files: Story = { render: () => files(ITEMS, '') }
 
-/** Search mode: both sections, filtered by what you have typed. */
-export const FilesFiltered: Story = { render: () => files(ITEMS, 'onboarding') }
-
 /** A message is found by what was said or by who said it. */
 export const FilesFilteredToMessages: Story = { render: () => files(ITEMS, 'ada') }
-
-/** No conversation on screen (the composer in a DM, say): topics alone. */
-export const FilesTopicsOnly: Story = {
-  render: () => files(ITEMS.filter((i) => i.kind === 'topic'), ''),
-}
 
 /** Nothing matches — the menu renders nothing rather than an empty box. */
 export const FilesNoMatches: Story = { render: () => files(ITEMS, 'zzzz') }

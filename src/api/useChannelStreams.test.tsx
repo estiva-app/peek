@@ -49,7 +49,7 @@ const socket = vi.hoisted(() => ({
   watches: [] as { channels: string[]; since?: number; kinds?: readonly number[]; stopped: boolean }[],
   deliver: undefined as ((channel: string, event?: SignedEvent) => void) | undefined,
 }))
-vi.mock('@/nostr/useLiveTopics', () => {
+vi.mock('@/nostr/useLiveClient', () => {
   const client = {
     state: () => socket.state,
     onState: (listener: (state: string) => void) => {
@@ -67,7 +67,7 @@ vi.mock('@/nostr/useLiveTopics', () => {
       return { stop: () => void (entry.stopped = true) }
     },
   }
-  return { useLiveTopics: () => ({ live: client, relayState: socket.state }) }
+  return { useLiveClient: () => ({ live: client, relayState: socket.state }) }
 })
 
 import { relayBudget } from '@/nostr/relayBudget'

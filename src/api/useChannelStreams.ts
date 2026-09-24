@@ -37,7 +37,7 @@ import { CHANNEL_STREAM_LIMIT, streamMessagesByFolder, type StreamMessage } from
 import { relayLog, type LiveTopics } from '@/nostr/liveTopics'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { RelayReadError, withRateLimitRetry } from '@/nostr/relayRead'
-import { useLiveTopics } from '@/nostr/useLiveTopics'
+import { useLiveClient } from '@/nostr/useLiveClient'
 import { createChannelStore, type ChannelStore, type ChannelStoreRead } from '@/platform/channelStore'
 import { useRelayViewer } from './foreign'
 
@@ -174,7 +174,7 @@ export function useChannelStreams(channels: readonly string[]): {
   at: number
   streams: Record<string, StreamMessage[]>
 } {
-  const { live } = useLiveTopics()
+  const { live } = useLiveClient()
   const viewer = useRelayViewer()
   const [store, setStore] = useState<ChannelStore | null>(null)
 

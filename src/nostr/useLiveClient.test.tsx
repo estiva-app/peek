@@ -11,14 +11,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const convex = vi.hoisted(() => ({ action: vi.fn() }))
-vi.mock('convex/react', () => {
-  // One client, as the real `useConvex` hands out: a fresh object per render
-  // is a dependency change, and the effect would rebuild on every render.
-  const client = { action: convex.action }
-  return { useConvex: () => client }
-})
-vi.mock('@/api/store', () => ({ hasConvex: true }))
 // A build-time value since REM-2, so there is no "not yet known" to wait out.
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'wss://estiva.estiva.app', hasRelay: true }))
 
@@ -47,7 +39,7 @@ vi.mock('./liveTopics', () => ({
   },
 }))
 
-import { useLiveTopics } from './useLiveTopics'
+import { useLiveClient } from './useLiveClient'
 
 beforeEach(() => {
   built.calls = []
@@ -59,9 +51,9 @@ afterEach(() => {
   built.listeners.clear()
 })
 
-describe('useLiveTopics', () => {
+describe('useLiveClient', () => {
   it('builds the client on mount, once', async () => {
-    const { result, rerender } = renderHook(() => useLiveTopics())
+    const { result, rerender } = renderHook(() => useLiveClient())
     // The point of the fix: the client appears without anything else in the
     // tab having connected, and the caller learns about it.
     await waitFor(() => expect(result.current.live).not.toBeNull())
@@ -73,7 +65,7 @@ describe('useLiveTopics', () => {
 
   it('reports the socket it found and every change after it, and unsubscribes on unmount', async () => {
     built.state = 'live'
-    const { result, unmount } = renderHook(() => useLiveTopics())
+    const { result, unmount } = renderHook(() => useLiveClient())
     // The snapshot, not only the changes: the tab-wide socket may already be
     // live when a sidebar mounts, and `onState` fires on change alone.
     await waitFor(() => expect(result.current.relayState).toBe('live'))

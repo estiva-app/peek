@@ -17,8 +17,9 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
 import { FoldersPage } from './FoldersPage'
+import { channelDestination } from '@/lib/legacyTopicLinks'
 
-const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
+const FOLDER = 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b'
 const ADDRESS = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
 const FILE_ADDRESS = `30840:${ADDRESS}`
 
@@ -68,13 +69,12 @@ const child = {
 */
 const relay = vi.hoisted(() => ({ files: [] as unknown[] }))
 /*
-  Which listed Folders are this Peek's own topics. Empty for the tests above;
-  the last group sets one, because a topic's Folder is the one row the page
-  must not offer to rename or delete.
+  A listed Folder that was one of Peek's topics — *For testing*, from the
+  bundled table (FOL-26) — because a topic's Folder is the one row the page must
+  not offer to rename or delete.
 */
 const TOPIC_CHANNEL = '3789d2ca-103c-40e5-906f-0490782db5fd'
 const RECORD_CHANNEL = '0804b906-1c2d-4e3f-8a5b-6c7d8e9f0a1b'
-const peekTopics = vi.hoisted(() => ({ list: [] as { id: string; title: string; folderId: string | null }[] }))
 /*
   What the team-unread hook answers per Folder — FOL-18. The judging is unit
   tested in `teamUnread.test.ts`; here the question is only that a Folder row
@@ -127,7 +127,6 @@ vi.mock('@/api', async () => ({
     signedOut: false,
     reload: async () => {},
   }),
-  useTopics: () => peekTopics.list,
   useFolderContents: () => ({
     state: { id: FOLDER, name: 'Folders', hasState: true, source: 'state', files: relay.files },
     reload: async () => {},
@@ -139,7 +138,6 @@ vi.mock('@/api', async () => ({
   useWorkspaceDirectory: () => undefined,
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
-  useIsTopicResolved: () => () => false,
   useResolvedReferences: () => ({}),
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: () => {} }) }))
@@ -231,15 +229,8 @@ describe('FoldersPage opens a file at its own address', () => {
   folder would be deleted. Fourteen topics went that way in the two days after
   the delete shipped. A topic's Folder is managed from the topic.
 */
-describe('FoldersPage manages a topic’s Folder from the topic', () => {
-  beforeEach(() => {
-    peekTopics.list = [{ id: 'k1', title: 'For testing', folderId: TOPIC_CHANNEL }]
-  })
-  afterEach(() => {
-    peekTopics.list = []
-  })
-
-  it('offers neither the delete nor the rename on a Folder that is a topic, and leads to the topic', async () => {
+describe('FoldersPage manages a topic’s Folder from where the topic went', () => {
+  it('offers neither the delete nor the rename on a Folder that was a topic, and leads to where it went', async () => {
     mount(`/app/folders/${TOPIC_CHANNEL}`)
     expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
@@ -247,9 +238,10 @@ describe('FoldersPage manages a topic’s Folder from the topic', () => {
     expect(screen.getAllByText('For testing').length).toBeGreaterThan(0)
     // A real link (UIG-14, F3): the address is on it, and a plain click routes in place.
     const open = screen.getByRole('link', { name: "Open this folder's topic" })
-    expect(open.getAttribute('href')).toBe(`/topic-old/for-testing-${TOPIC_CHANNEL}`)
+    // *For testing* was discarded and has no file, so it lands on its team (FOL-26).
+    expect(open.getAttribute('href')).toBe(channelDestination(TOPIC_CHANNEL))
     await userEvent.click(open)
-    expect(screen.getByTestId('url').textContent).toBe(`/topic-old/for-testing-${TOPIC_CHANNEL}`)
+    expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL))
   })
 
   it('still offers the delete and the rename on a Folder that is not a topic', () => {

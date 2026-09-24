@@ -5,9 +5,8 @@ import { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { encodeNevent } from '@estiva-app/protocol'
-import { mentionPeople, mentionTopics, type Person } from '@/api'
-import { useIsTopicResolved } from '@/api'
-import { mentionMessages, topicAddress } from '@/api/mentions'
+import { mentionPeople, type Person } from '@/api'
+import { mentionMessages } from '@/api/mentions'
 import { previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
 import { MentionMenu } from '@/components/ui/MentionMenu'
@@ -359,17 +358,18 @@ class FilesSuggestionPopup {
   }
 }
 
+/*
+  Nothing inserts a `topicMention` since FOL-23 took topics out of the `[` menu,
+  and nothing parses one out of a body. The node stays because the `[`
+  suggestion plugin is configured on it, and a chip already in an open editor
+  still has to draw and serialise; it draws from the snapshot it was made with.
+*/
 function TopicMentionView({ node }: NodeViewProps) {
-  const { id, label, isResolved } = node.attrs
-  // Live runtime resolution overrides the snapshot stored in the node when it was
-  // inserted, so an inline [Topic] tag's icon stays in sync with the topic's
-  // current resolved state across the app.
-  const isTopicResolved = useIsTopicResolved()
-  const liveResolved = id ? isTopicResolved(String(id)) : isResolved
+  const { label, isResolved } = node.attrs
   return (
     <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')}>
       <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0">
-        {liveResolved ? (
+        {isResolved ? (
           <IconCircleCheck size={16} stroke={1.5} className="text-success-default" />
         ) : (
           <IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />
@@ -427,19 +427,16 @@ export const TopicMention = Mention.extend({
   suggestion: {
     char: '[',
     items: (): FilesMenuItem[] => {
-      // Topics, and the messages on screen (RIC-11). The Apps and Documents
-      // sections that used to sit here were mock rows — a Figma category and
-      // a handful of invented files — and they only ever appeared in mock
-      // mode, so the menu you reviewed was not the menu the app shows.
-      // Placeholders retired (Katerina, 2026-09-05), the way the prototype
-      // reference chips were in #148.
+      // The messages on screen (RIC-11). Topics went with Convex (FOL-23).
+      // The Apps and Documents sections that used to sit here were mock rows
+      // — a Figma category and a handful of invented files — and they only
+      // ever appeared in mock mode, so the menu you reviewed was not the menu
+      // the app shows. Placeholders retired (Katerina, 2026-09-05), the way
+      // the prototype reference chips were in #148.
       //
       // APP_FILES / DOCUMENT_FILES stay in `src/data`: MessageBody still
       // resolves them so reference chips in existing messages keep working.
-      return [
-        ...mentionTopics().map((t): FilesMenuItem => ({ kind: 'topic', data: t })),
-        ...mentionMessages().map((m): FilesMenuItem => ({ kind: 'message', data: m })),
-      ]
+      return mentionMessages().map((m): FilesMenuItem => ({ kind: 'message', data: m }))
     },
 
     render: () => {
@@ -453,39 +450,28 @@ export const TopicMention = Mention.extend({
     },
 
     command: ({ editor, range, props: item }: any) => {
-      // A topic or a message (RIC-11). The `fileMention` node this used to
-      // insert still exists and MessageBody still renders it — messages
-      // already sent keep their file references; there is simply no longer a
-      // way to add a new one.
+      // A message (RIC-11). The `fileMention` node this used to insert still
+      // exists and MessageBody still renders it — messages already sent keep
+      // their file references; there is simply no longer a way to add a new
+      // one.
       const picked = item as FilesMenuItem
-      const node =
-        picked.kind === 'topic'
-          ? {
-              type: 'topicMention',
-              attrs: {
-                id: picked.data.id,
-                label: picked.data.title,
-                isResolved: picked.data.isResolved,
-                address: topicAddress(picked.data),
-              },
-            }
-          : {
-              type: 'messageMention',
-              attrs: {
-                id: picked.data.eventId,
-                label: picked.data.author,
-                snippet: previewText(picked.data.body),
-                /*
-                  The kind travels in the pointer so a reader can fetch the
-                  manifest and the event together rather than one after the
-                  other (`resolveForeignEvent`). No relay hint: the same
-                  omission every `naddr` Peek writes makes, and for the same
-                  reason — a reader on this relay needs none, and one elsewhere
-                  cannot read the event anyway.
-                */
-                uri: `nostr:${encodeNevent({ id: picked.data.eventId as string, relays: [], kind: MESSAGE_KIND })}`,
-              },
-            }
+      const node = {
+        type: 'messageMention',
+        attrs: {
+          id: picked.data.eventId,
+          label: picked.data.author,
+          snippet: previewText(picked.data.body),
+          /*
+            The kind travels in the pointer so a reader can fetch the manifest
+            and the event together rather than one after the other
+            (`resolveForeignEvent`). No relay hint: the same omission every
+            `naddr` Peek writes makes, and for the same reason — a reader on
+            this relay needs none, and one elsewhere cannot read the event
+            anyway.
+          */
+          uri: `nostr:${encodeNevent({ id: picked.data.eventId as string, relays: [], kind: MESSAGE_KIND })}`,
+        },
+      }
       editor
         .chain()
         .focus()

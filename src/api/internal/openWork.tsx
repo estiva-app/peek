@@ -1,5 +1,5 @@
 /**
- * Open work — the list on the relay, the rendering from Convex.
+ * Open work — the list on the relay, the rendering from the workspace.
  *
  * SHR-9 flipped which of those is the truth. `deskOpenWork` was the cleanest
  * layer-2 case left in Peek: four fields, every one authored by the person who
@@ -10,21 +10,20 @@
  *
  * ## The list and the rendering are two different things, and mixing them is a bug
  *
- * The list is ids: topic ids and person keys, in order, and nothing else is
- * published. Rendering resolves those through `useTopics()` and `useWorkspacePeople()` —
- * a title, a resolved state, a name, an avatar — which is ADR 0001's layer 3
- * doing exactly what it is for. An id the index cannot resolve is dropped from
+ * The list is ids: person keys and file addresses, in order, and nothing else
+ * is published. Rendering resolves those through `useWorkspacePeople()` and the
+ * relay — a name, an avatar, a title — which is ADR 0001's layer 3 doing
+ * exactly what it is for. An id that cannot be resolved is dropped from
  * `items` and **kept in the list**: they are separate values here for that
  * reason. Deriving the publish from the rendered rows instead would drop a row
  * from the person's list every time the workspace index was a beat behind,
  * permanently, because the blob is last-write-wins. SHR-6 states the same rule
  * for stars; it is the trap that ticket names and the reason this one repeats it.
  *
- * The cost of that rule, paid deliberately: an id whose topic is deleted for
- * good stays in the blob. `convex/topics.ts:210` used to sweep *other people's*
- * rows when a topic was deleted, which layer 2 forbids and which is not needed —
- * a row whose target no longer resolves simply does not render, which is the
- * read-time healing PEE-6 relies on.
+ * A Convex topic id is the case that rule now covers for good (FOL-23): the
+ * topics are gone, so a topic entry never renders and is never added again,
+ * and it is published back exactly as the blob held it — this file does not
+ * delete what a person put in their own list.
  *
  * ## Order is the state, and new work goes on the end
  *
@@ -43,11 +42,9 @@
  * ## Convex is out of it entirely (REM-4)
  *
  * `api.desk.openWorkList` used to serve while the relay had not answered and to
- * seed a person with no blob, and four mutations dual-wrote `deskOpenWork` so
- * that `nostr/sync.ts`'s `watchableChannels` could read it. All of that is gone:
- * a person the relay holds no list for starts with an empty one — Convex-only
- * rows are dropped, not migrated (Miky, 2026-09-24) — and the live working set
- * is computed from this list in the browser (`useWorkingSetChannels`).
+ * seed a person with no blob, and four mutations dual-wrote `deskOpenWork`. All
+ * of that is gone: a person the relay holds no list for starts with an empty one
+ * — Convex-only rows are dropped, not migrated (Miky, 2026-09-24).
  *
  * One reader of the old table is left behind on purpose: `desk.screenerList`'s
  * DM half still de-duplicates against `deskOpenWork`, which no longer changes.
@@ -57,15 +54,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { OPEN_WORK_ITEMS } from '@/data/deskData'
 import { hasRelay } from '@/api/relayUrl'
 import { isPersonKey, useWorkspacePeople } from '@/api/people'
-import { useTopics } from '@/api/topics'
 import { useResolvedReferences } from '@/api/foreign'
 import { useOpenWorkSync } from '@/nostr/useOpenWorkSync'
 import { openWorkKey, type OpenWorkRef } from '@/nostr/openWork'
 import type { OpenWorkItem } from '@/api/types'
 import { RELAY_URL } from '@/api/relayUrl'
 
-/** Overlay keys. The three prefixes cannot shadow each other. */
-const TOPIC = 'topic:'
+/** Overlay keys. The two prefixes cannot shadow each other. */
 const PERSON = 'dm:'
 const FILE = 'file:'
 
@@ -74,21 +69,12 @@ const NO_ENTRIES: OpenWorkRef[] = []
 export interface OpenWorkValue {
   /** The rendered rows, in the person's order. Never the list — see the header. */
   items: OpenWorkItem[]
-  /** Topic ids in the list, from the list rather than from `items`. */
-  topicIds: Set<string>
-  /** File addresses in the list, from the list for the same reason (FOL-34). */
+  /** File addresses in the list, from the list rather than from `items` (FOL-34). */
   fileAddresses: Set<string>
   /** True until the relay has answered and there is a list to render. */
   isLoading: boolean
-  /**
-   * The list itself, in order, with the relay identity each entry carries —
-   * `[]` until it has settled. The live working set reads it.
-   */
-  entries: readonly OpenWorkRef[]
-  addTopics: (topicIds: string[]) => void
   addDm: (dmId: string) => void
   addFile: (address: string) => void
-  removeTopic: (topicId: string) => void
   removeDm: (dmId: string) => void
   removeFile: (address: string) => void
 }
@@ -131,7 +117,6 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   const sync = useOpenWorkSync(relayUrl)
 
   // Rendering only. Never the list — see the header.
-  const topics = useTopics()
   const people = useWorkspacePeople()
 
   const relaySet = useMemo<OpenWorkRef[] | undefined>(() => {
@@ -163,13 +148,11 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
       const settled = settledByKey.get(key)
       if (settled) added.push(settled)
       else if (key.startsWith(PERSON)) added.push({ kind: 'dm', key: key.slice(PERSON.length) })
-      else if (key.startsWith(TOPIC)) added.push({ kind: 'topic', id: key.slice(TOPIC.length) })
       else if (key.startsWith(FILE)) added.push({ kind: 'file', address: key.slice(FILE.length) })
     }
     return [...kept, ...added]
   }, [settledSet, pending])
 
-  const topicById = useMemo(() => new Map((topics ?? []).map((t) => [t.id, t])), [topics])
   const personByKey = useMemo(() => new Map((people ?? []).map((p) => [p.id, p])), [people])
 
   /*
@@ -211,22 +194,11 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
           name: person.name,
           avatarSrc: person.avatarSrc,
         })
-      } else {
-        const topic = topicById.get(entry.id)
-        // Not in the index: deleted, or the index has not arrived. Either way
-        // there is no row to draw — and the id stays in the list regardless.
-        if (!topic) continue
-        out.push({
-          id: `ow_topic_${entry.id}`,
-          kind: 'topic',
-          topicId: entry.id,
-          title: topic.title,
-          topicStatus: topic.isResolved ? 'resolved' : 'unresolved',
-        })
       }
+      // A topic entry draws nothing and stays in the list (FOL-23, the header).
     }
     return out
-  }, [mockItems, effectiveSet, topicById, personByKey, fileObjects])
+  }, [mockItems, effectiveSet, personByKey, fileObjects])
 
   /*
     Publish the list the person owns, not the change that produced it.
@@ -242,10 +214,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     permanent. Now the relay's own answer is what is waited for — guarded
     inside `useOpenWorkSync`, and here as `effectiveSet` being undefined.
 
-    The relay identities are enriched from the workspace index but never gated on
-    it: an entry the index cannot resolve keeps whatever the blob already carried,
-    so a beat-behind index costs a `channelUuid` on one publish and never an
-    entry. Membership does not depend on `topics`/`people`; only decoration does.
+    A topic entry is published back exactly as the blob held it (FOL-23).
 
     An `absent` relay publishes only once the person has changed something: an
     empty list published on load would overwrite a blob this version cannot
@@ -258,14 +227,9 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   const publishList = sync.publish
   const publishEntries = useMemo<OpenWorkRef[] | undefined>(() => {
     if (!effectiveSet) return undefined
-    return effectiveSet.map((entry) => {
-      if (entry.kind === 'file') return entry
-      // A person is their pubkey since REM-3; `normalizePeople` made it so.
-      if (entry.kind === 'dm') return { kind: 'dm', key: entry.key, pubkey: entry.key }
-      const channelUuid = topicById.get(entry.id)?.folderId ?? entry.channelUuid
-      return channelUuid ? { kind: 'topic', id: entry.id, channelUuid } : { kind: 'topic', id: entry.id }
-    })
-  }, [effectiveSet, topicById])
+    // A person is their pubkey since REM-3; `normalizePeople` made it so.
+    return effectiveSet.map((entry) => (entry.kind === 'dm' ? { kind: 'dm', key: entry.key, pubkey: entry.key } : entry))
+  }, [effectiveSet])
 
   const untouchedAndAbsent = sync.state === 'absent' && pending.size === 0
   useEffect(() => {
@@ -274,50 +238,12 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     void publishList(publishEntries)
   }, [publishEntries, untouchedAndAbsent, publishList])
 
-  const topicIds = useMemo(() => {
-    // The list, never `items`: a row whose topic the index has not delivered yet
-    // is still in the list, and reading it off the rows would let the "+" picker
-    // offer it again and add a second copy.
-    if (!hasRelay) return new Set(mockItems.flatMap((w) => (w.kind === 'dm' || w.kind === 'file' ? [] : [w.topicId])))
-    return new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'topic' ? [e.id] : [])))
-  }, [mockItems, effectiveSet])
-
-  const addTopics = useCallback(
-    (ids: string[]) => {
-      if (!hasRelay) {
-        setMockItems((prev) => {
-          const have = new Set(prev.flatMap((w) => (w.kind === 'dm' || w.kind === 'file' ? [] : [w.topicId])))
-          const rows = ids
-            .filter((id) => !have.has(id))
-            .map((id) => ({
-              id: `ow_topic_${id}`,
-              kind: 'topic' as const,
-              topicId: id,
-              title: topicById.get(id)?.title ?? id,
-              topicStatus: (topicById.get(id)?.isResolved ? 'resolved' : 'unresolved') as 'resolved' | 'unresolved',
-            }))
-          return [...prev, ...rows]
-        })
-        return
-      }
-      setPending((prev) => {
-        const next = new Map(prev)
-        for (const id of ids) {
-          // Delete before set, so a re-add lands at the end of the order rather
-          // than back in the slot a removal left behind.
-          next.delete(`${TOPIC}${id}`)
-          next.set(`${TOPIC}${id}`, true)
-        }
-        return next
-      })
-    },
-    [topicById],
-  )
-
   const addDm = useCallback((dmId: string) => {
     if (!hasRelay) return
     setPending((prev) => {
       const next = new Map(prev)
+      // Delete before set, so a re-add lands at the end of the order rather
+      // than back in the slot a removal left behind.
       next.delete(`${PERSON}${dmId}`)
       next.set(`${PERSON}${dmId}`, true)
       return next
@@ -338,14 +264,6 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const removeTopic = useCallback((topicId: string) => {
-    if (!hasRelay) {
-      setMockItems((prev) => prev.filter((w) => w.kind === 'dm' || w.kind === 'file' || w.topicId !== topicId))
-      return
-    }
-    setPending((prev) => new Map(prev).set(`${TOPIC}${topicId}`, false))
-  }, [])
-
   const removeFile = useCallback((address: string) => {
     if (!hasRelay) return
     setPending((prev) => new Map(prev).set(`${FILE}${address}`, false))
@@ -359,26 +277,14 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     setPending((prev) => new Map(prev).set(`${PERSON}${dmId}`, false))
   }, [])
 
-  // Not gated on `topics`/`people`: those settle only for a signed-in viewer,
-  // and hanging on them would leave the Desk column under a skeleton for anyone
-  // they never settle for.
+  // Not gated on `people`: that settles only for a signed-in viewer, and
+  // hanging on it would leave the Desk column under a skeleton for anyone it
+  // never settles for.
   const isLoading = hasRelay && effectiveSet === undefined
 
   const value = useMemo<OpenWorkValue>(
-    () => ({
-      items,
-      topicIds,
-      fileAddresses,
-      isLoading,
-      entries: publishEntries ?? NO_ENTRIES,
-      addTopics,
-      addDm,
-      addFile,
-      removeTopic,
-      removeDm,
-      removeFile,
-    }),
-    [items, topicIds, fileAddresses, isLoading, publishEntries, addTopics, addDm, addFile, removeTopic, removeDm, removeFile],
+    () => ({ items, fileAddresses, isLoading, addDm, addFile, removeDm, removeFile }),
+    [items, fileAddresses, isLoading, addDm, addFile, removeDm, removeFile],
   )
 
   return <OpenWorkContext.Provider value={value}>{children}</OpenWorkContext.Provider>

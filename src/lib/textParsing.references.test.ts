@@ -12,7 +12,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
 
 const RELAY = 'f3a38fa6c6a1e5d2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920'
-const UUID = 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91'
+/** A real channel from the bundled legacy-topic table (FOL-26). */
+const UUID = '2303e8c1-c866-43b8-9b4c-e263f313a683'
 const ADDRESS = `39000:${RELAY}:${UUID}`
 const NADDR = `nostr:${addrToNaddr(ADDRESS, [])}`
 const EVENT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9011223344556677889900aabbccddeeff'
@@ -20,9 +21,6 @@ const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
 
 vi.mock('@/api/mentions', () => ({
   personByPubkey: () => undefined,
-  // The topic as it is called *now* — not what the message said when written.
-  topicByFolderId: (folderId: string) =>
-    folderId === UUID ? { id: '7', title: 'Office layout (renamed)', isResolved: false, folderId } : undefined,
 }))
 
 vi.mock('@/lib/conversationRegistry', () => ({
@@ -62,11 +60,13 @@ describe('what the composer writes', () => {
 })
 
 describe('what the editor loads back', () => {
-  it('turns a topic address into a chip wearing the title the topic has now', () => {
+  it('turns an old topic address into a chip wearing its title from the bundled table', () => {
+    // Not from Convex: the topics went in FOL-23, and a mention written before
+    // then still loads back as the chip it was picked from.
     const [chip] = parseInlineContent(NADDR)
     expect(chip).toMatchObject({
       type: 'topicMention',
-      attrs: { id: '7', label: 'Office layout (renamed)', address: ADDRESS },
+      attrs: { id: 't_1784708243871_2', label: 'Feedback on Peek', address: ADDRESS },
     })
   })
 

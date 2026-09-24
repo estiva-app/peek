@@ -36,7 +36,7 @@ vi.mock('@/api/mentions', () => ({
 import { MessageBody } from './MessageBody'
 
 const show = (body: string) =>
-  render(<MessageBody body={body} isTopicResolved={() => false} />).container
+  render(<MessageBody body={body} />).container
 
 describe('a mention in a message body', () => {
   it('renders the new form as the person it names', () => {

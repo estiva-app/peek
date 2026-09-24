@@ -53,7 +53,7 @@ vi.mock('@/api/mentions', () => ({
 import { MessageBody } from './MessageBody'
 
 const show = (body: string) =>
-  render(<MessageBody body={body} isTopicResolved={() => false} />).container
+  render(<MessageBody body={body} />).container
 
 describe('a topic or a message in a message body', () => {
   it('draws a topic address as the title the topic has now', () => {

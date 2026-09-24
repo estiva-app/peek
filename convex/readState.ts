@@ -67,17 +67,6 @@ async function clearScreenerFor(ctx: MutationCtx, userId: Id<'users'>, container
 }
 
 /** You opened a topic / DM / huddle and stayed a moment: its messages are read. */
-export const markContainerRead = mutation({
-  args: { parentKind: parentKindArg, parentKey: v.string() },
-  handler: async (ctx, { parentKind, parentKey }) => {
-    const you = await viewerOrThrow(ctx)
-    const parentId = await resolveParentId(ctx, parentKind, parentKey, you._id)
-    if (!parentId) return
-    await touch(ctx, you._id, parentId, Date.now())
-    await clearScreenerFor(ctx, you._id, parentId)
-  },
-})
-
 /** You opened one message's thread panel: its replies are read. */
 export const markThreadRead = mutation({
   args: { messageKey: v.string() },

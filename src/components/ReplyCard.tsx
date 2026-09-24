@@ -18,7 +18,7 @@ import { ConfirmDelete } from './ConfirmDelete'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
-import { useIsTopicResolved, useCanUpload, isCurrentUser } from '@/api'
+import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -182,7 +182,6 @@ export function ReplyCard({
      unmount from under an open menu. */
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
-  const isTopicResolved = useIsTopicResolved()
 
   const [reactionsState, setReactionsState] = useState<ReactionData[]>(reactions ?? [])
   // Sync local reactions state when the parent passes a new override (e.g. after navigation back).
@@ -534,7 +533,7 @@ export function ReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} isTopicResolved={isTopicResolved} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} />
+              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} />
             </div>
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a

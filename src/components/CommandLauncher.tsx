@@ -20,13 +20,12 @@ import { ShipLogoMark } from './ui/ShipLogo'
 import { TopicState } from './ui/TopicState'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
-import { formatDateLabel, useForeignObjects, useMessageSearch, useTopics, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
-import type { Topic } from '@/data/topicData'
+import { formatDateLabel, useForeignObjects, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
-import { matchPeople, matchTopics, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
-import { filePath, fileRouteFromPath, refNamesFile, topicPath } from '@/lib/objectUrl'
-import { legacyTopicByChannel } from '@/lib/legacyTopicLinks'
+import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
+import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
+import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
 import { draftInstruction, formSchema, prefillInstruction, threadContext, usablePrefill } from '@/lib/prefill'
@@ -58,7 +57,7 @@ import { LAUNCHER_APPS, type LauncherAction, type LauncherApp, type VocabOption 
  * **The levels are a stack**, so every way back puts back what was there:
  *
  * - the first level: this conversation, recents and apps before you type;
- *   apps, Ask, this conversation, topics, people, actions and messages as you do
+ *   apps, Ask, this conversation, people, actions and messages as you do
  * - inside an app: the actions its manifest declares
  * - Ask, Draft or Make: the result, then what you can do with it as rows
  * - a form: creating something, or changing something the thread refers to
@@ -175,14 +174,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
   const navigate = useNavigate()
   const { showToast } = useToast()
-  const { setPendingTopicMessage, topicId: selectedTopicId, dmId: selectedPersonId } = useLastSelection()
+  const { setPendingTopicMessage, dmId: selectedPersonId } = useLastSelection()
   const { pathname } = useLocation()
   /* Where the launcher was opened: a recent that is the page you are on is not somewhere to go (Katerina, 16 September). */
-  const openTopicId = /^\/(topics|topic-old)\//.test(pathname) ? selectedTopicId : null
   const openPersonId = pathname.startsWith('/app/people/') ? selectedPersonId : null
   // A file's page is `/<word>/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37, FOL-39); the ref in the path names the file that is open.
   const openFileRef = fileRouteFromPath(pathname)?.ref ?? null
-  const topics = useTopics()
   // The People page's list, keyed by pubkey — a row opens the DM (REM-3).
   const people = useWorkspacePeople()
   const directory = useWorkspaceDirectory()
@@ -501,11 +498,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     */
     const live39000 = (options: VocabOption[]) =>
       options.filter((p) => !(p.value.startsWith('39000:') && legacyTopicByChannel(p.value.split(':')[2] ?? '')))
-    if (form.app?.id === 'peek') {
-      out.topic = (topics ?? [])
-        .filter((t) => !t.isResolved && !(t.folderId && legacyTopicByChannel(t.folderId)))
-        .map((t) => ({ value: t.id, label: t.title }))
-    }
     const read = form.app ? live[form.app.id] : undefined
     if (read?.state === 'ready') out[PARENT_FIELD] = live39000(read.parents)
     if (!form.app && form.entry) out[PARENT_FIELD] = live39000(form.entry.parents)
@@ -610,16 +602,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     onClose()
   }
 
-  const topicRow = (t: Topic, forget?: () => void): CommandPaletteRow => ({
-    id: `topic-${t.id}`,
-    label: t.title,
-    description: t.isResolved ? 'Resolved' : undefined,
-    // The topic's own icon, not a hash: a dashed circle, or the tick once resolved.
-    leading: <TopicState type="topic" status={t.isResolved ? 'resolved' : 'unresolved'} />,
-    onSelect: close(() => navigate(topicPath(t))),
-    onForget: forget,
-  })
-
   /*
     A file the person opened — a bare-file topic, a Ship issue — by its address
     and the title it had then (FOL-36, `lib/recents`). A bare file is Peek's
@@ -715,20 +697,17 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
 
     if (!q) {
       /*
-        Topics and files share the three slots, in the order they were opened
-        (FOL-36): a topic started since #194 is a bare file and opens on the
-        file's page, and the person who opened two of those and one older
-        topic sees three topics, not one. A file carries its own title; a
-        topic's is read off the live list, and one no longer in it drops out.
+        Files take the three slots, in the order they were opened (FOL-36): a
+        topic started since #194 is a bare file and opens on the file's page.
+        A file carries its own title. A recent Convex topic has nothing to open
+        since FOL-23 and is skipped.
       */
       const recentTopics = recents
-        .flatMap((r) => {
-          if (r.kind === 'topic' && r.id !== openTopicId) {
-            return (topics ?? []).filter((t) => t.id === r.id).map((t) => topicRow(t, () => forgetRecent({ kind: 'topic', id: t.id })))
-          }
-          if (r.kind === 'file' && !(openFileRef && refNamesFile(openFileRef, r.id))) return [fileRow(r, () => forgetRecent({ kind: 'file', id: r.id }))]
-          return []
-        })
+        .flatMap((r) =>
+          r.kind === 'file' && !(openFileRef && refNamesFile(openFileRef, r.id))
+            ? [fileRow(r, () => forgetRecent({ kind: 'file', id: r.id }))]
+            : [],
+        )
         .slice(0, 3)
       const recentPeople = recents
         .filter((r) => r.kind === 'person' && r.id !== openPersonId)
@@ -758,7 +737,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const changes = changeRowsFor(
       changeRows.filter(({ action }) => action.label.toLowerCase().includes(q) || (action.targetLabel ?? '').toLowerCase().includes(q)),
     )
-    const topicHits = matchTopics(topics ?? [], query).map((t) => topicRow(t))
     const peopleHits = matchPeople(people ?? [], query).map((p) => personRow(p))
     // An app's action by its name: "add" finds "Add issue · Ship", and Enter opens its form (C4).
     const actionHits = probeable(LAUNCHER_APPS).flatMap((app) =>
@@ -774,23 +752,23 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     )
 
     /*
-      A message names its Folder on the `h` tag, and a Topic carries the same
-      uuid — the join, and the reason a hit can be unroutable: a message in a
-      channel this person has no topic row for has nowhere to go. Those are not
-      rows; how many there were is said, because a silent cap reads as "that is
-      all there was".
-    */
-    const byFolder = new Map((topics ?? []).filter((t) => t.folderId).map((t) => [t.folderId as string, t]))
-    /*
+      A message names its Folder on the `h` tag. The only channels whose talk
+      has somewhere to open are an old topic's, which lands on the file its
+      conversation moved to — the same table the old links redirect through
+      (FOL-26); the Convex topic rows this joined on went in FOL-23. Any other
+      hit is unroutable. Those are not rows; how many there were is said,
+      because a silent cap reads as "that is all there was".
+
       A comment on a file names the file instead (FOL-36), and the file's page
       resolves the address on its own, so a comment is routable wherever the
-      file is — its `h` is the team's channel, which has no topic row and is
-      not where the comment is anyway.
+      file is — its `h` is the team's channel, which is not where the comment
+      is anyway.
     */
-    const routable = messageHits.filter((h) => h.file || (h.folder && byFolder.has(h.folder)))
+    const topicOf = (folder: string | undefined) => (folder ? legacyTopicByChannel(folder) : undefined)
+    const routable = messageHits.filter((h) => h.file || topicOf(h.folder))
     const unroutable = messageHits.length - routable.length
     const messageRows = routable.slice(0, 5).map((hit): CommandPaletteRow => {
-      const topic = hit.file ? undefined : byFolder.get(hit.folder as string)
+      const topic = hit.file ? undefined : topicOf(hit.folder)
       const who = directory?.[hit.pubkey]
       // The thread is the conversation, and a reply lands on itself once it is open (R13).
       const pending = hit.folder ? { folder: hit.folder, eventId: hit.root ?? hit.id, ...(hit.root ? { reply: hit.id } : {}) } : null
@@ -805,7 +783,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         onSelect: close(() => {
           if (pending) setPendingTopicMessage(pending)
           if (hit.file) navigate(`${filePath(hit.file, hit.fileTitle)}?thread=${encodeURIComponent(hit.root ?? hit.id)}`)
-          else if (topic) navigate(topicPath(topic))
+          else if (topic) navigate(channelDestination(topic.channel))
         }),
       }
     })
@@ -816,7 +794,6 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       { label: 'Apps', rows: apps },
       ...(sentence ? [ask] : []),
       { label: 'This conversation', rows: changes },
-      { label: 'Topics', rows: topicHits },
       { label: 'People', rows: peopleHits },
       { label: 'Actions', rows: actionHits },
       { label: 'Messages', rows: messageRows },
@@ -832,7 +809,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         ...(messageNote && !(anyRows && messageNote === 'No messages matched.') ? [messageNote] : []),
         ...(unroutable > 0 ? [`${unroutable} more in conversations not in your sidebar.`] : []),
       ],
-      empty: !anyRows && !searching ? `Nothing is called “${typed}”. Try a topic, a person or an app.` : undefined,
+      empty: !anyRows && !searching ? `Nothing is called “${typed}”. Try a person or an app.` : undefined,
     }
   }
 

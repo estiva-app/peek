@@ -330,9 +330,9 @@ const PEEK: LauncherApp = {
       ],
     },
     {
-      // Mirrors Peek's own Start topic dialog (CreateTopicDialog.tsx) —
-      // Title and Invite people, no description field there and none here
-      // (Katerina 2026-08-31).
+      // Mirrored Peek's old Start topic dialog (CreateTopicDialog, gone with the
+      // Convex topics in FOL-23) — Title and Invite people, no description
+      // field (Katerina 2026-08-31).
       id: 'create-topic',
       label: 'Create a topic',
       emits: { kind: 9007 },

@@ -10,7 +10,7 @@
  *
  * | | where | matches |
  * | --- | --- | --- |
- * | topics | already in the app (`useTopics`) | any substring, live per keystroke |
+ * | topics | already in the app (`useTopics`) — until FOL-23 removed them | any substring, live per keystroke |
  * | people | already in the app (`usePeople`) | any substring, live per keystroke |
  * | messages | the relay, over NIP-50 | **whole tokens only** |
  *
@@ -36,7 +36,6 @@
  * a launcher that alone required a prefix would be the odd one out.
  */
 import type { Person } from '@/data/peopleData'
-import type { Topic } from '@/data/topicData'
 import type { RelayFailureKind } from '@/nostr/relayRead'
 
 /**
@@ -73,12 +72,6 @@ export function normalizeQuery(query: string): string {
  */
 export function hasCompleteWord(query: string): boolean {
   return /\s/.test(query.trim())
-}
-
-export function matchTopics(topics: readonly Topic[], query: string, limit = 5): Topic[] {
-  const q = normalizeQuery(query)
-  if (!q) return []
-  return topics.filter((t) => t.title.toLowerCase().includes(q)).slice(0, limit)
 }
 
 /**

@@ -1,7 +1,6 @@
 import { useRef, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { IconX, IconExternalLink, IconCircleDashed, IconCircleCheck, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
+import { IconX, IconExternalLink, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
 import { Chip, ContainerHeader, ScrollArea } from '@estiva-app/ui'
-import { RouterLink } from './RouterLink'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { ReplyCard } from './ReplyCard'
@@ -12,12 +11,10 @@ import { formatReplyTimestamp } from '@/api'
 import type { ConversationData, FileAttachment, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
 import { PinnedMessage } from './ui/PinnedMessage'
 import { SkeletonConversationList } from './ui/Skeleton'
-import { partitionRepliesAroundPromotion } from '@/lib/threadPartition'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
 import { findNaddrs } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { followInApp } from '@/lib/followInApp'
-import { useTopicPath } from '@/lib/useTopicPath'
 import { MetaText } from '@/components/ui/MetaText'
 
 // ── Thread Panel ──
@@ -80,7 +77,6 @@ function ResolutionTimeline({ events }: { events: ResolutionEvent[] }) {
 
 type ThreadRow =
   | { t: 'reply'; reply: ThreadReply }
-  | { t: 'divider' }
   | { t: 'events'; events: ResolutionEvent[] }
 
 /**
@@ -97,8 +93,6 @@ type ThreadRow =
 function buildThreadRows(
   persisted: ThreadReply[],
   sent: ThreadReply[],
-  hasDivider: boolean,
-  promotedAtMs: number | undefined,
   events: ResolutionEvent[]
 ): ThreadRow[] {
   const byAt = (a: ResolutionEvent, b: ResolutionEvent) => (a.atMs ?? Infinity) - (b.atMs ?? Infinity)
@@ -127,14 +121,8 @@ function buildThreadRows(
   // Persisted section (server clock), settled leftovers before the tail.
   interleave(persisted, settled).forEach(append)
 
-  // Optimistic tail (client clock), split by the promotion divider if any.
-  const { above: sentPre, below: sentPost } = promotedAtMs !== undefined
-    ? partitionRepliesAroundPromotion({ replies: [], sentReplies: sent, promotedAtMs })
-    : { above: sent, below: [] as ThreadReply[] }
-  let rest = interleave(sentPre, pending)
-  if (hasDivider) rows.push({ t: 'divider' })
-  rest = interleave(sentPost, rest)
-  rest.forEach(append)
+  // Optimistic tail (client clock).
+  interleave(sent, pending).forEach(append)
   return rows
 }
 
@@ -169,16 +157,6 @@ interface ThreadPanelProps {
   /** Called when the resolution-owning reply card edits the resolution. The parent updates the
    *  parent conv's resolution override accordingly (or reopens it when removed). */
   onResolutionChange?: (resolved: boolean, message?: string) => void
-  /**
-   * When set, an inline divider is rendered between the static `replies` (pre-promotion)
-   * and the runtime `sentReplies` (post-promotion). Used to mark the moment a DM
-   * conversation was promoted to a topic — visible from both DM and huddle entry points.
-   * If `onTopicClick` is provided, it overrides the Link's default navigation (used when
-   * the topic is already the current page and we just need to switch tabs / close the panel).
-   * `promotedAtMs` is the numeric promotion time used to partition runtime sentReplies
-   * chronologically: replies with createdAtMs < promotedAtMs render above the divider.
-   */
-  promotionDivider?: { topicId: string; topicTitle: string; topicResolved?: boolean; dateLabel: string; promotedAtMs?: number; onTopicClick?: () => void }
   /** When set, renders a header button that jumps to the matching DM thread. Used from the huddle side only. */
   onOpenInDm?: () => void
   /**
@@ -271,7 +249,6 @@ export function ThreadPanel({
   huddleMemberCount,
   huddleMembers = [],
   dmMembers = [],
-  promotionDivider,
   initialReactions,
   onInitialReactionsChange,
   initialHighlightType,
@@ -294,7 +271,6 @@ export function ThreadPanel({
   onReplyReactionsChange,
 }: ThreadPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const pathForTopic = useTopicPath()
 
   /*
     Publish what this thread refers to, so Cmd+K can offer those objects as the
@@ -364,16 +340,8 @@ export function ThreadPanel({
 
   const allReplies = [...replies, ...sentReplies]
 
-  // When a promotion divider is rendered, replies are split chronologically
-  // around the promotion event (see lib/threadPartition for the rule).
   // Replies + resolution events interleaved by time into one render sequence.
-  const threadRows = buildThreadRows(
-    replies,
-    sentReplies,
-    !!promotionDivider,
-    promotionDivider?.promotedAtMs,
-    resolutionEvents
-  )
+  const threadRows = buildThreadRows(replies, sentReplies, resolutionEvents)
 
   // Scroll to bottom when new replies are added
   useEffect(() => {
@@ -466,9 +434,7 @@ export function ThreadPanel({
         {/* Replies divider */}
         <DateDivider label="Replies" className="px-4 py-2" />
 
-        {/* Reply list - chronological top to bottom. When the conversation was promoted to a
-            topic, a system-event divider is inserted between the pre-promotion replies (static)
-            and the post-promotion replies (sentReplies). */}
+        {/* Reply list - chronological top to bottom. */}
         <div className="flex flex-col px-4 pb-4 gap-2">
           {isLoadingReplies && showSkeleton && <SkeletonConversationList />}
           {threadRows.map((row, i) => {
@@ -505,49 +471,7 @@ export function ThreadPanel({
                 </div>
               )
             }
-            // Promotion divider row
-            return promotionDivider ? (
-            <DateDivider
-              key="promotion-divider"
-              className="px-0 py-1"
-              label={
-                <span className="flex items-center gap-1.5 text-text-secondary min-w-0">
-                  {promotionDivider.topicResolved ? (
-                    <IconCircleCheck size={14} stroke={1.5} className="text-success-default shrink-0" />
-                  ) : (
-                    <IconCircleDashed size={14} stroke={1.5} className="shrink-0" />
-                  )}
-                  {/* The title is the only part allowed to truncate — the
-                      "Promoted to" prefix and the date suffix always stay. */}
-                  <span className="flex items-center gap-1 min-w-0 whitespace-nowrap">
-                    <span className="shrink-0">Promoted to</span>
-                    {/* The title's colour on a box around the link, which takes it from there (UIG-9). */}
-                    <span className="contents text-text-primary">
-                      <RouterLink
-                        href={pathForTopic(promotionDivider.topicId)}
-                        variant="quiet"
-                        truncate
-                        data-interactive
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // When the parent provides an override (e.g. we're already on the
-                          // topic page and just need to switch tabs + close the thread),
-                          // suppress the no-op navigation and run the callback instead.
-                          if (promotionDivider.onTopicClick) {
-                            e.preventDefault()
-                            promotionDivider.onTopicClick()
-                          }
-                        }}
-                      >
-                        {promotionDivider.topicTitle}
-                      </RouterLink>
-                    </span>
-                    <span className="shrink-0">· {promotionDivider.dateLabel}</span>
-                  </span>
-                </span>
-              }
-            />
-            ) : null
+            return null
           })}
         </div>
       </ScrollArea>

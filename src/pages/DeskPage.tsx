@@ -1,6 +1,6 @@
-﻿import { useCallback, useState, type ComponentProps, type ReactNode } from 'react'
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
-import { IconArrowUpRight, IconPlus, IconSortDescending } from '@tabler/icons-react'
+import { useCallback, useState, type ComponentProps, type ReactNode } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { IconArrowUpRight, IconSortDescending } from '@tabler/icons-react'
 import { CollapsibleSection, ContainerHeader, ListColumn, Toolbar, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { useRailClosed } from '@/layouts/railClosed'
@@ -8,7 +8,6 @@ import { Divider } from '@/components/ui/Divider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
-import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { useFileView } from '@/components/views/useFileView'
@@ -19,8 +18,6 @@ import {
   useScreenerItems,
   useDeskItems,
   useDeskLoading,
-  useIsTopicResolved,
-  useCreateTopicFromDm,
   usePeekActions,
   useStarred,
   useConversationBadges,
@@ -29,40 +26,32 @@ import {
 } from '@/api'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { filePath } from '@/lib/objectUrl'
-import { legacyTopicFile } from '@/lib/legacyTopicLinks'
 import { followInApp } from '@/lib/followInApp'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
-import { useToast } from '@/lib/toast'
-import { useTopicPath } from '@/lib/useTopicPath'
-import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
 type SectionKey = 'urgent' | 'openWork' | 'starred'
 
-type Selected = { kind: 'dm'; dmId: string; dmName: string; section: SectionKey }
-
-/** The file an Open work row opens beside the list: its own, or its topic's (SID-3). */
-const addressOf = (item: Exclude<OpenWorkItem, { kind: 'dm' }>): string | undefined =>
-  item.kind === 'file' ? item.address : legacyTopicFile(item.topicId)?.address
+type Selected = { dmId: string; dmName: string; section: SectionKey }
 
 /**
  * The Desk page: the Screener, Urgent, Open work and Starred lists on the left,
  * and the chosen file or direct message beside them.
+ *
+ * A DM or a file. A Convex topic was the third kind until FOL-23: its rows and
+ * the "+" picker that offered only topics went with the Convex topics. A topic
+ * still in somebody's open work or stars stays in their blob and draws nothing
+ * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
 export function DeskPage() {
   const railClosed = useRailClosed()
-  const { topicHasUnread, dmHasUnread } = useUnread()
+  const { dmHasUnread } = useUnread()
   const navigate = useNavigate()
-  const pathForTopic = useTopicPath()
-  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { showToast } = useToast()
   const { state: debug } = useDebug()
   const { entries: starredAll, isDmStarred, toggleDm, isLoading: starredLoading } = useStarred()
   const deskLoading = useDeskLoading()
   const actions = usePeekActions()
-  const createTopicFromDm = useCreateTopicFromDm()
-  const isTopicResolved = useIsTopicResolved()
   const allScreenerItems = useScreenerItems()
   const { openWork: OPEN_WORK_ITEMS, urgent: URGENT_ITEMS } = useDeskItems()
   const [selected, setSelected] = useState<Selected | null>(null)
@@ -77,7 +66,6 @@ export function DeskPage() {
   const [openedFrom, setOpenedFrom] = useState<{ section: SectionKey; title: string } | null>(null)
   const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
   const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
-  const [showAddToOpenWork, setShowAddToOpenWork] = useState(false)
 
   // The 1–2 item caps are a demo-composition affordance for the mock dataset.
   // With a real backend the Screener IS the inbox and Urgent is real — capping
@@ -91,8 +79,9 @@ export function DeskPage() {
       : URGENT_ITEMS.slice(0, debug.desk.urgentItemsCount)
     : []
 
-  // Section-level unread visibility (per-page debug toggles).
-  const showTopicUnreads = debug.unreads.topics
+  // Section-level unread visibility (per-page debug toggles). A file's dot
+  // follows the topics toggle, as it did when the two shared Open work.
+  const showFileUnreads = debug.unreads.topics
   const showPeopleUnreads = debug.unreads.people
 
   /*
@@ -105,17 +94,13 @@ export function DeskPage() {
     OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' ? [i.object] : [])),
   )
 
-  // Open work holds topics, files and (via Screener "Open") DMs. Sort unread
-  // first when unreads are visible. Filter out items dismissed via the row's X.
+  // Open work holds files and (via Screener "Open") DMs. Sort unread first when
+  // unreads are visible. Filter out items dismissed via the row's X.
   const openWorkUnread = (i: OpenWorkItem) =>
-    i.kind === 'file'
-      ? fileUnread[i.object.ref] === true
-      : i.kind === 'dm'
-        ? dmHasUnread(i.dmId)
-        : topicHasUnread(i.topicId)
+    i.kind === 'file' ? fileUnread[i.object.ref] === true : dmHasUnread(i.dmId)
   const baseOpenWork = (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : [])
     .filter((i) => !dismissedOpenWorkIds.has(i.id))
-  const openWorkItems = showTopicUnreads
+  const openWorkItems = showFileUnreads
     ? [...baseOpenWork].sort((a, b) => Number(openWorkUnread(b)) - Number(openWorkUnread(a)))
     : baseOpenWork
 
@@ -125,34 +110,28 @@ export function DeskPage() {
     const item = openWorkItems.find((i) => i.id === id)
     if (item?.kind === 'dm') {
       if (selected?.dmId === item.dmId) setSelected(null)
-    } else if (item && addressOf(item) === openAddress) {
+    } else if (item && item.address === openAddress) {
       closeFile()
     }
     setDismissedOpenWorkIds((prev) => new Set([...prev, id]))
     // Every kind removes by the key the blob holds, never by a row id: since
-    // SHR-9 the list comes from the relay and the rows carry synthetic ids. The
-    // action marks the removal in the session overlay — so the "+" picker offers
-    // a topic again immediately — and deletes the Convex row the Screener's
-    // de-duplication still reads (a file has none).
-    if (item && item.kind === 'file') openWorkFiles.remove(item.address)
-    else if (item && item.kind === 'dm') actions.removeDmFromOpenWork(item.dmId)
-    else if (item) actions.removeTopicFromOpenWork(item.topicId)
+    // SHR-9 the list comes from the relay and the rows carry synthetic ids.
+    if (item?.kind === 'file') openWorkFiles.remove(item.address)
+    else if (item?.kind === 'dm') actions.removeDmFromOpenWork(item.dmId)
   }
 
-  // Starred mixes DMs and topics. Sort each entry's unreadness based on its kind's toggle.
+  // Starred holds DMs. Unread first when the toggle is on.
   const baseStarred = debug.desk.starredHasData ? starredAll : []
-  const starredEntries = (showTopicUnreads || showPeopleUnreads)
-    ? [...baseStarred].sort((a, b) => {
-        const aUnread = a.kind === 'dm' ? (showPeopleUnreads && dmHasUnread(a.dmId)) : (showTopicUnreads && topicHasUnread(a.topicId))
-        const bUnread = b.kind === 'dm' ? (showPeopleUnreads && dmHasUnread(b.dmId)) : (showTopicUnreads && topicHasUnread(b.topicId))
-        return Number(bUnread) - Number(aUnread)
-      })
+  const starredEntries = showPeopleUnreads
+    ? [...baseStarred].sort((a, b) => Number(dmHasUnread(b.dmId)) - Number(dmHasUnread(a.dmId)))
     : baseStarred
 
   // Selection dedup: the section that owns the selected highlight is wherever
   // the user last clicked. So clicking the same item from a different section
   // moves the highlight to that section.
   const selectionAnchor: SectionKey | null = selected?.section ?? null
+  const isSelectedIn = (section: SectionKey, dmId: string) =>
+    selectionAnchor === section && selected?.dmId === dmId
 
   const dismissScreener = (id: string) => {
     setDismissedScreenerIds((prev) => new Set([...prev, id]))
@@ -166,11 +145,7 @@ export function DeskPage() {
     setDismissedScreenerIds((prev) => new Set([...prev, id]))
     actions.addScreenerToOpenWork(
       id,
-      item.kind === 'file'
-        ? { kind: 'file', address: item.address }
-        : item.kind === 'dm'
-          ? { kind: 'dm', dmId: item.dmId }
-          : { kind: 'topic', topicId: item.topicId },
+      item.kind === 'file' ? { kind: 'file', address: item.address } : { kind: 'dm', dmId: item.dmId },
     )
   }
 
@@ -181,16 +156,8 @@ export function DeskPage() {
   }
 
   /*
-    A topic or a file opens beside the lists, and the rail stays on Desk
-    (SID-3). Since FOL-26 a topic had navigated to the file its conversation
-    moved to, through `/topic-old/` and a redirect, which remounted the shell and
-    lit Topics on the rail; before that it opened here in `useTopicView`, which
-    read Convex. Now it is the file's own relay conversation, the one `FilePage`
-    draws (`useFileView`), found for a topic in the bundled table
-    (`legacyTopicFile`) — so no step of it asks Convex anything.
-
-    A topic id the table does not hold was never a production topic; it still
-    goes to wherever its old link lands, as before.
+    A file opens beside the lists, and the rail stays on Desk (SID-3): the
+    file's own relay conversation, the one `FilePage` draws (`useFileView`).
   */
   const openFile = (address: string, title: string, section: SectionKey) => {
     setSelected(null)
@@ -201,15 +168,10 @@ export function DeskPage() {
     setOpenedFrom(null)
     setSearchParams({}, { replace: true })
   }
-  const selectTopic = (topicId: string, section: SectionKey) => {
-    const file = legacyTopicFile(topicId)
-    if (file) openFile(file.address, file.title, section)
-    else navigate(pathForTopic(topicId))
-  }
   const selectDm = (dmId: string, fallbackName: string, section: SectionKey) => {
     const dmName = dmNameById(dmId) ?? fallbackName
     if (openAddress) closeFile()
-    setSelected({ kind: 'dm', dmId, dmName, section })
+    setSelected({ dmId, dmName, section })
   }
   const setOpenThread = useCallback(
     (id: string | null) => {
@@ -225,10 +187,8 @@ export function DeskPage() {
    * in is not known, so every row naming it is lit — the one case where the
    * Selection dedup above cannot say which section owns it.
    */
-  const isOpen = (address: string | undefined, section: SectionKey) =>
-    address != null &&
-    address === openAddress &&
-    (openedFrom == null || openedFrom.section === section)
+  const isOpen = (address: string, section: SectionKey) =>
+    address === openAddress && (openedFrom == null || openedFrom.section === section)
 
   // On Desk, unstarring a DM clears selection unless it is still reachable via
   // Urgent. If the selection was anchored to Starred, migrate it there.
@@ -238,35 +198,17 @@ export function DeskPage() {
     const wasStarred = isDmStarred(selected.dmId)
     toggleDm({ dmId: selected.dmId, name: selected.dmName })
     if (!wasStarred) return
-    const inUrgent = urgentItems.some((u) => u.kind === 'dm' && u.dmId === selected.dmId)
+    const inUrgent = urgentItems.some((u) => u.dmId === selected.dmId)
     if (!inUrgent) setSelected(null)
     else if (selected.section === 'starred') setSelected({ ...selected, section: 'urgent' })
   }
 
-  const handleStartTopicFromDm = (dmId: string, dmName: string, seedMessageId: string, data: StartTopicResult) => {
-    const { topicId } = createTopicFromDm({
-      title: data.title,
-      dmId,
-      dmName,
-      invitees: data.invitees,
-      seedMessageId,
-    })
-    const previousPath = `${location.pathname}${location.search}`
-    navigate(pathForTopic(topicId))
-    showToast({
-      label: 'Topic created',
-      actionLabel: 'Back to conversation',
-      onAction: () => navigate(previousPath),
-    })
-  }
-
   // Both hooks always run - each only does meaningful work when its id is set
   const dmView = useDmConversationView({
-    dmId: selected?.kind === 'dm' ? selected.dmId : null,
-    dmName: selected?.kind === 'dm' ? selected.dmName : undefined,
-    onToggleStarred: selected?.kind === 'dm' ? handleToggleStarredOnDesk : undefined,
+    dmId: selected?.dmId ?? null,
+    dmName: selected?.dmName,
+    onToggleStarred: selected ? handleToggleStarredOnDesk : undefined,
     showUnreads: showPeopleUnreads,
-    onStartTopicFromDm: handleStartTopicFromDm,
   })
   /*
     The open file, as its own page draws it: the conversation, a composer, the
@@ -313,123 +255,76 @@ export function DeskPage() {
   const threadPanel = selected ? dmView.threadPanel : filePane ? fileView.threadPanel : undefined
 
   return (
-    <>
-      <DeskPageView
-        railClosed={railClosed}
-        loading={deskLoading || starredLoading}
-        screener={debug.desk.showScreener ? screenerItems : []}
-        onOpenScreener={openScreener}
-        onDismissScreener={dismissScreener}
-        onLaterScreener={laterScreener}
-        urgent={urgentItems.map((item) =>
-          item.kind === 'dm'
-            ? {
-                id: item.id,
-                kind: 'dm' as const,
-                name: item.name,
-                avatarSrc: item.avatarSrc,
-                isUnread: true,
-                isUrgent: true,
-                isSelected: selectionAnchor === 'urgent' && selected?.kind === 'dm' && selected.dmId === item.dmId,
-                onClick: () => selectDm(item.dmId, item.name, 'urgent'),
-              }
-            : {
-                id: item.id,
-                kind: 'topic' as const,
-                name: item.title,
-                isResolved: isTopicResolved(item.topicId),
-                isUnread: true,
-                isUrgent: true,
-                isSelected: isOpen(legacyTopicFile(item.topicId)?.address, 'urgent'),
-                onClick: () => selectTopic(item.topicId, 'urgent'),
-              },
-        )}
-        openWork={openWorkItems.map((item) =>
-          item.kind === 'file'
-            ? {
-                id: item.id,
-                kind: 'file' as const,
-                name: item.title,
-                isBareFile: item.object.kind === KIND_BARE_FILE,
-                isUnread: showTopicUnreads && fileUnread[item.object.ref] === true,
-                isSelected: isOpen(item.address, 'openWork'),
-                onClick: () => openFile(item.address, item.title, 'openWork'),
-                onRemove: () => dismissOpenWork(item.id),
-              }
-            : item.kind === 'dm'
-            ? {
-                id: item.id,
-                kind: 'dm' as const,
-                name: item.name,
-                avatarSrc: item.avatarSrc,
-                isUnread: (showPeopleUnreads && dmHasUnread(item.dmId)) || Boolean(item.isUnread),
-                isSelected: selectionAnchor === 'openWork' && selected?.kind === 'dm' && selected.dmId === item.dmId,
-                onClick: () => selectDm(item.dmId, item.name, 'openWork'),
-                onRemove: () => dismissOpenWork(item.id),
-              }
-            : {
-                id: item.id,
-                kind: 'topic' as const,
-                name: item.title,
-                isResolved: isTopicResolved(item.topicId),
-                isUnread: (showTopicUnreads && topicHasUnread(item.topicId)) || Boolean(item.isUnread),
-                isSelected: isOpen(legacyTopicFile(item.topicId)?.address, 'openWork'),
-                onClick: () => selectTopic(item.topicId, 'openWork'),
-                onRemove: () => dismissOpenWork(item.id),
-              },
-        )}
-        starred={starredEntries.map((entry) =>
-          entry.kind === 'dm'
-            ? {
-                id: entry.id,
-                kind: 'dm' as const,
-                name: entry.name,
-                avatarSrc: entry.avatarSrc,
-                isUnread: (showPeopleUnreads && dmHasUnread(entry.dmId)) || Boolean(entry.isUnread),
-                isSelected: selectionAnchor === 'starred' && selected?.kind === 'dm' && selected.dmId === entry.dmId,
-                onClick: () => selectDm(entry.dmId, entry.name, 'starred'),
-              }
-            : {
-                id: entry.id,
-                kind: 'topic' as const,
-                name: entry.title,
-                isResolved: isTopicResolved(entry.topicId),
-                isUnread: (showTopicUnreads && topicHasUnread(entry.topicId)) || Boolean(entry.isUnread),
-                isSelected: isOpen(legacyTopicFile(entry.topicId)?.address, 'starred'),
-                onClick: () => selectTopic(entry.topicId, 'starred'),
-              },
-        )}
-        onAddToOpenWork={() => setShowAddToOpenWork(true)}
-        rightPanel={rightPanel}
-        threadPanel={threadPanel}
-      />
-      {showAddToOpenWork && (
-        <AddToOpenWorkDialog
-          onAdd={(topicIds) => actions.addTopicsToOpenWork(topicIds)}
-          onClose={() => setShowAddToOpenWork(false)}
-        />
+    <DeskPageView
+      railClosed={railClosed}
+      loading={deskLoading || starredLoading}
+      screener={debug.desk.showScreener ? screenerItems : []}
+      onOpenScreener={openScreener}
+      onDismissScreener={dismissScreener}
+      onLaterScreener={laterScreener}
+      urgent={urgentItems.map((item) => ({
+        id: item.id,
+        kind: 'dm' as const,
+        name: item.name,
+        avatarSrc: item.avatarSrc,
+        isUnread: true,
+        isUrgent: true,
+        isSelected: isSelectedIn('urgent', item.dmId),
+        onClick: () => selectDm(item.dmId, item.name, 'urgent'),
+      }))}
+      openWork={openWorkItems.map((item) =>
+        item.kind === 'file'
+          ? {
+              id: item.id,
+              kind: 'file' as const,
+              name: item.title,
+              isBareFile: item.object.kind === KIND_BARE_FILE,
+              isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
+              isSelected: isOpen(item.address, 'openWork'),
+              onClick: () => openFile(item.address, item.title, 'openWork'),
+              onRemove: () => dismissOpenWork(item.id),
+            }
+          : {
+              id: item.id,
+              kind: 'dm' as const,
+              name: item.name,
+              avatarSrc: item.avatarSrc,
+              isUnread: (showPeopleUnreads && dmHasUnread(item.dmId)) || Boolean(item.isUnread),
+              isSelected: isSelectedIn('openWork', item.dmId),
+              onClick: () => selectDm(item.dmId, item.name, 'openWork'),
+              onRemove: () => dismissOpenWork(item.id),
+            },
       )}
-    </>
+      starred={starredEntries.map((entry) => ({
+        id: entry.id,
+        kind: 'dm' as const,
+        name: entry.name,
+        avatarSrc: entry.avatarSrc,
+        isUnread: (showPeopleUnreads && dmHasUnread(entry.dmId)) || Boolean(entry.isUnread),
+        isSelected: isSelectedIn('starred', entry.dmId),
+        onClick: () => selectDm(entry.dmId, entry.name, 'starred'),
+      }))}
+      rightPanel={rightPanel}
+      threadPanel={threadPanel}
+    />
   )
 }
 
 /**
  * One row on the Desk, whichever section it is in, with every decision already
- * made — which is what lets the four sections stop repeating the same
- * DM-or-topic branch with the selection worked out inline.
+ * made — which is what lets the four sections stop repeating the same branch
+ * with the selection worked out inline.
  */
 export interface DeskRow {
   id: string
   /*
-    A file joined the two on 23 September (FOL-34): Open work holds files now.
-    It opens in the Desk's right column like the others (SID-3), drawing the
-    same conversation as the file's own page.
+    A file joined DMs on 23 September (FOL-34): Open work holds files. It
+    opens in the Desk's right column like a DM (SID-3), drawing the same
+    conversation as the file's own page.
   */
-  kind: 'dm' | 'topic' | 'file'
+  kind: 'dm' | 'file'
   name: string
   avatarSrc?: string
-  /** Topics only. */
-  isResolved?: boolean
   /** Files only: a bare-file topic wears the topic glyph, anything else the file one. */
   isBareFile?: boolean
   isUnread: boolean
@@ -447,9 +342,8 @@ function DeskRows({ rows }: { rows: DeskRow[] }) {
         <PersonRow
           key={row.id}
           name={row.name}
-          type={row.kind === 'dm' ? 'DM' : row.kind === 'file' ? (row.isBareFile ? 'topic' : 'file') : 'topic'}
+          type={row.kind === 'dm' ? 'DM' : row.isBareFile ? 'topic' : 'file'}
           avatarSrc={row.avatarSrc}
-          topicStatus={row.kind === 'topic' ? (row.isResolved ? 'resolved' : 'unresolved') : undefined}
           isUnread={row.isUnread}
           isUrgent={row.isUrgent}
           isSelected={row.isSelected}
@@ -481,7 +375,6 @@ export function DeskPageView({
   urgent,
   openWork,
   starred,
-  onAddToOpenWork,
   rightPanel,
   threadPanel,
 }: {
@@ -498,7 +391,6 @@ export function DeskPageView({
   urgent: DeskRow[]
   openWork: DeskRow[]
   starred: DeskRow[]
-  onAddToOpenWork: () => void
   rightPanel?: ReactNode
   threadPanel?: ReactNode
 }) {
@@ -536,7 +428,9 @@ export function DeskPageView({
               <div className="flex flex-col">
                 {/* The package's section row (UIG-14, 10.2): its actions always
                     shown, and the row itself still under the pointer — the
-                    buttons light up on their own (Katerina, 19 September). */}
+                    buttons light up on their own (Katerina, 19 September).
+                    "Add to Open work" went with the topic picker it opened
+                    (FOL-23); a DM and a file are added from where they are. */}
                 <SectionHeader
                   title="Open work"
                   showActions="always"
@@ -544,7 +438,6 @@ export function DeskPageView({
                   actions={[
                     // Sort does nothing yet, as before.
                     { icon: <IconSortDescending size={16} stroke={1.5} />, tooltip: 'Sort by', onClick: () => {} },
-                    { icon: <IconPlus size={16} stroke={1.5} />, tooltip: 'Add to Open work', onClick: onAddToOpenWork },
                   ]}
                 />
                 {openWork.length === 0 ? (
@@ -567,16 +460,15 @@ export function DeskPageView({
                   // Level with the rows (Katerina, 2026-09-14): each PersonRow pads itself,
                   // so the line takes a row's inset here, never on EmptyState.
                   <div className="px-2 py-1">
-                    <EmptyState scope="section" message="Favorite the conversations of People or Topics you interact mostly with" />
+                    <EmptyState scope="section" message="Favorite the conversations of People you interact mostly with" />
                   </div>
                 ) : (
                   starred.map((row) => (
                     <PersonRow
                       key={row.id}
                       name={row.name}
-                      type={row.kind === 'dm' ? 'DM' : 'topic'}
+                      type="DM"
                       avatarSrc={row.avatarSrc}
-                      topicStatus={row.kind === 'topic' ? (row.isResolved ? 'resolved' : 'unresolved') : undefined}
                       isUnread={row.isUnread}
                       isSelected={row.isSelected}
                       onClick={row.onClick}

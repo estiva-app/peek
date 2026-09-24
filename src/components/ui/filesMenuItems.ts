@@ -1,16 +1,15 @@
-import { type Topic } from '@/api'
 import type { ConversationMessage } from '@/lib/conversationRegistry'
 
-/** A row in the `[` picker: a topic to reference, or a message on screen. */
-export type FilesMenuItem =
-  | { kind: 'topic'; data: Topic }
-  | { kind: 'message'; data: ConversationMessage }
+/**
+ * A row in the `[` picker: a message on screen. A topic to reference was the
+ * other kind until FOL-23 removed the Convex topics.
+ */
+export type FilesMenuItem = { kind: 'message'; data: ConversationMessage }
 
 /** Where the picker will find one message among many on screen. */
 const MESSAGE_LIMIT = 6
 
 function matches(item: FilesMenuItem, q: string): boolean {
-  if (item.kind === 'topic') return item.data.title.toLowerCase().includes(q)
   // By what was said or who said it — "what Ada said" is found either way.
   return item.data.body.toLowerCase().includes(q) || item.data.author.toLowerCase().includes(q)
 }
@@ -30,13 +29,7 @@ function matches(item: FilesMenuItem, q: string): boolean {
 export function filterFilesItems(items: FilesMenuItem[], query: string): FilesMenuItem[] {
   const q = query.toLowerCase()
   const shown = q ? items.filter((i) => matches(i, q)) : items
-  /*
-    Topics first and messages capped, newest last as the thread shows them. A
-    topic list is bounded by the workspace; a thread is not, and a menu that
-    grew with it would put the topics somebody actually typed for below a
-    hundred rows of prose.
-  */
-  const topics = shown.filter((i) => i.kind === 'topic')
-  const messages = shown.filter((i) => i.kind === 'message').slice(-MESSAGE_LIMIT)
-  return [...topics, ...messages]
+  // Capped, newest last as the thread shows them: a thread is unbounded, and a
+  // menu that grew with it would be a hundred rows of prose.
+  return shown.slice(-MESSAGE_LIMIT)
 }

@@ -1,5 +1,5 @@
 /**
- * The Screener's decisions come from the relay, and the rows are folded (SHR-10).
+ * The Screener's decisions come from the relay (SHR-10).
  *
  * `screenerFold.test.ts` pins the rules. This pins the wiring around them, which
  * is where the ways to lose data are:
@@ -20,6 +20,10 @@
  *    in flight" it left the Desk under its skeleton for the whole load any time
  *    the relay was down. Only the last two can be told apart by a state the hook
  *    sets, which is why `unreachable` exists.
+ *
+ * The rows these tests draw are a DM (the Convex half, merged as it arrives)
+ * and followed files (the relay half, folded). The topic half went with the
+ * Convex topics in FOL-23.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -28,27 +32,11 @@ import { getFunctionName } from 'convex/server'
 
 vi.mock('@/api/store', () => ({ hasConvex: true }))
 
-interface Candidate {
-  kind: 'topic'
-  targetId: string
-  isMember: boolean
-  everOpened: boolean
-  events: {
-    id: string
-    preview: string
-    createdAt: number
-    isReply: boolean
-    mentionsMe: boolean
-    iWroteInThread: boolean
-  }[]
-}
-
-let candidates: { containers: Candidate[] } | undefined = { containers: [] }
-let dmRows: unknown = []
-let topicSnoozes: unknown = []
+const DM_ROW = { id: 'k17abc', kind: 'dm', dmId: 'greg', authorName: 'Greg Bothman', preview: 'a DM' }
+let dmRows: unknown = [DM_ROW]
 
 /*
-  Queries are told apart by name, not by reference: `api.screener.candidates` is
+  Queries are told apart by name, not by reference: `api.desk.screenerList` is
   a proxy handing back a fresh object per access, so `===` is false even for the
   identical call — and it fails *open*, as a query that answers `undefined` for
   ever, which is scaffolding that passes while asserting nothing.
@@ -56,24 +44,21 @@ let topicSnoozes: unknown = []
 vi.mock('convex/react', () => ({
   useQuery: (ref: unknown) => {
     const name = getFunctionName(ref as Parameters<typeof getFunctionName>[0])
-    if (name.includes('candidates')) return candidates
     if (name.includes('screenerList')) return dmRows
-    if (name.includes('topicSnoozes')) return topicSnoozes
     return undefined
   },
   useMutation: () => vi.fn(),
 }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
-let openWorkTopicIds = new Set<string>()
 let openWorkFileAddresses = new Set<string>()
 vi.mock('@/api/internal/openWork', () => ({
-  useOpenWork: () => ({ items: [], topicIds: openWorkTopicIds, fileAddresses: openWorkFileAddresses, isLoading: false }),
+  useOpenWork: () => ({ items: [], fileAddresses: openWorkFileAddresses, isLoading: false }),
 }))
 
 /*
-  The file half (FOL-34). `unknown` by default, so every test above the file
-  ones sees a Screener with no followed files — which is what they assert.
+  The file half (FOL-34). `unknown` by default, so a test that does not follow
+  a file sees the DM row alone.
 */
 let followsState: 'unknown' | 'present' = 'unknown'
 let followed = new Set<string>()
@@ -96,13 +81,6 @@ vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObjects }) 
 const FRONTIER = { ready: true, marker: () => 1_786_999_000 }
 vi.mock('@/nostr/useReadStateSync', () => ({ useReadFrontier: () => FRONTIER }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }) }))
-
-vi.mock('@/api/topics', () => ({
-  useTopics: () => [
-    { id: 't1', title: 'CI/CD pipeline stuck', isResolved: false, folderId: 'u-1' },
-    { id: 't2', title: 'Auth rollout', isResolved: true, folderId: null },
-  ],
-}))
 vi.mock('@/api/avatars', () => ({ useAvatarSrc: () => (name: string) => `${name}.png` }))
 
 const publish = vi.fn<(next: { snoozed: Record<string, number>; dismissed: Record<string, number> }) => Promise<void>>(
@@ -115,25 +93,10 @@ vi.mock('@/nostr/useScreenerSync', () => ({
   useScreenerSync: () => ({ state: syncState, asked, relayBlob, publish }),
 }))
 
-const event = (over: Partial<Candidate['events'][number]> = {}) => ({
-  id: 'm1',
-  preview: 'someone said something',
-  createdAt: 1_787_000_000_000,
-  isReply: false,
-  mentionsMe: false,
-  iWroteInThread: false,
-  ...over,
-})
-
-/** A topic Ada is in and has never opened — rule 2 at its simplest. */
-const screening = (targetId: string, over: Partial<Candidate> = {}): Candidate => ({
-  kind: 'topic',
-  targetId,
-  isMember: true,
-  everOpened: false,
-  events: [event()],
-  ...over,
-})
+const A = `30840:${'a'.repeat(64)}:a`
+const B = `30840:${'a'.repeat(64)}:b`
+const fileRows = (items: readonly ({ kind: string } & Partial<{ address: string }>)[]) =>
+  items.flatMap((i) => (i.kind === 'file' && i.address ? [i.address] : []))
 
 async function setup() {
   const { ScreenerProvider, useScreener } = await import('./screener')
@@ -144,10 +107,7 @@ async function setup() {
 beforeEach(() => {
   vi.clearAllMocks()
   refuseReads = false
-  candidates = { containers: [screening('t1')] }
-  dmRows = []
-  topicSnoozes = []
-  openWorkTopicIds = new Set()
+  dmRows = [DM_ROW]
   openWorkFileAddresses = new Set()
   followsState = 'unknown'
   followed = new Set()
@@ -157,16 +117,10 @@ beforeEach(() => {
 })
 
 describe('followed files (FOL-34)', () => {
-  const A = `30840:${'a'.repeat(64)}:a`
-  const B = `30840:${'a'.repeat(64)}:b`
-  const fileRows = (items: readonly ({ kind: string } & Partial<{ address: string }>)[]) =>
-    items.flatMap((i) => (i.kind === 'file' && i.address ? [i.address] : []))
-
   it('opening one file keeps the others on screen, and does not re-read them', async () => {
     // The flash Miky saw on production: "Open" puts the file in open work, the
     // set of files asked about shrinks, and holding one answer per *set* blanked
     // every file row until a fresh read of all of them came back.
-    candidates = { containers: [] }
     followsState = 'present'
     followed = new Set([A, B])
     const { result, rerender } = await setup()
@@ -182,7 +136,6 @@ describe('followed files (FOL-34)', () => {
   })
 
   it('asks about every followed file in one read, not one each (PER-10)', async () => {
-    candidates = { containers: [] }
     followsState = 'present'
     const many = Array.from({ length: 12 }, (_, i) => `30840:${'a'.repeat(64)}:${i.toString(16)}`)
     followed = new Set(many)
@@ -198,7 +151,6 @@ describe('followed files (FOL-34)', () => {
   })
 
   it('a refused refresh keeps the rows it held rather than blanking them', async () => {
-    candidates = { containers: [] }
     followsState = 'present'
     followed = new Set([A, B])
     const { result } = await setup()
@@ -210,36 +162,26 @@ describe('followed files (FOL-34)', () => {
     await act(async () => {})
     expect(fileRows(result.current.items)).toEqual([A, B].sort())
   })
-})
 
-describe('the fold renders from the relay answer', () => {
-  it('draws a folded topic row', async () => {
-    const { result } = await setup()
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
-    expect(result.current.items).toHaveLength(1)
-    expect(result.current.items[0]).toMatchObject({ kind: 'topic', topicId: 't1', topicTitle: 'CI/CD pipeline stuck' })
-  })
-
-  it('merges the DM half in, and does not fold it', async () => {
-    dmRows = [{ id: 'k17abc', kind: 'dm', dmId: 'greg', authorName: 'Greg Bothman', preview: 'a DM' }]
+  it('merges the DM half in above the folded rows, and keeps its Convex id', async () => {
+    followsState = 'present'
+    followed = new Set([A])
     const { result } = await setup()
     await waitFor(() => expect(result.current.items).toHaveLength(2))
-    expect(result.current.items.map((i) => i.kind)).toEqual(['dm', 'topic'])
+    expect(result.current.items.map((i) => i.kind)).toEqual(['dm', 'file'])
     // The DM row keeps its Convex id — the thing that routes its dismiss to the
     // table rather than the blob.
     expect(result.current.items[0].id).toBe('k17abc')
   })
 
   it('applies a dismissal from the blob', async () => {
-    relayBlob = {
-      v: 1,
-      updatedAt: 1,
-      snoozed: {},
-      dismissed: { 'topic:t1': Math.floor(1_787_000_000_000 / 1000) },
-    }
+    followsState = 'present'
+    followed = new Set([A])
+    relayBlob = { v: 1, updatedAt: 1, snoozed: {}, dismissed: { [`file:${A}`]: 1_787_000_000 } }
     const { result } = await setup()
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
-    expect(result.current.items).toEqual([])
+    await waitFor(() => expect(resolveObjects).toHaveBeenCalled())
+    await act(async () => {})
+    expect(fileRows(result.current.items)).toEqual([])
   })
 })
 
@@ -265,61 +207,41 @@ describe('nothing renders, and nothing publishes, before the relay answers', () 
     expect(result.current.items).toHaveLength(1)
   })
 
-  it('seeds snoozes from Convex when the coordinate is empty', async () => {
+  it('renders on an empty coordinate, with no decisions to seed', async () => {
     syncState = 'absent'
-    topicSnoozes = [{ topicId: 't1', snoozedUntil: Date.now() + 3_600_000 }]
     const { result } = await setup()
     await waitFor(() => expect(result.current.isLoading).toBe(false))
-    // The seeded snooze is live, so the row it covers is not drawn…
-    expect(result.current.items).toEqual([])
-    // …and it is published, so the next load reads it from the blob.
-    await waitFor(() => expect(publish).toHaveBeenCalled())
-    expect(Object.keys(publish.mock.calls[0][0].snoozed)).toEqual(['topic:t1'])
+    expect(result.current.items).toHaveLength(1)
   })
 })
 
 describe('a decision this session', () => {
   it('hides the row and publishes the watermark', async () => {
+    followsState = 'present'
+    followed = new Set([A])
     const { result } = await setup()
-    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([A]))
 
-    act(() => result.current.dismissTopic('t1', 1_787_100_000_000))
-    await waitFor(() => expect(result.current.items).toEqual([]))
+    act(() => result.current.dismissFile(A, 1_787_100_000_000))
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([]))
 
     const last = publish.mock.calls.at(-1)![0]
-    expect(last.dismissed['topic:t1']).toBe(Math.floor(1_787_100_000_000 / 1000))
+    expect(last.dismissed[`file:${A}`]).toBe(Math.floor(1_787_100_000_000 / 1000))
   })
 
   it('a snooze hides the row and publishes its instant', async () => {
+    followsState = 'present'
+    followed = new Set([A])
     const { result } = await setup()
-    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([A]))
     // Relative to the real clock: the provider compares a snooze against `now`,
     // so a hard-coded instant would pass or fail depending on the date it ran.
     const until = Date.now() + 3_600_000
-    act(() => result.current.snoozeTopic('t1', until))
-    await waitFor(() => expect(result.current.items).toEqual([]))
+    act(() => result.current.snoozeFile(A, until))
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([]))
 
     const last = publish.mock.calls.at(-1)![0]
-    expect(last.snoozed['topic:t1']).toBe(Math.floor(until / 1000))
-  })
-})
-
-describe('PEE-6', () => {
-  it('a topic held in open work does not screen', async () => {
-    openWorkTopicIds = new Set(['t1'])
-    const { result } = await setup()
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
-    expect(result.current.items).toEqual([])
-  })
-
-  it('and the check is on the list, so a topic the index has not resolved still counts', async () => {
-    // `t3` is in open work but not in `useTopics`. It must not screen, and it
-    // must not throw — the row simply is not there.
-    candidates = { containers: [screening('t3'), screening('t1')] }
-    openWorkTopicIds = new Set(['t3'])
-    const { result } = await setup()
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
-    expect(result.current.items.map((i) => (i.kind === 'topic' ? i.topicId : i.kind === 'dm' ? i.dmId : i.address))).toEqual(['t1'])
+    expect(last.snoozed[`file:${A}`]).toBe(Math.floor(until / 1000))
   })
 })
 
@@ -340,10 +262,12 @@ describe('the relay was asked and cannot answer', () => {
     syncState = 'unreachable'
     asked = true
     relayBlob = undefined
+    followsState = 'present'
+    followed = new Set([A])
     const { result } = await setup()
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
-    act(() => result.current.dismissTopic('t1', Date.now()))
-    await waitFor(() => expect(result.current.items).toEqual([]))
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([A]))
+    act(() => result.current.dismissFile(A, Date.now()))
+    await waitFor(() => expect(fileRows(result.current.items)).toEqual([]))
     // The provider still calls `publish` — the guard that matters is inside
     // `useScreenerSync`, and this asserts the provider does not route around it
     // by publishing through some other path.

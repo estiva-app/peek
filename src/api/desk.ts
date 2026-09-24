@@ -45,23 +45,14 @@ export function useDeskItems(): { openWork: OpenWorkItem[]; urgent: UrgentItem[]
   if (!hasConvex) return { openWork: openWork.items, urgent: URGENT_ITEMS }
   return {
     openWork: openWork.items,
-    urgent: (urgent ?? []).map((u) => (u.kind === 'dm' ? { ...u, avatarSrc: avatarSrcFor(u.name) } : u)),
+    urgent: (urgent ?? []).map((u) => ({ ...u, avatarSrc: avatarSrcFor(u.name) })),
   }
-}
-
-/** Topic ids currently in Open work — drives the Add/Remove advertising in
- *  the topic menus and excludes already-added topics from the Desk picker.
- *
- *  Read off the *list*, not the rendered rows: a topic the workspace index has
- *  not delivered yet is still in Open work, and answering "no" for it would let
- *  the picker offer it again and add a second copy. */
-export function useOpenWorkTopicIds(): Set<string> {
-  return useOpenWork().topicIds
 }
 
 /** Which files are in Open work, and the toggle — FOL-34. */
 export interface OpenWorkFiles {
-  /** File addresses in the list, read off the list for the reason above. */
+  /** File addresses in the list, read off the list rather than the rendered
+   *  rows: a file the relay has not resolved yet is still in Open work. */
   has: (address: string) => boolean
   add: (address: string) => void
   remove: (address: string) => void

@@ -25,7 +25,7 @@ const meta = {
     onDismiss: noop,
     /* Every row in the section opens the same card a lone row does — the
        section drew none at all before (Katerina, 23 September). */
-    previewFor: () => <ScreenerPreviewCardView isTopicResolved={() => false} rows={SCREENER_PREVIEW_ROWS} />,
+    previewFor: () => <ScreenerPreviewCardView rows={SCREENER_PREVIEW_ROWS} />,
   },
   argTypes: {
     items: { control: false },

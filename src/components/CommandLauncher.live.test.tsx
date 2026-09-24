@@ -106,7 +106,6 @@ vi.mock('@/api', async () => {
       applyAction,
       creatableUnder,
     }),
-    useTopics: () => [],
   }
 })
 

@@ -1,14 +1,12 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useState } from 'react'
 import { IconMessage } from '@tabler/icons-react'
 import { EnterHint, MenuItem, MenuSection } from '@estiva-app/ui'
-import { TopicState } from './TopicState'
-import { useIsTopicResolved } from '@/api'
 import { previewText } from '@/lib/textParsing'
 import { filterFilesItems, type FilesMenuItem } from './filesMenuItems'
 
 /**
- * The picker `[` opens: the topics you can reference, and the messages on
- * screen (RIC-11).
+ * The picker `[` opens: the messages on screen (RIC-11). Topics were its other
+ * section until FOL-23 removed the Convex topics.
  *
  * It used to offer three sections — Apps (a Figma category you could drill
  * into) and Documents beside Topics — built on invented files. Those only ever
@@ -39,11 +37,9 @@ interface FilesMenuProps {
 
 export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, query, onSelect }, ref) => {
   const [highlight, setHighlight] = useState(0)
-  const isTopicResolved = useIsTopicResolved()
 
   const shown = filterFilesItems(items, query)
-  const topics = shown.filter((i): i is Extract<FilesMenuItem, { kind: 'topic' }> => i.kind === 'topic')
-  const messages = shown.filter((i): i is Extract<FilesMenuItem, { kind: 'message' }> => i.kind === 'message')
+  const messages = shown
 
   useEffect(() => setHighlight(0), [query])
 
@@ -76,8 +72,6 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, quer
 
   if (shown.length === 0) return null
 
-  // One highlight index across both sections, so the arrow keys walk the
-  // whole menu; a message's index continues from the last topic's.
 /* A row is an `option` in the popup's listbox (P28): an id for the editor's
    `aria-activedescendant` to point at, `aria-selected` on the highlighted one,
    and `tabIndex={-1}` because focus stays in the text — the row is reached by
@@ -106,30 +100,13 @@ export const FilesMenu = forwardRef<FilesMenuRef, FilesMenuProps>(({ items, quer
 
   return (
     <>
-      {topics.length > 0 && (
-        <div role="group" aria-label="Topics">
-        <MenuSection label="Topics" className="px-2">
-          {topics.map((item, i) =>
-            row(
-              item,
-              i,
-              // `default`, not `tall`: a topic is one line beside a 16px state
-              // icon, and `tall` is for the row that carries a second line.
-              <TopicState type="topic" status={isTopicResolved(item.data.id) ? 'resolved' : 'unresolved'} />,
-              item.data.title,
-              `topic-${item.data.id}`,
-            ),
-          )}
-        </MenuSection>
-        </div>
-      )}
       {messages.length > 0 && (
         <div role="group" aria-label="Messages">
         <MenuSection label="Messages" className="px-2">
           {messages.map((item, i) =>
             row(
               item,
-              topics.length + i,
+              i,
               <IconMessage size={16} stroke={1.5} className="text-text-secondary" />,
               // The author and the opening words, marks stripped — the same
               // caption the chip wears once picked, so nothing changes shape.

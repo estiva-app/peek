@@ -1,21 +1,19 @@
 /**
  * Keep one open file's conversation in step with the relay — FOL-32.
  *
- * `useChannelSync` is what makes a topic live: the open channel is watched and
- * projected, so another person's message lands in seconds. A file's
+ * `useChannelSync` was what made a topic live: the open channel was watched and
+ * projected, so another person's message landed in seconds. A file's
  * conversation had no such path. `useFileConversation` reads it over HTTP and
  * `useRefreshTriggers` re-reads on focus, on becoming visible and every 30 s —
  * so somebody who stayed on the page saw a comment from Ship up to half a
  * minute late, and the first measurement that said otherwise was the focus
  * refresh firing when the tab was brought back to look.
  *
- * ## The wide filter, not the projection
+ * ## The wide filter
  *
  * A file's comments are `kind:1111` carrying the Folder as `h`, and nothing in
- * Peek stores them: the relay is their only copy (FOL-31). So the per-channel
- * `watch` is wrong twice over — it would project the Folder's channel into
- * Convex, and it delivers what the projection *takes*, which is not this. What
- * fits is `watchChannels`, the client's wide `#h` filter: one REQ on the tab's
+ * Peek stores them: the relay is their only copy (FOL-31). What fits is
+ * `watchChannels`, the client's wide `#h` filter: one REQ on the tab's
  * one socket, narrowed to `kinds: [1111]` because the Folder's `h` also carries
  * its own chat and a re-read of the file for every line said in the Folder
  * would be the cost with none of the point.
@@ -29,24 +27,21 @@
  *
  * ## The socket is the tab's one
  *
- * `getLiveTopics` rather than `peekLiveTopics()`: a file page opened from a
+ * `getLiveTopics` builds it if nothing has yet: a file page opened from a
  * pasted link may be the first thing in the tab to want the socket, and the
- * holder guarantees there is still only one. The Convex actions it takes are
- * the projection's, read once when the wiring is built and ignored after.
+ * holder guarantees there is still only one.
  *
  * ## Additive, like the rest
  *
  * If the socket never connects this degrades to exactly the HTTP behaviour
  * above. A caller passes `interval: relayState !== 'live'` to its refresh
- * triggers, as `useChannelSync` does: the timer idles under a working socket
+ * triggers: the timer idles under a working socket
  * and returns the moment it is not one. Focus and visibility stay regardless.
  * A transition *into* live re-reads once, to cover what was missed while it was
  * out — the first connect's read is the caller's own mount.
  */
 import { useEffect, useRef, useState } from 'react'
-import { useConvex } from 'convex/react'
 import { KIND, type RelayState } from '@estiva-app/protocol'
-import { api } from '../../convex/_generated/api'
 import { getLiveTopics } from './liveTopics'
 import { RELAY_URL } from '@/api/relayUrl'
 
@@ -68,7 +63,6 @@ export function useLiveFile(
   kinds: readonly number[] = FILE_KINDS,
 ): { relayState: RelayState } {
   const kindList = kinds.join(',')
-  const convex = useConvex()
   const relayUrl = RELAY_URL
   const [relayState, setRelayState] = useState<RelayState>('connecting')
 
@@ -80,9 +74,7 @@ export function useLiveFile(
   })
 
   useEffect(() => {
-    // Relay-only: gated on the relay, never on Convex (REM-2). The actions
-    // handed to `getLiveTopics` are the topic projection's and this watch
-    // never calls them.
+    // Relay-only: gated on the relay, never on Convex (REM-2).
     if (!folder || !relayUrl) return
 
     let unsubscribe: (() => void) | undefined
@@ -96,11 +88,7 @@ export function useLiveFile(
       }, LIVE_FILE_SETTLE_MS)
     }
     try {
-      const live = getLiveTopics(relayUrl, {
-        importChannel: (args) => convex.action(api.nostr.sync.importChannel, args as never),
-        importReactions: (args) => convex.action(api.nostr.sync.importReactions, args as never),
-        importResolutions: (args) => convex.action(api.nostr.sync.importResolutions, args as never),
-      })
+      const live = getLiveTopics(relayUrl)
       // The initial snapshot: `onState` fires on change, and the tab-wide
       // socket may already be live when this mounts.
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -121,7 +109,7 @@ export function useLiveFile(
       unsubscribe?.()
       watch?.stop()
     }
-  }, [folder, relayUrl, convex, kindList])
+  }, [folder, relayUrl, kindList])
 
   return { relayState }
 }

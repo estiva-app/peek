@@ -2,7 +2,6 @@ import {
   IconCircleDashed,
   IconCircleCheck,
   IconPlus,
-  IconArrowBack,
   IconHighlight,
   IconX,
   IconDotsVertical,
@@ -36,13 +35,9 @@ interface ConversationMoreMenuProps {
   /** Controlled, for a story that wants the panel standing open. */
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  isTopic?: boolean
   isResolved?: boolean
-  showCreateTopic?: boolean
   currentHighlight?: HighlightType
   onHighlight?: (type: HighlightType | undefined) => void
-  onCreateTopic?: () => void
-  onRevertToConversation?: () => void
   onResolve?: () => void
   onReopen?: () => void
   onOpenWork?: () => void
@@ -58,20 +53,15 @@ interface ConversationMoreMenuProps {
 }
 
 /**
- * The ⋯ menu on a message or a topic: highlight, resolve or reopen, make or
- * undo a topic, add to Open work, edit, see details and delete — only what the
- * card offers.
+ * The ⋯ menu on a message: highlight, resolve or reopen, add to Open work,
+ * edit, see details and delete — only what the card offers.
  */
 export function ConversationMoreMenu({
-  isTopic = false,
   isResolved = false,
-  showCreateTopic = true,
   currentHighlight,
   onHighlight,
   open,
   onOpenChange,
-  onCreateTopic,
-  onRevertToConversation,
   onResolve,
   onReopen,
   onOpenWork,
@@ -97,20 +87,6 @@ export function ConversationMoreMenu({
       className={cn('w-[244px] gap-2', className)}
     >
       <MenuSection label="Utilities">
-        {isTopic ? (
-          <MenuItem
-            leading={<IconArrowBack size={16} stroke={1.5} className="text-text-secondary" />}
-            label="Revert to conversation"
-            onClick={onRevertToConversation}
-          />
-        ) : showCreateTopic ? (
-          <MenuItem
-            leading={<IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />}
-            label="Start topic"
-            onClick={onCreateTopic}
-          />
-        ) : null}
-
         {isResolved ? (
           <MenuItem
             leading={<IconCircleDashed size={16} stroke={1.5} className="text-text-secondary" />}
@@ -175,7 +151,7 @@ export function ConversationMoreMenu({
           edit someone else's message" is the objection. Ruled 2026-09-21: hide
           both; an agent's owner loses the control in Peek, not the right.
         */}
-        {!isTopic && isOwnMessage && <MenuItem label="Edit message" onClick={onEditMessage} />}
+        {isOwnMessage && <MenuItem label="Edit message" onClick={onEditMessage} />}
         <MenuItem label="View details" onClick={onViewDetails} />
       </div>
 
