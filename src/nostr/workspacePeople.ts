@@ -46,6 +46,56 @@ interface ProfileContent {
   bot?: unknown
 }
 
+/** A named profile, and whether it is an agent's (NIP-24 `bot`). */
+export interface WorkspaceProfile extends WorkspacePerson {
+  bot: boolean
+}
+
+/**
+ * Every named profile in the events, newest `kind:0` per pubkey (REM-6).
+ *
+ * Not narrowed to the roster, humans or anyone but the viewer: this answers
+ * "what is this key called", which a mention of you, of an agent or of someone
+ * who has left still needs answered. A profile with no usable name is absent —
+ * a key is not a name.
+ */
+export function profilesOf(events: readonly SignedEvent[]): Map<string, WorkspaceProfile> {
+  const newest = new Map<string, SignedEvent>()
+  for (const e of events) {
+    if (e.kind !== 0) continue
+    const seen = newest.get(e.pubkey)
+    if (!seen || e.created_at > seen.created_at) newest.set(e.pubkey, e)
+  }
+
+  const out = new Map<string, WorkspaceProfile>()
+  for (const [pubkey, event] of newest) {
+    let content: ProfileContent
+    try {
+      content = JSON.parse(event.content) as ProfileContent
+    } catch {
+      continue
+    }
+    const name = [content.display_name, content.name].find((n): n is string => typeof n === 'string' && n.trim() !== '')
+    if (!name) continue
+    out.set(pubkey, {
+      pubkey,
+      name,
+      bot: content.bot === true,
+      ...(typeof content.picture === 'string' && content.picture ? { picture: content.picture } : {}),
+    })
+  }
+  return out
+}
+
+/** The newest roster's members, or `null` when the relay keeps no roster. */
+export function rosterOf(events: readonly SignedEvent[]): Set<string> | null {
+  const roster = events
+    .filter((e) => e.kind === KIND_MEMBERSHIP_LIST)
+    .sort((a, b) => b.created_at - a.created_at)[0]
+  if (!roster) return null
+  return new Set(roster.tags.filter((t) => (t[0] === 'member' || t[0] === 'p') && typeof t[1] === 'string').map((t) => t[1]))
+}
+
 /**
  * The people a viewer can DM, sorted by name.
  *
@@ -58,37 +108,26 @@ export function workspacePeopleOf(
   me: string | undefined,
   include: Iterable<string> = [],
 ): WorkspacePerson[] {
-  const roster = events
-    .filter((e) => e.kind === KIND_MEMBERSHIP_LIST)
-    .sort((a, b) => b.created_at - a.created_at)[0]
-  const members = roster
-    ? new Set([
-        ...roster.tags.filter((t) => (t[0] === 'member' || t[0] === 'p') && typeof t[1] === 'string').map((t) => t[1]),
-        ...include,
-      ])
-    : null
+  return membersOf(events, me, include)
+    .filter((p) => !p.bot)
+    .map((p) => ({ pubkey: p.pubkey, name: p.name, ...(p.picture ? { picture: p.picture } : {}) }))
+}
 
-  const newest = new Map<string, SignedEvent>()
-  for (const e of events) {
-    if (e.kind !== 0) continue
-    const seen = newest.get(e.pubkey)
-    if (!seen || e.created_at > seen.created_at) newest.set(e.pubkey, e)
-  }
+/**
+ * Everyone the viewer can @-mention or invite, sorted by name (REM-6).
+ *
+ * The roster as {@link workspacePeopleOf} reads it, **agents included**: you do
+ * not DM an agent from People, but mentioning one is how you ask it something.
+ * Still never the viewer — you do not mention yourself.
+ */
+export function mentionablePeopleOf(events: readonly SignedEvent[], me: string | undefined): WorkspaceProfile[] {
+  return membersOf(events, me, [])
+}
 
-  const out: WorkspacePerson[] = []
-  for (const [pubkey, event] of newest) {
-    if (pubkey === me) continue
-    if (members && !members.has(pubkey)) continue
-    let content: ProfileContent
-    try {
-      content = JSON.parse(event.content) as ProfileContent
-    } catch {
-      continue
-    }
-    if (content.bot === true) continue
-    const name = [content.display_name, content.name].find((n): n is string => typeof n === 'string' && n.trim() !== '')
-    if (!name) continue
-    out.push({ pubkey, name, ...(typeof content.picture === 'string' && content.picture ? { picture: content.picture } : {}) })
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+function membersOf(events: readonly SignedEvent[], me: string | undefined, include: Iterable<string>): WorkspaceProfile[] {
+  const roster = rosterOf(events)
+  const members = roster ? new Set([...roster, ...include]) : null
+  return [...profilesOf(events).values()]
+    .filter((p) => p.pubkey !== me && (!members || members.has(p.pubkey)))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 }

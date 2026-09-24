@@ -8,7 +8,7 @@ import { Button } from './ui/Button'
 import { Chip } from './ui/Chip'
 import { PersonChipInput } from './ui/PersonChipInput'
 import { Avatar } from './ui/Avatar'
-import { usePeople, useCurrentUser, CURRENT_USER_NAME, type Person } from '@/api'
+import { usePeople, type Person } from '@/api'
 
 export type MembersDialogView = 'list' | 'add'
 
@@ -45,18 +45,7 @@ export function MembersDialog({
   const [view, setView] = useState<MembersDialogView>(initialView)
   const [invitees, setInvitees] = useState<Person[]>([])
   const people = usePeople() ?? []
-  const me = useCurrentUser()
   const memberIds = people.filter((p) => memberNames.includes(p.name)).map((p) => p.id)
-  const personByName = new Map(people.map((p) => [p.name, p]))
-  /** Role as entered in the profile — both sources are reactive queries, so a
-   *  profile edit updates the label live. The directory excludes the viewer,
-   *  whose row renders as 'You' and reads from users.me instead. */
-  const roleFor = (name: string): string | undefined => {
-    const fromDirectory = personByName.get(name)?.role
-    if (fromDirectory) return fromDirectory
-    if (name === CURRENT_USER_NAME || name === me?.name) return me?.role || undefined
-    return undefined
-  }
 
   const canConfirm = invitees.length > 0
   const inviteFormId = useId()
@@ -153,20 +142,14 @@ export function MembersDialog({
           />
         </div>
       )}
-      {memberNames.map((name) => {
-        const role = roleFor(name)
-        return (
-          <div key={name} className="flex items-center gap-3 h-12 px-5">
-            <Avatar size={32} name={name} alt={name} />
-            <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
-              <div className="text-body-2 text-text-primary truncate">{name}</div>
-              {role && (
-                <div className="text-caption text-text-secondary truncate">{role}</div>
-              )}
-            </div>
+      {memberNames.map((name) => (
+        <div key={name} className="flex items-center gap-3 h-12 px-5">
+          <Avatar size={32} name={name} alt={name} />
+          <div className="flex flex-col flex-1 min-w-0 gap-[2px] justify-center">
+            <div className="text-body-2 text-text-primary truncate">{name}</div>
           </div>
-        )
-      })}
+        </div>
+      ))}
     </DialogShell>
   )
 }

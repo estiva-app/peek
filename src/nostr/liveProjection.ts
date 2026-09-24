@@ -61,9 +61,9 @@
  * **No profiles.** `importChannel` takes them, and the HTTP path fetches
  * `kind:0` for each author alongside the messages. `kind:0` is not
  * channel-scoped, so a `#h` subscription never delivers one and there is
- * nothing to pass. A first-time author therefore appears under a placeholder
- * until `pubkeysToRefresh`/`recordProfiles` fills it in — which is exactly
- * the gap PEEK-72 built that pair to close, and it runs on its own schedule.
+ * nothing to pass. A first-time author therefore keeps a placeholder in the
+ * Convex row. Peek no longer refreshes that copy (REM-6): the screens that name
+ * people read `kind:0` from the relay instead.
  *
  * **No deduplication and no cursor arithmetic.** Live and backfill overlap by
  * design; imports are idempotent by event id and `nostrSyncedAt` only ever moves
