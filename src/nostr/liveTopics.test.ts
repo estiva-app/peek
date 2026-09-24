@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * PEE-8 — the tab's single live client.
  *

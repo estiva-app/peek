@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * INT-3 — a citation has to land on the message, not near it.
  *

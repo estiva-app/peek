@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { DecorationSet } from '@tiptap/pm/view'

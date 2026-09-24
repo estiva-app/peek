@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * `window.__promptContext()` — INT-1's measurement, and what it says when it
  * cannot measure.
