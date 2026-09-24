@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The branch that had no way out (PEE-23).
  *

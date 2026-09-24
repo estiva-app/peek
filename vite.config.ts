@@ -26,9 +26,25 @@ export default defineConfig({
       allow: [__dirname],
     },
   },
+  /**
+   * Two projects, split by extension (PER-14). Setting up jsdom was the largest
+   * single cost in the suite, and a `.test.ts` file mostly has no DOM to test,
+   * so it runs under node. A `.test.ts` file that does need the DOM says so with
+   * a `// @vitest-environment jsdom` header; `convex/` files name
+   * `edge-runtime` the same way.
+   */
   test: {
-    environment: 'jsdom',
     globals: true,
     setupFiles: './src/test-setup.ts',
+    projects: [
+      {
+        extends: true,
+        test: { name: 'dom', environment: 'jsdom', include: ['**/*.test.tsx'] },
+      },
+      {
+        extends: true,
+        test: { name: 'node', environment: 'node', include: ['**/*.test.ts'] },
+      },
+    ],
   },
 })

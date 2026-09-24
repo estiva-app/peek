@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The auth source Convex reads (PEEK-104).
  *
