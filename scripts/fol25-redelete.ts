@@ -5,6 +5,7 @@
  *   set -a; . ~/.estiva-agent.env; set +a
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-redelete.ts plan
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-redelete.ts probe
+ *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-redelete.ts replace-placement
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-redelete.ts delete <channel uuid>… | all
  *
  * **Which channels.** The input is `LEGACY_TOPICS` (`src/lib/legacyTopicLinks.ts`),
@@ -310,6 +311,34 @@ async function probe(query: QueryFn, t: Token) {
   console.log(`\ncontrol ${ok ? 'passed' : 'FAILED — do not run delete'}`)
 }
 
+/**
+ * A topic channel placed in another Folder's state is refused by `delete`:
+ * deleting it would leave a dead `a` there (FOL-28). The channel's content is
+ * its file now, so the placement moves to the file — `add` first, `remove`
+ * second, so the Folder never draws neither — and the state is read back.
+ */
+async function replacePlacement(query: QueryFn, t: Token) {
+  if (t.allowedKinds && !t.allowedKinds.includes(1852)) throw new Error('the ceiling has no kind:1852')
+  const { topics } = candidates(await listFolders(query))
+  const readings = await read(topics.map((c) => c.channel), topics.map((c) => c.file ?? ''), query)
+  for (const c of topics) {
+    const r = readings.get(c.channel)!
+    if (!r.live || !r.placedIn.length || !c.file) continue
+    for (const parent of r.placedIn) {
+      for (const [op, address] of [['add', c.file], ['remove', r.address!]] as const) {
+        const result = await publish({ pubkey: t.pubkey, created_at: toNostrSeconds(Date.now()), kind: 1852, tags: [['h', parent], ['op', op], ['a', address]], content: '' }, t)
+        console.log(`1852 ${op.padEnd(6)} ${short(parent)} ${address.slice(0, 20)}… ${JSON.stringify(c.title)} → ${result.ok ? 'accepted' : `REFUSED ${result.reason}`}`)
+        await sleep(WRITE_GAP_MS)
+        if (!result.ok) break
+      }
+      const [state] = await query([{ kinds: [30890], '#d': [parent], limit: 1 }])
+      const holds = (a: string) => !!state?.tags.some((x) => x[0] === 'a' && x[1] === a)
+      console.log(`       ${holds(c.file) ? '✓' : '✗'} ${short(parent)}'s state places the file`)
+      console.log(`       ${holds(r.address!) ? '✗' : '✓'} ${short(parent)}'s state no longer places the channel`)
+    }
+  }
+}
+
 async function remove(query: QueryFn, t: Token, names: string[]) {
   const folders = await listFolders(query)
   const { topics, tests } = candidates(folders)
@@ -347,13 +376,14 @@ async function remove(query: QueryFn, t: Token, names: string[]) {
 
 async function main() {
   const [mode, ...rest] = process.argv.slice(2)
-  if (!['plan', 'probe', 'delete'].includes(mode ?? '')) throw new Error('mode: plan | probe | delete <channel uuid>… | all')
+  if (!['plan', 'probe', 'replace-placement', 'delete'].includes(mode ?? '')) throw new Error('mode: plan | probe | replace-placement | delete <channel uuid>… | all')
   if (mode === 'delete' && !rest.length) throw new Error('delete: name the channel uuids, or all for every topic channel with a file')
   const t = await token()
   const query = queryFn(t)
   console.log(`identity ${short(t.pubkey)}… relay ${RELAY_URL} mode ${mode}\n`)
   if (mode === 'plan') await plan(query, t)
   if (mode === 'probe') await probe(query, t)
+  if (mode === 'replace-placement') await replacePlacement(query, t)
   if (mode === 'delete') await remove(query, t, rest)
 }
 
