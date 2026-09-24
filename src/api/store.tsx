@@ -56,16 +56,16 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
             and sits above the Screener, whose file half is judged over it
             (FOL-34). */}
         <FollowsProvider>
-          {/* Inside OpenWorkProvider: the Screener's PEE-6 de-duplication
-              reads the open-work list, so open work has to be above it. */}
-          <OpenWorkProvider>
-            <ScreenerProvider>
-              {/* DM channels and hidden DMs (DMS-6, REM-3): the relay's, keyed
-                  by pubkey. It reads nothing from the stores above, so it
-                  sits innermost. */}
-              <DmsProvider>{children}</DmsProvider>
-            </ScreenerProvider>
-          </OpenWorkProvider>
+          {/* DM channels and hidden DMs (DMS-6, REM-3): the relay's, keyed by
+              pubkey. It reads nothing from the stores above, and sits above
+              the Screener, whose DM half folds its channels (CON-14). */}
+          <DmsProvider>
+            {/* Inside OpenWorkProvider: the Screener's PEE-6 de-duplication
+                reads the open-work list, so open work has to be above it. */}
+            <OpenWorkProvider>
+              <ScreenerProvider>{children}</ScreenerProvider>
+            </OpenWorkProvider>
+          </DmsProvider>
         </FollowsProvider>
       </StarredProvider>
     </AvatarRegistryProvider>

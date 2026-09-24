@@ -1,0 +1,43 @@
+/**
+ * Urgent is the DM dots' urgent flag, listed (CON-14).
+ *
+ * `desk.urgentList` walked every DM's messages and replies on the server. The
+ * sidebar's indicator already made the same judgement on the device, so Urgent
+ * is that judgement — a DM is in Urgent exactly when its row shows the
+ * indicator — and Convex is not asked.
+ */
+import { describe, it, expect, vi } from 'vitest'
+import { renderHook } from '@testing-library/react'
+
+vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
+vi.mock('convex/react', () => ({
+  useQuery: () => {
+    throw new Error('the Desk asked Convex')
+  },
+}))
+
+const URGENT = 'a'.repeat(64)
+const CALM = 'b'.repeat(64)
+const STRANGER = 'c'.repeat(64)
+vi.mock('@/api/internal/dms', () => ({ useDmChannels: () => ({ partners: [URGENT, CALM, STRANGER] }) }))
+vi.mock('@/api/unread', () => ({
+  useUnread: () => ({ dmHasUnread: () => true, dmIsUrgent: (id: string) => id !== CALM }),
+}))
+vi.mock('@/api/people', () => ({
+  useWorkspacePeople: () => [
+    { id: URGENT, name: 'Hallie Pratt', avatarSrc: 'hallie.png' },
+    { id: CALM, name: 'Greg Bothman' },
+  ],
+}))
+vi.mock('@/api/internal/openWork', () => ({ useOpenWork: () => ({ items: [], isLoading: false }) }))
+vi.mock('@/api/internal/screener', () => ({ useScreener: () => ({ items: [], isLoading: false }) }))
+
+describe('useDeskItems().urgent', () => {
+  it('lists the DMs whose indicator is lit, named from the roster', async () => {
+    const { useDeskItems } = await import('./desk')
+    const { result } = renderHook(() => useDeskItems())
+    expect(result.current.urgent).toEqual([
+      { id: `urg_dm_${URGENT}`, kind: 'dm', dmId: URGENT, name: 'Hallie Pratt', avatarSrc: 'hallie.png' },
+    ])
+  })
+})

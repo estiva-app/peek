@@ -58,6 +58,11 @@ export interface StreamMessage extends ConversationMessage {
    * the second cannot be read off anything but the text.
    */
   urgent: boolean
+  /**
+   * The text as sent. The Screener's DM half previews from it (CON-14), which
+   * is why a DM row costs no read of its own: the dots already hold the channel.
+   */
+  body: string
 }
 
 /**
@@ -136,6 +141,7 @@ export function streamMessagesByFolder(
       root: rootOf(event),
       about: event.tags.filter((t) => t[0] === 'a' && t[1]).map((t) => t[1]),
       urgent: isUrgentContent(event.content),
+      body: event.content,
     })
   }
   return byFolder

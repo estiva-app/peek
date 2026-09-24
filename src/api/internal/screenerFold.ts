@@ -12,12 +12,16 @@
  * the React Compiler's rules, and a rule set that reads the clock itself cannot
  * be tested against a snooze without waiting for it.
  *
- * The file half is all that is folded now. Rules 2 and 3 and the refresh rule
- * judged Convex topics from `screener.candidates`, and went with them (FOL-23).
+ * Both halves are folded: rule 1 (a DM) from the channel store since CON-14,
+ * and a followed file from its conversation since FOL-34. Rules 2 and 3 and the
+ * refresh rule judged Convex topics from `screener.candidates`, and went with
+ * them (FOL-23).
  */
 import type { ScreenerItem } from '@/api/types'
 import { fileHasUnread } from '@/api/fileUnread'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
+import { containerContext, threadContext } from '@/nostr/readState'
+import type { StreamMessage } from '@/nostr/channelStreams'
 
 export interface ScreenerDecisions {
   snoozed: InstantMap
@@ -53,6 +57,8 @@ export type FoldedFileItem = Extract<ScreenerItem, { kind: 'file' }>
 export interface FoldedFileRow {
   item: FoldedFileItem
   at: number
+  /** The comment the row previews — the hover card reads its replies (CON-14). */
+  commentId: string
 }
 
 /**
@@ -103,6 +109,7 @@ export function foldFileScreenerRows(
     if ((decisions.snoozed[key] ?? 0) * 1000 > nowMs) continue
     rows.push({
       at: screening.createdAt,
+      commentId: screening.id,
       item: {
         id: fileScreenerRowId(file.address),
         kind: 'file',
@@ -115,6 +122,123 @@ export function foldFileScreenerRows(
   }
   rows.sort((a, b) => b.at - a.at)
   return rows
+}
+
+/** A DM the viewer has a channel for, and what the channel store holds of it (CON-14). */
+export interface ScreenerDm {
+  /** The partner's pubkey — the DM's id everywhere (REM-3). */
+  partner: string
+  /** The channel uuid, which is the read-state context (SPEC §11.1). */
+  channel: string
+  authorName: string
+  authorAvatarSrc?: string
+  /** The channel's messages inside the horizon, any order. */
+  messages: readonly StreamMessage[]
+}
+
+/** What the DM half is judged against — the DM dot's inputs (`topicChannelFlags`). */
+export interface ScreenerDmFrontier {
+  /** One context's merged marker, unix seconds; absent = undefined. */
+  marker: (context: string | undefined) => number | undefined
+  me: string | undefined
+  nowSeconds: number
+  horizonSeconds: number
+}
+
+export type FoldedDmItem = Extract<ScreenerItem, { kind: 'dm' }>
+
+export interface FoldedDmRow {
+  item: FoldedDmItem
+  at: number
+  /** The message the row previews — the hover card starts its thread here. */
+  messageId: string
+}
+
+/**
+ * Fold DMs into Screener rows, newest first — rule 1, "someone DMs you" (CON-14).
+ *
+ * **The rule is the DM dot's rule**, as the file half's is the file dot's: a DM
+ * screens while a message somebody else sent in it is unread, judged exactly as
+ * `topicChannelFlags` judges it — the channel's marker, and for a reply the
+ * later of that and its thread's. The newest such message is the preview.
+ *
+ * That is a change from Convex, whose row was written by `messages.send` and
+ * stayed until the person dismissed or opened it from the Screener. Here,
+ * reading the DM retires the row, with no write — the property the file half
+ * already has, and the reason a row and the sidebar dot cannot disagree.
+ */
+export function foldDmScreenerRows(
+  dms: readonly ScreenerDm[],
+  decisions: ScreenerDecisions,
+  /** Partner pubkeys in open work, off the **list** (PEE-6). */
+  openWorkPartners: ReadonlySet<string>,
+  frontier: ScreenerDmFrontier,
+  nowMs: number,
+): FoldedDmRow[] {
+  const rows: FoldedDmRow[] = []
+  for (const dm of dms) {
+    if (openWorkPartners.has(dm.partner)) continue
+    const key = screenerKey('dm', dm.partner)
+    const dismissedAt = decisions.dismissed[key] ?? 0
+    const judge = {
+      file: frontier.marker(containerContext(dm.channel)),
+      thread: (root: string) => frontier.marker(threadContext(root)),
+      me: frontier.me,
+      nowSeconds: frontier.nowSeconds,
+      horizonSeconds: frontier.horizonSeconds,
+    }
+    let screening: StreamMessage | undefined
+    for (const message of dm.messages) {
+      if (message.at <= dismissedAt) continue
+      if (screening && message.at <= screening.at) continue
+      if (fileHasUnread([message], judge)) screening = message
+    }
+    if (!screening) continue
+    if ((decisions.snoozed[key] ?? 0) * 1000 > nowMs) continue
+    rows.push({
+      at: screening.at,
+      messageId: screening.id,
+      item: {
+        id: dmScreenerRowId(dm.partner),
+        kind: 'dm',
+        dmId: dm.partner,
+        authorName: dm.authorName,
+        authorAvatarSrc: dm.authorAvatarSrc,
+        preview: screening.body,
+      },
+    })
+  }
+  rows.sort((a, b) => b.at - a.at)
+  return rows
+}
+
+/**
+ * The hover card's messages for a DM row: the thread the screening message is
+ * in — its root, then the last four replies — as `screener.preview` chose them.
+ * From the channel store, oldest first; a root older than the horizon is simply
+ * not there, and the replies stand on their own.
+ */
+export function dmPreviewMessages(messages: readonly StreamMessage[], messageId: string): StreamMessage[] {
+  const screening = messages.find((m) => m.id === messageId)
+  if (!screening) return []
+  const root = screening.root
+  const head = messages.find((m) => m.id === root)
+  const replies = messages
+    .filter((m) => m.root === root && m.id !== root)
+    .sort((a, b) => a.at - b.at)
+    .slice(-4)
+  return head ? [head, ...replies] : replies
+}
+
+const DM_ROW = 'sc_dm_'
+
+export function dmScreenerRowId(partner: string): string {
+  return `${DM_ROW}${partner}`
+}
+
+/** The partner a folded DM row names, or null for any other row. */
+export function dmPartnerFromScreenerRowId(id: string): string | null {
+  return id.startsWith(DM_ROW) ? id.slice(DM_ROW.length) : null
 }
 
 const FILE_ROW = 'sc_file_'

@@ -19,6 +19,7 @@ const said = (id: string, at: number, about: string[] = [], by = THEM): StreamMe
   root: id,
   about,
   urgent: false,
+  body: '',
 })
 const replied = (id: string, at: number, inThread: string, about: string[] = [], by = THEM): StreamMessage => ({
   id,
@@ -27,6 +28,7 @@ const replied = (id: string, at: number, inThread: string, about: string[] = [],
   root: inThread,
   about,
   urgent: false,
+  body: '',
 })
 
 /* Everything followed unless a test says otherwise: the FOL-16/18 rules are

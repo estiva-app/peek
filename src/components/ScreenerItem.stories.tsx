@@ -71,7 +71,8 @@ export const HoverPreview: Story = {
 }
 
 /** A followed file with an unread comment (FOL-34) — the tree's glyph, the file's title,
- *  the comment as the preview. No hover card: a file's conversation is not in Convex. */
+ *  the comment as the preview. Hovering opens the card, as for a DM: since CON-14 it
+ *  shows the comment and its replies, read from the relay. */
 export const FileItem: Story = {
   args: {
     item: {
