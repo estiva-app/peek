@@ -170,6 +170,8 @@ vi.mock('@/api', async () => ({
     folders: [
       { id: FOLDER, name: 'Folders', hasState: true },
       { id: OTHER_FOLDER, name: 'Elsewhere', hasState: false },
+      // A Ship project's own channel, placed in the team — where production's projects and issues live.
+      { id: 'record-channel', name: 'project-0ebd5fdd', hasState: false, listedIn: [FOLDER] },
     ],
     signedOut: false,
     reload: async () => {},
@@ -606,6 +608,18 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     expect(selected(TOPIC_ADDRESS)).toBe(true)
     // The topic has no parent, so nothing asks for the project open — and nobody closed it.
     expect(screen.getByTestId('left').querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+  })
+
+  it('a click from a topic to a Ship project whose Folder is its own channel keeps the team open', () => {
+    objects.byAddress[PROJECT_ADDRESS] = { ...project, folder: 'record-channel' }
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(row(PROJECT_ADDRESS)!).getByText('Folders: navigation for the whole suite'))
+    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(selected(PROJECT_ADDRESS)).toBe(true)
+    // And back again.
+    fireEvent.click(within(row(TOPIC_ADDRESS)!).getByText('FOL-15 test topic 2'))
+    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(selected(TOPIC_ADDRESS)).toBe(true)
   })
 
   it('a click that resolves to nothing lets the last file go, as a dead link always has', () => {
