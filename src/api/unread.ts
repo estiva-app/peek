@@ -4,12 +4,12 @@
  *   hasNewMessage → cleared by opening the topic/DM (after a short dwell)
  *   hasNewReply / isNew → cleared only by opening THAT message's thread panel
  *
- * Convex mode derives both per viewer from `readState`; mock mode keeps the
- * fixture's seeded flags so the demo renders identically. (The fixture is
- * still keyed by legacy DM conversation numbers — bridged here.)
+ * Both are folded from the relay per viewer; mock mode keeps the fixture's
+ * seeded flags so the demo renders identically. (The fixture is still keyed by
+ * legacy DM conversation numbers — bridged here.)
  */
-import { useCallback, useEffect, useRef } from 'react'
-import { useMutation, useQuery } from 'convex/react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { topicHasUnread as mockTopicHasUnread } from '@/data/topicData'
 import { dmHasUnread as mockDmHasUnread } from '@/data/dmData'
@@ -18,6 +18,7 @@ import { hasConvex } from './store'
 import { hasRelay } from './relayUrl'
 import { useTopicLookup, useTopics } from './topics'
 import { useTopicUnread } from './useTopicUnread'
+import { useDmChannels } from './internal/dms'
 import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/useReadStateSync'
 
 /**
@@ -27,19 +28,21 @@ import { recordContainerRead, recordFileRead, recordThreadRead } from '@/nostr/u
  *                  instead of the dot (issue #11). Mock mode has no urgent
  *                  derivation, so it's always false there.
  *
- * ## Two answers, one union (SHR-5)
+ * ## One fold, two kinds of channel (SHR-5, REM-3)
  *
- * A topic's indicator is the union of its own channel and any huddle under
- * it, and the two halves now come from different places: the channel is
- * folded from the relay (`useTopicUnread`), and the huddle rollup stays in
- * `unread.summary` because a huddle is not a channel. DMs stay there too.
- * A topic lights if **either** says so, which is the same `unread || f.unread`
- * the Convex loop used to do internally.
+ * A topic and a DM are both channels, and a channel's dot is the same
+ * question either way: is there a message in it newer than the person's
+ * NIP-RS marker for it. So both go through `useTopicUnread` — a topic keyed by
+ * its id and read from its Folder, a DM keyed by the partner's pubkey and read
+ * from the channel the relay says it is.
  *
- * The relay half undercounts by whatever has never been published: SHR-8
- * counted 202 non-DM messages on production with no relay event. A fold's
- * worst case is a dot that fails to light, not content that is lost, and the
- * huddle and DM halves are unaffected.
+ * `unread.summary` is no longer asked anything (REM-3). It held the DM dots,
+ * the huddle rollup — huddles have been off since CON-8 — and `topicMarks`,
+ * Convex's cached watermark per topic channel. Without that cache a topic
+ * whose marker has fallen out of the byte-capped frontier (SHR-4) can light
+ * again; the relay frontier is the read state, and the cache was Convex's.
+ *
+ * A fold's worst case is a dot that fails to light, not content that is lost.
  */
 export function useUnread(): {
   topicHasUnread: (topicId: string) => boolean
@@ -47,40 +50,36 @@ export function useUnread(): {
   topicIsUrgent: (topicId: string) => boolean
   dmIsUrgent: (dmId: string) => boolean
 } {
-  const remote = useQuery(api.unread.summary, hasConvex ? {} : 'skip')
   const topics = useTopics()
-  const fold = useTopicUnread(hasConvex ? topics : undefined, remote?.topicMarks)
+  const fold = useTopicUnread(hasConvex ? topics : undefined)
+  const { partners, channelOf } = useDmChannels()
+  const dmChannels = useMemo(
+    () => (hasRelay ? partners.map((pubkey) => ({ id: pubkey, folderId: channelOf(pubkey) })) : undefined),
+    [partners, channelOf],
+  )
+  const dmFold = useTopicUnread(dmChannels)
 
   const topicHasUnread = useCallback(
     (topicId: string) => {
       if (!hasConvex) return mockTopicHasUnread(topicId)
-      return (fold.unread[topicId] ?? false) || (remote?.huddleTopics.includes(topicId) ?? false)
+      return fold.unread[topicId] ?? false
     },
-    [remote, fold],
+    [fold],
   )
 
   const dmHasUnread = useCallback(
     (dmId: string) => {
-      if (!hasConvex) {
+      if (!hasRelay) {
         const convId = mockConvIdFor(dmId)
         return convId === undefined ? false : mockDmHasUnread(convId)
       }
-      return remote?.dms.includes(dmId) ?? false
+      return dmFold.unread[dmId] ?? false
     },
-    [remote],
+    [dmFold],
   )
 
-  const topicIsUrgent = useCallback(
-    (topicId: string) =>
-      hasConvex
-        ? (fold.urgent[topicId] ?? false) || (remote?.urgentHuddleTopics.includes(topicId) ?? false)
-        : false,
-    [remote, fold],
-  )
-  const dmIsUrgent = useCallback(
-    (dmId: string) => (hasConvex ? (remote?.urgentDms.includes(dmId) ?? false) : false),
-    [remote],
-  )
+  const topicIsUrgent = useCallback((topicId: string) => (hasConvex ? (fold.urgent[topicId] ?? false) : false), [fold])
+  const dmIsUrgent = useCallback((dmId: string) => (hasRelay ? (dmFold.urgent[dmId] ?? false) : false), [dmFold])
 
   return { topicHasUnread, dmHasUnread, topicIsUrgent, dmIsUrgent }
 }
@@ -103,32 +102,30 @@ export function useReadActions() {
   const markThreadRemote = useMutation(api.readState.markThreadRead)
   const findTopic = useTopicLookup()
   /*
-   * A DM's channel uuid, by the partner key the page marks read with (DMS-8).
-   * The same query `DmVisibilityProvider` holds open, so this costs no second
-   * subscription. Read through a ref rather than the closure: `useMarkRead`
+   * A DM's channel uuid, by the partner pubkey the page marks read with
+   * (DMS-8, REM-3). Read through a ref rather than the closure: `useMarkRead`
    * captures `markContainerRead` once per target and fires it 1.5 s later, and
-   * `useEnsureDmChannel` may mint the channel inside that window.
+   * opening the DM may mint its channel inside that window.
    */
-  const dmChannels = useQuery(api.nostr.outbox.dmChannels, hasConvex ? {} : 'skip')
-  const dmChannelByKey = useRef<ReadonlyMap<string, string>>(new Map())
+  const { channelOf } = useDmChannels()
+  const dmChannelOf = useRef(channelOf)
   useEffect(() => {
-    dmChannelByKey.current = new Map((dmChannels ?? []).map((c) => [c.dmKey, c.channelUuid]))
-  }, [dmChannels])
+    dmChannelOf.current = channelOf
+  }, [channelOf])
 
   return {
     markContainerRead(parentKind: 'topic' | 'dm' | 'huddle', parentKey: string) {
+      // A topic's context is its Folder id and a DM's is its channel uuid —
+      // the bare uuid either way (SPEC §11.1), never an app id. A huddle is
+      // not a channel at all.
+      if (parentKind === 'dm') {
+        // Relay only (REM-3): nothing reads a DM's Convex watermark any more.
+        if (hasRelay) recordContainerRead(dmChannelOf.current(parentKey), Date.now())
+        return
+      }
       if (!hasConvex) return
       void markContainerRemote({ parentKind, parentKey })
-      // A topic's context is its Folder id and a DM's is its channel uuid —
-      // the bare uuid either way (SPEC §11.1), never the Convex id. A huddle is
-      // not a channel at all. A DM with no channel yet records only the Convex
-      // watermark here; `cachedReadContexts` hands it to the relay once the
-      // uuid exists, so nothing is lost by waiting.
-      if (parentKind === 'topic') {
-        recordContainerRead(findTopic(parentKey)?.folderId, Date.now())
-      } else if (parentKind === 'dm') {
-        recordContainerRead(dmChannelByKey.current.get(parentKey), Date.now())
-      }
+      if (parentKind === 'topic') recordContainerRead(findTopic(parentKey)?.folderId, Date.now())
     },
     markThreadRead(messageKey: string) {
       if (!hasConvex) return

@@ -4,8 +4,7 @@ import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { CURRENT_USER_NAME, useStarred, useEnsureDmChannel, useDmVisibility } from '@/api'
-import { useChannelSync } from '@/nostr/useChannelSync'
+import { CURRENT_USER_NAME, useStarred, useDmChannels, useDmVisibility } from '@/api'
 import type { StartTopicResult } from '@/components/CreateTopicDialog'
 import { useFileConversationView } from './useFileConversationView'
 
@@ -53,11 +52,11 @@ interface ViewSlots {
  * Two things a DM had are dropped (Miky, 2026-09-23): the highlight, which
  * only Convex held and no DM message carries, and the promoted-huddle context.
  *
- * **What still comes from Convex, until REM-3:** which channel a DM is
- * (`syncPlan`, off `dmConversations`), and minting it on first open. The
- * relay→Convex import `useChannelSync` runs is also left in place: it is what
- * keeps a DM's unread dot and the Desk current until REM-3 and CON-14 read
- * those from the relay. It is a projection, and nothing here reads it back.
+ * **Nothing comes from Convex since REM-3.** `dmId` is the partner's pubkey,
+ * which channel the DM is comes from the relay's `39000`s (`useDmChannels`),
+ * and a DM with no channel gets one on first open. The relay→Convex import
+ * `useChannelSync` ran for a DM is gone with them: it fed the DM dots and the
+ * Desk, which read the relay now.
  */
 export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm }: UseDmConversationViewArgs): ViewSlots {
   const [threadConvId, setThreadConvId] = useState<string | null>(null)
@@ -65,9 +64,16 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   // Opening the DM clears new-message state; opening a thread clears that
   // thread's new-reply state (§4.3).
   useMarkRead('dm', dmId, threadConvId)
-  // Opening the DM also gives it a channel on the relay, if it has a row and
-  // does not have one yet (DMS-3).
-  useEnsureDmChannel(dmId)
+  /*
+    Opening the DM also gives it a channel on the relay if it has none (DMS-3):
+    a DM is a channel, so there is nowhere to send the first message until the
+    relay has minted one. `ensureChannel` waits for the channel read, and is a
+    no-op for a DM that already has one.
+  */
+  const { state: channelsState, channelOf, ensureChannel } = useDmChannels()
+  useEffect(() => {
+    if (dmId) ensureChannel(dmId)
+  }, [dmId, ensureChannel])
   /*
     And brings it back if the viewer had hidden it — DMS-6.
 
@@ -82,19 +88,21 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   const { state: visibilityState, isDmHidden, reopenDm } = useDmVisibility()
   const considered = useRef<string | null>(null)
   useEffect(() => {
-    if (visibilityState !== 'present') return
+    // Both answers, or "hidden" cannot be judged: the set names channels, and
+    // which channel this DM is arrives separately.
+    if (visibilityState !== 'present' || channelsState !== 'present') return
     if (considered.current === dmId) return
     considered.current = dmId
     if (dmId && isDmHidden(dmId)) void reopenDm(dmId)
-  }, [dmId, visibilityState, isDmHidden, reopenDm])
+  }, [dmId, visibilityState, channelsState, isDmHidden, reopenDm])
 
   /*
-    Which channel this DM is. Keyed on the partner's person key, never a
-    `dmConversations` id (§2.4), so a viewer can only name a conversation they
-    are in. Null until `useEnsureDmChannel`'s `41010` has landed; the
-    conversation below starts on its own the moment it has one.
+    Which channel this DM is. Keyed on the partner's pubkey (§2.4), and only
+    ever a channel the relay listed for this viewer, so a viewer can only name
+    a conversation they are in. Undefined until the relay has answered, or the
+    `41010` above has; the conversation below starts the moment it has one.
   */
-  const { channelUuid } = useChannelSync('dm', dmId)
+  const channelUuid = dmId ? channelOf(dmId) : undefined
   const { isDmStarred, toggleDm } = useStarred()
 
   const dm = useFileConversationView({

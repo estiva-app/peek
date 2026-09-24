@@ -8,7 +8,16 @@ import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
-import { useUnread, useCreateTopicFromDm, usePeople, useStarred, useDmVisibility } from '@/api'
+import {
+  hasRelay,
+  isPersonKey,
+  useCreateTopicFromDm,
+  useDmChannels,
+  useDmVisibility,
+  useStarred,
+  useUnread,
+  useWorkspacePeople,
+} from '@/api'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -33,17 +42,19 @@ export function PeoplePage() {
   const { id: routeId } = useParams<{ id: string }>()
   const { entries: starredEntries, isLoading: starredLoading } = useStarred()
   const { isDmHidden, canHideDm, hideDm: hideDmRemote } = useDmVisibility()
+  const { partners } = useDmChannels()
   const { state: debug } = useDebug()
   const showUnreads = debug.unreads.people
 
-  // Everyone in the workspace appears in the DM list (ruling 2026-07-08).
-  // A DM's id IS the partner's person key (§2.4) — stable for every viewer,
-  // so two people always address the same conversation. (The old scheme minted
-  // ids from list position, which collided across viewers.) People with no
-  // conversation yet simply start empty. undefined = Convex still loading.
+  // Everyone in the workspace appears in the DM list (ruling 2026-07-08), read
+  // from the relay: the roster, named by profiles, humans only (REM-3). A DM's
+  // id IS the partner's pubkey (§2.4) — the same for every viewer and every
+  // app, so two people always address the same conversation. People with no
+  // conversation yet simply start empty; anyone the viewer already has a DM
+  // with stays listed after leaving the roster. undefined = still loading.
   // (Teams are hidden until they're a real feature — user ruling 2026-07-15.)
-  const people = usePeople()
-  const DMS = useMemo(() => people?.map((p) => ({ id: p.id, name: p.name })), [people])
+  const people = useWorkspacePeople(partners)
+  const DMS = useMemo(() => people?.map((p) => ({ id: p.id, name: p.name, avatarSrc: p.avatarSrc })), [people])
   const ALL_ITEMS = useMemo(() => DMS ?? [], [DMS])
   const DM_IDS = useMemo(() => new Set((DMS ?? []).map((d) => d.id)), [DMS])
 
@@ -110,6 +121,17 @@ export function PeoplePage() {
   }
 
   useEffect(() => {
+    /*
+      A link from before REM-3 names a Convex id or `seedKey`. Nothing but
+      Convex can say whose, so it lands on the list rather than on somebody's
+      conversation by guess; stars and open work carried the pubkey and were
+      moved, and every link Peek draws now is a pubkey.
+    */
+    if (routeId && hasRelay && !isPersonKey(routeId)) {
+      if (lastDmId === routeId) setLastDmId(null)
+      navigate('/app/people', { replace: true })
+      return
+    }
     if (routeId && DM_IDS.has(routeId)) {
       setLastDmId(routeId)
       // The launcher's Recent group (UIG-29, C3).
@@ -141,6 +163,7 @@ export function PeoplePage() {
         return {
           id: dm.id,
           name: dm.name,
+          avatarSrc: dm.avatarSrc,
           isUnread: (showUnreads && dmHasUnread(dm.id)) || urgent,
           isUrgent: urgent,
           canHide: canHideDm(dm.id),
@@ -159,6 +182,8 @@ export function PeoplePage() {
 export interface PeopleListItem {
   id: string
   name: string
+  /** The profile's picture; absent falls back to the name-keyed registry. */
+  avatarSrc?: string
   isUnread: boolean
   isUrgent: boolean
   /** Hiding is offered only where it can succeed (DMS-6). */
@@ -229,6 +254,7 @@ export function PeoplePageView({
                 <PersonRow
                   key={dm.id}
                   name={dm.name}
+                  avatarSrc={dm.avatarSrc}
                   type="DM"
                   isUnread={dm.isUnread}
                   isUrgent={dm.isUrgent}

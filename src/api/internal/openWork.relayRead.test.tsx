@@ -24,6 +24,10 @@ import { getFunctionName } from 'convex/server'
 
 vi.mock('@/api/store', () => ({ hasConvex: true }))
 
+/** A person in open work is their pubkey since REM-3. */
+const GREG = 'a'.repeat(64)
+const JUAN = 'b'.repeat(64)
+
 let openWorkListResult: unknown = []
 /*
   Queries are told apart by name, not by reference. `api.desk.openWorkList` is a
@@ -49,10 +53,13 @@ let topics: unknown = [
 vi.mock('@/api/topics', () => ({ useTopics: () => topics }))
 
 let people: unknown = [
-  { id: 'greg', name: 'Greg Bothman', avatarSrc: 'greg.png', pubkey: 'ab' },
-  { id: 'juan', name: 'Juan Foley', avatarSrc: 'juan.png' },
+  { id: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png', pubkey: GREG },
+  { id: JUAN, name: 'Juan Foley', avatarSrc: 'juan.png' },
 ]
-vi.mock('@/api/people', () => ({ usePeople: () => people }))
+vi.mock('@/api/people', async (importOriginal) => ({
+  isPersonKey: (await importOriginal<typeof import('@/api/people')>()).isPersonKey,
+  useWorkspacePeople: () => people,
+}))
 
 type Ref = { kind: 'topic'; id: string; channelUuid?: string } | { kind: 'dm'; key: string; pubkey?: string }
 const publish = vi.fn<(entries: Ref[]) => Promise<void>>(async () => undefined)
@@ -80,8 +87,8 @@ beforeEach(() => {
     { id: 't2', title: 'Auth rollout', isResolved: true, folderId: null },
   ]
   people = [
-    { id: 'greg', name: 'Greg Bothman', avatarSrc: 'greg.png', pubkey: 'ab' },
-    { id: 'juan', name: 'Juan Foley', avatarSrc: 'juan.png' },
+    { id: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png', pubkey: GREG },
+    { id: JUAN, name: 'Juan Foley', avatarSrc: 'juan.png' },
   ]
 })
 
@@ -102,10 +109,10 @@ describe('the list comes from the relay', () => {
   it('renders a DM entry, which needs no relay stream to resolve its partner', async () => {
     // Why this ticket is not gated on DMS-3: a DM row resolves through the
     // workspace directory either way, so the list can move without the stream.
-    relayBlob = aBlob([{ kind: 'dm', key: 'greg' }])
+    relayBlob = aBlob([{ kind: 'dm', key: GREG }])
     const { result } = await setup()
     expect(result.current.items).toEqual([
-      { id: 'ow_dm_greg', kind: 'dm', dmId: 'greg', name: 'Greg Bothman', avatarSrc: 'greg.png' },
+      { id: `ow_dm_${GREG}`, kind: 'dm', dmId: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' },
     ])
   })
 
@@ -118,18 +125,18 @@ describe('the list comes from the relay', () => {
   it('renders topics and DMs interleaved in the blob order, not grouped by kind', async () => {
     relayBlob = aBlob([
       { kind: 'topic', id: 't1' },
-      { kind: 'dm', key: 'greg' },
+      { kind: 'dm', key: GREG },
       { kind: 'topic', id: 't2' },
     ])
     const { result } = await setup()
-    expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1', 'ow_dm_greg', 'ow_topic_t2'])
+    expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1', `ow_dm_${GREG}`, 'ow_topic_t2'])
   })
 
   it('ignores what Convex says once the relay has answered', async () => {
     relayBlob = aBlob([{ kind: 'topic', id: 't1' }])
     openWorkListResult = [
       { id: 'w1', kind: 'topic', topicId: 't2', title: 'Auth rollout', topicStatus: 'resolved' },
-      { id: 'w2', kind: 'dm', dmId: 'juan', name: 'Juan Foley' },
+      { id: 'w2', kind: 'dm', dmId: JUAN, name: 'Juan Foley' },
     ]
     const { result } = await setup()
     expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1'])
@@ -171,13 +178,28 @@ describe('what is published is the list, never the rows that could be drawn', ()
     // whatever the blob already carried rather than losing its channel.
     relayBlob = aBlob([
       { kind: 'topic', id: 't9', channelUuid: 'u-9' },
-      { kind: 'dm', key: 'greg' },
+      { kind: 'dm', key: GREG },
     ])
     await setup()
     await waitFor(() => expect(publish).toHaveBeenCalled())
     expect(publish.mock.calls.at(-1)?.[0]).toEqual([
       { kind: 'topic', id: 't9', channelUuid: 'u-9' },
-      { kind: 'dm', key: 'greg', pubkey: 'ab' },
+      { kind: 'dm', key: GREG, pubkey: GREG },
+    ])
+  })
+
+  it('moves an entry under the old Peek key to its stored pubkey, and drops one with none (REM-3)', async () => {
+    relayBlob = aBlob([
+      { kind: 'dm', key: 'kh7abc', pubkey: JUAN },
+      { kind: 'dm', key: 'kh7def' },
+      { kind: 'topic', id: 't1' },
+    ])
+    const { result } = await setup()
+    expect(result.current.items.map((i) => i.id)).toEqual([`ow_dm_${JUAN}`, 'ow_topic_t1'])
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    expect(publish.mock.calls.at(-1)?.[0]).toEqual([
+      { kind: 'dm', key: JUAN, pubkey: JUAN },
+      { kind: 'topic', id: 't1', channelUuid: 'u-1' },
     ])
   })
 
@@ -188,17 +210,17 @@ describe('what is published is the list, never the rows that could be drawn', ()
     syncState = 'absent'
     relayBlob = undefined
     openWorkListResult = [
-      { id: 'w1', kind: 'dm', dmId: 'greg', name: 'Greg Bothman' },
+      { id: 'w1', kind: 'dm', dmId: GREG, name: 'Greg Bothman' },
       { id: 'w2', kind: 'topic', topicId: 't2', title: 'Auth rollout', topicStatus: 'resolved' },
       { id: 'w3', kind: 'topic', topicId: 't1', title: 'CI/CD', topicStatus: 'unresolved' },
     ]
     const { result } = await setup()
-    expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1', 'ow_topic_t2', 'ow_dm_greg'])
+    expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1', 'ow_topic_t2', `ow_dm_${GREG}`])
     await waitFor(() => expect(publish).toHaveBeenCalled())
     expect(publish.mock.calls.at(-1)?.[0]).toEqual([
       { kind: 'topic', id: 't1', channelUuid: 'u-1' },
       { kind: 'topic', id: 't2' },
-      { kind: 'dm', key: 'greg', pubkey: 'ab' },
+      { kind: 'dm', key: GREG, pubkey: GREG },
     ])
   })
 })
@@ -228,9 +250,9 @@ describe('adding and removing', () => {
   })
 
   it('drops an entry from the rendered list and from what is published', async () => {
-    relayBlob = aBlob([{ kind: 'topic', id: 't1' }, { kind: 'dm', key: 'greg' }])
+    relayBlob = aBlob([{ kind: 'topic', id: 't1' }, { kind: 'dm', key: GREG }])
     const { result } = await setup()
-    act(() => result.current.removeDm('greg'))
+    act(() => result.current.removeDm(GREG))
     expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1'])
     await waitFor(() =>
       expect(publish.mock.calls.at(-1)?.[0]).toEqual([{ kind: 'topic', id: 't1', channelUuid: 'u-1' }]),

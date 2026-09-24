@@ -20,6 +20,10 @@ import { getFunctionName } from 'convex/server'
 
 vi.mock('@/api/store', () => ({ hasConvex: true }))
 
+/** A starred person is their pubkey since REM-3. */
+const GREG = 'a'.repeat(64)
+const JUAN = 'b'.repeat(64)
+
 let starsListResult: unknown = []
 const toggleRemote = vi.fn(async () => undefined)
 /*
@@ -46,10 +50,13 @@ let topics: unknown = [
 vi.mock('@/api/topics', () => ({ useTopics: () => topics }))
 
 let people: unknown = [
-  { id: 'greg', name: 'Greg Bothman', avatarSrc: 'greg.png' },
-  { id: 'juan', name: 'Juan Foley', avatarSrc: 'juan.png' },
+  { id: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' },
+  { id: JUAN, name: 'Juan Foley', avatarSrc: 'juan.png' },
 ]
-vi.mock('@/api/people', () => ({ usePeople: () => people }))
+vi.mock('@/api/people', async (importOriginal) => ({
+  isPersonKey: (await importOriginal<typeof import('@/api/people')>()).isPersonKey,
+  useWorkspacePeople: () => people,
+}))
 
 type PublishedSet = { topics: { id: string }[]; people: { key: string }[] }
 const publish = vi.fn<(set: PublishedSet) => Promise<void>>(async () => undefined)
@@ -82,8 +89,8 @@ beforeEach(() => {
     { id: 't2', title: 'Auth rollout', isResolved: true },
   ]
   people = [
-    { id: 'greg', name: 'Greg Bothman', avatarSrc: 'greg.png' },
-    { id: 'juan', name: 'Juan Foley', avatarSrc: 'juan.png' },
+    { id: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' },
+    { id: JUAN, name: 'Juan Foley', avatarSrc: 'juan.png' },
   ]
 })
 
@@ -102,12 +109,28 @@ describe('the set comes from the relay', () => {
   })
 
   it('renders a starred person the same way, which is the half the ticket had excluded', async () => {
-    relayBlob = aBlob([], ['greg'])
+    relayBlob = aBlob([], [GREG])
     const { result } = await setup()
     expect(result.current.entries).toEqual([
-      { id: 'star_dm_greg', kind: 'dm', dmId: 'greg', name: 'Greg Bothman', avatarSrc: 'greg.png' },
+      { id: `star_dm_${GREG}`, kind: 'dm', dmId: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' },
     ])
-    expect(result.current.isDmStarred('greg')).toBe(true)
+    expect(result.current.isDmStarred(GREG)).toBe(true)
+  })
+
+  it('moves a star written under the old Peek key to the pubkey stored beside it (REM-3)', async () => {
+    relayBlob = { ...aBlob([], []), people: [{ key: 'kh7abc', pubkey: GREG }] }
+    const { result } = await setup()
+    expect(result.current.isDmStarred(GREG)).toBe(true)
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [], people: [{ key: GREG, pubkey: GREG }] })
+  })
+
+  it('drops an old-key star with no pubkey — nothing without Convex can say whose it is', async () => {
+    relayBlob = { ...aBlob(['t1'], []), people: [{ key: 'kh7abc' }, { key: JUAN }] }
+    const { result } = await setup()
+    expect(result.current.isDmStarred('kh7abc')).toBe(false)
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't1' }], people: [{ key: JUAN, pubkey: JUAN }] })
   })
 
   it('takes the resolved state from the workspace index, since the blob carries none', async () => {
@@ -117,7 +140,7 @@ describe('the set comes from the relay', () => {
   })
 
   it('sorts people and topics together by label, as it did when Convex served them', async () => {
-    relayBlob = aBlob(['t1', 't2'], ['greg', 'juan'])
+    relayBlob = aBlob(['t1', 't2'], [GREG, JUAN])
     const { result } = await setup()
     expect(result.current.entries.map((e) => (e.kind === 'dm' ? e.name : e.title))).toEqual([
       'Auth rollout',
@@ -134,11 +157,11 @@ describe('the set comes from the relay', () => {
     starsListResult = [
       { id: 's1', kind: 'topic', topicId: 't1', title: 'CI/CD pipeline stuck', topicStatus: 'unresolved' },
       { id: 's2', kind: 'topic', topicId: 't2', title: 'Auth rollout', topicStatus: 'resolved' },
-      { id: 's3', kind: 'dm', dmId: 'juan', name: 'Juan Foley' },
+      { id: 's3', kind: 'dm', dmId: JUAN, name: 'Juan Foley' },
     ]
     const { result } = await setup()
     expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t1'])
-    expect(result.current.unpublished).toEqual({ topics: ['t2'], people: ['juan'] })
+    expect(result.current.unpublished).toEqual({ topics: ['t2'], people: [JUAN] })
   })
 })
 
@@ -189,12 +212,12 @@ describe('what is published is the set, never the rows that could be drawn', () 
     relayBlob = undefined
     starsListResult = [
       { id: 's1', kind: 'topic', topicId: 't1', title: 'CI/CD', topicStatus: 'unresolved' },
-      { id: 's2', kind: 'dm', dmId: 'greg', name: 'Greg Bothman' },
+      { id: 's2', kind: 'dm', dmId: GREG, name: 'Greg Bothman' },
     ]
     const { result } = await setup()
-    expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t1', 'star_dm_greg'])
+    expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t1', `star_dm_${GREG}`])
     await waitFor(() => expect(publish).toHaveBeenCalled())
-    expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't1' }], people: [{ key: 'greg' }] })
+    expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't1' }], people: [{ key: GREG, pubkey: GREG }] })
   })
 })
 
@@ -212,20 +235,20 @@ describe('toggling', () => {
   it('adds a person optimistically, over a relay set that does not have them yet', async () => {
     relayBlob = aBlob([], [])
     const { result } = await setup()
-    act(() => result.current.toggleDm({ dmId: 'juan', name: 'Juan Foley' }))
-    expect(result.current.isDmStarred('juan')).toBe(true)
+    act(() => result.current.toggleDm({ dmId: JUAN, name: 'Juan Foley' }))
+    expect(result.current.isDmStarred(JUAN)).toBe(true)
     expect(result.current.entries).toEqual([
-      { id: 'star_dm_juan', kind: 'dm', dmId: 'juan', name: 'Juan Foley', avatarSrc: 'juan.png' },
+      { id: `star_dm_${JUAN}`, kind: 'dm', dmId: JUAN, name: 'Juan Foley', avatarSrc: 'juan.png' },
     ])
-    await waitFor(() => expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [], people: [{ key: 'juan' }] }))
+    await waitFor(() => expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [], people: [{ key: JUAN, pubkey: JUAN }] }))
   })
 
   it('keeps the overlay when the relay set catches up, rather than starring twice', async () => {
     relayBlob = aBlob([], [])
     const { result, rerender } = await setup()
-    act(() => result.current.toggleDm({ dmId: 'juan', name: 'Juan Foley' }))
-    relayBlob = aBlob([], ['juan'])
+    act(() => result.current.toggleDm({ dmId: JUAN, name: 'Juan Foley' }))
+    relayBlob = aBlob([], [JUAN])
     rerender()
-    expect(result.current.entries.map((e) => e.id)).toEqual(['star_dm_juan'])
+    expect(result.current.entries.map((e) => e.id)).toEqual([`star_dm_${JUAN}`])
   })
 })

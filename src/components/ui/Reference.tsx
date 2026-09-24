@@ -135,8 +135,8 @@ export function Reference({
     const person = pubkey ? personByPubkey(pubkey) : undefined
     const chip = (
       <Chip
-        // A person opens their DM — `/app/people/<id>` is the DM with them (§2.4).
-        link={person ? { place: 'person', href: `/app/people/${encodeURIComponent(person.id)}` } : null}
+        // A person opens their DM — `/app/people/<pubkey>` is the DM with them (§2.4, REM-3).
+        link={person && pubkey ? { place: 'person', href: `/app/people/${pubkey}` } : null}
         data-reference="person"
         data-mention={pubkey ?? undefined}
         data-resolved={person ? 'true' : 'false'}

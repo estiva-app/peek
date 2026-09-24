@@ -11,7 +11,7 @@
  * ## The list and the rendering are two different things, and mixing them is a bug
  *
  * The list is ids: topic ids and person keys, in order, and nothing else is
- * published. Rendering resolves those through `useTopics()` and `usePeople()` —
+ * published. Rendering resolves those through `useTopics()` and `useWorkspacePeople()` —
  * a title, a resolved state, a name, an avatar — which is ADR 0001's layer 3
  * doing exactly what it is for. An id the index cannot resolve is dropped from
  * `items` and **kept in the list**: they are separate values here for that
@@ -61,7 +61,7 @@ import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { OPEN_WORK_ITEMS } from '@/data/deskData'
 import { hasConvex } from '@/api/store'
-import { usePeople } from '@/api/people'
+import { isPersonKey, useWorkspacePeople } from '@/api/people'
 import { useTopics } from '@/api/topics'
 import { useResolvedReferences } from '@/api/foreign'
 import { useOpenWorkSync } from '@/nostr/useOpenWorkSync'
@@ -93,6 +93,29 @@ export interface OpenWorkValue {
 
 const OpenWorkContext = createContext<OpenWorkValue | null>(null)
 
+/**
+ * A person in open work is their pubkey since REM-3, as a DM is everywhere
+ * else. An entry written under the old Peek key moves to the pubkey the blob
+ * stored beside it; one with none cannot be moved without Convex, so it is
+ * dropped and the next publish deletes it rather than keeping a key nothing
+ * can read. A second entry for the same person after the move is a duplicate.
+ */
+function normalizePeople(entries: readonly OpenWorkRef[]): OpenWorkRef[] {
+  const seen = new Set<string>()
+  const out: OpenWorkRef[] = []
+  for (const entry of entries) {
+    if (entry.kind !== 'dm') {
+      out.push(entry)
+      continue
+    }
+    const key = entry.pubkey ?? entry.key
+    if (!isPersonKey(key) || seen.has(key)) continue
+    seen.add(key)
+    out.push({ kind: 'dm', key, pubkey: key })
+  }
+  return out
+}
+
 export function OpenWorkProvider({ children }: { children: ReactNode }) {
   // Mock-mode state (full source of truth without a deployment).
   const [mockItems, setMockItems] = useState<OpenWorkItem[]>(OPEN_WORK_ITEMS)
@@ -108,25 +131,27 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
 
   // Rendering only. Never the list — see the header.
   const topics = useTopics()
-  const people = usePeople()
+  const people = useWorkspacePeople()
 
   const convexSet = useMemo<OpenWorkRef[] | undefined>(() => {
     if (convexOpenWork === undefined) return undefined
     // The query sorts `addedAt` descending. The list is oldest-first, so the
     // seed reverses it rather than freezing the old presentation order into the
     // blob, where it would then be the person's order for ever.
-    return [...convexOpenWork]
-      .reverse()
-      .map((w) =>
-        w.kind === 'dm'
-          ? ({ kind: 'dm', key: w.dmId } as const)
-          : ({ kind: 'topic', id: w.topicId } as const),
-      )
+    return normalizePeople(
+      [...convexOpenWork]
+        .reverse()
+        .map((w) =>
+          w.kind === 'dm'
+            ? ({ kind: 'dm', key: w.dmId } as const)
+            : ({ kind: 'topic', id: w.topicId } as const),
+        ),
+    )
   }, [convexOpenWork])
 
   const relaySet = useMemo<OpenWorkRef[] | undefined>(() => {
     if (sync.state !== 'present' || !sync.relayBlob) return undefined
-    return sync.relayBlob.entries
+    return normalizePeople(sync.relayBlob.entries)
   }, [sync.state, sync.relayBlob])
 
   /** The list as last settled, before this session's changes. */
@@ -242,14 +267,12 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     if (!effectiveSet) return undefined
     return effectiveSet.map((entry) => {
       if (entry.kind === 'file') return entry
-      if (entry.kind === 'dm') {
-        const pubkey = personByKey.get(entry.key)?.pubkey ?? entry.pubkey
-        return pubkey ? { kind: 'dm', key: entry.key, pubkey } : { kind: 'dm', key: entry.key }
-      }
+      // A person is their pubkey since REM-3; `normalizePeople` made it so.
+      if (entry.kind === 'dm') return { kind: 'dm', key: entry.key, pubkey: entry.key }
       const channelUuid = topicById.get(entry.id)?.folderId ?? entry.channelUuid
       return channelUuid ? { kind: 'topic', id: entry.id, channelUuid } : { kind: 'topic', id: entry.id }
     })
-  }, [effectiveSet, topicById, personByKey])
+  }, [effectiveSet, topicById])
 
   useEffect(() => {
     if (!hasConvex) return

@@ -15,7 +15,7 @@ export * from './desk'
 export * from './currentUser'
 export * from './people'
 export * from './topics'
-export * from './dms'
+export { useDmChannels, useDmVisibility } from '@/api/internal/dms'
 /* `window.__readState()` — see src/nostr/useReadStateSync.ts (CRO-14). At module
    scope so it exists before anything asks, including on a cold URL load. */
 import { installReadStateDiagnostic } from '@/nostr/useReadStateSync'
@@ -54,7 +54,6 @@ export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format
 export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionTopics } from './mentions'
 export { useStarred } from '@/api/internal/starred'
-export { useDmVisibility } from '@/api/internal/dmVisibility'
 export { useFollows, type Follows } from '@/api/internal/follows'
 export { PeekDataProvider, hasConvex } from './store'
 export { RELAY_URL, hasRelay } from './relayUrl'

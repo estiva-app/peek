@@ -1,12 +1,14 @@
 /**
  * DM directory — which DM conversations exist and who they're with.
  *
- * A DM is identified by **the partner's person key** (`dmId`), never by a
- * conversation number. That key is the same for every viewer, so two people
- * addressing each other always land on the same conversation; the server
- * resolves the pair (viewer, partner) to one canonical `dmConversations`
- * row (domain model §2.4). The previous scheme minted client-side numbers
- * from the viewer's People-list position, which collided across viewers.
+ * A DM is identified by **the partner's pubkey** (`dmId`, REM-3), never by a
+ * conversation number. That key is the same for every viewer and every app, so
+ * two people addressing each other always land on the same conversation; the
+ * relay resolves the pair to one channel (domain model §2.4). The previous
+ * scheme minted client-side numbers from the viewer's People-list position,
+ * which collided across viewers.
+ *
+ * This directory is the **mock** cast's, keyed by its own ids.
  *
  * The old numeric ids survive only as the mock fixture's storage keys
  * (`DM_CONVERSATIONS` is keyed by them); `mockConvIdFor` bridges to them in

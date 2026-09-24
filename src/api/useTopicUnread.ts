@@ -24,10 +24,10 @@ export interface TopicChannel {
  *
  * ## What it replaces, and what it does not
  *
- * The topic half only. Huddles are not channels and DMs are not on the relay
- * yet, so both stay in Convex — `unread.summary` keeps them, and `useUnread`
- * unions the two answers. A topic's dot is the union of its own channel and
- * any huddle under it, and the huddle side of that union arrives from there.
+ * Any channel's dot, not only a topic's: since REM-3 `useUnread` folds DMs
+ * through this too, keyed by the partner's pubkey and read from the DM's
+ * channel. Huddles are not channels and have been off since CON-8, and
+ * `unread.summary`, which held them, is no longer asked.
  *
  * ## `undefined` is not "nothing new"
  *
@@ -53,9 +53,10 @@ export interface TopicChannel {
 export function useTopicUnread(
   topics: readonly TopicChannel[] | null | undefined,
   /**
-   * `unread.summary`'s `topicMarks` — this deployment's cached watermark per
-   * channel uuid, unix seconds. Raises the relay marker, never lowers it;
-   * `topicUnread.ts` says why a relay fold still wants it.
+   * A cached watermark per channel uuid, unix seconds. Raises the relay
+   * marker, never lowers it; `topicUnread.ts` says why a fold might want it.
+   * No caller passes one since REM-3 stopped reading `unread.summary`'s
+   * `topicMarks`.
    */
   cachedMarks?: Readonly<Record<string, number>> | undefined,
 ): {

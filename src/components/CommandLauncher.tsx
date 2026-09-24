@@ -20,7 +20,7 @@ import { ShipLogoMark } from './ui/ShipLogo'
 import { TopicState } from './ui/TopicState'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
-import { formatDateLabel, useForeignObjects, useMessageSearch, usePeople, useTopics, useWorkspaceDirectory, type Person } from '@/api'
+import { formatDateLabel, useForeignObjects, useMessageSearch, useTopics, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import type { Topic } from '@/data/topicData'
 import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
@@ -183,7 +183,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   // A file's page is `/<word>/<slug>-<d>` or `/topic/<address>` (FOL-19, FOL-37, FOL-39); the ref in the path names the file that is open.
   const openFileRef = fileRouteFromPath(pathname)?.ref ?? null
   const topics = useTopics()
-  const people = usePeople()
+  // The People page's list, keyed by pubkey — a row opens the DM (REM-3).
+  const people = useWorkspacePeople()
   const directory = useWorkspaceDirectory()
   const recents = useRecents()
 
