@@ -98,6 +98,93 @@ describe('useFileConversation — live (FOL-32)', () => {
 })
 
 /*
+  SID-1 — a new root is a re-read of the same conversation, not a new one. The
+  answer is keyed on the container, so the list stays on screen while the read
+  that includes the new root is out; only a different container starts again
+  from 'loading'.
+*/
+describe('useFileConversation — a new root keeps the conversation (SID-1)', () => {
+  const withRoot = (id: string) => ({ ...empty, roots: [{ id }] }) as unknown as FileConversation
+  const one = withRoot('r1')
+  const two = { ...empty, roots: [{ id: 'r1' }, { id: 'r2' }] } as unknown as FileConversation
+
+  /** Every state the hook rendered, so a single 'loading' frame cannot hide. */
+  function mount(initial: { container: typeof container; rootIds: string[] }) {
+    const seen: unknown[] = []
+    const hook = renderHook(
+      ({ container: c, rootIds }) => {
+        const out = useFileConversation(c, rootIds)
+        seen.push(out.state)
+        return out
+      },
+      { initialProps: initial },
+    )
+    return { ...hook, seen }
+  }
+
+  it('a new root re-reads with it, and the state never drops back to loading', async () => {
+    relay.read.mockResolvedValueOnce(one)
+    const { result, rerender, seen } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(one))
+
+    let land!: (c: FileConversation) => void
+    relay.read.mockReturnValueOnce(new Promise((resolve) => (land = resolve)))
+    const from = seen.length
+    rerender({ container, rootIds: ['r1', 'r2'] })
+    expect(relay.read).toHaveBeenLastCalledWith(container, ['r1', 'r2'])
+    // While the read is out, the conversation it had is what is drawn.
+    expect(result.current.state).toBe(one)
+    await act(async () => land(two))
+    expect(result.current.state).toBe(two)
+    expect(seen.slice(from)).not.toContain('loading')
+    expect(relay.read).toHaveBeenCalledTimes(2)
+  })
+
+  it('a failed re-read keeps the conversation it has (FOL-40)', async () => {
+    relay.read.mockResolvedValueOnce(one)
+    const { result, rerender } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(one))
+    relay.read.mockRejectedValueOnce(new Error('rate-limited: slow down'))
+    rerender({ container, rootIds: ['r1', 'r2'] })
+    await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(2))
+    await act(async () => {})
+    expect(result.current.state).toBe(one)
+  })
+
+  it('a first read still reports its failure', async () => {
+    relay.read.mockRejectedValueOnce(new Error('rate-limited: slow down'))
+    const { result } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toEqual({ failed: 'rate_limited' }))
+  })
+
+  it('a live re-read with the old roots does not paint over the read with the new one', async () => {
+    relay.read.mockResolvedValueOnce(one)
+    const { result, rerender } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(one))
+
+    // The signal fires: this hook re-reads with the roots it has, while the
+    // caller's re-resolve finds r2 and the ids change under it.
+    let stale!: (c: FileConversation) => void
+    relay.read.mockReturnValueOnce(new Promise((resolve) => (stale = resolve)))
+    await act(async () => live.fire?.())
+    relay.read.mockResolvedValueOnce(two)
+    rerender({ container, rootIds: ['r1', 'r2'] })
+    await waitFor(() => expect(result.current.state).toBe(two))
+    await act(async () => stale(one))
+    expect(result.current.state).toBe(two)
+  })
+
+  it('negative control: a different container starts from loading', async () => {
+    relay.read.mockResolvedValueOnce(one)
+    const { result, rerender } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(one))
+    relay.read.mockReturnValueOnce(new Promise(() => {}))
+    rerender({ container: { ...container, address: '30850:abc:other' }, rootIds: ['r9'] })
+    expect(result.current.state).toBe('loading')
+  })
+})
+
+/*
   REM-1 — a DM is a channel container. It finds its own messages, so the read is
   asked for the channel and no roots; it watches the channel for its messages
   and what carries its `h`; and a new message, which only the channel read can

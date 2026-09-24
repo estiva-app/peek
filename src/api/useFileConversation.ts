@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRelayViewer } from './foreign'
 import { KIND } from '@estiva-app/protocol'
 import {
@@ -57,6 +57,14 @@ export interface FileConversationActions {
 
 const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this conversation.' }
 
+/** The last answer for a container, and which roots it was read with. */
+interface Answer {
+  key: string
+  ids: string
+  conversation?: FileConversation
+  failed?: RelayFailureKind
+}
+
 const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION]
 
 /**
@@ -83,11 +91,21 @@ const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTI
  *
  * ## Same shape as `useFileThreads`
  *
- * Keyed on the container and the root ids, so a new comment re-asks and a
- * re-render does not; `loading` until the first answer for *this* key, and a
- * failure kept apart from an empty conversation — an unreadable conversation
- * is not one nobody has written in. Refreshed on focus and reconnect through
- * `useRefreshTriggers`, the fallback for a read Convex cannot make reactive.
+ * Re-read when the container or the root ids change, so a new comment re-asks
+ * and a re-render does not; a failure kept apart from an empty conversation —
+ * an unreadable conversation is not one nobody has written in. Refreshed on
+ * focus and reconnect through `useRefreshTriggers`, the fallback for a read
+ * Convex cannot make reactive.
+ *
+ * ## Keyed on the container alone (SID-1)
+ *
+ * `loading` until the first answer for *this container*, and never again for
+ * it. The root ids are an input to the read, not part of the key: a new root —
+ * yours after a send, someone else's live, or one the 30 s tick found — is a
+ * re-read of the same conversation, like a reply, and the list stays on
+ * screen until it lands. Keyed on the roots, each of those dropped the view
+ * to the skeleton and remounted every card, losing the scroll and the open
+ * replies.
  *
  * ## Live, the way a topic is (FOL-32)
  *
@@ -96,7 +114,7 @@ const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTI
  * carries no event, so it cannot say whether a new root or a reply landed and
  * both reads run: the caller's `onActivity` — the object's own read, which is
  * where the roots come from; a new one is not in `rootIds` until then, and
- * the changed key re-reads here — and this hook's `reload`, for a reply, an
+ * the changed ids re-read here — and this hook's `reload`, for a reply, an
  * edit or a reaction on a root already listed. When the root set did change
  * the second read is one too many, at the frequency of a new comment.
  */
@@ -117,26 +135,30 @@ export function useFileConversation(
   viewerPubkey: string | null
 } {
   const viewer = useRelayViewer()
-  const [answer, setAnswer] = useState<{
-    key: string
-    conversation?: FileConversation
-    failed?: RelayFailureKind
-  }>()
-  // The identity of the array changes every render; the comment ids do not.
+  const [answer, setAnswer] = useState<Answer>()
+  // The answer is the container's; the root ids are only what to read in it.
   const key = !container
     ? ''
     : container.kind === 'file'
-      ? `file ${container.h} ${container.address} ${rootIds.join(',')}`
+      ? `file ${container.h} ${container.address}`
       : `channel ${container.h}`
+  // The identity of the array changes every render; the comment ids do not.
+  const ids = container?.kind === 'file' ? rootIds.join(',') : ''
 
-  const load = useCallback(async () => {
+  // What is being read now, for a read that lands after the roots moved on.
+  const asking = useRef({ key, ids })
+  useEffect(() => {
+    asking.current = { key, ids }
+  }, [key, ids])
+
+  const load = useCallback(async (): Promise<Answer | undefined> => {
     if (!key) return
-    const [kind, h, address, ids] = key.split(' ')
+    const [kind, h, address] = key.split(' ')
     const v = viewer()
     if (!v) return
     const where: ConversationContainer = kind === 'file' ? { kind: 'file', address, h } : { kind: 'channel', h }
     return conversationAsViewer(where, ids ? ids.split(',') : [], v.relayUrl, v.token)
-      .then((conversation) => ({ key, conversation }))
+      .then((conversation) => ({ key, ids, conversation }))
       .catch((error: unknown) => {
         const kind =
           error instanceof RelayReadError
@@ -144,24 +166,37 @@ export function useFileConversation(
             : classifyRelayFailure((error as Error)?.message ?? '')
         if (isOutage(kind)) recordReadFailure(kind)
         console.warn('[nostr] file conversation read failed:', error)
-        return { key, failed: kind as RelayFailureKind }
+        return { key, ids, failed: kind as RelayFailureKind }
       })
-  }, [key, viewer])
+  }, [key, ids, viewer])
+
+  /*
+    A failed *re*-read keeps the conversation it has (FOL-40), the rule the
+    object's own resolve follows: one hiccup on the 30 s tick must not swap the
+    list for an error and back. A first read still reports its failure; there
+    is nothing to keep.
+  */
+  const keep = useCallback(
+    (next: Answer) =>
+      setAnswer((held) => (next.failed && held?.key === next.key && held.failed === undefined ? held : next)),
+    [],
+  )
 
   const reload = useCallback(async () => {
     const next = await load()
-    // A slow read for the file that *was* open must not paint over this one.
-    if (next?.key === key) setAnswer(next)
-  }, [load, key])
+    // A slow read for the file that *was* open, or for the roots it had before
+    // one was added, must not paint over what is being read now.
+    if (next && next.key === asking.current.key && next.ids === asking.current.ids) keep(next)
+  }, [load, keep])
 
   useEffect(() => {
     if (!key) return
     let cancelled = false
-    void load().then((next) => !cancelled && next && setAnswer(next))
+    void load().then((next) => !cancelled && next && keep(next))
     return () => {
       cancelled = true
     }
-  }, [key, load])
+  }, [key, load, keep])
 
   const live = useLiveFile(
     container?.h,
