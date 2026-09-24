@@ -185,7 +185,15 @@ function TreeRow({
   // `expand` decides until the person does — see `FileRow` for why this is
   // not an initialiser and not an effect.
   const [toggled, setToggled] = useState<boolean | null>(null)
-  const open = toggled ?? !!expand?.includes(file.ref)
+  /*
+    And once `expand` has opened a row it stays open (SID-2): the selection
+    moving to another branch is not the person closing this one, and closing
+    it would slide the row they just clicked out from under the pointer. Set
+    during render, the one place that is neither the initialiser nor an effect.
+  */
+  const expanded = !!expand?.includes(file.ref)
+  if (toggled === null && expanded) setToggled(true)
+  const open = toggled ?? expanded
   const title = file.slots.title?.value ?? 'Untitled'
   const listedChildren = listedChildrenOf(file, listed)
   /*

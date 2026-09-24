@@ -69,6 +69,13 @@ export type ForeignConversationState =
 function useResolvedForeign(naddr: string | null | undefined): {
   state: ForeignConversationState
   reload: () => Promise<void>
+  /**
+   * The file the last answer was for, while `state` is loading a different
+   * one (SID-2) — `null` otherwise. The file page's sidebar draws off it
+   * between a click and the next resolve, so the open Folder, its rows and
+   * their expand state are not thrown away for one read's length.
+   */
+  previous: ForeignObject | null
 } {
   const { resolveObject, resolveFileFolder } = useForeignObjects()
   const [resolved, setResolved] = useState<{
@@ -162,8 +169,9 @@ function useResolvedForeign(naddr: string | null | undefined): {
       : resolved.failed
         ? { failed: resolved.failed }
         : (resolved.object ?? 'unresolved')
+  const previous = state === 'loading' ? (resolved?.object ?? null) : null
 
-  return { state, reload }
+  return { state, reload, previous }
 }
 
 /**

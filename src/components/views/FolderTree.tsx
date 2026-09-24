@@ -5,7 +5,7 @@ import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { topLevelFolders, useFolderContents, useFolders, useTeamUnread } from '@/api'
+import { rememberFileAddress, topLevelFolders, useFolderContents, useFolders, useTeamUnread } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -149,7 +149,14 @@ export function FolderTree({
         selectedRef={selectedRef}
         selectedParent={selectedParent}
         onSelect={(file) => {
-          if (file.address) navigate(filePath(file.address, file.slots.title?.value))
+          if (!file.address) return
+          /*
+            The row has the author the short link drops, so the page needs no
+            `#d` read to recover it (SID-2) — and with the address known at
+            once, it selects the clicked row before the file resolves.
+          */
+          rememberFileAddress(file.address)
+          navigate(filePath(file.address, file.slots.title?.value))
         }}
         onOpenFolder={(id) => navigate(folderPath(id))}
         onControl={onControl}
