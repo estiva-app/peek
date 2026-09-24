@@ -1,41 +1,30 @@
 /**
- * People reads — the workspace directory.
+ * People reads — the workspace directory, from the relay.
  *
- * Convex-backed when a deployment is configured; static mocks otherwise.
- * `avatarSrc` prefers the person's uploaded avatar and falls back to the
- * seeded demo portrait (name-keyed `avatarFor`), so the demo dataset keeps
- * its faces while real sign-ups show theirs.
+ * One read answers all of it: the roster (`kind:13534`) and every profile
+ * (`kind:0`), shared by every caller on screen. People (REM-3), the @-mention
+ * and invite list, the names mentions render with and the viewer's own name and
+ * face (REM-6) are each a view over that one answer — Convex's `users` table,
+ * which used to be the copy all of these read, is not consulted.
+ *
+ * Demo mode (no relay) answers from the mock cast, whose ids are its own.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQuery } from 'convex/react'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { api } from '../../convex/_generated/api'
-import { PEOPLE as MOCK_PEOPLE, avatarFor } from '@/data/peopleData'
+import { PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { validToken, type StoredToken } from '@/auth/estivaId'
 import { queryRelay } from '@/nostr/bridge'
-import { workspaceFilters, workspacePeopleOf } from '@/nostr/workspacePeople'
+import {
+  mentionablePeopleOf,
+  profilesOf,
+  workspaceFilters,
+  workspacePeopleOf,
+  type WorkspacePerson,
+  type WorkspaceProfile,
+} from '@/nostr/workspacePeople'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
-import { hasConvex } from './store'
 import { RELAY_URL, hasRelay } from './relayUrl'
 import type { Person } from './types'
-
-/**
- * All people in the workspace, excluding the current user.
- * `undefined` while the Convex query is loading — callers guard or render
- * a skeleton (see SkeletonSidebarList).
- */
-export function usePeople(): Person[] | undefined {
-  const remote = useQuery(api.people.list, hasConvex ? {} : 'skip')
-  if (!hasConvex) return MOCK_PEOPLE
-  if (remote === undefined) return undefined
-  return remote.map((p) => ({
-    id: p.id,
-    name: p.name,
-    role: p.role,
-    avatarSrc: p.avatarUrl ?? avatarFor(p.name),
-    pubkey: p.pubkey,
-  }))
-}
 
 /** One read per minute, shared by every caller on screen. */
 let workspaceCache: { at: number; events: SignedEvent[] } | null = null
@@ -56,18 +45,13 @@ function readWorkspace(relayUrl: string, token: StoredToken): Promise<SignedEven
 }
 
 /**
- * Everyone the viewer can DM, from the relay — REM-3.
+ * The roster and every profile, as the relay last answered. `undefined` until
+ * the first read lands, and in demo mode, which has no relay to ask.
  *
- * The workspace's roster, named by each member's profile, humans only and
- * never the viewer (`workspacePeopleOf` says why each). A person's `id` **is**
- * their pubkey: it is what a DM route, a star and an open-work entry are keyed
- * by, and the one key every app can read.
- *
- * `include` keeps people the viewer already has a DM with on the list after
- * they leave the roster. `undefined` while the first read is in flight; demo
- * mode answers from the mock cast, whose ids are its own.
+ * Read on mount and again on the app's refresh triggers (focus, reconnect), so
+ * a rename in Estiva ID shows on the next load at the latest.
  */
-export function useWorkspacePeople(include: readonly string[] = NONE): Person[] | undefined {
+function useWorkspaceEvents(): SignedEvent[] | undefined {
   const [events, setEvents] = useState<SignedEvent[] | undefined>(() => workspaceCache?.events)
 
   const refresh = useCallback(() => {
@@ -80,18 +64,49 @@ export function useWorkspacePeople(include: readonly string[] = NONE): Person[] 
   useEffect(refresh, [refresh])
   useRefreshTriggers(refresh, { enabled: hasRelay, interval: false })
 
+  return events
+}
+
+/** Parsed once per answer, however many hooks ask. */
+const profilesByAnswer = new WeakMap<readonly SignedEvent[], Map<string, WorkspaceProfile>>()
+
+function profilesFor(events: readonly SignedEvent[]): Map<string, WorkspaceProfile> {
+  let profiles = profilesByAnswer.get(events)
+  if (!profiles) {
+    profiles = profilesOf(events)
+    profilesByAnswer.set(events, profiles)
+  }
+  return profiles
+}
+
+const toPerson = (p: WorkspacePerson): Person => ({
+  id: p.pubkey,
+  name: p.name,
+  role: '',
+  avatarSrc: p.picture,
+  pubkey: p.pubkey,
+})
+
+/**
+ * Everyone the viewer can DM, from the relay — REM-3.
+ *
+ * The workspace's roster, named by each member's profile, humans only and
+ * never the viewer (`workspacePeopleOf` says why each). A person's `id` **is**
+ * their pubkey: it is what a DM route, a star and an open-work entry are keyed
+ * by, and the one key every app can read.
+ *
+ * `include` keeps people the viewer already has a DM with on the list after
+ * they leave the roster. `undefined` while the first read is in flight; demo
+ * mode answers from the mock cast, whose ids are its own.
+ */
+export function useWorkspacePeople(include: readonly string[] = NONE): Person[] | undefined {
+  const events = useWorkspaceEvents()
   const includeKey = include.join(',')
   return useMemo(() => {
     if (!hasRelay) return MOCK_PEOPLE
     if (events === undefined) return undefined
     const extra = includeKey ? includeKey.split(',') : []
-    return workspacePeopleOf(events, validToken()?.pubkey, extra).map((p) => ({
-      id: p.pubkey,
-      name: p.name,
-      role: '',
-      avatarSrc: p.picture,
-      pubkey: p.pubkey,
-    }))
+    return workspacePeopleOf(events, validToken()?.pubkey, extra).map(toPerson)
   }, [events, includeKey])
 }
 
@@ -103,16 +118,58 @@ export function isPersonKey(id: string): boolean {
 }
 
 /**
+ * Everyone the viewer can @-mention or invite: the roster, agents included,
+ * never the viewer (`mentionablePeopleOf`). Ids are pubkeys, as on People.
+ *
+ * `undefined` while the first read is in flight — callers guard or render a
+ * skeleton (see SkeletonSidebarList).
+ */
+export function usePeople(): Person[] | undefined {
+  const events = useWorkspaceEvents()
+  return useMemo(() => {
+    if (!hasRelay) return MOCK_PEOPLE
+    if (events === undefined) return undefined
+    return mentionablePeopleOf(events, validToken()?.pubkey).map(toPerson)
+  }, [events])
+}
+
+/**
  * Pubkey to name for everyone Peek can name, for resolving mentions.
  *
  * Deliberately not {@link usePeople}: that one is the suggestion list and
- * excludes both the viewer and relay-only identities, which is right for
- * "who can I @" and wrong for "who is this key".
+ * excludes the viewer and anyone off the roster, which is right for "who can I
+ * @" and wrong for "who is this key".
  */
 export function useMentionNames(): Array<{ pubkey: string; name: string }> | undefined {
-  const remote = useQuery(api.people.mentionNames, hasConvex ? {} : 'skip')
-  if (!hasConvex) {
-    return MOCK_PEOPLE.flatMap((p) => (p.pubkey ? [{ pubkey: p.pubkey, name: p.name }] : []))
-  }
-  return remote
+  const profiles = useWorkspaceProfiles()
+  return useMemo(() => {
+    if (!hasRelay) return MOCK_PEOPLE.flatMap((p) => (p.pubkey ? [{ pubkey: p.pubkey, name: p.name }] : []))
+    return profiles?.map(({ pubkey, name }) => ({ pubkey, name }))
+  }, [profiles])
+}
+
+/**
+ * Every named profile on the relay — the viewer, agents and people off the
+ * roster included. `undefined` while loading and in demo mode.
+ */
+export function useWorkspaceProfiles(): WorkspaceProfile[] | undefined {
+  const events = useWorkspaceEvents()
+  return useMemo(() => (hasRelay && events ? [...profilesFor(events).values()] : undefined), [events])
+}
+
+/**
+ * The signed-in pubkey and its profile, if it has one (REM-6).
+ *
+ * `undefined` until the first read lands, or with no session; `profile` is
+ * absent for a key that has never published a name. Demo mode has no viewer
+ * key and answers `undefined` — `useCurrentUser` owns the demo's viewer.
+ */
+export function useViewerProfile(): { pubkey: string; profile?: WorkspaceProfile } | undefined {
+  const events = useWorkspaceEvents()
+  const pubkey = validToken()?.pubkey
+  return useMemo(() => {
+    if (!hasRelay || !pubkey || events === undefined) return undefined
+    const profile = profilesFor(events).get(pubkey)
+    return profile ? { pubkey, profile } : { pubkey }
+  }, [events, pubkey])
 }
