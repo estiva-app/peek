@@ -2,10 +2,12 @@ import { useRef } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { EditorContent, useEditor } from '@tiptap/react'
-import { peekEditorExtensions } from '@/extensions/peekEditor'
+import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
 import { Toolbar } from '@estiva-app/ui'
 import { PeekDataProvider } from '@/api'
 import { HighlightButton } from './HighlightButton'
+import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
+import { cn } from '@/lib/utils'
 
 /**
  * The highlighter, and the five kinds a message can be marked as.
@@ -29,14 +31,14 @@ function Box({ withText }: { withText?: boolean }) {
     extensions: peekEditorExtensions,
     content: withText ? '<p>Pinning the dependency back to 3.22 fixed it.</p>' : '<p></p>',
     editorProps: {
-      attributes: { class: 'outline-none w-full bg-transparent text-body-2 text-text-primary min-h-[20px]' },
+      attributes: { class: PEEK_EDITOR_CLASSES },
     },
   })
   return (
     <div className="flex min-h-[520px] w-[560px] items-end">
       <div
         ref={boxRef}
-        className="relative w-full rounded-lg border border-border-default bg-bg-inset p-3 flex flex-col gap-4"
+        className={cn(WRITING_BOX_CLASSES, 'w-full')}
       >
         <EditorContent editor={editor} />
         {/* The button is a ToolbarButton since 2026-09-11 (§4.2), and Base UI
