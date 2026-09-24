@@ -136,10 +136,6 @@ export function usePeekActions(
   const removeHuddleRemote = useMutation(api.huddles.remove)
   const dismissScreenerRemote = useMutation(api.desk.dismissScreenerItem)
   const snoozeScreenerRemote = useMutation(api.desk.snoozeScreenerItem)
-  const addToOpenWorkRemote = useMutation(api.desk.addToOpenWork)
-  const addTopicsToOpenWorkRemote = useMutation(api.desk.addTopicsToOpenWork)
-  const removeTopicFromOpenWorkRemote = useMutation(api.desk.removeTopicFromOpenWork)
-  const removeDmFromOpenWorkRemote = useMutation(api.desk.removeDmFromOpenWork)
 
   /**
    * The token every relay write needs, or null with the reason said out loud.
@@ -864,39 +860,29 @@ export function usePeekActions(
       if (hasConvex) void dismissScreenerRemote({ id })
     },
     /**
-     * "Open" → move the item into Open work.
+     * "Open" → move the item into Open work, which is the blob and nothing else
+     * since REM-4.
      *
-     * Takes the target as well as the row id since SHR-9: the Convex mutation
-     * resolves the screener row to its target server-side, but the blob is the
-     * list now and the client has to know what it is appending. The Screener row
-     * already carries it (`desk.screenerList`), so nothing has to be looked up.
+     * A folded topic or file row leaves the Screener by itself: the fold drops
+     * anything in open work. A DM row is `desk.screenerList`'s, which still
+     * de-duplicates against a `deskOpenWork` nothing writes any more — so the
+     * row is retired the way `addToOpenWork` used to retire it, by deleting it.
+     * CON-14 moves that half to the relay.
      */
     addScreenerToOpenWork(
       id: string,
       target: { kind: 'topic'; topicId: string } | { kind: 'dm'; dmId: string } | { kind: 'file'; address: string },
     ) {
-      // A file goes to the blob and nowhere else: `deskOpenWork` is keyed on
-      // Convex ids and has no row to write for it (FOL-34).
       if (target.kind === 'file') {
         openWork.addFile(target.address)
         return
       }
-      if (target.kind === 'dm') openWork.addDm(target.dmId)
-      else openWork.addTopics([target.topicId])
-      if (!hasConvex) return
-      const foldedTopic = topicIdFromScreenerRowId(id)
-      if (foldedTopic) {
-        // A folded row names no Convex screener item, so `addToOpenWork` — which
-        // resolves the target *from* that row — has nothing to resolve. It still
-        // has to write `deskOpenWork`: SHR-9 kept that table dual-written on
-        // purpose, and it is what `watchableChannels` and the DM half's PEE-6
-        // check still read. Dropping the write here would have left the row in
-        // the blob and nowhere else, which looks exactly like a working Open
-        // button until something reads Convex.
-        void addTopicsToOpenWorkRemote({ topicKeys: [foldedTopic] })
+      if (target.kind === 'topic') {
+        openWork.addTopics([target.topicId])
         return
       }
-      void addToOpenWorkRemote({ screenerItemId: id })
+      openWork.addDm(target.dmId)
+      if (hasConvex) void dismissScreenerRemote({ id })
     },
     /** "Later" — the item reappears after `untilMs` (an absolute timestamp);
      *  defaults to +24h server-side when omitted. */
@@ -916,25 +902,18 @@ export function usePeekActions(
       }
       if (hasConvex) void snoozeScreenerRemote({ id, until: untilMs })
     },
-    /** Remove a DM from Open work. By the partner's person key since SHR-9 —
-     *  the rows the blob renders carry synthetic ids, so there is no Convex row
-     *  id on this side to pass. */
+    /** Remove a DM from Open work, by the partner's pubkey (REM-3). */
     removeDmFromOpenWork(dmId: string) {
       openWork.removeDm(dmId)
-      if (hasConvex) void removeDmFromOpenWorkRemote({ dmKey: dmId })
     },
     /** Desk "+" picker + the topic menus: put topics straight into Open work.
-     *  The session overlay renders instantly and is what gets published; the
-     *  Convex row follows, and is still what `watchableChannels` and the
-     *  Screener's de-duplication read. */
+     *  The session overlay renders instantly and is what gets published. */
     addTopicsToOpenWork(topicIds: string[]) {
       if (topicIds.length === 0) return
       openWork.addTopics(topicIds)
-      if (hasConvex) void addTopicsToOpenWorkRemote({ topicKeys: topicIds })
     },
     /** The topic-side menus and the Desk rows both remove a topic by id. */
     removeTopicFromOpenWork(topicId: string) {
       openWork.removeTopic(topicId)
-      if (hasConvex) void removeTopicFromOpenWorkRemote({ topicKey: topicId })
     },  }
 }

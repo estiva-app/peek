@@ -19,24 +19,18 @@
  *   tell a list that is genuinely empty from one that has not arrived, and
  *   last-write-wins makes the wrong guess permanent.
  * - `absent` — answered, and holds no list this version can use. The caller
- *   seeds it from Convex, which still carries every row.
- * - `present` — answered with a list. That list is the truth, in that order, and
- *   Convex is out of the path.
+ *   starts from an empty list and publishes once the person changes it.
+ * - `present` — answered with a list. That list is the truth, in that order.
  *
- * ## What this deliberately does not do
- *
- * **It does not restore automatically, in either direction.** A person's open
- * work being *dropped* is what the `absent` seed covers. A row Convex has and
- * the relay does not — a publish that failed — is deliberately not healed here:
- * silently republishing from a source that is no longer the truth would
- * resurrect something cleared on another device.
+ * Convex is in none of the three since REM-4: it neither seeds `absent` nor
+ * stands in for `unknown`.
  *
  * ## Publishing is best-effort, and says so out loud
  *
  * A failed publish never fails the person's action; the row still appears for
- * this session on the optimistic overlay, because the Convex mutation is written
- * either way. It no longer survives a reload, though, because the reload reads
- * the relay — so the log line is the only warning before a row quietly reverts.
+ * this session on the optimistic overlay. It does not survive a reload, which
+ * reads the relay, and there is no Convex copy to recover it from — so the log
+ * line is the only warning before a row quietly reverts.
  * That is `src/api/actions.ts`'s rule, established after silence made a session
  * that published nothing indistinguishable from one that published everything.
  */
@@ -142,8 +136,8 @@ export function useOpenWorkSync(relayUrl: string | null | undefined): OpenWorkSy
         if (result.ok) {
           setRelayBlob(next)
           // A successful publish is also an answer about what the relay holds:
-          // this. Without it a seeded coordinate would stay `absent` for the
-          // rest of the load and the caller would keep reading Convex.
+          // this. Without it a first publish would leave the coordinate
+          // `absent` for the rest of the load.
           setState('present')
         } else {
           console.warn('[open-work] publish failed:', result.reason)

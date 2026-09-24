@@ -20,29 +20,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { getFunctionName } from 'convex/server'
-
-vi.mock('@/api/store', () => ({ hasConvex: true }))
 
 /** A person in open work is their pubkey since REM-3. */
 const GREG = 'a'.repeat(64)
 const JUAN = 'b'.repeat(64)
 
-let openWorkListResult: unknown = []
 /*
-  Queries are told apart by name, not by reference. `api.desk.openWorkList` is a
-  proxy that hands back a fresh object on every property access, so `===`
-  against it is false even for the identical call — which fails open, as a query
-  that answers `undefined` for ever, and is exactly the kind of test scaffolding
-  that passes while asserting nothing.
+  REM-4: open work never touches Convex. Any read or write reaching it fails the
+  test loudly rather than answering `undefined`, which is what a query in flight
+  looks like and would pass unnoticed.
 */
 vi.mock('convex/react', () => ({
-  useQuery: (ref: unknown) => {
-    const name = getFunctionName(ref as Parameters<typeof getFunctionName>[0])
-    if (name.includes('openWorkList')) return openWorkListResult
-    return undefined
+  useQuery: () => {
+    throw new Error('open work asked Convex')
   },
-  useMutation: () => vi.fn(),
+  useMutation: () => {
+    throw new Error('open work wrote Convex')
+  },
 }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
@@ -79,7 +73,6 @@ async function setup() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  openWorkListResult = []
   syncState = 'present'
   relayBlob = undefined
   topics = [
@@ -93,10 +86,7 @@ beforeEach(() => {
 })
 
 describe('the list comes from the relay', () => {
-  it('renders a topic the relay holds while Convex holds none of it', async () => {
-    // The done-when, stated as a test: `openWorkList` answers with an empty
-    // array throughout, which is what a reload with the Convex query removed
-    // looks like from inside this provider.
+  it('renders a topic the relay holds', async () => {
     relayBlob = aBlob([{ kind: 'topic', id: 't1' }])
     const { result } = await setup()
     expect(result.current.items).toEqual([
@@ -132,14 +122,16 @@ describe('the list comes from the relay', () => {
     expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1', `ow_dm_${GREG}`, 'ow_topic_t2'])
   })
 
-  it('ignores what Convex says once the relay has answered', async () => {
-    relayBlob = aBlob([{ kind: 'topic', id: 't1' }])
-    openWorkListResult = [
-      { id: 'w1', kind: 'topic', topicId: 't2', title: 'Auth rollout', topicStatus: 'resolved' },
-      { id: 'w2', kind: 'dm', dmId: JUAN, name: 'Juan Foley' },
-    ]
+  it('hands the live working set the list, with the relay identity each entry carries', async () => {
+    relayBlob = aBlob([
+      { kind: 'topic', id: 't9', channelUuid: 'u-9' },
+      { kind: 'dm', key: GREG },
+    ])
     const { result } = await setup()
-    expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1'])
+    expect(result.current.entries).toEqual([
+      { kind: 'topic', id: 't9', channelUuid: 'u-9' },
+      { kind: 'dm', key: GREG, pubkey: GREG },
+    ])
   })
 })
 
@@ -159,16 +151,16 @@ describe('what is published is the list, never the rows that could be drawn', ()
     ])
   })
 
-  it('publishes nothing at all while no source has settled', async () => {
-    // The guard the ticket asked to be kept, in its new form: the relay has not
-    // answered and Convex is in flight, so there is no list — and an empty
-    // publish here is permanent.
+  it('renders and publishes nothing while the relay has not answered — there is no fallback', async () => {
+    // The guard the ticket asked to be kept: no answer is no list, and an empty
+    // publish here is permanent. Convex used to fill this gap; nothing does now.
     syncState = 'unknown'
     relayBlob = undefined
-    openWorkListResult = undefined
     const { result } = await setup()
     expect(result.current.isLoading).toBe(true)
     expect(result.current.items).toEqual([])
+    expect(result.current.entries).toEqual([])
+    act(() => result.current.addTopics(['t1']))
     await act(async () => {})
     expect(publish).not.toHaveBeenCalled()
   })
@@ -203,25 +195,19 @@ describe('what is published is the list, never the rows that could be drawn', ()
     ])
   })
 
-  it('seeds the relay from Convex, oldest first, when the relay holds nothing', async () => {
-    // The migration, for a person whose open work predates this ticket. The
-    // query sorts `addedAt` descending; the list is oldest-first, so the seed
-    // reverses it rather than freezing the old presentation order into the blob.
+  it('starts empty when the relay holds no list, with nothing seeded from Convex', async () => {
+    // REM-4: Convex-only open work is dropped, not migrated (Miky, 2026-09-24).
     syncState = 'absent'
     relayBlob = undefined
-    openWorkListResult = [
-      { id: 'w1', kind: 'dm', dmId: GREG, name: 'Greg Bothman' },
-      { id: 'w2', kind: 'topic', topicId: 't2', title: 'Auth rollout', topicStatus: 'resolved' },
-      { id: 'w3', kind: 'topic', topicId: 't1', title: 'CI/CD', topicStatus: 'unresolved' },
-    ]
     const { result } = await setup()
-    expect(result.current.items.map((i) => i.id)).toEqual(['ow_topic_t1', 'ow_topic_t2', `ow_dm_${GREG}`])
-    await waitFor(() => expect(publish).toHaveBeenCalled())
-    expect(publish.mock.calls.at(-1)?.[0]).toEqual([
-      { kind: 'topic', id: 't1', channelUuid: 'u-1' },
-      { kind: 'topic', id: 't2' },
-      { kind: 'dm', key: GREG, pubkey: GREG },
-    ])
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.items).toEqual([])
+    // Nothing is written until the person changes something: `absent` may be a
+    // blob this version cannot read, and an empty list must not overwrite it.
+    await act(async () => {})
+    expect(publish).not.toHaveBeenCalled()
+    act(() => result.current.addDm(GREG))
+    await waitFor(() => expect(publish.mock.calls.at(-1)?.[0]).toEqual([{ kind: 'dm', key: GREG, pubkey: GREG }]))
   })
 })
 

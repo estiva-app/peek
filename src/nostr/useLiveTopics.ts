@@ -4,8 +4,8 @@
  * `peekLiveTopics()` hands back the wiring **only if something else has
  * already built it**, and returns null otherwise. That is right for a panel
  * that is a passenger on a topic view's socket, and wrong for anything the
- * sidebar draws: the wiring is built by `LiveWorkingSet` (only once Convex has
- * answered `watchableChannels`, and only when that set is non-empty), by the
+ * sidebar draws: the wiring is built by `LiveWorkingSet` (only when its set is
+ * non-empty), by the
  * topic view, or by a file page. A person sitting on the Folders page with
  * nothing starred and no topic open has no socket at all — and a subscription
  * effect that read `peekLiveTopics()` once at mount never learned that one

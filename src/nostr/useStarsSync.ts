@@ -23,33 +23,20 @@
  *   tell a set that is genuinely empty from one that has not arrived, and
  *   last-write-wins makes the wrong guess permanent.
  * - `absent` — answered, and holds no set this version can use. The caller
- *   seeds it from Convex, which still carries every star.
- * - `present` — answered with a set. That set is the truth; Convex is out of
- *   the path.
+ *   starts from an empty set and publishes once the person toggles one.
+ * - `present` — answered with a set. That set is the truth.
  *
- * ## What this deliberately does not do
- *
- * **It does not restore automatically, in either direction.** A person's stars
- * being *dropped* is what the `absent` seed covers. A person's stars being
- * *stale* — a toggle whose publish failed, so Convex has it and the relay does
- * not — is deliberately not healed here: silently republishing a set from a
- * source that is no longer the truth would resurrect stars somebody cleared on
- * another device. `StarredProvider` exposes that difference as `unpublished`
- * for an affordance the person asks for; making it silent is the kind of
- * decision that reads as data loss in reverse.
+ * Convex is in none of the three since REM-4: it neither seeds `absent` nor
+ * stands in for `unknown`.
  *
  * ## Publishing is best-effort, and says so out loud
  *
- * A failed publish never fails the user's action — the star still appears,
- * because Convex is written either way. But it is logged with the reason, which
- * is the rule `src/api/actions.ts` established after silence made a session that
- * published nothing indistinguishable from one that published everything.
- *
- * What SHR-6 changes about that: the star still appears *for this session*, on
- * the optimistic overlay, and no longer survives a reload, because the reload
- * reads the relay. Nothing is destroyed — `desk.toggleStar` wrote Convex, and
- * `unpublished` names exactly these — but the log line is now the only warning
- * before a star quietly reverts.
+ * A failed publish never fails the user's action — the star still appears *for
+ * this session*, on the optimistic overlay. It does not survive a reload, which
+ * reads the relay, and since REM-4 there is no Convex copy to recover it from.
+ * It is logged with the reason, the rule `src/api/actions.ts` established after
+ * silence made a session that published nothing indistinguishable from one that
+ * published everything; that line is the only warning before a star reverts.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { validToken } from '@/auth/estivaId'
@@ -159,8 +146,8 @@ export function useStarsSync(relayUrl: string | null | undefined): StarsSync {
         if (result.ok) {
           setRelayBlob(next)
           // A successful publish is also an answer about what the relay holds:
-          // this. Without it a seeded coordinate would stay `absent` for the
-          // rest of the load and the caller would keep reading Convex.
+          // this. Without it a first publish would leave the coordinate
+          // `absent` for the rest of the load.
           setState('present')
         } else {
           console.warn('[stars] publish failed:', result.reason)
