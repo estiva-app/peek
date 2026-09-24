@@ -1,42 +1,29 @@
 import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { IconArrowUpRight, IconBell, IconBellFilled, IconDotsVertical, IconX } from '@tabler/icons-react'
-import { Breadcrumb, ContainerHeader, ScrollArea, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
+import { IconArrowUpRight, IconBell, IconBellFilled, IconDotsVertical } from '@tabler/icons-react'
+import { Breadcrumb, ContainerHeader, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { IconButton } from '@/components/ui/IconButton'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { FolderTree } from '@/components/views/FolderTree'
-import { ForeignConversationView } from '@/components/views/ForeignConversationView'
-import { FileThreadView } from '@/components/views/FileThreadView'
 import { useFileControls } from '@/components/views/useFileControls'
-import { useFileConversationView } from '@/components/views/useFileConversationView'
-import { FileActivityPanel } from '@/components/FileActivityPanel'
-import { FileWidgetPanel } from '@/components/FileWidgetPanel'
+import { useFileView } from '@/components/views/useFileView'
 import {
   useFileAddress,
   rememberFileAddress,
-  useFileThreads,
   useFolderContents,
   useFollows,
-  useForeignConversation,
   useOpenWorkFiles,
-  useWorkspaceDirectory,
-  type ConversationContainer,
-  type ForeignConversationState,
 } from '@/api'
-import { useFileMentions } from '@/api/useFileMentions'
 import { canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useFolderPath } from '@/lib/useFolderPath'
 import { followInApp } from '@/lib/followInApp'
-import { referenceLink } from '@/lib/referenceLink'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { rememberRecent } from '@/lib/recents'
-import { useMarkFileRead } from '@/lib/useMarkRead'
 import { KIND_TOPIC } from '@/nostr/foreign'
 
 /**
@@ -118,19 +105,37 @@ export function FilePage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const people = useWorkspaceDirectory()
 
   /*
-    The address is the reference. `resolveObject` takes an naddr, an nevent or a
-    bare address — `referenceToPointer`'s tolerance, which exists so a widget
-    rendered from an `a` tag is actionable and not merely visible — so nothing
-    has to be encoded to bech32 on the way in.
+    Which thread is open, in the URL rather than in state, so a thread is a
+    link — the same argument `?file=` was given and the same one §7 makes about
+    a topic: a conversation somebody can point at is worth more than one that
+    only exists in this tab.
   */
-  const { state: resolved, reload: reloadConversation, previous } = useForeignConversation(fileAddress)
-  // A short link that resolved to no address is as dead as an address that resolved to nothing.
-  const conversation: ForeignConversationState =
-    shortForm === 'unresolved' || (typeof shortForm === 'object' && 'failed' in shortForm) ? shortForm : resolved
-  const file = typeof conversation === 'object' && 'ref' in conversation ? conversation : null
+  const openThreadId = searchParams.get('thread') ?? undefined
+  const setOpenThread = useCallback(
+    (id: string | null) => {
+      const next = new URLSearchParams(searchParams)
+      if (id) next.set('thread', id)
+      else next.delete('thread')
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+
+  /*
+    The conversation, its thread and its read marker — shared with the Desk's
+    pane (SID-3), so a file is the same conversation wherever it opens.
+  */
+  const view = useFileView({
+    address: fileAddress,
+    // A short link that resolved to no address is as dead as an address that resolved to nothing.
+    override:
+      shortForm === 'unresolved' || (typeof shortForm === 'object' && 'failed' in shortForm) ? shortForm : undefined,
+    openThreadId,
+    onOpenThread: setOpenThread,
+  })
+  const { conversation, file, previous, reload: reloadConversation, title, rootIds } = view
   /*
     What the sidebar draws while the next file resolves (SID-2): the one it
     drew last. A click in the tree changes the address and nothing else is
@@ -162,14 +167,6 @@ export function FilePage() {
   }, [canonicalPath, shortFormAddress, location.pathname, location.search, navigate])
 
   /*
-    The dwell marks this file's own stream and no container (FOL-16). Passing
-    `file?.address` rather than the address from the URL is deliberate: an
-    address that resolved to nothing was never read, and marking it would clear
-    a dot for a file the person never saw.
-  */
-  useMarkFileRead(file?.address)
-
-  /*
     The launcher's Recent (UIG-29), which only `TopicsPage` fed until FOL-36 —
     so a topic started since #194, which is a bare file and opens here, was
     never recent. Written once the file has resolved, with the title the
@@ -183,91 +180,6 @@ export function FilePage() {
   }, [resolvedAddress, fileTitle])
 
   /*
-    Which thread is open, in the URL rather than in state, so a thread is a
-    link — the same argument `?file=` was given and the same one §7 makes about
-    a topic: a conversation somebody can point at is worth more than one that
-    only exists in this tab.
-  */
-  const openThreadId = searchParams.get('thread') ?? undefined
-  const setOpenThread = useCallback(
-    (id: string | null) => {
-      const next = new URLSearchParams(searchParams)
-      if (id) next.set('thread', id)
-      else next.delete('thread')
-      setSearchParams(next, { replace: true })
-    },
-    [searchParams, setSearchParams],
-  )
-  const comments = file?.comments ?? []
-  const rootIds = comments.map((comment) => comment.id)
-  /*
-    Which view, decided by the manifest and not by the kind (FOL-31). A file
-    the viewer may comment on — a bare file's built-in manifest declares
-    `comment`, and so does Ship's for a project and an issue — gets Peek's own
-    conversation view: the Topics cards, composer and thread pane over
-    `kind:1111`. A file the viewer may only look at keeps the read-only panes.
-    The two reads are exclusive, so a page pays for one of them and never both.
-
-    And only with somewhere to write (PEE-33). Peek's view needs the Folder the
-    comment goes in, and a file that resolved without one — a record with
-    neither `h` nor a channel of its own, after `useForeignConversation` has
-    asked — cannot have it; handing the view no container left the column
-    loading for ever, since the view answers a null container with nothing.
-    Such a file keeps the read-only panes, which draw its comments off the
-    same resolve: a conversation one can read and not write in, never a spinner.
-  */
-  const canComment = !!file?.naddr && (file.actions ?? []).some((a) => a.id === 'comment')
-  const container: ConversationContainer | null =
-    canComment && file?.address && file.folder ? { kind: 'file', address: file.address, h: file.folder } : null
-  const ownView = container !== null
-  const title = file?.slots.title?.value ?? 'File'
-  const peek = useFileConversationView({
-    container,
-    rootIds,
-    openThreadId,
-    onOpenThread: setOpenThread,
-    title,
-    onCommented: reloadConversation,
-  })
-  const { state: threads } = useFileThreads(ownView ? null : file?.address, rootIds)
-  /*
-    Activity — the comments elsewhere that name this file (CON-11), read by
-    `#a` off the relay for a file Peek's own view draws. It takes the third
-    column when no thread is open and there is something to show; the file's
-    own conversation is the middle column, and a mention is not part of it
-    (`isCommentOn` keeps the two apart on the read).
-  */
-  const { mentions } = useFileMentions(ownView ? file?.address : null)
-  /*
-    The third column while no thread is open (FOL-29): another app's file has
-    its widget there, and under it the Activity above when there is any. A
-    bare file gets no widget — it is nobody's, so there is no other app whose
-    part of it the column could show, and its title is already the header —
-    and a file nobody has named keeps its two columns as before. "Another
-    app's" is `referenceLink`'s answer, the one place Peek says which files
-    live inside it: a file whose way in is a link out to its owner is the one
-    whose widget is worth a column. No kind number here, and a manifest from
-    an app nobody has written lands the same way Ship's does.
-  */
-  const home = file ? referenceLink(file.naddr ?? file.address ?? file.ref, file) : null
-  const widget = file && home?.place === 'app' ? <FileWidgetPanel file={file} /> : undefined
-  const activity = mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined
-  const aside =
-    widget || activity ? (
-      <div className="flex h-full flex-col">
-        {widget}
-        {activity}
-      </div>
-    ) : undefined
-  const replyCounts =
-    threads === 'loading' || 'failed' in threads
-      ? undefined
-      : Object.fromEntries(
-          Object.entries(threads.replies).map(([id, replies]) => [id, replies.length]),
-        )
-  const openThread = openThreadId ? comments.find((c) => c.id === openThreadId) : undefined
-
-  /*
     A link to a comment lands on the comment (FOL-36) — `ObjectPage`'s and the
     launcher's one-shot, the same one the topic view answers (RIC-16), read
     here for a comment whose thread is one of this file's. The thread comes
@@ -279,7 +191,7 @@ export function FilePage() {
     while the reads are still in flight is not lost to them.
   */
   const { pendingTopicMessage, setPendingTopicMessage } = useLastSelection()
-  const threadDrawn = peek.threadPanel !== undefined
+  const { threadDrawn } = view
   useEffect(() => {
     if (!pendingTopicMessage || !rootIds.includes(pendingTopicMessage.eventId)) return
     if (openThreadId !== pendingTopicMessage.eventId) {
@@ -487,48 +399,10 @@ export function FilePage() {
               ) : undefined
             }
           />
-          {ownView ? (
-            peek.conversation
-          ) : (
-            /* The package's bar, not the browser's (D40). */
-            <ScrollArea className="min-h-0 flex-1">
-              <ForeignConversationView
-                state={conversation}
-                people={people}
-                onOpenThread={setOpenThread}
-                openThreadId={openThreadId}
-                replyCounts={replyCounts}
-              />
-            </ScrollArea>
-          )}
+          {view.body}
         </div>
         }
-        threadPanel={
-        ownView ? (
-          // The thread is what somebody just asked for; the widget and Activity are what the page shows otherwise.
-          (peek.threadPanel ?? aside)
-        ) : openThread ? (
-          <div className="flex h-full flex-col">
-            <ContainerHeader
-              title="Thread"
-              actions={
-                <IconButton
-                  tooltip="Close"
-                  aria-label="Close thread"
-                  onClick={() => setOpenThread(null)}
-                >
-                  <IconX size={16} stroke={1.5} />
-                </IconButton>
-              }
-            />
-            <ScrollArea className="min-h-0 flex-1">
-              <FileThreadView root={openThread} state={threads} people={people} />
-            </ScrollArea>
-          </div>
-        ) : (
-          aside
-        )
-        }
+        threadPanel={view.threadPanel}
       />
     </>
   )

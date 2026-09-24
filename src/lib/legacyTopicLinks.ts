@@ -93,8 +93,25 @@ export function channelDestination(channel: string): string {
  * was never a production topic.
  */
 export function legacyTopicDestination(ref: string): string | null {
+  const topic = legacyTopicOf(ref)
+  if (topic) return destinationOf(topic)
   const channel = identifierFromRef(ref)
-  if (channel) return channelDestination(channel)
-  const topic = byId.get(decodeURIComponent(ref))
-  return topic ? destinationOf(topic) : null
+  return channel ? `/app/folders/${channel.toLowerCase()}` : null
+}
+
+/**
+ * The file a retired topic's conversation moved to, by the same parameters
+ * `legacyTopicDestination` takes — for a surface that draws the file where it
+ * is rather than navigating to it, as the Desk does (SID-3). Null for a topic
+ * that landed on a team rather than a file, and for anything that was never a
+ * production topic.
+ */
+export function legacyTopicFile(ref: string): { address: string; title: string } | null {
+  const topic = legacyTopicOf(ref)
+  return topic && 'file' in topic ? { address: topic.file, title: topic.title } : null
+}
+
+function legacyTopicOf(ref: string): LegacyTopic | undefined {
+  const channel = identifierFromRef(ref)
+  return channel ? legacyTopicByChannel(channel) : byId.get(decodeURIComponent(ref))
 }
