@@ -2,6 +2,7 @@ import { useIsTopicResolved, useScreenerPreview, type ScreenerPreviewRow } from 
 import { Avatar } from './ui/Avatar'
 import { MessageBody } from './ui/MessageBody'
 import { SkeletonBar } from './ui/Skeleton'
+import { MetaText } from '@/components/ui/MetaText'
 
 /**
  * The rows of the preview — the triggering message plus its recent replies, or
@@ -37,7 +38,7 @@ export function ScreenerPreviewCardView({
             <div className="flex items-center gap-2">
               <Avatar size={16} name={r.authorName} alt={r.authorName} />
               <span className="text-h5 leading-tight text-text-primary">{r.authorName}</span>
-              <span className="text-chip font-normal leading-tight text-text-muted signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{r.timestamp}</span>
+              <MetaText size="chip" className="leading-tight">{r.timestamp}</MetaText>
             </div>
             <div className="text-caption leading-normal text-text-secondary line-clamp-4">
               <MessageBody body={r.body} isTopicResolved={isTopicResolved} />

@@ -18,6 +18,7 @@ import { findNaddrs } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { followInApp } from '@/lib/followInApp'
 import { useTopicPath } from '@/lib/useTopicPath'
+import { MetaText } from '@/components/ui/MetaText'
 
 // ── Thread Panel ──
 
@@ -66,9 +67,9 @@ function ResolutionTimeline({ events }: { events: ResolutionEvent[] }) {
               </>
             )}
             {e.atMs !== undefined && (
-              <span className="text-chip font-normal text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
+              <MetaText size="chip">
                 {' '}· {formatReplyTimestamp(e.atMs)}
-              </span>
+              </MetaText>
             )}
           </p>
         </div>

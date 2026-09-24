@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
   IconMessage2,
-  IconChevronRight,
   IconDotsVertical,
   IconLock,
   IconAlertSquareRounded,
@@ -11,11 +10,12 @@ import {
 import { AvatarGroup, Card, Menu, MenuItem, MenuSeparator, ToolbarButton } from '@estiva-app/ui'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ConfirmDelete } from './ConfirmDelete'
-import { Chip } from './ui/Chip'
+import { RepliesRow } from './ui/RepliesRow'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { previewText } from '@/lib/textParsing'
 import { useAvatarSrc, useReplyCount, useReplyMeta, type Huddle } from '@/api'
+import { MetaText } from '@/components/ui/MetaText'
 
 interface HuddleCardProps {
   huddle: Huddle
@@ -173,13 +173,13 @@ export function HuddleCard({
           )}>
             {inStream ? inStreamMemberLabel : gridMemberLabel}
           </span>
-          <span className="text-caption text-text-muted whitespace-nowrap shrink-0 signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
+          <MetaText className="shrink-0">
             {inStream
               ? (huddle.conversation?.timestamp ?? huddle.lastActivity)
               : huddle.conversation
                 ? `${huddle.lastActivity}, ${huddle.conversation.timestamp}`
                 : huddle.lastActivity}
-          </span>
+          </MetaText>
           {inStream && hasNewMessage && !isUrgent && <UnreadDot className="ml-auto" />}
           {inStream && hasNewMessage && isUrgent && (
             <div className="w-6 h-6 flex items-center justify-center shrink-0 ml-auto">
@@ -227,51 +227,7 @@ export function HuddleCard({
           </div>
         )}
         {inStream && replyCount > 0 && (
-          <div className="flex items-center gap-2 pl-8 pr-2 pb-1.5 w-full">
-            <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-accent-outline signal:hover:bg-accent-wash signal:transition-colors">
-              {replyAuthors && replyAuthors.length > 0 && (
-                <div className="hidden signal:flex items-center shrink-0">
-                  <AvatarGroup
-                    size={18}
-                    members={replyAuthors.map((a) => ({ name: a.name, picture: a.avatarSrc ?? avatarSrcFor(a.name) }))}
-                  />
-                </div>
-              )}
-              <IconMessage2
-                size={16}
-                stroke={1.5}
-                className={cn(
-                  'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-text-interactive signal:group-hover/replies:text-text-primary',
-                  replyAuthors && replyAuthors.length > 0 && 'signal:hidden'
-                )}
-              />
-              <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-text-interactive signal:group-hover/replies:text-text-primary">
-                {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
-              </span>
-              {lastReplyTime && (
-                <span className="hidden signal:inline font-mono text-small leading-3 mt-px text-text-muted tabular-nums">
-                  {lastReplyTime}
-                </span>
-              )}
-              <IconChevronRight
-                size={12}
-                stroke={2}
-                className="hidden signal:block text-text-muted group-hover/replies:text-text-primary transition-all group-hover/replies:translate-x-0.5"
-              />
-            </div>
-            {hasNewReply && !isUrgent && (
-              <>
-                <div className="w-0.5 h-0.5 rounded-full bg-text-muted shrink-0" />
-                <Chip type="brand" label="1 new" />
-              </>
-            )}
-            {hasNewReply && isUrgent && (
-              <>
-                <div className="w-0.5 h-0.5 rounded-full bg-text-muted shrink-0" />
-                <Chip type="warning" label="1 new" />
-              </>
-            )}
-          </div>
+          <RepliesRow replyCount={replyCount} replyAuthors={replyAuthors} lastReplyTime={lastReplyTime} hasNewReply={hasNewReply} isUrgent={isUrgent} />
         )}
 
         {/* Resolution banner — inStream resolved huddles, mirrors ConversationCard's banner. */}

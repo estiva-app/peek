@@ -33,6 +33,8 @@ import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
 import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
+import { MetaText } from '@/components/ui/MetaText'
+import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
 // ── Reply More Menu ──
 
@@ -450,7 +452,7 @@ export function ReplyCard({
                   ConversationCard's edit box's, which this one lacked: typing
                   here drew no ring where typing there and in the composer
                   does (Katerina, 2026-09-13, D66). */}
-              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring">
+              <div ref={editBoxRef} className={cn(WRITING_BOX_CLASSES, 'flex-1 min-w-0')}>
                 <div className={cn('relative min-h-[20px] transition-all', (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2')}>
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}
@@ -510,14 +512,14 @@ export function ReplyCard({
                 {messageLink ? (
                   <WithTooltip label="Link to this message" wrapperClassName="shrink-0">
                     {/* The time's look on a box around the link, which takes it from there (UIG-9). */}
-                    <span className="contents whitespace-nowrap text-caption text-text-muted signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
+                    <MetaText className="contents">
                       <Link href={messageLink} variant="quiet" data-interactive>
                         {timestamp}
                       </Link>
-                    </span>
+                    </MetaText>
                   </WithTooltip>
                 ) : (
-                  <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
+                  <MetaText className="shrink-0">{timestamp}</MetaText>
                 )}
                 <EditedMarker editedAt={editedAt} />
                 {highlightState && <HighlightPill type={highlightState} />}

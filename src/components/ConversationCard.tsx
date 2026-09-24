@@ -5,8 +5,6 @@ import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
 import {
-  IconMessage2,
-  IconChevronRight,
   IconAlertSquareRounded,
   IconChecks,
   IconArrowNarrowRight,
@@ -16,9 +14,9 @@ import {
 } from '@tabler/icons-react'
 import { Button } from './ui/Button'
 import { Avatar } from './ui/Avatar'
-import { AttachmentCard, AvatarGroup, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { AttachmentCard, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { RouterLink } from './RouterLink'
-import { Chip } from './ui/Chip'
+import { RepliesRow } from './ui/RepliesRow'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { TopicState } from './ui/TopicState'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
@@ -28,7 +26,7 @@ import { ConfirmDelete } from './ConfirmDelete'
 import { CreateTopicDialog, type StartTopicResult } from './CreateTopicDialog'
 import { PEOPLE, type Person } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
-import { useIsTopicResolved, useAvatarSrc, useCanUpload, isCurrentUser } from '@/api'
+import { useIsTopicResolved, useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
@@ -43,6 +41,8 @@ import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 
 import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
+import { MetaText } from '@/components/ui/MetaText'
+import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
 interface ConversationCardProps {
   authorName: string
@@ -359,7 +359,6 @@ export function ConversationCard({
   // topic-anchor icon). Reads runtime mutations so the icon reflects user changes.
   const isTopicResolved = useIsTopicResolved()
   /** Reply authors' faces, resolved as Peek's Avatar wrapper resolves any other. */
-  const avatarSrcFor = useAvatarSrc()
 
 
   const handleResolveConfirm = (message: string) => {
@@ -613,7 +612,7 @@ export function ConversationCard({
               {/* `relative` so the highlight picker hangs off this box, the
                   way it hangs off the composer's — the edit box is a compose
                   box, and everything the composer can do belongs here. */}
-              <div ref={editBoxRef} className="relative flex-1 min-w-0 bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring">
+              <div ref={editBoxRef} className={cn(WRITING_BOX_CLASSES, 'flex-1 min-w-0')}>
                 <div className={cn(
                   'relative min-h-[20px] transition-all',
                   (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2'
@@ -667,7 +666,7 @@ export function ConversationCard({
             <div className="flex items-center gap-2 shrink-0">
               <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
               <span className="text-body-2-strong text-text-primary whitespace-nowrap">{authorName}</span>
-              <span className="text-caption text-text-muted whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
+              <MetaText>{timestamp}</MetaText>
               <EditedMarker editedAt={editedAt} />
               {highlightState && <HighlightPill type={highlightState} />}
             </div>
@@ -708,56 +707,7 @@ export function ConversationCard({
 
           {/* Replies */}
           {!isEditing && replyCount != null && replyCount > 0 && (
-            <div className="flex items-center gap-2 pl-8 pr-2 pb-1.5 w-full">
-              <div className="group/replies flex items-center gap-2 py-1.5 shrink-0 signal:px-2 signal:rounded-lg signal:border signal:border-transparent signal:hover:border-accent-outline signal:hover:bg-accent-wash signal:transition-colors">
-                {replyAuthors && replyAuthors.length > 0 && (
-                  /* The shared stack at 18px (2026-09-03). This row hand-rolled
-                     its own for want of a size prop, and drifted while it did:
-                     four faces where the shared rule is three, and its own ring.
-                     The picture chain is Peek's Avatar wrapper's, kept exactly —
-                     the message's own face, else the registry's for that name. */
-                  <div className="hidden signal:flex items-center shrink-0">
-                    <AvatarGroup
-                      size={18}
-                      members={replyAuthors.map((a) => ({ name: a.name, picture: a.avatarSrc ?? avatarSrcFor(a.name) }))}
-                    />
-                  </div>
-                )}
-                <IconMessage2
-                  size={16}
-                  stroke={1.5}
-                  className={cn(
-                    'text-text-secondary group-hover/replies:text-text-primary transition-colors shrink-0 signal:text-text-interactive signal:group-hover/replies:text-text-primary',
-                    replyAuthors && replyAuthors.length > 0 && 'signal:hidden'
-                  )}
-                />
-                <span className="text-chip text-text-secondary group-hover/replies:text-text-primary transition-colors signal:font-medium signal:text-text-interactive signal:group-hover/replies:text-text-primary">
-                  {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
-                </span>
-                {lastReplyTime && (
-                  <span className="hidden signal:inline font-mono text-small leading-3 mt-px text-text-muted tabular-nums">
-                    {lastReplyTime}
-                  </span>
-                )}
-                <IconChevronRight
-                  size={12}
-                  stroke={2}
-                  className="hidden signal:block text-text-muted group-hover/replies:text-text-primary transition-all group-hover/replies:translate-x-0.5"
-                />
-              </div>
-              {hasNewReply && !isUrgent && (
-                <>
-                  <div className="w-0.5 h-0.5 rounded-full bg-text-muted shrink-0" />
-                  <Chip type="brand" label="1 new" />
-                </>
-              )}
-              {hasNewReply && isUrgent && (
-                <>
-                  <div className="w-0.5 h-0.5 rounded-full bg-text-muted shrink-0" />
-                  <Chip type="warning" label="1 new" />
-                </>
-              )}
-            </div>
+            <RepliesRow replyCount={replyCount} replyAuthors={replyAuthors} lastReplyTime={lastReplyTime} hasNewReply={hasNewReply} isUrgent={isUrgent} />
           )}
         </div>
         )}

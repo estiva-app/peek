@@ -1,0 +1,46 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as RepliesRowStories from './RepliesRow.stories'
+
+<Meta of={RepliesRowStories} />
+
+# RepliesRow
+
+The row under a message that opens its thread: who replied, "N replies", the
+last reply's time, and "1 new" when there is.
+
+<Canvas of={RepliesRowStories.Default} />
+
+## When
+
+- Under a message with replies, in a conversation: `ConversationCard`.
+- Under a huddle with replies, in the stream: `HuddleCard`.
+
+## When not
+
+- The thread panel's own list of replies: that is the thread, not a way into it.
+- A count of replies anywhere else — a list row, a search result. That is a
+  count, not this row.
+
+## How
+
+```tsx
+import { RepliesRow } from '@/components/ui/RepliesRow'
+
+{replyCount > 0 && (
+  <RepliesRow replyCount={replyCount} replyAuthors={replyAuthors} lastReplyTime={lastReplyTime} hasNewReply={hasNewReply} isUrgent={isUrgent} />
+)}
+```
+
+## What it owns
+
+- **The row, written once.** HuddleCard had typed a copy of ConversationCard's,
+  piece by piece (UIG-25).
+- **Who replied**, as the package's `AvatarGroup` at 18px, each face the
+  message's own picture or else the directory's for that name.
+- **The hover** in Signal: a hairline and a wash, the icon and the chevron
+  turning primary, the chevron moving 2px.
+- **"1 new"** as a `Chip`, in the warning colour when the thread is urgent.
+
+## Props
+
+<Controls of={RepliesRowStories.Default} />
