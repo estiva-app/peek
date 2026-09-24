@@ -119,6 +119,19 @@ export function FolderTree({
   */
   const { unread, activity } = useTeamUnread(folders)
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
+  /*
+    The section a file is drawn in (SID-2). A Ship project's Folder is its own
+    record channel and an issue's is the same one, and neither is a section:
+    the channel is `listedIn` its team. Matched by id alone, opening either
+    from inside the team made no section current, so the team shut or read its
+    listing again — the flash between a topic and a project in one Folder. The
+    page's read is of the record channel, so the team gets it only when the
+    two are the same Folder.
+  */
+  const section =
+    folders?.find((folder) => folder.id === currentFolder)?.listedIn?.find((id) =>
+      topLevel?.some((top) => top.id === id),
+    ) ?? currentFolder
   const folderPath = useFolderPath()
 
   return (
@@ -145,7 +158,7 @@ export function FolderTree({
         signedOut={signedOut}
         unread={unread}
         activity={activity}
-        currentFolder={currentFolder}
+        currentFolder={section}
         selectedRef={selectedRef}
         selectedParent={selectedParent}
         onSelect={(file) => {
@@ -160,7 +173,7 @@ export function FolderTree({
         }}
         onOpenFolder={(id) => navigate(folderPath(id))}
         onControl={onControl}
-        currentContents={currentContents}
+        currentContents={section === currentFolder ? currentContents : undefined}
       />
     </ListColumn>
   )
@@ -304,7 +317,19 @@ function FolderSection({
     nobody opened costs the column nothing beyond its dot.
   */
   const own = useFolderContents(open && !preloaded ? folder.id : null)
-  const state = preloaded ?? own.state
+  /*
+    The last listing drawn stays drawn while the next read of the same Folder
+    is in flight (SID-2). The read hands over between the page's and this
+    section's own as the open file moves between a topic and a Ship project,
+    and each hand-over starts at 'loading' — a skeleton over rows that were
+    right a moment ago. Only a listing is held; a failure is said as before.
+  */
+  const fresh = preloaded ?? own.state
+  const listing = typeof fresh === 'object' && 'files' in fresh ? fresh : undefined
+  const [drawn, setDrawn] = useState(listing)
+  // By the rows, not the wrapper: a listing rebuilt per render would set this for ever.
+  if (listing && !sameRows(listing.files, drawn?.files)) setDrawn(listing)
+  const state = fresh === 'loading' && drawn ? drawn : fresh
   const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
   /*
     Every row above the open file starts open, not only its parent (FOL-4): a
@@ -378,4 +403,9 @@ function FolderSection({
       </CollapsibleSection>
     </div>
   )
+}
+
+/** The same rows, in the same order — what a re-read that changed nothing answers. */
+function sameRows(a: readonly ForeignObject[], b: readonly ForeignObject[] | undefined): boolean {
+  return !!b && a.length === b.length && a.every((row, i) => row === b[i])
 }
