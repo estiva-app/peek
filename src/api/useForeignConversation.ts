@@ -10,6 +10,8 @@ import {
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { createListingCache, type ListingLoad } from '@/platform/listingCache'
+import { useListing } from '@/platform/useListing'
 
 /**
  * One file's conversation, whichever app owns the file — RFC 0.5 §10.
@@ -78,14 +80,9 @@ function useResolvedForeign(naddr: string | null | undefined): {
   previous: ForeignObject | null
 } {
   const { resolveObject, resolveFileFolder } = useForeignObjects()
-  const [resolved, setResolved] = useState<{
-    naddr: string
-    object?: ForeignObject | null
-    failed?: RelayFailureKind
-  }>()
 
   const load = useCallback(
-    (target: string) =>
+    (target: string): Promise<ListingLoad<ForeignObject | null, RelayFailureKind>> =>
       resolveObject(target)
         .then(async (object) => {
           /*
@@ -98,9 +95,9 @@ function useResolvedForeign(naddr: string | null | undefined): {
           */
           if (object?.address && !object.folder) {
             const folder = await resolveFileFolder(object.address)
-            return { naddr: target, object: folder ? { ...object, folder } : object }
+            return { ok: true as const, value: folder ? { ...object, folder } : object }
           }
-          return { naddr: target, object }
+          return { ok: true as const, value: object }
         })
         .catch((error: unknown) => {
           /*
@@ -117,12 +114,17 @@ function useResolvedForeign(naddr: string | null | undefined): {
               : classifyRelayFailure((error as Error)?.message ?? '')
           if (isOutage(kind)) recordReadFailure(kind)
           console.warn('[nostr] foreign conversation read failed:', error)
-          return { naddr: target, failed: kind as RelayFailureKind }
+          return { ok: false as const, failure: kind as RelayFailureKind }
         }),
     [resolveObject, resolveFileFolder],
   )
 
   /*
+    Held past this component, by address (SID-2): a row's children after its
+    chevron closes and opens again, and a file opened a second time, draw at
+    once and revalidate behind it. Keyed, so a slow resolve for the previously
+    selected file cannot paint over the one that is open now.
+
     A failed *re*-read keeps the answer it has (FOL-40), the same rule the
     Folder's own listing follows. It matters beyond this pane: the file page
     hands the tree `currentFolder` and `selectedRef` off this object, so one
@@ -131,30 +133,15 @@ function useResolvedForeign(naddr: string | null | undefined): {
     Miky saw beside the late dot. A first read still reports its failure;
     there is nothing to keep.
   */
-  const keep = useCallback(
-    (next: { naddr: string; object?: ForeignObject | null; failed?: RelayFailureKind }) =>
-      setResolved((held) =>
-        next.failed && held?.naddr === next.naddr && held.failed === undefined ? held : next,
-      ),
-    [],
-  )
+  const entry = useListing(resolvedCache, naddr ?? null)
 
   const reload = useCallback(async () => {
-    if (!naddr) return
-    const next = await load(naddr)
-    // A slow resolve for the previously selected file must not paint over the
-    // one that is open now.
-    if (next.naddr === naddr) keep(next)
-  }, [naddr, load, keep])
+    if (naddr) await resolvedCache.read(naddr, () => load(naddr))
+  }, [naddr, load])
 
   useEffect(() => {
-    if (!naddr) return
-    let cancelled = false
-    void load(naddr).then((next) => !cancelled && keep(next))
-    return () => {
-      cancelled = true
-    }
-  }, [naddr, load, keep])
+    if (naddr) void resolvedCache.revalidate(naddr, () => load(naddr))
+  }, [naddr, load])
 
   useRefreshTriggers(
     () => {
@@ -164,15 +151,27 @@ function useResolvedForeign(naddr: string | null | undefined): {
   )
 
   const state: ForeignConversationState =
-    !naddr || resolved?.naddr !== naddr
+    !naddr || !entry
       ? 'loading'
-      : resolved.failed
-        ? { failed: resolved.failed }
-        : (resolved.object ?? 'unresolved')
-  const previous = state === 'loading' ? (resolved?.object ?? null) : null
+      : entry.value !== undefined
+        ? (entry.value ?? 'unresolved')
+        : entry.failure
+          ? { failed: entry.failure }
+          : 'loading'
+  /*
+    The address this hook last had an answer for, so `previous` can name it
+    while the next one loads. Set during render, since an effect would be a
+    second render with the old answer already gone from the screen.
+  */
+  const [shown, setShown] = useState<string | null>(null)
+  if (naddr && entry?.value !== undefined && shown !== naddr) setShown(naddr)
+  const previous = state === 'loading' && shown && shown !== naddr ? (resolvedCache.peek(shown)?.value ?? null) : null
 
   return { state, reload, previous }
 }
+
+/** Every reference this tab has resolved, by the reference asked (SID-2). */
+const resolvedCache = createListingCache<ForeignObject | null, RelayFailureKind>()
 
 /**
  * One file's conversation — the panel's read.

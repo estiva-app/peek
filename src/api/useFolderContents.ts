@@ -10,6 +10,8 @@ import {
 import { recordReadFailure } from '@/nostr/freshness'
 import { peekLiveTopics } from '@/nostr/liveTopics'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { createListingCache, type ListingLoad } from '@/platform/listingCache'
+import { useListing } from '@/platform/useListing'
 
 /**
  * Navigation by Folder — RFC 0.4 §4 and §5.
@@ -40,74 +42,77 @@ export type FolderContentsState =
   | 'loading'
   | { failed: RelayFailureKind }
 
+/** Every Folder's contents this tab has read, by Folder id (SID-2). */
+const folderContentsCache = createListingCache<FolderContents, RelayFailureKind>()
+
+type ResolveFolderContents = (folder: string) => Promise<FolderContents>
+
+function loadFolderContents(
+  resolveFolderContents: ResolveFolderContents,
+  folder: string,
+): Promise<ListingLoad<FolderContents, RelayFailureKind>> {
+  /*
+    A quota refusal is waited out at the second the relay named rather than
+    drawn as a failure (FOL-40). This read is one of the six that go out
+    together when the sidebar and the Folder view both refresh, so it is
+    among the first to be refused — and "This folder could not be read" for
+    a relay that answered promptly and will answer again in eight seconds
+    is the wrong sentence twice over.
+  */
+  return withRateLimitRetry(() => resolveFolderContents(folder))
+    .then((contents) => ({ ok: true as const, value: contents }))
+    .catch((error: unknown) => {
+      // Swallowed, like the project read: nothing throws and the app keeps
+      // working. What the failure buys is that the view can say *which*
+      // empty state this is — an empty Folder and an unreadable one look
+      // identical otherwise, which is the ambiguity PEE-10 exists to remove.
+      const kind = relayFailureKind(error)
+      if (isOutage(kind)) recordReadFailure(kind)
+      console.warn('[nostr] folder contents read failed:', error)
+      return { ok: false as const, failure: kind as RelayFailureKind }
+    })
+}
+
+/**
+ * Read a Folder's contents ahead of its fold opening (SID-2) — the hover or
+ * focus on its header, so the first open draws rows rather than a skeleton.
+ * One Folder, the one the pointer rests on, and only one this tab has never
+ * read: once anything is held, opening the fold shows it and revalidates, so a
+ * second prefetch would only spend the relay's minute on a pointer passing by.
+ */
+export function prefetchFolderContents(resolveFolderContents: ResolveFolderContents, folder: string): void {
+  if (folderContentsCache.peek(folder)) return
+  void folderContentsCache.read(folder, () => loadFolderContents(resolveFolderContents, folder))
+}
+
 export function useFolderContents(folder: string | null | undefined): {
   state: FolderContentsState
   reload: () => Promise<void>
 } {
   const { resolveFolderContents } = useForeignObjects()
-  const [resolved, setResolved] = useState<{
-    folder: string
-    contents?: FolderContents
-    failed?: RelayFailureKind
-  }>()
-
-  const load = useCallback(
-    (target: string) =>
-      /*
-        A quota refusal is waited out at the second the relay named rather than
-        drawn as a failure (FOL-40). This read is one of the six that go out
-        together when the sidebar and the Folder view both refresh, so it is
-        among the first to be refused — and "This folder could not be read" for
-        a relay that answered promptly and will answer again in eight seconds
-        is the wrong sentence twice over.
-      */
-      withRateLimitRetry(() => resolveFolderContents(target))
-        .then((contents) => ({ folder: target, contents }))
-        .catch((error: unknown) => {
-          // Swallowed, like the project read: nothing throws and the app keeps
-          // working. What the failure buys is that the view can say *which*
-          // empty state this is — an empty Folder and an unreadable one look
-          // identical otherwise, which is the ambiguity PEE-10 exists to remove.
-          const kind = relayFailureKind(error)
-          if (isOutage(kind)) recordReadFailure(kind)
-          console.warn('[nostr] folder contents read failed:', error)
-          return { folder: target, failed: kind as RelayFailureKind }
-        }),
-    [resolveFolderContents],
-  )
+  const load = useCallback((target: string) => loadFolderContents(resolveFolderContents, target), [resolveFolderContents])
 
   /*
-    A failed *re*-read keeps what is on screen (FOL-40). The failure is worth
-    a sentence when there is nothing else to say — an empty Folder and an
-    unreadable one are different (PEE-10) — and worth nothing at all when the
-    rows are already drawn: a 30 s tick that hits a hiccup would otherwise
-    replace a read Folder with "This folder could not be read", and the next
-    tick would put it back. A first read for this Folder still says so,
-    because there is then no answer to keep.
+    Held past this component (SID-2): a Folder collapsed and opened again, or
+    drawn again by the next page's sidebar, shows what it held at once and
+    revalidates behind it — with no read at all when the answer is seconds
+    old, which is the hand-over between the page's read and a section's.
+
+    A failed *re*-read keeps what is on screen (FOL-40), which the cache does
+    for every reader: a 30 s tick that hits a hiccup would otherwise replace a
+    read Folder with "This folder could not be read", and the next tick would
+    put it back. A first read for this Folder still says so, because there is
+    then no answer to keep.
   */
-  const keep = useCallback(
-    (next: { folder: string; contents?: FolderContents; failed?: RelayFailureKind }) =>
-      setResolved((held) =>
-        next.failed && held?.folder === next.folder && held.contents ? held : next,
-      ),
-    [],
-  )
+  const entry = useListing(folderContentsCache, folder ?? null)
 
   const reload = useCallback(async () => {
-    if (!folder) return
-    const next = await load(folder)
-    // A slow resolve for the previous Folder must not paint over the next one.
-    if (next.folder === folder) keep(next)
-  }, [folder, load, keep])
+    if (folder) await folderContentsCache.read(folder, () => load(folder))
+  }, [folder, load])
 
   useEffect(() => {
-    if (!folder) return
-    let cancelled = false
-    void load(folder).then((next) => !cancelled && keep(next))
-    return () => {
-      cancelled = true
-    }
-  }, [folder, load, keep])
+    if (folder) void folderContentsCache.revalidate(folder, () => load(folder))
+  }, [folder, load])
 
   useEffect(() => {
     if (!folder) return
@@ -120,12 +125,7 @@ export function useFolderContents(folder: string | null | undefined): {
     if (folder) void reload()
   }, { enabled: !!folder })
 
-  const state: FolderContentsState =
-    !folder || resolved?.folder !== folder
-      ? 'loading'
-      : resolved.failed
-        ? { failed: resolved.failed }
-        : (resolved.contents as FolderContents)
+  const state: FolderContentsState = entry?.value ?? (entry?.failure ? { failed: entry.failure } : 'loading')
 
   return { state, reload }
 }
@@ -196,38 +196,51 @@ export function useFolders(): {
   reload: () => Promise<void>
 } {
   const { listFolders } = useForeignObjects()
-  const [folders, setFolders] = useState<FolderSummary[] | null>(null)
-  const [signedOut, setSignedOut] = useState(false)
   /* Consecutive retryable failures. Each one is a new value, so the effect
      below schedules exactly one re-read per failure, and a success ends it. */
   const [failures, setFailures] = useState(0)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<ListingLoad<FolderSummary[] | null, RelayFailureKind>> => {
     try {
-      const next = await withRateLimitRetry(() => listFolders())
       // `null` is the seam saying "no viewer", which is not an empty workspace.
-      setSignedOut(next === null)
-      setFolders(next)
+      const next = await withRateLimitRetry(() => listFolders())
       setFailures(0)
+      return { ok: true, value: next }
     } catch (error: unknown) {
       const kind = relayFailureKind(error)
       if (isOutage(kind)) recordReadFailure(kind)
       console.warn('[nostr] folder listing read failed:', error)
-      setFolders((held) => held ?? [])
       if (kind === 'unreachable' || kind === 'rate_limited') setFailures((n) => n + 1)
+      return { ok: false, failure: kind as RelayFailureKind }
     }
   }, [listFolders])
 
+  /*
+    Held past this component (SID-2), like a Folder's contents: every page
+    mounts its own sidebar, and each used to start at `null` — the whole
+    column a skeleton, on every page change, over Folders the tab had just
+    drawn. A failure after a good read keeps the good one.
+  */
+  const entry = useListing(foldersCache, FOLDERS_KEY)
+  const reload = useCallback(() => foldersCache.read(FOLDERS_KEY, load), [load])
+
   useEffect(() => {
-    void load()
+    void foldersCache.revalidate(FOLDERS_KEY, load)
   }, [load])
 
   useEffect(() => {
     if (failures === 0) return
     const wait = Math.min(FOLDERS_RETRY_FIRST_MS * 2 ** (failures - 1), FOLDERS_RETRY_MAX_MS)
-    const timer = setTimeout(() => void load(), wait)
+    const timer = setTimeout(() => void reload(), wait)
     return () => clearTimeout(timer)
-  }, [failures, load])
+  }, [failures, reload])
 
-  return { folders, signedOut, reload: load }
+  const held = entry?.value
+  // A first read that failed draws as an empty workspace, as it always has; a signed-out answer is `null`.
+  const folders = held !== undefined ? held : entry?.failure ? [] : null
+  return { folders, signedOut: held === null, reload }
 }
+
+/** The one listing of every Folder the viewer can see (SID-2). */
+const FOLDERS_KEY = 'folders'
+const foldersCache = createListingCache<FolderSummary[] | null, RelayFailureKind>()

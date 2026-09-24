@@ -369,3 +369,59 @@ describe("an open section's rows follow the socket (FOL-44)", () => {
     expect(rowReads()).toBe(1)
   })
 })
+
+describe('the tab holds what it read (SID-2)', () => {
+  const tree = (currentFolder?: string) => (
+    <MemoryRouter initialEntries={['/folders']}>
+      <FolderTree currentFolder={currentFolder} />
+    </MemoryRouter>
+  )
+  const readsOf = (folder: string) => seam.resolveFolderContents.mock.calls.filter(([f]) => f === folder).length
+  const section = (id: string) => document.querySelector(`[data-tree-folder="${id}"]`) as HTMLElement
+
+  it('a Folder closed and opened again draws its rows at once, and asks nothing while its answer is fresh', async () => {
+    render(tree(TEAM))
+    await screen.findByText('FOL-15 test topic 2')
+    fireEvent.click(screen.getByRole('button', { name: 'Peek' }))
+    expect(screen.queryByText('FOL-15 test topic 2')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Peek' }))
+    // Synchronously: no commit with a skeleton in between.
+    expect(screen.getByText('FOL-15 test topic 2')).toBeInTheDocument()
+    expect(skeletons()).toHaveLength(0)
+    expect(readsOf(TEAM)).toBe(1)
+  })
+
+  it('the next page’s sidebar draws the Folders and the open rows on its first commit', async () => {
+    const first = render(tree(TEAM))
+    await screen.findByText('FOL-15 test topic 2')
+    first.unmount()
+    render(tree(TEAM))
+    expect(screen.getByText('FOL-15 test topic 2')).toBeInTheDocument()
+    expect(skeletons()).toHaveLength(0)
+    expect(readsOf(TEAM)).toBe(1)
+  })
+
+  it('a pointer resting on a closed Folder reads it once, and the first open draws no skeleton', async () => {
+    render(tree())
+    await screen.findByRole('button', { name: 'Peek' })
+    fireEvent.pointerOver(section(TEAM))
+    await waitFor(() => expect(readsOf(TEAM)).toBe(1))
+    fireEvent.pointerOut(section(TEAM))
+    fireEvent.pointerOver(section(TEAM))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Held already: a second rest asks nothing.
+    expect(readsOf(TEAM)).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Peek' }))
+    expect(screen.getByText('FOL-15 test topic 2')).toBeInTheDocument()
+    expect(skeletons()).toHaveLength(0)
+  })
+
+  it('a pointer passing over a closed Folder reads nothing', async () => {
+    render(tree())
+    await screen.findByRole('button', { name: 'Zebra' })
+    fireEvent.pointerOver(section(OTHER))
+    fireEvent.pointerOut(section(OTHER))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(readsOf(OTHER)).toBe(0)
+  })
+})
