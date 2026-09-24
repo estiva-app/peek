@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import { Form } from '@estiva-app/ui'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { Checkbox } from './ui/Checkbox'
@@ -61,9 +62,10 @@ export function AddToOpenWorkDialog({ onAdd, onClose }: AddToOpenWorkDialogProps
       }
     >
       {candidates.length === 0 ? (
-        <p className="text-body-2 text-text-secondary py-1">
-          Every topic is already in your Open work.
-        </p>
+        // The rows' own px-3 inset, so the line sits level with them and the title (ruling 21).
+        <div className="px-3">
+          <EmptyState scope="section" message="Every topic is already in your Open work." />
+        </div>
       ) : (
         // The package Form (UIG-7), the body's own column inside it; Add sends it.
         <Form id={formId} onSubmit={() => { if (selected.size > 0) handleAdd() }} className="flex flex-col gap-0.5">
