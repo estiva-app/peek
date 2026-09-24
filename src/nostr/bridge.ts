@@ -49,6 +49,7 @@ import {
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
+import { relayBudget } from './relayBudget'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 
 /**
@@ -121,7 +122,12 @@ async function bridgePost(
   const text = await res.text()
   // Counted once the relay has answered, so the answer says whether this one
   // was refused, and why (PER-8, `window.__relayReads()`).
-  recordRelayRequest(path, payload, refusalOf(res.status, text))
+  const refusal = refusalOf(res.status, text)
+  recordRelayRequest(path, payload, refusal)
+  // Every quota refusal passes here, so this is where the tab learns the pause
+  // the refresh triggers and `withRateLimitRetry` honour (PER-13). No reader
+  // has to know about quotas.
+  if (refusal) relayBudget.noteRateLimited(text)
   return { status: res.status, text }
 }
 

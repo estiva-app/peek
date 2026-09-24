@@ -26,11 +26,39 @@
  * visibility triggers — those are cheap, happen at human frequency, and are the
  * one moment somebody actively wants certainty about what is on screen. They
  * also cover a socket that believes it is connected and is not.
+ *
+ * ## One scheduler for the tab (PER-13)
+ *
+ * Each call used to add its own `focus` and `visibilitychange` listener, and a
+ * tab switch raises both — so every read in the tab went out twice, at the same
+ * millisecond. Measured in buzz's log on 2026-09-23: seconds of 40–58 requests
+ * from Miky's key, against fan-outs of 20–33. The listeners, the 1 s merge of
+ * the two events, and the pause after a 429 now live in `@estiva-app/platform`'s
+ * scheduler, shared with Ship's `useRefresh`; this hook subscribes to the one
+ * this tab holds.
  */
 import { useEffect, useRef } from 'react'
+import { createRefreshScheduler, type RefreshScheduler } from '@estiva-app/platform'
+import { relayBudget } from '@/nostr/relayBudget'
 
 /** Slow on purpose: this is a fallback, not the delivery mechanism. */
 export const REFRESH_INTERVAL_MS = 30_000
+
+/**
+ * The tab's scheduler. The package hands out a scheduler and keeps nothing, so
+ * this line is the one binding; built on first use so importing registers no
+ * listener.
+ */
+let scheduler: RefreshScheduler | undefined
+function refreshScheduler(): RefreshScheduler {
+  scheduler ??= createRefreshScheduler({
+    document,
+    window,
+    budget: relayBudget,
+    intervalMs: REFRESH_INTERVAL_MS,
+  })
+  return scheduler
+}
 
 export interface RefreshTriggerOptions {
   /** Whether to run at all. `false` removes every listener. */
@@ -58,29 +86,6 @@ export function useRefreshTriggers(
 
   useEffect(() => {
     if (!enabled || typeof document === 'undefined') return
-
-    const run = () => latest.current()
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') run()
-    }
-
-    document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('focus', run)
-
-    let timer: ReturnType<typeof setInterval> | undefined
-    if (interval) {
-      timer = setInterval(() => {
-        // Checked at fire time rather than by starting and stopping the timer
-        // on every visibility change: same outcome, one branch instead of a
-        // second lifecycle to keep correct.
-        if (document.visibilityState === 'visible') run()
-      }, intervalMs)
-    }
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('focus', run)
-      if (timer !== undefined) clearInterval(timer)
-    }
+    return refreshScheduler().subscribe(() => latest.current(), { interval, intervalMs })
   }, [enabled, interval, intervalMs])
 }

@@ -70,6 +70,7 @@ vi.mock('@/nostr/useLiveTopics', () => {
   return { useLiveTopics: () => ({ live: client, relayState: socket.state }) }
 })
 
+import { relayBudget } from '@/nostr/relayBudget'
 import { CATCH_UP_MS, LOOKBACK_SECONDS, RESYNC_MS, resetChannelStreamsForTests, useChannelStreams } from './useChannelStreams'
 
 const A = '11111111-1111-4111-8111-111111111111'
@@ -105,6 +106,9 @@ beforeEach(() => {
 })
 afterEach(() => {
   resetChannelStreamsForTests()
+  // A refusal a test provoked is the tab's pause now (PER-13), and the next
+  // test's first read would wait it out.
+  relayBudget.reset()
   vi.useRealTimers()
 })
 
