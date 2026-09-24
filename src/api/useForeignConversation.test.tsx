@@ -67,6 +67,19 @@ describe('useForeignConversation fills the Folder of a record that carries no h'
   })
 })
 
+describe('useForeignConversation holds what it resolved past the component (SID-2)', () => {
+  it('a file opened a second time draws at once, and a fresh answer is not asked again', async () => {
+    const issue = foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM })
+    seam.resolveObject.mockResolvedValue(issue)
+    const first = renderHook(() => useForeignConversation(ISSUE))
+    await waitFor(() => expect(first.result.current.state).toBe(issue))
+    first.unmount()
+    const second = renderHook(() => useForeignConversation(ISSUE))
+    expect(second.result.current.state).toBe(issue)
+    expect(seam.resolveObject).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('useForeignConversation keeps the last file while the next resolves (SID-2)', () => {
   it('holds the last answer as `previous` while the next address loads, and only then', async () => {
     const issue = foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM })

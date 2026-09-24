@@ -1,11 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
 import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { rememberFileAddress, topLevelFolders, useFolderContents, useFolders, useTeamUnread } from '@/api'
+import {
+  prefetchFolderContents,
+  rememberFileAddress,
+  topLevelFolders,
+  useFolderContents,
+  useFolders,
+  useForeignObjects,
+  useTeamUnread,
+} from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -318,6 +326,24 @@ function FolderSection({
   */
   const own = useFolderContents(open && !preloaded ? folder.id : null)
   /*
+    A closed Folder is read a moment before it is opened (SID-2): when the
+    pointer rests on it, or the keyboard lands on it, so the first open draws
+    rows. Resting, not passing — a pointer sweeping down the column must not
+    spend a read per Folder — and never for one the tab has read already
+    (`prefetchFolderContents`), so it costs at most one read per Folder.
+  */
+  const { resolveFolderContents } = useForeignObjects()
+  const intent = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const prefetch = () => {
+    if (!open) prefetchFolderContents(resolveFolderContents, folder.id)
+  }
+  const rest = () => {
+    clearTimeout(intent.current)
+    intent.current = setTimeout(prefetch, PREFETCH_INTENT_MS)
+  }
+  const leave = () => clearTimeout(intent.current)
+  useEffect(() => () => clearTimeout(intent.current), [])
+  /*
     The last listing drawn stays drawn while the next read of the same Folder
     is in flight (SID-2). The read hands over between the page's and this
     section's own as the open file moves between a topic and a Ship project,
@@ -352,7 +378,14 @@ function FolderSection({
     : undefined
 
   return (
-    <div className="shrink-0" data-tree-folder={folder.id} data-open={open}>
+    <div
+      className="shrink-0"
+      data-tree-folder={folder.id}
+      data-open={open}
+      onPointerEnter={rest}
+      onPointerLeave={leave}
+      onFocus={prefetch}
+    >
       <CollapsibleSection
         /*
           The id when there is no name. A Folder with no state event has only
@@ -404,6 +437,9 @@ function FolderSection({
     </div>
   )
 }
+
+/** How long the pointer rests on a closed Folder before it is read ahead (SID-2). */
+export const PREFETCH_INTENT_MS = 150
 
 /** The same rows, in the same order — what a re-read that changed nothing answers. */
 function sameRows(a: readonly ForeignObject[], b: readonly ForeignObject[] | undefined): boolean {
