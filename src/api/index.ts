@@ -85,5 +85,5 @@ export {
   type OutgoingAttachment,
   type WriteResult,
 } from './useFileConversation'
-export { useConversationBadges } from './useConversationBadges'
+export { useConversationBadges, useLiveConversationBadges } from './useConversationBadges'
 export { useTeamUnread } from './useTeamUnread'

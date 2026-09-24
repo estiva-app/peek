@@ -20,9 +20,8 @@ import {
   useDeskLoading,
   usePeekActions,
   useStarred,
-  useConversationBadges,
+  useLiveConversationBadges,
   useOpenWorkFiles,
-  type OpenWorkItem,
 } from '@/api'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { filePath } from '@/lib/objectUrl'
@@ -87,22 +86,21 @@ export function DeskPage() {
   /*
     A file's dot (FOL-34) is the listing's: its own conversation against its own
     marker, and only for what the person follows. `=== true` — an unjudged file
-    draws no dot, not a dark one.
+    draws no dot, not a dark one. Live: it re-reads when something is said in
+    one of the files' Folders, not only when the list changes.
   */
   const openWorkFiles = useOpenWorkFiles()
-  const { unread: fileUnread } = useConversationBadges(
+  const { unread: fileUnread } = useLiveConversationBadges(
     OPEN_WORK_ITEMS.flatMap((i) => (i.kind === 'file' ? [i.object] : [])),
   )
 
-  // Open work holds files and (via Screener "Open") DMs. Sort unread first when
-  // unreads are visible. Filter out items dismissed via the row's X.
-  const openWorkUnread = (i: OpenWorkItem) =>
-    i.kind === 'file' ? fileUnread[i.object.ref] === true : dmHasUnread(i.dmId)
-  const baseOpenWork = (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : [])
+  // Open work holds files and (via Screener "Open") DMs, in the person's order
+  // — new work on the end, like a browser tab (Miky, 2026-09-16). Not sorted
+  // by unread: that moved a row the moment it was read, so opening something
+  // from the Screener put it first and reading it sent it last. The dot says
+  // what is unread. Filter out items dismissed via the row's X.
+  const openWorkItems = (debug.desk.openWorkHasData ? OPEN_WORK_ITEMS : [])
     .filter((i) => !dismissedOpenWorkIds.has(i.id))
-  const openWorkItems = showFileUnreads
-    ? [...baseOpenWork].sort((a, b) => Number(openWorkUnread(b)) - Number(openWorkUnread(a)))
-    : baseOpenWork
 
   const dismissOpenWork = (id: string) => {
     // Removing the conversation you're looking at clears the stale selection —
