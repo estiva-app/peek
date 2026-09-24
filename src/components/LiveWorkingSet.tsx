@@ -31,30 +31,35 @@
  * Read state moves in `useMarkRead`, which is driven by *opening* a topic.
  * Projecting a message into a topic nobody is looking at raises its unread
  * count, which is the entire point of this ticket.
+ *
+ * ## The set is the browser's (REM-4)
+ *
+ * It was `api.nostr.sync.watchableChannels`, a Convex read of three tables
+ * that only stayed current because stars and open work were dual-written.
+ * `useWorkingSetChannels` computes it from the relay blobs instead; see there.
  */
 import { useEffect } from 'react'
-import { useConvex, useQuery } from 'convex/react'
+import { useConvex } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { hasConvex, RELAY_URL } from '@/api'
+import { hasConvex, RELAY_URL, useWorkingSetChannels } from '@/api'
 import { getLiveTopics } from '@/nostr/liveTopics'
 
 export function LiveWorkingSet() {
   const convex = useConvex()
   const relayUrl = RELAY_URL
-  const channels = useQuery(api.nostr.sync.watchableChannels, hasConvex ? {} : 'skip')
+  const channels = useWorkingSetChannels()
 
-  // Reactive: the query re-runs when the Desk, inbox or stars change, so the
-  // set follows what is on screen without anything polling for it.
+  // Reactive: the set is recomputed when the Screener, open work or stars
+  // change, so it follows what is on screen without anything polling for it.
   //
-  // The dependency is a stringified list rather than the array, because Convex
-  // hands back a new array identity on every update and the effect would
+  // The dependency is a stringified list rather than the array, because every
+  // change to any input hands back a new array identity and the effect would
   // otherwise tear down and rebuild every subscription each time — closing and
   // reopening REQs the relay was perfectly happy with.
-  const key =
-    channels?.map((c) => `${c.containerKind}:${c.containerKey}:${c.channelUuid}`).join(',') ?? ''
+  const key = channels.map((c) => `${c.containerKind}:${c.containerKey}:${c.channelUuid}`).join(',')
 
   useEffect(() => {
-    if (!hasConvex || !relayUrl || !channels || channels.length === 0) return
+    if (!hasConvex || !relayUrl || channels.length === 0) return
 
     let live
     try {

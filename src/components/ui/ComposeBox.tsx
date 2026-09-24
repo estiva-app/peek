@@ -17,6 +17,7 @@ import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { AttachFileButton } from './AttachFiles'
 import { SelectionToolbar } from './SelectionToolbar'
 import { HighlightButton } from './HighlightButton'
+import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
 export interface SendPayload {
   text: string
@@ -334,7 +335,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   return (
     <div ref={composeRef} className={cn('relative', className)}>
 
-      <div className="relative bg-bg-inset border border-border-default focus-within:border-border-strong rounded-lg p-3 flex flex-col gap-4 transition-colors signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring">
+      <div className={cn(WRITING_BOX_CLASSES, 'focus-within:border-border-strong transition-colors')}>
         {/* Editable area - left border when urgent or highlight */}
         <div data-composer-editor className={cn(
           'relative min-h-[20px] transition-all',

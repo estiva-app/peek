@@ -1,0 +1,51 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as MetaTextStories from './MetaText.stories'
+
+<Meta of={MetaTextStories} />
+
+# MetaText
+
+The small figure beside a name or a count: a message's time, a thread entry's
+time, a topic's open and resolved counts. In Signal it is the mono micro-type
+with even digits.
+
+<Canvas of={MetaTextStories.Default} />
+
+## When
+
+- A message's time, beside its author: every card, the pinned message.
+- A count that sits in a line of meta: a topic's "6 open · 0 resolved".
+- At `size="chip"`, beside a small name: the thread panel's entries, the
+  Screener's preview.
+
+## When not
+
+- A number that is the point of the row — an unread count, a badge. That is a
+  part of its own, not meta.
+- A label over a group: that is `SectionLabel`.
+
+## How
+
+```tsx
+import { MetaText } from '@/components/ui/MetaText'
+
+<MetaText>{timestamp}</MetaText>
+<MetaText tone="secondary">{openCount} open</MetaText>
+<MetaText size="chip" className="shrink-0">{time}</MetaText>
+```
+
+- `tone`: `muted` for a time (the default); `secondary` and `success` for the
+  open and resolved counts.
+- `className` places it — `shrink-0`, `contents` — and nothing else.
+
+## What it owns
+
+- **The look, written once.** It was typed by hand in nine places (UIG-25);
+  a change to how a time looks is one edit here.
+- **One line.** It never wraps.
+- **The Signal voice** — mono, 10px, wide tracking, even digits — through
+  `signal:` variants, never at a call site.
+
+## Props
+
+<Controls of={MetaTextStories.Default} />

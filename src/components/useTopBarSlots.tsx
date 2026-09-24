@@ -41,7 +41,7 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
      as the account menu closes, so its own ref would be null by the time it
      is needed. The anchor is the top bar's right cluster, which persists. */
 
-  const displayName = me?.name ?? CURRENT_USER_NAME
+  const displayName = me?.name || CURRENT_USER_NAME
   const live = hasConvex || hasRelay
 
   return {
@@ -91,10 +91,11 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
           // (src/api/avatars.tsx). Looking up by me.name silently
           // degrades a signed-in face to initials (shipped 2026-09-02;
           // pinned by TopBar.avatar.test.tsx).
-          me={{ name: displayName, picture: avatarSrcFor(CURRENT_USER_NAME) ?? undefined, email: me?.email }}
+          // No email line: the relay holds none, and Convex's copy is gone (REM-6).
+          me={{ name: displayName, picture: avatarSrcFor(CURRENT_USER_NAME) ?? undefined }}
           // Signed in is Estiva ID's to say, and `AuthGate` renders none of
-          // this without a session (REM-2); `me` is Convex's and may still be
-          // loading, or unreachable. Mock mode has neither backend.
+          // this without a session (REM-2); `me` is the relay's profile and may
+          // still be loading. Mock mode has neither backend.
           signedIn={live}
           relayUrl={relayUrl}
           idBase={live ? PROFILE_EDIT_URL : undefined}

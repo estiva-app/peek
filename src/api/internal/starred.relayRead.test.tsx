@@ -16,30 +16,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { getFunctionName } from 'convex/server'
-
-vi.mock('@/api/store', () => ({ hasConvex: true }))
 
 /** A starred person is their pubkey since REM-3. */
 const GREG = 'a'.repeat(64)
 const JUAN = 'b'.repeat(64)
 
-let starsListResult: unknown = []
-const toggleRemote = vi.fn(async () => undefined)
 /*
-  Queries are told apart by name, not by reference. `api.desk.starsList` is a
-  proxy that hands back a fresh object on every property access, so `===`
-  against it is false even for the identical call — which fails open, as a
-  query that answers `undefined` for ever, and is exactly the kind of test
-  scaffolding that passes while asserting nothing.
+  REM-4: stars never touch Convex. Any read or write reaching it fails the test
+  loudly rather than answering `undefined`, which is what a query in flight
+  looks like and would pass unnoticed.
 */
 vi.mock('convex/react', () => ({
-  useQuery: (ref: unknown) => {
-    const name = getFunctionName(ref as Parameters<typeof getFunctionName>[0])
-    if (name.includes('starsList')) return starsListResult
-    return undefined
+  useQuery: () => {
+    throw new Error('stars asked Convex')
   },
-  useMutation: () => toggleRemote,
+  useMutation: () => {
+    throw new Error('stars wrote Convex')
+  },
 }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
@@ -81,7 +74,6 @@ async function setup() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  starsListResult = []
   syncState = 'present'
   relayBlob = undefined
   topics = [
@@ -95,10 +87,7 @@ beforeEach(() => {
 })
 
 describe('the set comes from the relay', () => {
-  it('renders a starred topic the relay holds while Convex holds none of it', async () => {
-    // The done-when, stated as a test: `starsList` answers with an empty array
-    // throughout, which is what a reload with the Convex query removed looks
-    // like from inside this provider.
+  it('renders a starred topic the relay holds', async () => {
     relayBlob = aBlob(['t1'], [])
     const { result } = await setup()
     expect(result.current.entries).toEqual([
@@ -150,18 +139,10 @@ describe('the set comes from the relay', () => {
     ])
   })
 
-  it('ignores what Convex says once the relay has answered', async () => {
-    // A star Convex has and the relay does not is a toggle whose publish
-    // failed. It does not render — the relay is the set — and it is reported.
-    relayBlob = aBlob(['t1'], [])
-    starsListResult = [
-      { id: 's1', kind: 'topic', topicId: 't1', title: 'CI/CD pipeline stuck', topicStatus: 'unresolved' },
-      { id: 's2', kind: 'topic', topicId: 't2', title: 'Auth rollout', topicStatus: 'resolved' },
-      { id: 's3', kind: 'dm', dmId: JUAN, name: 'Juan Foley' },
-    ]
+  it('hands the live working set the set, including what has no row yet', async () => {
+    relayBlob = aBlob(['t1', 't9'], [GREG])
     const { result } = await setup()
-    expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t1'])
-    expect(result.current.unpublished).toEqual({ topics: ['t2'], people: [JUAN] })
+    expect(result.current.set).toEqual({ topics: ['t1', 't9'], people: [GREG] })
   })
 })
 
@@ -181,43 +162,35 @@ describe('what is published is the set, never the rows that could be drawn', () 
     })
   })
 
-  it('publishes nothing at all while no source has settled', async () => {
-    // The guard the ticket asked to be kept, in its new form: the relay has not
-    // answered and Convex is in flight, so there is no set — and an empty
-    // publish here is permanent.
+  it('renders and publishes nothing while the relay has not answered — there is no fallback', async () => {
+    // The guard the ticket asked to be kept: no answer is no set, and an empty
+    // publish here is permanent. Convex used to fill this gap; nothing does now.
     syncState = 'unknown'
     relayBlob = undefined
-    starsListResult = undefined
     const { result } = await setup()
     expect(result.current.isLoading).toBe(true)
     expect(result.current.entries).toEqual([])
+    expect(result.current.set).toBeUndefined()
+    act(() => result.current.toggleTopic({ topicId: 't1', title: 'CI/CD', topicStatus: 'unresolved' }))
     await act(async () => {})
     expect(publish).not.toHaveBeenCalled()
   })
 
-  it('falls back to Convex while the relay is unreachable, and still publishes nothing', async () => {
-    syncState = 'unknown'
-    starsListResult = [{ id: 's1', kind: 'topic', topicId: 't1', title: 'CI/CD', topicStatus: 'unresolved' }]
-    const { result } = await setup()
-    expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t1'])
-    await act(async () => {})
-    // `useStarsSync` refuses it as well; this is the caller's half of the same
-    // rule, and the reason a relay outage cannot rewrite the coordinate.
-    expect(publish).toHaveBeenCalled()
-  })
-
-  it('seeds the relay from Convex when the relay answers that it holds nothing', async () => {
-    // The migration, for a person whose stars predate CRO-11's dual-write.
+  it('starts empty when the relay holds no set, with nothing seeded from Convex', async () => {
+    // REM-4: Convex-only stars are dropped, not migrated (Miky, 2026-09-24).
     syncState = 'absent'
     relayBlob = undefined
-    starsListResult = [
-      { id: 's1', kind: 'topic', topicId: 't1', title: 'CI/CD', topicStatus: 'unresolved' },
-      { id: 's2', kind: 'dm', dmId: GREG, name: 'Greg Bothman' },
-    ]
     const { result } = await setup()
-    expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t1', `star_dm_${GREG}`])
-    await waitFor(() => expect(publish).toHaveBeenCalled())
-    expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't1' }], people: [{ key: GREG, pubkey: GREG }] })
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.entries).toEqual([])
+    // Nothing is written until the person toggles: `absent` may be a blob this
+    // version cannot read, and an empty set must not overwrite it.
+    await act(async () => {})
+    expect(publish).not.toHaveBeenCalled()
+    act(() => result.current.toggleDm({ dmId: GREG, name: 'Greg Bothman' }))
+    await waitFor(() =>
+      expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [], people: [{ key: GREG, pubkey: GREG }] }),
+    )
   })
 })
 
@@ -229,7 +202,6 @@ describe('toggling', () => {
     expect(result.current.isTopicStarred('t1')).toBe(false)
     expect(result.current.entries.map((e) => e.id)).toEqual(['star_topic_t2'])
     await waitFor(() => expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [{ id: 't2' }], people: [] }))
-    expect(toggleRemote).toHaveBeenCalledWith({ kind: 'topic', targetKey: 't1' })
   })
 
   it('adds a person optimistically, over a relay set that does not have them yet', async () => {

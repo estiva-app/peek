@@ -5,7 +5,7 @@
   `-` (NIP-70) tag and one `member` per admitted key, and Estiva ID's `kind:0`s.
 */
 import { describe, expect, it } from 'vitest'
-import { workspaceFilters, workspacePeopleOf } from './workspacePeople'
+import { mentionablePeopleOf, profilesOf, workspaceFilters, workspacePeopleOf } from './workspacePeople'
 
 const ME = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const MIKY = 'f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1'
@@ -86,5 +86,31 @@ describe('who People lists', () => {
     const broken = { ...profile(KATERINA, {}), content: '{not json' }
     const out = workspacePeopleOf([roster([MIKY, KATERINA, NAMELESS]), broken, profile(NAMELESS, { name: ' ' }), people[0]], ME)
     expect(out.map((p) => p.pubkey)).toEqual([MIKY])
+  })
+})
+
+describe('who the viewer can mention (REM-6)', () => {
+  it('is the roster with agents, still never the viewer', () => {
+    const out = mentionablePeopleOf([roster([MIKY, KATERINA, AGENT, ME]), ...people], ME)
+    expect(out.map((p) => [p.name, p.bot])).toEqual([
+      ['Claude (steered by Katerina)', true],
+      ['Katerina Kelepouri', false],
+      ['Miky', false],
+    ])
+  })
+})
+
+describe('what a key is called (REM-6)', () => {
+  it('names everyone with a profile — the viewer, agents and people off the roster', () => {
+    const names = profilesOf([roster([MIKY]), ...people])
+    expect(names.get(ME)?.name).toBe('Claude (steered by Miky)')
+    expect(names.get(AGENT)).toEqual({ pubkey: AGENT, name: 'Claude (steered by Katerina)', bot: true })
+    expect(names.get(LEFT)?.name).toBe('Somebody who left')
+    expect(names.get(MIKY)?.picture).toBe('https://id.estiva.app/avatar/m.jpg')
+  })
+
+  it('answers a rename with the newest profile', () => {
+    const names = profilesOf([profile(MIKY, { name: 'Renamed' }, 300), ...people])
+    expect(names.get(MIKY)?.name).toBe('Renamed')
   })
 })

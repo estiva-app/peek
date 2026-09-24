@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
 import { ScreenerPreviewCardView } from './ScreenerPreviewCard'
+import { MenuPanel } from '@estiva-app/ui'
 
 /**
  * The Screener hover preview — what the card holds. The card itself is the
@@ -20,9 +21,9 @@ const meta = {
   component: ScreenerPreviewCardView,
   decorators: [
     (Story) => (
-      <div className="flex w-[360px] flex-col gap-3 rounded-lg border border-border-default bg-bg-elevated p-3 shadow-lg">
+      <MenuPanel className="w-[360px] gap-3 p-3">
         <Story />
-      </div>
+      </MenuPanel>
     ),
   ],
   args: { isTopicResolved: () => false },

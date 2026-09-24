@@ -1,9 +1,10 @@
 /**
  * Avatar resolution — one lookup for the whole app.
  *
- * Precedence: an uploaded avatar (Convex file storage) wins; otherwise the
- * seeded demo portrait for that name (keeps the demo dataset
- * pixel-identical); otherwise nothing, and `Avatar` draws the silhouette.
+ * Precedence: the picture in the person's profile (`kind:0`, on the relay —
+ * REM-6) wins; otherwise the seeded demo portrait for that name (keeps the demo
+ * dataset pixel-identical); otherwise nothing, and `Avatar` draws the
+ * silhouette.
  *
  * It is a context with a MOCK DEFAULT rather than a required provider, so
  * `Avatar` stays a dumb primitive: Storybook and unit tests render it with
@@ -12,8 +13,8 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import { avatarFor } from '@/data/peopleData'
 import { CURRENT_USER_NAME, useCurrentUser } from './currentUser'
-import { usePeople } from './people'
-import { hasConvex } from './store'
+import { useWorkspaceProfiles } from './people'
+import { hasRelay } from './relayUrl'
 
 export type AvatarLookup = (name: string | undefined) => string | undefined
 
@@ -26,11 +27,11 @@ const AvatarContext = createContext<AvatarLookup>(avatarFor)
  */
 export function AvatarRegistryProvider({ children }: { children: ReactNode }) {
   const me = useCurrentUser()
-  const people = usePeople()
+  const profiles = useWorkspaceProfiles()
 
   const lookup = useMemo<AvatarLookup>(() => {
-    if (!hasConvex) return avatarFor
-    const byName = new Map((people ?? []).map((p) => [p.name, p.avatarSrc]))
+    if (!hasRelay) return avatarFor
+    const byName = new Map((profiles ?? []).map((p) => [p.name, p.picture]))
     return (name) => {
       if (!name) return undefined
       if (name === CURRENT_USER_NAME) {
@@ -40,7 +41,7 @@ export function AvatarRegistryProvider({ children }: { children: ReactNode }) {
       }
       return byName.get(name) ?? avatarFor(name)
     }
-  }, [me, people])
+  }, [me, profiles])
 
   return <AvatarContext.Provider value={lookup}>{children}</AvatarContext.Provider>
 }

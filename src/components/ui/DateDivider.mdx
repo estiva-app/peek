@@ -41,11 +41,12 @@ import { DateDivider } from '@/components/ui/DateDivider'
 - **Two package `Divider`s pulled edge to edge** (`mx-0`) with the label
   between them. A caller writing this by hand gets the package's default side
   margins and a line that stops short of both edges.
-- **Long labels ellipsize rather than clip.** The label is `min-w-0 truncate`,
-  not `shrink-0`: `Promoted to {a long topic title}` inside a 380px thread panel
-  would otherwise run past the container edge. Short date labels are unaffected.
-- **The Signal voice** — mono, uppercase, wide tracking, muted — applied through
-  `signal:` variants rather than at each call site.
+- **The label is the package's `SectionLabel`**, `tone="muted"`, not typed here
+  (UIG-25): the section-label voice — mono, uppercase, wide tracking in Signal —
+  follows SectionLabel whenever it changes.
+- **Long labels ellipsize rather than clip** (`truncate`): `Promoted to {a long
+  topic title}` inside a 380px thread panel would otherwise run past the
+  container edge. Short date labels are unaffected.
 
 ## Props
 

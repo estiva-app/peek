@@ -49,8 +49,10 @@
  * ids and is already read off the list for exactly this reason, so this is one
  * `Set.has` per container and no second spelling of a key to keep in step.
  *
- * The DM half keeps its server-side de-duplication, which still works because
- * SHR-9 deliberately kept `deskOpenWork` dual-written.
+ * The DM half keeps its server-side de-duplication against `deskOpenWork`, which
+ * nothing has written since REM-4, so it hides only DMs that were in open work
+ * then. "Open" on a DM row deletes the row instead (`addScreenerToOpenWork`)
+ * until CON-14 folds this half from the relay too.
  *
  * ## `clearScreenerFor` is gone for topics, and nothing replaced it
  *
