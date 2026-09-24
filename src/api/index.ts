@@ -54,6 +54,7 @@ export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format
 export { useAvatarSrc } from './avatars'
 export { mentionPeople, mentionTopics } from './mentions'
 export { useStarred } from '@/api/internal/starred'
+export { useWorkingSetChannels, type WorkingSetChannel } from '@/api/internal/workingSet'
 export { useFollows, type Follows } from '@/api/internal/follows'
 export { PeekDataProvider, hasConvex } from './store'
 export { RELAY_URL, hasRelay } from './relayUrl'

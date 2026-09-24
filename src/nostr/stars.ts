@@ -188,10 +188,9 @@ export interface RelaySeam {
  *
  * `absent` therefore covers one case beyond "no event": an event that is there
  * and carries nothing this version can read. There is no usable set either
- * way, and the caller's fallback rewrites it from Convex, which still holds
- * every star (`desk.toggleStar` writes both). Reporting it as an empty
- * `present` would instead render the person's stars as gone and then publish
- * that.
+ * way. The caller renders an empty set and publishes nothing until the person
+ * toggles a star (REM-4; before it, a Convex seed rewrote it). Reporting it as
+ * an empty `present` would instead publish that emptiness at once.
  *
  * A *decrypt* failure is `unreachable`, not `absent`: the blob is there and
  * intact as far as anyone can tell, and the thing that failed is this tab's

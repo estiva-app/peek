@@ -37,27 +37,26 @@
  * unportable, and shipped. SHR-7 settled the same question the same way for
  * `deskOpenWork`. Widened with Miky, 2026-09-16.
  *
- * ## Where Convex still appears, and why it is temporary
+ * ## Convex is out of it entirely (REM-4)
  *
- * `api.desk.starsList` is read, and is not the set. It serves while the relay
- * has not answered — no origin configured, no token in this tab, or a read that
- * failed — and it is the seed for a person whose stars predate CRO-11's
- * dual-write, published the moment the relay says it holds nothing. Both cases
- * are bounded by `useStarsSync`'s `state`; neither can fire once a blob exists.
- * `desk.toggleStar` still writes Convex on every toggle, which is what makes
- * that fallback safe and is the reason it can be removed only after it is no
- * longer needed to recover from a failed publish (`unpublished`).
+ * `api.desk.starsList` used to serve while the relay had not answered, and to
+ * seed a person with no blob; `desk.toggleStar` wrote Convex on every toggle so
+ * that fallback stayed true. All three are gone: a person the relay holds no
+ * set for starts with an empty one — Convex-only stars are dropped, not
+ * migrated (Miky, 2026-09-24) — and a relay that has not answered renders the
+ * skeleton rather than somebody else's copy of the truth. A failed publish is
+ * now recoverable only from this session's overlay, and `useStarsSync` logs it.
  */
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react'
-import { useMutation, useQuery } from 'convex/react'
-import { api } from '../../../convex/_generated/api'
 import { STARRED_ENTRIES, type StarredEntry } from '@/data/deskData'
-import { hasConvex } from '@/api/store'
+import { hasRelay } from '@/api/relayUrl'
 import { isPersonKey, useWorkspacePeople } from '@/api/people'
 import { useTopics } from '@/api/topics'
 import { useStarsSync } from '@/nostr/useStarsSync'
 import type { TopicStateStatus } from '@/components/ui/TopicState'
 import { RELAY_URL } from '@/api/relayUrl'
+
+const NO_STARS: StarSet = { topics: [], people: [] }
 
 const entryLabel = (e: StarredEntry) => (e.kind === 'dm' ? e.name : e.title)
 const byLabel = (a: StarredEntry, b: StarredEntry) =>
@@ -91,22 +90,14 @@ interface StarredContextValue {
   isTopicStarred: (topicId: string) => boolean
   toggleDm: (input: StarDmInput) => void
   toggleTopic: (input: StarTopicInput) => void
-  /** True until a source has settled and there is a set to render. */
+  /** True until the relay has answered and there is a set to render. */
   isLoading: boolean
   /**
-   * Stars Convex holds that the relay does not.
-   *
-   * This was `missingLocally`, pointing the other way: what the relay held that
-   * the deployment did not. Since the blob became the set, that direction is
-   * structurally always empty — the local set *is* the relay's — and a field
-   * that can never report anything is worse than no field. The direction that
-   * now carries something is this one, and what it carries is exactly the stars
-   * a failed publish left behind: `desk.toggleStar` wrote Convex, the relay
-   * never heard, and a reload reads the relay. This is what a "restore my
-   * stars" affordance would offer; it is deliberately not applied
-   * automatically — see `useStarsSync`.
+   * The set itself, this session's toggles included — ids, not rows, so a star
+   * the index has not resolved is still here. `undefined` until it has settled.
+   * The live working set reads it (`useWorkingSetChannels`).
    */
-  unpublished: { topics: string[]; people: string[] }
+  set: StarSet | undefined
 }
 
 const StarredContext = createContext<StarredContextValue | null>(null)
@@ -122,8 +113,6 @@ export function StarredProvider({ children }: { children: ReactNode }) {
   // Where the relay lives — a build-time value since REM-2 (`@/api/relayUrl`).
   const relayUrl = RELAY_URL
   const stars = useStarsSync(relayUrl)
-  const convexStars = useQuery(api.desk.starsList, hasConvex ? {} : 'skip')
-  const toggleRemote = useMutation(api.desk.toggleStar)
 
   // Rendering only. Never the set — see the header.
   const topics = useTopics()
@@ -134,17 +123,8 @@ export function StarredProvider({ children }: { children: ReactNode }) {
     A star written under the old Peek key moves to the pubkey stored beside it;
     one with none cannot be moved without Convex, so it is dropped from the set
     and the next publish deletes it, rather than leaving a key nothing can read
-    in the person's blob for ever. Convex's copy is Convex ids only, so a seed
-    from it brings topics and no people.
+    in the person's blob for ever.
   */
-  const convexSet = useMemo<StarSet | undefined>(() => {
-    if (convexStars === undefined) return undefined
-    return {
-      topics: convexStars.flatMap((e) => (e.kind === 'topic' ? [e.topicId] : [])),
-      people: convexStars.flatMap((e) => (e.kind === 'dm' && isPersonKey(e.dmId) ? [e.dmId] : [])),
-    }
-  }, [convexStars])
-
   const relaySet = useMemo<StarSet | undefined>(() => {
     if (stars.state !== 'present' || !stars.relayBlob) return undefined
     return {
@@ -160,8 +140,12 @@ export function StarredProvider({ children }: { children: ReactNode }) {
     }
   }, [stars.state, stars.relayBlob])
 
-  /** The set as last settled, before this session's toggles. */
-  const settledSet = relaySet ?? convexSet
+  /**
+   * The set as last settled, before this session's toggles. A relay that holds
+   * no set is an empty one; a relay that has not answered is no set at all,
+   * and nothing renders or publishes until it does.
+   */
+  const settledSet = relaySet ?? (stars.state === 'absent' ? NO_STARS : undefined)
 
   const effectiveSet = useMemo<StarSet | undefined>(() => {
     if (!settledSet) return undefined
@@ -177,7 +161,7 @@ export function StarredProvider({ children }: { children: ReactNode }) {
   }, [settledSet, pending])
 
   const entries = useMemo<StarredEntry[]>(() => {
-    if (!hasConvex) return [...mockEntries].sort(byLabel)
+    if (!hasRelay) return [...mockEntries].sort(byLabel)
     if (!effectiveSet) return []
     const topicById = new Map((topics ?? []).map((t) => [t.id, t]))
     const personByKey = new Map((people ?? []).map((p) => [p.id, p]))
@@ -215,40 +199,36 @@ export function StarredProvider({ children }: { children: ReactNode }) {
     The guard SHR-6 had to keep, in its new form. It used to be
     `remote === undefined`: do not publish while the Convex query is in flight,
     because a briefly-empty set is a last-write-wins publish that makes the loss
-    permanent. Convex is no longer what is being waited for, and two things are
-    — the relay's own answer, guarded inside `useStarsSync`, and whichever
-    source the set came from, which is `effectiveSet` being undefined here.
+    permanent. Now the relay's own answer is what is waited for — guarded
+    inside `useStarsSync`, and here as `effectiveSet` being undefined.
     `topics` and `people` are deliberately *not* waited for; they resolve rows,
     not membership of the set.
+
+    An `absent` relay publishes only once the person has toggled something.
+    `absent` includes a blob this version cannot read (`stars.ts`), and an empty
+    set published over it on load would destroy it for nothing — the Convex
+    seed used to be what overwrote it, with something at least.
 
     Mock mode publishes nothing: there is no session and no relay, and a fixture
     is not the person's data.
   */
   const publishSet = stars.publish
+  const untouchedAndAbsent = stars.state === 'absent' && pending.size === 0
   useEffect(() => {
-    if (!hasConvex) return
-    if (!effectiveSet) return
+    if (!hasRelay) return
+    if (!effectiveSet || untouchedAndAbsent) return
     void publishSet({
       topics: effectiveSet.topics.map((id) => ({ id })),
       people: effectiveSet.people.map((key) => ({ key, pubkey: key })),
     })
-  }, [effectiveSet, publishSet])
-
-  const unpublished = useMemo(() => {
-    if (!relaySet || !convexSet) return { topics: [], people: [] }
-    const onRelay = { topics: new Set(relaySet.topics), people: new Set(relaySet.people) }
-    return {
-      topics: convexSet.topics.filter((id) => !onRelay.topics.has(id)),
-      people: convexSet.people.filter((key) => !onRelay.people.has(key)),
-    }
-  }, [relaySet, convexSet])
+  }, [effectiveSet, untouchedAndAbsent, publishSet])
 
   const isDmStarred = useCallback(
     (dmId: string) => {
       // The set, never `entries`: a star on somebody the directory has not
       // delivered yet is still a star, and reading it off the rows would let
       // the next toggle add a second one.
-      if (!hasConvex) return mockEntries.some((e) => e.kind === 'dm' && e.dmId === dmId)
+      if (!hasRelay) return mockEntries.some((e) => e.kind === 'dm' && e.dmId === dmId)
       return effectiveSet?.people.includes(dmId) ?? false
     },
     [mockEntries, effectiveSet],
@@ -256,7 +236,7 @@ export function StarredProvider({ children }: { children: ReactNode }) {
 
   const isTopicStarred = useCallback(
     (topicId: string) => {
-      if (!hasConvex) return mockEntries.some((e) => e.kind === 'topic' && e.topicId === topicId)
+      if (!hasRelay) return mockEntries.some((e) => e.kind === 'topic' && e.topicId === topicId)
       return effectiveSet?.topics.includes(topicId) ?? false
     },
     [mockEntries, effectiveSet],
@@ -264,7 +244,7 @@ export function StarredProvider({ children }: { children: ReactNode }) {
 
   const toggleDm = useCallback(
     ({ dmId, name, avatarSrc }: StarDmInput) => {
-      if (!hasConvex) {
+      if (!hasRelay) {
         setMockEntries((prev) => {
           const exists = prev.some((e) => e.kind === 'dm' && e.dmId === dmId)
           if (exists) return prev.filter((e) => !(e.kind === 'dm' && e.dmId === dmId))
@@ -274,14 +254,13 @@ export function StarredProvider({ children }: { children: ReactNode }) {
       }
       const currentlyStarred = effectiveSet?.people.includes(dmId) ?? false
       setPending((prev) => new Map(prev).set(`${PERSON}${dmId}`, !currentlyStarred))
-      void toggleRemote({ kind: 'dm', targetKey: dmId })
     },
-    [effectiveSet, toggleRemote],
+    [effectiveSet],
   )
 
   const toggleTopic = useCallback(
     ({ topicId, title, topicStatus }: StarTopicInput) => {
-      if (!hasConvex) {
+      if (!hasRelay) {
         setMockEntries((prev) => {
           const exists = prev.some((e) => e.kind === 'topic' && e.topicId === topicId)
           if (exists) return prev.filter((e) => !(e.kind === 'topic' && e.topicId === topicId))
@@ -291,19 +270,18 @@ export function StarredProvider({ children }: { children: ReactNode }) {
       }
       const currentlyStarred = effectiveSet?.topics.includes(topicId) ?? false
       setPending((prev) => new Map(prev).set(`${TOPIC}${topicId}`, !currentlyStarred))
-      void toggleRemote({ kind: 'topic', targetKey: topicId })
     },
-    [effectiveSet, toggleRemote],
+    [effectiveSet],
   )
 
   // Not gated on `topics`/`people`: those settle only for a signed-in viewer,
   // and hanging on them would leave the whole desk sidebar under a skeleton for
   // anyone they never settle for (DeskPage gates the column on this).
-  const isLoading = hasConvex && effectiveSet === undefined
+  const isLoading = hasRelay && effectiveSet === undefined
 
   return (
     <StarredContext.Provider
-      value={{ entries, isDmStarred, isTopicStarred, toggleDm, toggleTopic, isLoading, unpublished }}
+      value={{ entries, isDmStarred, isTopicStarred, toggleDm, toggleTopic, isLoading, set: effectiveSet }}
     >
       {children}
     </StarredContext.Provider>

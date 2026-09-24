@@ -40,27 +40,22 @@
  * order, so a batch added inside one millisecond cannot tie and cannot flip.
  * There are no timestamps left to tie.
  *
- * ## Where Convex still appears, and why it is temporary
+ * ## Convex is out of it entirely (REM-4)
  *
- * `api.desk.openWorkList` is read, and is not the list. It serves while the
- * relay has not answered — no origin configured, no token in this tab, or a read
- * that failed — and it is the seed for a person whose open work predates this
- * ticket, published the moment the relay says it holds nothing. It is read
- * oldest-first for that seed, reversing the query's newest-first sort, so a
- * seeded list comes out in the order the person built it. Both cases are bounded
- * by `useOpenWorkSync`'s `state`; neither can fire once a blob exists.
+ * `api.desk.openWorkList` used to serve while the relay had not answered and to
+ * seed a person with no blob, and four mutations dual-wrote `deskOpenWork` so
+ * that `nostr/sync.ts`'s `watchableChannels` could read it. All of that is gone:
+ * a person the relay holds no list for starts with an empty one — Convex-only
+ * rows are dropped, not migrated (Miky, 2026-09-24) — and the live working set
+ * is computed from this list in the browser (`useWorkingSetChannels`).
  *
- * The mutations still write Convex on every change, which is what makes that
- * fallback safe — and it is also what keeps `nostr/sync.ts`'s `watchableChannels`
- * and `desk.screenerList`'s de-duplication reading the same rows they always
- * have. They can move to the client (and this table can be dropped) only after
- * the dual-write is no longer needed to recover from a failed publish.
+ * One reader of the old table is left behind on purpose: `desk.screenerList`'s
+ * DM half still de-duplicates against `deskOpenWork`, which no longer changes.
+ * CON-14 moves that half to the relay.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useQuery } from 'convex/react'
-import { api } from '../../../convex/_generated/api'
 import { OPEN_WORK_ITEMS } from '@/data/deskData'
-import { hasConvex } from '@/api/store'
+import { hasRelay } from '@/api/relayUrl'
 import { isPersonKey, useWorkspacePeople } from '@/api/people'
 import { useTopics } from '@/api/topics'
 import { useResolvedReferences } from '@/api/foreign'
@@ -74,6 +69,8 @@ const TOPIC = 'topic:'
 const PERSON = 'dm:'
 const FILE = 'file:'
 
+const NO_ENTRIES: OpenWorkRef[] = []
+
 export interface OpenWorkValue {
   /** The rendered rows, in the person's order. Never the list — see the header. */
   items: OpenWorkItem[]
@@ -81,8 +78,13 @@ export interface OpenWorkValue {
   topicIds: Set<string>
   /** File addresses in the list, from the list for the same reason (FOL-34). */
   fileAddresses: Set<string>
-  /** True until a source has settled and there is a list to render. */
+  /** True until the relay has answered and there is a list to render. */
   isLoading: boolean
+  /**
+   * The list itself, in order, with the relay identity each entry carries —
+   * `[]` until it has settled. The live working set reads it.
+   */
+  entries: readonly OpenWorkRef[]
   addTopics: (topicIds: string[]) => void
   addDm: (dmId: string) => void
   addFile: (address: string) => void
@@ -127,35 +129,22 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   // Where the relay lives — a build-time value since REM-2 (`@/api/relayUrl`).
   const relayUrl = RELAY_URL
   const sync = useOpenWorkSync(relayUrl)
-  const convexOpenWork = useQuery(api.desk.openWorkList, hasConvex ? {} : 'skip')
 
   // Rendering only. Never the list — see the header.
   const topics = useTopics()
   const people = useWorkspacePeople()
-
-  const convexSet = useMemo<OpenWorkRef[] | undefined>(() => {
-    if (convexOpenWork === undefined) return undefined
-    // The query sorts `addedAt` descending. The list is oldest-first, so the
-    // seed reverses it rather than freezing the old presentation order into the
-    // blob, where it would then be the person's order for ever.
-    return normalizePeople(
-      [...convexOpenWork]
-        .reverse()
-        .map((w) =>
-          w.kind === 'dm'
-            ? ({ kind: 'dm', key: w.dmId } as const)
-            : ({ kind: 'topic', id: w.topicId } as const),
-        ),
-    )
-  }, [convexOpenWork])
 
   const relaySet = useMemo<OpenWorkRef[] | undefined>(() => {
     if (sync.state !== 'present' || !sync.relayBlob) return undefined
     return normalizePeople(sync.relayBlob.entries)
   }, [sync.state, sync.relayBlob])
 
-  /** The list as last settled, before this session's changes. */
-  const settledSet = relaySet ?? convexSet
+  /**
+   * The list as last settled, before this session's changes. A relay that
+   * holds no list is an empty one; a relay that has not answered is no list at
+   * all, and nothing renders or publishes until it does.
+   */
+  const settledSet = relaySet ?? (sync.state === 'absent' ? NO_ENTRIES : undefined)
 
   const effectiveSet = useMemo<OpenWorkRef[] | undefined>(() => {
     if (!settledSet) return undefined
@@ -196,7 +185,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   const fileObjects = useResolvedReferences(useMemo(() => [...fileAddresses].sort(), [fileAddresses]))
 
   const items = useMemo<OpenWorkItem[]>(() => {
-    if (!hasConvex) return mockItems
+    if (!hasRelay) return mockItems
     if (!effectiveSet) return []
     const out: OpenWorkItem[] = []
     for (const entry of effectiveSet) {
@@ -250,14 +239,18 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     The guard SHR-6 had to keep, in its new form. It used to be
     `remote === undefined`: do not publish while the Convex query is in flight,
     because a briefly-empty list is a last-write-wins publish that makes the loss
-    permanent. Convex is no longer what is being waited for, and two things are —
-    the relay's own answer, guarded inside `useOpenWorkSync`, and whichever
-    source the list came from, which is `effectiveSet` being undefined here.
+    permanent. Now the relay's own answer is what is waited for — guarded
+    inside `useOpenWorkSync`, and here as `effectiveSet` being undefined.
 
     The relay identities are enriched from the workspace index but never gated on
     it: an entry the index cannot resolve keeps whatever the blob already carried,
     so a beat-behind index costs a `channelUuid` on one publish and never an
     entry. Membership does not depend on `topics`/`people`; only decoration does.
+
+    An `absent` relay publishes only once the person has changed something: an
+    empty list published on load would overwrite a blob this version cannot
+    read, which `absent` includes, and would write one per load for everybody
+    who has never used open work.
 
     Mock mode publishes nothing: there is no session and no relay, and a fixture
     is not the person's data.
@@ -274,23 +267,24 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
     })
   }, [effectiveSet, topicById])
 
+  const untouchedAndAbsent = sync.state === 'absent' && pending.size === 0
   useEffect(() => {
-    if (!hasConvex) return
-    if (!publishEntries) return
+    if (!hasRelay) return
+    if (!publishEntries || untouchedAndAbsent) return
     void publishList(publishEntries)
-  }, [publishEntries, publishList])
+  }, [publishEntries, untouchedAndAbsent, publishList])
 
   const topicIds = useMemo(() => {
     // The list, never `items`: a row whose topic the index has not delivered yet
     // is still in the list, and reading it off the rows would let the "+" picker
     // offer it again and add a second copy.
-    if (!hasConvex) return new Set(mockItems.flatMap((w) => (w.kind === 'dm' || w.kind === 'file' ? [] : [w.topicId])))
+    if (!hasRelay) return new Set(mockItems.flatMap((w) => (w.kind === 'dm' || w.kind === 'file' ? [] : [w.topicId])))
     return new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'topic' ? [e.id] : [])))
   }, [mockItems, effectiveSet])
 
   const addTopics = useCallback(
     (ids: string[]) => {
-      if (!hasConvex) {
+      if (!hasRelay) {
         setMockItems((prev) => {
           const have = new Set(prev.flatMap((w) => (w.kind === 'dm' || w.kind === 'file' ? [] : [w.topicId])))
           const rows = ids
@@ -321,7 +315,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   )
 
   const addDm = useCallback((dmId: string) => {
-    if (!hasConvex) return
+    if (!hasRelay) return
     setPending((prev) => {
       const next = new Map(prev)
       next.delete(`${PERSON}${dmId}`)
@@ -331,12 +325,11 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /*
-    Relay only, in both modes' sense: mock mode has no relay to resolve a file
-    from, so there is no row to add and nothing is pretended. The Convex
-    dual-write the other kinds keep has no table to go to — see `OpenWorkFileRef`.
+    Mock mode has no relay to resolve a file from, so there is no row to add
+    and nothing is pretended.
   */
   const addFile = useCallback((address: string) => {
-    if (!hasConvex) return
+    if (!hasRelay) return
     setPending((prev) => {
       const next = new Map(prev)
       next.delete(`${FILE}${address}`)
@@ -346,7 +339,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const removeTopic = useCallback((topicId: string) => {
-    if (!hasConvex) {
+    if (!hasRelay) {
       setMockItems((prev) => prev.filter((w) => w.kind === 'dm' || w.kind === 'file' || w.topicId !== topicId))
       return
     }
@@ -354,12 +347,12 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const removeFile = useCallback((address: string) => {
-    if (!hasConvex) return
+    if (!hasRelay) return
     setPending((prev) => new Map(prev).set(`${FILE}${address}`, false))
   }, [])
 
   const removeDm = useCallback((dmId: string) => {
-    if (!hasConvex) {
+    if (!hasRelay) {
       setMockItems((prev) => prev.filter((w) => w.kind !== 'dm' || w.dmId !== dmId))
       return
     }
@@ -369,11 +362,23 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   // Not gated on `topics`/`people`: those settle only for a signed-in viewer,
   // and hanging on them would leave the Desk column under a skeleton for anyone
   // they never settle for.
-  const isLoading = hasConvex && effectiveSet === undefined
+  const isLoading = hasRelay && effectiveSet === undefined
 
   const value = useMemo<OpenWorkValue>(
-    () => ({ items, topicIds, fileAddresses, isLoading, addTopics, addDm, addFile, removeTopic, removeDm, removeFile }),
-    [items, topicIds, fileAddresses, isLoading, addTopics, addDm, addFile, removeTopic, removeDm, removeFile],
+    () => ({
+      items,
+      topicIds,
+      fileAddresses,
+      isLoading,
+      entries: publishEntries ?? NO_ENTRIES,
+      addTopics,
+      addDm,
+      addFile,
+      removeTopic,
+      removeDm,
+      removeFile,
+    }),
+    [items, topicIds, fileAddresses, isLoading, publishEntries, addTopics, addDm, addFile, removeTopic, removeDm, removeFile],
   )
 
   return <OpenWorkContext.Provider value={value}>{children}</OpenWorkContext.Provider>
