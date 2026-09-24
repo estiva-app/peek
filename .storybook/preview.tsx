@@ -87,7 +87,6 @@ const preview: Preview = {
           /* The seven file and folder parts that had been split across
              Messages, Navigation and Overlays (Katerina, 23 September). */
           'Folders',
-          'Huddles',
           'Screener & Desk',
           'Overlays',
           /* Parked, so a story that is going is visible instead of vanishing in

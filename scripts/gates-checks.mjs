@@ -23,20 +23,6 @@ import { appChecks } from '@estiva-app/ui/gates'
 export default function define(h) {
   const PROBE = "src/components/__gates_probe__.tsx";
   const GATES = "eslint.gates.config.js";
-  const registry = () => { try { return JSON.parse(h.read("registry.json")).entries ?? null; } catch { return null; } };
-  const storyFiles = () => h.listFiles("src", (name) => name.endsWith(".stories.tsx") || name.endsWith(".mdx"));
-  /** Every top-level heading the sidebar actually has. */
-  const sidebarHeadings = () => {
-    const real = new Set();
-    for (const file of storyFiles()) {
-      const text = h.read(file);
-      const start = text.indexOf("const meta");
-      const meta = start === -1 ? "" : text.slice(start, text.indexOf("satisfies Meta", start) + 1 || undefined);
-      const title = meta.match(/\btitle: *['"]([^'"]+)['"]/) ?? text.match(/<Meta\s+title="([^"]+)"/);
-      if (title) real.add(title[1].split("/")[0].trim());
-    }
-    return real;
-  };
   const probe = (code, expect, mentions, file = PROBE, config = GATES) => () => h.lint({ config, file, code, expect, mentions });
   const component = (body) => `export function Probe() {\n  return ${body}\n}\n`;
 
@@ -61,73 +47,15 @@ export default function define(h) {
       // gate job (UIG-19); this repo kept its own copy until then.
       { what: "every reusable part keeps the usage-page contract", run: () => h.contract(".") },
       /*
-        This replaced a check that could not fail. "A usage page sits beside its
-        component" is true by construction — the builder derives `docPage` as
-        `join(dirname(sourceFile), name + '.mdx')` (estiva-ui
-        `src/registry/app.ts:735`), so the two directories are always equal or
-        the page is null, which check 1 already catches. estiva-04 found it and
-        proved it by moving a page and watching the check stay green.
-
-        What can actually rot is the heading list in `preview.tsx`, and that is
-        the bug Katerina caught by eye on 22 September: `Pages` was not named in
-        the order, so it fell to the bottom and sat under "To be removed". A
-        heading named on the Introduction but not in the order still reads
-        correctly on the page and still falls to the bottom in the sidebar.
+        Three more checks stood here: the heading order in preview.tsx, the
+        headings the Introduction names, and the count it states. They ran only
+        in gates:status, never in CI, so the Introduction kept a deleted Huddles
+        heading and said 49 when the catalogue built 41 (the audit before
+        UIG-26, A3). They are the package's now, inside `estiva-ui check`, which
+        CI's gate job runs, and they read the catalogue it builds in memory
+        rather than a local registry.json (A5).
       */
-      { what: "every heading is named in preview.tsx's order, and names something", run: () => {
-        const preview = ".storybook/preview.tsx";
-        if (!h.exists(preview)) return h.FAIL(`${preview} is missing`);
-        const block = h.read(preview).match(/const HEADINGS = \[([\s\S]*?)\]/);
-        if (!block) return h.FAIL("no HEADINGS list in preview.tsx — storySort cannot be ordering anything");
-        /* Comments first: the list is commented per heading, and an apostrophe
-           in "someone's pull request" opens a string that swallows the rest. */
-        const listed = block[1].replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-        const ordered = [...listed.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-        const real = sidebarHeadings();
-        const unordered = [...real].filter((r) => !ordered.includes(r));
-        const empty = ordered.filter((o) => !real.has(o));
-        if (!unordered.length && !empty.length) return h.PASS(`${ordered.length} headings, every one named and every one real`);
-        return h.FAIL([
-          unordered.length ? `not named in the order, so they fall to the bottom: ${unordered.join(", ")}` : "",
-          empty.length ? `named in the order but no story uses them: ${empty.join(", ")}` : "",
-        ].filter(Boolean).join("; "));
-      } },
-      /*
-        This one could not fail either: a group-by always sums to the length of
-        the list it grouped, and the builder assigns every part a class. It
-        asserted arithmetic. What rots is the number a person wrote down — so
-        the check now reads the Introduction's sentence and holds the registry
-        against it. estiva-04's suggestion, and it is the right one: the counts
-        in this project have gone stale in three separate documents already.
-      */
-      { what: "the count the Introduction states is the count the registry builds", run: () => {
-        const entries = registry();
-        if (!entries) return h.FAIL("registry.json has no entries — run `npm run registry`");
-        const intro = "src/stories/Introduction.mdx";
-        if (!h.exists(intro)) return h.FAIL(`${intro} is missing`);
-        const said = h.read(intro).match(/\*\*(\d+) parts worth reusing\*\*/);
-        if (!said) return h.FAIL(`${intro} no longer states how many parts are worth reusing`);
-        const reusable = entries.filter((e) => ["reusable", "promote-candidate"].includes(e.app?.class)).length;
-        return Number(said[1]) === reusable
-          ? h.PASS(`${reusable}, and the Introduction says ${said[1]}`)
-          : h.FAIL(`the Introduction says ${said[1]}; the registry builds ${reusable}`);
-      } },
-      /*
-        The Introduction is a hand-written map of something that moves, and it
-        has been wrong twice in three days — once naming three headings that no
-        longer existed, once missing four that did. Nothing noticed either time
-        (Katerina, 23 September). This is what notices.
-      */
-      { what: "the Introduction names exactly the headings the sidebar has", run: () => {
-        const intro = "src/stories/Introduction.mdx";
-        if (!h.exists(intro)) return h.FAIL(`${intro} is missing`);
-        const listed = new Set([...h.read(intro).matchAll(/^\|\s*\*\*([^*]+)\*\*\s*\|/gm)].map((m) => m[1].trim()));
-        const real = sidebarHeadings();
-        const missing = [...real].filter((r) => !listed.has(r));
-        const stale = [...listed].filter((l) => !real.has(l));
-        if (!missing.length && !stale.length) return h.PASS(`${real.size} headings, all named on the Introduction`);
-        return h.FAIL([missing.length ? `the sidebar has, the page does not name: ${missing.join(", ")}` : "", stale.length ? `the page names, the sidebar does not have: ${stale.join(", ")}` : ""].filter(Boolean).join("; "));
-      } },
+      { what: "CI's gate job holds the Storybook map against the Storybook", run: () => h.ciJob("gate", "registry:check") },
     ] },
     { ref: "UIG-27", checks: [
       { what: "Peek's hand-made progress bar is gone", run: () => h.exists("src/components/ui/ProjectTickets.tsx") ? h.lacks("src/components/ui/ProjectTickets.tsx", 'role="progressbar"') : h.PASS("ProjectTickets.tsx is gone") },

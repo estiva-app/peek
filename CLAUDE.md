@@ -27,8 +27,8 @@ https://honorable-guineapig-592.eu-west-1.convex.cloud`, or use the dashboard.
 
 ## The gate lint, and a session opened above this folder
 
-A raw element, a rebuilt behaviour or a restyled package part is refused
-before the write by the package's editor hook, which `.claude/settings.json`
+Code that reaches past the package is refused (the `estiva-ui` skill lists
+what, and the list grows with the package) before the write by its editor hook, which `.claude/settings.json`
 runs — but that hook runs only in a Claude session started in this folder. A session started in a folder above it
 (a workspace holding several repositories) does not get the hook, so: after
 changing any `.ts` or `.tsx` under `src/`, run `npm run lint:rules` in this
