@@ -128,8 +128,11 @@ describe('renaming a folder', () => {
 })
 
 describe('moving a file', () => {
+  const here = { id: FOLDER, hasState: true }
+  const there = { id: OTHER, hasState: true }
+
   it('adds to the destination before removing from the source', async () => {
-    await moveFileAsViewer(ADDRESS, FOLDER, OTHER, 'https://relay.test', token)
+    await moveFileAsViewer(ADDRESS, here, there, 'https://relay.test', token)
 
     const [add, remove] = sent()
     expect(tag(add!, 'h')).toEqual([OTHER])
@@ -142,7 +145,7 @@ describe('moving a file', () => {
   it('leaves the file in both folders when the remove fails, and says so', async () => {
     publishSigned.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })
 
-    const result = await moveFileAsViewer(ADDRESS, FOLDER, OTHER, 'https://relay.test', token)
+    const result = await moveFileAsViewer(ADDRESS, here, there, 'https://relay.test', token)
 
     // Not "the move failed": the file did arrive, and saying it failed would
     // send somebody looking for it in the folder it already left.
@@ -155,17 +158,37 @@ describe('moving a file', () => {
     // the file ends up in neither folder.
     publishSigned.mockResolvedValueOnce({ ok: false, reason: 'refused' })
 
-    const result = await moveFileAsViewer(ADDRESS, FOLDER, OTHER, 'https://relay.test', token)
+    const result = await moveFileAsViewer(ADDRESS, here, there, 'https://relay.test', token)
 
-    expect(result.ok).toBe(false)
+    expect(result).toEqual({ ok: false, reason: 'refused' })
     expect(sent()).toHaveLength(1)
     expect(tag(sent()[0]!, 'op')).toEqual(['add'])
   })
 
   it('writes nothing when the destination is where it already is', async () => {
-    const result = await moveFileAsViewer(ADDRESS, FOLDER, FOLDER, 'https://relay.test', token)
+    const result = await moveFileAsViewer(ADDRESS, here, here, 'https://relay.test', token)
 
     expect(result).toEqual({ ok: true })
+    expect(sent()).toHaveLength(0)
+  })
+
+  /*
+    FOL-10. A Folder with no state lists what is filed in it by `h`, and any
+    command against it emits state listing only what the command named — so an
+    `add` would hide everything already there, and a `remove` would hide all of
+    it. Nothing is sent, and the page is told why.
+  */
+  it('sends nothing when moving into a folder with no state', async () => {
+    const result = await moveFileAsViewer(ADDRESS, here, { id: OTHER, hasState: false }, 'https://relay.test', token)
+
+    expect(result.ok === false && result.reason).toMatch(/into it would hide/)
+    expect(sent()).toHaveLength(0)
+  })
+
+  it('sends nothing when moving out of a folder with no state', async () => {
+    const result = await moveFileAsViewer(ADDRESS, { id: FOLDER, hasState: false }, there, 'https://relay.test', token)
+
+    expect(result.ok === false && result.reason).toMatch(/out of this folder/)
     expect(sent()).toHaveLength(0)
   })
 })

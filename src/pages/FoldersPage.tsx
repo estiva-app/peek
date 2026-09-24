@@ -392,7 +392,13 @@ export function FoldersPage() {
               onMove={async (to) => {
                 const address = movingFile.address
                 if (!address || !id) return false
-                const result = await moveFile(address, id, to)
+                // Both sides' state from a read, as a rename's is: a move into
+                // or out of a Folder with none is refused rather than emptying it.
+                const result = await moveFile(
+                  address,
+                  { id, hasState: typeof state === 'object' && 'hasState' in state && state.hasState },
+                  { id: to, hasState: folders?.find((candidate) => candidate.id === to)?.hasState ?? false },
+                )
                 if (!result.ok) {
                   showToast({ label: result.reason, type: 'error' })
                   return false
