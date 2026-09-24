@@ -44,6 +44,7 @@ export function TopicState({
         <IconUsers size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : type === 'group' ? (
         <div className="flex items-center justify-center bg-bg-inset rounded-sm px-[2px] min-w-[16px] h-[16px]">
+          {/* @estiva-escape: A4 (Katerina, 24 September: record only): a group's count in the chip text style, which Chip and MetaText also use */}
           <span className={cn('text-chip text-text-secondary leading-none signal:font-mono signal:text-small signal:tabular-nums', iconClassName)}>
             {memberCount ?? 0}
           </span>

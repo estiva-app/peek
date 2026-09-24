@@ -142,6 +142,7 @@ function Report() {
       {/* The context ids themselves, because "which one" is the whole question
           when a publish is being lost. Capped — a long list is a diff, not a panel. */}
       {persistent.slice(0, 3).map((d) => (
+        // @estiva-escape: B5 (Katerina, 24 September: record only): a mono id in a debug panel, the text style Breadcrumb's id also uses
         <p key={d.context} className="truncate font-mono text-caption text-text-muted">
           {d.context.slice(0, 24)}… +{d.deltaSeconds}s
         </p>

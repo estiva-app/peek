@@ -425,6 +425,7 @@ export function ForeignObjectCard({
                 </Link>
               </span>
             ) : (
+              // @estiva-escape: C4 (Katerina, 24 September: record only): a 14px semibold title, a text style several panels share, not a copy of a part
               <span className="truncate text-body-2 font-semibold text-text-primary">
                 {title}
               </span>

@@ -41,6 +41,7 @@ import { SlashCommands } from './slashCommands'
  * named `…_CLASSES`), so `text-sm leading-[1.4]` sat there unchecked: Tailwind's
  * ramp and a hand-written line height, together exactly `text-body-2` (UIG-28 R5).
  */
+// @estiva-escape: (Katerina, 24 September: record only): the editor's text, close to the package's bare input; Peek's own editor, kept as it is
 export const PEEK_EDITOR_CLASSES = 'outline-none w-full bg-transparent text-body-2 text-text-primary break-words min-h-[20px]'
 
 export const peekEditorExtensions = [
