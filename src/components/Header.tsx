@@ -6,6 +6,7 @@ import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
 import { Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { MetaText } from '@/components/ui/MetaText'
 
 interface HeaderProps {
   avatarSrc?: string
@@ -163,13 +164,13 @@ export function Header({
             <>
               {/* Open / resolved counts */}
               <div className="flex items-center gap-2">
-                <span className="text-caption text-text-secondary whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
+                <MetaText tone="secondary">
                   {openCount} open
-                </span>
+                </MetaText>
                 <div className="w-[3px] h-[3px] rounded-full bg-text-muted shrink-0" />
-                <span className="text-caption text-success-default whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">
+                <MetaText tone="success">
                   {resolvedCount} resolved
-                </span>
+                </MetaText>
               </div>
             </>
           )}

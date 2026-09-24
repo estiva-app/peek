@@ -3,6 +3,7 @@ import { Avatar } from './Avatar'
 import { HighlightPill } from './HighlightPill'
 import { previewText } from '@/lib/textParsing'
 import type { HighlightType } from '@/api'
+import { MetaText } from '@/components/ui/MetaText'
 
 // ── Pinned Initial Message (compact) ──
 //
@@ -33,7 +34,7 @@ export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, hi
         <div className="flex items-center gap-2">
           <Avatar size={24} src={authorAvatarSrc} alt={authorName} />
           <span className="text-body-2-strong text-text-primary min-w-0 truncate">{authorName}</span>
-          <span className="text-caption text-text-muted shrink-0 whitespace-nowrap signal:font-mono signal:text-small signal:tracking-wide signal:tabular-nums">{timestamp}</span>
+          <MetaText className="shrink-0">{timestamp}</MetaText>
           {highlightType && <HighlightPill type={highlightType} />}
         </div>
         {/* Truncated body */}

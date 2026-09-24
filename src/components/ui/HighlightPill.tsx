@@ -20,6 +20,7 @@ export function HighlightPill({ type, className }: HighlightPillProps) {
       )}
     >
       <span className={cn('size-[10px] rounded-sm shrink-0', HIGHLIGHT_FILL_CLASSES[type])} />
+      {/* @estiva-escape: A4 (Katerina, 24 September: record only): a highlight's name in the chip text style; whether it should be a Chip is for later */}
       <span className="text-text-primary signal:font-mono signal:text-small signal:font-semibold signal:tracking-wide">{meta.label}</span>
     </span>
   )

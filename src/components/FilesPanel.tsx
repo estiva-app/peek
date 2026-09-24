@@ -290,6 +290,7 @@ export function TopicProjectPanelView({
                 </Link>
               </div>
             ) : (
+              // @estiva-escape: C4 (Katerina, 24 September: record only): a 14px semibold title, a text style several panels share, not a copy of a part
               <span className="block truncate text-body-2 font-semibold text-text-primary">
                 {project.slots.title?.value ?? 'Untitled project'}
               </span>

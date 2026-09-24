@@ -4,6 +4,7 @@ import { Button } from './ui/Button'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { PersonChipInput } from './ui/PersonChipInput'
 import { type Person } from '@/api'
+import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
 interface HuddleCreatorProps {
   /** Topic the huddle is being started in — drives the compose box's context label. */
@@ -81,7 +82,7 @@ export function HuddleCreator({ topicTitle, onCancel, onCreate }: HuddleCreatorP
         // recipient is added — guarantees no jump. The hint text uses V1's caption
         // text-muted styling rather than the editor's body text.
         <div className="border border-t-0 border-border-default rounded-b-lg overflow-hidden">
-          <div className="bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4">
+          <div className={WRITING_BOX_CLASSES}>
             <div className="min-h-[20px] flex items-center text-caption text-text-muted">
               Add at least one person to start a Huddle
             </div>

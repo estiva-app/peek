@@ -248,6 +248,7 @@ export function TopicDetailsDialogView({
             */}
           <Card fill="none">
             <div className="flex flex-col gap-2 px-3 py-2.5">
+              {/* @estiva-escape: C4 (Katerina, 24 September: record only): a 14px semibold title, a text style several panels share, not a copy of a part */}
               <span className="min-w-0 truncate text-body-2 font-semibold text-text-primary">
                 {folderProject.project.slots.title?.value ?? 'Untitled'}
               </span>
@@ -365,6 +366,7 @@ export function TopicDetailsDialog({ topicKey, onClose }: { topicKey: string; on
  */
 function ReadOnlyPill({ children }: { children: React.ReactNode }) {
   return (
+    // @estiva-escape: N7 (Katerina, 24 September: record only): a status label in a small bordered box; it resembles the small Select but is a label, not a control
     <span className="inline-flex h-6 items-center gap-1.5 rounded-lg border border-border-default px-2 text-caption text-text-secondary">
       {children}
     </span>
