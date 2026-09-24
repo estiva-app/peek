@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { Form } from '@estiva-app/ui'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
@@ -103,9 +104,7 @@ export function StartTopicDialog({
       }
     >
       {choosing && folders.length === 0 ? (
-        <p className="text-body-2 text-text-secondary">
-          There is nowhere to start one yet — make a folder first.
-        </p>
+        <EmptyState scope="section" message="There is nowhere to start one yet — make a folder first." />
       ) : (
       /* The package Form (UIG-7): Enter in the title and the footer's Start send it the same way. */
       <Form id={formId} busy={creating} onSubmit={create} className="flex flex-col gap-2">

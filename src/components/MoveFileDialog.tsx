@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { Form } from '@estiva-app/ui'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { Select } from './ui/Select'
@@ -73,9 +74,7 @@ export function MoveFileDialog({
       }
     >
       {candidates.length === 0 ? (
-        <p className="text-body-2 text-text-secondary">
-          There is nowhere else to move it — this is your only folder.
-        </p>
+        <EmptyState scope="section" message="There is nowhere else to move it — this is your only folder." />
       ) : (
         // The package Form (UIG-7): Ctrl+Enter or Move sends; the list picks with Enter.
         <Form id={formId} busy={moving} onSubmit={move} className="flex flex-col gap-2">

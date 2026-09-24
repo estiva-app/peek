@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { Form } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { Select } from './ui/Select'
@@ -78,9 +79,7 @@ export function MoveUnderDialog({
       }
     >
       {targets.length === 0 ? (
-        <p className="text-body-2 text-text-secondary">
-          There is nowhere else in {teamName} to put it.
-        </p>
+        <EmptyState scope="section" message={`There is nowhere else in ${teamName} to put it.`} />
       ) : (
         <Form id={formId} busy={moving} onSubmit={move} className="flex flex-col gap-2">
           <p className="text-body-2-strong text-text-primary">{title}</p>
