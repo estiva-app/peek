@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { FOLDER_HERE, PICKER_FOLDERS, SHIP_PROJECT } from '@/api/fixtures'
+import { FOLDER_HERE, PICKER_FOLDERS, SHIP_PROJECT, STATELESS_FOLDER } from '@/api/fixtures'
 import { MoveFileDialog } from './MoveFileDialog'
 
 const noop = () => {}
@@ -33,6 +33,15 @@ type Story = StoryObj<typeof meta>
  */
 export const PickADestination: Story = {}
 
+/**
+ * "Old topic channel" has no Folder state, so it is not offered (FOL-10): a
+ * move into it would emit state listing only this file and hide everything
+ * already filed there.
+ */
+export const StatelessFolderNotOffered: Story = {
+  args: { folders: [...PICKER_FOLDERS, STATELESS_FOLDER] },
+}
+
 /** A Folder with no name is offered by its id rather than left out. */
 export const UnnamedFolders: Story = {
   args: { folders: PICKER_FOLDERS.slice(2) },
@@ -42,10 +51,10 @@ export const UnnamedFolders: Story = {
  * Nowhere to go, said rather than shown as an empty picker.
  *
  * Reachable whenever the only Folder is the one you are in, which is every
- * workspace on its first day.
+ * workspace on its first day — or when every other one has no state.
  */
 export const NowhereToMoveIt: Story = {
-  args: { folders: [PICKER_FOLDERS[0]!] },
+  args: { folders: [PICKER_FOLDERS[0]!, STATELESS_FOLDER] },
 }
 
 /**

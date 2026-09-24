@@ -50,11 +50,18 @@ export const FOLDER_HERE = '85db5b59-9e49-4ea1-8e93-3d2a2d78c048'
  * gets.
  */
 export const PICKER_FOLDERS = [
-  { id: FOLDER_HERE, name: 'Folders' },
-  { id: '2303e8c1-c866-43b8-9b4c-e263f313a683', name: 'Feedback on Peek' },
-  { id: 'a1b2c3d4-0000-4000-8000-000000000001', name: 'Performance & infrastructure' },
-  { id: 'a1b2c3d4-0000-4000-8000-000000000002' },
+  { id: FOLDER_HERE, name: 'Folders', hasState: true },
+  { id: '2303e8c1-c866-43b8-9b4c-e263f313a683', name: 'Feedback on Peek', hasState: true },
+  { id: 'a1b2c3d4-0000-4000-8000-000000000001', name: 'Performance & infrastructure', hasState: true },
+  { id: 'a1b2c3d4-0000-4000-8000-000000000002', hasState: true },
 ] as FolderSummary[]
+
+/** A bare channel: a Folder with no `kind:30890`, which a move must not touch (FOL-10). */
+export const STATELESS_FOLDER: FolderSummary = {
+  id: 'a1b2c3d4-0000-4000-8000-000000000003',
+  name: 'Old topic channel',
+  hasState: false,
+}
 
 /**
  * The conversation a Screener row's hover card shows.

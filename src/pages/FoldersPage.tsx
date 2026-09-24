@@ -301,7 +301,13 @@ export function FoldersPage() {
                   the Folder) had no way to open at all.
                 */
                 onSelect={(file) => file.address && navigate(filePath(file.address, file.slots.title?.value))}
-                onMove={setMovingFile}
+                /*
+                  Only from a Folder with state (FOL-10). Out of one without,
+                  the `remove` would emit state listing nothing and hide the
+                  rest of the Folder, so the planner refuses — and an action
+                  that cannot succeed is not offered.
+                */
+                onMove={typeof state === 'object' && 'hasState' in state && state.hasState ? setMovingFile : undefined}
                 onStartTopic={(file) => setStartingTopic({ parent: file })}
                 counts={counts}
                 unread={unread}
