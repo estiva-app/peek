@@ -22,6 +22,11 @@ import { Field } from './ui/Field'
  * "only offer actions that can succeed" rule. The writer treats it as a no-op
  * as well, because this dialog is not the only caller.
  *
+ * **Nor is a Folder with no state** (FOL-10). It lists what is filed in it by
+ * `h`, and an `add` against it would emit state listing only this file — so
+ * everything already there would disappear. `planMoveFile` refuses that move;
+ * this list does not offer it.
+ *
  * **Not `AddToOpenWorkDialog`'s row list.** That is the nearest existing
  * pattern and it hand-rolls `role="option"` and uses `text-sm`, both of which
  * the gate lint and the token lint now refuse; the files that predate them
@@ -43,7 +48,7 @@ export function MoveFileDialog({
   onMove: (to: string) => Promise<boolean>
   onClose: () => void
 }) {
-  const candidates = folders.filter((folder) => folder.id !== from)
+  const candidates = folders.filter((folder) => folder.id !== from && folder.hasState)
   const [to, setTo] = useState(candidates[0]?.id ?? '')
   const [moving, setMoving] = useState(false)
   const formId = useId()
@@ -74,7 +79,7 @@ export function MoveFileDialog({
       }
     >
       {candidates.length === 0 ? (
-        <EmptyState scope="section" message="There is nowhere else to move it — this is your only folder." />
+        <EmptyState scope="section" message="There is no other folder it can be moved to." />
       ) : (
         // The package Form (UIG-7): Ctrl+Enter or Move sends; the list picks with Enter.
         <Form id={formId} busy={moving} onSubmit={move} className="flex flex-col gap-2">
