@@ -102,9 +102,9 @@ export const toggleStar = mutation({
  *
  * SHR-10 folded the topic half on the device, and FOL-23 removed it with the
  * Convex topics. Nothing writes a `screenerItems` row any more: the fan-out ran
- * on `messages.send`, and DMs are written to the relay since REM-3. So this
- * serves what the table already holds until the Screener's DM half moves to the
- * relay (CON-14), and the table goes in REM-7.
+ * on `messages.send`, and DMs are written to the relay since REM-3. Nothing in
+ * `src/` asks for it since CON-14, which folds the DM half from the relay; it,
+ * the two mutations below and the table go in REM-7.
  *
  * - A `kind: 'topic'` row may still exist in `screenerItems` — written before
  *   SHR-10 shipped — and is skipped rather than swept. A cross-user sweep is
@@ -257,7 +257,8 @@ export const removeDmFromOpenWork = mutation({
 /** The topic-side menus toggle by topic key (the Desk rows remove by row id,
  *  but a topic page only knows its topic). */
 /** §4.4 — Desk Urgent, derived: DMs holding an urgent message newer
- *  than the user's readState watermark. No watermark row = fully read. */
+ *  than the user's readState watermark. No watermark row = fully read.
+ *  No caller since CON-14: Urgent is the relay DM fold's urgent flag. */
 export const urgentList = query({
   args: {},
   handler: async (ctx) => {

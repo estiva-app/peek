@@ -1,15 +1,16 @@
 /**
- * The Screener — the file half folded here, the DM half from Convex, the
- * decisions on the relay (SHR-10, FOL-34).
+ * The Screener — both halves folded here from the relay, the decisions on the
+ * relay too (SHR-10, FOL-34, CON-14).
  *
  * A snooze and a dismissal are the person's, so they live in their own
- * `estiva-peek:screener:v1` blob and nowhere else.
+ * `estiva-peek:screener:v1` blob and nowhere else — for a DM row as for a file
+ * row, under `screenerKey`'s `dm:` and `file:` prefixes.
  *
  * ## The rules, and where each input comes from
  *
  * | Rule | Decided by |
  * |---|---|
- * | 1 — someone DMs you | **not here.** `desk.screenerList`, merged in — see below |
+ * | 1 — someone DMs you (CON-14) | `foldDmScreenerRows`, from the channel store the DM dots read |
  * | a followed file got a comment you have not read (FOL-34) | `foldFileScreenerRows`, from the relay |
  *
  * Rules 2 and 3 and the refresh rule judged Convex topics, folded here from
@@ -21,23 +22,32 @@
  * already computed here from the read frontier). One row per conversation,
  * carrying the newest screening event's preview.
  *
- * ## The two halves, and the seam between them
+ * ## The DM half (CON-14)
  *
- * DMs stay on `desk.screenerList` and are merged in here, above the folded
- * file rows. The seam is `kind`, which both sides already carry. The DM half
- * keeps its server-side PEE-6 de-duplication ("an item in Desk Open Work must
- * not screen") against `deskOpenWork`, which nothing has written since REM-4,
- * so it hides only DMs that were in open work then; "Open" on a DM row deletes
- * the row instead (`addScreenerToOpenWork`) until CON-14 folds this half from
- * the relay too. The file half checks the open-work **list**, not its rows.
+ * Until CON-14 DMs came from `desk.screenerList`, rows `messages.send` wrote —
+ * and nothing had written one since REM-1 sent DMs to the relay, so a new DM
+ * never screened. The DM half now reads what the sidebar's DM dots already
+ * hold: every DM channel's messages, kept by the tab's channel store
+ * (`useChannelStreams`). It costs no read of its own, and a row lights and
+ * clears with the dot, because it is the dot's rule (`foldDmScreenerRows`).
+ *
+ * Both halves check the open-work **list**, not its rows (PEE-6), and are
+ * merged newest first.
+ *
+ * ## The hover preview
+ *
+ * `previewOf` hands the card what the fold already holds: a DM row's thread
+ * from the channel store, and a file row's screening comment, whose replies
+ * the card reads on hover (`useScreenerPreview`). Nothing is asked of Convex.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useQuery } from 'convex/react'
-import { api } from '../../../convex/_generated/api'
 import { SCREENER_ITEMS } from '@/data/screenerData'
 import { hasConvex } from '@/api/store'
-import { useAvatarSrc } from '@/api/avatars'
 import { useOpenWork } from '@/api/internal/openWork'
+import { useDmChannels } from '@/api/internal/dms'
+import { useWorkspacePeople } from '@/api/people'
+import { useChannelStreams } from '@/api/useChannelStreams'
+import type { StreamMessage } from '@/nostr/channelStreams'
 import { useFollows } from '@/api/internal/follows'
 import { useForeignObjects } from '@/api/foreign'
 import { validToken } from '@/auth/estivaId'
@@ -46,7 +56,15 @@ import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { fileContext, PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
-import { foldFileScreenerRows, type ScreenerFile } from '@/api/internal/screenerFold'
+import {
+  dmPartnerFromScreenerRowId,
+  dmPreviewMessages,
+  fileAddressFromScreenerRowId,
+  foldDmScreenerRows,
+  foldFileScreenerRows,
+  type ScreenerDm,
+  type ScreenerFile,
+} from '@/api/internal/screenerFold'
 import type { ScreenerItem } from '@/api/types'
 import { RELAY_URL } from '@/api/relayUrl'
 
@@ -55,11 +73,20 @@ export interface ScreenerValue {
   items: ScreenerItem[]
   /** True until every source has settled. Drives the Desk skeleton. */
   isLoading: boolean
-  /** Dismiss a followed file's row (FOL-34) — a watermark at `now`, not a deletion. */
-  dismissFile: (address: string, nowMs: number) => void
-  /** "Later" on a followed file's row. */
-  snoozeFile: (address: string, untilMs: number) => void
+  /** Dismiss a row — a watermark at `now` for its conversation, not a deletion. */
+  dismiss: (rowId: string, nowMs: number) => void
+  /** "Later" on a row: it comes back at `untilMs`. */
+  snooze: (rowId: string, untilMs: number) => void
+  /** What the hover card starts from, for a row on screen; undefined for any other id. */
+  previewOf: (rowId: string) => ScreenerPreviewSource | undefined
 }
+
+/** The fold's own facts about a row, handed to the hover card (CON-14). */
+export type ScreenerPreviewSource =
+  /** The screening message's thread, from the channel store, oldest first. */
+  | { kind: 'dm'; messages: StreamMessage[] }
+  /** The screening comment; its replies are the card's to read. */
+  | { kind: 'file'; address: string; comment: ScreenerFile['comments'][number] }
 
 /**
  * How often the file half re-reads while the Desk is visible (FOL-34).
@@ -141,6 +168,16 @@ function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
 
 const ScreenerContext = createContext<ScreenerValue | null>(null)
 
+const NO_CHANNELS: readonly string[] = []
+
+/** The decisions-blob key a row's conversation is recorded under, or null for an id no fold made. */
+function keyOfRow(rowId: string): string | null {
+  const partner = dmPartnerFromScreenerRowId(rowId)
+  if (partner) return screenerKey('dm', partner)
+  const address = fileAddressFromScreenerRowId(rowId)
+  return address ? screenerKey('file', address) : null
+}
+
 /** A decision made this session, applied over the settled maps until they catch up. */
 type Pending = { snoozed: InstantMap; dismissed: InstantMap }
 const NO_PENDING: Pending = { snoozed: {}, dismissed: {} }
@@ -171,10 +208,31 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   const relayUrl = RELAY_URL
   const sync = useScreenerSync(relayUrl)
 
-  const dmRows = useQuery(api.desk.screenerList, hasConvex ? {} : 'skip')
-
   const openWork = useOpenWork()
-  const avatarSrcFor = useAvatarSrc()
+
+  /*
+    The DM half (CON-14): every DM channel the relay says the viewer has, read
+    through the same store as the DM dots (`useUnread`), so tracking them here
+    adds no request. Named from the roster, kept for partners who left it.
+  */
+  const { partners, channelOf } = useDmChannels()
+  const dmChannelIds = useMemo(
+    () => partners.flatMap((pubkey) => (channelOf(pubkey) ? [channelOf(pubkey) as string] : [])),
+    [partners, channelOf],
+  )
+  const dmStreams = useChannelStreams(hasConvex ? dmChannelIds : NO_CHANNELS)
+  const people = useWorkspacePeople(partners)
+  const dms = useMemo<ScreenerDm[]>(() => {
+    const byKey = new Map((people ?? []).map((p) => [p.id, p]))
+    return partners.flatMap((partner) => {
+      const channel = channelOf(partner)
+      const messages = channel ? dmStreams.streams[channel] : undefined
+      const person = byKey.get(partner)
+      // Not answered yet, or nobody to name: no row, as for an unresolved file.
+      if (!channel || !messages || !person) return []
+      return [{ partner, channel, authorName: person.name, authorAvatarSrc: person.avatarSrc, messages }]
+    })
+  }, [partners, channelOf, dmStreams.streams, people])
 
   /** The decisions as last settled, before this session's changes. */
   const settled = useMemo<Pending | undefined>(() => {
@@ -230,35 +288,56 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   )
   const files = useFollowedFiles(followedFiles)
 
-  const items = useMemo<ScreenerItem[]>(() => {
-    if (!hasConvex) return SCREENER_ITEMS
-    if (!effective) return []
+  const { items, previews } = useMemo<{ items: ScreenerItem[]; previews: Map<string, ScreenerPreviewSource> }>(() => {
+    const previews = new Map<string, ScreenerPreviewSource>()
+    if (!hasConvex) return { items: SCREENER_ITEMS, previews }
+    if (!effective) return { items: [], previews }
 
     // Not judged until the read-state merge has landed: before it every marker
-    // is absent, and absent reads as "new" for every followed file at once.
-    const fileRows = frontier.ready
-      ? foldFileScreenerRows(
-          files,
-          effective,
-          openWork.fileAddresses,
-          {
-            marker: (address) => frontier.marker(fileContext(address)),
-            me: validToken()?.pubkey,
-            nowSeconds: Math.floor(now / 1000),
-            horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
-          },
-          now,
-        )
-      : []
+    // is absent, and absent reads as "new" for every followed file — and every
+    // DM — at once.
+    if (!frontier.ready) return { items: [], previews }
+    const me = validToken()?.pubkey
+    const horizonSeconds = PEEK_HORIZON_DAYS * 24 * 60 * 60
 
-    // The DM half, merged rather than folded. `screenerList` already sorts
-    // `createdAt` descending and applies its own snooze and PEE-6 check, but it
-    // does not return the instant — so DMs keep their relative order and sit
-    // above the folded rows, which is where the newest traffic usually is.
-    const dms: ScreenerItem[] = (dmRows ?? []).map((row) => ({ ...row, authorAvatarSrc: avatarSrcFor(row.authorName) }))
+    const dmRows = foldDmScreenerRows(
+      dms,
+      effective,
+      openWork.dmIds,
+      { marker: frontier.marker, me, nowSeconds: Math.floor(now / 1000), horizonSeconds },
+      now,
+    )
+    const messagesOf = new Map(dms.map((dm) => [dm.partner, dm.messages]))
+    for (const row of dmRows) {
+      previews.set(row.item.id, {
+        kind: 'dm',
+        messages: dmPreviewMessages(messagesOf.get(row.item.dmId) ?? [], row.messageId),
+      })
+    }
 
-    return [...dms, ...fileRows.map((r) => r.item)]
-  }, [effective, dmRows, avatarSrcFor, now, files, frontier, openWork.fileAddresses])
+    const fileRows = foldFileScreenerRows(
+      files,
+      effective,
+      openWork.fileAddresses,
+      {
+        marker: (address) => frontier.marker(fileContext(address)),
+        me,
+        nowSeconds: Math.floor(now / 1000),
+        horizonSeconds,
+      },
+      now,
+    )
+    const commentsOf = new Map(files.map((file) => [file.address, file.comments]))
+    for (const row of fileRows) {
+      const comment = commentsOf.get(row.item.address)?.find((c) => c.id === row.commentId)
+      if (comment) previews.set(row.item.id, { kind: 'file', address: row.item.address, comment })
+    }
+
+    // One list, newest screening event first: both halves carry the instant now.
+    const rows: { item: ScreenerItem; at: number }[] = [...dmRows, ...fileRows]
+    rows.sort((a, b) => b.at - a.at)
+    return { items: rows.map((r) => r.item), previews }
+  }, [effective, dms, now, files, frontier, openWork.fileAddresses, openWork.dmIds])
 
   /*
     Publish the decisions the person owns, not the change that produced them.
@@ -284,24 +363,28 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     void publish(effective)
   }, [effective, publish])
 
-  const dismissFile = useCallback((address: string, nowMs: number) => {
-    const key = screenerKey('file', address)
+  const dismiss = useCallback((rowId: string, nowMs: number) => {
+    const key = keyOfRow(rowId)
+    if (!key) return
     setPending((prev) => ({ ...prev, dismissed: { ...prev.dismissed, [key]: Math.floor(nowMs / 1000) } }))
   }, [])
 
-  const snoozeFile = useCallback((address: string, untilMs: number) => {
-    const key = screenerKey('file', address)
+  const snooze = useCallback((rowId: string, untilMs: number) => {
+    const key = keyOfRow(rowId)
+    if (!key) return
     setPending((prev) => ({ ...prev, snoozed: { ...prev.snoozed, [key]: Math.floor(untilMs / 1000) } }))
   }, [])
 
-  // Not gated on the file half: its rows are additive, so arriving late costs a
-  // row a moment, where waiting on a relay read per followed file would cost the
-  // Desk.
-  const isLoading = hasConvex && (dmRows === undefined || effective === undefined)
+  const previewOf = useCallback((rowId: string) => previews.get(rowId), [previews])
+
+  // Gated on the decisions alone. Both halves' rows are additive, so arriving
+  // late costs a row a moment, where waiting on every channel and every followed
+  // file would hold the whole Desk under a skeleton for the slowest read.
+  const isLoading = hasConvex && effective === undefined
 
   const value = useMemo<ScreenerValue>(
-    () => ({ items, isLoading, dismissFile, snoozeFile }),
-    [items, isLoading, dismissFile, snoozeFile],
+    () => ({ items, isLoading, dismiss, snooze, previewOf }),
+    [items, isLoading, dismiss, snooze, previewOf],
   )
 
   return <ScreenerContext.Provider value={value}>{children}</ScreenerContext.Provider>
@@ -313,5 +396,3 @@ export function useScreener(): ScreenerValue {
   if (!ctx) throw new Error('useScreener must be used within PeekDataProvider')
   return ctx
 }
-
-export { fileAddressFromScreenerRowId } from '@/api/internal/screenerFold'

@@ -21,39 +21,68 @@
  *    the relay was down. Only the last two can be told apart by a state the hook
  *    sets, which is why `unreachable` exists.
  *
- * The rows these tests draw are a DM (the Convex half, merged as it arrives)
- * and followed files (the relay half, folded). The topic half went with the
- * Convex topics in FOL-23.
+ * The rows these tests draw are a DM and followed files, both folded from the
+ * relay — the DM from the channel store since CON-14, when `desk.screenerList`
+ * stopped being asked. The topic half went with the Convex topics in FOL-23.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { getFunctionName } from 'convex/server'
+import type { StreamMessage } from '@/nostr/channelStreams'
 
 vi.mock('@/api/store', () => ({ hasConvex: true }))
-
-const DM_ROW = { id: 'k17abc', kind: 'dm', dmId: 'greg', authorName: 'Greg Bothman', preview: 'a DM' }
-let dmRows: unknown = [DM_ROW]
-
 /*
-  Queries are told apart by name, not by reference: `api.desk.screenerList` is
-  a proxy handing back a fresh object per access, so `===` is false even for the
-  identical call — and it fails *open*, as a query that answers `undefined` for
-  ever, which is scaffolding that passes while asserting nothing.
+  Convex answers nothing and accepts nothing: the Screener must not ask it. A
+  query here would render as a row that never arrives, so it throws instead.
 */
 vi.mock('convex/react', () => ({
-  useQuery: (ref: unknown) => {
-    const name = getFunctionName(ref as Parameters<typeof getFunctionName>[0])
-    if (name.includes('screenerList')) return dmRows
-    return undefined
+  useQuery: () => {
+    throw new Error('the Screener asked Convex')
   },
-  useMutation: () => vi.fn(),
+  useMutation: () => {
+    throw new Error('the Screener wrote to Convex')
+  },
 }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
+/* The DM half (CON-14): one DM, with one unread message from the partner. */
+const GREG = 'b'.repeat(64)
+const GREG_CHANNEL = '5f0c6a8e-1b2d-4c3e-9f4a-0b1c2d3e4f50'
+const dmMessage = (over: Partial<StreamMessage> = {}): StreamMessage => ({
+  id: 'dm-1',
+  at: 1_787_000_100,
+  by: GREG,
+  root: 'dm-1',
+  about: [],
+  urgent: false,
+  body: 'a DM',
+  ...over,
+})
+let dmStream: StreamMessage[] | undefined = [dmMessage()]
+vi.mock('@/api/internal/dms', () => ({
+  useDmChannels: () => ({
+    state: 'present',
+    partners: [GREG],
+    channelOf: (p: string) => (p === GREG ? GREG_CHANNEL : undefined),
+    ensureChannel: vi.fn(),
+  }),
+}))
+/** The channels the Screener tracked, per render — it must read the DMs' own. */
+const tracked = vi.fn<(channels: readonly string[]) => void>()
+vi.mock('@/api/useChannelStreams', () => ({
+  useChannelStreams: (channels: readonly string[]) => {
+    tracked(channels)
+    return { at: 1_787_000_200, streams: dmStream ? { [GREG_CHANNEL]: dmStream } : {} }
+  },
+}))
+vi.mock('@/api/people', () => ({
+  useWorkspacePeople: () => [{ id: GREG, name: 'Greg Bothman', avatarSrc: 'greg.png' }],
+}))
+
 let openWorkFileAddresses = new Set<string>()
+let openWorkDmIds = new Set<string>()
 vi.mock('@/api/internal/openWork', () => ({
-  useOpenWork: () => ({ items: [], fileAddresses: openWorkFileAddresses, isLoading: false }),
+  useOpenWork: () => ({ items: [], fileAddresses: openWorkFileAddresses, dmIds: openWorkDmIds, isLoading: false }),
 }))
 
 /*
@@ -81,7 +110,6 @@ vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObjects }) 
 const FRONTIER = { ready: true, marker: () => 1_786_999_000 }
 vi.mock('@/nostr/useReadStateSync', () => ({ useReadFrontier: () => FRONTIER }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }) }))
-vi.mock('@/api/avatars', () => ({ useAvatarSrc: () => (name: string) => `${name}.png` }))
 
 const publish = vi.fn<(next: { snoozed: Record<string, number>; dismissed: Record<string, number> }) => Promise<void>>(
   async () => undefined,
@@ -107,8 +135,9 @@ async function setup() {
 beforeEach(() => {
   vi.clearAllMocks()
   refuseReads = false
-  dmRows = [DM_ROW]
+  dmStream = [dmMessage()]
   openWorkFileAddresses = new Set()
+  openWorkDmIds = new Set()
   followsState = 'unknown'
   followed = new Set()
   syncState = 'present'
@@ -163,18 +192,30 @@ describe('followed files (FOL-34)', () => {
     expect(fileRows(result.current.items)).toEqual([A, B].sort())
   })
 
-  it('merges the DM half in above the folded rows, and keeps its Convex id', async () => {
+  it('folds the DM half beside the file rows, newest first, from the DM channels', async () => {
     followsState = 'present'
     followed = new Set([A])
-    const { result } = await setup()
+    // The file's comment is at 1_787_000_000: older than the DM, so below it —
+    // and above it once the DM is older still.
+    const { result, rerender } = await setup()
     await waitFor(() => expect(result.current.items).toHaveLength(2))
     expect(result.current.items.map((i) => i.kind)).toEqual(['dm', 'file'])
-    // The DM row keeps its Convex id — the thing that routes its dismiss to the
-    // table rather than the blob.
-    expect(result.current.items[0].id).toBe('k17abc')
+    expect(result.current.items[0]).toMatchObject({
+      id: `sc_dm_${GREG}`,
+      dmId: GREG,
+      authorName: 'Greg Bothman',
+      authorAvatarSrc: 'greg.png',
+      preview: 'a DM',
+    })
+    expect(tracked).toHaveBeenLastCalledWith([GREG_CHANNEL])
+
+    dmStream = [dmMessage({ at: 1_786_999_500 })]
+    rerender()
+    expect(result.current.items.map((i) => i.kind)).toEqual(['file', 'dm'])
   })
 
   it('applies a dismissal from the blob', async () => {
+
     followsState = 'present'
     followed = new Set([A])
     relayBlob = { v: 1, updatedAt: 1, snoozed: {}, dismissed: { [`file:${A}`]: 1_787_000_000 } }
@@ -182,6 +223,69 @@ describe('followed files (FOL-34)', () => {
     await waitFor(() => expect(resolveObjects).toHaveBeenCalled())
     await act(async () => {})
     expect(fileRows(result.current.items)).toEqual([])
+  })
+})
+
+describe('the DM half (CON-14)', () => {
+  it('a DM dismissed on another device stays dismissed here — the blob holds it', async () => {
+    relayBlob = { v: 1, updatedAt: 1, snoozed: {}, dismissed: { [`dm:${GREG}`]: 1_787_000_100 } }
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.items).toEqual([])
+  })
+
+  it('and a later message brings it back', async () => {
+    relayBlob = { v: 1, updatedAt: 1, snoozed: {}, dismissed: { [`dm:${GREG}`]: 1_787_000_100 } }
+    dmStream = [dmMessage(), dmMessage({ id: 'dm-2', root: 'dm-2', at: 1_787_000_150, body: 'again' })]
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    expect(result.current.items[0]).toMatchObject({ kind: 'dm', preview: 'again' })
+  })
+
+  it('dismissing a DM row publishes a dm: watermark and asks nothing of Convex', async () => {
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    act(() => result.current.dismiss(`sc_dm_${GREG}`, 1_787_100_000_000))
+    await waitFor(() => expect(result.current.items).toEqual([]))
+    expect(publish.mock.calls.at(-1)![0].dismissed[`dm:${GREG}`]).toBe(1_787_100_000)
+  })
+
+  it('snoozing a DM row publishes its instant', async () => {
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    const until = Date.now() + 3_600_000
+    act(() => result.current.snooze(`sc_dm_${GREG}`, until))
+    await waitFor(() => expect(result.current.items).toEqual([]))
+    expect(publish.mock.calls.at(-1)![0].snoozed[`dm:${GREG}`]).toBe(Math.floor(until / 1000))
+  })
+
+  it('a DM in open work does not screen (PEE-6), off the list', async () => {
+    openWorkDmIds = new Set([GREG])
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.items).toEqual([])
+  })
+
+  it('a DM whose channel has not been read yet has no row, and holds nothing up', async () => {
+    dmStream = undefined
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.items).toEqual([])
+  })
+
+  it('hands the hover card the screening message’s thread', async () => {
+    dmStream = [
+      dmMessage({ id: 'root', root: 'root', at: 1_786_000_000, by: 'me', body: 'my question' }),
+      dmMessage({ id: 'r1', root: 'root', at: 1_787_000_100, body: 'the answer' }),
+      dmMessage({ id: 'other', root: 'other', at: 1_786_500_000, body: 'elsewhere' }),
+    ]
+    const { result } = await setup()
+    await waitFor(() => expect(result.current.items).toHaveLength(1))
+    const source = result.current.previewOf(`sc_dm_${GREG}`)
+    expect(source?.kind).toBe('dm')
+    expect(source?.kind === 'dm' && source.messages.map((m) => m.body)).toEqual(['my question', 'the answer'])
+    // A row that is not on screen has no preview.
+    expect(result.current.previewOf('sc_dm_nobody')).toBeUndefined()
   })
 })
 
@@ -222,7 +326,7 @@ describe('a decision this session', () => {
     const { result } = await setup()
     await waitFor(() => expect(fileRows(result.current.items)).toEqual([A]))
 
-    act(() => result.current.dismissFile(A, 1_787_100_000_000))
+    act(() => result.current.dismiss(`sc_file_${A}`, 1_787_100_000_000))
     await waitFor(() => expect(fileRows(result.current.items)).toEqual([]))
 
     const last = publish.mock.calls.at(-1)![0]
@@ -237,7 +341,7 @@ describe('a decision this session', () => {
     // Relative to the real clock: the provider compares a snooze against `now`,
     // so a hard-coded instant would pass or fail depending on the date it ran.
     const until = Date.now() + 3_600_000
-    act(() => result.current.snoozeFile(A, until))
+    act(() => result.current.snooze(`sc_file_${A}`, until))
     await waitFor(() => expect(fileRows(result.current.items)).toEqual([]))
 
     const last = publish.mock.calls.at(-1)![0]
@@ -266,7 +370,7 @@ describe('the relay was asked and cannot answer', () => {
     followed = new Set([A])
     const { result } = await setup()
     await waitFor(() => expect(fileRows(result.current.items)).toEqual([A]))
-    act(() => result.current.dismissFile(A, Date.now()))
+    act(() => result.current.dismiss(`sc_file_${A}`, Date.now()))
     await waitFor(() => expect(fileRows(result.current.items)).toEqual([]))
     // The provider still calls `publish` — the guard that matters is inside
     // `useScreenerSync`, and this asserts the provider does not route around it

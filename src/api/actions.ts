@@ -4,67 +4,40 @@
  * Until FOL-23 this was every write a topic, huddle, message and reply made:
  * the Convex double-write, the relay mirror of each, and the optimistic local
  * copy. Those went with the Convex topics. A DM's writes are its conversation's
- * (REM-1), and a file's are `useFileConversation`'s.
+ * (REM-1), and a file's are `useFileConversation`'s. Since CON-14 none of what
+ * is left touches Convex: a Screener decision is the person's blob on the relay,
+ * and open work has been the relay's since REM-4.
  */
-import { useMutation } from 'convex/react'
-import { api } from '../../convex/_generated/api'
 import { useOpenWork } from '@/api/internal/openWork'
-import { fileAddressFromScreenerRowId, useScreener } from '@/api/internal/screener'
-import { hasConvex } from './store'
+import { useScreener } from '@/api/internal/screener'
 
 export function usePeekActions() {
   const openWork = useOpenWork()
   const screener = useScreener()
-  const dismissScreenerRemote = useMutation(api.desk.dismissScreenerItem)
-  const snoozeScreenerRemote = useMutation(api.desk.snoozeScreenerItem)
 
   return {
     // ── Desk (pages keep their instant local hide; these persist it) ──
     /**
-     * Dismiss — a watermark for a folded file row, a deletion for a DM.
-     *
-     * The two halves keep different records because they keep different truths
-     * (SHR-10). A folded row has no Convex id to delete: what "dismissed" means
-     * is *ignore this conversation up to now*, so it goes into the person's
-     * decisions blob as an instant. DMs still have a row, and still lose it.
+     * Dismiss — a watermark in the person's decisions blob, for a DM row and a
+     * file row alike (SHR-10, CON-14). A folded row has no record to delete:
+     * what "dismissed" means is *ignore this conversation up to now*, which is
+     * what deleting a Convex row meant too, since later traffic re-created it.
      */
     dismissScreenerItem(id: string, nowMs: number = Date.now()) {
-      const address = fileAddressFromScreenerRowId(id)
-      if (address) {
-        screener.dismissFile(address, nowMs)
-        return
-      }
-      if (hasConvex) void dismissScreenerRemote({ id })
+      screener.dismiss(id, nowMs)
     },
     /**
      * "Open" → move the item into Open work, which is the blob and nothing else
-     * since REM-4.
-     *
-     * A folded file row leaves the Screener by itself: the fold drops anything
-     * in open work. A DM row is `desk.screenerList`'s, which still de-duplicates
-     * against a `deskOpenWork` nothing writes any more — so the row is retired
-     * the way `addToOpenWork` used to retire it, by deleting it. CON-14 moves
-     * that half to the relay.
+     * since REM-4. The row leaves the Screener by itself: both folds drop
+     * anything in open work (PEE-6), so there is nothing else to retire.
      */
-    addScreenerToOpenWork(id: string, target: { kind: 'dm'; dmId: string } | { kind: 'file'; address: string }) {
-      if (target.kind === 'file') {
-        openWork.addFile(target.address)
-        return
-      }
-      openWork.addDm(target.dmId)
-      if (hasConvex) void dismissScreenerRemote({ id })
+    addScreenerToOpenWork(_id: string, target: { kind: 'dm'; dmId: string } | { kind: 'file'; address: string }) {
+      if (target.kind === 'file') openWork.addFile(target.address)
+      else openWork.addDm(target.dmId)
     },
-    /** "Later" — the item reappears after `untilMs` (an absolute timestamp);
-     *  defaults to +24h server-side when omitted. */
-    snoozeScreenerItem(id: string, untilMs?: number) {
-      const address = fileAddressFromScreenerRowId(id)
-      if (address) {
-        // A folded row has no server to default it, so the same 24 hours is
-        // spelled here, in the one place the blob is written from.
-        screener.snoozeFile(address, untilMs ?? Date.now() + 24 * 60 * 60 * 1000)
-        return
-      }
-      if (hasConvex) void snoozeScreenerRemote({ id, until: untilMs })
+    /** "Later" — the item reappears after `untilMs` (an absolute timestamp), 24 hours by default. */
+    snoozeScreenerItem(id: string, untilMs: number = Date.now() + 24 * 60 * 60 * 1000) {
+      screener.snooze(id, untilMs)
     },
     /** Remove a DM from Open work, by the partner's pubkey (REM-3). */
     removeDmFromOpenWork(dmId: string) {

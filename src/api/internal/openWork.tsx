@@ -46,9 +46,9 @@
  * of that is gone: a person the relay holds no list for starts with an empty one
  * — Convex-only rows are dropped, not migrated (Miky, 2026-09-24).
  *
- * One reader of the old table is left behind on purpose: `desk.screenerList`'s
- * DM half still de-duplicates against `deskOpenWork`, which no longer changes.
- * CON-14 moves that half to the relay.
+ * Nothing reads the old table since CON-14: the Screener's DM half, which
+ * de-duplicated against `deskOpenWork`, is folded from the relay and checks
+ * `dmIds` instead.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { OPEN_WORK_ITEMS } from '@/data/deskData'
@@ -71,6 +71,8 @@ export interface OpenWorkValue {
   items: OpenWorkItem[]
   /** File addresses in the list, from the list rather than from `items` (FOL-34). */
   fileAddresses: Set<string>
+  /** Partner pubkeys in the list, the same way — the Screener's DM half (CON-14). */
+  dmIds: Set<string>
   /** True until the relay has answered and there is a list to render. */
   isLoading: boolean
   addDm: (dmId: string) => void
@@ -163,6 +165,10 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   */
   const fileAddresses = useMemo(
     () => new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'file' ? [e.address] : []))),
+    [effectiveSet],
+  )
+  const dmIds = useMemo(
+    () => new Set((effectiveSet ?? []).flatMap((e) => (e.kind === 'dm' ? [e.key] : []))),
     [effectiveSet],
   )
   const fileObjects = useResolvedReferences(useMemo(() => [...fileAddresses].sort(), [fileAddresses]))
@@ -283,8 +289,8 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   const isLoading = hasRelay && effectiveSet === undefined
 
   const value = useMemo<OpenWorkValue>(
-    () => ({ items, fileAddresses, isLoading, addDm, addFile, removeDm, removeFile }),
-    [items, fileAddresses, isLoading, addDm, addFile, removeDm, removeFile],
+    () => ({ items, fileAddresses, dmIds, isLoading, addDm, addFile, removeDm, removeFile }),
+    [items, fileAddresses, dmIds, isLoading, addDm, addFile, removeDm, removeFile],
   )
 
   return <OpenWorkContext.Provider value={value}>{children}</OpenWorkContext.Provider>

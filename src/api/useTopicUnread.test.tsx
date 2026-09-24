@@ -86,6 +86,7 @@ const topics = [
 ]
 
 const said = (id: string, at: number, urgent = false): StreamMessage => ({
+  body: '',
   id,
   at,
   by: THEM,

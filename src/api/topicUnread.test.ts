@@ -19,6 +19,7 @@ const said = (id: string, at: number, urgent = false, by = THEM): StreamMessage 
   root: id,
   about: [],
   urgent,
+  body: '',
 })
 const replied = (id: string, at: number, inThread: string, urgent = false, by = THEM): StreamMessage => ({
   id,
@@ -27,6 +28,7 @@ const replied = (id: string, at: number, inThread: string, urgent = false, by = 
   root: inThread,
   about: [],
   urgent,
+  body: '',
 })
 
 const judge = (

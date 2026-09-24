@@ -6,8 +6,9 @@
  * and `candidates` handed the device the facts its topic fold ran on (SHR-10).
  * The topic half went with the Convex topics (FOL-23), and the fan-out went
  * with the last caller that wrote a message through Convex — DMs are written to
- * the relay since REM-3. What `screenerItems` still holds for a DM is read by
- * `desk.screenerList`; the table itself goes in REM-7.
+ * the relay since REM-3. Since CON-14 the preview is read from the relay too
+ * (`src/api/screener.ts`) and nothing calls this; it goes with `screenerItems`
+ * in REM-7.
  */
 import { v } from 'convex/values'
 import { query, type QueryCtx } from './_generated/server'

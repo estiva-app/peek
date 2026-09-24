@@ -87,16 +87,11 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
     an inline span.
   */
   /*
-    A file row never opens a card, whatever the caller hands over: a file's
-    conversation is not in Convex, so there is nothing to show (FOL-34). Not
-    even a story overrides that, or its picture would promise a behaviour the
-    app does not have.
-
-    Otherwise the read is Convex's, so with no backend there is nothing either —
-    unless a caller brings its own rows, which is how a story draws the card at
-    all (UIG-17).
+    Both kinds open a card, read from the relay (CON-14): a DM row's thread from
+    the channel store, a file row's comment and its replies. With no backend
+    there is nothing to read — unless a caller brings its own rows, which is how
+    a story draws the card at all (UIG-17).
   */
-  if (item.kind === 'file') return row
   if (!hasConvex && !preview) return row
   return (
     <PreviewCard

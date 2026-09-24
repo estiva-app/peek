@@ -1,52 +1,55 @@
 /**
- * Desk + Screener reads.
+ * Desk + Screener reads — all of them from the relay since CON-14.
  *
- * Convex-backed when a deployment is configured: per-user tables for
- * screener items and open work (domain model §2.12–2.13), and the urgent
- * list fully derived server-side (§4.4 — urgent message or an unread reply
- * on one, newer than the readState watermark). Static mocks otherwise.
- * DM-partner avatars resolve through the shared registry (uploaded avatar,
- * else the seeded portrait).
+ * The Screener and open work are their providers'; Urgent is the DM dots'
+ * urgent flag (§4.4), read off the same fold. Static mocks without a relay.
  */
 import { useMemo } from 'react'
-import { useQuery } from 'convex/react'
-import { api } from '../../convex/_generated/api'
 import { URGENT_ITEMS } from '@/data/deskData'
-import { useAvatarSrc } from './avatars'
 import { useOpenWork, useOpenWorkIfMounted } from './internal/openWork'
 import { useScreener } from './internal/screener'
-import { hasConvex } from './store'
+import { useDmChannels } from './internal/dms'
+import { useWorkspacePeople } from './people'
+import { useUnread } from './unread'
+import { hasRelay } from './relayUrl'
 import type { ScreenerItem, OpenWorkItem, UrgentItem } from './types'
 
-/**
- * The Screener's rows. The topic half is folded on the device (SHR-10), the DM
- * half still comes from Convex, and `ScreenerProvider` merges the two — see its
- * header for why rule 1 cannot be folded until DMS-3.
- */
+/** The Screener's rows — both halves folded from the relay by `ScreenerProvider`. */
 export function useScreenerItems(): ScreenerItem[] {
   return useScreener().items
 }
 
 /**
- * Open work comes from the relay blob and Urgent from Convex (SHR-9).
+ * Open work from the relay blob, and Urgent from the relay's DM channels (CON-14).
  *
- * The asymmetry is ADR 0001 working rather than an inconsistency. Open work is
- * four fields a person authored, so it is layer 2 and `OpenWorkProvider` owns it
- * — rows, order, the optimistic window and the publish. Urgent is derived
- * server-side from every message in a container against the readState watermark
- * (§4.4): that is aggregation over data the viewer does not hold, which is
- * exactly what layer 3 is for.
+ * Urgent used to be `desk.urgentList`, which walked every message and reply in
+ * every DM on the server against Convex's readState watermark — the reason SHR-9
+ * gave for leaving it there. The walk was already being done on the device: the
+ * sidebar's urgent indicator is `useUnread().dmIsUrgent`, the channel fold over
+ * every DM channel's messages against the NIP-RS markers, with the same rule
+ * (an unread urgent message or reply by somebody else, per message — ruling
+ * 2026-07-16). So Urgent is that flag, listed, and a DM is in Urgent exactly
+ * when its sidebar row shows the indicator.
+ *
+ * Files are not in it yet: FOL-43.
  */
 export function useDeskItems(): { openWork: OpenWorkItem[]; urgent: UrgentItem[] } {
-  const avatarSrcFor = useAvatarSrc()
   const openWork = useOpenWork()
-  const urgent = useQuery(api.desk.urgentList, hasConvex ? {} : 'skip')
+  const { partners } = useDmChannels()
+  const { dmIsUrgent } = useUnread()
+  const people = useWorkspacePeople(partners)
 
-  if (!hasConvex) return { openWork: openWork.items, urgent: URGENT_ITEMS }
-  return {
-    openWork: openWork.items,
-    urgent: (urgent ?? []).map((u) => ({ ...u, avatarSrc: avatarSrcFor(u.name) })),
-  }
+  const urgent = useMemo<UrgentItem[]>(() => {
+    if (!hasRelay) return URGENT_ITEMS
+    const byKey = new Map((people ?? []).map((p) => [p.id, p]))
+    return partners.flatMap((dmId) => {
+      const person = byKey.get(dmId)
+      if (!person || !dmIsUrgent(dmId)) return []
+      return [{ id: `urg_dm_${dmId}`, kind: 'dm' as const, dmId, name: person.name, avatarSrc: person.avatarSrc }]
+    })
+  }, [partners, dmIsUrgent, people])
+
+  return { openWork: openWork.items, urgent }
 }
 
 /** Which files are in Open work, and the toggle — FOL-34. */
@@ -82,11 +85,12 @@ export function useOpenWorkFiles(): OpenWorkFiles {
 
 /** True while any Desk list is still unsettled (drives the sidebar skeleton). */
 export function useDeskLoading(): boolean {
-  const urgent = useQuery(api.desk.urgentList, hasConvex ? {} : 'skip')
   const openWorkLoading = useOpenWork().isLoading
-  // The Screener's own loading now covers the relay's answer as well as the two
-  // Convex reads: the decisions blob is subtractive, so rendering before it
-  // arrives shows rows the person has already dismissed.
+  // The Screener's loading is the decisions blob: it is subtractive, so
+  // rendering before it arrives shows rows the person has already dismissed.
+  // Urgent is not waited on — like the sidebar indicator it lists, a DM joins
+  // it when its channel has been read, rather than holding the Desk for the
+  // slowest channel.
   const screenerLoading = useScreener().isLoading
-  return hasConvex && (screenerLoading || urgent === undefined || openWorkLoading)
+  return hasRelay && (screenerLoading || openWorkLoading)
 }

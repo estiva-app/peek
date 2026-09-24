@@ -26,6 +26,7 @@ const said = (id: string, at: number, about: string[] = [], by = THEM): StreamMe
   root: id,
   about,
   urgent: false,
+  body: '',
 })
 
 const observation = (over: Partial<TeamUnreadObservation> = {}): TeamUnreadObservation => ({

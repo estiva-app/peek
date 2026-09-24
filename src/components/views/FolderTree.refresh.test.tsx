@@ -300,7 +300,7 @@ describe('a refresh keeps the rows it already has (FOL-40)', () => {
     // The dot's messages come from the channel store, which applies what the
     // socket delivers (PER-8): no Folder-contents read at all, and no remount.
     act(() => {
-      dots.streams = { [TEAM]: [{ id: 'n', at: dots.at, by: 'd'.repeat(64), root: 'n', about: [], urgent: false }] }
+      dots.streams = { [TEAM]: [{ id: 'n', at: dots.at, by: 'd'.repeat(64), root: 'n', about: [], urgent: false, body: '' }] }
       dots.version++
       for (const listener of dots.listeners) listener()
     })

@@ -168,7 +168,7 @@ function read(partial: Partial<ChannelStoreRead>) {
 
 const HELD = {
   // A: a sibling file nobody read, said an hour ago. B: nothing.
-  [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false }],
+  [FOLDER_A]: [{ id: 'm', at: NOW - 3600, by: THEM, root: 'm', about: [FOL18], urgent: false, body: '' }],
   [FOLDER_B]: [],
 }
 
@@ -233,7 +233,7 @@ describe('useTeamUnread', () => {
       [FOLDER_A]: [],
       [FOLDER_B]: [],
       // The topic's own channel: a plain message, no `about`, said an hour ago.
-      [TOPIC]: [{ id: 't', at: NOW - 3600, by: THEM, root: 't', about: [], urgent: false }],
+      [TOPIC]: [{ id: 't', at: NOW - 3600, by: THEM, root: 't', about: [], urgent: false, body: '' }],
     })
     // One store call for the lot — the topic's channel is asked for with the teams'.
     expect(store.asked).toEqual([[FOLDER_A, FOLDER_B, TOPIC]])
