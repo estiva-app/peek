@@ -5,7 +5,6 @@
  *   set -a; . ~/.estiva-agent.env; set +a
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts survey
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts migrate
- *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts delete
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts unmigrate
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts remigrate
  *   npx tsx --tsconfig tsconfig.app.json scripts/fol25-topics-to-files.ts verify
@@ -16,9 +15,9 @@
  * in its team and re-posts its conversation; `bare` re-creates the file and
  * drops the conversation; `delete` sends nothing but the `9008`.
  *
- * `migrate` writes and re-reads; `delete` sends the `9008`s the relay now lets
- * an admin send (buzz#16/#17) and re-reads `listFolders`; `unmigrate` takes a
- * copy back down.
+ * `migrate` writes and re-reads; `unmigrate` takes a copy back down. Deleting
+ * the channels is `scripts/fol25-redelete.ts` (FOL-25 phase C), which replaced
+ * the `delete` mode that lived here.
  *
  * **"Messages cannot be re-signed" was wrong**, and it was the sentence this
  * file was built on. They cannot be re-signed *by the agent* — but an author's
@@ -35,7 +34,7 @@
  * no readable originals until `channels.deleted_at` is cleared on the box. It
  * refuses to start rather than trading good copies for nothing.
  */
-import { buildUnsignedAuthEvent, authorizationHeaderFor, buildDeleteChannel, buildBareFile, buildDeletion, toNostrSeconds, signEvent, publicKeyFromSecret } from '@estiva-app/protocol'
+import { buildUnsignedAuthEvent, authorizationHeaderFor, buildBareFile, buildDeletion, toNostrSeconds, signEvent, publicKeyFromSecret } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { createPeopleCache, listFolders, type FolderSummary, type QueryFn } from '@estiva-app/interop'
 import { randomUUID } from 'node:crypto'
@@ -95,30 +94,6 @@ const TRIAGE: Array<[string, keyof typeof TEAMS, Fate]> = [
   ['Domain name - brainstorming', 'Estiva HQ', 'bare'],
   ['Peek vision - initial notes', 'Peek', 'bare'],
   ['Researching using Buzz "backend" to power Peek', 'Peek', 'bare'],
-]
-
-/**
- * The 8 test topics the FOL-11 run refused. Each holds one test **issue**
- * (`30851`, by Miky, Katerina or Ship's own key — not a `30840`, which is
- * what the ticket assumed), and a `kind:5` is the author's to send, so the
- * `9008` is refused until the issue is deleted in Ship. Read off `plan` on
- * 2026-09-15; `delete` re-reads and refuses any bare Folder not in this list
- * rather than guessing.
- *
- * Nine of the 25 topics are refused the same way, for a better reason: they
- * were the Peek half of a paired Ship project ("Feedback on Peek", the six
- * "Project: …" ones, …) and hold 148 issues by `h` between them — record
- * Folders in substance, which FOL-25 says never to delete. The relay's count
- * is the guard; the run reports the refusal and moves on.
- */
-const TEST_TOPICS = [
-  'katerina topic',
-  'new',
-  'New test',
-  'new topic',
-  'New topic [TRACE2]',
-  'PEEK-72 probe',
-  'Project Peek <> Ship integration',
 ]
 
 type Token = { accessToken: string; pubkey: string }
@@ -395,48 +370,6 @@ async function migrate(p: { folders: FolderSummary[]; topics: Topic[] }, query: 
     const after = await query([{ kinds: [1111], '#a': [address], authors: [t.pubkey], limit: 2000 }])
     console.log(`    re-posted ${n}; relay now holds ${after.length} of ${topic.messages.length}`)
   }
-}
-
-async function remove(p: { folders: FolderSummary[]; topics: Topic[] }, query: QueryFn, t: Signer) {
-  const doomed: Array<{ id: string; name: string; files: SignedEvent[] }> = []
-  for (const topic of p.topics) {
-    if (!topic.live) continue
-    if (topic.fate === 'ask') {
-      console.log(`${topic.name}: no triage yet, kept`)
-      continue
-    }
-    if (topic.fate !== 'delete') {
-      // A migrated topic's file must exist before its channel goes.
-      const file = (await query([{ kinds: [30840], '#h': [TEAMS[topic.team]!], authors: [t.pubkey], limit: 200 }])).find((e) => tag(e, 'title') === topic.name)
-      if (!file) {
-        console.log(`${topic.name}: no file in ${topic.team} yet, kept — run migrate first`)
-        continue
-      }
-    }
-    doomed.push({ id: topic.uuid, name: topic.name, files: topic.files })
-  }
-  for (const f of p.folders) {
-    if (f.hasState || !TEST_TOPICS.includes(f.name ?? '')) continue
-    const { files } = await readTopic(f.id, query)
-    doomed.push({ id: f.id, name: f.name ?? '', files })
-  }
-  const refused: string[] = []
-  for (const [i, d] of doomed.entries()) {
-    // The relay refuses a 9008 while a 30840 is filed in the channel; the
-    // file's author (this identity, for all 8 test topics) deletes it first.
-    for (const file of d.files) {
-      const r = await publish(buildDeletion(t.pubkey, Date.now(), { targetEventId: file.id }), t)
-      console.log(`    kind:5 ${file.id.slice(0, 8)} (${tag(file, 'title')}) → ${r.ok ? 'accepted' : `REFUSED ${r.reason}`}`)
-      await sleep(WRITE_GAP_MS)
-    }
-    const result = await publish(buildDeleteChannel(t.pubkey, Date.now(), { channelUuid: d.id }), t)
-    console.log(`${String(i + 1).padStart(3)}/${doomed.length} 9008 ${d.id} ${JSON.stringify(d.name)} → ${result.ok ? 'accepted' : `REFUSED ${result.reason}`}`)
-    if (!result.ok) refused.push(d.id)
-    await sleep(WRITE_GAP_MS)
-  }
-  const after = await listFolders(query)
-  console.log(`\nlistFolders now: ${after.length}; refused: ${refused.length}`)
-  for (const f of after) if (!/^project-[0-9a-f]{8}$/.test(f.name ?? '')) console.log(`    ${f.id}  ${f.hasState ? 'state' : 'bare '}  ${JSON.stringify(f.name ?? '')}`)
 }
 
 /**
@@ -778,7 +711,8 @@ async function verify(p: { folders: FolderSummary[]; topics: Topic[] }, query: Q
 
 async function main() {
   const mode = process.argv[2]
-  const modes = ['survey', 'migrate', 'delete', 'unmigrate', 'remigrate', 'verify']
+  const modes = ['survey', 'migrate', 'unmigrate', 'remigrate', 'verify']
+  if (mode === 'delete') throw new Error('delete moved to scripts/fol25-redelete.ts, which reads no Convex and never empties a channel to delete it')
   if (!modes.includes(mode ?? '')) throw new Error(`mode: ${modes.join(' | ')}`)
   const agent = agentSigner(await token())
   const query = queryFn(agent)
@@ -786,7 +720,6 @@ async function main() {
   const p = await plan(query)
   if (mode === 'survey') await survey(p, query)
   if (mode === 'migrate') await migrate(p, query, agent)
-  if (mode === 'delete') await remove(p, query, agent)
   if (mode === 'unmigrate') await unmigrate(p, query, agent)
   if (mode === 'remigrate') await remigrate(p, query, agent)
   if (mode === 'verify') await verify(p, query, agent)
