@@ -126,11 +126,20 @@ export function FilePage() {
     rendered from an `a` tag is actionable and not merely visible — so nothing
     has to be encoded to bech32 on the way in.
   */
-  const { state: resolved, reload: reloadConversation } = useForeignConversation(fileAddress)
+  const { state: resolved, reload: reloadConversation, previous } = useForeignConversation(fileAddress)
   // A short link that resolved to no address is as dead as an address that resolved to nothing.
   const conversation: ForeignConversationState =
     shortForm === 'unresolved' || (typeof shortForm === 'object' && 'failed' in shortForm) ? shortForm : resolved
   const file = typeof conversation === 'object' && 'ref' in conversation ? conversation : null
+  /*
+    What the sidebar draws while the next file resolves (SID-2): the one it
+    drew last. A click in the tree changes the address and nothing else is
+    known until the resolve answers, and handing the tree `undefined` for that
+    long shut the open Folder, unmounted its rows with their expand state, and
+    re-read the team from cold. Only while loading — a link that resolved to
+    nothing lets go of it, as before.
+  */
+  const navFile = file ?? (conversation === 'loading' ? (previous ?? null) : null)
 
   /*
     Canonicalise (FOL-37, FOL-39), the way `TopicsPage` does: a file reached
@@ -306,8 +315,17 @@ export function FilePage() {
     one says nothing the header's title does not.
   */
   const folderPath = useFolderPath()
-  const { state: team, reload: reloadTeam } = useFolderContents(file?.folder)
+  const { state: team, reload: reloadTeam } = useFolderContents(navFile?.folder)
   const teamFiles = typeof team === 'object' && 'files' in team ? team.files : undefined
+  /*
+    The row that was clicked is selected at once when the team's listing has
+    it, which it does for any bare file there — the listing is already in hand,
+    so this costs no read. One it does not hold, an issue under its project,
+    keeps the last selection until the resolve answers.
+  */
+  const clicked =
+    !file && navFile && fileAddress ? teamFiles?.find((candidate) => candidate.address === fileAddress) : undefined
+  const selected = file ?? clicked ?? navFile
   const listedSelf = file && teamFiles?.find((candidate) => candidate.ref === file.ref)
   const ancestors = listedSelf && teamFiles ? nestingOf(teamFiles).ancestorsOf(listedSelf) : []
   const trail =
@@ -394,11 +412,11 @@ export function FilePage() {
       <FilePageView
         nav={
           <FolderTree
-            currentFolder={file?.folder}
-            selectedRef={file?.ref}
-            selectedParent={file?.parentRef}
+            currentFolder={navFile?.folder}
+            selectedRef={selected?.ref}
+            selectedParent={selected?.parentRef}
             onControl={fileControls.open}
-            currentContents={file?.folder ? team : undefined}
+            currentContents={navFile?.folder ? team : undefined}
           />
         }
         rightPanel={

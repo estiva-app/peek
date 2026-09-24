@@ -66,3 +66,26 @@ describe('useForeignConversation fills the Folder of a record that carries no h'
     expect(seam.resolveFileFolder).not.toHaveBeenCalled()
   })
 })
+
+describe('useForeignConversation keeps the last file while the next resolves (SID-2)', () => {
+  it('holds the last answer as `previous` while the next address loads, and only then', async () => {
+    const issue = foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM })
+    seam.resolveObject.mockResolvedValueOnce(issue)
+    const { result, rerender } = renderHook(({ naddr }) => useForeignConversation(naddr), {
+      initialProps: { naddr: ISSUE },
+    })
+    await waitFor(() => expect(result.current.state).toBe(issue))
+    expect(result.current.previous).toBeNull()
+
+    let answer: (object: ForeignObject | null) => void = () => {}
+    seam.resolveObject.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    seam.resolveFileFolder.mockResolvedValue(CHANNEL)
+    rerender({ naddr: PROJECT })
+    expect(result.current.state).toBe('loading')
+    expect(result.current.previous).toBe(issue)
+
+    answer(foreign({ ref: PROJECT, address: PROJECT, kind: 30850 }))
+    await waitFor(() => expect(result.current.state).toMatchObject({ address: PROJECT }))
+    expect(result.current.previous).toBeNull()
+  })
+})

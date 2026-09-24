@@ -93,7 +93,12 @@ const topic = foreign({
   whole input; `relay.files` is the Folder's listing, which is navigation and
   not the source of truth; `threads` is the `#e` read the thread pane makes.
 */
-const objects = vi.hoisted(() => ({ byAddress: {} as Record<string, unknown> }))
+const objects = vi.hoisted(() => ({
+  byAddress: {} as Record<string, unknown>,
+  /** Addresses whose resolve has not answered yet (SID-2); `wake` redraws once one is let go. */
+  pending: new Set<string>(),
+  wake: undefined as (() => void) | undefined,
+}))
 const relay = vi.hoisted(() => ({ files: [] as unknown[] }))
 const threads = vi.hoisted(() => ({
   state: { roots: {}, replies: {} } as unknown,
@@ -189,10 +194,18 @@ vi.mock('@/api', async () => ({
     return got.address ? { address: got.address } : 'unresolved'
   },
   rememberFileAddress: (address: string) => shortForm.known.set(address.split(':')[2], address),
-  useForeignConversation: (address: string | null | undefined) => ({
-    state: address ? (objects.byAddress[address] ?? 'unresolved') : 'loading',
-    reload: async () => {},
-  }),
+  // The real hook's `previous` is the last answer while the next is loading — pinned in its own test.
+  useForeignConversation: (address: string | null | undefined) => {
+    const [, redraw] = useState(0)
+    useEffect(() => {
+      objects.wake = () => redraw((n) => n + 1)
+    }, [])
+    const state = !address || objects.pending.has(address) ? 'loading' : (objects.byAddress[address] ?? 'unresolved')
+    const [held, setHeld] = useState<unknown>(null)
+    const answer = state === 'loading' ? held : typeof state === 'object' ? state : null
+    if (answer !== held) setHeld(answer)
+    return { state, reload: async () => {}, previous: state === 'loading' ? held : null }
+  },
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useFileThreads: () => ({ state: threads.state, reload: threads.reload }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
@@ -308,6 +321,7 @@ function shape() {
 
 beforeEach(() => {
   objects.byAddress = { [ISSUE_ADDRESS]: issue, [TOPIC_ADDRESS]: topic, [PROJECT_ADDRESS]: project }
+  objects.pending.clear()
   relay.files = [project, topic]
   threads.state = { roots: {}, replies: {} }
   follows.state = 'present'
@@ -543,6 +557,62 @@ describe('FilePage draws every app’s file in the same panes', () => {
     expect(left.querySelector('[data-foreign-object]')).toBeNull()
     expect(within(left).getByText('Folders: navigation for the whole suite')).toBeInTheDocument()
     expect(within(left).queryByText('Estiva Ship')).toBeNull()
+  })
+})
+
+describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
+  const OTHER_D = '6b1e0c2d-3f4a-4b5c-8d6e-7f8091a2b3c4'
+  const OTHER_ADDRESS = `30840:${CATH}:${OTHER_D}`
+  const other = foreign({
+    ref: OTHER_ADDRESS,
+    address: OTHER_ADDRESS,
+    kind: 30840,
+    appName: 'File',
+    slots: { title: { value: 'Another topic' } },
+  })
+  const row = (ref: string) => screen.getByTestId('left').querySelector(`[data-file="${ref}"]`) as HTMLElement | null
+  const selected = (ref: string) => row(ref)?.querySelector('.bg-bg-selected') != null
+
+  beforeEach(() => {
+    relay.files = [project, topic, other]
+    objects.byAddress[OTHER_ADDRESS] = other
+  })
+
+  it('a click keeps the Folder open and selects the clicked row before its file has resolved', () => {
+    objects.pending.add(OTHER_ADDRESS)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
+
+    expect(screen.getByTestId('url').textContent).toBe(`/topic/another-topic-${OTHER_D}`)
+    // The listing, not a skeleton and not a shut fold: nothing was thrown away.
+    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(selected(OTHER_ADDRESS)).toBe(true)
+    expect(selected(TOPIC_ADDRESS)).toBe(false)
+    // The row carried the author, so the short link cost no `#d` read.
+    expect(writes.resolveFileAddress).not.toHaveBeenCalled()
+
+    act(() => {
+      objects.pending.delete(OTHER_ADDRESS)
+      objects.wake?.()
+    })
+    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
+    expect(selected(OTHER_ADDRESS)).toBe(true)
+  })
+
+  it('a row opened for the last selection stays open when the next one is elsewhere', () => {
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('left').querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    fireEvent.click(within(row(TOPIC_ADDRESS)!).getByText('FOL-15 test topic 2'))
+    expect(selected(TOPIC_ADDRESS)).toBe(true)
+    // The topic has no parent, so nothing asks for the project open — and nobody closed it.
+    expect(screen.getByTestId('left').querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+  })
+
+  it('a click that resolves to nothing lets the last file go, as a dead link always has', () => {
+    delete objects.byAddress[OTHER_ADDRESS]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
+    expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).toBeNull()
   })
 })
 
