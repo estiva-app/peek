@@ -1,10 +1,9 @@
-﻿import { useState, type ComponentProps, type ReactNode } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { IconPlus, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
+﻿import { useCallback, useState, type ComponentProps, type ReactNode } from 'react'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { IconArrowUpRight, IconPlus, IconSortDescending } from '@tabler/icons-react'
+import { CollapsibleSection, ContainerHeader, ListColumn, Toolbar, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { useRailClosed } from '@/layouts/railClosed'
-import { TopicDetailsDialog } from '@/components/TopicDetailsDialog'
 import { Divider } from '@/components/ui/Divider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
@@ -12,9 +11,7 @@ import { ScreenerSection } from '@/components/ScreenerSection'
 import { AddToOpenWorkDialog } from '@/components/AddToOpenWorkDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
-import { useTopicView } from '@/components/views/useTopicView'
-import { FilesPanel } from '@/components/FilesPanel'
-import { useFolderProject } from '@/api/useFolderProject'
+import { useFileView } from '@/components/views/useFileView'
 import {
   dmNameById,
   useUnread,
@@ -22,7 +19,6 @@ import {
   useScreenerItems,
   useDeskItems,
   useDeskLoading,
-  useTopics,
   useIsTopicResolved,
   useCreateTopicFromDm,
   usePeekActions,
@@ -33,6 +29,8 @@ import {
 } from '@/api'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { filePath } from '@/lib/objectUrl'
+import { legacyTopicFile } from '@/lib/legacyTopicLinks'
+import { followInApp } from '@/lib/followInApp'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
 import { useToast } from '@/lib/toast'
@@ -41,13 +39,15 @@ import type { StartTopicResult } from '@/components/CreateTopicDialog'
 
 type SectionKey = 'urgent' | 'openWork' | 'starred'
 
-type Selected =
-  | { kind: 'dm'; dmId: string; dmName: string; section: SectionKey }
-  | { kind: 'topic'; topicId: string; topicTitle: string; topicResolved: boolean; section: SectionKey }
+type Selected = { kind: 'dm'; dmId: string; dmName: string; section: SectionKey }
+
+/** The file an Open work row opens beside the list: its own, or its topic's (SID-3). */
+const addressOf = (item: Exclude<OpenWorkItem, { kind: 'dm' }>): string | undefined =>
+  item.kind === 'file' ? item.address : legacyTopicFile(item.topicId)?.address
 
 /**
  * The Desk page: the Screener, Urgent, Open work and Starred lists on the left,
- * and the chosen topic or direct message beside them.
+ * and the chosen file or direct message beside them.
  */
 export function DeskPage() {
   const railClosed = useRailClosed()
@@ -55,9 +55,10 @@ export function DeskPage() {
   const navigate = useNavigate()
   const pathForTopic = useTopicPath()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { showToast } = useToast()
   const { state: debug } = useDebug()
-  const { entries: starredAll, isDmStarred, isTopicStarred, toggleDm, toggleTopic, isLoading: starredLoading } = useStarred()
+  const { entries: starredAll, isDmStarred, toggleDm, isLoading: starredLoading } = useStarred()
   const deskLoading = useDeskLoading()
   const actions = usePeekActions()
   const createTopicFromDm = useCreateTopicFromDm()
@@ -65,6 +66,15 @@ export function DeskPage() {
   const allScreenerItems = useScreenerItems()
   const { openWork: OPEN_WORK_ITEMS, urgent: URGENT_ITEMS } = useDeskItems()
   const [selected, setSelected] = useState<Selected | null>(null)
+  /*
+    The file open beside the lists (SID-3), in the URL rather than in state, so
+    a reload or a pasted Desk link keeps it open — and its thread with it, as
+    on the file's own page. A DM stays in state, as it always has.
+  */
+  const openAddress = searchParams.get('open')
+  const openThreadId = searchParams.get('thread') ?? undefined
+  /** Which section the open file was clicked in, and the title its row showed. Lost on a reload. */
+  const [openedFrom, setOpenedFrom] = useState<{ section: SectionKey; title: string } | null>(null)
   const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
   const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
   const [showAddToOpenWork, setShowAddToOpenWork] = useState(false)
@@ -113,16 +123,11 @@ export function DeskPage() {
     // Removing the conversation you're looking at clears the stale selection —
     // the right panel falls back to "No conversation selected" (QA #2.2).
     const item = openWorkItems.find((i) => i.id === id)
-    // A file is never selected here — it opens on its own page — so only the
-    // other two kinds can leave a stale selection behind.
-    const wasSelected =
-      item != null &&
-      selected != null &&
-      item.kind !== 'file' &&
-      (item.kind === 'dm'
-        ? selected.kind === 'dm' && selected.dmId === item.dmId
-        : selected.kind === 'topic' && selected.topicId === item.topicId)
-    if (wasSelected) setSelected(null)
+    if (item?.kind === 'dm') {
+      if (selected?.dmId === item.dmId) setSelected(null)
+    } else if (item && addressOf(item) === openAddress) {
+      closeFile()
+    }
     setDismissedOpenWorkIds((prev) => new Set([...prev, id]))
     // Every kind removes by the key the blob holds, never by a row id: since
     // SHR-9 the list comes from the relay and the rows carry synthetic ids. The
@@ -176,47 +181,66 @@ export function DeskPage() {
   }
 
   /*
-    A topic opens on the file its conversation moved to (FOL-26), not beside
-    the list: the Topics view is retired, and it was the one surface here that
-    could still reach a topic's rename, delete, member and huddle writes.
-    `pathForTopic` goes by `/topic-old/`, which redirects to the file.
+    A topic or a file opens beside the lists, and the rail stays on Desk
+    (SID-3). Since FOL-26 a topic had navigated to the file its conversation
+    moved to, through `/topic-old/` and a redirect, which remounted the shell and
+    lit Topics on the rail; before that it opened here in `useTopicView`, which
+    read Convex. Now it is the file's own relay conversation, the one `FilePage`
+    draws (`useFileView`), found for a topic in the bundled table
+    (`legacyTopicFile`) — so no step of it asks Convex anything.
+
+    A topic id the table does not hold was never a production topic; it still
+    goes to wherever its old link lands, as before.
   */
-  const selectTopic = (topicId: string) => navigate(pathForTopic(topicId))
+  const openFile = (address: string, title: string, section: SectionKey) => {
+    setSelected(null)
+    setOpenedFrom({ section, title })
+    setSearchParams({ open: address })
+  }
+  const closeFile = () => {
+    setOpenedFrom(null)
+    setSearchParams({}, { replace: true })
+  }
+  const selectTopic = (topicId: string, section: SectionKey) => {
+    const file = legacyTopicFile(topicId)
+    if (file) openFile(file.address, file.title, section)
+    else navigate(pathForTopic(topicId))
+  }
   const selectDm = (dmId: string, fallbackName: string, section: SectionKey) => {
     const dmName = dmNameById(dmId) ?? fallbackName
+    if (openAddress) closeFile()
     setSelected({ kind: 'dm', dmId, dmName, section })
   }
+  const setOpenThread = useCallback(
+    (id: string | null) => {
+      const next = new URLSearchParams(searchParams)
+      if (id) next.set('thread', id)
+      else next.delete('thread')
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+  /**
+   * Whether a row is the open file. After a reload the section it was clicked
+   * in is not known, so every row naming it is lit — the one case where the
+   * Selection dedup above cannot say which section owns it.
+   */
+  const isOpen = (address: string | undefined, section: SectionKey) =>
+    address != null &&
+    address === openAddress &&
+    (openedFrom == null || openedFrom.section === section)
 
-  // On Desk, unstarring clears selection unless the item is still reachable via
-  // Urgent (DMs or topics) or Open work (topics only). If the selection was
-  // anchored to Starred, migrate it to the next section that still has the item.
+  // On Desk, unstarring a DM clears selection unless it is still reachable via
+  // Urgent. If the selection was anchored to Starred, migrate it there.
   // Starring is harmless.
   const handleToggleStarredOnDesk = () => {
     if (!selected) return
-    if (selected.kind === 'dm') {
-      const wasStarred = isDmStarred(selected.dmId)
-      toggleDm({ dmId: selected.dmId, name: selected.dmName })
-      if (!wasStarred) return
-      const inUrgent = urgentItems.some((u) => u.kind === 'dm' && u.dmId === selected.dmId)
-      if (!inUrgent) setSelected(null)
-      else if (selected.section === 'starred') setSelected({ ...selected, section: 'urgent' })
-    } else {
-      const wasStarred = isTopicStarred(selected.topicId)
-      toggleTopic({
-        topicId: selected.topicId,
-        title: selected.topicTitle,
-        topicStatus: selected.topicResolved ? 'resolved' : 'unresolved',
-      })
-      if (!wasStarred) return
-      const inUrgent = urgentItems.some((u) => u.kind === 'topic' && u.topicId === selected.topicId)
-      const inOpenWork = openWorkItems.some(
-        (i) => i.kind !== 'dm' && i.kind !== 'file' && i.topicId === selected.topicId,
-      )
-      if (!inUrgent && !inOpenWork) setSelected(null)
-      else if (selected.section === 'starred') {
-        setSelected({ ...selected, section: inUrgent ? 'urgent' : 'openWork' })
-      }
-    }
+    const wasStarred = isDmStarred(selected.dmId)
+    toggleDm({ dmId: selected.dmId, name: selected.dmName })
+    if (!wasStarred) return
+    const inUrgent = urgentItems.some((u) => u.kind === 'dm' && u.dmId === selected.dmId)
+    if (!inUrgent) setSelected(null)
+    else if (selected.section === 'starred') setSelected({ ...selected, section: 'urgent' })
   }
 
   const handleStartTopicFromDm = (dmId: string, dmName: string, seedMessageId: string, data: StartTopicResult) => {
@@ -244,71 +268,52 @@ export function DeskPage() {
     showUnreads: showPeopleUnreads,
     onStartTopicFromDm: handleStartTopicFromDm,
   })
-  /**
-   * The Folder panel is a property of the topic, not of the page it was opened
-   * from — so Desk offers it exactly as Topics does (PEE-3). Without this a
-   * topic reached from Desk lost both the panel and the header button that
-   * shows it, which read as the topic having no linked project at all.
-   */
-  const [folderPanelOpen, setFolderPanelOpen] = useState(true)
   /*
-    The Folder resolved once for this topic — CON-9.
-
-    Both the conversation and the Folder panel need it: the conversation to know
-    which messages belong to a file *under* this one, the panel to draw the
-    files and the Activity beneath them. Held here, above both, so there is one
-    cross-app read per topic rather than two disagreeing ones.
-
-    `panelBusy` is the panel telling us a change is in flight, so an automatic
-    re-read cannot land over it and put the pre-change state back on screen.
+    The open file, as its own page draws it: the conversation, a composer, the
+    thread or the owner's widget in the third column, and the read marker. The
+    header is the Desk's — the file's title and a way to its full page, which
+    is where the tree, the trail and the file's menu are.
   */
-  const [panelBusy, setPanelBusy] = useState<string | undefined>()
-  const folderProject = useFolderProject(selected?.kind === 'topic' ? selected.topicId : null, panelBusy)
-  /** Which topic's details are open. Desk offers the same header menu Topics
-   *  does — a topic opened from here is the same topic (PEE-2). */
-  const [detailsTopicId, setDetailsTopicId] = useState<string | null>(null)
-  const topicView = useTopicView({
-    folderProject: folderProject.state,
-    topicId: selected?.kind === 'topic' ? selected.topicId : null,
-    topicTitle: selected?.kind === 'topic' ? selected.topicTitle : undefined,
-    onToggleStarred: selected?.kind === 'topic' ? handleToggleStarredOnDesk : undefined,
-    showUnreads: showTopicUnreads,
-    onToggleFolderPanel: hasConvex ? () => setFolderPanelOpen((v) => !v) : undefined,
-    folderPanelOpen,
-    onOpenDetails:
-      selected?.kind === 'topic' ? () => setDetailsTopicId(selected.topicId) : undefined,
+  const fileView = useFileView({
+    address: selected ? null : openAddress,
+    openThreadId,
+    onOpenThread: setOpenThread,
   })
+  const fileTitle = fileView.file?.slots.title?.value ?? openedFrom?.title ?? 'File'
+  const fullPage = openAddress ? filePath(openAddress, fileView.file?.slots.title?.value ?? openedFrom?.title) : null
+  const filePane = fullPage ? (
+    <div className="flex h-full flex-col">
+      <ContainerHeader
+        title={
+          <div className="min-w-0">
+            <p className="truncate text-body-2-strong text-text-primary">{fileTitle}</p>
+            {fileView.file?.appName && (
+              <p className="truncate text-caption text-text-muted">In {fileView.file.appName}</p>
+            )}
+          </div>
+        }
+        actions={
+          <Toolbar aria-label="File actions" surface={false}>
+            <ToolbarLink
+              tooltip="Open full page"
+              aria-label="Open full page"
+              href={fullPage}
+              onClick={(event) => followInApp(event, () => navigate(fullPage))}
+            >
+              <IconArrowUpRight size={16} stroke={1.5} />
+            </ToolbarLink>
+          </Toolbar>
+        }
+      />
+      {fileView.body}
+    </div>
+  ) : null
 
-  const rightPanel = selected?.kind === 'dm' ? dmView.rightPanel : topicView.rightPanel
-  /**
-   * Same rule as Topics (PEEK-24): the right column is the reply thread when one
-   * is open, and the Folder panel otherwise. A thread is what somebody just
-   * asked for; the Folder is context they chose to keep.
-   *
-   * DMs are untouched — they have no Folder to show.
-   */
-  const threadPanel =
-    selected?.kind === 'dm'
-      ? dmView.threadPanel
-      : (topicView.threadPanel ??
-        (hasConvex && folderPanelOpen && selected?.kind === 'topic' && topicView.folderId ? (
-          <FilesPanel
-            topicKey={selected.topicId}
-            folderProject={folderProject.state}
-            reload={folderProject.reload}
-            onBusyChange={setPanelBusy}
-            activity={topicView.activity}
-            subFileLabels={topicView.subFileLabels}
-            selectedConversationId={topicView.openThreadId}
-            onOpenThread={topicView.openThread}
-          />
-        ) : undefined))
+  const rightPanel = selected ? dmView.rightPanel : (filePane ?? dmView.rightPanel)
+  const threadPanel = selected ? dmView.threadPanel : filePane ? fileView.threadPanel : undefined
 
   return (
     <>
-      {detailsTopicId && (
-        <TopicDetailsDialog topicKey={detailsTopicId} onClose={() => setDetailsTopicId(null)} />
-      )}
       <DeskPageView
         railClosed={railClosed}
         loading={deskLoading || starredLoading}
@@ -335,8 +340,8 @@ export function DeskPage() {
                 isResolved: isTopicResolved(item.topicId),
                 isUnread: true,
                 isUrgent: true,
-                isSelected: selectionAnchor === 'urgent' && selected?.kind === 'topic' && selected.topicId === item.topicId,
-                onClick: () => selectTopic(item.topicId),
+                isSelected: isOpen(legacyTopicFile(item.topicId)?.address, 'urgent'),
+                onClick: () => selectTopic(item.topicId, 'urgent'),
               },
         )}
         openWork={openWorkItems.map((item) =>
@@ -347,10 +352,8 @@ export function DeskPage() {
                 name: item.title,
                 isBareFile: item.object.kind === KIND_BARE_FILE,
                 isUnread: showTopicUnreads && fileUnread[item.object.ref] === true,
-                // Never selected: a file opens on its own page, and the Desk's
-                // right column draws only a topic or a DM (FOL-34).
-                isSelected: false,
-                onClick: () => navigate(filePath(item.address, item.title)),
+                isSelected: isOpen(item.address, 'openWork'),
+                onClick: () => openFile(item.address, item.title, 'openWork'),
                 onRemove: () => dismissOpenWork(item.id),
               }
             : item.kind === 'dm'
@@ -370,8 +373,8 @@ export function DeskPage() {
                 name: item.title,
                 isResolved: isTopicResolved(item.topicId),
                 isUnread: (showTopicUnreads && topicHasUnread(item.topicId)) || Boolean(item.isUnread),
-                isSelected: selectionAnchor === 'openWork' && selected?.kind === 'topic' && selected.topicId === item.topicId,
-                onClick: () => selectTopic(item.topicId),
+                isSelected: isOpen(legacyTopicFile(item.topicId)?.address, 'openWork'),
+                onClick: () => selectTopic(item.topicId, 'openWork'),
                 onRemove: () => dismissOpenWork(item.id),
               },
         )}
@@ -392,8 +395,8 @@ export function DeskPage() {
                 name: entry.title,
                 isResolved: isTopicResolved(entry.topicId),
                 isUnread: (showTopicUnreads && topicHasUnread(entry.topicId)) || Boolean(entry.isUnread),
-                isSelected: selectionAnchor === 'starred' && selected?.kind === 'topic' && selected.topicId === entry.topicId,
-                onClick: () => selectTopic(entry.topicId),
+                isSelected: isOpen(legacyTopicFile(entry.topicId)?.address, 'starred'),
+                onClick: () => selectTopic(entry.topicId, 'starred'),
               },
         )}
         onAddToOpenWork={() => setShowAddToOpenWork(true)}
@@ -418,9 +421,9 @@ export function DeskPage() {
 export interface DeskRow {
   id: string
   /*
-    A file joined the two on 23 September (FOL-34): Open work holds files now,
-    and a file row opens the file's own page rather than the Desk's right
-    column, because its conversation is that page's.
+    A file joined the two on 23 September (FOL-34): Open work holds files now.
+    It opens in the Desk's right column like the others (SID-3), drawing the
+    same conversation as the file's own page.
   */
   kind: 'dm' | 'topic' | 'file'
   name: string
