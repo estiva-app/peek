@@ -32,15 +32,13 @@ import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
 import {
   buildBareFile,
-  buildCreateChannel,
   buildDeleteChannel,
-  buildEditChannelMetadata,
   decodeNevent,
   encodeNaddr,
   pointerToAddress,
   referenceToPointer,
-  toNostrSeconds,
   type AddressPointer,
+  type UnsignedEvent,
 } from '@estiva-app/protocol'
 import {
   KIND_BARE_FILE,
@@ -70,6 +68,12 @@ import {
   conversationsOf,
   commentKindsOf,
   CONVERSATION_LIMIT,
+  planCreateFolder,
+  planMoveFile,
+  planPlaceFile,
+  planRenameFolder,
+  planUnlistFile,
+  type FolderRef,
 } from '@estiva-app/interop'
 
 export interface ActResult {
@@ -509,52 +513,31 @@ export async function createFolderAsViewer(
   token: StoredToken,
 ): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
   const id = crypto.randomUUID()
-  const unsigned = buildCreateChannel(token.pubkey, Date.now(), { channelUuid: id, name })
-  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  // Never the status code: the relay refuses in a shape that reads as success.
-  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the folder.' }
-  const named = await folderCommand({ folder: id, op: 'add', name }, relayUrl, token)
-  if (!named.ok) {
-    // The channel exists and is reachable by its id; only the list will not show it.
-    return { ok: false, reason: 'The folder was created but the relay refused to list it. Reload and rename it to try again.' }
-  }
-  return { ok: true, id }
+  const result = await publishInOrder(planCreateFolder(token.pubkey, Date.now(), { folder: id, name }), relayUrl, token)
+  if (result.ok) return { ok: true, id }
+  if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused to create the folder.' }
+  // The channel exists and is reachable by its id; only the list will not show it.
+  return { ok: false, reason: 'The folder was created but the relay refused to list it. Reload and rename it to try again.' }
 }
 
-/** The Folder command — RFC 0.4 §4. `op` is `add`, `remove` or `set`. */
-const KIND_FOLDER_COMMAND = 1852
-
 /**
- * Publish a Folder command and say plainly whether the relay took it.
+ * Sign and publish a Folder plan in order, stopping at the first refusal.
  *
- * There is no builder for this in `@estiva-app/protocol` — the kind is the
- * relay's own and the tag shape is read straight off `handle_folder_command`:
- * `h` names the Folder, `op` is required and an unrecognised one is *refused*
- * rather than defaulted, `a` tags are the addresses in the order given, and
- * `name` is optional.
+ * The plans are `@estiva-app/interop`'s (FOL-4): the events and their order are
+ * shared with Ship, and each app keeps its own signing and its own words for a
+ * refusal part-way through — which `index` is what lets the caller choose.
  */
-async function folderCommand(
-  args: { folder: string; op: 'add' | 'remove' | 'set'; addresses?: string[]; name?: string },
+async function publishInOrder(
+  events: UnsignedEvent[],
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const unsigned = {
-    pubkey: token.pubkey,
-    created_at: toNostrSeconds(Date.now()),
-    kind: KIND_FOLDER_COMMAND,
-    tags: [
-      ['h', args.folder],
-      ['op', args.op],
-      ...(args.addresses ?? []).map((address) => ['a', address]),
-      ...(args.name === undefined ? [] : [['name', args.name]]),
-    ],
-    content: '',
+): Promise<{ ok: true } | { ok: false; index: number; reason?: string }> {
+  for (const [index, unsigned] of events.entries()) {
+    const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
+    const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
+    // Never the status code: the relay refuses as 200 with `accepted: false`.
+    if (!result.ok) return { ok: false, index, ...(result.reason ? { reason: result.reason } : {}) }
   }
-  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  // Never the status code: the relay refuses as 200 with `accepted: false`.
-  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
   return { ok: true }
 }
 
@@ -583,17 +566,12 @@ export async function renameFolderAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const unsigned = buildEditChannelMetadata(token.pubkey, Date.now(), { channelUuid: folder, name })
-  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused the rename.' }
-  if (!hasState) return { ok: true }
-  /*
-    `op: add` with no addresses, which the handler turns into `next = current` —
-    the contents are preserved and only the name changes. `set` would empty the
-    Folder, and there is no `rename` op.
-  */
-  return folderCommand({ folder, op: 'add', name }, relayUrl, token)
+  // `[9002]`, or `[9002, 1852 add + name]` with state: `add` of nothing keeps
+  // the contents, `set` would empty them, and there is no `rename` op.
+  const result = await publishInOrder(planRenameFolder(token.pubkey, Date.now(), { folder, name, hasState }), relayUrl, token)
+  if (result.ok) return { ok: true }
+  if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused the rename.' }
+  return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
 }
 
 /**
@@ -637,25 +615,33 @@ export async function deleteFolderAsViewer(
  * The remove failing is therefore reported as a partial move rather than a
  * failure, because the file did arrive and saying "it failed" would send
  * somebody looking for it in the wrong place.
+ *
+ * **Refused, before anything is sent, when either Folder has no state**
+ * (FOL-10). An `add` to one emits state listing only the moved file and hides
+ * everything else filed there; a `remove` from one emits state listing nothing.
+ * So each side's `hasState` comes from a read, as a rename's does.
  */
 export async function moveFileAsViewer(
   address: string,
-  from: string,
-  to: string,
+  from: FolderRef,
+  to: FolderRef,
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (from === to) return { ok: true }
-  const added = await folderCommand({ folder: to, op: 'add', addresses: [address] }, relayUrl, token)
-  if (!added.ok) return added
-  const removed = await folderCommand({ folder: from, op: 'remove', addresses: [address] }, relayUrl, token)
-  if (!removed.ok) {
+  const plan = planMoveFile(token.pubkey, Date.now(), { address, from, to })
+  if (!plan.ok) {
     return {
       ok: false,
-      reason: 'Added to the new folder, but it is still in the old one. Try moving it again.',
+      reason:
+        plan.reason === 'source-has-no-state'
+          ? 'Files can’t be moved out of this folder yet: it has no list of its own, so moving one would hide the rest.'
+          : 'That folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
-  return { ok: true }
+  const result = await publishInOrder(plan.events, relayUrl, token)
+  if (result.ok) return { ok: true }
+  if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
+  return { ok: false, reason: 'Added to the new folder, but it is still in the old one. Try moving it again.' }
 }
 
 /**
@@ -698,13 +684,15 @@ export async function createTopicAsViewer(
   if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the topic.' }
   const address = `${KIND_BARE_FILE}:${token.pubkey}:${fileId}`
   const naddr = encodeNaddr({ kind: KIND_BARE_FILE, pubkey: token.pubkey, identifier: fileId, relays: [] })
-  if (args.hasState) {
-    const added = await folderCommand({ folder: args.folder, op: 'add', addresses: [address] }, relayUrl, token)
-    if (!added.ok) {
-      return {
-        ok: false,
-        reason: 'The topic was created but could not be added to this folder’s list. Reload and try adding it again.',
-      }
+  const placed = await publishInOrder(
+    planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address, hasState: args.hasState }),
+    relayUrl,
+    token,
+  )
+  if (!placed.ok) {
+    return {
+      ok: false,
+      reason: 'The topic was created but could not be added to this folder’s list. Reload and try adding it again.',
     }
   }
   return { ok: true, address, naddr }
@@ -1316,8 +1304,11 @@ export async function deleteFileAsViewer(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const deleted = await applyActionAsViewer({ naddr: args.naddr, actionId: args.actionId, value: '' }, relayUrl, token)
   if (!deleted.ok) return { ok: false, reason: deleted.reason ?? 'The relay refused to delete the topic.' }
-  if (!args.hasState) return { ok: true }
-  const removed = await folderCommand({ folder: args.folder, op: 'remove', addresses: [args.address] }, relayUrl, token)
+  const removed = await publishInOrder(
+    planUnlistFile(token.pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: args.hasState }),
+    relayUrl,
+    token,
+  )
   if (!removed.ok) {
     return {
       ok: false,
