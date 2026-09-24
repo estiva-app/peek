@@ -24,7 +24,7 @@
  *   - a **topic** contributes its channel uuid, which exists once the topic has
  *     been published to the relay;
  *   - a **DM** contributes its channel uuid too (DMS-8), the one the relay
- *     answered `kind:41010` with and `dmConversations.channelUuid` keeps —
+ *     answered `kind:41010` with and its `39000` names (REM-3) —
  *     bare, like a topic's, never the Convex id and never with a prefix (the
  *     blob is grow-only, so a prefixed variant would be a second permanent key
  *     for the same conversation). Until the relay has answered, the DM has no

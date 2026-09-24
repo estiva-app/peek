@@ -16,8 +16,8 @@
  * Convex holds no hidden flag and must not grow one: the snapshot is the truth,
  * a second copy would be a divergence waiting to happen, and the newest event
  * replaces the set wholesale — `hiddenChannelsOf` reads the latest and never
- * merges. What Convex contributes is only the join from a channel uuid to the
- * DM's person key (`dmChannels`), which is rendering, not state.
+ * merges. The join from a channel uuid to the person it is with is the relay's
+ * too — the channel's `39000` (`fetchDmChannels`) — so Convex has no part.
  *
  * ## Never sign a 30622
  *
@@ -32,14 +32,14 @@
  * `open_dm` clears the caller's `hidden_at` when the DM already exists and
  * republishes the snapshot on that path (`buzz-db/src/dm.rs`,
  * `command_executor.rs`). So the unhide is a second `kind:41010` —
- * `publishDmChannel` with `reopen` — and Peek sends one when the viewer opens
+ * `publishDmChannel` again — and Peek sends one when the viewer opens
  * a hidden DM. A message *arriving* in a hidden DM does not resurface it:
  * nothing on the relay's `kind:9` path touches `hidden_at` (measured against
  * `origin/nfb-demo-kinds`, the deployed branch), and Peek does not do it on
  * the relay's behalf either — the Screener is where an incoming DM surfaces,
  * and opening it from there is the re-open.
  */
-import { KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { KIND, buildDmHide, type SignedEvent } from '@estiva-app/protocol'
 import type { RelaySeam } from './stars'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 
@@ -68,21 +68,17 @@ export async function fetchHiddenDms(seam: RelaySeam): Promise<HiddenDmsRead> {
   return { state: 'present', hidden: hiddenChannelsOf(events) }
 }
 
-type DmHidePlan =
-  | { ok: true; unsigned: UnsignedEvent; channelUuid: string }
-  | { ok: false; reason: string; expected?: boolean }
-
 export interface DmHideResult {
   ok: boolean
-  /** The channel the hide named, so a caller can apply it before re-reading. */
-  channelUuid?: string
   reason?: string
-  /** This was never going to publish, and saying so would be crying wolf. */
-  expected?: boolean
 }
 
 /**
- * Hide one DM: Convex shapes the `41012`, the browser signs and sends it.
+ * Hide one DM channel: the browser builds, signs and sends the `41012`.
+ *
+ * The channel is the one the relay's `39000` named (`fetchDmChannels`), so
+ * there is nothing to look up first — until REM-3 Convex shaped this event only
+ * because Convex was where the uuid was kept.
  *
  * Nothing is recorded back — there is nothing to record. The relay's answer to
  * a hide is the snapshot it republishes, and the caller re-reads that
@@ -90,15 +86,10 @@ export interface DmHideResult {
  * than the round trip. A `duplicate` answer is still `ok`: the same hide sent
  * twice in one second is already applied.
  */
-export async function publishDmHide(
-  dmKey: string,
-  seam: RelaySeam,
-  api: { unsignedDmHide: (args: { dmKey: string }) => Promise<DmHidePlan> },
-): Promise<DmHideResult> {
-  const plan = await api.unsignedDmHide({ dmKey })
-  if (!plan.ok) return { ok: false, reason: plan.reason, expected: plan.expected }
-  const signed = await signViaEstivaId(plan.unsigned, seam.accessToken, seam.pubkey)
+export async function publishDmHide(channelUuid: string, seam: RelaySeam): Promise<DmHideResult> {
+  const unsigned = buildDmHide(seam.pubkey, Date.now(), { channelUuid })
+  const signed = await signViaEstivaId(unsigned, seam.accessToken, seam.pubkey)
   const result = await publishSigned(seam.relayUrl, signed, seam.accessToken, seam.pubkey)
   if (!result.ok) return { ok: false, reason: result.reason ?? 'the relay refused the DM hide' }
-  return { ok: true, channelUuid: plan.channelUuid }
+  return { ok: true }
 }

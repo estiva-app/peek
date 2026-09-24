@@ -340,9 +340,9 @@ describe('Reference, as a link (RIC-16)', () => {
     expect(a?.textContent).toBe('Feedback on Ship')
   })
 
-  it('a person chip is a link to their DM', () => {
+  it('a person chip is a link to their DM, by pubkey (REM-3)', () => {
     const c = render(<Reference uri={`nostr:${encodeNpub(KNOWN)}`} />).container
-    expect(c.querySelector('a')?.getAttribute('href')).toBe('/app/people/Ada%20Lovelace')
+    expect(c.querySelector('a')?.getAttribute('href')).toBe(`/app/people/${KNOWN}`)
   })
 
   it('a label that leads nowhere is not a link', () => {

@@ -10,7 +10,7 @@
  * ## The set and the rendering are two different things, and mixing them is a bug
  *
  * The set is ids: topic ids and person keys, and nothing else is published.
- * Rendering resolves those through `useTopics()` and `usePeople()` — a title, a
+ * Rendering resolves those through `useTopics()` and `useWorkspacePeople()` — a title, a
  * resolved state, a name, an avatar — which is ADR 0001's layer 3 doing exactly
  * what it is for. An id the index cannot resolve is dropped from `entries` and
  * **kept in the set**: they are separate values here for that reason. Deriving
@@ -53,7 +53,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import { STARRED_ENTRIES, type StarredEntry } from '@/data/deskData'
 import { hasConvex } from '@/api/store'
-import { usePeople } from '@/api/people'
+import { isPersonKey, useWorkspacePeople } from '@/api/people'
 import { useTopics } from '@/api/topics'
 import { useStarsSync } from '@/nostr/useStarsSync'
 import type { TopicStateStatus } from '@/components/ui/TopicState'
@@ -127,13 +127,21 @@ export function StarredProvider({ children }: { children: ReactNode }) {
 
   // Rendering only. Never the set — see the header.
   const topics = useTopics()
-  const people = usePeople()
+  const people = useWorkspacePeople()
 
+  /*
+    A starred person is their pubkey since REM-3 — the DM's id everywhere else.
+    A star written under the old Peek key moves to the pubkey stored beside it;
+    one with none cannot be moved without Convex, so it is dropped from the set
+    and the next publish deletes it, rather than leaving a key nothing can read
+    in the person's blob for ever. Convex's copy is Convex ids only, so a seed
+    from it brings topics and no people.
+  */
   const convexSet = useMemo<StarSet | undefined>(() => {
     if (convexStars === undefined) return undefined
     return {
       topics: convexStars.flatMap((e) => (e.kind === 'topic' ? [e.topicId] : [])),
-      people: convexStars.flatMap((e) => (e.kind === 'dm' ? [e.dmId] : [])),
+      people: convexStars.flatMap((e) => (e.kind === 'dm' && isPersonKey(e.dmId) ? [e.dmId] : [])),
     }
   }, [convexStars])
 
@@ -141,7 +149,14 @@ export function StarredProvider({ children }: { children: ReactNode }) {
     if (stars.state !== 'present' || !stars.relayBlob) return undefined
     return {
       topics: stars.relayBlob.topics.map((t) => t.id),
-      people: stars.relayBlob.people.map((p) => p.key),
+      people: [
+        ...new Set(
+          stars.relayBlob.people.flatMap((p) => {
+            const key = p.pubkey ?? p.key
+            return isPersonKey(key) ? [key] : []
+          }),
+        ),
+      ],
     }
   }, [stars.state, stars.relayBlob])
 
@@ -215,7 +230,7 @@ export function StarredProvider({ children }: { children: ReactNode }) {
     if (!effectiveSet) return
     void publishSet({
       topics: effectiveSet.topics.map((id) => ({ id })),
-      people: effectiveSet.people.map((key) => ({ key })),
+      people: effectiveSet.people.map((key) => ({ key, pubkey: key })),
     })
   }, [effectiveSet, publishSet])
 

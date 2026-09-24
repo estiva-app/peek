@@ -71,41 +71,27 @@ describe('reading the hidden set', () => {
 })
 
 describe('hiding a DM', () => {
-  const UNSIGNED = { pubkey: ME, created_at: 1789660131, kind: 41012, tags: [['h', A]], content: '' }
-
-  it('signs and sends the 41012 Convex shaped, and hands back the channel it named', async () => {
+  it('builds, signs and sends a 41012 naming the channel, and nothing else', async () => {
     publishSigned.mockResolvedValue({ ok: true, eventId: 'e1', httpStatus: 200, message: '{}' })
-    const api = { unsignedDmHide: vi.fn().mockResolvedValue({ ok: true, unsigned: UNSIGNED, channelUuid: A }) }
 
-    const result = await publishDmHide('alice', seam, api)
+    const result = await publishDmHide(A, seam)
 
-    expect(api.unsignedDmHide).toHaveBeenCalledWith({ dmKey: 'alice' })
-    expect(signViaEstivaId).toHaveBeenCalledWith(UNSIGNED, 't', ME)
-    expect(result).toEqual({ ok: true, channelUuid: A })
+    expect(result).toEqual({ ok: true })
+    const [[event, accessToken, pubkey]] = signViaEstivaId.mock.calls as [[{ kind: number; pubkey: string; tags: string[][]; content: string }, string, string]]
+    expect([accessToken, pubkey]).toEqual(['t', ME])
+    expect(event).toMatchObject({ kind: 41012, pubkey: ME, tags: [['h', A]], content: '' })
   })
 
   it('never signs a 30622 — the only event it sends is the 41012', async () => {
     publishSigned.mockResolvedValue({ ok: true, eventId: 'e1', httpStatus: 200, message: '{}' })
-    await publishDmHide('alice', seam, {
-      unsignedDmHide: vi.fn().mockResolvedValue({ ok: true, unsigned: UNSIGNED, channelUuid: A }),
-    })
+    await publishDmHide(A, seam)
     const kinds = signViaEstivaId.mock.calls.map(([e]) => (e as { kind: number }).kind)
     expect(kinds).toEqual([41012])
   })
 
-  it('publishes nothing when the DM has no channel yet, and says it was expected', async () => {
-    const result = await publishDmHide('alice', seam, {
-      unsignedDmHide: vi.fn().mockResolvedValue({ ok: false, reason: 'the DM has no channel on the relay yet', expected: true }),
-    })
-    expect(result).toEqual({ ok: false, reason: 'the DM has no channel on the relay yet', expected: true })
-    expect(publishSigned).not.toHaveBeenCalled()
-  })
-
   it('carries the relay\'s refusal back by reason', async () => {
     publishSigned.mockResolvedValue({ ok: false, reason: 'forbidden: not a member of this DM' })
-    const result = await publishDmHide('alice', seam, {
-      unsignedDmHide: vi.fn().mockResolvedValue({ ok: true, unsigned: UNSIGNED, channelUuid: A }),
-    })
+    const result = await publishDmHide(A, seam)
     expect(result).toEqual({ ok: false, reason: 'forbidden: not a member of this DM' })
   })
 })
