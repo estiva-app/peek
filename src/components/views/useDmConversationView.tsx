@@ -41,7 +41,7 @@ interface ViewSlots {
  * and the relay after without waiting; DMS-7's duplicate rows broke one pair's
  * import, and a failed publish still reported a sent message.
  *
- * Attachments go to the blob store only (the view's `UploadDestinationProvider`).
+ * Attachments go to the blob store only, as every upload does.
  * Two things a DM had are dropped (Miky, 2026-09-23): the highlight, which
  * only Convex held and no DM message carries, and the promoted-huddle context.
  *

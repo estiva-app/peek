@@ -23,5 +23,5 @@ import reactHooks from 'eslint-plugin-react-hooks'
  */
 export default gateConfig({
   quiet: { 'react-hooks': reactHooks },
-  ignores: ['demo-scenarios', 'convex/_generated'],
+  ignores: ['demo-scenarios'],
 })

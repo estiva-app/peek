@@ -27,19 +27,6 @@ const GREG = 'a'.repeat(64)
 const JUAN = 'b'.repeat(64)
 const CY = 'c'.repeat(64)
 
-/*
-  REM-4: open work never touches Convex. Any read or write reaching it fails the
-  test loudly rather than answering `undefined`, which is what a query in flight
-  looks like and would pass unnoticed.
-*/
-vi.mock('convex/react', () => ({
-  useQuery: () => {
-    throw new Error('open work asked Convex')
-  },
-  useMutation: () => {
-    throw new Error('open work wrote Convex')
-  },
-}))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 const PEOPLE = [

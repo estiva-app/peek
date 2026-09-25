@@ -10,20 +10,13 @@ It runs at peek.estiva.app. How to run and check it: `README.md`.
 
 - React 19 + Vite + TypeScript + Tailwind (the tokens come from the
   `@estiva-app/ui` preset) + Tiptap composer.
-- Data: the relay is canonical (ADR 0001, `estiva-docs/decisions/`); Convex
-  is the projection and cache beside it. Config in `.env.local`; schema in
-  `convex/schema.ts`.
+- Data: the relay, and nothing else (ADR 0001, `estiva-docs/decisions/`).
+  Convex was deleted in REM-7. Config (`VITE_RELAY_URL`) in `.env.local`.
 - Tests: Vitest (`npm run test:run`). Storybook: `npm run storybook`.
 - **Type-check with `npx tsc -b`** — never `tsc --noEmit` (matches the build,
   which runs `tsc -b && vite build`).
 - `npm run lint:rules` is the gate lint, `npm run lint:tokens` the token lint.
   Both run in CI's `gate` job, the one required check.
-
-## Convex: never `--prod`
-
-`--prod` is wrong here: the live backend is `honorable-guineapig-592`, and
-Convex labels it Development. Name it with `--url
-https://honorable-guineapig-592.eu-west-1.convex.cloud`, or use the dashboard.
 
 ## The gate lint, and a session opened above this folder
 
@@ -59,8 +52,6 @@ also in a session started in the folder above.
   `usePeekActions()`.
 - `.claude/rules/on-device-ai.md` — the launcher and the Prompt API files:
   a model runs on the device, never in a cloud.
-- `.claude/rules/convex.md` — `convex/` and `scripts/`: ADR 0001's three
-  questions, the nine-field measurement, the deployment, schema changes.
 - Skill `estiva-ui` (the package's) — before any screen work: `npm run
   ui:find` first, read the part's page, never hand-roll what it owns.
 - Skill `verify` — to prove a change in the running app, or to measure a

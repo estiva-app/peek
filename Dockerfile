@@ -1,13 +1,9 @@
 # Estiva Peek — production image.
 #
-# The build does **not** happen here (nor, since PER-16, in Ship's). Peek's bundle is
-# produced by `npx convex deploy --cmd 'npm run build'`, which pushes the Convex
-# backend and injects the matching `VITE_CONVEX_URL` into the frontend in one
-# step — so the two halves cannot drift. That needs `CONVEX_DEPLOY_KEY` and
-# network access, neither of which belongs in a Dockerfile.
-#
-# So CI builds `dist/`, and this image is the delivery envelope for it. Building
-# without a prior `convex deploy` produces a bundle pointed at nothing.
+# The build does **not** happen here (nor, since PER-16, in Ship's). CI builds
+# `dist/` with `npm run build`, its `VITE_*` values set in
+# `.github/workflows/deploy.yml`, and this image is the delivery envelope for
+# it. Building without `VITE_RELAY_URL` produces a bundle in mock mode.
 
 FROM nginx:1.27-alpine AS runtime
 

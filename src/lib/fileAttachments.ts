@@ -57,28 +57,18 @@ export function fileTypeLabel(name: string): string {
  * `PendingAttachmentChip` that is Peek's own.
  *
  * Three states: **uploading**, **ready** (the card shows the size), and
- * **failed** (why, in place of the size). And one qualifier on ready — CON-12:
- * a file can upload to Peek and fail to reach the relay. It still sends and
- * Peek still draws it; what is lost is every **other** reader, which is
- * invisible from here. Miky posted an image on 2026-09-08 and Ship showed
- * nothing, because the event reached the relay with no `imeta` and neither app
- * said so.
+ * **failed** (why, in place of the size).
  *
- * So that case is drawn, in **warning** rather than error: nothing failed for
- * the person holding this screen. The words name the consequence — other apps
- * — and the relay's own words ("403 kind_not_allowed") go on hover, where a
- * maintainer finds them and nobody else has to read them. A real failure wins
- * over the sharing note, and an upload still in flight says nothing about
- * sharing yet.
+ * There was a fourth, **warning**, for a file that uploaded to Convex and not
+ * to the relay (CON-12). The relay is the only destination since REM-7, so a
+ * file it refused has failed.
  */
-export function pendingAttachmentNote(file: { status: 'uploading' | 'done' | 'error'; error?: string; shareError?: string }): {
-  state: 'uploading' | 'ready' | 'failed' | 'warning'
+export function pendingAttachmentNote(file: { status: 'uploading' | 'done' | 'error'; error?: string }): {
+  state: 'uploading' | 'ready' | 'failed'
   note?: string
-  noteHint?: string
 } {
   if (file.status === 'error') return { state: 'failed', note: file.error }
   if (file.status === 'uploading') return { state: 'uploading' }
-  if (file.shareError) return { state: 'warning', note: "Other apps won't see this", noteHint: `Not shared with other apps — ${file.shareError}` }
   return { state: 'ready' }
 }
 
@@ -94,14 +84,13 @@ export function pendingAttachmentNote(file: { status: 'uploading' | 'done' | 'er
  * only when somebody opens it, so a thread of screenshots does not pull every
  * full-size file to draw them at 112px.
  *
- * A file this deployment holds needs none of that: `url` is a URL an `<img>`
- * can load, and during the optimistic window only `previewUrl` exists.
+ * During the optimistic window a file needs none of that: `previewUrl` is a
+ * local object URL an `<img>` can load.
  */
 export function postedAttachment(file: {
   name: string
   size: number
   contentType: string
-  url?: string
   previewUrl?: string
   mediaUrl?: string
   thumbUrl?: string
@@ -114,7 +103,7 @@ export function postedAttachment(file: {
   remoteSrc?: string
   remoteFullSrc?: string
 } {
-  const local = file.url ?? file.previewUrl
+  const local = file.previewUrl
   const image = isImageAttachment(file.name, file.contentType)
   if (local) return { name: file.name, size: file.size, contentType: file.contentType, src: image ? local : undefined, href: local }
   return {

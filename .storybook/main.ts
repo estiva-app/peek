@@ -33,15 +33,12 @@ const config: StorybookConfig = {
     },
   ],
   viteFinal: (viteConfig) => {
-    // Stories must be deterministic: blank out the Convex deployment URL so
-    // the data seam takes its static-mock path (hasConvex = false) instead of
-    // subscribing to live queries that never resolve without an authed
-    // session (which left the page stories on permanent skeletons).
-    // The relay is blanked for the same reason (REM-2): its absence is the
-    // mock-mode flag for every relay path (`hasRelay`, src/api/relayUrl.ts).
+    // Stories must be deterministic: blank out the relay so the data seam
+    // takes its static-mock path (`hasRelay` false, src/api/relayUrl.ts)
+    // instead of reads that never resolve without a signed-in session (which
+    // left the page stories on permanent skeletons).
     viteConfig.define = {
       ...viteConfig.define,
-      'import.meta.env.VITE_CONVEX_URL': JSON.stringify(''),
       'import.meta.env.VITE_RELAY_URL': JSON.stringify(''),
     }
 

@@ -11,10 +11,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 /*
-  `@/api` reaches convex, and the widget below the text reaches it again. Neither
-  is what this file is about: the subject is the mapping from parsed spans and
-  segments to DOM. Mocking them keeps the test on that, and keeps it runnable
-  without a convex deployment.
+  `@/api` reaches the relay, and the widget below the text reaches it again.
+  Neither is what this file is about: the subject is the mapping from parsed
+  spans and segments to DOM. Mocking them keeps the test on that.
 */
 vi.mock('@/api', () => ({
   TOPICS: [],

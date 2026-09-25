@@ -20,7 +20,7 @@ const applyAction = vi.fn()
 // relay read and the publish happen in the browser, so there is no action to
 // mock and `@/api` is the only seam to stub.
 vi.mock('@/api', () => ({
-  hasConvex: true,
+  hasRelay: true,
   useForeignObjects: () => ({ resolveObject, applyAction, resolveFolderProject: vi.fn() }),
   // The assignee picker's option list (PEE-1) — two known people.
   useWorkspaceDirectory: () => ({

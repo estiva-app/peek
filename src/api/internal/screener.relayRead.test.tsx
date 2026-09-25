@@ -30,19 +30,6 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { StreamMessage } from '@/nostr/channelStreams'
 
-vi.mock('@/api/store', () => ({ hasConvex: true }))
-/*
-  Convex answers nothing and accepts nothing: the Screener must not ask it. A
-  query here would render as a row that never arrives, so it throws instead.
-*/
-vi.mock('convex/react', () => ({
-  useQuery: () => {
-    throw new Error('the Screener asked Convex')
-  },
-  useMutation: () => {
-    throw new Error('the Screener wrote to Convex')
-  },
-}))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 /* The DM half (CON-14): one DM, with one unread message from the partner. */
