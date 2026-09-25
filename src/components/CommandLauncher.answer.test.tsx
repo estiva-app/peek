@@ -12,6 +12,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { enter } from '@/test-enter'
 import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
@@ -77,7 +78,7 @@ const input = () => document.querySelector<HTMLInputElement>('[data-command-pale
 
 async function ask(question = 'what did we decide about the migration') {
   open()
-  await userEvent.type(input(), question)
+  await enter(input(), question)
   await userEvent.click(await screen.findByText(/^Ask: “/))
 }
 
@@ -276,14 +277,14 @@ describe('asking about a whole topic (INT-8)', () => {
 
   async function askTopic(question = 'what did we decide about the migration') {
     open(acrossConversations)
-    await userEvent.type(input(), question)
+    await enter(input(), question)
     await userEvent.click(await screen.findByText(/^Ask: “/))
   }
 
   it('offers to answer with no thread open and no composer', async () => {
     // The gap: a topic detail page has neither, and used to offer nothing.
     open(acrossConversations)
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(), 'what did we decide')
 
     expect(await screen.findByText(/^Ask: “/)).toBeInTheDocument()
     // Draft still needs somewhere to put a reply, and correctly stays away.
@@ -345,7 +346,7 @@ describe('asking about a whole topic (INT-8)', () => {
         ],
       },
     })
-    await userEvent.type(input(), 'migration')
+    await enter(input(), 'migration')
     await userEvent.click(await screen.findByText(/^Ask: “/))
     await screen.findByTestId('answer')
 

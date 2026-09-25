@@ -14,7 +14,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { enter } from '@/test-enter'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { PeekDataProvider } from '@/api'
@@ -70,7 +70,7 @@ function open(onClose = vi.fn()) {
 
 async function type(text: string) {
   // The launcher autofocuses its single input.
-  await userEvent.type(document.querySelector<HTMLInputElement>('[data-command-palette-field]')!, text)
+  await enter(document.querySelector<HTMLInputElement>('[data-command-palette-field]')!, text)
 }
 
 describe('Cmd+K finds a person by typing part of them (PEE-4)', () => {
