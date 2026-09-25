@@ -2,7 +2,6 @@ import type { Decorator, Preview } from '@storybook/react-vite'
 import { themes } from 'storybook/theming'
 import { PeekDataProvider } from '../src/api'
 import { DebugProvider } from '../src/lib/debug'
-import { TopicStoreProvider } from '../src/api/internal/topicStore'
 import '../src/index.css'
 import './preview.css'
 import './signal.css'
@@ -25,10 +24,11 @@ document.body.classList.add('bg-bg-base', 'text-text-primary', 'font-sans')
 
 /**
  * Every story runs inside the app's ambient providers. Components deep in a
- * tree reach for useDebug and the topic store — the read-state sync mounts
- * with the app since peek#97 — and a story rendering them without these
- * crashed to Storybook's error page. 67 of 316 stories were error pages
- * before this, silently, until a pixel run compared them (2026-09-01).
+ * tree reach for useDebug and the data provider, and a story rendering them
+ * without these crashed to Storybook's error page. 67 of 316 stories were
+ * error pages before this, silently, until a pixel run compared them
+ * (2026-09-01). The topic store was mounted here too until FOL-23 deleted it
+ * (#358); the import stayed, and no Peek story could render until it went.
  *
  * PeekDataProvider is safe here because Storybook pins VITE_RELAY_URL to ''
  * (main.ts), so every store in it answers from the mock data. Same nesting as
@@ -37,9 +37,7 @@ document.body.classList.add('bg-bg-base', 'text-text-primary', 'font-sans')
 const withProviders: Decorator = (Story) => (
   <DebugProvider>
     <PeekDataProvider>
-      <TopicStoreProvider>
-        <Story />
-      </TopicStoreProvider>
+      <Story />
     </PeekDataProvider>
   </DebugProvider>
 )
