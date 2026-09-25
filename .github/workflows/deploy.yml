@@ -1,7 +1,6 @@
 name: deploy
 
-# Push to main → Convex backend deployed, image on GHCR. The box pulls the
-# image within two minutes.
+# Push to main → image on GHCR. The box pulls the image within two minutes.
 #
 # No SSH, no DEPLOY_SSH_KEY, no DEPLOY_HOST. The Hetzner firewall allows TCP 22
 # from the home IP only, and a deploy key in GitHub would be a standing
@@ -34,21 +33,12 @@ jobs:
       # wiring it here would block every deploy on a backlog this ticket did not
       # sign up to clear. Worth fixing separately; not worth blocking on.
 
-      # Both typechecks, because there are two and they disagree.
-      #
-      # `tsc -b` is the app's (`lib: ES2023`). `tsc -p convex` is the one
-      # `convex deploy` runs on the functions, and its `lib` is **ES2021** — so
-      # a `.at(-1)` typechecks under the first and fails under the second.
-      # Neither ran here until now: the app's build happened only inside
-      # `publish`, and the Convex one only inside `convex deploy`. A PR was
-      # therefore green while `main`'s deploy was broken, which is exactly what
-      # happened to #182 — the deploy failed on one line in a test file that
-      # every check on the PR had passed.
+      # The build's typecheck, run on the PR too: until it ran here, the app's
+      # build happened only inside `publish`, so a PR could be green while
+      # `main`'s deploy was broken (#182). There was a second one, `tsc -p
+      # convex`, until REM-7 deleted `convex/`.
       - name: Typecheck the app
         run: npx tsc -b
-
-      - name: Typecheck the Convex functions
-        run: npx tsc -p convex
 
   # Sharded by file, because a private repository's runner has 2 vCPUs and
   # Vitest leaves one for itself: the suite ran on a single worker, one file at
@@ -125,22 +115,17 @@ jobs:
       # (PER-15). estiva-foundation's action since PER-16, shared with Ship.
       - uses: estiva-app/estiva-foundation/.github/actions/install@ci-v1
 
-      # Pushes the Convex backend *and* injects the matching VITE_CONVEX_URL
-      # into the frontend build, in one step, so the two halves cannot drift.
-      # This is what removes the old "backend changes additionally need
-      # `npx convex deploy`" footgun — nobody has to remember.
-      #
-      # It runs before the image build because the image is only an envelope for
-      # dist/; building without this produces a bundle pointed at nothing.
+      # Runs before the image build because the image is only an envelope for
+      # dist/.
       #
       # The relay origin is a build-time value since REM-2, and this is where it
-      # is set. It used to be read at runtime from the deployment's
-      # NOSTR_RELAY_URL through `nostr.config.relayConfig`, which made a Convex
-      # outage a relay outage. Not a secret: every published event names it.
-      - name: Deploy Convex backend and build frontend
-        run: npx convex deploy --cmd 'npm run build'
+      # is set; without it the bundle is in mock mode. Not a secret: every
+      # published event names it. Until REM-7 this step was `npx convex deploy
+      # --cmd 'npm run build'`, which also pushed the Convex backend and set
+      # VITE_CONVEX_URL.
+      - name: Build the frontend
+        run: npm run build
         env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           VITE_RELAY_URL: https://estiva.estiva.app
 
       - uses: docker/setup-buildx-action@v3

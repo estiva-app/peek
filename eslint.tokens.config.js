@@ -24,5 +24,5 @@ import reactHooks from 'eslint-plugin-react-hooks'
  */
 export default tokenConfig({
   quiet: { 'react-hooks': reactHooks },
-  ignores: ['demo-scenarios', 'convex/_generated'],
+  ignores: ['demo-scenarios'],
 })

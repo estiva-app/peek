@@ -26,7 +26,7 @@ import type { StoredToken } from '@estiva-app/identity'
 export type { StoredToken }
 export { SignInError } from '@estiva-app/identity'
 
-/** Must equal `domain` in `convex/auth.config.ts` and `ESTIVA_ID_ISSUER` in `convex/users.ts`. */
+/** The Estiva ID issuer this app signs in with. */
 export const ESTIVA_ID_ORIGIN =
   (import.meta.env.VITE_ESTIVA_ID_ORIGIN as string | undefined) || 'https://id.estiva.app'
 

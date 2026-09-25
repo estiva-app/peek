@@ -25,8 +25,8 @@ import {
 
 describe('not a member is an answer, not an outage', () => {
   it('recognises the relay saying so', () => {
-    // `src/nostr/sync.ts` already says this in a comment: it means the viewer is
-    // not a member of that channel, which is a real answer.
+    // It means the viewer is not a member of that channel, which is a real
+    // answer.
     for (const reason of [
       'relay_membership_required',
       'RELAY_MEMBERSHIP_REQUIRED',

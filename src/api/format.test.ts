@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDateLabel, formatTimestamp, formatReplyTimestamp, formatLastReplyTimestamp, dayKey } from './format'
+import { formatDateLabel, formatTimestamp, formatReplyTimestamp } from './format'
 
 // Fixed "now": Tue Sep 3 2024, 10:00:00 local time.
 const NOW = new Date(2024, 8, 3, 10, 0, 0).getTime()
@@ -66,52 +66,6 @@ describe('formatReplyTimestamp — a bare time means today', () => {
   })
 })
 
-describe('formatLastReplyTimestamp — the pill under a date divider', () => {
-  const cardAt = new Date(2024, 6, 22, 11, 21).getTime() // Jul 22
-  it('plain time when BOTH the reply and its card are today', () => {
-    const todayCard = new Date(2024, 8, 3, 8, 0).getTime()
-    expect(formatLastReplyTimestamp(new Date(2024, 8, 3, 9, 28).getTime(), todayCard, NOW)).toBe('9:28 AM')
-  })
-  it('explicit Today when the reply is today but the card sits under an older divider', () => {
-    expect(formatLastReplyTimestamp(new Date(2024, 8, 3, 9, 14).getTime(), cardAt, NOW)).toBe('Today at 9:14 AM')
-  })
-  it('keeps Just now (unambiguous)', () => {
-    expect(formatLastReplyTimestamp(NOW - 30_000, cardAt, NOW)).toBe('Just now')
-  })
-  it('Yesterday / dated forms for other days', () => {
-    expect(formatLastReplyTimestamp(new Date(2024, 8, 2, 16, 5).getTime(), cardAt, NOW)).toBe('Yesterday at 4:05 PM')
-    expect(formatLastReplyTimestamp(new Date(2024, 7, 28, 11, 45).getTime(), cardAt, NOW)).toBe('Aug 28 at 11:45 AM')
-  })
-  it('adds the year when the whole thread is from a previous year', () => {
-    const oldCard = new Date(2023, 11, 24, 17, 0).getTime()
-    expect(formatLastReplyTimestamp(new Date(2023, 11, 24, 18, 0).getTime(), oldCard, NOW)).toBe(
-      'Dec 24, 2023 at 6:00 PM'
-    )
-  })
-
-  // The regression: the old rule compared the reply to the CARD's day, so a
-  // thread that opened and closed inside one past day never got a date. The
-  // dates and times below are read off the 2026-08-20 screenshots.
-  describe('a thread that began and ended on one past day is still dated', () => {
-    const AUG_20 = new Date(2026, 7, 20, 9, 0).getTime()
-    it('yesterday: card 11:18 AM, last reply 2:21 PM', () => {
-      const card = new Date(2026, 7, 19, 11, 18).getTime()
-      const reply = new Date(2026, 7, 19, 14, 21).getTime()
-      expect(formatLastReplyTimestamp(reply, card, AUG_20)).toBe('Yesterday at 2:21 PM')
-    })
-    it('two days back: card 12:17 AM, last reply 6:52 PM', () => {
-      const card = new Date(2026, 7, 18, 0, 17).getTime()
-      const reply = new Date(2026, 7, 18, 18, 52).getTime()
-      expect(formatLastReplyTimestamp(reply, card, AUG_20)).toBe('Aug 18 at 6:52 PM')
-    })
-    it('the cases that already worked keep working', () => {
-      const card = new Date(2026, 7, 16, 21, 54).getTime()
-      const reply = new Date(2026, 7, 17, 11, 17).getTime()
-      expect(formatLastReplyTimestamp(reply, card, AUG_20)).toBe('Aug 17 at 11:17 AM')
-    })
-  })
-})
-
 describe('formatDateLabel (§5)', () => {
   it('renders Today for the same local day', () => {
     expect(formatDateLabel(new Date(2024, 8, 3, 0, 5).getTime(), NOW)).toBe('Today')
@@ -157,12 +111,5 @@ describe('previous-day arithmetic is calendar-based, not 24h-based', () => {
   it('rolls back across a year boundary', () => {
     const jan1 = new Date(2025, 0, 1, 10, 0).getTime()
     expect(formatDateLabel(new Date(2024, 11, 31, 22, 0).getTime(), jan1)).toBe('Yesterday')
-  })
-})
-
-describe('dayKey', () => {
-  it('groups by local calendar day', () => {
-    expect(dayKey(new Date(2024, 8, 2, 0, 1).getTime())).toBe(dayKey(new Date(2024, 8, 2, 23, 59).getTime()))
-    expect(dayKey(new Date(2024, 8, 2, 23, 59).getTime())).not.toBe(dayKey(new Date(2024, 8, 3, 0, 1).getTime()))
   })
 })

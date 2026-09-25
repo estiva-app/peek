@@ -425,7 +425,7 @@ describe('FilePage opens a topic in a Folder at its short form', () => {
     expect(screen.queryByText('That link does not point at anything Peek can open.')).toBeNull()
   })
 
-  it('sends an old /topic/<slug>-<channel-uuid> link — a retired topic — to its file, without Convex', () => {
+  it('sends an old /topic/<slug>-<channel-uuid> link — a retired topic — to its file', () => {
     // FOLDER is "Claude on Estiva / Estiva Steer", whose conversation is on the
     // Ship project in its channel (FOL-26's table). Convex's topic list is
     // empty here, so this is answered from the bundle.

@@ -4,7 +4,7 @@ Peek is Estiva's team-communication app: DMs, Topics, Huddles, the
 Screener and the Desk. It runs at https://peek.estiva.app.
 
 Its screens are built from the shared package `@estiva-app/ui`. Its
-messages live on the Estiva relay; Convex keeps a projection beside it.
+messages, and everything else it keeps, live on the Estiva relay.
 
 ## Run it
 

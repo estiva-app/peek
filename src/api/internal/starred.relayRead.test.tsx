@@ -23,19 +23,6 @@ import type { ReactNode } from 'react'
 const GREG = 'a'.repeat(64)
 const JUAN = 'b'.repeat(64)
 
-/*
-  REM-4: stars never touch Convex. Any read or write reaching it fails the test
-  loudly rather than answering `undefined`, which is what a query in flight
-  looks like and would pass unnoticed.
-*/
-vi.mock('convex/react', () => ({
-  useQuery: () => {
-    throw new Error('stars asked Convex')
-  },
-  useMutation: () => {
-    throw new Error('stars wrote Convex')
-  },
-}))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 const PEOPLE = [
@@ -95,7 +82,7 @@ describe('the set comes from the relay', () => {
     expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [], people: [{ key: GREG, pubkey: GREG }] })
   })
 
-  it('drops an old-key star with no pubkey — nothing without Convex can say whose it is', async () => {
+  it('drops an old-key star with no pubkey — nothing can say whose it is', async () => {
     relayBlob = { ...aBlob(['t1'], []), people: [{ key: 'kh7abc' }, { key: JUAN }] }
     const { result } = await setup()
     expect(result.current.isDmStarred('kh7abc')).toBe(false)
@@ -145,7 +132,7 @@ describe('what is published is the set, never the rows that could be drawn', () 
     expect(publish).not.toHaveBeenCalled()
   })
 
-  it('starts empty when the relay holds no set, with nothing seeded from Convex', async () => {
+  it('starts empty when the relay holds no set', async () => {
     // REM-4: Convex-only stars are dropped, not migrated (Miky, 2026-09-24).
     syncState = 'absent'
     relayBlob = undefined

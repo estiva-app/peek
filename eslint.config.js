@@ -27,7 +27,7 @@ export default defineConfig([
   // The token contract (D55), so an editor shows it where the class is typed.
   // `npm run lint:tokens` runs these alone, and that is the CI gate — this set
   // still carries 79 pre-existing errors of its own.
-  globalIgnores([...TOKEN_LINT_IGNORES, 'demo-scenarios', 'convex/_generated']),
+  globalIgnores([...TOKEN_LINT_IGNORES, 'demo-scenarios']),
   tokenLint(),
   // UIG-28: hand-written sizes, corners, shadows and inline colours.
   tokenValues(),

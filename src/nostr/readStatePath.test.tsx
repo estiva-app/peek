@@ -29,18 +29,6 @@ vi.mock('@/auth/estivaId', () => ({
   validToken: () => ({ accessToken: 'tok', pubkey: 'me' }),
   ESTIVA_ID_ORIGIN: 'https://id.estiva.app',
 }))
-/**
- * Convex unreachable (REM-5): any Convex hook the read path still called would
- * throw here and fail the render. The blob is the only store.
- */
-vi.mock('convex/react', () => ({
-  useQuery: () => {
-    throw new Error('read state touched Convex')
-  },
-  useMutation: () => {
-    throw new Error('read state touched Convex')
-  },
-}))
 
 describe('ReadStateSync', () => {
   beforeEach(async () => {
@@ -57,7 +45,7 @@ describe('ReadStateSync', () => {
     expect(loadMergedReadState).toHaveBeenCalled()
   })
 
-  it('hands the merge to the frontier the dots are judged from, with Convex blocked', async () => {
+  it('hands the merge to the frontier the dots are judged from', async () => {
     const { ReadStateSync, useReadFrontier } = await import('./useReadStateSync')
     render(<ReadStateSync />)
     const { result } = renderHook(() => useReadFrontier())

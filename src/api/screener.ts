@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CURRENT_USER_NAME } from './currentUser'
 import { formatReplyTimestamp } from './format'
-import { hasConvex } from './store'
+import { hasRelay } from './relayUrl'
 import { useMentionNames } from './people'
 import { useForeignObjects } from './foreign'
 import { validToken } from '@/auth/estivaId'
@@ -76,7 +76,7 @@ export function useScreenerPreview(itemId: string | null): ScreenerPreviewRow[] 
   }, [fileAddress, fileCommentId, fileKey, threads])
 
   return useMemo(() => {
-    if (!hasConvex || !itemId || !source) return []
+    if (!hasRelay || !itemId || !source) return []
     let said: Said[]
     if (source.kind === 'dm') {
       said = source.messages.map((m, i) => ({

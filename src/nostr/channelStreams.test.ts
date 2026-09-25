@@ -77,7 +77,7 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
     expect(streamMessagesByFolder([twice, twice], [FOLDER_A])[FOLDER_A]).toHaveLength(1)
   })
 
-  it('reads the urgent marker off the content, the twin of what Convex stamps (SHR-5)', () => {
+  it('reads the urgent marker off the content (SHR-5)', () => {
     const events = [
       event('1', [['h', FOLDER_A]], { content: 'need a hand here' }),
       event('2', [['h', FOLDER_A]], { content: '!@Ada the build is down' }),
@@ -94,7 +94,7 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
 })
 
 describe('isUrgentContent', () => {
-  it('agrees with `convex/screener.ts`’s isUrgentBody on the cases that decide a sidebar row', () => {
+  it('finds the marker anywhere in the body, and only the marker', () => {
     expect(isUrgentContent('!@Ada')).toBe(true)
     expect(isUrgentContent('mid-sentence !@Ada still counts')).toBe(true)
     expect(isUrgentContent('@Ada')).toBe(false)

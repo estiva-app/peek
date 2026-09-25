@@ -5,9 +5,8 @@
  * handler, and the edit editor had no paste handler. Those two, and the three
  * rules around them, are what is proved here.
  *
- * `hasConvex` and the upload are mocked, exactly as in ComposeBox.paste.test:
- * without a deployment both routes are inert on purpose, so a test against the
- * real ones would prove nothing.
+ * The upload is mocked, exactly as in ComposeBox.paste.test: without a relay
+ * it is inert on purpose, so a test against the real one would prove nothing.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
@@ -15,22 +14,17 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
 
-const deleted: string[] = []
-
 vi.mock('@/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api')>()),
-  hasConvex: true,
   useCanUpload: () => true,
   useUploadActions: () => ({
-    deleteUpload: (storageId: string) => {
-      deleted.push(storageId)
-    },
     uploadFile: async (file: File) => ({
-      storageId: `stored_${file.name}`,
       name: file.name,
       contentType: file.type,
       size: file.size,
       previewUrl: 'blob:preview',
+      sha256: 'cd'.repeat(32),
+      mediaUrl: `https://relay.test/${file.name}`,
     }),
   }),
 }))
@@ -53,10 +47,11 @@ const screenshot = () => new File([new Uint8Array([1, 2, 3])], 'image.png', { ty
 const NAMED = /^Screenshot \d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.png$/
 
 const EXISTING: FileAttachment = {
-  storageId: 'stored_brief.pdf',
   name: 'brief.pdf',
   contentType: 'application/pdf',
   size: 2048,
+  sha256: 'ab'.repeat(32),
+  mediaUrl: 'https://relay.test/brief.pdf',
 }
 
 /** jsdom has no `DataTransfer`; ProseMirror reads `clipboardData` and nothing else. */
@@ -147,6 +142,9 @@ describe('attaching a file while editing a sent message', () => {
     expect(saved).toHaveLength(2)
     expect(saved[0].name).toBe('brief.pdf')
     expect(saved[1].name).toMatch(NAMED)
+    // The relay's copy rides along: the conversation view refuses a file
+    // without it, which was every file added in an edit until REM-7.
+    expect(saved[1]).toMatchObject({ sha256: 'cd'.repeat(32), mediaUrl: expect.stringMatching(/^https:\/\/relay\.test\//) })
   })
 
   it('says nothing about files when the edit did not touch them', async () => {
@@ -156,9 +154,8 @@ describe('attaching a file while editing a sent message', () => {
   })
 
   /* Her ruling: cancel reverts the changes, the attached file included. */
-  it('cancel puts back what was removed and deletes what was added', async () => {
-    deleted.length = 0
-    const { editor } = await openEditor({ files: [EXISTING] })
+  it('cancel puts back what was removed and drops what was added', async () => {
+    const { editor, onFilesChange } = await openEditor({ files: [EXISTING] })
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove brief.pdf' }))
     paste(editor, '', [screenshot()])
@@ -166,9 +163,8 @@ describe('attaching a file while editing a sent message', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
-    // The blob nothing will ever own is gone; the message's own is untouched.
-    await waitFor(() => expect(deleted).toEqual([expect.stringMatching(/^stored_Screenshot/)]))
-    expect(deleted).not.toContain('stored_brief.pdf')
+    await waitFor(() => expect(screen.queryByText(NAMED)).toBeNull())
     expect(screen.getByText('brief.pdf')).toBeTruthy()
+    expect(onFilesChange).not.toHaveBeenCalled()
   })
 })

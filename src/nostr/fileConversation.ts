@@ -14,8 +14,8 @@
  *
  * ## A channel
  *
- * `convex/nostr/sync.ts` is the specification of what folds into what, since
- * it is what drew a DM until REM-1: a `kind:9` with an `e` is a reply to the
+ * The fold is the one Convex's `nostr/sync.ts` drew a DM with until REM-1: a
+ * `kind:9` with an `e` is a reply to the
  * message that `e` names ({@link replyTargetOf}), one without is a message, and
  * a reply to something that is not a message here is dropped rather than
  * guessed at. Edits, reactions and resolutions are the same `#e` read a file's

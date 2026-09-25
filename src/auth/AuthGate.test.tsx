@@ -1,25 +1,17 @@
 /**
- * The gate is Estiva ID's (REM-2), and nothing runs beside it (REM-6).
+ * The gate is Estiva ID's (REM-2).
  *
  * The first test is the regression: Convex never confirming the token used to
  * hold the whole app on the auth shell, which made a Convex outage a Peek
- * outage for screens that read nothing from Convex. The last is REM-6's: the
- * viewer is a pubkey, so signing in writes no Peek user row.
+ * outage for screens that read nothing from Convex.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 /** What the Estiva ID session answers. */
-let session = { isLoading: false, isAuthenticated: true, fetchAccessToken: async () => 'token' }
+let session = { isAuthenticated: true }
 
-const convexCalls = vi.fn()
-vi.mock('convex/react', () => ({
-  useConvex: () => ({ query: convexCalls, action: convexCalls, mutation: convexCalls }),
-  useMutation: () => convexCalls,
-  useConvexAuth: () => ({ isLoading: false, isAuthenticated: true }),
-}))
-
-vi.mock('@/api', () => ({ hasConvex: true, hasRelay: true, RELAY_URL: 'wss://relay.test' }))
+vi.mock('@/api', () => ({ hasRelay: true, RELAY_URL: 'wss://relay.test' }))
 vi.mock('./useEstivaIdSession', () => ({ useEstivaIdSession: () => session }))
 vi.mock('./shell/AuthShell', () => ({ AuthShell: () => <div>auth shell</div> }))
 const markEntered = vi.fn()
@@ -33,9 +25,8 @@ const { AuthGate } = await import('./AuthGate')
 const app = () => <AuthGate><div>app</div></AuthGate>
 
 beforeEach(() => {
-  session = { isLoading: false, isAuthenticated: true, fetchAccessToken: async () => 'token' }
+  session = { isAuthenticated: true }
   markEntered.mockClear()
-  convexCalls.mockClear()
 })
 
 afterEach(() => vi.clearAllMocks())
@@ -54,11 +45,5 @@ describe('the gate', () => {
     expect(screen.getByText('auth shell')).toBeTruthy()
     expect(screen.queryByText('app')).toBeNull()
     expect(markEntered).not.toHaveBeenCalled()
-  })
-
-  it('sends Convex nothing on sign-in — there is no user row to adopt', () => {
-    const view = render(app())
-    view.rerender(app())
-    expect(convexCalls).not.toHaveBeenCalled()
   })
 })

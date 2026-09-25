@@ -66,14 +66,14 @@ export const WithAttachments: Story = {
         name: 'checkout-flow.png',
         size: 840_000,
         contentType: 'image/png',
-        url:
+        previewUrl:
           'data:image/svg+xml;utf8,' +
           encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270"><rect width="480" height="270" fill="#0f1720"/><circle cx="120" cy="90" r="52" fill="#56c8ff"/><rect x="196" y="150" width="220" height="70" rx="12" fill="#4ade8c"/></svg>',
           ),
       },
-      { name: 'Q3-billing-summary.pdf', size: 2_412_000, contentType: 'application/pdf', url: '#' },
-      { name: 'raw-events.csv', size: 96_000, contentType: 'text/csv', url: '#' },
+      { name: 'Q3-billing-summary.pdf', size: 2_412_000, contentType: 'application/pdf', previewUrl: '#' },
+      { name: 'raw-events.csv', size: 96_000, contentType: 'text/csv', previewUrl: '#' },
     ],
   },
 }

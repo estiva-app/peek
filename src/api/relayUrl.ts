@@ -26,8 +26,7 @@ export const RELAY_URL: string | undefined = configured
  * Whether this build talks to a relay — the mock-mode flag for relay paths.
  *
  * False in unit tests, in Storybook and in a checkout without `VITE_RELAY_URL`,
- * where the mock-backed internals answer instead. It is deliberately not
- * `hasConvex`: that one means "a Convex deployment is configured", and gating a
- * relay-only path on it switched the path off whenever Convex was absent.
+ * where the mock-backed internals answer instead. It is the only mode flag
+ * since REM-7, which retired `hasConvex` and moved every gate onto this one.
  */
 export const hasRelay = RELAY_URL !== undefined
