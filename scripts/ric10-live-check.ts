@@ -10,9 +10,8 @@
  * **What this proves and what it does not.** It proves the rendering: the two
  * variants exist, the position chooses between them, and a reader never sees a
  * raw pointer either way. It does not exercise the live fetch — Peek reads its
- * relay URL from Convex and its token from a signed-in session, so a stub relay
- * cannot be pointed at the app the way Ship's `ric9-live-check.ts` points at
- * Ship. `useResolvedReferences` calls the same `resolveObject` the attachment
+ * token from a signed-in session, so a stub relay cannot be pointed at the app
+ * the way Ship's `ric9-live-check.ts` points at Ship. `useResolvedReferences` calls the same `resolveObject` the attachment
  * widget has always called; that is an argument, not a measurement, and it is
  * the leg to check first if this ever looks wrong in production.
  *
