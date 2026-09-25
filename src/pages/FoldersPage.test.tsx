@@ -11,7 +11,7 @@
  * The dwell tests that were here went with it, to `FilePage.test.tsx`: this
  * page marks nothing read, because a listing is not a reading.
  */
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -105,6 +105,22 @@ const created = vi.hoisted(() => ({
   open file's own stream after a dwell, and what it must never do is mark the
   Folder's channel, so both are recorded and one is asserted absent.
 */
+/*
+  Which channels are DMs — PEE-36. Stable across renders, as the seam's own
+  callback is, so the page's check runs once per Folder.
+*/
+const DM_CHANNEL = 'cbdb84c1-f0f2-4eaf-b3d1-4c4509dfe09c'
+const GROUP_DM_CHANNEL = 'aaaaaaaa-0000-4000-8000-000000000000'
+const PARTNER = 'd'.repeat(64)
+const dms = vi.hoisted(() => ({
+  forChannel: vi.fn(async (uuid: string) =>
+    uuid === 'cbdb84c1-f0f2-4eaf-b3d1-4c4509dfe09c'
+      ? 'd'.repeat(64)
+      : uuid === 'aaaaaaaa-0000-4000-8000-000000000000'
+        ? 'not-a-person'
+        : null,
+  ),
+}))
 const marks = vi.hoisted(() => ({
   file: vi.fn<(address: string | null | undefined) => void>(),
   container: vi.fn<(kind: string, key: string) => void>(),
@@ -131,7 +147,7 @@ vi.mock('@/api', async () => ({
     state: { id: FOLDER, name: 'Folders', hasState: true, source: 'state', files: relay.files },
     reload: async () => {},
   }),
-  useForeignObjects: () => ({ createFolder: created.folder, createTopic: created.topic }),
+  useForeignObjects: () => ({ createFolder: created.folder, createTopic: created.topic, dmForChannel: dms.forChannel }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
   useTeamUnread: () => ({ unread: teamUnread.unread, followed: teamUnread.followed }),
@@ -244,11 +260,33 @@ describe('FoldersPage manages a topic’s Folder from where the topic went', () 
     expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL))
   })
 
-  it('still offers the delete and the rename on a Folder that is not a topic', () => {
+  it('still offers the delete and the rename on a Folder that is not a topic', async () => {
     mount(`/app/folders/${FOLDER}`)
-    expect(screen.getByRole('button', { name: 'Delete folder' })).toBeTruthy()
+    // Once the relay has said the channel is not a DM (PEE-36).
+    expect(await screen.findByRole('button', { name: 'Delete folder' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: "Open this folder's topic" })).toBeNull()
+  })
+})
+
+/*
+  PEE-36: a link to a DM message landed here by the message's `h`, and the page
+  drew an empty Folder called "DM" with a Delete that would have hidden the
+  conversation from both people.
+*/
+describe('FoldersPage never treats a DM channel as a Folder', () => {
+  it('opens the viewer’s DM as the DM', async () => {
+    mount(`/app/folders/${DM_CHANNEL}`)
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/people/${PARTNER}`))
+  })
+
+  it('offers no Folder actions on a DM with no single partner', async () => {
+    mount(`/app/folders/${GROUP_DM_CHANNEL}`)
+    await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(GROUP_DM_CHANNEL))
+    // Let the answer land before asserting what it left.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Start a topic in this folder' })).toBeNull()
   })
 })
 

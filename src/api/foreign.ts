@@ -23,6 +23,8 @@ import {
   commentedFileOf,
   creatableUnderAsViewer,
   placeForReferenceAsViewer,
+  dmForChannelAsViewer,
+  type DmChannel,
   type ReferencePlace,
   directoryAsViewer,
   conversationsAsViewer,
@@ -355,6 +357,15 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /** Whether a channel is a DM rather than a Folder — see `dmForChannelAsViewer`. */
+  const dmForChannel = useCallback(
+    async (uuid: string): Promise<DmChannel> => {
+      const v = viewer()
+      return v ? dmForChannelAsViewer(uuid, v.relayUrl, v.token) : null
+    },
+    [viewer],
+  )
+
   return {
     resolveObject,
     resolveObjects,
@@ -376,6 +387,7 @@ export function useForeignObjects() {
     replyToComment,
     creatableUnder,
     placeForReference,
+    dmForChannel,
   }
 }
 

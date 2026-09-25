@@ -8,7 +8,8 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-const { queryRelay } = vi.hoisted(() => ({ queryRelay: vi.fn() }))
+// Anything not answered by a test is an empty read — a channel with no `39000`, say.
+const { queryRelay } = vi.hoisted(() => ({ queryRelay: vi.fn(async (..._args: unknown[]) => ({ ok: true, events: [] as unknown[] })) }))
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
 
 import { addrToNaddr, encodeNevent } from '@estiva-app/protocol'
@@ -61,6 +62,38 @@ describe('a Message has no address, so its Folder has to be fetched', () => {
       events: [{ id: MESSAGE_ID, kind: 9, pubkey: AUTHOR, tags: [['h', FOLDER]], content: '', created_at: 1, sig: '' }],
     })
     expect(await resolve(MESSAGE_ID)).toEqual({ folder: FOLDER, message: MESSAGE_ID })
+  })
+
+  /*
+    PEE-36: a DM's channel is not a Folder. Landing by `h` opened an empty page
+    called "DM" that offered to delete the conversation.
+  */
+  it('opens a message in the viewer’s DM as that DM, with its thread', async () => {
+    const PARTNER = 'd'.repeat(64)
+    const ROOT = 'e'.repeat(64)
+    queryRelay
+      .mockResolvedValueOnce({
+        ok: true,
+        events: [{ id: MESSAGE_ID, kind: 9, pubkey: PARTNER, tags: [['h', FOLDER], ['e', ROOT, '', 'root']], content: '', created_at: 1, sig: '' }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        events: [{ id: 'f'.repeat(64), kind: 39000, pubkey: AUTHOR, tags: [['d', FOLDER], ['t', 'dm'], ['p', AUTHOR], ['p', PARTNER]], content: '', created_at: 1, sig: '' }],
+      })
+    expect(await resolve(MESSAGE_ID)).toEqual({ folder: FOLDER, dm: PARTNER, message: MESSAGE_ID, thread: ROOT })
+  })
+
+  it('refuses a message in a group DM rather than calling its channel a Folder', async () => {
+    queryRelay
+      .mockResolvedValueOnce({
+        ok: true,
+        events: [{ id: MESSAGE_ID, kind: 9, pubkey: AUTHOR, tags: [['h', FOLDER]], content: '', created_at: 1, sig: '' }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        events: [{ id: 'f'.repeat(64), kind: 39000, pubkey: AUTHOR, tags: [['d', FOLDER], ['t', 'dm'], ['p', AUTHOR], ['p', 'd'.repeat(64)], ['p', 'a'.repeat(64)]], content: '', created_at: 1, sig: '' }],
+      })
+    expect(await resolve(MESSAGE_ID)).toBeNull()
   })
 
   it('returns null for an event that is not readable from here', async () => {

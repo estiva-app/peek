@@ -30,6 +30,7 @@ const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
+import { dmChannelsOf, KIND_CHANNEL_MEMBERS } from './dms'
 import {
   buildBareFile,
   buildDeleteChannel,
@@ -42,6 +43,7 @@ import {
 } from '@estiva-app/protocol'
 import {
   KIND_BARE_FILE,
+  KIND_CHANNEL_METADATA,
   matchObjectUrl,
   urlPatternsOf,
   buildActionEvent,
@@ -923,6 +925,8 @@ export async function listFoldersAsViewer(
 export type ReferencePlace = {
   folder: string
   file?: string
+  /** The DM partner's pubkey when `folder` is the viewer's DM with them, not a Folder (PEE-36). */
+  dm?: string
   /** The event id of the message the reference named, so the topic can land on it (RIC-16). */
   message?: string
   /**
@@ -1005,11 +1009,47 @@ export async function placeForReferenceAsViewer(
     return null
   }
 
-  const [event] = await viewerQuery(relayUrl, token)([{ ids: [id], limit: 1 }])
+  const query = viewerQuery(relayUrl, token)
+  const [event] = await query([{ ids: [id], limit: 1 }])
   const folder = event?.tags.find((t) => t[0] === 'h')?.[1]
   if (!event || !folder) return null
   const file = event.kind === KIND.COMMENT ? commentedFileOf(event) : null
-  return file ? { folder, file, message: id, thread: rootOf(event) } : { folder, message: id }
+  if (file) return { folder, file, message: id, thread: rootOf(event) }
+  /*
+    A message in a DM is in a channel too, and its `h` is not a Folder
+    (PEE-36): landing by `h` opened an empty page called "DM" that offered to
+    delete the conversation. The channel's `39000` says which it is.
+  */
+  const dm = await dmChannelOf(query, folder, token.pubkey)
+  if (dm === 'not-a-person') return null
+  if (dm) return { folder, dm, message: id, thread: rootOf(event) }
+  return { folder, message: id }
+}
+
+/**
+ * Whether channel `uuid` is a DM, and with whom: the partner's pubkey for the
+ * viewer's one-to-one DM, `'not-a-person'` for any other DM channel — a group
+ * DM, an archived one — which People has no row for and which is not a Folder
+ * either, and null for a channel that is not a DM.
+ */
+export type DmChannel = string | 'not-a-person' | null
+
+/** {@link DmChannel} for one channel, as the viewer — the Folder page's guard (PEE-36). */
+export async function dmForChannelAsViewer(uuid: string, relayUrl: string, token: StoredToken): Promise<DmChannel> {
+  return dmChannelOf(viewerQuery(relayUrl, token), uuid, token.pubkey)
+}
+
+/** The same test the DM list makes (`dmChannelsOf`), asked of one channel. */
+async function dmChannelOf(query: QueryFn, uuid: string, me: string): Promise<DmChannel> {
+  const metadata = await query([{ kinds: [KIND_CHANNEL_METADATA], '#d': [uuid], limit: 1 }])
+  const channel = metadata.find((e) => e.tags.some((t) => t[0] === 't' && t[1] === 'dm'))
+  if (!channel) return null
+  // A DM written before the relay tagged participants names them in its `39002`.
+  const members = channel.tags.some((t) => t[0] === 'p')
+    ? []
+    : await query([{ kinds: [KIND_CHANNEL_MEMBERS], '#d': [uuid], limit: 1 }])
+  const [partner] = dmChannelsOf([channel], me, members).keys()
+  return partner ?? 'not-a-person'
 }
 
 /**
