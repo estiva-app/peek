@@ -13,7 +13,7 @@
  * *control* here and nothing more — the one that must be refused.
  *
  * So the person runs this as themselves, with the token out of a signed-in
- * Peek tab, exactly as `dms5-live-check.ts` does. No secret key is involved
+ * Peek tab. No secret key is involved
  * and none may be put here.
  *
  * ## The legs

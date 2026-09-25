@@ -6,7 +6,7 @@ import { IdentityMenu, MenuItem } from '@estiva-app/ui'
 import { ReadStatePanel } from './ReadStatePanel'
 import { IconButton } from './ui/IconButton'
 import { SearchInput } from './ui/SearchInput'
-import { hasConvex, hasRelay, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
+import { hasRelay, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
 
 export interface TopBarSlotsProps {
   onMenuToggle?: () => void
@@ -42,7 +42,7 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
      is needed. The anchor is the top bar's right cluster, which persists. */
 
   const displayName = me?.name || CURRENT_USER_NAME
-  const live = hasConvex || hasRelay
+  const live = hasRelay
 
   return {
     menu: (
@@ -110,7 +110,7 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
             A click rather than a press, so no pointerdown is still in
             flight when the panel arms its own outside-dismiss.
           */}
-          {hasConvex
+          {hasRelay
             ? (close: () => void) => (
                 <MenuItem
                   label="Read state"
@@ -127,6 +127,6 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
     /* Always there on the real app, opened by `open` — not mounted only while
        open (the package's Popover page; UIG-14). Only the real app has the
        row that opens it. */
-    panel: hasConvex && <ReadStatePanel anchor={cluster} open={readStateOpen} onClose={() => setReadStateOpen(false)} />,
+    panel: hasRelay && <ReadStatePanel anchor={cluster} open={readStateOpen} onClose={() => setReadStateOpen(false)} />,
   }
 }

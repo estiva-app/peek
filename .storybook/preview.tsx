@@ -30,10 +30,9 @@ document.body.classList.add('bg-bg-base', 'text-text-primary', 'font-sans')
  * crashed to Storybook's error page. 67 of 316 stories were error pages
  * before this, silently, until a pixel run compared them (2026-09-01).
  *
- * PeekDataProvider is safe here because Storybook pins VITE_CONVEX_URL to ''
- * (main.ts): the dummy client only answers the context lookup — every query
- * in mock mode passes 'skip', but Convex's useQuery demands the provider
- * even then, which is what took NavRail down. Same nesting as main.tsx.
+ * PeekDataProvider is safe here because Storybook pins VITE_RELAY_URL to ''
+ * (main.ts), so every store in it answers from the mock data. Same nesting as
+ * main.tsx.
  */
 const withProviders: Decorator = (Story) => (
   <DebugProvider>

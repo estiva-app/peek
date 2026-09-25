@@ -1,17 +1,17 @@
 ---
 name: verify
-description: Use to prove a Peek change works, either end to end in the running app (Vite + Convex + headless Chromium via playwright-core, with a CDP virtual authenticator for passkey sign-in) or by rendering and measuring a story in Storybook.
+description: Use to prove a Peek change works, either end to end in the running app (Vite + the relay + headless Chromium via playwright-core, with a CDP virtual authenticator for passkey sign-in) or by rendering and measuring a story in Storybook.
 ---
 
 # Verifying Peek changes at the running app
 
 ## Launch
 
-- `npm run dev` (background) → http://localhost:5173. `.env.local` already
-  points at the live Convex deployment (`honorable-guineapig-592`, the one
-  peek.estiva.app uses), so the app runs in **Convex mode** on the team's
-  real data. Convex labels it Development; it is still the live one.
-- **Never wipe, reseed or mutate the live deployment.**
+- `npm run dev` (background) → http://localhost:5173. With `VITE_RELAY_URL`
+  in `.env.local` the app reads and writes the relay it names — production's
+  is the team's real data.
+- **Never publish test data to the production relay** that you do not
+  delete again.
 - **It must be port 5173.** `redirect_uri` is compared exact-string against
   the app's registered list, so on 5174 the round trip dies at Estiva ID with
   `That redirect_uri is not registered for this app`. A stray earlier `vite`
@@ -19,9 +19,9 @@ description: Use to prove a Peek change works, either end to end in the running 
   than a port collision. Check with `ss -ltnp | grep 517` and kill the old one.
 - Tool shells are not interactive, so `node` may be missing from `PATH`.
   Source nvm first: `export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"`.
-- Unit tests / Storybook run in **mock mode** (no `VITE_CONVEX_URL` in
-  test env) — they never exercise the Convex read/write paths. Anything
-  touching `hasConvex === true` branches must be verified in the running app.
+- Unit tests / Storybook run in **mock mode** (no `VITE_RELAY_URL` in
+  test env) — they never exercise the relay read/write paths. Anything
+  touching `hasRelay === true` branches must be verified in the running app.
 
 ## Drive (headless browser)
 
@@ -107,16 +107,11 @@ the token landing in `sessionStorage`. The silent `prompt=none` probe even
 carries the session left behind by enrolment, so the "Continue with passkey"
 click is skipped entirely.
 
-**Convex data is out of reach locally.** `convex/auth.config.ts` pins the
-issuer to `https://id.estiva.app`, and Convex fetches
-`<issuer>/.well-known/openid-configuration` from its own cloud, which cannot
-resolve `localhost`. A local token is well-formed and accepted by Peek but
-**Convex answers 401**, and the app renders an empty page rather than erroring
-— so a blank screen here is the expected shape, not a bug to chase.
-
 So local Estiva ID verifies **auth flows**. Verifying **data** — a live thread,
-relay reads, publishing — needs the production issuer, or a public HTTPS tunnel
-to a local one with `auth.config.ts` changed to match.
+relay reads, publishing — has so far meant the production issuer. The reason
+recorded here was Convex's (it could not fetch a `localhost` issuer's
+configuration, and answered 401), and Convex is gone since REM-7; whether a
+relay accepts a local issuer's token has not been measured.
 
 Other consequences for driving the app:
 

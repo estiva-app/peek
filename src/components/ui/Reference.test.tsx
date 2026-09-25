@@ -147,8 +147,8 @@ describe('Reference, for a person', () => {
       display name in it can never be corrected; a key is resolved every time it
       is drawn, so a person who changes their name is named correctly in every
       message that ever mentioned them. This half is the renderer; the other
-      half — Peek's directory actually learning the new name from the relay —
-      is `resolveExternalUser`, pinned in `convex/profileRefresh.test.ts`.
+      half — Peek's directory actually learning the new name — reads the
+      person's `kind:0` from the relay.
     */
     const uri = `nostr:${encodeNpub(KNOWN)}`
     const c = render(<Reference uri={uri} />).container

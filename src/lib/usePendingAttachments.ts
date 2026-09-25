@@ -8,15 +8,14 @@
  * drawn three times (F4), so the lines moved here first and the callers were
  * wired to them afterwards.
  *
- * What it knows: check the file, upload it, keep a row per file so the chip
- * can show uploading / done / failed, and never leave a blob in storage that
- * no message will ever own.
+ * What it knows: check the file, upload it, and keep a row per file so the
+ * chip can show uploading / done / failed.
  *
- * `clear` and `discard` are the two ends a picked file can come to and they
- * are NOT the same. After a send or a save the message owns the blobs, so the
- * rows are forgotten and storage is left alone — `clear`. After a cancel, or
- * a chip removed by hand, nothing will ever own them, so they are deleted —
- * `discard`. Calling `clear` where `discard` belongs leaks a blob per cancel.
+ * `clear` and `discard` are the two ends a picked file can come to: after a
+ * send or a save the message owns the blobs (`clear`); after a cancel nothing
+ * will (`discard`). They do the same thing since REM-7. `discard` used to
+ * delete the Convex copy, and the relay's blob store has no delete, so an
+ * unsent blob stays there unreferenced — as the relay's copy always did.
  */
 import { useRef, useState } from 'react'
 import { useUploadActions, type UploadedFile } from '@/api'
@@ -42,7 +41,7 @@ export interface PendingAttachments {
   ref: React.MutableRefObject<PendingUpload[]>
   /** Validate and start uploading each; failures become an error chip. */
   add: (files: File[]) => void
-  /** Remove one chip and delete its blob if it had already landed. */
+  /** Remove one chip. */
   remove: (localId: string) => void
   /** Descriptors that finished uploading, ready to attach. */
   ready: () => UploadedFile[]
@@ -50,13 +49,13 @@ export interface PendingAttachments {
   isUploading: boolean
   /** Forget the rows; the blobs now belong to a message. */
   clear: () => void
-  /** Forget the rows AND delete their blobs; nothing will own them. */
+  /** Forget the rows; nothing will own the blobs. */
   discard: () => void
 }
 
 export function usePendingAttachments(): PendingAttachments {
   const [files, setFiles] = useState<PendingUpload[]>([])
-  const { uploadFile, deleteUpload } = useUploadActions()
+  const { uploadFile } = useUploadActions()
 
   // The editors' `handlePaste` and `handleKeyDown` are closures from the first
   // render, so they read the list through a ref rather than through `files`.
@@ -82,21 +81,7 @@ export function usePendingAttachments(): PendingAttachments {
     }
   }
 
-  const remove = (localId: string) => {
-    setFiles((prev) => {
-      const slot = prev.find((f) => f.localId === localId)
-      // A successfully-uploaded blob that never got sent must be cleaned up.
-      if (slot?.uploaded) deleteUpload(slot.uploaded.storageId)
-      return prev.filter((f) => f.localId !== localId)
-    })
-  }
-
-  const discard = () => {
-    setFiles((prev) => {
-      for (const f of prev) if (f.uploaded) deleteUpload(f.uploaded.storageId)
-      return []
-    })
-  }
+  const remove = (localId: string) => setFiles((prev) => prev.filter((f) => f.localId !== localId))
 
   return {
     files,
@@ -106,6 +91,6 @@ export function usePendingAttachments(): PendingAttachments {
     ready: () => ref.current.filter((f) => f.status === 'done' && f.uploaded).map((f) => f.uploaded!),
     isUploading: files.some((f) => f.status === 'uploading'),
     clear: () => setFiles([]),
-    discard,
+    discard: () => setFiles([]),
   }
 }

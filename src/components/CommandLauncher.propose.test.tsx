@@ -19,6 +19,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { enter } from '@/test-enter'
 import { MemoryRouter } from 'react-router-dom'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
@@ -127,7 +128,7 @@ const makeRow = () => screen.findByText(/Suggest what to make from this conversa
 
 async function propose(typed = 'kingfisher') {
   open()
-  await userEvent.type(input(), typed)
+  await enter(input(),typed)
   await userEvent.click(await makeRow())
 }
 
@@ -148,7 +149,7 @@ beforeEach(() => {
 describe('the row', () => {
   it('is offered once something is typed, beside the others', async () => {
     open()
-    await userEvent.type(input(), 'kingfisher')
+    await enter(input(),'kingfisher')
 
     expect(await makeRow()).toBeInTheDocument()
     expect(screen.getByText(/^Ask: “/)).toBeInTheDocument()
@@ -156,7 +157,7 @@ describe('the row', () => {
 
   it('is absent with no conversation to make anything of', async () => {
     open({ composer: { isFocused: true, hasDraft: false } })
-    await userEvent.type(input(), 'kingfisher')
+    await enter(input(),'kingfisher')
 
     expect(screen.queryByText(/Suggest what to make from this conversation/i)).not.toBeInTheDocument()
   })
@@ -165,7 +166,7 @@ describe('the row', () => {
     canPrefill.mockResolvedValue(false)
     prefillAvailability.mockResolvedValue('downloadable')
     open()
-    await userEvent.type(input(), 'kingfisher')
+    await enter(input(),'kingfisher')
 
     expect(screen.queryByText(/Suggest what to make from this conversation/i)).not.toBeInTheDocument()
   })

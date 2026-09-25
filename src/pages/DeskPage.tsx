@@ -14,7 +14,7 @@ import { useFileView } from '@/components/views/useFileView'
 import {
   dmNameById,
   useUnread,
-  hasConvex,
+  hasRelay,
   useScreenerItems,
   useDeskItems,
   useDeskLoading,
@@ -69,11 +69,11 @@ export function DeskPage() {
   // The 1–2 item caps are a demo-composition affordance for the mock dataset.
   // With a real backend the Screener IS the inbox and Urgent is real — capping
   // them would silently hide incoming messages.
-  const screenerItems = (hasConvex ? allScreenerItems : allScreenerItems.slice(0, debug.desk.screenerItemsCount))
+  const screenerItems = (hasRelay ? allScreenerItems : allScreenerItems.slice(0, debug.desk.screenerItemsCount))
     .filter((i) => !dismissedScreenerIds.has(i.id))
 
   const urgentItems = debug.desk.showUrgent
-    ? hasConvex
+    ? hasRelay
       ? URGENT_ITEMS
       : URGENT_ITEMS.slice(0, debug.desk.urgentItemsCount)
     : []

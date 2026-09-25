@@ -68,13 +68,8 @@ export interface StreamMessage extends ConversationMessage {
 /**
  * `!@` — the composer's urgent marker (§2.12), read off the wire.
  *
- * The twin of `convex/screener.ts`'s `isUrgentBody`, which is what stamps the
- * `urgent` column when Convex records the message. The two must agree, and
- * they are apart because a Convex module cannot be imported into the browser
- * bundle — `screener.ts` pulls `MutationCtx` and the generated server types
- * with it. A copy of one `includes` is the cheaper of the two wrongs; if the
- * rule ever grows past that, it moves into `@estiva-app/interop` and both
- * sides call it.
+ * It had a twin, Convex's `isUrgentBody`, until REM-7 deleted `convex/`; this
+ * is the only copy now.
  */
 export function isUrgentContent(content: string | undefined): boolean {
   return content !== undefined && content.includes('!@')

@@ -33,21 +33,10 @@ import { fileHasUnread } from './fileUnread'
  * you had read the topic. The relay rule is the specified one and the one
  * every other surface in the app already uses.
  *
- * ## Why a cached marker still enters a relay fold
- *
- * `cachedMarker` is this deployment's `readState` row for the channel, in
- * seconds — the cache `convex/readState.ts` keeps precisely so that "the relay
- * has forgotten this context" does not read as "never opened". The relay
- * frontier is the newest 90 days of the person's own slots and is capped in
- * bytes (SHR-4), so a marker can genuinely fall out of it while the message it
- * covers is still inside the horizon, and absence would then light a topic
- * somebody read months ago. Taking the later of the two keeps that from
- * happening without putting any per-message work back in Convex: the whole
- * saving was the message-and-reply walk, and this is one indexed collect the
- * DM half already pays for.
- *
- * It only ever raises the marker, never lowers it, so a deployment that has
- * never seen the person changes nothing.
+ * The marker is the relay's alone (REM-5). Convex's `readState` cache used to
+ * raise it for a context the 90-day slot horizon had dropped, but a marker
+ * that old is older than every message judged here, so its absence lights
+ * nothing it would not have lit anyway.
  */
 export function topicChannelFlags(
   channelUuid: string,
@@ -60,15 +49,9 @@ export function topicChannelFlags(
     /** Now and the horizon, both unix seconds — the absent-marker rule needs them. */
     nowSeconds: number
     horizonSeconds: number
-    /** This deployment's cached watermark for the channel, unix seconds. */
-    cachedMarker?: number | undefined
   },
 ): { unread: boolean; urgent: boolean } {
-  const relayMarker = frontier.marker(containerContext(channelUuid))
-  const container =
-    relayMarker === undefined || (frontier.cachedMarker ?? 0) > relayMarker
-      ? (frontier.cachedMarker ?? relayMarker)
-      : relayMarker
+  const container = frontier.marker(containerContext(channelUuid))
   const judge = (subset: readonly StreamMessage[]) =>
     subset.length > 0 &&
     fileHasUnread(subset, {

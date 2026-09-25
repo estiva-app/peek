@@ -11,7 +11,7 @@
  * resolves each topic the way `shr8-migrate.ts` chose where its messages went:
  * the `30840` in a team whose title is the Convex title (CON-4), or else the
  * Ship project that lives in the topic's channel (CON-12). *For testing* was
- * discarded (CON-4, `scripts/con4-discarded.ts`) and has no file, so its link
+ * discarded (CON-4) and has no file, so its link
  * lands on its team, Peek (FOL-25's triage).
  *
  * The shapes an old link came in, all answered here:

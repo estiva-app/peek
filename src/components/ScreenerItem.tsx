@@ -8,7 +8,7 @@ import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
-import { hasConvex } from '@/api'
+import { hasRelay } from '@/api'
 import { previewText } from '@/lib/textParsing'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
 
@@ -92,7 +92,7 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
     there is nothing to read — unless a caller brings its own rows, which is how
     a story draws the card at all (UIG-17).
   */
-  if (!hasConvex && !preview) return row
+  if (!hasRelay && !preview) return row
   return (
     <PreviewCard
       content={preview ?? <ScreenerPreviewContent itemId={item.id} />}

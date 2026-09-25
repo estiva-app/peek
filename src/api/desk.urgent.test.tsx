@@ -10,11 +10,6 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
-vi.mock('convex/react', () => ({
-  useQuery: () => {
-    throw new Error('the Desk asked Convex')
-  },
-}))
 
 const URGENT = 'a'.repeat(64)
 const CALM = 'b'.repeat(64)
