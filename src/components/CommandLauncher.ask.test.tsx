@@ -15,6 +15,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { enter } from '@/test-enter'
 import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
@@ -89,13 +90,13 @@ describe('the Ask row is offered, not triggered (INT-2)', () => {
     // The approved design (UIG-29): a thread's own rows come first, before typing.
     open()
     expect(await screen.findByText('Ask about this conversation')).toBeInTheDocument()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     expect(await askRow()).toBeInTheDocument()
   })
 
   it('shows the question it would ask, so the row says what it does', async () => {
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     // Scoped to the row: INT-4 added a second row that quotes the same
     // sentence back, read as a brief rather than a question.
     expect(await askRow()).toHaveTextContent('Ask: “what did we decide”')
@@ -116,13 +117,13 @@ describe('the Ask row is offered, not triggered (INT-2)', () => {
     // `userEvent.type` flushes between keystrokes, so the resolved probe has
     // settled by here. "Apps" is not a sync point: a typed sentence matches no
     // app, so that section is filtered away.
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     expect(askRowNow()).not.toBeInTheDocument()
   })
 
   it('is absent with no conversation open, because there is nothing to ask about', async () => {
     open({ composer: { isFocused: true, hasDraft: false } })
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     expect(askRowNow()).not.toBeInTheDocument()
   })
 })
@@ -131,7 +132,7 @@ describe('the query is sovereign (INT-2)', () => {
   it('keeps what was typed when Ask is taken', async () => {
     // Changing how a sentence is interpreted must never cost the sentence.
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await askRow())
 
     expect(input()).toHaveValue('what did we decide')
@@ -139,7 +140,7 @@ describe('the query is sovereign (INT-2)', () => {
 
   it('keeps it on the way back out too', async () => {
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await askRow())
     await userEvent.click(screen.getByRole('button', { name: /Leave Ask/i }))
 
@@ -154,7 +155,7 @@ describe('the query is sovereign (INT-2)', () => {
       leaves — so leaving Ask no longer costs deleting the whole question.
     */
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await askRow())
 
     input().setSelectionRange(0, 0)
@@ -171,7 +172,7 @@ describe('the Ask surface (INT-2)', () => {
     // The sentence showed twice, in the chip and in the field. The chip is the
     // mode now; the field is the question.
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await askRow())
 
     expect(screen.getByRole('button', { name: 'Leave Ask' })).toBeInTheDocument()
@@ -181,7 +182,7 @@ describe('the Ask surface (INT-2)', () => {
 
   it('replaces the result list rather than sitting under it', async () => {
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await askRow())
 
     expect(screen.queryByText('Apps')).not.toBeInTheDocument()
@@ -193,7 +194,7 @@ describe('the Ask surface (INT-2)', () => {
       a third application that does not exist.
     */
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await askRow())
 
     expect(screen.getByRole('button', { name: /Leave Ask/i })).toBeInTheDocument()
@@ -206,7 +207,7 @@ describe('nothing PEE-4 built has changed (INT-2)', () => {
     // Results coexist with the offer — asking is a choice, not a mode you fall
     // into, and the search must still work while it is available.
     open()
-    await userEvent.type(input(), 'designer')
+    await enter(input(),'designer')
 
     expect(await askRow()).toBeInTheDocument()
     expect(screen.getByText('People')).toBeInTheDocument()
@@ -220,7 +221,7 @@ describe('nothing PEE-4 built has changed (INT-2)', () => {
       would make both meaningless.
     */
     open()
-    await userEvent.type(input(), 'zzqxvwmkjjbtplfd')
+    await enter(input(),'zzqxvwmkjjbtplfd')
 
     expect(screen.queryByRole('button', { name: /Leave Ask/i })).not.toBeInTheDocument()
     expect(await askRow()).toBeInTheDocument()
@@ -246,7 +247,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
   it('offers the fetch where the model could run but is not here', async () => {
     prefillAvailability.mockResolvedValue('downloadable')
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
 
     expect(await offer()).toBeInTheDocument()
     // Says what it costs before it is taken, not after.
@@ -257,7 +258,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
     // The PEE-6 guarantee: opening a launcher is not consent to a 22 GB fetch.
     prefillAvailability.mockResolvedValue('downloadable')
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
 
     expect(await offer()).toBeInTheDocument()
     expect(downloadModel).not.toHaveBeenCalled()
@@ -266,7 +267,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
   it('starts the fetch when it is', async () => {
     prefillAvailability.mockResolvedValue('downloadable')
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await offer())
 
     expect(downloadModel).toHaveBeenCalledTimes(1)
@@ -280,7 +281,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
       return await new Promise<boolean>(() => {})
     })
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await offer())
 
     expect(await screen.findByText(/Downloading the on-device model… 42%/)).toBeInTheDocument()
@@ -289,7 +290,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
   it('replaces itself with the Ask row once the model is here', async () => {
     prefillAvailability.mockResolvedValue('downloadable')
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     expect(askRowNow()).not.toBeInTheDocument()
     await userEvent.click(await offer())
 
@@ -307,7 +308,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
     prefillAvailability.mockResolvedValue('downloadable')
     downloadModel.mockResolvedValue(false)
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await offer())
 
     expect(await screen.findByText(/This browser refused the model/i)).toBeInTheDocument()
@@ -328,7 +329,7 @@ describe('the download is offered rather than deadlocked (INT-10)', () => {
     // 'unavailable' is not 'downloadable'. Nothing to fetch, so nothing to say.
     prefillAvailability.mockResolvedValue('unavailable')
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
 
     expect(screen.queryByText(/Download the on-device model/i)).not.toBeInTheDocument()
   })

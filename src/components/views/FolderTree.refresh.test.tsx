@@ -98,7 +98,6 @@ vi.mock('@/api/foreign', () => {
   }
   return { useForeignObjects: () => objects }
 })
-vi.mock('@/api/topics', () => ({ useTopics: () => [] }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 /**
  * Present, and holding both signals: the wide filter the dot now rides

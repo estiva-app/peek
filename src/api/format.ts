@@ -69,38 +69,3 @@ export function formatReplyTimestamp(createdAt: number, now: number = Date.now()
     ? `${monthDay} at ${time}`
     : `${monthDay}, ${d.getFullYear()} at ${time}`
 }
-
-/** The reply pill on a conversation card — the one place a timestamp DOES sit
- *  under a date divider, so it carries the single exception to the rule above:
- *  a bare time is safe only when the divider says Today AND the reply is
- *  today. A reply from today under an OLDER divider says `Today at …`, or it
- *  would be read as the divider's day.
- *
- *  The rule this replaces compared the reply to the CARD's day, which left a
- *  thread that began and ended on one past day bare forever — a card under a
- *  `Yesterday` divider showing `2:21 PM` with nothing to date it. */
-export function formatLastReplyTimestamp(
-  lastReplyAt: number,
-  messageCreatedAt: number,
-  now: number = Date.now()
-): string {
-  if (now - lastReplyAt < 60_000) return 'Just now'
-  const n = new Date(now)
-  if (sameLocalDay(new Date(lastReplyAt), n)) {
-    const time = formatTimestamp(lastReplyAt, now)
-    return sameLocalDay(new Date(messageCreatedAt), n) ? time : `Today at ${time}`
-  }
-  return formatReplyTimestamp(lastReplyAt, now)
-}
-
-/** Local calendar-day key for grouping (stable across DST). */
-export function dayKey(createdAt: number): string {
-  const d = new Date(createdAt)
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-}
-
-/** `'MMMM d'` — the promotion divider's date (per topicStore.formatPromotedAt). */
-export function formatPromotedAt(createdAt: number): string {
-  const d = new Date(createdAt)
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}`
-}

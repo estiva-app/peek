@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { enter } from '@/test-enter'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { PeekDataProvider, type MessageHit } from '@/api'
@@ -103,18 +104,18 @@ beforeEach(() => {
 describe('the first level, by what was typed', () => {
   it('puts Ask, Draft and Make first for a sentence, and last for a word (C2)', async () => {
     open(inThread)
-    await userEvent.type(field(), 'designer')
+    await enter(field(),'designer')
     await waitFor(() => expect(groupNames().at(-1)).toBe('Ask'))
     expect(groupNames()[0]).toBe('People')
 
     await userEvent.clear(field())
-    await userEvent.type(field(), 'product designer')
+    await enter(field(),'product designer')
     await waitFor(() => expect(groupNames()[0]).toBe('Ask'))
   })
 
   it('puts an app whose name starts with the text first (R6)', async () => {
     open()
-    await userEvent.type(field(), 'pe')
+    await enter(field(),'pe')
     await waitFor(() => expect(groupNames()[0]).toBe('Apps'))
     expect(within(screen.getByRole('group', { name: 'Apps' })).getByText('Peek')).toBeInTheDocument()
   })
@@ -127,7 +128,7 @@ describe('the first level, by what was typed', () => {
 
   it('finds an app’s action by its name, and opens its form (C4)', async () => {
     open()
-    await userEvent.type(field(), 'add')
+    await enter(field(),'add')
     const row = await screen.findByRole('option', { name: /Add issue/ })
     expect(row).toHaveTextContent('Ship')
     await userEvent.click(row)
@@ -223,7 +224,7 @@ describe('inside an app', () => {
     open({}, { initialAppId: 'ship' })
     expect(await screen.findByRole('option', { name: /Add issue/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Leave Ship' }))
-    await userEvent.type(field(), 'pe')
+    await enter(field(),'pe')
     await userEvent.keyboard('{Tab}')
     expect(await screen.findByText(/Peek has not published anything/)).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Add issue/ })).not.toBeInTheDocument()
@@ -231,7 +232,7 @@ describe('inside an app', () => {
 
   it('does not search messages there, where nobody would see them (F9)', async () => {
     open({}, { initialAppId: 'ship' })
-    await userEvent.type(field(), 'add')
+    await enter(field(),'add')
     expect(messageSearch.mock.calls.every(([query]) => query === '')).toBe(true)
   })
 })
@@ -245,7 +246,7 @@ describe('a message result (R13)', () => {
       query ? { state: { kind: 'done', count: 1 }, hits: [{ id: 'e1', content: 'the office **layout** is done', pubkey: 'p', createdAt: 1_758_000_000, folder: FOLDER }] } : { state: { kind: 'idle' }, hits: [] },
     )
     open()
-    await userEvent.type(field(), 'layout')
+    await enter(field(),'layout')
     // Words, never markdown.
     const row = await screen.findByRole('option', { name: /the office layout is done/ })
     await userEvent.click(row)
@@ -258,7 +259,7 @@ describe('a message result (R13)', () => {
       query ? { state: { kind: 'done', count: 1 }, hits: [{ id: 'e2', content: 'a reply about the layout', pubkey: 'p', createdAt: 1_758_000_000, folder: FOLDER, root: 'e1' }] } : { state: { kind: 'idle' }, hits: [] },
     )
     open()
-    await userEvent.type(field(), 'layout')
+    await enter(field(),'layout')
     await userEvent.click(await screen.findByRole('option', { name: /a reply about the layout/ }))
     expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: FOLDER, eventId: 'e1', reply: 'e2' })
   })
@@ -280,7 +281,7 @@ describe('a message result (R13)', () => {
           : { state: { kind: 'idle' }, hits: [] },
       )
       open()
-      await userEvent.type(field(), 'layout')
+      await enter(field(),'layout')
       const row = await screen.findByRole('option', { name: /a comment about the layout/ })
       expect(row).toHaveTextContent('FOL-15 test topic 2')
       await userEvent.click(row)
@@ -297,7 +298,7 @@ describe('a message result (R13)', () => {
           : { state: { kind: 'idle' }, hits: [] },
       )
       open()
-      await userEvent.type(field(), 'layout')
+      await enter(field(),'layout')
       await userEvent.click(await screen.findByRole('option', { name: /a reply about the layout/ }))
       expect(screen.getByTestId('where-search').textContent).toBe('?thread=c1')
       expect(JSON.parse(screen.getByTestId('pending').textContent!)).toEqual({ folder: TEAM, eventId: 'c1', reply: 'c2' })

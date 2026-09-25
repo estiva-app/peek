@@ -19,6 +19,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { enter } from '@/test-enter'
 import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
@@ -89,7 +90,7 @@ const draftRow = () => screen.findByText(/Draft a reply/i)
 
 async function enterDraft(request = 'offer to take a look tomorrow') {
   open()
-  await userEvent.type(input(), request)
+  await enter(input(),request)
   await userEvent.click(await draftRow())
 }
 
@@ -112,7 +113,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
       arrow key and are never wrong.
     */
     open()
-    await userEvent.type(input(), 'offer to take a look tomorrow')
+    await enter(input(),'offer to take a look tomorrow')
 
     expect(await draftRow()).toBeInTheDocument()
     expect(screen.getByText(/^Ask: “/)).toBeInTheDocument()
@@ -120,7 +121,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
 
   it('is absent with no composer, because a draft would have nowhere to go', async () => {
     open({ conversation: { references: [], messages: [reply('the build broke on main')] } })
-    await userEvent.type(input(), 'offer to take a look tomorrow')
+    await enter(input(),'offer to take a look tomorrow')
 
     // Ask still stands: reading a conversation needs no composer.
     expect(await screen.findByText(/^Ask: “/)).toBeInTheDocument()
@@ -129,7 +130,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
 
   it('is absent with no conversation, because there is nothing to draft from', async () => {
     open({ composer: { isFocused: true, hasDraft: false } })
-    await userEvent.type(input(), 'offer to take a look tomorrow')
+    await enter(input(),'offer to take a look tomorrow')
 
     expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
   })
@@ -139,7 +140,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
     canPrefill.mockResolvedValue(false)
     prefillAvailability.mockResolvedValue('downloadable')
     open()
-    await userEvent.type(input(), 'offer to take a look tomorrow')
+    await enter(input(),'offer to take a look tomorrow')
 
     expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
   })
@@ -148,7 +149,7 @@ describe('drafting is offered as its own row (INT-4)', () => {
     // The same rule INT-2 keeps, restated because a second row is a second
     // chance to get it wrong.
     open()
-    await userEvent.type(input(), 'zzqxvwmkjjbtplfd')
+    await enter(input(),'zzqxvwmkjjbtplfd')
 
     expect(await draftRow()).toBeInTheDocument()
     expect(promptForText).not.toHaveBeenCalled()
@@ -250,7 +251,7 @@ describe('the draft is the person\'s to send (INT-4)', () => {
     // Both intents reach the same panel and both call a model (INT-3 filled
     // Ask in). What separates them is what the panel then offers.
     open()
-    await userEvent.type(input(), 'what did we decide')
+    await enter(input(),'what did we decide')
     await userEvent.click(await screen.findByText(/^Ask: “/))
 
     expect(await screen.findByRole('group', { name: /^Sources?$/ })).toBeInTheDocument()
