@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { hasConvex, hasRelay } from '@/api'
+import { hasRelay } from '@/api'
 import { useEstivaIdSession } from './useEstivaIdSession'
 import { AuthShell } from './shell/AuthShell'
 import { markEntered, useAuthShell } from './shell/useAuthShell'
@@ -16,12 +16,10 @@ import { markEntered, useAuthShell } from './shell/useAuthShell'
  *
  * **Nothing is bootstrapped beside it (REM-6).** The viewer is the token's
  * pubkey and names and faces are read from the relay, so there is no Peek user
- * row to adopt and no Convex copy of `kind:0` to refresh. The Convex screens
- * that remain resolve the viewer by that same pubkey (`convex/users.ts`'s
- * `viewerId`).
+ * row to adopt and no Convex copy of `kind:0` to refresh. There are no Convex
+ * screens left at all since REM-7.
  *
- * Mock mode (tests, Storybook, a checkout with neither a deployment nor a
- * relay) has no identity server at all, so the app stays signed in as
+ * Mock mode (tests, Storybook, a checkout with no relay) has no identity server at all, so the app stays signed in as
  * CURRENT_USER_NAME — unchanged.
  *
  * **The signed-out branch is no longer a screen (PEEK-118).** It used to be a
@@ -31,7 +29,7 @@ import { markEntered, useAuthShell } from './shell/useAuthShell'
  * only asks for anything when it genuinely cannot.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
-  if (!hasConvex && !hasRelay) return <>{children}</>
+  if (!hasRelay) return <>{children}</>
   return <SessionGate>{children}</SessionGate>
 }
 

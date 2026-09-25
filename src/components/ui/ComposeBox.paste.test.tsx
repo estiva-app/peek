@@ -6,9 +6,9 @@
  * paste at all, that the picture becomes a chip instead of going into the
  * text, and that a second paste adds to the first rather than replacing it.
  *
- * `hasConvex` and the upload are mocked. Without a deployment the real ones
- * make a paste inert on purpose, so a test against them would prove nothing —
- * and the upload itself is the seam's, not the composer's.
+ * The upload is mocked. Without a relay the real one makes a paste inert on
+ * purpose, so a test against it would prove nothing — and the upload itself is
+ * the seam's, not the composer's.
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -17,16 +17,15 @@ import { DebugProvider } from '@/lib/debug'
 
 vi.mock('@/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api')>()),
-  hasConvex: true,
   useCanUpload: () => true,
   useUploadActions: () => ({
-    deleteUpload: () => {},
     uploadFile: async (file: File) => ({
-      storageId: `stored_${file.name}`,
       name: file.name,
       contentType: file.type,
       size: file.size,
       previewUrl: 'blob:preview',
+      sha256: 'cd'.repeat(32),
+      mediaUrl: `https://relay.test/${file.name}`,
     }),
   }),
 }))

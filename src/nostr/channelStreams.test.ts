@@ -94,7 +94,7 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
 })
 
 describe('isUrgentContent', () => {
-  it('agrees with `convex/screener.ts`’s isUrgentBody on the cases that decide a sidebar row', () => {
+  it('finds the marker anywhere in the body, and only the marker', () => {
     expect(isUrgentContent('!@Ada')).toBe(true)
     expect(isUrgentContent('mid-sentence !@Ada still counts')).toBe(true)
     expect(isUrgentContent('@Ada')).toBe(false)

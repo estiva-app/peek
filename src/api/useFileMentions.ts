@@ -4,7 +4,7 @@ import { RelayReadError, classifyRelayFailure, isOutage } from '@/nostr/relayRea
 import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useRelayViewer } from './foreign'
-import { hasConvex } from './store'
+import { hasRelay } from './relayUrl'
 
 /**
  * The comments elsewhere that name this file — a file page's Activity
@@ -53,7 +53,7 @@ export function useFileMentions(address: string | null | undefined): { mentions:
   }, [file, viewer])
 
   useEffect(() => {
-    if (!hasConvex || !file) return
+    if (!hasRelay || !file) return
     let cancelled = false
     void load().then((next) => next && !cancelled && setResolved(next))
     return () => {
@@ -66,7 +66,7 @@ export function useFileMentions(address: string | null | undefined): { mentions:
       // A slow read for the previous file must not paint over the next one.
       void load().then((next) => next && next.file === file && setResolved(next))
     },
-    { enabled: hasConvex && !!file },
+    { enabled: hasRelay && !!file },
   )
 
   return { mentions: resolved?.file === file ? resolved.mentions : EMPTY }

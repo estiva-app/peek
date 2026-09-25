@@ -42,16 +42,9 @@
  * `prompt=none` probe even carries an existing Estiva ID session straight
  * through, so the "Continue with passkey" click is skipped entirely.
  *
- * NOT reachable locally: anything served by Convex. `convex/auth.config.ts`
- * pins the issuer to `https://id.estiva.app` and Convex fetches
- * `<issuer>/.well-known/openid-configuration` from its own cloud, which cannot
- * resolve localhost. A local token is therefore well-formed and accepted by
- * Peek but rejected by Convex with **401**, and the app renders an empty page
- * rather than erroring.
- *
  * So: local Estiva ID verifies auth flows. Verifying *data* — a live thread,
- * relay reads, publishing — needs either the production issuer or a public
- * HTTPS tunnel to a local one with a matching `auth.config.ts`.
+ * relay reads, publishing — has meant the production issuer; see the skill's
+ * SKILL.md for why that was Convex's limit, and what is unmeasured since.
  */
 import { chromium } from 'playwright-core'
 

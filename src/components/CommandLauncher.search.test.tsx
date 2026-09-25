@@ -7,7 +7,7 @@
  * The topic search went with the Convex topics (FOL-23).
  *
  * People come from the mock dataset here, which is the real code
- * path — the test env has no `VITE_CONVEX_URL`, so `hasConvex` is false and
+ * path — the test env has no `VITE_RELAY_URL`, so `hasRelay` is false and
  * the seam answers from `src/data`. Message search is the one thing that
  * cannot work in mock mode (there is no relay to ask), so its states are
  * injected.

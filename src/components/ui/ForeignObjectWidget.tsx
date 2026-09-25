@@ -6,7 +6,7 @@ import type {
   ResolvedAction,
   ResolvedSlot,
 } from '@estiva-app/interop'
-import { hasConvex, useForeignObjects, useWorkspaceDirectory } from '@/api'
+import { hasRelay, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
 import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
@@ -576,18 +576,17 @@ export function ForeignObjectWidget({
   useEffect(() => {
     // Already in hand — nothing to resolve (see `resolved` above).
     if (resolved) return
-    // Peek runs without a deployment in tests, Storybook and checkouts with no
-    // backend (`hasConvex`). There is no relay to ask in that mode, so resolve
-    // to nothing rather than calling an action that has no client behind it.
-    if (!hasConvex) {
+    // Peek runs without a relay in tests, Storybook and checkouts with no
+    // `VITE_RELAY_URL` (`hasRelay`). There is nothing to ask in that mode, so
+    // resolve to nothing.
+    if (!hasRelay) {
       setObject(null)
       return
     }
     let cancelled = false
-    // An action, not a query: this reads a relay over HTTP, which Convex's
-    // reactive query layer cannot do. So there is no live update — the widget
-    // reflects the moment it was resolved. Good enough for a message
-    // attachment, and the honest limitation to note rather than hide.
+    // One read over HTTP, so there is no live update — the widget reflects the
+    // moment it was resolved. Good enough for a message attachment, and the
+    // honest limitation to note rather than hide.
     // The token matters as much here as in `reload`: without it this reads as
     // the backend, which is a member of no channel, so the relay returns
     // nothing and the widget silently renders as if the reference were broken.

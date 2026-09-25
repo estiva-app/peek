@@ -541,7 +541,7 @@ export function ReplyCard({
             {files && files.length > 0 && (
               <div className="flex flex-wrap items-start gap-2 pl-8 pr-2 pb-2 w-full">
                 {files.map((f, i) => (
-                  <AttachmentCard key={f.storageId ?? `${f.name}_${i}`} {...postedAttachment(f)} fetchImage={blobObjectUrl} download data-interactive />
+                  <AttachmentCard key={`${f.sha256 ?? f.name}_${i}`} {...postedAttachment(f)} fetchImage={blobObjectUrl} download data-interactive />
                 ))}
               </div>
             )}

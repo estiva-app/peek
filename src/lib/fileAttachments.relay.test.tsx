@@ -115,15 +115,9 @@ describe('a relay-hosted attachment', () => {
   })
 })
 
-describe("Peek's own files are untouched by any of it", () => {
-  it('draws a Convex URL directly, signing nothing', async () => {
-    render(card({ storageId: 'st_1', url: 'https://convex.example/f.png', name: 'mine.png', contentType: 'image/png', size: 10 }))
-    expect(await screen.findByAltText('mine.png')).toHaveAttribute('src', 'https://convex.example/f.png')
-    expect(blobObjectUrl).not.toHaveBeenCalled()
-  })
-
-  it('draws the optimistic preview while an upload is still in flight', async () => {
-    render(card({ storageId: 'st_1', previewUrl: 'blob:local', name: 'mine.png', contentType: 'image/png', size: 10 }))
+describe('a file still in its optimistic window', () => {
+  it('draws the local preview, signing nothing', async () => {
+    render(card({ previewUrl: 'blob:local', name: 'mine.png', contentType: 'image/png', size: 10 }))
     expect(await screen.findByAltText('mine.png')).toHaveAttribute('src', 'blob:local')
     expect(blobObjectUrl).not.toHaveBeenCalled()
   })

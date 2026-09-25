@@ -53,7 +53,7 @@ export { useAvatarSrc } from './avatars'
 export { mentionPeople } from './mentions'
 export { useStarred } from '@/api/internal/starred'
 export { useFollows, type Follows } from '@/api/internal/follows'
-export { PeekDataProvider, hasConvex } from './store'
+export { PeekDataProvider } from './store'
 export { RELAY_URL, hasRelay } from './relayUrl'
 export {
   prefetchFolderContents,

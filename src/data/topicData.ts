@@ -73,29 +73,25 @@ export interface ReactionData {
   names?: string[]
 }
 
-/** A real uploaded file attached to a message/reply (Phase 5). `url` is the
- *  resolved storage URL; `previewUrl` is a local object URL used only during
- *  the optimistic window before the server round-trips (images render
- *  instantly). */
+/** A real uploaded file attached to a message/reply (Phase 5). `previewUrl` is
+ *  a local object URL used only during the optimistic window before the relay
+ *  round-trips (images render instantly). */
 export interface FileAttachment {
-  storageId?: string
-  url?: string
   previewUrl?: string
   name: string
   contentType: string
   size: number
   /**
-   * The relay's copy — CON-12. Present instead of `url` for a file that
-   * arrived from another app, where this deployment holds no blob.
+   * The relay's copy — CON-12.
    *
-   * **Not interchangeable with `url`.** Media GET is authenticated, so an
+   * **Not a URL an `<img>` can load.** Media GET is authenticated, so an
    * `<img src={mediaUrl}>` answers 401; the bytes come through
    * `blobObjectUrl`, which signs a `kind:24242` first.
    */
   mediaUrl?: string
   /** The relay's generated thumbnail, when it made one. Same fetch rules. */
   thumbUrl?: string
-  /** The blob's identity. Tells two relay files apart where neither has a storage id. */
+  /** The blob's identity. */
   sha256?: string
 }
 
