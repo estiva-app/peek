@@ -16,6 +16,12 @@
  * Both live in the one `readState` table: `containerId` is a container _id
  * or, for a thread, the parent message's _id. No watermark row = never
  * opened, so everything in it (except your own writing) is new.
+ *
+ * **Retired (REM-5): nothing in `src/` calls these any more.** Read state is
+ * the NIP-RS blob only. They stay deployed for one release so a tab still
+ * running the previous bundle — which calls `cachedReadContexts` from the
+ * provider at the root of the tree — does not throw. REM-7 deletes this module
+ * with the rest of `convex/`, `unread.summary` and `desk.urgentList` included.
  */
 import { v } from 'convex/values'
 import { mutation, query, type QueryCtx, type MutationCtx } from './_generated/server'

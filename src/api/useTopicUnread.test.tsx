@@ -174,19 +174,6 @@ describe('useTopicUnread', () => {
     await waitFor(() => expect(result.current.unread.t_a).toBe(false))
   })
 
-  it('the cached mark clears a dot the relay frontier alone would light', async () => {
-    const { rerender, result } = renderHook(
-      ({ marks }: { marks?: Record<string, number> }) => useTopicUnread(topics, marks),
-      { initialProps: {} as { marks?: Record<string, number> } },
-    )
-    hold(HELD)
-    advance({})
-    await waitFor(() => expect(result.current.unread.t_a).toBe(true))
-
-    rerender({ marks: { [CHANNEL_A]: NOW - 60 } })
-    await waitFor(() => expect(result.current.unread.t_a).toBe(false))
-  })
-
   it('an urgent message raises the indicator instead of the dot', async () => {
     const { result } = renderHook(() => useTopicUnread(topics))
     hold({ [CHANNEL_A]: [said('m', NOW - 3600, true)], [CHANNEL_B]: [] })

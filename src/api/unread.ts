@@ -9,11 +9,8 @@
  * legacy DM conversation numbers — bridged here.)
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { useMutation } from 'convex/react'
-import { api } from '../../convex/_generated/api'
 import { dmHasUnread as mockDmHasUnread } from '@/data/dmData'
 import { mockConvIdFor } from './directory'
-import { hasConvex } from './store'
 import { hasRelay } from './relayUrl'
 import { useTopicUnread } from './useTopicUnread'
 import { useDmChannels } from './internal/dms'
@@ -74,7 +71,6 @@ export const READ_DWELL_MS = 1500
  * `useReadStateSync` for which those are.
  */
 export function useReadActions() {
-  const markThreadRemote = useMutation(api.readState.markThreadRead)
   /*
    * A DM's channel uuid, by the partner pubkey the page marks read with
    * (DMS-8, REM-3). Read through a ref rather than the closure: `useMarkRead`
@@ -94,8 +90,8 @@ export function useReadActions() {
       if (hasRelay) recordContainerRead(dmChannelOf.current(dmId), Date.now())
     },
     markThreadRead(messageKey: string) {
-      if (!hasConvex) return
-      void markThreadRemote({ messageKey })
+      // Relay only (REM-5): the NIP-RS blob is the only read state.
+      if (!hasRelay) return
       // §11.2: this advances the thread and MUST NOT touch its container.
       // For a relay-synced message the Peek key *is* the event id; for one that
       // has never been published, `recordThreadRead` finds no context and stops.
