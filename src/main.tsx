@@ -1,6 +1,5 @@
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
-import { Analytics } from '@vercel/analytics/react'
 import { DebugProvider } from './lib/debug'
 import { PeekDataProvider } from './api'
 import { AuthGate } from './auth/AuthGate'
@@ -39,7 +38,6 @@ createRoot(document.getElementById('root')!).render(
                       <TooltipProvider>
                         <App />
                       </TooltipProvider>
-                      <Analytics />
                     </ToastProvider>
                   </LastSelectionProvider>
                 </AuthGate>
