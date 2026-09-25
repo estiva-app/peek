@@ -82,7 +82,7 @@ describe('the set comes from the relay', () => {
     expect(publish.mock.calls.at(-1)?.[0]).toEqual({ topics: [], people: [{ key: GREG, pubkey: GREG }] })
   })
 
-  it('drops an old-key star with no pubkey — nothing without Convex can say whose it is', async () => {
+  it('drops an old-key star with no pubkey — nothing can say whose it is', async () => {
     relayBlob = { ...aBlob(['t1'], []), people: [{ key: 'kh7abc' }, { key: JUAN }] }
     const { result } = await setup()
     expect(result.current.isDmStarred('kh7abc')).toBe(false)
@@ -132,7 +132,7 @@ describe('what is published is the set, never the rows that could be drawn', () 
     expect(publish).not.toHaveBeenCalled()
   })
 
-  it('starts empty when the relay holds no set, with nothing seeded from Convex', async () => {
+  it('starts empty when the relay holds no set', async () => {
     // REM-4: Convex-only stars are dropped, not migrated (Miky, 2026-09-24).
     syncState = 'absent'
     relayBlob = undefined

@@ -551,7 +551,7 @@ describe('a channel conversation (REM-1)', () => {
     await expect(channelConversationAsViewer(DM, 'https://relay.test', token)).rejects.toThrow()
   })
 
-  it('a message is a kind:9 in the channel, its attachment as imeta and its mention as p — no Convex row, no 1111', async () => {
+  it('a message is a kind:9 in the channel, its attachment as imeta and its mention as p — no 1111', async () => {
     const body = `For you nostr:${encodeNpub(CATH)}`
     const result = await commentAsViewer(
       {

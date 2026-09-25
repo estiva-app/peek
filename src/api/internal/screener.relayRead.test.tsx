@@ -229,7 +229,7 @@ describe('the DM half (CON-14)', () => {
     expect(result.current.items[0]).toMatchObject({ kind: 'dm', preview: 'again' })
   })
 
-  it('dismissing a DM row publishes a dm: watermark and asks nothing of Convex', async () => {
+  it('dismissing a DM row publishes a dm: watermark', async () => {
     const { result } = await setup()
     await waitFor(() => expect(result.current.items).toHaveLength(1))
     act(() => result.current.dismiss(`sc_dm_${GREG}`, 1_787_100_000_000))

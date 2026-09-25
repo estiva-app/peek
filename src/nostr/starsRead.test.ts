@@ -74,7 +74,7 @@ describe('fetchStars keeps apart the three answers the relay can give', () => {
     expect(await fetchStars(SEAM)).toEqual({ state: 'unreachable' })
   })
 
-  it('treats a blob it can read and cannot use as absent, so Convex rewrites it', async () => {
+  it('treats a blob it can read and cannot use as absent', async () => {
     const { fetchStars } = await import('./stars')
     queryRelay.mockResolvedValue({ ok: true, events: anEvent('cipher') })
     for (const unusable of ['not json at all', JSON.stringify({ v: 2, topics: [{ id: 't1' }] }), '{}']) {

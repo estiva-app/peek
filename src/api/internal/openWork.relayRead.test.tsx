@@ -138,7 +138,7 @@ describe('what is published is the list, never the rows that could be drawn', ()
     ])
   })
 
-  it('starts empty when the relay holds no list, with nothing seeded from Convex', async () => {
+  it('starts empty when the relay holds no list', async () => {
     // REM-4: Convex-only open work is dropped, not migrated (Miky, 2026-09-24).
     syncState = 'absent'
     relayBlob = undefined
