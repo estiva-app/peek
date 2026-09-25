@@ -2,38 +2,32 @@
 
 Target: `https://peek.estiva.app`, through the `estiva-prod` Cloudflare Tunnel.
 
-## Two halves, one deploy
+## One deploy
 
-Peek is a Convex backend plus a static bundle that talks to it, and they must
-ship together.
+Peek is a static bundle that talks to the relay from the browser. There has
+been no backend of its own since REM-7 deleted `convex/`.
 
 ```
-push to main → CI: lint, test
+push to main → CI: typecheck, test, gate
                      ↓
-             npx convex deploy --cmd 'npm run build'
-             (pushes the backend AND injects the matching
-              VITE_CONVEX_URL into the frontend build)
+             npm run build   (VITE_RELAY_URL set on the step)
                      ↓
              build image → ghcr.io/estiva-app/peek:main
                      ↓
    systemd timer on the box, every 2 min → update.sh → pull → restart
 ```
 
-`convex deploy --cmd` is the whole point of the ordering: it deploys the backend
-and builds the frontend against *that* deployment in one step, so the two cannot
-drift. It also removes the footgun documented in `HOW-TO-RUN.md` — "backend
-changes additionally need `npx convex deploy` once per change" — because nobody
-has to remember any more.
+The Dockerfile does **not** build. It copies `dist/`, which CI built.
 
-The Dockerfile therefore does **not** build. It copies `dist/`. Building the
-image without a prior `convex deploy` produces a bundle pointed at nothing.
+**Without `VITE_RELAY_URL` the build runs in mock mode for every relay path** —
+nothing reaches the relay, and nothing says so. It is set on the build step in
+`.github/workflows/deploy.yml` (`https://estiva.estiva.app`).
 
 ## Why its own subdomain
 
 Peek's Vite build emits absolute asset paths (`/assets/index-<hash>.js`), so it
-cannot be served under a path prefix the way Estiva Ship is. That is fine here:
-unlike Ship, Peek reaches the relay **server-side from Convex**, so there is no
-browser-to-relay CORS problem to solve by sharing an origin.
+cannot be served under a path prefix the way Estiva Ship is. The relay allows
+the origin by `BUZZ_CORS_ORIGINS`.
 
 ## First deploy, by hand
 
@@ -52,34 +46,18 @@ https://one.dash.cloudflare.com → **Networks** → **Tunnels** → **estiva-pr
 
 Adding it creates the DNS record automatically.
 
-### 2. Set the Convex production environment
+### 2. Secrets
 
-In the Convex dashboard, production deployment — **not** GitHub secrets. These
-are read by Convex-side code at runtime, so they belong to the deployment rather
-than the build:
+None beyond the `GITHUB_TOKEN` every workflow gets — no `DEPLOY_SSH_KEY`, no
+`DEPLOY_HOST`, and since REM-7 no `CONVEX_DEPLOY_KEY`.
 
-* `NOSTR_KEY_ENCRYPTION_SECRET` — required by `convex/nostr/keys.ts`
-
-**The relay origin is not here any more (REM-2).** The browser reads it from
-`VITE_RELAY_URL`, set on the build step in `.github/workflows/deploy.yml`
-(`https://estiva.estiva.app`). The deployment's `NOSTR_RELAY_URL` now feeds only
-`nostr.config.relayConfig`, which nothing in `src/` calls; it stays until
-REM-7 deletes `convex/`, so a bundle cached from before the change keeps
-working. **Without `VITE_RELAY_URL` the build runs in mock mode for every relay
-path** — nothing reaches the relay, and nothing says so.
-
-### 3. Add the GitHub secret
-
-`CONVEX_DEPLOY_KEY`, from the Convex dashboard. It is the only secret this
-pipeline needs — no `DEPLOY_SSH_KEY`, no `DEPLOY_HOST`.
-
-### 4. Make the image pullable
+### 3. Make the image pullable
 
 GitHub → `estiva-app` → **Packages** → `peek` → **Package settings** →
 **Change visibility** → Public. Otherwise the box cannot pull it without
 credentials.
 
-### 5. Lay out the deploy directory
+### 4. Lay out the deploy directory
 
 ```bash
 ssh root@167.233.252.136 'mkdir -p /opt/estiva-peek'
@@ -89,7 +67,7 @@ scp deploy/docker-compose.yml deploy/update.sh \
 ssh root@167.233.252.136 'chmod +x /opt/estiva-peek/update.sh'
 ```
 
-### 6. Start it and turn on automatic deploys
+### 5. Start it and turn on automatic deploys
 
 ```bash
 cd /opt/estiva-peek && docker compose pull && docker compose up -d
@@ -98,24 +76,12 @@ systemctl daemon-reload
 systemctl enable --now estiva-peek-update.timer
 ```
 
-### 7. Verify
+### 6. Verify
 
 ```bash
 curl -I https://peek.estiva.app/
 curl -I https://peek.estiva.app/some/deep/route   # 200 — SPA fallback
 ```
-
-## A failure mode worth knowing about
-
-With `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`, Peek's writes to the relay are
-rejected exactly as a stranger's would be. `convex/nostr/keys.ts` mints its
-**own** per-user keypairs server-side, unrelated to any browser key, and the
-relay has never seen them. Combined with `publish.ts` no-opping quietly, the
-symptom is *Peek working perfectly while nothing reaches the relay*.
-
-Per PEEK-55 this is deliberately not solved here — a dedicated identity service
-is its own project. Until then, either admit Peek's pubkeys manually as they
-appear, or accept that Peek→relay mirroring is off.
 
 ## Operating it
 
@@ -131,6 +97,5 @@ systemctl stop estiva-peek-update.timer
 ESTIVA_PEEK_IMAGE=ghcr.io/estiva-app/peek:<sha> docker compose up -d --force-recreate
 ```
 
-Note that a frontend rollback does **not** roll back the Convex backend, which
-`convex deploy` has already updated. If a deploy breaks the backend, fix it
-forward in Convex rather than expecting the image tag to help.
+Rolling back to an image from before REM-7 brings back a bundle that talks to
+Convex, and works only while the Convex deployment is still up.

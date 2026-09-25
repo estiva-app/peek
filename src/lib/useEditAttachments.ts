@@ -28,8 +28,6 @@ export interface EditAttachmentChip {
   contentType?: string
   status: 'uploading' | 'done' | 'error'
   error?: string
-  /** Why the relay has no copy of this one — CON-12. */
-  shareError?: string
   previewUrl?: string
   onRemove: () => void
 }
@@ -54,7 +52,7 @@ export interface EditAttachments {
 }
 
 /** Same identity the message card uses for its own file list. */
-const fileKey = (f: FileAttachment, i: number) => f.storageId ?? `${f.name}_${i}`
+const fileKey = (f: FileAttachment, i: number) => `${f.sha256 ?? f.name}_${i}`
 
 export function useEditAttachments(files: FileAttachment[] | undefined): EditAttachments {
   const [kept, setKept] = useState<FileAttachment[]>(files ?? [])
@@ -66,12 +64,17 @@ export function useEditAttachments(files: FileAttachment[] | undefined): EditAtt
 
   const current = (): FileAttachment[] => [
     ...kept,
+    // The relay's copy rides along: the conversation view refuses a file
+    // without `sha256` and `mediaUrl`, which is every file added in an edit
+    // while this passed the Convex `storageId` alone.
     ...added.map((f) => ({
-      storageId: f.storageId,
       previewUrl: f.previewUrl,
       name: f.name,
       contentType: f.contentType,
       size: f.size,
+      sha256: f.sha256,
+      mediaUrl: f.mediaUrl,
+      thumbUrl: f.thumbUrl,
     })),
   ]
 
@@ -82,10 +85,9 @@ export function useEditAttachments(files: FileAttachment[] | undefined): EditAtt
       size: f.size,
       contentType: f.contentType,
       status: 'done' as const,
-      // A file already on the message has a resolved storage URL; during the
-      // optimistic window only the local object URL exists (FileAttachmentCard
-      // reads the same pair, in the same order).
-      previewUrl: f.url ?? f.previewUrl,
+      // Only during the optimistic window: a file the relay holds has no URL
+      // an `<img>` can load without signing (see `postedAttachment`).
+      previewUrl: f.previewUrl,
       onRemove: () => setKept((prev) => prev.filter((_, j) => j !== i)),
     })),
     ...uploads.files.map((f) => ({
@@ -95,7 +97,6 @@ export function useEditAttachments(files: FileAttachment[] | undefined): EditAtt
       contentType: f.contentType,
       status: f.status,
       error: f.error,
-      shareError: f.uploaded?.shareError,
       previewUrl: f.uploaded?.previewUrl,
       onRemove: () => uploads.remove(f.localId),
     })),

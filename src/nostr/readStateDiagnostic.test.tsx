@@ -18,19 +18,10 @@ vi.mock('./readStateRelay', async (importOriginal) => ({
   loadMergedReadState: () => loadMergedReadState(),
   fetchOwnSlot: async () => ({ reachable: true }),
 }))
-vi.mock('@/api/store', () => ({ hasConvex: true }))
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 vi.mock('@/auth/estivaId', () => ({
   validToken: () => ({ accessToken: 'tok', pubkey: 'me' }),
   ESTIVA_ID_ORIGIN: 'https://id.estiva.app',
-}))
-const anyQueryResult = Object.assign([] as unknown[], { relayUrl: 'https://relay.test' })
-vi.mock('convex/react', () => ({
-  useQuery: () => anyQueryResult,
-  useMutation: () => async () => ({ applied: 1, unresolved: 0 }),
-}))
-vi.mock('@/lib/debug', () => ({
-  useDebug: () => ({ state: { readState: { dualRun: true } }, setReadStateDiff: vi.fn() }),
 }))
 
 const diag = () => (window as unknown as { __readState: () => Record<string, unknown> }).__readState()

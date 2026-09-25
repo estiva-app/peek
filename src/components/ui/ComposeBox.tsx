@@ -377,10 +377,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
                 contentType={f.contentType}
                 src={f.uploaded?.previewUrl}
                 onRemove={() => uploads.remove(f.localId)}
-                // CON-12 — the file uploaded here but not to the relay, so
-                // only Peek can see it. Said before send, while it is still
-                // something the sender can act on.
-                {...pendingAttachmentNote({ status: f.status, error: f.error, shareError: f.uploaded?.shareError })}
+                {...pendingAttachmentNote({ status: f.status, error: f.error })}
               />
             ))}
           </div>

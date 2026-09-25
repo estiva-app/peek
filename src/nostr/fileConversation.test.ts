@@ -485,8 +485,8 @@ describe('foldEdits — the body and the attachments fold separately (RFC 0.4 §
 
 /*
   REM-1 — a DM is a channel container: its `kind:9` messages, read by `#h` and
-  written with `buildMessage`. `convex/nostr/sync.ts` is the specification of
-  the fold, since it is what drew a DM until now.
+  written with `buildMessage`. The fold is the one Convex's `nostr/sync.ts`
+  drew a DM with until then.
 */
 describe('a channel conversation (REM-1)', () => {
   const DM = '3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f'
@@ -551,7 +551,7 @@ describe('a channel conversation (REM-1)', () => {
     await expect(channelConversationAsViewer(DM, 'https://relay.test', token)).rejects.toThrow()
   })
 
-  it('a message is a kind:9 in the channel, its attachment as imeta and its mention as p — no Convex row, no 1111', async () => {
+  it('a message is a kind:9 in the channel, its attachment as imeta and its mention as p — no 1111', async () => {
     const body = `For you nostr:${encodeNpub(CATH)}`
     const result = await commentAsViewer(
       {

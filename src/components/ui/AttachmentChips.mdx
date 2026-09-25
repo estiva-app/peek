@@ -39,10 +39,9 @@ import { AttachmentChips } from '@/components/ui/AttachFiles'
 
 ## What it owns
 
-- **The three states a pending file can be in** — uploading, failed, and
-  "other apps won't see this" — through `pendingAttachmentNote`, which turns a
-  chip's status into the note the card shows. These three are the **only**
-  place in Peek those states are drawn.
+- **The states a pending file can be in** — uploading, ready and failed —
+  through `pendingAttachmentNote`, which turns a chip's status into the note
+  the card shows. This is the **only** place in Peek those states are drawn.
 - **Drawing nothing at zero**, so no call site guards it.
 - **The order**, which is the order they were attached and nothing else.
 

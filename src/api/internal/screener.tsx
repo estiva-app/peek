@@ -42,7 +42,6 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { SCREENER_ITEMS } from '@/data/screenerData'
-import { hasConvex } from '@/api/store'
 import { useOpenWork } from '@/api/internal/openWork'
 import { useDmChannels } from '@/api/internal/dms'
 import { useWorkspacePeople } from '@/api/people'
@@ -66,7 +65,7 @@ import {
   type ScreenerFile,
 } from '@/api/internal/screenerFold'
 import type { ScreenerItem } from '@/api/types'
-import { RELAY_URL } from '@/api/relayUrl'
+import { RELAY_URL, hasRelay } from '@/api/relayUrl'
 
 export interface ScreenerValue {
   /** The rows, newest screening event first. */
@@ -128,7 +127,7 @@ function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
 
   const read = useCallback(
     (asked: readonly string[]) => {
-      if (!hasConvex || asked.length === 0) return
+      if (!hasRelay || asked.length === 0) return
       resolveObjects(asked).then(
         (objects) =>
           setHeld((prev) => {
@@ -156,7 +155,7 @@ function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
   }, [key, read])
   // A refresh re-reads everything in the set — that is how new comments arrive.
   useRefreshTriggers(() => read(key ? key.split('\u0000') : []), {
-    enabled: hasConvex && !!key,
+    enabled: hasRelay && !!key,
     intervalMs: FILE_REFRESH_MS,
   })
 
@@ -220,7 +219,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     () => partners.flatMap((pubkey) => (channelOf(pubkey) ? [channelOf(pubkey) as string] : [])),
     [partners, channelOf],
   )
-  const dmStreams = useChannelStreams(hasConvex ? dmChannelIds : NO_CHANNELS)
+  const dmStreams = useChannelStreams(hasRelay ? dmChannelIds : NO_CHANNELS)
   const people = useWorkspacePeople(partners)
   const dms = useMemo<ScreenerDm[]>(() => {
     const byKey = new Map((people ?? []).map((p) => [p.id, p]))
@@ -290,7 +289,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
 
   const { items, previews } = useMemo<{ items: ScreenerItem[]; previews: Map<string, ScreenerPreviewSource> }>(() => {
     const previews = new Map<string, ScreenerPreviewSource>()
-    if (!hasConvex) return { items: SCREENER_ITEMS, previews }
+    if (!hasRelay) return { items: SCREENER_ITEMS, previews }
     if (!effective) return { items: [], previews }
 
     // Not judged until the read-state merge has landed: before it every marker
@@ -358,7 +357,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   */
   const publish = sync.publish
   useEffect(() => {
-    if (!hasConvex) return
+    if (!hasRelay) return
     if (!effective) return
     void publish(effective)
   }, [effective, publish])
@@ -380,7 +379,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   // Gated on the decisions alone. Both halves' rows are additive, so arriving
   // late costs a row a moment, where waiting on every channel and every followed
   // file would hold the whole Desk under a skeleton for the slowest read.
-  const isLoading = hasConvex && effective === undefined
+  const isLoading = hasRelay && effective === undefined
 
   const value = useMemo<ScreenerValue>(
     () => ({ items, isLoading, dismiss, snooze, previewOf }),

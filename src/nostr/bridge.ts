@@ -1,8 +1,8 @@
 /**
  * Browser-side client for `/sign` and Buzz's HTTP bridge (PEEK-106).
  *
- * The counterpart to `convex/nostr/bridge.ts`, and eventually its replacement
- * for every user-attributed path. The reason it exists is not architectural
+ * It replaced `convex/nostr/bridge.ts` for every user-attributed path, and is
+ * the only one since REM-7. The reason it exists is not architectural
  * neatness: **Convex surfaces function arguments in its dashboard logs**, so
  * every `estivaAccessToken` passed to an action is a bearer token — usable to
  * publish under that person's name — sitting in log retention for anyone with

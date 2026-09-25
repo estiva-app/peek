@@ -52,13 +52,6 @@ export interface TopicChannel {
  */
 export function useTopicUnread(
   topics: readonly TopicChannel[] | null | undefined,
-  /**
-   * A cached watermark per channel uuid, unix seconds. Raises the relay
-   * marker, never lowers it; `topicUnread.ts` says why a fold might want it.
-   * No caller passes one since REM-3 stopped reading `unread.summary`'s
-   * `topicMarks`.
-   */
-  cachedMarks?: Readonly<Record<string, number>> | undefined,
 ): {
   unread: Record<string, boolean>
   urgent: Record<string, boolean>
@@ -107,11 +100,10 @@ export function useTopicUnread(
         me,
         nowSeconds: held.at,
         horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
-        cachedMarker: cachedMarks?.[folder],
       })
       unread[id] = flags.unread
       urgent[id] = flags.urgent
     }
     return { unread, urgent }
-  }, [held, frontier, pairs, cachedMarks])
+  }, [held, frontier, pairs])
 }
