@@ -101,6 +101,12 @@ export function ObjectPage() {
     const thread = state.thread ? `?thread=${encodeURIComponent(state.thread)}` : ''
     return <Navigate to={`${filePath(state.file)}${thread}`} replace />
   }
+  /*
+    Something said in a DM opens the DM, with the one-shot above opening its
+    thread (PEE-36). Its channel is not a Folder, and landing by `h` drew an
+    empty "DM" page that offered to delete the conversation.
+  */
+  if (state.dm) return <Navigate to={`/app/people/${state.dm}`} replace />
   // A channel, or something said in one: a retired topic's lands on the file its
   // conversation moved to, and a team's on its Folder (FOL-26).
   return <Navigate to={channelDestination(state.folder)} replace />

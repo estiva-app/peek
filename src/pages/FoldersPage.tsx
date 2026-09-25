@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import {
   IconArrowUpRight,
   IconBell,
@@ -125,6 +125,34 @@ export function FoldersPage() {
   const topic = id ? legacyTopicByChannel(id) : undefined
 
   /*
+    A DM's channel is not a Folder (PEE-36). Its uuid reached this page from a
+    link to one of its messages, and the page drew an empty Folder called "DM"
+    with a Delete that would have hidden the conversation from both people.
+    The viewer's own DM opens as the DM; any other DM channel — a group DM —
+    is shown without the Folder's actions. They wait for the answer, so Delete
+    is never offered on a channel not yet known to be a Folder.
+  */
+  const { dmForChannel } = useForeignObjects()
+  const [dmCheck, setDmCheck] = useState<{ id: string; isFolder: boolean } | null>(null)
+  useEffect(() => {
+    if (!id || topic) return
+    let cancelled = false
+    dmForChannel(id)
+      .then((dm) => {
+        if (cancelled) return
+        if (dm && dm !== 'not-a-person') navigate(`/app/people/${dm}`, { replace: true })
+        else setDmCheck({ id, isFolder: dm === null })
+      })
+      .catch(() => {
+        // Unanswered is not "a Folder": Delete stays hidden, which is the safe side.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id, topic, dmForChannel, navigate])
+  const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder
+
+  /*
     Follow / unfollow the Folder itself (FOL-30): that is its general stream —
     the messages in it that name no file — and it lights the Folder's dot on
     its own, as a followed file in it does. Same control as the file page's,
@@ -235,7 +263,9 @@ export function FoldersPage() {
                 )
               }
               actions={
-                // One strip: one Tab stop, arrows along it (UIG-14).
+                // One strip: one Tab stop, arrows along it (UIG-14). None on a
+                // channel not known to be a Folder — see `isFolder`.
+                (topic || isFolder) && (
                 <Toolbar aria-label="Folder actions" surface={false}>
                   <ToolbarButton
                     tooltip="Start a topic"
@@ -281,6 +311,7 @@ export function FoldersPage() {
                     </ToolbarButton>
                   )}
                 </Toolbar>
+                )
               }
             />
             {/* The package's bar, not the browser's (D40). */}

@@ -1,4 +1,6 @@
 import { useMarkRead } from '@/lib/useMarkRead'
+import { useLastSelection } from '@/lib/lastSelection'
+import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { draftKeys } from '@/lib/drafts'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Header } from '@/components/Header'
@@ -108,6 +110,25 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
     threadMembers: dmName ? [CURRENT_USER_NAME, dmName] : [],
   })
+
+  /*
+    A link to a DM message lands on it (PEE-36) — `ObjectPage`'s one-shot, the
+    one the file page answers for a comment (FOL-36), keyed by this DM's
+    channel. The message's thread opens, and the scroll waits for the thread
+    pane to draw; the one-shot is consumed only once it is answered, so a link
+    opened while the channel read is in flight is not lost to it.
+  */
+  const { pendingTopicMessage, setPendingTopicMessage } = useLastSelection()
+  const pending = channelUuid && pendingTopicMessage?.folder === channelUuid ? pendingTopicMessage : null
+  // Opened while rendering, not in an effect — React's "adjusting state when a
+  // prop changes", so the thread pane draws in the same pass.
+  if (pending && threadConvId !== pending.eventId) setThreadConvId(pending.eventId)
+  const threadDrawn = dm.threadPanel !== undefined
+  useEffect(() => {
+    if (!pending || threadConvId !== pending.eventId || !threadDrawn) return
+    setPendingTopicMessage(null)
+    void scrollToMessageWhenReady(pending.reply ?? pending.eventId)
+  }, [pending, threadConvId, threadDrawn, setPendingTopicMessage])
 
   if (dmId == null || !dmName) {
     return {
