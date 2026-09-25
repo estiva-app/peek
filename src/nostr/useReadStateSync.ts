@@ -1,11 +1,10 @@
 /**
- * Wiring read markers to the relay (CRO-4).
+ * Read state: the NIP-RS blob, written and read here (CRO-4, CRO-5).
  *
- * Peek's `readState` table stays exactly where it is. This is a mirror
- * alongside it, on the same terms `src/api/actions.ts` set for every other
- * relay write: the Convex row is the user's action succeeding, and a failed
- * publish is a warning rather than a failed action. Reading *from* the relay
- * and merging every slot is CRO-5; nothing here consumes what it writes.
+ * **The blob is the only store** (REM-5). Convex's `readState` table was a
+ * mirror, then a horizon cache the merge was written back into and re-anchored
+ * from, then one side of a dual-run diff; all three are gone. A failed publish
+ * is a warning rather than a failed action, as for every other relay write.
  *
  * ## One queue per tab, deliberately module-level
  *
@@ -28,7 +27,7 @@
  *     bare, like a topic's, never the Convex id and never with a prefix (the
  *     blob is grow-only, so a prefixed variant would be a second permanent key
  *     for the same conversation). Until the relay has answered, the DM has no
- *     context and only its Convex watermark moves;
+ *     context and nothing is recorded;
  *   - a **thread** contributes its root's event id, which for relay-synced
  *     messages is the Peek message key itself (`convex/nostr/data.ts` writes
  *     `seedKey: nostrEventId` on import);
@@ -39,10 +38,7 @@
  * id, because the blob is grow-only and a bad identifier in it is permanent.
  */
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { useMutation, useQuery } from 'convex/react'
-import { api } from '../../convex/_generated/api'
 import { validToken } from '@/auth/estivaId'
-import { hasConvex } from '@/api/store'
 import type { RelaySeam } from './stars'
 import {
   containerContext,
@@ -57,29 +53,17 @@ import {
 import { MAX_PLAINTEXT_BYTES } from './appData'
 import { fetchOwnSlot, loadMergedReadState, publishReadState } from './readStateRelay'
 import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
-import { buildDiffReport } from './readStateDiff'
-import { useDebug } from '@/lib/debug'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { RELAY_URL } from '@/api/relayUrl'
 
-/**
- * The previous merge, kept so a *regression* between fetches is detectable
- * (CRO-7). The merge takes a maximum, so its output can only grow — a value
- * going down is a bug in the merge, not in the data, and it is the one class
- * that blocks the cutover.
- */
+/** The last merge over every slot this person owns (CRO-5). */
 let previousRelayMerge: Record<string, number> | undefined
 
 /*
- * The frontier as this tab knows it, for a surface that judges unread from the
- * relay rather than from Convex (FOL-16).
- *
- * Peek's own indicators read `readState` in Convex, and the merge is written
- * into that cache as it arrives — but only for contexts Convex can name, a
- * topic or a message. A **file's** marker (SPEC §11.1, the bare address) has no
- * row there, so the Folder listing reads it from here: the last merge over every
- * slot, advanced by whatever this tab has recorded since, so a file just read
- * goes quiet without waiting for the next fetch. One module-level store, bumped
+ * The frontier as this tab knows it, which every unread dot is judged from
+ * (FOL-16, REM-5): the last merge over every slot, advanced by whatever this
+ * tab has recorded since, so a conversation just read goes quiet without
+ * waiting for the next fetch. One module-level store, bumped
  * where the merge lands and where a marker is recorded, so a page can subscribe
  * without running a second relay fetch of its own — `ReadStateSync` is the one
  * place the merge happens, and relay reads are metered.
@@ -192,8 +176,6 @@ export function useReadStateSize(): ReadStateSize {
 /** Facts the diagnostic reports that live outside the queue. */
 let readPathRuns = 0
 let lastMergeAt: number | undefined
-let lastCacheSize: number | undefined
-let lastDiffSummary: { benign: number; unpublished: number; regressed: number } | undefined
 
 /** Set by the hook, read at call time. Null disables publishing entirely. */
 let relayOrigin: string | null = null
@@ -258,34 +240,6 @@ function ensureQueue(): ReadStateQueue {
   return queue
 }
 
-/**
- * Which cached markers are worth re-anchoring onto the relay (CRO-6).
- *
- * Only the ones the relay does not already hold at least as recently. Anything
- * it has is not "forgotten by the horizon" — it is simply there, and
- * republishing it puts a context into **this installation's** slot that this
- * installation never read.
- *
- * That distinction was missing, and check 3 found it: a second browser profile
- * came up with a slot holding 67 contexts, identical to the first, because
- * Convex is per *deployment* and not per device — so every new Peek install read
- * the shared cache and republished the whole thing as its own. Nothing is lost
- * that way (the merge is a maximum) but every slot grows toward the 65,535-byte
- * plaintext ceiling together — §11.6's 32,768 is the reference client's figure,
- * not the one this suite meets (SPEC §12.5) — and `client_id` stops meaning "the
- * installation that read this". Ship had the same shape by a different route,
- * fixed in ship#62.
- */
-export function reanchorable(
-  cached: readonly { context: string; atSeconds: number }[],
-  onRelay: Readonly<Record<string, number>>,
-): { context: string; atSeconds: number }[] {
-  return cached.filter(({ context, atSeconds }) => {
-    const have = onRelay[context]
-    return have === undefined || have < atSeconds
-  })
-}
-
 /** Test seam: drop the tab's queue so a suite can build a fresh one. */
 export function resetReadStateQueueForTests(): void {
   queue?.cancel()
@@ -295,8 +249,6 @@ export function resetReadStateQueueForTests(): void {
   previousRelayMerge = undefined
   readPathRuns = 0
   lastMergeAt = undefined
-  lastCacheSize = undefined
-  lastDiffSummary = undefined
   frontierCache = undefined
   frontierChanged()
 }
@@ -388,48 +340,30 @@ export function flushReadState(): Promise<void> {
  * list of what is kept in sync, which is the shape `MentionDirectorySync` and
  * `TopicDirectorySync` already established.
  */
-/**
- * Re-anchor what the horizon has genuinely dropped, and nothing else.
- *
- * Lives here rather than in `useReadStateSync` because the decision needs the
- * merged frontier, which is this component's to read. Gated on `ready` so the
- * first pass does not compare against an empty merge and conclude the relay has
- * forgotten everything.
- */
-function useCacheReanchor(merged: Record<string, number>, ready: boolean): void {
-  const cached = useQuery(api.readState.cachedReadContexts, hasConvex ? {} : 'skip')
-  useEffect(() => {
-    if (!ready || !cached?.length) return
-    const queue = ensureQueue()
-    for (const { context, atSeconds } of reanchorable(cached, merged)) {
-      queue.record(context, atSeconds)
-    }
-  }, [cached, merged, ready])
-}
-
 export function ReadStateSync(): null {
   useReadStateSync()
   /*
    * **Run the read path.** Without this line nothing on it executes.
    *
-   * `useMergedReadState` was written by CRO-5, given a cache to fill by CRO-6
-   * and a dual-run diff by CRO-7, and never mounted by any of them — each ticket
-   * ended "nothing consumes it yet, that is the next one", and the next one
-   * added to it rather than turning it on. So publishing worked, and every
-   * consequence of reading — the merge, the horizon cache, the comparison the
-   * cutover is gated on — silently did nothing.
+   * `useMergedReadState` was written by CRO-5 and mounted by none of the three
+   * tickets after it, so publishing worked while the merge every dot is judged
+   * from silently never ran. `window.__readState().hasRun` says whether it has.
    *
-   * Nothing renders from it yet; that is still the cutover's job. What changes
-   * here is that the cache gets filled and the diff gets data.
+   * There is no re-anchor any more (REM-5). CRO-6 re-published markers from
+   * Convex that the 90-day horizon had dropped, but the horizon filters slot
+   * *events*, not contexts: a live installation republishes its whole slot on
+   * every read, and a slot old enough to fall outside it holds markers older
+   * than every message the fold still judges (`PEEK_HORIZON_DAYS`), so losing
+   * them changes no dot. What a slot can genuinely lose is SHR-4's eviction,
+   * which the Read state panel shows.
    */
-  const { merged, ready, refresh } = useMergedReadState()
+  const { refresh } = useMergedReadState()
   useEffect(() => {
     void refresh()
   }, [refresh])
   // Focus, visibility and a slow interval — the same triggers every other
   // background read in this app uses, for the same reasons.
   useRefreshTriggers(() => void refresh())
-  useCacheReanchor(merged, ready)
   return null
 }
 
@@ -460,24 +394,12 @@ export interface MergedReadStateView {
  *
  * This is the half that makes read state follow the person: Peek's slot and
  * Ship's slot are different coordinates, and the frontier is the maximum over
- * both. Nothing in Peek's unread indicators consumes it yet — dual-running it
- * against Convex and cutting over is CRO-7, and cutting over before CRO-6's
- * horizon cache exists would regress unread for every quiet conversation.
+ * both. Every unread dot is judged from it, through {@link useReadFrontier}.
  */
 export function useMergedReadState(): MergedReadStateView {
   const [merged, setMerged] = useState<Record<string, number>>({})
   const [ready, setReady] = useState(false)
   const [staleDuplicates, setStaleDuplicates] = useState<string[]>([])
-  const applyToCache = useMutation(api.readState.applyRelayReadState)
-  const { state: debug, setReadStateDiff } = useDebug()
-  const dualRun = debug.readState.dualRun
-  /*
-   * The Convex side, as protocol contexts — the same query CRO-6 uses to
-   * re-anchor aged-out markers, read here as side A of the comparison. The UI
-   * still renders from A; this change computes B and records the difference,
-   * and nothing switches until CRO-7 step 2.
-   */
-  const localContexts = useQuery(api.readState.cachedReadContexts, hasConvex ? {} : 'skip')
 
   const refresh = useCallback(async () => {
     const current = seam()
@@ -492,20 +414,6 @@ export function useMergedReadState(): MergedReadStateView {
       lastMergeAt = Date.now()
       setStaleDuplicates(state.verdict.staleDuplicates.map((s) => s.dTag))
       /*
-       * Into the horizon cache (CRO-6). Max only, on the Convex side, so this
-       * cannot lower anything — and a context the relay has since forgotten
-       * keeps the value cached here instead of reverting to unread.
-       */
-      const contexts = Object.entries(state.merged).map(([context, atSeconds]) => ({ context, atSeconds }))
-      if (contexts.length > 0) {
-        // Not awaited (REM-2). The relay half succeeded and the cache is an
-        // optimisation on top of it; awaiting it meant a Convex that never
-        // answers kept `ready` false, so no unread dot was ever judged.
-        applyToCache({ contexts }).catch((error: unknown) =>
-          console.warn('[read-state] could not write the merged state into the cache:', error),
-        )
-      }
-      /*
        * Our coordinate holds another installation's `client_id`. Publishing to
        * it would overwrite them on every write and them overwrite us on every
        * one of theirs, invisibly. Rotate before the next publish; the markers
@@ -516,28 +424,6 @@ export function useMergedReadState(): MergedReadStateView {
         console.warn('[read-state] our slot coordinate belongs to another installation; rotating')
         identity = rotateSlotId(currentIdentity())
       }
-      /*
-       * Dual-run (CRO-7 step 1). Compared *before* the merge is written into
-       * the cache above would be wrong — the write is what makes them agree —
-       * so this reads the local side as it was when this refresh started.
-       */
-      if (dualRun && localContexts) {
-        const local: Record<string, number> = {}
-        for (const { context, atSeconds } of localContexts) local[context] = atSeconds
-        const report = buildDiffReport({
-          local,
-          relay: state.merged,
-          previousRelay: previousRelayMerge,
-          nowMs: Date.now(),
-        })
-        lastCacheSize = Object.keys(local).length
-        lastDiffSummary = {
-          benign: report.divergences.filter((d) => d.kind !== 'local-ahead-persistent').length,
-          unpublished: report.divergences.filter((d) => d.kind === 'local-ahead-persistent').length,
-          regressed: report.regressions.length,
-        }
-        setReadStateDiff(report)
-      }
       previousRelayMerge = state.merged
       frontierChanged()
 
@@ -545,7 +431,7 @@ export function useMergedReadState(): MergedReadStateView {
     } catch (error) {
       console.warn('[read-state] could not merge read state from the relay:', error)
     }
-  }, [applyToCache, dualRun, localContexts, setReadStateDiff])
+  }, [])
 
   return { merged, ready, refresh, staleDuplicates }
 }
@@ -569,7 +455,7 @@ export function useMergedReadState(): MergedReadStateView {
  * anybody looked.
  *
  * ```
- * __readState()                    the queue, the cache, the diff, and whether it has run
+ * __readState()                    the queue, the blob's size, and whether it has run
  * __readState.flush()              publish now instead of waiting on the debounce
  * __readState.marker('<context>')  one context's merged value, as a date
  * ```
@@ -627,9 +513,8 @@ export interface PeekReadStateDiagnostic {
   hasRun: boolean
   mergeRuns: number
   lastMergeAt: string | undefined
-  /** Contexts in the merged frontier, and in Convex's horizon cache. */
+  /** Contexts in the merged frontier. */
   relayContexts: number
-  cacheContexts: number | undefined
   /**
    * The merged frontier serialized exactly as it would be published — what
    * `/nip44/encrypt` would be handed, in bytes — and that as a percentage of
@@ -639,8 +524,6 @@ export interface PeekReadStateDiagnostic {
   blobPctOfCeiling: number
   /** The frontier's keys by kind, because they differ by more than 2× in cost. */
   keySplit: ReadStateKeySplit
-  /** The dual-run, without needing the debug menu. */
-  diff: typeof lastDiffSummary
   queue: ReturnType<ReadStateQueue['diagnostic']> | 'queue not created yet'
 }
 
@@ -655,11 +538,9 @@ function snapshot(): PeekReadStateDiagnostic {
     mergeRuns: readPathRuns,
     lastMergeAt: lastMergeAt === undefined ? undefined : new Date(lastMergeAt).toISOString(),
     relayContexts: Object.keys(contexts).length,
-    cacheContexts: lastCacheSize,
     blobBytes: bytes,
     blobPctOfCeiling: Math.round((bytes / MAX_PLAINTEXT_BYTES) * 1000) / 10,
     keySplit: splitReadStateKeys(contexts),
-    diff: lastDiffSummary,
     queue: queue ? queue.diagnostic() : 'queue not created yet',
   }
 }

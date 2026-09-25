@@ -222,9 +222,6 @@ async function main() {
       me: t.pubkey,
       nowSeconds,
       horizonSeconds,
-      // The cached marker is per viewer and lives behind the same identity
-      // gate, so it is absent here. Its effect is only ever to clear a dot.
-      cachedMarker: undefined,
     })
     if (flags.unread) lit++
     if (flags.urgent) urgent++

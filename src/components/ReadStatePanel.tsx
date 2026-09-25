@@ -1,31 +1,16 @@
-import { Checkbox, Popover, SectionLabel } from '@estiva-app/ui'
+import { Popover, SectionLabel } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
-import { useDebug } from '@/lib/debug'
-import { needsAttention } from '@/nostr/readStateDiff'
 import { useReadStateSize, type ReadStateSize } from '@/nostr/useReadStateSync'
 
 /**
- * The dual-run read-state comparison (Jan, CRO-7 step 1, 2026-09-01).
+ * The Read state panel from the account menu: how full read state is, and
+ * whether anything has been dropped to keep it under the ceiling.
  *
- * **It used to live in the debug panel, and D48 deleted that panel with it.**
- * That was a miss rather than the ruling: the panel's other sections drove the
- * mock dataset and were the reason it went, while this is a diagnostic on real
- * data — the only readout for whether read state can be cut over to the relay.
- * The dual run itself never stopped: it has kept running on every sync and
- * writing a report nothing could display (Katerina noticed the row was gone,
- * 2026-09-11).
+ * It also held the dual-run comparison with Convex (CRO-7) until REM-5 made the
+ * NIP-RS blob the only store, leaving nothing to compare it with.
  *
- * It is back on its own, reached from the same place it was reached from — the
- * "Read state" row in the account menu, which is the only way in on the real app
- * because the debug button was always hidden there.
- *
- * A `Popover` rather than a `Menu`: it holds a switch and a readout, and a menu
- * is a list of verbs you choose one of (P26, the same reason the selection
- * toolbar stopped being one).
- */
-/**
- * The Read state panel from the account menu: a switch to compare read state
- * with the relay, how full read state is, and what the last comparison found.
+ * A `Popover` rather than a `Menu`: it holds a readout, and a menu is a list of
+ * verbs you choose one of (P26).
  *
  * Rendered always and opened with `open`, as the package's Popover page asks
  * (UIG-14): mounted only while open, Base UI's exits go with it, and Escape
@@ -46,23 +31,8 @@ export function ReadStatePanel({ anchor, open, onClose }: { anchor: HTMLElement 
       className="w-[300px] gap-2"
     >
       <SectionLabel>Read state</SectionLabel>
-      <DualRun />
       <Size />
-      <Report />
     </Popover>
-  )
-}
-
-/** The switch for the dual run, wired to the debug settings. */
-function DualRun() {
-  const { state, setReadState } = useDebug()
-  return (
-    /* The words are the Checkbox's own `label` (UIG-7): part of the target, and its name. */
-    <Checkbox
-      checked={state.readState.dualRun}
-      onChange={(next) => setReadState('dualRun', next)}
-      label="Compare with the relay on every sync"
-    />
   )
 }
 
@@ -82,9 +52,7 @@ function Size() {
  * trades a silent, total failure for a small, local loss, and a loss nobody can
  * see is how the first failure would have gone unnoticed too.
  *
- * Shown whether or not the dual run is on: it is a fact about this person's read
- * state rather than about the comparison. Unlike `Report` below it needs no relay
- * fetch of its own — it reads what the last merge left behind.
+ * It needs no relay fetch of its own — it reads what the last merge left behind.
  *
  * Pure, and takes what {@link useReadStateSize} returns, so the three states a
  * person can be in are a story rather than a thing to wait for.
@@ -109,44 +77,6 @@ export function SizeReadout({ contexts, bytes, pctOfCeiling, ceilingBytes, slotB
             ? `${pctOfCeiling}% of the ceiling · the oldest markers will start dropping`
             : `${pctOfCeiling}% of the ceiling`}
       </p>
-    </div>
-  )
-}
-
-/**
- * What the last comparison found.
- *
- * Two classes are expected forever — `relay-ahead` is the feature working, and
- * `local-ahead-recent` is a debounced publish still in flight — so they are
- * counted quietly. What is called out is the pair the cutover is gated on: a
- * persistent local-ahead (a lost publish, or a context id under the wrong
- * scheme) and a regression (the merge going backwards, which §11.4 forbids).
- */
-function Report() {
-  const { state, readStateDiff: report } = useDebug()
-  if (!state.readState.dualRun) return null
-  if (!report) return <p className="text-caption text-text-muted">No comparison yet — it needs one relay fetch.</p>
-  const persistent = report.divergences.filter((d) => d.kind === 'local-ahead-persistent')
-  const benign = report.divergences.length - persistent.length
-  const attention = needsAttention(report)
-  return (
-    <div className="flex flex-col gap-0.5">
-      <p className="text-caption text-text-secondary">
-        {report.localCount} local · {report.relayCount} relay · {benign} benign
-      </p>
-      <p className={cn('text-caption', attention ? 'text-warning-default' : 'text-text-muted')}>
-        {attention
-          ? `${persistent.length} unpublished · ${report.regressions.length} regressed`
-          : 'Nothing outside the benign classes'}
-      </p>
-      {/* The context ids themselves, because "which one" is the whole question
-          when a publish is being lost. Capped — a long list is a diff, not a panel. */}
-      {persistent.slice(0, 3).map((d) => (
-        // @estiva-escape: B5 (Katerina, 24 September: record only): a mono id in a debug panel, the text style Breadcrumb's id also uses
-        <p key={d.context} className="truncate font-mono text-caption text-text-muted">
-          {d.context.slice(0, 24)}… +{d.deltaSeconds}s
-        </p>
-      ))}
     </div>
   )
 }

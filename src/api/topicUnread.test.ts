@@ -34,14 +34,12 @@ const replied = (id: string, at: number, inThread: string, urgent = false, by = 
 const judge = (
   messages: StreamMessage[],
   markers: Record<string, number> = {},
-  cachedMarker?: number,
 ) =>
   topicChannelFlags(CHANNEL, messages, {
     marker: (context) => (context ? markers[context] : undefined),
     me: ME,
     nowSeconds: NOW,
     horizonSeconds: HORIZON,
-    cachedMarker,
   })
 
 const CONTAINER = containerContext(CHANNEL) as string
@@ -110,7 +108,7 @@ describe('which marker a message answers to', () => {
   })
 })
 
-describe('absence, and the cached marker that stands in for it', () => {
+describe('absence', () => {
   it('no marker anywhere lights a message inside the horizon (§11.6)', () => {
     expect(judge([said('m', NOW - 40 * DAY)]).unread).toBe(true)
   })
@@ -119,25 +117,10 @@ describe('absence, and the cached marker that stands in for it', () => {
     expect(judge([said('m', NOW - 120 * DAY)]).unread).toBe(false)
   })
 
-  it("the cached marker keeps a long-quiet topic read once the relay has forgotten it", () => {
-    // The done-when `convex/readState.test.ts` proves the other half of: read
-    // 39 days ago, last message 40 days ago, and the relay's slots no longer
-    // carry the context. Without the cache this lights.
-    expect(judge([said('m', NOW - 40 * DAY)], {}, NOW - 39 * DAY).unread).toBe(false)
-  })
-
-  it('the cached marker only ever raises the relay marker, never lowers it', () => {
-    // Relay says read an hour ago, the cache is a day stale: the newer wins,
-    // so a message from two hours ago stays read.
-    expect(
-      judge([said('m', NOW - 7200)], { [CONTAINER]: NOW - 3600 }, NOW - DAY).unread,
-    ).toBe(false)
-    // And the other way round: the cache is ahead, so it clears a message the
-    // relay marker would have lit.
-    expect(judge([said('m', NOW - 1800)], { [CONTAINER]: NOW - 3600 }, NOW - 60).unread).toBe(false)
-  })
-
-  it('a deployment that has never seen the person changes nothing', () => {
-    expect(judge([said('m', NOW - 3600)], {}, undefined).unread).toBe(true)
+  it('a marker older than the horizon judges the same as none (REM-5)', () => {
+    // Why no Convex cache has to stand in for a slot the 90-day horizon drops:
+    // every marker in it is older than every message still judged.
+    const messages = [said('m', NOW - 40 * DAY), said('n', NOW - 3600)]
+    expect(judge(messages, { [CONTAINER]: NOW - 100 * DAY })).toEqual(judge(messages))
   })
 })
