@@ -37,7 +37,7 @@ The package's docs are product-agnostic; a component that needs a product noun t
 
 The reason goes on the line above. Two forms, one per lint:
 
-- A gate rule (`npm run lint:rules`): `// @estiva-escape: <reason>`, or `{/* @estiva-escape: <reason> */}` in JSX. Never `eslint-disable`.
+- A gate rule (`npm run lint:rules`): `// @estiva-escape(<rule>): <reason>`, or `{/* @estiva-escape(<rule>): <reason> */}` in JSX, naming the rule it keeps off. Never `eslint-disable`.
 - A token rule (`npm run lint:tokens`): `// eslint-disable-next-line <rule> -- @estiva-escape: <reason>`.
 
 ## Only offer actions that can succeed

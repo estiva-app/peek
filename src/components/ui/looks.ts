@@ -10,5 +10,5 @@
  * picture of one. The focus ring shows in Signal.
  */
 export const WRITING_BOX_CLASSES =
-  // @estiva-escape: (Katerina, 24 September: record only): Peek's writing box, close to the package's ChipInput box; Peek's own writing surface, kept as it is
+  // @estiva-escape(no-copied-look): (Katerina, 24 September: record only): Peek's writing box, close to the package's ChipInput box; Peek's own writing surface, kept as it is
   'relative bg-bg-inset border border-border-default rounded-lg p-3 flex flex-col gap-4 signal:transition-shadow signal:focus-within:border-border-focus signal:focus-within:shadow-focus-ring'

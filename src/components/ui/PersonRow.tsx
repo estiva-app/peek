@@ -114,7 +114,7 @@ export function PersonRow({
   )
 
   return (
-    // @estiva-escape: N8 (Katerina, 24 September: record only): a row that fills on hover, as Checkbox's row also does
+    // @estiva-escape(no-copied-look, no-raw-element): N8 (Katerina, 24 September: record only): a row that fills on hover and opens on a click, as Checkbox's row also does
     <div
       className={cn(
         'flex items-center gap-2 px-2 h-[32px] rounded-lg cursor-pointer transition-colors',

@@ -195,7 +195,7 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
     editor.on('selectionUpdate', schedule)
     editor.on('transaction', schedule)
     editor.on('blur', onBlur)
-    // @estiva-escape: watches presses in the editor to follow a text selection; the package Popover it opens in has no trigger to own that (UIG-8)
+    // @estiva-escape(no-rebuilt-behaviour): watches presses in the editor to follow a text selection; the package Popover it opens in has no trigger to own that (UIG-8)
     document.addEventListener('mousedown', onPointerDown, true)
     document.addEventListener('mouseup', onPointerUp, true)
 

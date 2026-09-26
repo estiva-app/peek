@@ -18,8 +18,9 @@ import reactHooks from 'eslint-plugin-react-hooks'
  * without also failing on that backlog. Zero errors the day it landed.
  *
  * A place that keeps something the gate refuses says why, on the line above:
- * `// @estiva-escape: <reason>`, or `{/* @estiva-escape: <reason> *\/}` as a
- * JSX child. Never `eslint-disable`: the count refuses it.
+ * `// @estiva-escape(<rule>): <reason>`, or `{/* @estiva-escape(<rule>): <reason> *\/}`
+ * as a JSX child, naming the rule it keeps off (0.36.0). Never `eslint-disable`:
+ * the count refuses it.
  */
 export default gateConfig({
   quiet: { 'react-hooks': reactHooks },

@@ -43,7 +43,7 @@ export function MentionMenu({
     <div role="group" aria-label={section}>
     <MenuSection label={section} className="px-3 py-1">
           {people.map((person, i) => (
-            // @estiva-escape: a row of a list the editor drives from its caret; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
+            // @estiva-escape(no-rebuilt-behaviour): a row of a list the editor drives from its caret; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
             <MenuItem
               key={person.id}
               role="option"
