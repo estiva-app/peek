@@ -131,6 +131,25 @@ export const Issue: Story = {}
 /** A Ship project: the same card, with the description its manifest gives the subtitle. */
 export const Project: Story = { args: { file: project } }
 
+const LONG = Array.from({ length: 14 }, (_, i) =>
+  `Part ${i + 1}. What this project delivers, who it is for, and what it leaves for later, written out in full the way a real brief is.`,
+).join(' ')
+const longProject: ForeignObject = { ...project, slots: { ...project.slots, subtitle: { value: LONG } } }
+
+/** A description longer than the column: the panel scrolls, so its end and the controls under it are always reachable. */
+export const ALongDescription: Story = { args: { file: longProject } }
+
+/** The same over Activity: the widget scrolls in three fifths of the column, and Activity keeps the rest. */
+export const ALongDescriptionOverActivity: Story = {
+  args: { file: longProject },
+  render: (args) => (
+    <>
+      <FileWidgetPanel {...args} className="max-h-[60%]" />
+      <FileActivityPanelView items={[MENTION]} labelFor={new Map([['30840:aa:roadmap', 'Roadmap']])} />
+    </>
+  ),
+}
+
 /** The widget over Activity: a file another app owns that a comment elsewhere has named. */
 export const WithActivity: Story = {
   render: (args) => (
