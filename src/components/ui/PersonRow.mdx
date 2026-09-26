@@ -16,6 +16,9 @@ its icon or photo, its name, its unread mark and a hover menu.
 - Pass only the handlers that apply. The hover menu appears **only** when at
   least one of its items would be there, so a row with nothing to offer has an
   inert ⋯ rather than an empty menu.
+- Always pass `type`, even for a topic. Left out, the row is an unresolved
+  topic and wears the dashed circle — the Folders list once did, on
+  eighty-one rows that were not topics.
 
 ## When not
 

@@ -19,12 +19,8 @@ and a send button, with unsent text kept for later.
 
 ## When not
 
-- **With a `draftKey` you had to invent.** Omitting it means nothing is kept,
-  which is correct for a composer with no stable destination: the huddle creator
-  has no huddle yet, and a draft that cannot be keyed correctly is worse than no
-  draft, because it comes back somewhere it was never written.
-- For editing an existing message. That is the edit box inside the card, which
-  shares the editor extensions but not this shell.
+- **With a `draftKey` you had to invent.** Omitting it means nothing is kept, which is correct for a composer with no stable destination: the huddle creator has no huddle yet, and a draft that cannot be keyed correctly is worse than no draft, because it comes back somewhere it was never written.
+- For editing an existing message. That is the edit box inside the card — `ConversationCard` or `ReplyCard` — which shares the editor extensions but not this shell.
 
 <Canvas of={ComposeBoxStories.SlashMenu} />
 

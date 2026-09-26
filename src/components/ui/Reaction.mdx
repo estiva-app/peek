@@ -20,13 +20,9 @@ used.
 
 ## When not
 
-- To *offer* a reaction. This draws one that exists; the picker is its own
-  thing.
-- With an emoji outside `REACTION_NAMES`. It will render, but the hover label
-  and the accessible name fall back to the raw character, and a reaction nobody
-  can name is a reaction nobody can search for.
-- Importing `Reaction` from `@estiva-app/ui` directly. That one has no
-  vocabulary and no tooltip, and the call sites here speak Peek's words.
+- To *offer* a reaction. This draws one that exists; the picker is its own thing, the package's `ReactionPicker`, which `ConversationQuickMenu` opens.
+- With an emoji outside `REACTION_NAMES`. It will render, but the hover label and the accessible name fall back to the raw character, and a reaction nobody can name is a reaction nobody can search for.
+- Importing `Reaction` from `@estiva-app/ui` directly. That one has no vocabulary and no tooltip, and the call sites here speak Peek's words.
 
 ## How
 

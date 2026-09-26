@@ -29,14 +29,11 @@ mount it, and what you see there is the rail lighting the row you were last in.
 
 ## When not
 
-- **For anything that should survive a reload.** This is `useState`, not
-  storage. Close the tab and it is gone, which is correct for "where you just
-  were" and wrong for a preference.
-- **To pass a value down one screen.** A prop does that, and a prop can be seen
-  in a story. Reach for this only when the setter and the reader are on
-  different screens.
-- **To remember more than one thing at a time.** Each one-shot is a single
-  slot. A second intention set before the first is answered replaces it.
+- **For anything that should survive a reload.** This is `useState`, not storage. Close the tab and it is gone, which is correct for "where you just were" and wrong for a preference.
+- **To pass a value down one screen.** A prop does that, and a prop can be seen in a story. Reach for this only when the setter and the reader are on different screens.
+- **To remember more than one thing at a time.** Each one-shot is a single slot. A second intention set before the first is answered replaces it.
+
+No alternative: it draws nothing, and what each line sends you to instead — storage, a prop — is not a part.
 
 ## How
 
