@@ -28,11 +28,14 @@ vi.mock('@/components/views/useFileView', () => ({
     pane.asked.push(address)
     return {
       file: address ? { address, slots: { title: { value: address === ISSUE ? 'Issue one' : 'Widgets' } } } : null,
-      body: address ? (
-        <div data-testid="file-pane" data-address={address}>
-          <textarea aria-label="Composer" />
-        </div>
-      ) : null,
+      // The middle column's parts, for the page's Panel (estiva-ui 0.37.0).
+      panel: {
+        children: address ? (
+          <div data-testid="file-pane" data-address={address}>
+            <textarea aria-label="Composer" />
+          </div>
+        ) : null,
+      },
       threadPanel: undefined,
     }
   },

@@ -11,11 +11,10 @@ import {
 } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  ContainerHeader,
   ListColumn,
   Menu,
   MenuItem,
-  ScrollArea,
+  Panel,
   Toolbar,
   ToolbarButton,
   ToolbarLink,
@@ -204,8 +203,8 @@ export function FoldersPage() {
         onOpenFolder={(folder: string) => navigate(folderPath(folder))}
         rightPanel={
         id ? (
-          <div className="flex h-full flex-col">
-            {/*
+          <Panel
+            /*
               The name is edited where it is shown — `EditableText`'s own
               "When", and the reason there is no rename dialog. `ContainerHeader`
               takes a node for its title since 2026-09-11, so this pane is
@@ -214,8 +213,9 @@ export function FoldersPage() {
               It had been `px-3 py-2` with no height and no rule, so its title
               sat eight pixels left of "Folders" in the column beside it and
               nothing separated it from the list (Katerina, 2026-09-11).
-            */}
-            <ContainerHeader
+              Since estiva-ui 0.37.0 it is a Panel: the same header, and the
+              listing under it scrolls in the Panel's own body.
+            */
               title={
                 topic ? (
                   /*
@@ -313,9 +313,7 @@ export function FoldersPage() {
                 </Toolbar>
                 )
               }
-            />
-            {/* The package's bar, not the browser's (D40). */}
-            <ScrollArea className="min-h-0 flex-1">
+          >
               <FolderContentsView
                 state={state}
                 /*
@@ -337,8 +335,7 @@ export function FoldersPage() {
                 counts={counts}
                 unread={unread}
               />
-            </ScrollArea>
-          </div>
+          </Panel>
         ) : (
           <EmptyState message="Select a folder." />
         )

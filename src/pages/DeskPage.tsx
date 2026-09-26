@@ -1,7 +1,7 @@
 import { useCallback, useState, type ComponentProps, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection, ContainerHeader, ListColumn, Toolbar, ToolbarLink } from '@estiva-app/ui'
+import { CollapsibleSection, ListColumn, Panel, Toolbar, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { useRailClosed } from '@/layouts/railClosed'
 import { Divider } from '@/components/ui/Divider'
@@ -222,8 +222,9 @@ export function DeskPage() {
   const fileTitle = fileView.file?.slots.title?.value ?? openedFrom?.title ?? 'File'
   const fullPage = openAddress ? filePath(openAddress, fileView.file?.slots.title?.value ?? openedFrom?.title) : null
   const filePane = fullPage ? (
-    <div className="flex h-full flex-col">
-      <ContainerHeader
+    // The file's conversation in the package's Panel: it scrolls, and the composer stays under it.
+    <Panel
+      {...fileView.panel}
         title={
           <div className="min-w-0">
             <p className="truncate text-body-2-strong text-text-primary">{fileTitle}</p>
@@ -245,8 +246,6 @@ export function DeskPage() {
           </Toolbar>
         }
       />
-      {fileView.body}
-    </div>
   ) : null
 
   const rightPanel = selected ? dmView.rightPanel : (filePane ?? dmView.rightPanel)

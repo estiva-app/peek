@@ -85,7 +85,7 @@ export default function define(h) {
   // Peek's own checks join the package's row for the same ticket, or make a row of their own.
   // The real page the gate must pass untouched. TopicsPage.tsx was it until FOL-23
   // deleted it, and three checks threw instead of reading (the audit before UIG-26).
-  const tickets = appChecks(h, { page: "src/pages/FoldersPage.tsx", chain: { ref: "UIG-3", owner: true }, headers: ["ContainerHeader"] });
+  const tickets = appChecks(h, { page: "src/pages/FoldersPage.tsx", chain: { ref: "UIG-3", owner: true }, headers: ["Panel"] });
   for (const { ref, title, owner = false, checks } of own) {
     const row = tickets.find((t) => t.ref === ref);
     if (row) row.checks.push(...checks);

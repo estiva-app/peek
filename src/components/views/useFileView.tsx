@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
-import { ContainerHeader, ScrollArea } from '@estiva-app/ui'
+import { Panel } from '@estiva-app/ui'
 import { IconButton } from '@/components/ui/IconButton'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
-import { useFileConversationView } from '@/components/views/useFileConversationView'
+import { useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { FileWidgetPanel } from '@/components/FileWidgetPanel'
 import {
@@ -112,8 +112,9 @@ export function useFileView({
     an app nobody has written lands the same way Ship's does.
   */
   const home = file ? referenceLink(file.naddr ?? file.address ?? file.ref, file) : null
-  const widget = file && home?.place === 'app' ? <FileWidgetPanel file={file} /> : undefined
   const activity = mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined
+  // Under a long widget, Activity keeps two fifths of the column: the widget scrolls in the rest.
+  const widget = file && home?.place === 'app' ? <FileWidgetPanel file={file} className={activity ? 'max-h-[60%]' : undefined} /> : undefined
   const aside =
     widget || activity ? (
       <div className="flex h-full flex-col">
@@ -129,38 +130,36 @@ export function useFileView({
         )
   const openThread = openThreadId ? comments.find((c) => c.id === openThreadId) : undefined
 
-  const body: ReactNode = ownView ? (
-    peek.conversation
-  ) : (
-    /* The package's bar, not the browser's (D40). */
-    <ScrollArea className="min-h-0 flex-1">
-      <ForeignConversationView
-        state={conversation}
-        people={people}
-        onOpenThread={onOpenThread}
-        openThreadId={openThreadId}
-        replyCounts={replyCounts}
-      />
-    </ScrollArea>
-  )
+  // The middle column's body and footer, for the page's Panel (estiva-ui 0.37.0): the
+  // Panel scrolls the body with the package's bar, and keeps the composer under it.
+  const panel: Partial<ConversationParts> & { children: ReactNode } = ownView
+    ? peek.conversationParts
+    : {
+        children: (
+          <ForeignConversationView
+            state={conversation}
+            people={people}
+            onOpenThread={onOpenThread}
+            openThreadId={openThreadId}
+            replyCounts={replyCounts}
+          />
+        ),
+      }
 
   const threadPanel: ReactNode | undefined = ownView ? (
     // The thread is what somebody just asked for; the widget and Activity are what the page shows otherwise.
     (peek.threadPanel ?? aside)
   ) : openThread ? (
-    <div className="flex h-full flex-col">
-      <ContainerHeader
-        title="Thread"
-        actions={
-          <IconButton tooltip="Close" aria-label="Close thread" onClick={() => onOpenThread(null)}>
-            <IconX size={16} stroke={1.5} />
-          </IconButton>
-        }
-      />
-      <ScrollArea className="min-h-0 flex-1">
-        <FileThreadView root={openThread} state={threads} people={people} />
-      </ScrollArea>
-    </div>
+    <Panel
+      title="Thread"
+      actions={
+        <IconButton tooltip="Close" aria-label="Close thread" onClick={() => onOpenThread(null)}>
+          <IconX size={16} stroke={1.5} />
+        </IconButton>
+      }
+    >
+      <FileThreadView root={openThread} state={threads} people={people} />
+    </Panel>
   ) : (
     aside
   )
@@ -173,8 +172,8 @@ export function useFileView({
     reload,
     title,
     rootIds,
-    /** The middle column's body, under whatever header the page draws. */
-    body,
+    /** The middle column's body and footer, for a `Panel` whose header the page draws: spread it onto one. */
+    panel,
     threadPanel,
     /** The open thread has drawn its anchor, so a scroll to a comment in it can land. */
     threadDrawn: peek.threadPanel !== undefined,

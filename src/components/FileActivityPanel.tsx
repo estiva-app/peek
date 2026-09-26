@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ContainerHeader } from '@estiva-app/ui'
+import { Panel } from '@estiva-app/ui'
 import { KIND } from '@estiva-app/protocol'
 import { formatTimestamp, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
 import type { FileMention } from '@/nostr/fileMentions'
@@ -97,21 +97,21 @@ export function FileActivityPanelView({
 }) {
   return (
     // The column's contract (D46): the room left, never `h-full` — under the file's widget (FOL-29) that room is what remains.
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ContainerHeader
+    // The package's Panel (0.37.0) takes that room and scrolls the rows.
+    <Panel
         title={
           <div className="flex items-center gap-2">
             <span className="text-body-2-strong text-text-primary">Activity</span>
             {items.length > 0 && <span className="font-mono text-caption text-text-muted">{items.length}</span>}
           </div>
         }
-      />
+    >
       {/*
         Every row has an `href` — its thread is on another file's page — so
         nothing here is ever selected and the thread opener is never reached;
         both props are the component's.
       */}
       <TopicActivity items={items} labelFor={labelFor} onOpenThread={() => {}} />
-    </div>
+    </Panel>
   )
 }

@@ -137,12 +137,15 @@ vi.mock('@/components/views/useFileConversationView', () => ({
   useFileConversationView: (args: Record<string, unknown>) => {
     peekView.args.push(args)
     const container = args.container as { address: string; h: string } | null
+    const view = container ? (
+      <div data-testid="peek-view" data-address={container.address} data-h={container.h}>
+        <textarea aria-label="Peek composer" />
+      </div>
+    ) : null
     return {
-      conversation: container ? (
-        <div data-testid="peek-view" data-address={container.address} data-h={container.h}>
-          <textarea aria-label="Peek composer" />
-        </div>
-      ) : null,
+      conversation: view,
+      // The same, as the page's Panel takes it (estiva-ui 0.37.0).
+      conversationParts: { children: view },
       threadPanel: container && args.openThreadId ? <div data-testid="peek-thread">{String(args.openThreadId)}</div> : undefined,
     }
   },
