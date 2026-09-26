@@ -139,23 +139,17 @@ const longProject: ForeignObject = { ...project, slots: { ...project.slots, subt
 /** A description longer than the column: the panel scrolls, so its end and the controls under it are always reachable. */
 export const ALongDescription: Story = { args: { file: longProject } }
 
-/** The same over Activity: the widget scrolls in three fifths of the column, and Activity keeps the rest. */
-export const ALongDescriptionOverActivity: Story = {
+/** The same with Activity: one scroll for the whole column, and Activity a section under the card. */
+export const ALongDescriptionWithActivity: Story = {
   args: { file: longProject },
   render: (args) => (
-    <>
-      <FileWidgetPanel {...args} className="max-h-[60%]" />
-      <FileActivityPanelView items={[MENTION]} labelFor={new Map([['30840:aa:roadmap', 'Roadmap']])} />
-    </>
+    <FileWidgetPanel {...args} below={<FileActivityPanelView as="section" items={[MENTION]} labelFor={new Map([['30840:aa:roadmap', 'Roadmap']])} />} />
   ),
 }
 
-/** The widget over Activity: a file another app owns that a comment elsewhere has named. */
+/** The widget with Activity under it, in the same panel: a file another app owns that a comment elsewhere has named. */
 export const WithActivity: Story = {
   render: (args) => (
-    <>
-      <FileWidgetPanel {...args} />
-      <FileActivityPanelView items={[MENTION]} labelFor={new Map([['30840:aa:roadmap', 'Roadmap']])} />
-    </>
+    <FileWidgetPanel {...args} below={<FileActivityPanelView as="section" items={[MENTION]} labelFor={new Map([['30840:aa:roadmap', 'Roadmap']])} />} />
   ),
 }

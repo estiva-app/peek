@@ -112,16 +112,11 @@ export function useFileView({
     an app nobody has written lands the same way Ship's does.
   */
   const home = file ? referenceLink(file.naddr ?? file.address ?? file.ref, file) : null
-  const activity = mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined
-  // Under a long widget, Activity keeps two fifths of the column: the widget scrolls in the rest.
-  const widget = file && home?.place === 'app' ? <FileWidgetPanel file={file} className={activity ? 'max-h-[60%]' : undefined} /> : undefined
-  const aside =
-    widget || activity ? (
-      <div className="flex h-full flex-col">
-        {widget}
-        {activity}
-      </div>
-    ) : undefined
+  // One scroll for the whole column (Katerina, 27 September): with another app's widget,
+  // Activity is a section under the card in the same Panel; alone, it is its own Panel.
+  const widget = file && home?.place === 'app' && (file.naddr ?? file.address) ? <FileWidgetPanel file={file} below={mentions.length > 0 ? <FileActivityPanel mentions={mentions} as="section" /> : undefined} /> : undefined
+  const activity = !widget && mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined
+  const aside = widget ?? activity
   const replyCounts =
     threads === 'loading' || 'failed' in threads
       ? undefined

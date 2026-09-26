@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Panel } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from '@/components/ui/ForeignObjectWidget'
@@ -35,16 +36,18 @@ import { ForeignObjectWidget } from '@/components/ui/ForeignObjectWidget'
  * The header is the app's name: this is that app's aspect of the file, and
  * the column beside it says "Thread" and "Activity" in the same bar.
  */
-export function FileWidgetPanel({ file, className }: { file: ForeignObject; /** Placement: a cap when Activity shares the column. */ className?: string }) {
+export function FileWidgetPanel({ file, below }: { file: ForeignObject; /** What sits under the card in the same body, and scrolls with it: the Activity section. */ below?: ReactNode }) {
   const reference = file.naddr ?? file.address
   if (!reference) return null
   return (
     // The package's Panel (0.37.0): a long description scrolls instead of running off the column.
     // The widget carries its own `mt-1` from the message it was written for; 12px above it puts the card's edge at the column's 16px inset.
-    <Panel title={file.appName ?? 'File'} bodyClassName="px-4 pb-4 pt-3" className={className}>
-      <div data-file-widget={file.address}>
+    // One scroll for the whole column (Katerina, 27 September): Activity, when there is any, is a section under the card.
+    <Panel title={file.appName ?? 'File'} bodyClassName="flex flex-col pb-4">
+      <div className="px-4 pt-3" data-file-widget={file.address}>
         <ForeignObjectWidget naddr={reference} resolved={file} />
       </div>
+      {below}
     </Panel>
   )
 }
