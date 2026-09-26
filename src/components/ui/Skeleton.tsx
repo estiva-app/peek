@@ -28,7 +28,8 @@ export function SkeletonConversationCard({ secondLineWidth = 380 }: { secondLine
       </div>
       <div className="pl-8 pr-2 pt-2 pb-2 flex flex-col gap-2">
         <SkeletonBar className="h-3.5 w-full" />
-        <SkeletonBar className="h-3.5" style={{ width: secondLineWidth }} />
+        {/* Never wider than its row: in the 380px thread column it ran past the panel's edge. */}
+        <SkeletonBar className="h-3.5 max-w-full" style={{ width: secondLineWidth }} />
       </div>
     </div>
   )
