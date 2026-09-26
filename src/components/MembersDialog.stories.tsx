@@ -21,7 +21,7 @@ const decorators = [(Story: () => ReactNode) => <PeekDataProvider>{Story()}</Pee
  * the same dialog rather than two.
  */
 const meta = {
-  title: 'Topics/MembersDialog',
+  title: 'To be removed/MembersDialog',
   component: MembersDialog,
   parameters: {
     layout: 'fullscreen',
