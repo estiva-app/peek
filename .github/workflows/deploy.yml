@@ -80,22 +80,16 @@ jobs:
       # (PER-15). estiva-foundation's action since PER-16, shared with Ship.
       - uses: estiva-app/estiva-foundation/.github/actions/install@ci-v1
 
-      - name: Gate lint
-        run: npm run lint:rules
-
-      # The token rules are a gate, on their own (2026-09-10). They are the
-      # ones that catch a class which compiles to nothing — the defect that
-      # shipped a transparent sign-in screen in Ship and an unfilled card in
-      # Peek's Folder panel. Zero errors on the day this landed, so it stays
-      # zero. In `gate`, the one required check, since UIG-21: in `check` a
-      # token error stopped the deploy but not the merge.
-      - name: Token lint
-        run: npm run lint:tokens
-
-      # Every part says in one line what it is for, so `npm run ui:find` can offer
-      # it before someone builds it again (UIG-13). Built from the code; nothing kept.
-      - name: Every part is described
-        run: npm run registry:check
+      # Every step of the gate, as one command from the package (estiva-ui
+      # 0.36.0, Katerina's ruling R13): the gate lint and `.gates-count.json`,
+      # which must be committed; the token rules (`npm run lint:tokens`, which
+      # catch a class that compiles to nothing — the transparent sign-in screen
+      # in Ship, the unfilled card in Peek's Folder panel); the catalogue
+      # (every part described, every usage page kept); and the wall's own
+      # settings: the editor hook refuses a raw button, and every folder the
+      # gate skips is named on docs/GATES-DEBT.md.
+      - name: The gate (estiva-gates ci)
+        run: npx estiva-gates ci
 
   publish:
     # `gate` too: the rules stopped a deploy while they were a step in `check`,

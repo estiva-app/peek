@@ -168,7 +168,7 @@ export function FileDetailsDialog({
         <Section label="Address">
           <div className="flex items-center gap-2">
             {/* The string another app lists this file by; mono so it reads as one. */}
-            {/* @estiva-escape: N9 (Katerina, 24 September: record only): a mono address, the text style Breadcrumb's id also uses, not a copy of a part */}
+            {/* @estiva-escape(no-copied-look): N9 (Katerina, 24 September: record only): a mono address, the text style Breadcrumb's id also uses, not a copy of a part */}
             <span className="min-w-0 flex-1 truncate font-mono text-caption text-text-secondary">{file.address}</span>
             <IconButton tooltip="Copy address" aria-label="Copy address" onClick={copyAddress}>
               <IconCopy size={16} stroke={1.5} />

@@ -86,7 +86,7 @@ export function FreshnessIndicator() {
     /* The package tooltip, not the browser's `title`: it shows on focus too
        and follows the theme (§4.9, P31, 2026-09-10). */
     <WithTooltip label={label} placement="top" wrapperClassName="mt-auto w-full">
-      {/* @estiva-escape: a dot that tells a screen reader how fresh the relay is; FieldLine and Banner, which own that label, are lines of words (UIG-8) */}
+      {/* @estiva-escape(no-rebuilt-behaviour): a dot that tells a screen reader how fresh the relay is; FieldLine and Banner, which own that label, are lines of words (UIG-8) */}
       <div
         className="flex w-full justify-center py-2"
         role="status"

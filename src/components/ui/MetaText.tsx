@@ -28,7 +28,7 @@ export function MetaText({
   className?: string
 }) {
   return (
-    // @estiva-escape: A4 (Katerina, 24 September: record only): the chip size shares TopicState's count style; TopicState keeps its own
+    // @estiva-escape(no-copied-look): A4 (Katerina, 24 September: record only): the chip size shares TopicState's count style; TopicState keeps its own
     <span
       className={cn(
         size === 'chip' ? 'text-chip font-normal' : 'text-caption',

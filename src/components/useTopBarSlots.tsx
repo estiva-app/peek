@@ -51,8 +51,9 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
       </IconButton>
     ),
     search: (
-      /* The field is a launcher affordance, not a real input - clicking opens
-         the command launcher; preventDefault keeps the input from focusing. */
+      /* @estiva-escape(no-raw-element): a launcher that looks like a search field, and
+         the package has no such part (Katerina, 25 September: it stays hand-made).
+         Clicking opens the command launcher; preventDefault keeps the input from focusing. */
       <div
         className="cursor-pointer"
         onMouseDown={(e) => {
@@ -60,7 +61,7 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
           onSearchClick?.()
         }}
       >
-        {/* @estiva-escape: a picture of the search field that opens the launcher; no part is a button that looks like a search field yet (UIG-9, Katerina 17 September) */}
+        {/* @estiva-escape(no-restyled-part): a picture of the search field that opens the launcher; no part is a button that looks like a search field yet (UIG-9, Katerina 17 September) */}
         <SearchInput shortcut={shortcutLabel('Mod-K')} className="w-[290px] pointer-events-none" />
       </div>
     ),

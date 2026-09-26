@@ -25,15 +25,12 @@ which is the one part that reads the comparison it holds.
 
 ## When not
 
-- **For anything a user is meant to change.** These are not settings. They are
-  switches for showing the app, and nothing persists them.
-- **To hide a feature that is not finished.** A flag here does not gate a
-  release; it changes what one screen draws in one session.
-- **For a log line.** `readStateDiff` lives in state rather than the console on
-  purpose (CRO-7): a log scrolls away, and the disagreements worth seeing only
-  appear after the app has been idle for a while.
-- **In a story.** A story that needs the Desk empty should be handed empty
-  props. Mounting this to reach a state is reaching around the component.
+- **For anything a user is meant to change.** These are not settings. They are switches for showing the app, and nothing persists them.
+- **To hide a feature that is not finished.** A flag here does not gate a release; it changes what one screen draws in one session.
+- **For a log line.** `readStateDiff` lives in state rather than the console on purpose (CRO-7): a log scrolls away, and the disagreements worth seeing only appear after the app has been idle for a while.
+- **In a story.** A story that needs the Desk empty should be handed empty props. Mounting this to reach a state is reaching around the component.
+
+No alternative: it draws nothing, and what each line sends you to instead — a setting, a release, state, a prop — is not a part.
 
 ## How
 

@@ -1,6 +1,6 @@
 import { Meta } from '@storybook/addon-docs/blocks'
 
-<Meta title="Frame/ThreadPanelLoading" />
+<Meta title="To be removed/ThreadPanelLoading" />
 
 # ThreadPanelLoading
 
@@ -22,6 +22,8 @@ it.
   the whole panel down and reads as the thread closing and reopening.
 - For the first open of a thread from nothing. Then there is no column yet, so
   there is nothing to keep mounted.
+
+No alternative: before the column exists there is nothing to draw, and while it stands this is the only loading state it has.
 
 ## Why the state exists at all
 

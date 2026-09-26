@@ -71,14 +71,14 @@ export default function define(h) {
         const file = "src/components/CommandLauncher.tsx";
         const lint = await h.lint({ config: GATES, file, code: h.read(file), expect: "none" });
         if (lint.result !== "pass") return lint;
-        return h.lacks(file, /@estiva-escape:[^\n]*UIG-29/, "it passes, and no escape names UIG-29");
+        return h.lacks(file, /@estiva-escape(?:\([^)]*\))?:[^\n]*UIG-29/, "it passes, and no escape names UIG-29");
       } },
       // DialogShell did not fit the launcher; UIG-29 built the package's CommandPalette for it instead (Katerina, 15 September).
       { what: "its window is the package's CommandPalette", run: () => h.contains("src/components/CommandLauncher.tsx", /import\s*\{[^}]*\bCommandPalette\b[^}]*\}\s*from\s*['"]@estiva-app\/ui['"]/, "CommandLauncher imports CommandPalette from @estiva-app/ui") },
     ] },
     // A first guess, from the ticket's text (much later: Katerina, 16 September).
     { ref: "UIG-31", title: "Editor menus — one shared part for the / @ [ menus", checks: [
-      { what: "the / menu keeps no escape naming UIG-31", run: () => h.lacks("src/components/ui/SlashMenu.tsx", /@estiva-escape:[^\n]*UIG-31/, "SlashMenu keeps no escape naming UIG-31") },
+      { what: "the / menu keeps no escape naming UIG-31", run: () => h.lacks("src/components/ui/SlashMenu.tsx", /@estiva-escape(?:\([^)]*\))?:[^\n]*UIG-31/, "SlashMenu keeps no escape naming UIG-31") },
     ] },
   ];
 

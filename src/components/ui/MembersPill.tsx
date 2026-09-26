@@ -49,7 +49,7 @@ export function MembersPill({
       className={cn('gap-2 pl-[3px] pr-2', className)}
     >
       <AvatarGroup members={members} />
-      {/* @estiva-escape: (Katerina, 24 September: record only): the members count, close to MetaText's secondary tone without its tracking; left as it looks */}
+      {/* @estiva-escape(no-copied-look): (Katerina, 24 September: record only): the members count, close to MetaText's secondary tone without its tracking; left as it looks */}
       <span className="text-caption text-text-secondary signal:font-mono signal:text-small signal:tabular-nums">{total}</span>
     </Button>
   )

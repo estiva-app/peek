@@ -17,18 +17,21 @@ reports 0 errors for all three rules, and `npm run lint:tokens` reports 0 errors
 (102 warnings, which are hand-written sizes and spaces, reported and never
 blocked).
 
-What is kept is kept in the open, on the line above it, and counted in
-`.gates-count.json` — 16 escapes, each with its reason:
-
-- `estiva/no-raw-element` — 1. UIG-3 found 16 raw `<button>`: 8 became the
-  package's `Button`, 7 went with the Signal Theme page, 1 is escaped. UIG-7
-  then found 3 more raw elements and replaced all 3.
-- `estiva/no-rebuilt-behaviour` — 13. UIG-8 found 15: 2 fixed, 13 kept with
-  their reasons, seven of them the `/ @ [` editor menus, which UIG-31 will make
-  one shared part.
-- `estiva/no-restyled-part` — 2. UIG-9 found 23: 16 fixed, 5 drawn by new props
-  on the package's parts, 2 kept — a row that is one link, and a search field
-  that is a button, neither of which the package has a part for yet.
+What is kept is kept in the open: on the line above it, naming the rule it
+keeps off, `// @estiva-escape(<rule>): <reason>`. This page does not count them
+by hand — the counts it once carried had drifted by 25 September.
+`npm run gates:status -- --escapes` lists every one from the code, with its age
+from git, and `npm run gates:status` shows the ones older than 30 days, to keep
+with a new reason or fix (Katerina's rulings B1 and B3, 25 September).
 
 An escape is not a debt: the code is in the open, counted, and named in a
 ticket. A debt is a file a gate cannot read at all, and there is none.
+
+## Folders the gate does not read
+
+CI's job `gate` (`estiva-gates ci`) fails on a skipped folder that is not
+named here (B11, B13).
+
+| folder | why it is not checked |
+|---|---|
+| `demo-scenarios` | The Nostr-for-Business scenario player: a separate Vite app with its own `src`, Tailwind config and port (5200), built for a demo and not part of Peek's own build. Its own `STORYBOARD.md` says what it is. |
