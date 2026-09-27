@@ -1,7 +1,7 @@
 import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconBell, IconBellFilled, IconDotsVertical } from '@tabler/icons-react'
-import { Breadcrumb, ContainerHeader, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
+import { Breadcrumb, Panel, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -332,8 +332,9 @@ export function FilePage() {
           />
         }
         rightPanel={
-        <div className="flex h-full flex-col">
-          <ContainerHeader
+          // The file's conversation in the package's Panel: it scrolls, and the composer stays under it.
+          <Panel
+            {...view.panel}
             title={
               <div className="min-w-0">
                 {trail && <Breadcrumb items={trail} />}
@@ -399,8 +400,6 @@ export function FilePage() {
               ) : undefined
             }
           />
-          {view.body}
-        </div>
         }
         threadPanel={view.threadPanel}
       />

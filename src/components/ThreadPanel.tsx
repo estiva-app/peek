@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconX, IconExternalLink, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Chip, ContainerHeader, ScrollArea } from '@estiva-app/ui'
+import { Chip, Panel } from '@estiva-app/ui'
 import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { ReplyCard } from './ReplyCard'
@@ -220,19 +220,17 @@ export function ThreadPanelLoading({ onClose }: { onClose: () => void }) {
     return () => clearTimeout(t)
   }, [])
   return (
-    <div className="flex flex-col h-full">
-      <ContainerHeader
-        title="Replies"
-        actions={
-          <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
-            <IconX size={16} stroke={1.5} />
-          </IconButton>
-        }
-      />
-      <div className="flex-1 overflow-hidden px-4 pt-4">
-        {showSkeleton && <SkeletonConversationList />}
-      </div>
-    </div>
+    <Panel
+      title="Replies"
+      actions={
+        <IconButton tooltip="Close" aria-label="Close thread" onClick={onClose}>
+          <IconX size={16} stroke={1.5} />
+        </IconButton>
+      }
+      bodyClassName="px-4 pt-4"
+    >
+      {showSkeleton && <SkeletonConversationList />}
+    </Panel>
   )
 }
 
@@ -351,9 +349,17 @@ export function ThreadPanel({
   }, [allReplies.length])
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <ContainerHeader
+    // The package's Panel (0.37.0): the replies scroll, the compose box stays under them.
+    <Panel
+      bodyRef={scrollRef}
+      bodyClassName="flex flex-col"
+      footer={
+        <div className="p-3">
+          {readOnlyNotice ?? (
+            <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
+          )}
+        </div>
+      }
         title={
             <div className="flex items-center gap-2">
               {huddleMemberCount != null && <IconLock size={16} stroke={1.5} className="text-text-secondary" />}
@@ -395,10 +401,7 @@ export function ThreadPanel({
           </IconButton>
           </>
         }
-      />
-
-      {/* Scrollable content */}
-      <ScrollArea className="flex-1" viewportRef={scrollRef} contentClassName="flex flex-col">
+    >
         {/* Initial message. Anchored like a reply (INT-3): a citation has to be
             able to reach the message that opened the thread too. */}
         <div className="px-4 pt-4 pb-2" data-reply-id={conversation.id}>
@@ -474,14 +477,6 @@ export function ThreadPanel({
             return null
           })}
         </div>
-      </ScrollArea>
-
-      {/* Compose box */}
-      <div className="p-3">
-        {readOnlyNotice ?? (
-          <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
-        )}
-      </div>
-    </div>
+    </Panel>
   )
 }

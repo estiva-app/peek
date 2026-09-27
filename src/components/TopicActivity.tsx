@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom'
-import { ScrollArea } from '@estiva-app/ui'
 import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -106,7 +105,8 @@ export function TopicActivity({
   }
 
   return (
-    <ScrollArea className="flex-1" contentClassName={LIST}>
+    // The rows only: the Panel they sit in scrolls them (estiva-ui 0.37.0), so there is one scroll, not two.
+    <div className={LIST}>
       {items.map(({ conv, about, relation = 'sub-file', href }) => {
         const words = RELATION[relation]
         const open = href ? () => navigate(href) : () => onOpenThread(conv.id)
@@ -154,6 +154,6 @@ export function TopicActivity({
         </div>
         )
       })}
-    </ScrollArea>
+    </div>
   )
 }

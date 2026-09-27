@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject, type UIEventHandler } from 'react'
 import { ScrollArea } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -58,9 +58,20 @@ interface UseFileConversationViewArgs {
   threadMembers?: string[]
 }
 
+/** The stream and its composer as a `Panel` takes them: spread them onto one. */
+export interface ConversationParts {
+  children: ReactNode
+  footer: ReactNode
+  bodyRef: RefObject<HTMLDivElement | null>
+  onBodyScroll: UIEventHandler<HTMLDivElement>
+  bodyClassName: string
+}
+
 interface ViewSlots {
   /** The stream and its composer — under the page's own header. */
   conversation: ReactNode
+  /** The same two, for a `Panel` whose header is the page's. */
+  conversationParts: ConversationParts
   /** The open thread, or nothing. */
   threadPanel: ReactNode | undefined
 }
@@ -343,9 +354,11 @@ export function useFileConversationView({
     }
   }, [address, onOpenThread])
 
-  const conversationSlot = (
+  // The stream and its composer, as a Panel's body and footer (estiva-ui 0.37.0): the
+  // Panel scrolls the stream and keeps the composer under it. A page with a header of
+  // its own (a DM) draws the same two in `conversation`, around a ScrollArea of its own.
+  const conversationBody = (
     <>
-      <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
         <div className="flex-1 min-h-0" />
         <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
           {isLoading && <SkeletonConversationList />}
@@ -404,7 +417,9 @@ export function useFileConversationView({
           */}
           {view && <ReactionHorizon omitted={view.reactionTargetsOmitted} container="conversation" />}
         </div>
-      </ScrollArea>
+    </>
+  )
+  const composer = (
       <div className="p-3">
         <ComposeBox
           onSend={handleSend}
@@ -412,6 +427,14 @@ export function useFileConversationView({
           draftKey={draftKey ?? (container?.kind === 'file' ? draftKeys.object(container.address) : undefined)}
         />
       </div>
+  )
+  const conversationParts: ConversationParts = { children: conversationBody, footer: composer, bodyRef: scrollRef, onBodyScroll: handleScroll, bodyClassName: 'flex min-h-full flex-col' }
+  const conversationSlot = (
+    <>
+      <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
+        {conversationBody}
+      </ScrollArea>
+      {composer}
     </>
   )
 
@@ -440,7 +463,7 @@ export function useFileConversationView({
       />
     ) : undefined
 
-  return { conversation: conversationSlot, threadPanel }
+  return { conversation: conversationSlot, conversationParts, threadPanel }
 }
 
 // ── From the relay's events to what the cards take ──

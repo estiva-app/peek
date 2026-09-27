@@ -25,7 +25,7 @@
     "@estiva-app/interop": "^0.32.0",
     "@estiva-app/platform": "^0.3.1",
     "@estiva-app/protocol": "^0.23.0",
-    "@estiva-app/ui": "^0.36.0",
+    "@estiva-app/ui": "^0.37.1",
     "@tabler/icons-react": "^3.41.1",
     "@tiptap/extension-link": "^3.22.1",
     "@tiptap/extension-mention": "^3.22.1",
