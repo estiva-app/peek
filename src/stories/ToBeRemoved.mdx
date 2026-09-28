@@ -12,7 +12,7 @@ disappearing inside somebody else's pull request. Katerina's idea, 22 September
 components that stay — the app still draws them, and only the *story* is
 parked, because Katerina wanted to look at the picture again before deciding.
 One, `JoinTopicBanner`, is dead code: nothing in the app uses it, and it is
-here to be **deleted**, not to be reconsidered. And four more are unused, and
+here to be **deleted**, not to be reconsidered. And three more are unused, and
 wait for her to keep or delete each one from its picture (26 September).
 
 The distinction matters when you clear this heading. Parking a story changes
@@ -38,7 +38,6 @@ It sorts last, under everything of Peek's own.
 | `ReadStatePanel` | UIG-17 | 2026-09-22 | A developer's readout, not a design. It was the only thing under a `Diagnostics` heading, which is gone with it. |
 | `JoinTopicBanner` | UIG-17 | 2026-09-23 | **Going, not parked — the component too.** Unused since CON-8: `ReadOnlyTopicBanner` took its place in `useTopicView`, and nothing else drew it. Katerina's call, 23 September. |
 | `MembersDialog` | UIG-26 (R20) | 2026-09-26 | **Nothing in the app draws it**: `gates:status` lists it unused. Katerina, 25 September: park the unused parts here, then decide each from its picture. |
-| `ProjectTickets` | UIG-26 (R20) | 2026-09-26 | Unused since FOL-23 deleted the two places that showed it; its stories went with them, so only its page is here. Same ruling. |
 | `RouterLink` | UIG-26 (R20) | 2026-09-26 | Unused: nothing in the app imports it. Its page only. Same ruling. |
 | `ThreadPanelLoading` | UIG-26 (R20) | 2026-09-26 | Unused, and **its page disagrees**: it says the panel draws it while a conversation loads, but only `ThreadPanel`'s *Loading* story does. The page or the app is wrong. Same ruling. |
 
@@ -72,3 +71,7 @@ on an empty canvas: the marker is drawn where it means something, in
 *Messages/ConversationCard* → **Edited** and *Messages/ReplyCard* → **Edited**,
 and its rule page points at both. The same ruling ended its candidacy for the
 package.
+
+`ProjectTickets` went on 28 September, with its page: unused since FOL-23, and
+the only row in Peek that stretched a link over itself by hand. Katerina chose
+deleting it over moving it onto the package's `Link` `cover` (UIG-33).
