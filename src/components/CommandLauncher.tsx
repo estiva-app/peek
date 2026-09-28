@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { IconDownload, IconEraser, IconFileText, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
 import {
-  Card,
   CommandPalette,
   CommandPaletteAnswer,
   CommandPaletteForm,
+  CommandPaletteProposal,
   CommandPaletteQuote,
   CommandPaletteSearch,
   CommandPaletteWorking,
@@ -964,15 +964,13 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       ) : proposal === false ? (
         <FieldLine>Nothing here matches what any app offers to make.</FieldLine>
       ) : (
-        <Card fill="surface" className="flex flex-col gap-1 p-3">
-          {/* Which app, always: two apps may declare something plausibly matching. */}
-          <span className="flex items-center gap-2 text-caption text-text-secondary">
-            {appMark({ id: proposal.entry.appId }, 10)} {proposal.entry.appLabel} › {proposal.entry.launcher.label}
-          </span>
-          <span data-testid="proposal" className="text-body-2 text-text-primary">
+        // Which app, always: two apps may declare something plausibly matching.
+        // The palette's own part since UIG-40 (ruling P4), drawn as it was.
+        <div data-testid="proposal">
+          <CommandPaletteProposal source={`${proposal.entry.appLabel} › ${proposal.entry.launcher.label}`} mark={appMark({ id: proposal.entry.appId }, 10)}>
             {proposal.preview}
-          </span>
-        </Card>
+          </CommandPaletteProposal>
+        </div>
       )
     const next: CommandPaletteRow[] = [
       ...(proposal
