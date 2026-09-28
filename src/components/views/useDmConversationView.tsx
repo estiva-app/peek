@@ -132,11 +132,8 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
 
   if (dmId == null || !dmName) {
     return {
-      rightPanel: (
-        <div className="flex-1 flex items-center justify-center h-full">
-          <EmptyState />
-        </div>
-      ),
+      // A page EmptyState fills and centres itself in the pane's column (UIG-42).
+      rightPanel: <EmptyState />,
       threadPanel: undefined,
     }
   }
