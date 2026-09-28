@@ -1,3 +1,4 @@
+import { richTextClassName } from '@estiva-app/ui'
 import { peekStarterKit } from './editorKit'
 import { PeekMention, UrgentMention, TopicMention, FileMention, MessageMention } from './mention'
 import { ResolutionBlock } from './resolution'
@@ -41,8 +42,14 @@ import { SlashCommands } from './slashCommands'
  * named `…_CLASSES`), so `text-sm leading-[1.4]` sat there unchecked: Tailwind's
  * ramp and a hand-written line height, together exactly `text-body-2` (UIG-28 R5).
  */
-// @estiva-escape(no-copied-look): (Katerina, 24 September: record only): the editor's text, close to the package's bare input; Peek's own editor, kept as it is
-export const PEEK_EDITOR_CLASSES = 'outline-none w-full bg-transparent text-body-2 text-text-primary break-words min-h-[20px]'
+/*
+ * The look is the package's RichText, the one a sent message is drawn with, so
+ * what you type is exactly what the card shows (UIG-30, Katerina, 28 September).
+ * One thing is Peek's: a line typed with Enter is a paragraph here but a line
+ * break once sent (`serializeTiptapToText` joins them with one newline), so two
+ * paragraphs in a row sit flush, as the lines of one paragraph do.
+ */
+export const PEEK_EDITOR_CLASSES = richTextClassName('default', 'outline-none w-full bg-transparent min-h-[20px] [&>p+p]:-mt-1')
 
 export const peekEditorExtensions = [
   peekStarterKit,

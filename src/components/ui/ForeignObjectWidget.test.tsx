@@ -424,7 +424,7 @@ describe('the body slot', () => {
     const { ForeignObjectCard } = await import('./ForeignObjectWidget')
     const { container } = render(<ForeignObjectCard object={object({ widget: 'card', slots: { title: { value: 'Payments' }, body } })} />)
     expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
-    expect(container.querySelector('[data-foreign-body] .font-semibold')?.textContent).toBe('Checkout')
+    expect(container.querySelector('[data-foreign-body] strong')?.textContent).toBe('Checkout')
   })
 
   it('leaves it off a row, which is a single line by definition', async () => {

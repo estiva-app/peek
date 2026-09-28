@@ -21,7 +21,7 @@ describe('ForeignBody', () => {
     expect(container.querySelector('h1')?.textContent).toBe('Goal')
     expect(container.querySelectorAll('li')).toHaveLength(2)
     expect(container.querySelector('code')?.textContent).toBe('code')
-    expect(container.querySelector('.font-semibold')?.textContent).toBe('bold')
+    expect(container.querySelector('strong')?.textContent).toBe('bold')
   })
 
   it('renders a block document as blocks, not as its JSON', () => {
@@ -43,7 +43,7 @@ describe('ForeignBody', () => {
     })
     const { container } = render(<ForeignBody slot={slot(doc, 'blocks')} />)
     expect(container.querySelector('h1')?.textContent).toBe('Goal')
-    expect(container.querySelector('.font-semibold')?.textContent).toBe('Ship it')
+    expect(container.querySelector('strong')?.textContent).toBe('Ship it')
     expect(container.textContent).not.toContain('"type"')
   })
 
@@ -74,7 +74,7 @@ describe('ForeignBody', () => {
     // body is valid marker text and must still not be rendered as any.
     const { container } = render(<ForeignBody slot={slot('# Heading\n**bold**', 'unknown')} />)
     expect(container.querySelector('h1')).toBeNull()
-    expect(container.querySelector('.font-semibold')).toBeNull()
+    expect(container.querySelector('strong')).toBeNull()
     expect(container.textContent).toContain('# Heading')
   })
 

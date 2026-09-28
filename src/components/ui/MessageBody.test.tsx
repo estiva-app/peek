@@ -49,7 +49,7 @@ describe('MessageBody renders the code mark', () => {
     const c = show('**bold `code` end**')
     const code = c.querySelector('code')!
     expect(code.textContent).toBe('code')
-    expect(code.closest('span')?.className ?? '').not.toContain('font-semibold')
+    expect(code.closest('strong')).toBeNull()
   })
 
   it('leaves a mention inside code as literal text, not a chip', () => {
@@ -76,9 +76,9 @@ describe('MessageBody renders the code mark', () => {
   it('still renders the marks that were already shipping', () => {
     const c = show('a **bold** and *italic* and __underlined__ word')
     expect(c.textContent).toBe('a bold and italic and underlined word')
-    expect(screen.getByText('bold').className).toContain('font-semibold')
-    expect(screen.getByText('italic').className).toContain('italic')
-    expect(screen.getByText('underlined').className).toContain('underline')
+    expect(screen.getByText('bold').closest('strong')).not.toBeNull()
+    expect(screen.getByText('italic').closest('em')).not.toBeNull()
+    expect(screen.getByText('underlined').closest('u')).not.toBeNull()
   })
 })
 
@@ -95,7 +95,7 @@ describe('MessageBody renders a labelled link (PEE-19)', () => {
     const c = show('**[the topic](https://x/y)** now')
     const a = c.querySelector('a')
     expect(a?.textContent).toBe('the topic')
-    expect(a?.closest('.font-semibold')).not.toBeNull()
+    expect(a?.closest('strong')).not.toBeNull()
   })
 
   it('a scheme a reader may not follow stays text', () => {
