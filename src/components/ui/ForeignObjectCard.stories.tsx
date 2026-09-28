@@ -113,7 +113,8 @@ export const Assigned: Story = {
  * **With its description** — the issue's body, drawn one step down with every
  * heading, list, quote and code block kept (the package's `RichText`, small:
  * Katerina, 28 September, UIG-30). Another app's text is drawn with its marks
- * and links only, never Peek's chips.
+ * and links only, never Peek's chips. Its last line is long on purpose: a
+ * description runs the card's full width, under the app's name too.
  */
 export const WithDescription: Story = {
   args: {
@@ -132,7 +133,7 @@ export const WithDescription: Story = {
             '',
             '> Seen on every file with somebody on it.',
             '',
-            'The row reads `assignee` straight from the tag.',
+            'The row reads `assignee` straight from the tag, so a person who has never published a profile shows as sixty-four characters of hex, wrapped across the whole width of the panel.',
           ].join('\n'),
           format: 'marker',
         },
