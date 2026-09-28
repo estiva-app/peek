@@ -412,43 +412,29 @@ export function ForeignObjectCard({
        * Baselines, not box tops. The app name is 10px beside a 14px title, so
        * aligning their boxes sat it visibly above the title's line — the
        * smaller the type, the worse it looked (2026-08-19).
+       *
+       * The app's name shares the title's line and nothing below it: in a
+       * column of its own it held an empty strip down the card's whole right
+       * side, and a long description ran as a narrow column (Katerina,
+       * 28 September).
        */}
       <div className="flex items-baseline gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {/* The title is the way into the owning app. A reference you cannot
-                follow is a screenshot. */}
-            {object.openUrl ? (
-              <span className="contents text-body-2 font-semibold text-text-primary">
-                <Link href={object.openUrl} variant="quiet" external truncate>
-                  {title}
-                </Link>
-              </span>
-            ) : (
-              // @estiva-escape(no-copied-look): C4 (Katerina, 24 September: record only): a 14px semibold title, a text style several panels share, not a copy of a part
-              <span className="truncate text-body-2 font-semibold text-text-primary">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {/* The title is the way into the owning app. A reference you cannot
+              follow is a screenshot. */}
+          {object.openUrl ? (
+            <span className="contents text-body-2 font-semibold text-text-primary">
+              <Link href={object.openUrl} variant="quiet" external truncate>
                 {title}
-              </span>
-            )}
-            {status && <StatusPill slot={status} />}
-          </div>
-          {/* A card shows the subtitle; a row is a single line by definition —
-              except in the sidebar, where the description is what makes a
-              ticket scannable without opening it. */}
-          {widget === 'card' && slots.subtitle && (
-            <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
+              </Link>
+            </span>
+          ) : (
+            // @estiva-escape(no-copied-look): C4 (Katerina, 24 September: record only): a 14px semibold title, a text style several panels share, not a copy of a part
+            <span className="truncate text-body-2 font-semibold text-text-primary">
+              {title}
+            </span>
           )}
-          {/* The description, in whichever content model its own app writes —
-              PRO-2. A card only, for the reason the subtitle is: a row is a
-              single line by definition and a body is not one. */}
-          {widget === 'card' && slots.body && <ForeignBody slot={slots.body} className="mt-1" />}
-          {visibleMeta.length > 0 && (
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-              {visibleMeta.map((slot, i) => (
-                <Meta key={i} slot={slot} people={object.people} />
-              ))}
-            </div>
-          )}
+          {status && <StatusPill slot={status} />}
         </div>
         {/*
          * Just the app's name. A `?` used to follow it when no NIP-89
@@ -471,6 +457,23 @@ export function ForeignObjectCard({
             what `SectionLabel` already is (Katerina, 2026-09-11). */}
         <SectionLabel className="shrink-0">{object.appName}</SectionLabel>
       </div>
+      {/* A card shows the subtitle; a row is a single line by definition —
+          except in the sidebar, where the description is what makes a
+          ticket scannable without opening it. */}
+      {widget === 'card' && slots.subtitle && (
+        <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
+      )}
+      {/* The description, in whichever content model its own app writes —
+          PRO-2. A card only, for the reason the subtitle is: a row is a
+          single line by definition and a body is not one. */}
+      {widget === 'card' && slots.body && <ForeignBody slot={slots.body} className="mt-1" />}
+      {visibleMeta.length > 0 && (
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          {visibleMeta.map((slot, i) => (
+            <Meta key={i} slot={slot} people={object.people} />
+          ))}
+        </div>
+      )}
 
       {onAct && (
         <Actions
