@@ -81,11 +81,14 @@ export function MoveUnderDialog({
       {targets.length === 0 ? (
         <EmptyState scope="section" message={`There is nowhere else in ${teamName} to put it.`} />
       ) : (
-        <Form id={formId} busy={moving} onSubmit={move} className="flex flex-col gap-2">
-          <p className="text-body-2-strong text-text-primary">{title}</p>
-          <p className="text-body-2 text-text-secondary">
-            It stays in {teamName}, and everyone who can read it now still can.
-          </p>
+        <Form id={formId} busy={moving} onSubmit={move}>
+          {/* The title and its sentence are one block, 8px apart; the Form puts 24px between it and the field. */}
+          <div className="flex flex-col gap-2">
+            <p className="text-body-2-strong text-text-primary">{title}</p>
+            <p className="text-body-2 text-text-secondary">
+              It stays in {teamName}, and everyone who can read it now still can.
+            </p>
+          </div>
           <Field label="Put it under">
             <Select
               value={to}

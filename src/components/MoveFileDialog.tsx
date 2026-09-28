@@ -82,17 +82,20 @@ export function MoveFileDialog({
         <EmptyState scope="section" message="There is no other folder it can be moved to." />
       ) : (
         // The package Form (UIG-7): Ctrl+Enter or Move sends; the list picks with Enter.
-        <Form id={formId} busy={moving} onSubmit={move} className="flex flex-col gap-2">
+        <Form id={formId} busy={moving} onSubmit={move}>
           {/*
             The title on its own line. Inline, a long one ran into the sentence
             around it — "Moving Folders: navigation for the whole suite files it
             elsewhere" — which is unreadable, and Ship's titles are sentences.
           */}
-          <p className="text-body-2-strong text-text-primary">{title}</p>
-          <p className="text-body-2 text-text-secondary">
-            Filing it elsewhere does not change it — it stays exactly as it is in{' '}
-            {file.appName ?? 'its own app'}.
-          </p>
+          {/* The title and its sentence are one block, 8px apart; the Form puts 24px between it and the field. */}
+          <div className="flex flex-col gap-2">
+            <p className="text-body-2-strong text-text-primary">{title}</p>
+            <p className="text-body-2 text-text-secondary">
+              Filing it elsewhere does not change it — it stays exactly as it is in{' '}
+              {file.appName ?? 'its own app'}.
+            </p>
+          </div>
           <Field label="Destination folder">
             <Select
               value={to}

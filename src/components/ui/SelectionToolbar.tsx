@@ -277,8 +277,8 @@ export function SelectionToolbar({ editor }: { editor: Editor | null }) {
         /* One field, so no strip: a toolbar of one control is a toolbar in
            name only, and `ToolbarInput` cannot take the ref this field is
            focused by (ADOPTION B25). */
-        // The package Form (UIG-7): Enter applies the link. `flex`, so the field keeps its own height.
-        <Form onSubmit={submit} className="flex">
+        // The package Form (UIG-7): Enter applies the link. `free` and `flex`: one field, which keeps its own height.
+        <Form onSubmit={submit} layout="free" className="flex">
         <TextInput
           ref={field}
           value={url}
