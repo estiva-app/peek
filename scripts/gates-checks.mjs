@@ -80,6 +80,11 @@ export default function define(h) {
     { ref: "UIG-31", title: "Editor menus — one shared part for the / @ [ menus", checks: [
       { what: "the / menu keeps no escape naming UIG-31", run: () => h.lacks("src/components/ui/SlashMenu.tsx", /@estiva-escape(?:\([^)]*\))?:[^\n]*UIG-31/, "SlashMenu keeps no escape naming UIG-31") },
     ] },
+    // Katerina's scope, 28 September: Make drawn by the palette's part, and another app's address a chip in the composer.
+    { ref: "UIG-40", title: "Launcher leftovers — the chip in the composer and the Make card", checks: [
+      { what: "the launcher draws Make with the palette's CommandPaletteProposal", run: () => h.contains("src/components/CommandLauncher.tsx", /<CommandPaletteProposal\b/, "CommandLauncher draws Make with CommandPaletteProposal") },
+      { what: "another app's address is a chip in the composer, not text", run: () => h.contains("src/extensions/peekEditor.ts", /\bObjectMention\b/, "the editor list holds ObjectMention") },
+    ] },
   ];
 
   // Peek's own checks join the package's row for the same ticket, or make a row of their own.
