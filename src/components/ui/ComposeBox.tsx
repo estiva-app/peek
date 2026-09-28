@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import type { ForeignObject } from '@estiva-app/interop'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { serializeTiptapToText, textToTiptapContent } from '@/lib/textParsing'
@@ -56,6 +57,12 @@ interface ComposeBoxProps {
   /** Names this composer as a launcher target ("Reply to Alice", "#Topic").
    *  Shown in the command launcher's context chip and the Figma attach footer. */
   contextLabel?: string
+  /**
+   * Objects already resolved, by address — `MessageBody`'s seam, for a surface
+   * with no relay to ask (a story, a test). An address chip in the composer
+   * (UIG-40) takes its title and status from here instead of asking.
+   */
+  resolvedObjects?: Record<string, ForeignObject>
   className?: string
 }
 
@@ -78,7 +85,7 @@ const DEFAULT_DRAFTS = browserDrafts()
  * The box for writing a new message or reply, with text formatting, files,
  * highlights and a send button; unsent text is kept for later.
  */
-export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draftKey, drafts = DEFAULT_DRAFTS, className }: ComposeBoxProps) {
+export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draftKey, drafts = DEFAULT_DRAFTS, resolvedObjects, className }: ComposeBoxProps) {
   const [isEmpty, setIsEmpty] = useState(true)
   const [hasUrgent, setHasUrgent] = useState(false)
   const [hasHighlight, setHasHighlight] = useState(false)
@@ -278,6 +285,14 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     goes through, so a draft with a heading or a list comes back as one rather
     than as its marker characters.
   */
+  // What the address chips read instead of asking the relay: set before the
+  // draft below loads, so a chip is drawn resolved from its first paint.
+  useLayoutEffect(() => {
+    if (!editor) return
+    const storage = (editor.storage as unknown as { objectMention?: { supplied?: Record<string, ForeignObject> } }).objectMention
+    if (storage) storage.supplied = resolvedObjects
+  }, [editor, resolvedObjects])
+
   useEffect(() => {
     if (!editor) return
     const text = draftKey ? (drafts.read(draftKey) ?? '') : ''

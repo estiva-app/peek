@@ -91,9 +91,17 @@ function shortKey(pubkey: string): string {
 export function Reference({
   uri,
   object,
+  link = true,
   className,
 }: {
   uri: string
+  /**
+   * Whether the chip leads to what it names. `false` in the composer (UIG-40):
+   * the same chip as in the sent message, but while it is being written a click
+   * is not a way out of the draft, and the editor draws every link blue and
+   * underlined, which the sent chip never is.
+   */
+  link?: boolean
   /**
    * The resolved object, when the URI names one. `undefined` means still
    * resolving or never asked, `null` means resolved to nothing — different
@@ -136,7 +144,7 @@ export function Reference({
     const chip = (
       <Chip
         // A person opens their DM — `/app/people/<pubkey>` is the DM with them (§2.4, REM-3).
-        link={person && pubkey ? { place: 'person', href: `/app/people/${pubkey}` } : null}
+        link={link && person && pubkey ? { place: 'person', href: `/app/people/${pubkey}` } : null}
         data-reference="person"
         data-mention={pubkey ?? undefined}
         data-resolved={person ? 'true' : 'false'}
@@ -158,7 +166,7 @@ export function Reference({
       // The full title on hover, because the visible one is truncated.
       <Tip label={title}>
         <Chip
-          link={referenceLink(uri, object)}
+          link={link ? referenceLink(uri, object) : null}
           data-reference="object"
           data-object={object.address}
           data-resolved="true"

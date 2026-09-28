@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import { PeekDataProvider } from '@/api'
+import type { ForeignObject } from '@estiva-app/interop'
+import { RECORDED_SHIP_ISSUE as recorded } from '@/api/fixtures'
 import { ComposeBox } from './ComposeBox'
 
 /**
@@ -51,6 +53,20 @@ export const Default: Story = {}
 /** Reply composer — the "Reply..." placeholder used inside the thread panel. */
 export const Reply: Story = {
   args: { placeholder: 'reply' },
+}
+
+/**
+ * Another app's object in the text — an issue the launcher created, a pasted
+ * address, a draft coming back (UIG-40). The sent message's chip, its title and
+ * its status, and not a link while it is being written; it sends the address.
+ * The object is the recorded Ship issue `MessageBody`'s stories draw.
+ */
+export const WithAnIssue: Story = {
+  args: {
+    draftKey: 'story-with-an-issue',
+    drafts: { read: () => `Filed it for Thursday: nostr:${recorded.naddr} `, write: () => {}, clear: () => {} },
+    resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
+  },
 }
 
 /**

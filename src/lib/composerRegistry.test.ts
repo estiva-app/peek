@@ -47,10 +47,10 @@ function fakeComposer() {
   return { handle, editor, inserted, steps }
 }
 
-/** The text a sent message would carry, given what was inserted. */
+/** The text a sent message would carry, given what was inserted: a chip sends its address, as `serializeInline` writes it. */
 function insertedText(inserted: unknown[]): string {
-  return (inserted.flat() as Array<{ type: string; text?: string }>)
-    .map((node) => node.text ?? '')
+  return (inserted.flat() as Array<{ type: string; text?: string; attrs?: { uri?: string } }>)
+    .map((node) => (node.type === 'objectMention' ? (node.attrs?.uri ?? '') : (node.text ?? '')))
     .join('')
 }
 
@@ -68,6 +68,9 @@ describe('insertReferenceIntoActiveComposer (PEE-2)', () => {
     registerActiveComposer(handle)
 
     expect(insertReferenceIntoActiveComposer(addrToNaddr(NEW_ISSUE, []))).toBe(true)
+
+    // A chip, not text (UIG-40): the sent message's chip, in the composer.
+    expect((inserted.flat() as Array<{ type: string }>)[0].type).toBe('objectMention')
 
     // The round trip that matters: what the person sends is what MessageBody
     // resolves. Compared as an *address*, because the body carries `naddr1…`

@@ -75,12 +75,14 @@ describe('what the editor loads back', () => {
     expect(serializeInline(node(content.map((c) => ({ ...c, type: { name: c.type } }))))).toBe(`see ${NADDR} for the plan`)
   })
 
-  it('leaves an address this workspace cannot name as the text it was', () => {
-    // Another app's object, or a topic nobody here holds: no chip would say
-    // more than the URI does, and the text is written back as it came.
+  it("turns another app's address into its chip, and writes back the text it was", () => {
+    // Another app's object, or a topic nobody here holds: the sent message's
+    // chip, which looks the object up itself (UIG-40), and the address is
+    // written back as it came.
     const other = `nostr:${addrToNaddr(`30850:${RELAY}:some-project`, [])}`
     const content = parseInlineContent(`about ${other} today`)
-    expect(content.map((c) => c.type)).toEqual(['text', 'text', 'text'])
+    expect(content.map((c) => c.type)).toEqual(['text', 'objectMention', 'text'])
+    expect(content[1]).toMatchObject({ attrs: { uri: other } })
     expect(serializeInline(node(content.map((c) => ({ ...c, type: { name: c.type } }))))).toBe(`about ${other} today`)
   })
 
