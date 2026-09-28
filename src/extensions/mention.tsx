@@ -1,19 +1,21 @@
 import { forwardRef, useEffect, useImperativeHandle, useState, useCallback, useRef } from 'react'
-import { ReactRenderer, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
+import { ReactRenderer, NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
 import { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion'
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { encodeNevent } from '@estiva-app/protocol'
-import { mentionPeople, type Person } from '@/api'
+import { mentionPeople, useResolvedReferences, type Person } from '@/api'
 import { mentionMessages } from '@/api/mentions'
-import { previewText } from '@/lib/textParsing'
+import { isObjectAddress, previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
 import { MentionMenu } from '@/components/ui/MentionMenu'
 import { inlineChipClassName } from '@estiva-app/ui'
 import { FilesMenu, type FilesMenuRef } from '@/components/ui/FilesMenu'
 import { filterFilesItems, type FilesMenuItem } from '@/components/ui/filesMenuItems'
 import { SuggestionPopover } from './SuggestionPopover'
+import type { ForeignObject } from '@estiva-app/interop'
+import { Reference } from '@/components/ui/Reference'
 
 // ─── Types ───
 
@@ -611,6 +613,89 @@ export const FileMention = Mention.extend({
   },
 }).configure({
   HTMLAttributes: {},
+  suggestion: {
+    char: '\0',
+    items: () => [],
+  },
+})
+
+// ─── Another app's object (UIG-40) ───
+
+/** What a story or a test hands the composer instead of asking the relay: `ComposeBox`'s `resolvedObjects`. */
+type ObjectMentionStorage = { supplied?: Record<string, ForeignObject> }
+
+function ObjectMentionView({ node, editor }: NodeViewProps) {
+  const uri: string = node.attrs.uri
+  const storage = (editor.storage as unknown as { objectMention?: ObjectMentionStorage }).objectMention
+  const supplied = storage?.supplied?.[uri] ?? storage?.supplied?.[uri.replace(/^nostr:/, '')]
+  // Asked for only when nothing was handed in; the hook is called either way.
+  const fetched = useResolvedReferences(supplied ? [] : [uri])
+  return (
+    <NodeViewWrapper as="span">
+      <Reference uri={uri} object={supplied ?? fetched[uri]} link={false} />
+    </NodeViewWrapper>
+  )
+}
+
+/**
+ * Another app's object in the composer — an issue the launcher just created, a
+ * pasted address, one in a draft or an edit coming back (UIG-40, Katerina 28
+ * September).
+ *
+ * **It is the sent message's chip.** `Reference`, the same title and status in
+ * its colour, so what is written looks like what is sent — with `link={false}`,
+ * because a click while writing is not a way out of the draft, and the editor
+ * draws every link blue and underlined, which the sent chip never is. It looks
+ * the object up itself, as `MessageBody` does for a body: the composer holds
+ * only the address.
+ *
+ * **It sends the address, verbatim.** `serializeInline` writes `attrs.uri` back,
+ * so the message on the wire is exactly what it was when this was text.
+ *
+ * A pasted address becomes one too, unless it is an old topic's, which stays
+ * the text it is (a topic chip comes from the `[` menu or a draft).
+ */
+export const ObjectMention = Mention.extend({
+  name: 'objectMention',
+  group: 'inline',
+  inline: true,
+  atom: true,
+
+  addAttributes() {
+    return {
+      /** `nostr:naddr…`, exactly as the body carries it. */
+      uri: { default: null },
+    }
+  },
+
+  addStorage() {
+    return { supplied: undefined } as ObjectMentionStorage
+  },
+
+  renderHTML({ node }) {
+    return ['span', { 'data-object-mention': 'true', class: inlineChipClassName('neutral', 'cursor-default') }, node.attrs.uri]
+  },
+
+  parseHTML() {
+    return [{ tag: 'span[data-object-mention]' }]
+  },
+
+  addPasteRules() {
+    return [
+      nodePasteRule({
+        find: /nostr:naddr1[023456789acdefghjklmnpqrstuvwxyz]+/g,
+        type: this.type,
+        getAttributes: (match) => (isObjectAddress(match[0]) ? { uri: match[0] } : null),
+      }),
+    ]
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ObjectMentionView, { as: 'span' })
+  },
+}).configure({
+  HTMLAttributes: {},
+  // Inserted by the launcher, a paste or a draft; it opens no menu of its own.
   suggestion: {
     char: '\0',
     items: () => [],

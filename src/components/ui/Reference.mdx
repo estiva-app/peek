@@ -1,0 +1,58 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Writing & text/Reference" />
+
+# Reference
+
+A `nostr:` pointer drawn where it was written, as a chip: a person's name, or
+another app's object by its title and status, or the pointer's own short form
+when nothing could be looked up.
+
+**Seen in** — *Writing & text/MessageBody* → **Inline Reference**, and
+*Writing & text/Composer/ComposeBox* → **With An Issue**, where the same chip
+sits in the text being written.
+
+## When
+
+- A pointer in the middle of a sentence, in a sent message: `MessageBody` draws
+  it through this.
+- The same pointer while it is being written, in the composer (UIG-40): the
+  editor's `objectMention` draws it through this with `link={false}`, so what is
+  written looks like what is sent.
+
+## When not
+
+- A pointer alone on its line in a sent message. That is a card below the text,
+  `ForeignObjectWidget`, and `MessageBody` chooses between the two.
+- A person picked from the `@` menu, or a topic from the `[` menu, while
+  writing: those are the editor's own chips (`mention`, `topicMention`), which
+  know their label without looking anything up.
+- A link to a web page. That is a link, not a reference.
+
+## How
+
+```tsx
+import { Reference } from '@/components/ui/Reference'
+
+<Reference uri={uri} object={resolved[uri]} />
+<Reference uri={uri} object={resolved[uri]} link={false} />
+```
+
+- **It never looks anything up.** The caller resolves the pointers and hands in
+  the result: `MessageBody` once for a whole body, the composer's chip for
+  itself. `undefined` is still looking, `null` is nothing found; both draw the
+  short form.
+- `link={false}` in an editor: a click while writing is not a way out of the
+  draft, and the editor draws every link blue and underlined.
+
+## What it owns
+
+- **What a pointer is called.** A person's name from the directory; an object's
+  title as its app's manifest declares it (a person's name where the title is a
+  key, a message's opening words); the pointer's short form otherwise, never a
+  blank.
+- **Where a click goes,** unless `link={false}`: a person to their DM, a topic
+  to the topic, a message to its conversation, another app's object to that app
+  in a new tab.
+- **The chip's size.** One line, the title cut at 24 characters' width with the
+  whole of it on hover, the status after it in its own colour.

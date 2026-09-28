@@ -72,8 +72,10 @@ export function insertFileMentionIntoActiveComposer(attrs: FileMentionAttrs): bo
  *
  * Sent, `MessageBody` finds the `nostr:naddr1…` back out of the body
  * (`findNaddrs`) and renders the object through its own projection. So the
- * *spelling* is the contract here, not the node type: this must stay plain text
- * matching `NADDR_RE`.
+ * *spelling* is the contract here: what is sent must be the address matching
+ * `NADDR_RE`. It goes in as an `objectMention` chip since UIG-40 — the sent
+ * message's chip, title and status (Katerina, 28 September) — which serialises
+ * back to exactly that address.
  *
  * **Where the cursor was decides how it is drawn, since RIC-10.** Inserted into
  * an empty composer it is the whole message, and the object is a card below the
@@ -95,7 +97,10 @@ export function insertReferenceIntoActiveComposer(naddr: string): boolean {
     .chain()
     .focus()
     .unsetAllMarks()
-    .insertContent([{ type: 'text', text: `nostr:${naddr} ` }])
+    .insertContent([
+      { type: 'objectMention', attrs: { uri: `nostr:${naddr}` } },
+      { type: 'text', text: ' ' },
+    ])
     .run()
   return true
 }

@@ -271,6 +271,16 @@ function topicForAddress(uri: string): { id: string; title: string; address: str
   }
 }
 
+/**
+ * Whether a `nostr:` URI is another app's object (or any address that is not an
+ * old topic): what the composer draws as an `objectMention` chip (UIG-40). A
+ * topic's address is a `topicMention`; a person, a message and a URL are not
+ * addresses.
+ */
+export function isObjectAddress(uri: string): boolean {
+  return /^nostr:naddr1/i.test(uri) && !topicForAddress(uri)
+}
+
 /** Parse a single line into Tiptap inline JSON nodes (text + mention nodes,
  *  with bold/italic/underline marks parsed from storage markers). */
 export function parseInlineContent(line: string): Record<string, unknown>[] {
@@ -313,9 +323,12 @@ export function parseInlineContent(line: string): Record<string, unknown>[] {
         chip serialises to again.
 
         Any other address — another app's object, or a channel that was never a
-        topic — stays as the text it was, and is written back as the same text.
-        The editor has no chip that would say more than the URI does, and
-        inventing one would put a label on an object it cannot name.
+        topic — is the chip the sent message draws for it (UIG-40, Katerina 28
+        September): its title and status once it resolves, its shortened
+        address until then, and the address itself when it is written back. It
+        stayed text until then, on the reasoning that a label invented here
+        would name an object nobody had resolved; the chip names nothing it
+        has not looked up, so the reasoning holds and the text is gone.
       */
       const topic = topicForAddress(part)
       if (topic) {
@@ -324,7 +337,7 @@ export function parseInlineContent(line: string): Record<string, unknown>[] {
           attrs: { id: topic.id, label: topic.title, isResolved: false, address: topic.address },
         })
       } else {
-        content.push({ type: 'text', text: part })
+        content.push({ type: 'objectMention', attrs: { uri: part } })
       }
     } else if (/^nostr:(?:nevent|note)1/i.test(part)) {
       /*
@@ -451,6 +464,9 @@ export function serializeInline(node: TiptapNode): string {
       text += child.attrs.address ? `nostr:${addrToNaddr(child.attrs.address, [])}` : `[${child.attrs.label}] `
     } else if (child.type.name === 'messageMention') {
       // Written back as the URI it was picked or loaded as, verbatim.
+      text += child.attrs.uri
+    } else if (child.type.name === 'objectMention') {
+      // Written back as the address it was loaded or inserted as, verbatim.
       text += child.attrs.uri
     } else if (child.type.name === 'fileMention') {
       text += `[${child.attrs.label}] `

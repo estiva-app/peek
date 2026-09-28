@@ -1,6 +1,6 @@
 import { richTextClassName } from '@estiva-app/ui'
 import { peekStarterKit } from './editorKit'
-import { PeekMention, UrgentMention, TopicMention, FileMention, MessageMention } from './mention'
+import { PeekMention, UrgentMention, TopicMention, FileMention, MessageMention, ObjectMention } from './mention'
 import { ResolutionBlock } from './resolution'
 import { HighlightTag } from './highlight'
 import { SlashCommands } from './slashCommands'
@@ -58,6 +58,7 @@ export const peekEditorExtensions = [
   TopicMention,
   FileMention,
   MessageMention,
+  ObjectMention,
   ResolutionBlock,
   HighlightTag,
   SlashCommands,

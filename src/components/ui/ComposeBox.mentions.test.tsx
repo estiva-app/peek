@@ -96,3 +96,27 @@ describe('ComposeBox sends a mention as a pointer (RIC-11)', () => {
     expect((onSend.mock.calls[0][0] as SendPayload).text).toBe('[Office layout] today')
   })
 })
+
+describe("ComposeBox sends another app's object as its address (UIG-40)", () => {
+  const ISSUE = `nostr:${addrToNaddr(`30851:${RELAY}:${UUID}`, [])}`
+
+  it('the chip goes out as the nostr:naddr… it holds, exactly', async () => {
+    const onSend = vi.fn()
+    const { dom, editor } = await compose(onSend)
+    editor.commands.insertContent([
+      { type: 'text', text: 'Filed it: ' },
+      { type: 'objectMention', attrs: { uri: ISSUE } },
+      { type: 'text', text: ' ' },
+    ])
+    // The sent message's chip, not a link while it is being written.
+    const chip = dom.querySelector('[data-reference]')
+    expect(chip).not.toBeNull()
+    expect(chip?.closest('a')).toBeNull()
+    send(dom)
+    expect((onSend.mock.calls[0][0] as SendPayload).text).toBe(`Filed it: ${ISSUE}`)
+  })
+
+  // A pasted address becoming the chip is proved in Chrome, on the ComposeBox
+  // story: jsdom has no clipboard, and Tiptap's simulated paste fails inside
+  // Tiptap without one.
+})

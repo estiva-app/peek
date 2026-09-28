@@ -53,6 +53,11 @@ import { ComposeBox } from '@/components/ui/ComposeBox'
   composer went on sending the bracket form and dropping the message node on the
   floor. **The first pointer mention ever typed on production went out as
   `[Title]` with nothing after it.**
+- **Another app's object as the sent message's chip** (UIG-40). An issue the
+  launcher creates, a pasted address, one in a draft or an edit coming back:
+  its title and status, as `Reference` draws it once sent, but not a link while
+  it is being written. It sends the address, exactly. `resolvedObjects` hands
+  it the object where there is no relay to ask — the **With An Issue** story.
 - **The draft store as an injected dependency**, so a test needs no browser.
 - **Naming itself to the command launcher** through `contextLabel` — "Reply to
   Alice", "#Topic" — which is what the launcher's context chip shows.
