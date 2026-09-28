@@ -78,7 +78,7 @@ export function mentionPeople(): Person[] {
  * Who a `nostr:npub…` in a body names — SPEC §13.1's `reference` mark.
  *
  * Module-level for the same reason the suggestion lists are: the renderer that
- * needs it is inside a `RenderBlocks` callback rather than a component that can
+ * needs it is inside a `RichText` callback rather than a component that can
  * hold a hook, and it must answer synchronously while drawing a run.
  *
  * **Returning `undefined` is a normal answer, not a failure.** A key belonging

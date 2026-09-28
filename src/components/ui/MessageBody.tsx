@@ -9,9 +9,8 @@ import {
   IconPresentation,
 } from '@tabler/icons-react'
 import { DOCUMENT_FILES } from '@/api'
-import { INLINE_TOKEN_RE, findUrls, matchLink, matchUrl } from '@/lib/textParsing'
-import { cn } from '@/lib/utils'
-import { InlineChip, Link } from '@estiva-app/ui'
+import { INLINE_TOKEN_RE, findUrls } from '@/lib/textParsing'
+import { InlineChip, RichText } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { useResolvedReferences } from '@/api'
@@ -23,65 +22,22 @@ import {
   standaloneReference,
   toRenderTree,
 } from '@estiva-app/protocol'
-import type { RenderBlock, RenderFormat, RenderInline } from '@estiva-app/protocol'
-
-// Inline token renderer shared by ConversationCard and ReplyCard: turns
-// [File] refs into chips, @/!@ mentions into pills.
 
 /**
- * Tokens inside one run of text that carries no `code` mark.
+ * Peek's own words inside a run of plain text: `[Title]` chips and `@`/`!@`
+ * mentions.
  *
- * **Marks are parsed before this runs, and the order is load-bearing.** It used
- * to be the other way round — split on mention tokens, then parse marks in each
- * part — which was fine while the dialect had no way to say *"this text is
- * literal"*. `code` says exactly that (SPEC §13.1: its content MUST NOT be
- * parsed for further marks), and under the old order `` `@Alice` `` would have
- * rendered a mention chip inside a code span.
+ * Handed to the package's `RichText` as `renderText`, which calls it only with
+ * text that is not code and not a link — it finds links itself first (UIG-30),
+ * so an address is never read as a name, and `` `@Alice` `` in code stays text
+ * (SPEC §13.1: code is never parsed for anything further).
  */
-/**
- * A link in a body — a bare URL, or `[label](url)`. One element for both, so
- * the two cannot drift apart in look. `breakAll` is for the bare form, whose
- * text has no spaces to wrap at; a label wraps at its words.
- */
-function BodyLink({ href, breakAll, children }: { href: string; breakAll?: boolean; children: ReactNode }) {
-  return (
-    // Where a long link breaks is set on a box around it, which the link takes it from (UIG-9; Katerina kept today's breaking, 17 September).
-    <span className={breakAll ? 'break-all' : 'break-words'}>
-      <Link href={href} variant="text" external data-interactive onClick={(e) => e.stopPropagation()}>
-        {children}
-      </Link>
-    </span>
-  )
-}
-
 function renderTokens(text: string): ReactNode {
   const parts = text.split(INLINE_TOKEN_RE)
   if (parts.length === 1) return text
   return (
     <>
       {parts.map((part, i) => {
-        // A user-typed URL → a real, clickable link. `break-all` lets long
-        // URLs wrap instead of forcing the card to overflow horizontally.
-        const url = matchUrl(part)
-        if (url) {
-          return (
-            <span key={i}>
-              <BodyLink href={url.href} breakAll>
-                {url.href}
-              </BodyLink>
-              {url.trailing}
-            </span>
-          )
-        }
-        // `[label](url)` — a link with its own words (PEE-19, SPEC §13.1).
-        const link = matchLink(part)
-        if (link) {
-          return (
-            <BodyLink key={i} href={link.href}>
-              {link.label}
-            </BodyLink>
-          )
-        }
         if (part.startsWith('[') && part.endsWith(']') && part.length > 2) {
           const title = part.slice(1, -1)
           // A document. A `[Topic]` chip, matched against the topic list with
@@ -144,203 +100,6 @@ function dedupeReferences(refs: string[]): string[] {
     out.push(ref)
   }
   return out
-}
-
-/**
- * SPEC §13.2's block structure, laid out. One layout, two callers.
- *
- * `renderLine` is the seam: Peek's own messages render mentions and chips
- * inside a line, another app's body renders marks only. Extracted rather than
- * copied because a second implementation would disagree the first time the
- * dialect gained a construct — and §13.2 is a *specified* dialect now, so it
- * will.
- *
- * A fence is literal by definition: no marks, no mentions, no chips. That is
- * §13.1's rule about `code` one level up, and it is why `renderLine` is not
- * applied to one.
- */
-/**
- * A resolved body, laid out. One parse path, whichever content model it is in.
- *
- * `toRenderTree` (SPEC §13.5, `@estiva-app/protocol`) hands back a tree with
- * marks decided and blocks decided — **nothing left to parse and nothing to
- * interpolate**. That is where the safety lives: an app mapping this cannot
- * accidentally render markup, because there is no markup in it. This component
- * only creates elements and sets text.
- *
- * It replaced a version that parsed marker segments here and rendered a block
- * document as raw JSON, because a block renderer would have been a second
- * implementation of §13.3.
- *
- * `renderRun` is the seam between the two callers: Peek's own messages resolve
- * mentions, `[Topic]` chips and `PEEK-`/`PR #` references inside a run, and
- * another app's body renders the run as text. The marks are the protocol's and
- * are shared; that token vocabulary is Peek's and is not.
- */
-function withBreaks(text: string, renderRun: (run: string) => ReactNode): ReactNode {
-  // §13.5: "a `\n` inside `inline` text is a line break, in both content
-  // models... splitting on it is the consumer's whole obligation."
-  const lines = text.split('\n')
-  if (lines.length === 1) return renderRun(text)
-  return lines.map((line, i) => (
-    <span key={i}>
-      {i > 0 && <br />}
-      {renderRun(line)}
-    </span>
-  ))
-}
-
-function Inline({
-  runs,
-  renderRun,
-  resolved,
-}: {
-  runs?: RenderInline[]
-  renderRun: (run: string) => ReactNode
-  resolved?: Record<string, ForeignObject | null>
-}) {
-  return (
-    <>
-      {(runs ?? []).map((run, k) =>
-        run.reference ? (
-          /*
-            A `nostr:` reference — SPEC §13.1. Drawn here rather than passed to
-            `renderRun`, because the parser has already decided this run *is* a
-            reference; handing it back as text would invite each caller to
-            re-detect it with a regex, which is how the display-name mention
-            ended up needing a directory in the first place.
-
-            Whatever it names: a person, or an object with the title and status
-            its owner's manifest declares (RIC-10). `resolved` is the body's own
-            answer sheet — absent, as it is inside another app's body, an object
-            draws as its shortened URI and nothing is fetched.
-          */
-          <Reference key={k} uri={run.reference} object={resolved?.[run.reference]} />
-        ) : run.marks.includes('code') ? (
-          // `code` never combines with another mark and its content is never
-          // parsed further — SPEC §13.1.
-          // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: code is 0.9 of the text around it, so it scales with a heading; a named size is fixed
-          <code key={k} className="rounded-sm bg-bg-active px-1 py-0.5 font-mono text-[0.9em] text-text-primary">
-            {run.text}
-          </code>
-        ) : (
-          <span
-            key={k}
-            className={cn(
-              run.marks.includes('bold') && 'font-semibold',
-              run.marks.includes('italic') && 'italic',
-              run.marks.includes('underline') && 'underline underline-offset-2'
-            )}
-          >
-            {withBreaks(run.text, renderRun)}
-          </span>
-        )
-      )}
-    </>
-  )
-}
-
-function Block({
-  block,
-  renderRun,
-  resolved,
-}: {
-  block: RenderBlock
-  renderRun: (run: string) => ReactNode
-  resolved?: Record<string, ForeignObject | null>
-}) {
-  const inline = <Inline runs={block.inline} renderRun={renderRun} resolved={resolved} />
-  switch (block.type) {
-    // Lists are native ul/ol so sent messages and the composer share the exact
-    // same markers, indent, and item spacing (see index.css).
-    case 'bulletList':
-      return <ul>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} resolved={resolved} /></li>)}</ul>
-    case 'orderedList':
-      return <ol>{(block.children ?? []).map((child, i) => <li key={i} className="break-words"><Inline runs={child.inline} renderRun={renderRun} resolved={resolved} /></li>)}</ol>
-    case 'heading':
-      // Same sizes the composer's h1/h2 get in index.css. Level 3 exists only
-      // in a block document — §13.2's marker dialect stops at `##`.
-      if (block.level === 1) return <h1>{inline}</h1>
-      if (block.level === 3) return <h3>{inline}</h3>
-      return <h2>{inline}</h2>
-    case 'codeBlock':
-      // A fence is literal by definition: no mentions, no marks, no reference
-      // chips.
-      //
-      // A long line **wraps** (Katerina, 2026-09-11). It used to scroll
-      // sideways, and briefly did so in the package's bar; she asked for the
-      // block to behave like the rest of the message instead. `whitespace-pre-wrap`
-      // keeps every space and newline the author typed — which is the whole
-      // point of a fence — while letting a line that is too long fold, and
-      // `break-words` folds one long unbroken token rather than widening the
-      // card. Nothing here scrolls, so there is no bar to draw.
-      return (
-        <pre
-          // eslint-disable-next-line token-values/no-restricted-classes -- @estiva-escape: code is 0.9 of the text around it, so it scales with a heading; a named size is fixed
-          className="whitespace-pre-wrap break-words rounded-md bg-bg-active p-2 font-mono text-[0.9em] text-text-primary"
-          data-language={block.language}
-        >
-          <code>{(block.inline ?? []).map((run) => run.text).join('')}</code>
-        </pre>
-      )
-    case 'blockquote':
-      // Native blockquote so sent messages and the composer share the exact
-      // same border/padding/color (see index.css).
-      return <blockquote><p>{inline}</p></blockquote>
-    case 'horizontalRule':
-      return <hr className="border-border-subtle" />
-    default:
-      /*
-        paragraph, and everything Peek has no design for — `table`,
-        `attachment`, `widget`, and a block type published after this was
-        written (`unknown`).
-
-        §13.3 is explicit: *"A reader encountering an unknown block type MUST
-        render that block's inline text rather than dropping it, and MUST NOT
-        drop the block silently."* A paragraph of its text is the honest
-        degradation; a blank is the PEE-10 failure, where an object that renders
-        empty is indistinguishable from one the reader may not see.
-      */
-      return <p data-block-type={block.type === 'paragraph' ? undefined : (block.typeName ?? block.type)}>{inline}</p>
-  }
-}
-
-/**
- * Formatted text laid out as paragraphs, lists, headings, quotes and code, for
- * a message or for another app's item shown inside one.
- */
-export function RenderBlocks({
-  value,
-  format,
-  renderRun,
-  resolved,
-  hideStandalone = false,
-}: {
-  value: string
-  format: RenderFormat
-  renderRun: (run: string) => ReactNode
-  /** The body's resolved objects, for a reference drawn in place — RIC-10. */
-  resolved?: Record<string, ForeignObject | null>
-  /**
-   * Drop the blocks that are nothing but a reference, because the caller is
-   * drawing those below as widgets instead (RIC-10).
-   *
-   * The alternative was to keep cutting pointers out of the text with
-   * `stripNaddrs` and let the widget list stand for all of them, which is what
-   * this replaced: it could not tell a pointer written as a whole line from one
-   * written mid-sentence, so it removed both.
-   */
-  hideStandalone?: boolean
-}) {
-  const all = value ? toRenderTree(value, format) : []
-  const blocks = hideStandalone ? all.filter((block) => !standaloneReference(block)) : all
-  return (
-    <>
-      {blocks.map((block, i) => (
-        <Block key={i} block={block} renderRun={renderRun} resolved={resolved} />
-      ))}
-    </>
-  )
 }
 
 /**
@@ -439,20 +198,19 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     .map((ref) => ref.replace(/^nostr:/i, ''))
   const attachments = [...references.filter((ref) => !drawnInline.has(addressOf(ref))), ...attachedEvents]
   // A message that was *only* a reference has no blocks left to lay out, and
-  // `RenderBlocks` emits nothing rather than an empty paragraph that still
-  // takes a gap.
+  // `RichText` draws nothing rather than an empty paragraph that still takes a
+  // gap.
   return (
     <div data-message-body className="flex flex-col gap-1 text-body-2 text-text-secondary break-words">
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}
       <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />
-      <RenderBlocks
-        value={body}
-        format="marker"
-        renderRun={(run) => renderTokens(run)}
-        resolved={resolved}
-        hideStandalone
+      {/* A block that is nothing but a reference is drawn below as a card, so it leaves the text. */}
+      <RichText
+        blocks={blocks.filter((block) => !standaloneReference(block))}
+        renderText={renderTokens}
+        renderReference={(reference) => <Reference uri={reference} object={resolved[reference]} />}
       />
       {attachments.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={supplied(naddr)} />

@@ -1,6 +1,6 @@
 import type { ResolvedSlot } from '@estiva-app/interop'
-import { cn } from '@/lib/utils'
-import { RenderBlocks } from './MessageBody'
+import { toRenderTree } from '@estiva-app/protocol'
+import { RichText } from '@estiva-app/ui'
 
 /**
  * Another app's `body` slot, rendered — PRO-2.
@@ -25,8 +25,8 @@ import { RenderBlocks } from './MessageBody'
  * this repo can produce one — the dependency is `^0.8.0` — so it is a
  * belt-and-braces default rather than a live path.
  *
- * **Marks, not Peek's tokens.** The run renderer is the identity, so §13.1's
- * six marks arrive and nothing else. Peek's own messages additionally resolve
+ * **Marks, not Peek's tokens.** No `renderText`, so §13.1's marks and links
+ * arrive and nothing else. Peek's own messages additionally resolve
  * `[Topic]` chips and mentions inside a run, and another app's body must not
  * get that layer: a Ship description's `[Title]` is not a topic in Peek.
  *
@@ -43,12 +43,10 @@ import { RenderBlocks } from './MessageBody'
  * equivalent for prose.
  */
 export function ForeignBody({ slot, className }: { slot: ResolvedSlot; className?: string }) {
+  // One step down, with every heading, list, quote and table kept: it sits inside a card (Katerina, 28 September, UIG-30).
   return (
-    <div
-      data-foreign-body
-      className={cn('flex flex-col gap-1 break-words text-caption leading-snug text-text-secondary', className)}
-    >
-      <RenderBlocks value={slot.value} format={slot.format ?? 'marker'} renderRun={(run) => run} />
+    <div data-foreign-body className={className}>
+      <RichText blocks={toRenderTree(slot.value, slot.format ?? 'marker')} size="small" />
     </div>
   )
 }

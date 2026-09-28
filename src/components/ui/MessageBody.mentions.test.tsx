@@ -67,6 +67,6 @@ describe('a mention in a message body', () => {
   it('keeps the marks around a mention', () => {
     const c = show(`**ask nostr:${encodeNpub(ADA)} now**`)
     expect(c.querySelector(`[data-mention="${ADA}"]`)).not.toBeNull()
-    expect(c.querySelector('.font-semibold')).not.toBeNull()
+    expect(c.querySelector('strong')).not.toBeNull()
   })
 })

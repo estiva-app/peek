@@ -110,6 +110,40 @@ export const Assigned: Story = {
 }
 
 /**
+ * **With its description** — the issue's body, drawn one step down with every
+ * heading, list, quote and code block kept (the package's `RichText`, small:
+ * Katerina, 28 September, UIG-30). Another app's text is drawn with its marks
+ * and links only, never Peek's chips.
+ */
+export const WithDescription: Story = {
+  args: {
+    object: {
+      ...issue,
+      slots: {
+        ...issue.slots,
+        body: {
+          value: [
+            '## What happens',
+            '',
+            'The files panel shows the assignee as a bare key.',
+            '',
+            '- the avatar is missing',
+            '- the **full name** is missing',
+            '',
+            '> Seen on every file with somebody on it.',
+            '',
+            'The row reads `assignee` straight from the tag.',
+          ].join('\n'),
+          format: 'marker',
+        },
+      },
+    },
+    onAct: () => {},
+    directory: DIRECTORY,
+  },
+}
+
+/**
  * **The fix for FEE-3.** While the relay is being asked, the card's shell is
  * drawn at the size the answer will take, so the message does not grow under
  * you when it lands.

@@ -18,135 +18,34 @@
   margin: 0;
 }
 
-/* ─── Message rich text — ONE look for the composer (.tiptap) and sent
-   messages ([data-message-body]). Any change here must apply to both, so
-   what you type is exactly what the sent card shows. ─── */
-.tiptap ul,
-[data-message-body] ul,
+/* ─── Formatted text — ONE look for the composer (.tiptap) and sent
+   messages, and it is the package's: RichText draws a sent message and the
+   composers wear `richTextClassName()` (UIG-30, Katerina, 28 September), so
+   what you type is exactly what the sent card shows. What stays here is
+   Peek's alone. The highlights card keeps its own lists. ─── */
 [data-highlights-card] ul,
-.tiptap ol,
-[data-message-body] ol,
 [data-highlights-card] ol {
   margin: 0 !important;
   padding: 0 0 0 1.25rem !important;
   list-style-position: outside;
 }
-.tiptap ul, [data-message-body] ul, [data-highlights-card] ul { list-style-type: disc !important; }
-.tiptap ol, [data-message-body] ol, [data-highlights-card] ol { list-style-type: decimal !important; }
-.tiptap li,
-[data-message-body] li,
+[data-highlights-card] ul { list-style-type: disc !important; }
+[data-highlights-card] ol { list-style-type: decimal !important; }
 [data-highlights-card] li {
   margin: 0 !important;
   padding: 0 !important;
 }
-.tiptap li + li,
-[data-message-body] li + li,
 [data-highlights-card] li + li {
   margin-top: 4px;
 }
-.tiptap li::marker,
-[data-message-body] li::marker,
 [data-highlights-card] li::marker {
   color: var(--text-muted);
 }
-.tiptap li p {
-  margin: 0 !important;
-}
-/* Headline (`# `) and subheading (`## `) — chat scale, not document scale
-   (body is 14px): headline 16px, subheading 14px; both 600. The subheading
-   reads as "bold text on its own line" and earns its hierarchy from the
-   heading margins. Spacing rule: a heading binds to what FOLLOWS it — 12px
-   above, 8px below, both totals identical in the composer and the sent
-   card (the sent card's segment container contributes a 4px flex gap; the
-   composer stacks blocks with none, so it carries the full values). */
-.tiptap h1,
-[data-message-body] h1 {
-  font-size: 16px;
-  line-height: 1.3;
-  font-weight: 600;
-  margin: 0;
-}
-.tiptap h2,
-[data-message-body] h2 {
-  font-size: 14px;
-  line-height: 1.3;
-  font-weight: 600;
-  margin: 0;
-}
-.tiptap h1,
-.tiptap h2 {
-  margin-bottom: 8px;
-}
-[data-message-body] h1,
-[data-message-body] h2 {
-  margin-bottom: 4px;
-}
-.tiptap h1:last-child,
-.tiptap h2:last-child,
-[data-message-body] h1:last-child,
-[data-message-body] h2:last-child {
-  margin-bottom: 0;
-}
-[data-message-body] h1,
-[data-message-body] h2 {
-  color: var(--text-primary);
-}
-/* Heading-above spacing: 12px total on both sides. Sibling selectors leave
-   a first-line heading with no dead air at the top of the card/composer. */
-.tiptap * + h1,
-.tiptap * + h2 {
-  margin-top: 12px !important; /* composer has no flex gap — full 12px */
-}
-[data-message-body] * + h1,
-[data-message-body] * + h2 {
-  margin-top: 8px; /* + the sent card's 4px flex gap = 12px */
-}
-/* Heading directly after a heading: the sent card's flex container doesn't
-   collapse margins (prev mb 4 + gap 4 + mt would stack), while the composer's
-   block flow collapses to 12 — trim the sent side so both read 12px. */
-[data-message-body] :is(h1, h2) + :is(h1, h2) {
-  margin-top: 4px;
-}
-/* Quotes (`> ` lines) — the classic quiet quote: a hairline-strong left rule,
-   indented, in secondary ink. One look while typing and once sent. */
-.tiptap blockquote,
-[data-message-body] blockquote {
-  margin: 0;
-  border-left: 3px solid var(--border-strong);
-  padding: 0 0 0 10px;
-  color: var(--text-secondary);
-}
-
-/* Inline code (backticks) — the one element in this section that was never
-   paired, which is why it read as plain text while you typed and as a chip
-   once sent. Values mirror MessageBody s own classes exactly: rounded-sm
-   (4px), bg-bg-active, px-1/py-0.5, font-mono, 0.9em, primary ink. */
-.tiptap code,
-[data-message-body] code {
-  border-radius: 4px;
-  background: var(--bg-active);
-  padding: 2px 4px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
-  font-size: 0.9em;
-  color: var(--text-primary);
-}
-/* Composer-only list/quote boundaries: the sent card separates block
-   segments with a 4px flex gap (list/quote above/below/between). The
-   composer stacks blocks with no gap, so it carries the same 4px as
-   margins. Plain line-to-line stays flush — the sent card joins those
-   lines into one <br>-separated paragraph. Heading-BELOW spacing is
-   handled above (composer 8px vs sent 4px + gap); adjacent-margin
-   collapsing keeps heading→block at 8px here too. */
-.tiptap :is(p, h1, h2, ul, ol, blockquote) + :is(ul, ol, blockquote),
-.tiptap :is(ul, ol, blockquote) + p {
-  margin-top: 4px !important;
-}
-/* Links — PEE-19. Values mirror the classes MessageBody puts on a link
-   (text-info-default underline underline-offset-2 break-all), so a link
-   reads the same while you type and once sent. Not paired as
-   `[data-message-body] a` like the rules above: the widgets drawn under a
-   message carry links of their own, and an unlayered rule here would win
-   over their classes. */
+/* Links — PEE-19. Values mirror the package Link's `text` look, which
+   RichText draws a sent link with (text-info-default underline
+   underline-offset-2), so a link reads the same while you type and once sent.
+   The composer's only: a sent message's widgets carry links of their own,
+   and an unlayered rule over them would win over their classes. */
 .tiptap a {
   color: var(--info-default);
   text-decoration: underline;
@@ -162,15 +61,6 @@
 .tiptap ::selection,
 .tiptap .kept-selection {
   background: var(--bg-selected);
-}
-/* Matches the `underline-offset-2` MessageBody puts on underlined spans. */
-.tiptap u {
-  text-underline-offset: 2px;
-}
-/* Geist ships 400/500/600 only — browser-default bold (700) would render a
-   synthetic weight the sent card (font-semibold, 600) doesn't use. */
-.tiptap strong {
-  font-weight: 600;
 }
 
 /*
