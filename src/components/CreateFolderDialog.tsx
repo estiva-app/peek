@@ -58,7 +58,7 @@ export function CreateFolderDialog({
       }
     >
       {/* The package Form (UIG-7): Enter in the field and the footer's Create send it the same way. */}
-      <Form id={formId} busy={creating} onSubmit={create} className="flex flex-col gap-2">
+      <Form id={formId} busy={creating} onSubmit={create}>
         <p className="text-body-2 text-text-secondary">
           A place for files and conversations. Everyone you add to it can read what is in it.
         </p>

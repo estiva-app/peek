@@ -106,8 +106,8 @@ export function FileDetailsDialog({
     >
       <Section label="Name">
         {editing ? (
-          // The package Form (UIG-7): Enter saves, and the field locks while saving.
-          <Form busy={saving} onSubmit={save} className="flex flex-col gap-2">
+          // The package Form (UIG-7): Enter saves, and the field locks while saving. `free`: a rename box and its buttons, not a list of fields.
+          <Form busy={saving} onSubmit={save} layout="free" className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <TextInput
                 autoFocus

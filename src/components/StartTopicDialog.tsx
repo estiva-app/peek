@@ -107,7 +107,7 @@ export function StartTopicDialog({
         <EmptyState scope="section" message="There is nowhere to start one yet — make a folder first." />
       ) : (
       /* The package Form (UIG-7): Enter in the title and the footer's Start send it the same way. */
-      <Form id={formId} busy={creating} onSubmit={create} className="flex flex-col gap-2">
+      <Form id={formId} busy={creating} onSubmit={create}>
         <p className="text-body-2 text-text-secondary">
           {parent
             ? `A conversation about one part of ${parentTitle}. Everyone in ${where} can read it, and ${parent.appName ?? 'its app'} shows it there as related.`

@@ -205,7 +205,9 @@ export function ActionControl({
   }
 
   return (
+    // `free`: one small field in the card's action row, not a list of fields.
     <Form
+      layout="free"
       className={cn('flex flex-1 gap-1', className)}
       // Switches the field off while the object is being written, and keeps focus for it.
       busy={busy}
