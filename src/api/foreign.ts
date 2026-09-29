@@ -32,6 +32,7 @@ import {
   createTopicAsViewer,
   deleteFileAsViewer,
   deleteFolderAsViewer,
+  folderDeletableAsViewer,
   moveFileAsViewer,
   renameFileAsViewer,
   renameFolderAsViewer,
@@ -224,7 +225,23 @@ export function useForeignObjects() {
     [viewer],
   )
 
-  /** Delete a Folder. The files in it are unfiled, not deleted. */
+  /**
+   * Whether Delete may be offered on a Folder — see `folderDeletableAsViewer`.
+   * Signed out is a no, like any other.
+   */
+  const folderDeletable = useCallback(
+    async (folder: string) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to delete a folder.' }
+      return folderDeletableAsViewer(folder, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /**
+   * Delete a Folder. Everything carrying its `h` stops answering for everyone,
+   * so the Folder is checked again first and refused if it holds anything.
+   */
   const deleteFolder = useCallback(
     async (folder: string) => {
       const v = viewer()
@@ -382,6 +399,7 @@ export function useForeignObjects() {
     renameFile,
     deleteFile,
     renameFolder,
+    folderDeletable,
     deleteFolder,
     moveFile,
     applyAction,

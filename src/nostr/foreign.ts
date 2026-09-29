@@ -31,6 +31,7 @@ import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
 import { dmChannelsOf, KIND_CHANNEL_MEMBERS } from './dms'
+import { folderDeletableOf, type FolderDeletable } from './folderDeletable'
 import {
   buildBareFile,
   buildDeleteChannel,
@@ -576,6 +577,11 @@ export async function renameFolderAsViewer(
   return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
 }
 
+/** {@link folderDeletableOf} as the viewer — whether Delete may be offered (FOL-9). */
+export async function folderDeletableAsViewer(folder: string, relayUrl: string, token: StoredToken): Promise<FolderDeletable> {
+  return folderDeletableOf(viewerQuery(relayUrl, token), folder, token.pubkey)
+}
+
 /**
  * Delete a Folder.
  *
@@ -584,16 +590,22 @@ export async function renameFolderAsViewer(
  * makes the Folder actually leave `listFolders` rather than linger there named
  * and populated.
  *
- * **The files are not deleted and are not meant to be.** A Folder is an
- * association (RFC 0.4 §2); deleting it unfiles its contents and destroys
- * nothing. A Ship project whose only Folder is gone is still a Ship project,
- * which is why this takes no cascade argument.
+ * **Everything carrying the Folder's `h` stops answering**, for everyone: its
+ * messages, and any file or Ship issue filed in it. The rows stay in the
+ * relay's database, but no read returns them and no app can bring them back.
+ * So the same read that decides whether Peek offers Delete
+ * ({@link folderDeletableAsViewer}) runs again here, immediately before
+ * signing, and a Folder that fails it is refused with nothing sent.
  */
 export async function deleteFolderAsViewer(
   folder: string,
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const deletable = await folderDeletableAsViewer(folder, relayUrl, token).catch(
+    (): { ok: false; reason: string } => ({ ok: false, reason: 'This folder could not be read, so it was not deleted.' }),
+  )
+  if (!deletable.ok) return deletable
   const unsigned = buildDeleteChannel(token.pubkey, Date.now(), { channelUuid: folder })
   const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
   const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)

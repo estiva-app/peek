@@ -13,8 +13,11 @@
  *  - **Move must add before it removes.** There is no atomic move, so the order
  *    decides what a failure between the two leaves behind: in both Folders
  *    (visible, fixable) or in neither (looks like it was never there).
- *  - **Delete must not touch the files.** A Folder is an association — RFC 0.4
- *    §2 — so deleting it unfiles its contents and destroys none of them.
+ *  - **Delete must not be sent at a Folder that holds anything** (FOL-9). A
+ *    `kind:9008` hides every event carrying the Folder's `h`, Ship issues
+ *    included, so it is refused with nothing signed unless the Folder has no
+ *    state, is not a Ship record channel, has nothing filed in it and the
+ *    viewer owns it.
  *  - **Create must give the Folder state** (PEE-31). The navigation lists only
  *    Folders with a `kind:30890`, so a bare channel is created and never seen.
  *    The one place a `kind:1852` on a stateless Folder is right: it holds
@@ -22,11 +25,12 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-const { publishSigned, signViaEstivaId } = vi.hoisted(() => ({
+const { publishSigned, signViaEstivaId, queryRelay } = vi.hoisted(() => ({
   publishSigned: vi.fn(),
   signViaEstivaId: vi.fn(),
+  queryRelay: vi.fn(),
 }))
-vi.mock('./bridge', () => ({ publishSigned, signViaEstivaId, queryRelay: vi.fn() }))
+vi.mock('./bridge', () => ({ publishSigned, signViaEstivaId, queryRelay }))
 
 import {
   createFolderAsViewer,
@@ -194,6 +198,78 @@ describe('moving a file', () => {
 })
 
 describe('deleting a folder', () => {
+  const OTHER_PERSON = 'f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1'
+  /** The relay's own key — the author of every `39000`, `39001`, `30890` and `13534`. */
+  const RELAY = '8b75a34d'.padEnd(64, '0')
+  const event = (kind: number, tags: string[][], pubkey = RELAY) => ({ kind, tags, pubkey, content: '', created_at: 0, id: '', sig: '' })
+  const metadata = (name = 'scratch') => event(39000, [['d', FOLDER], ['name', name]])
+  const admins = (owner = AUTHOR) => event(39001, [['d', FOLDER], ['p', owner, 'owner']])
+  const roster = (role = 'member') => event(13534, [['member', AUTHOR, role]])
+  /** What the relay answers for the Folder — an empty, stateless channel the viewer owns unless a test says otherwise. */
+  const relayHolds = (...events: ReturnType<typeof event>[]) => queryRelay.mockResolvedValue({ ok: true, events })
+
+  beforeEach(() => {
+    queryRelay.mockReset()
+    relayHolds(metadata(), admins(), roster())
+  })
+
+  it('asks the relay the same question its guard asks, filed kinds by h', async () => {
+    await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)
+
+    const filters = queryRelay.mock.calls[0]![1] as { kinds: number[]; '#h'?: string[] }[]
+    expect(filters.find((f) => f['#h'])).toMatchObject({ kinds: [30840, 30850, 30851], '#h': [FOLDER] })
+  })
+
+  it.each([
+    ['it has state — a team, QA, any Folder made with New folder', [metadata(), admins(), roster(), event(30890, [['d', FOLDER]])], /files things/],
+    ["it is a Ship project's record channel", [metadata('project-85db5b59'), admins(), roster()], /Ship project/],
+    ['an issue is filed in it', [metadata(), admins(), roster(), event(30851, [['h', FOLDER]])], /filed/],
+    ['a topic is filed in it', [metadata(), admins(), roster(), event(30840, [['h', FOLDER]])], /filed/],
+    ['it is a DM, which names no owner — even for a steward', [event(39000, [['d', FOLDER], ['name', 'DM'], ['t', 'dm']]), event(39001, [['d', FOLDER]]), roster('admin')], /not a folder/],
+    ['the viewer is neither its owner nor a steward', [metadata(), admins(OTHER_PERSON), roster('member')], /made this folder/],
+    ['the relay does not answer for it', [], /could not be read/],
+    [
+      'only a roster somebody other than the relay signed makes the viewer a steward',
+      [metadata(), admins(OTHER_PERSON), event(13534, [['member', AUTHOR, 'admin']], OTHER_PERSON)],
+      /made this folder/,
+    ],
+  ])('sends nothing when %s', async (_why, events, reason) => {
+    relayHolds(...events)
+
+    const result = await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)
+
+    expect(result.ok === false && result.reason).toMatch(reason)
+    expect(sent()).toHaveLength(0)
+  })
+
+  it("sends nothing when another Folder's state places it — the parent would keep a dead `a` (FOL-28)", async () => {
+    const address = `39000:${RELAY}:${FOLDER}`
+    queryRelay
+      .mockResolvedValueOnce({ ok: true, events: [metadata()] })
+      .mockResolvedValueOnce({ ok: true, events: [event(30890, [['d', OTHER], ['a', address]]), admins(), roster()] })
+
+    const result = await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)
+
+    const placement = (queryRelay.mock.calls[1]![1] as { kinds: number[]; '#a'?: string[]; authors?: string[] }[])[0]
+    expect(placement).toMatchObject({ kinds: [30890], '#a': [address], authors: [RELAY] })
+    expect(result.ok === false && result.reason).toMatch(/inside another/)
+    expect(sent()).toHaveLength(0)
+  })
+
+  it('sends nothing when the check itself fails', async () => {
+    queryRelay.mockResolvedValue({ ok: false, events: [], reason: 'rate-limited' })
+
+    expect(await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)).toMatchObject({ ok: false })
+    expect(sent()).toHaveLength(0)
+  })
+
+  it("lets a relay admin delete an empty Folder somebody else made", async () => {
+    relayHolds(metadata(), admins(OTHER_PERSON), roster('admin'))
+
+    expect(await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)).toEqual({ ok: true })
+    expect(sent().map((e) => e.kind)).toEqual([9008])
+  })
+
   it('deletes the channel and nothing else', async () => {
     const result = await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)
 
@@ -201,7 +277,7 @@ describe('deleting a folder', () => {
     const events = sent()
     expect(events.map((e) => e.kind)).toEqual([9008])
     expect(tag(events[0]!, 'h')).toEqual([FOLDER])
-    // No kind:5, no `a` tags: the files are unfiled, not deleted.
+    // No kind:5, no `a` tags: nothing but the channel is named.
     expect(tag(events[0]!, 'a')).toEqual([])
   })
 
