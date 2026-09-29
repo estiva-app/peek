@@ -68,8 +68,8 @@ import {
   type ConversationMessage,
   type UnsignedActionEvent,
   conversationsOf,
-  commentKindsOf,
-  CONVERSATION_LIMIT,
+  threadsOf,
+  type Threads,
   planCreateFolder,
   planMoveFile,
   planPlaceFile,
@@ -766,35 +766,11 @@ export interface FileThreads {
 /**
  * The replies under a file's comments — the thread pane's read (FOL-19).
  *
- * **Asked by `#e`, not by `#a`, and that is the whole reason this exists.**
- * A file's conversation read is address-scoped: `conversationsOf` and
- * `resolveForeignObject` both match the object's `a` tag, which by NIP-22 is
- * carried by a *top-level* comment and by nothing below it — a reply's
- * lowercase tags name its parent comment instead (SPEC §6.4's table). So the
- * roots arrive with the file and the replies never do, whichever app wrote
- * them, and a pane drawing `object.comments` as a thread would be drawing only
- * its first message.
- *
- * The kinds come off the owning app's manifest, as everywhere else: no kind
- * number is written here, so a NIP-22 `kind:1111` reply and Ship's `kind:9`
- * ones — which is what Ship's own reply button still publishes — both arrive,
- * because `commentKindsOf` puts a declared kind and everything it says it also
- * reads into the one filter.
- *
- * **Every thread of the conversation in one request, not one per thread.** A
- * `#e` filter takes a list, so the whole pane's replies cost the same round
- * trip as any single thread's would — which is what lets a comment carry an
- * honest reply count rather than the panel discovering, once opened, that
- * there was something under it all along. The roots come back beside them
- * (`ids`), because their `kind` is reported by no projection and NIP-22's
- * lowercase `k` on a reply names the parent's kind.
- *
- * Only *direct* replies to a root arrive: a reply's lowercase `e` names its
- * immediate parent, so a reply to a reply hangs off that reply's id and not the
- * root's. The panel is flat and writes flat — every reply it sends names the
- * thread's root — so the one level it reads is the one level it can produce.
- * A deeper tree written by another app would be undercounted here, which is
- * recorded rather than hidden.
+ * interop's `threadsOf` as the viewer (PRO-20): the roots by id and their
+ * direct replies by `#e`, every thread in one request, kinds off the owner's
+ * manifest. A reply's lowercase tags name its parent comment, not the file, so
+ * the `#a` read that brings the roots never brings a reply. The panel is flat
+ * and writes flat, so the one level it reads is the one level it can produce.
  *
  * Throws `RelayReadError` on a refused read, like every read in this file: an
  * unreadable thread and an unanswered one must not be the same empty array.
@@ -805,99 +781,52 @@ export async function threadsAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileThreads> {
-  const empty: FileThreads = { roots: {}, replies: {} }
-  if (rootIds.length === 0) return empty
-  let pointer
-  try {
-    pointer = referenceToPointer(reference)
-  } catch {
-    return empty
+  const threads = await threadEventsAsViewer(reference, rootIds, relayUrl, token)
+  return {
+    roots: Object.fromEntries(Object.entries(threads.roots).map(([id, event]) => [id, fileCommentOf(event)])),
+    replies: Object.fromEntries(Object.entries(threads.replies).map(([id, list]) => [id, list.map(fileCommentOf)])),
   }
-  const query = viewerQuery(relayUrl, token)
-  const resolved = await resolveManifest(pointer, query, manifests)
-  if (!resolved) return empty
-  const kinds = commentKindsOf(resolved.manifest)
-  if (kinds.length === 0) return empty
-
-  const ids = [...new Set(rootIds)]
-  const events = await query([
-    { ids, limit: ids.length },
-    { kinds, '#e': ids, limit: CONVERSATION_LIMIT },
-  ])
-  const asComment = (event: SignedEvent): FileComment => ({
-    id: event.id,
-    author: event.pubkey,
-    body: event.content,
-    createdAt: event.created_at,
-    kind: event.kind,
-  })
-  const wanted = new Set(ids)
-  const roots: Record<string, FileComment> = {}
-  const replies: Record<string, FileComment[]> = {}
-  const seen = new Set<string>()
-  for (const event of events) {
-    if (seen.has(event.id)) continue
-    seen.add(event.id)
-    if (wanted.has(event.id)) {
-      roots[event.id] = asComment(event)
-      continue
-    }
-    // The `e` that names a root of *this* conversation. A reply carries others
-    // — a quote, a mention — and picking the first would file it under one.
-    const parent = event.tags.find((tag) => tag[0] === 'e' && wanted.has(tag[1]))?.[1]
-    if (!parent) continue
-    ;(replies[parent] ??= []).push(asComment(event))
-  }
-  // Oldest first, as a conversation reads. Ties broken by id so two replies in
-  // the same second do not swap places between renders.
-  for (const thread of Object.values(replies)) {
-    thread.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
-  }
-  return { roots, replies }
 }
+
+/** {@link threadsAsViewer} with the events themselves, for a caller that needs their tags. */
+export function threadEventsAsViewer(
+  reference: string,
+  rootIds: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<Threads> {
+  return threadsOf(reference, rootIds, viewerQuery(relayUrl, token), manifests)
+}
+
+/** One event of a thread, as much of it as the pane draws and a reply needs. */
+export const fileCommentOf = (event: SignedEvent): FileComment => ({
+  id: event.id,
+  author: event.pubkey,
+  body: event.content,
+  createdAt: event.created_at,
+  kind: event.kind,
+})
 
 /**
  * Reply to a comment on a file — the thread pane's write (FOL-19).
  *
- * **A reply is the owner's comment action with NIP-22's lowercase half
- * redirected.** `buildActionEvent` writes a *top-level* comment: uppercase
- * `A`/`K`/`P` naming the file, lowercase `a`/`k`/`p` repeating it, because for
- * a top-level comment the thread root and the immediate parent are the same
- * object. §6.4's table says what a reply is instead — uppercase unchanged, the
- * lowercase trio naming the comment being replied to — and the runtime has no
- * argument for it, so the substitution is made here, on the bytes it produced.
- *
- * Everything the manifest owns still comes from the manifest: the kind, whether
- * a comment may be written at all, and the Folder. What is added is the
- * ratified NIP, which is the same licence interop takes for the top-level case
- * — legitimate precisely because no app owns `kind:1111`. Filed to move it one
- * layer down, where every consumer would get it rather than each rediscovering
- * it; done here because a person is blocked on it now.
- *
- * The consequence worth knowing: a reply carries no lowercase `a`, so it is
- * absent from the file's `#a` conversation read — it does not raise the file's
- * message count and does not light its unread dot. That is NIP-22 as written,
- * and it is the same gap Ship's own `kind:9` replies have had all along.
+ * The owner's comment action with `replyTo`, which interop turns into SPEC
+ * §6.4's reply (PRO-20): uppercase `A`/`K`/`P` still the file, the lowercase
+ * trio the comment answered. The consequence worth knowing: a reply carries no
+ * lowercase `a`, so it is absent from the file's `#a` conversation read — it
+ * does not raise the file's message count and does not light its unread dot.
+ * That is NIP-22 as written, and the same gap Ship's `kind:9` replies have.
  */
 export async function replyToCommentAsViewer(
   args: { reference: string; parent: FileComment; body: string },
   relayUrl: string,
   token: StoredToken,
 ): Promise<ActResult> {
-  const lowercase = new Set(['a', 'e', 'k', 'p'])
+  const { id, kind, author } = args.parent
   return applyActionAsViewer(
-    { naddr: args.reference, actionId: 'comment', value: args.body },
+    { naddr: args.reference, actionId: 'comment', value: args.body, replyTo: { id, kind, author } },
     relayUrl,
     token,
-    (event) => ({
-      ...event,
-      tags: [
-        ...event.tags.filter((tag) => !lowercase.has(tag[0])),
-        ['e', args.parent.id],
-        ['k', String(args.parent.kind)],
-        ['p', args.parent.author],
-      ],
-    }),
   )
 }
 
@@ -1144,6 +1073,8 @@ export async function applyActionAsViewer(
      * object-creating action, whose form has several fields (PRO-4).
      */
     value: string | Record<string, string>
+    /** The comment answered, for a comment that is a reply — interop's `buildActionEvent` builds it (PRO-20). */
+    replyTo?: { id: string; kind: number; author: string }
   },
   relayUrl: string,
   token: StoredToken,
@@ -1152,12 +1083,11 @@ export async function applyActionAsViewer(
    * after `buildActionEvent` and before signing.
    *
    * It exists for a single case and is documented as such rather than offered:
-   * a NIP-22 *reply* (FOL-19), whose lowercase tags name the comment being
-   * replied to instead of the object. Everything the manifest owns — the kind,
-   * whether the action exists, the Folder — is already decided by the time this
-   * runs, so a transform cannot invent an action or reach past an app's
-   * declaration; it can only restate the parent, which no manifest describes
-   * because NIP-22 does.
+   * the composer's own tags on a comment — attachments, mentions, references
+   * (`commentAsViewer`). Everything the manifest owns — the kind, whether the
+   * action exists, the Folder — is already decided by the time this runs, so a
+   * transform cannot invent an action or reach past an app's declaration.
+   * A reply's parent is not this seam's: that is `replyTo`.
    */
   transform?: (event: UnsignedActionEvent) => UnsignedActionEvent,
 ): Promise<ActResult & { created?: string; id?: string }> {
@@ -1235,6 +1165,7 @@ export async function applyActionAsViewer(
     actionId: args.actionId,
     value,
     newId,
+    replyTo: args.replyTo,
     pubkey: token.pubkey,
     createdAtMs: Date.now(),
   })
