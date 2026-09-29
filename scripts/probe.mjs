@@ -40,6 +40,8 @@
  * Peek token exactly as it does for a person, so the probe exercises the real
  * sign-in rather than planting a token beside it.
  *
+ * `--base https://ship.estiva.app` runs Ship as the same identity — how a
+ * Peek write is checked where the other app renders it (RIC-13).
  * `--base http://localhost:5173` runs against a dev server; `--id` names the
  * Estiva ID origin when that is not production.
  *
@@ -204,8 +206,12 @@ function controls(page) {
 }
 
 /**
- * Wait for the silent boot to land back on Peek holding a token. The keys are
- * the identity package's, under Peek's `peek.estivaId` prefix.
+ * Wait for the silent boot to land back on the app holding a token. The keys
+ * are the identity package's, under each app's own prefix: Peek's
+ * `peek.estivaId` in `sessionStorage`, Ship's `ship.estiva-id` in
+ * `localStorage` (Ship's `src/auth/estivaId.ts`). Knowing only Peek's made
+ * `--base https://ship.estiva.app` report signed out and stop before its first
+ * step, though Ship had signed in (RIC-13).
  */
 async function signedIn(page) {
   const base = new URL(options.base).origin
@@ -214,7 +220,8 @@ async function signedIn(page) {
       (origin) =>
         location.origin === origin &&
         location.pathname !== '/auth/callback' &&
-        Object.keys(sessionStorage).some((key) => key.startsWith('peek.estivaId') && /token/i.test(key)),
+        (Object.keys(sessionStorage).some((key) => key.startsWith('peek.estivaId') && /token/i.test(key)) ||
+          Object.keys(localStorage).some((key) => key.startsWith('ship.estiva-id') && /token/i.test(key))),
       base,
       { timeout, polling: 250 },
     )
