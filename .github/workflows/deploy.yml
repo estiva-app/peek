@@ -10,6 +10,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # GitHub sometimes never delivers the push: e9c57da (PEE-38, 2026-09-29)
+  # merged, no run was ever created, and there was nothing to re-run.
+  # `gh workflow run deploy.yml -R estiva-app/peek --ref main` deploys main as
+  # it stands; from any other ref it only checks, like a pull request.
+  workflow_dispatch:
 
 concurrency:
   group: deploy-peek-${{ github.ref }}
@@ -95,7 +100,7 @@ jobs:
     # `gate` too: the rules stopped a deploy while they were a step in `check`,
     # and moving them into a job of their own must not change that.
     needs: [typecheck, test, gate]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
     permissions:
