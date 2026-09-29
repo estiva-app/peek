@@ -186,11 +186,13 @@ export function manifestContent() {
      * publishing one puts it where Peek cannot find it (RFC 0.4 §7.2). Both
      * belong with the conversation work.
      *
-     * **Create a topic** cannot be declared either, and that one is not about
-     * tags: a topic *is* a container, so creating one creates a Folder that
-     * does not exist yet. `buildCreationEvent` emits one event into a Folder
-     * that already exists. That is FOL-2, and PRO-18's steer is to wait for the
-     * folder model rather than invent a shape it then contradicts.
+     * **Create a topic** is not declared either, for a different reason. A
+     * topic is no longer a container: since FOL-23/26 it is a bare
+     * `kind:30840` file (`createTopicAsViewer`), one event `buildCreationEvent`
+     * could build. But the file only appears in the tree once a `kind:1852`
+     * command lists it in its Folder, and `emits` has no way to declare that
+     * second step — a consumer following the declaration would publish a topic
+     * nobody can find. That gap is PRO-18.
      *
      * Starting a conversation creates no container and names no event id, which
      * is what leaves it declarable.
