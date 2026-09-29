@@ -85,6 +85,22 @@ async function main() {
   console.log('\nby answer:')
   for (const [why, n] of [...reasons].sort((a, b) => b[1] - a[1])) console.log(`  ${String(n).padStart(4)}  ${why}`)
   console.log(`\n${offered.length} Folder(s) would offer Delete`)
+
+  /*
+    The control for the placement read: the check's `#a` filter must find the
+    parent of a Folder `listFolders` says is placed, or its silence above means
+    nothing — an unsupported filter answers exactly like "placed nowhere".
+    Taken from a state's own `a` tag, not from `listedIn`, which also counts a
+    record channel placed through its project.
+  */
+  const states = await query([{ kinds: [30890], limit: 500 }])
+  const direct = states
+    .flatMap((s) => s.tags.filter((t) => t[0] === 'a' && t[1]?.startsWith('39000:')).map((t) => ({ parent: s, address: t[1]! })))
+    .find(({ parent, address }) => address.split(':')[2] !== parent.tags.find((t) => t[0] === 'd')?.[1])
+  if (!direct) return console.log('control: no state lists a channel directly — nothing to test the placement read against')
+  const parents = await query([{ kinds: [30890], authors: [direct.parent.pubkey], '#a': [direct.address], limit: 5 }])
+  const good = parents.some((e) => e.id === direct.parent.id)
+  console.log(`control: ${direct.address.slice(0, 24)}… is listed by one state — the #a read found ${parents.length} ${good ? '✓' : '✗ PLACEMENT READ IS BLIND'}`)
 }
 
 void main()

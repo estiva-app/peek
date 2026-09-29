@@ -63,7 +63,7 @@ export function FoldersPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { state, reload: reloadContents } = useFolderContents(id)
-  const { createFolder, createTopic, renameFolder, deleteFolder, moveFile } = useForeignObjects()
+  const { createFolder, createTopic, renameFolder, folderDeletable, deleteFolder, moveFile } = useForeignObjects()
   const { showToast } = useToast()
   /** The New folder dialog, open or not — the header's first action (FOL-41). */
   const [creatingFolder, setCreatingFolder] = useState(false)
@@ -157,17 +157,19 @@ export function FoldersPage() {
     how FOL-1…FOL-24 vanished on 2026-09-14 — so a Folder with state (every
     team, QA, anything made with New folder) never offers it, and any other is
     asked of the relay first: see `folderDeletableAsViewer`. Hidden until that
-    answers yes for this Folder; unanswered is a no.
+    answers yes for this Folder; unanswered is a no. Asked again when what the
+    Folder holds changes, so a file filed in it takes Delete away — and the
+    delete itself asks once more before it signs anything.
   */
-  const { folderDeletable } = useForeignObjects()
   const contentsHasState = typeof state === 'object' && 'hasState' in state ? state.hasState : undefined
-  const [deleteCheck, setDeleteCheck] = useState<{ id: string; ok: boolean } | null>(null)
+  const contentsCount = typeof state === 'object' && 'files' in state ? state.files.length : undefined
+  const [deleteCheck, setDeleteCheck] = useState<{ id: string; count?: number; ok: boolean } | null>(null)
   useEffect(() => {
     if (!id || !isFolder || contentsHasState !== false) return
     let cancelled = false
     folderDeletable(id)
       .then((result) => {
-        if (!cancelled) setDeleteCheck({ id, ok: result.ok })
+        if (!cancelled) setDeleteCheck({ id, count: contentsCount, ok: result.ok })
       })
       .catch(() => {
         // Unanswered: Delete stays hidden, the safe side.
@@ -175,8 +177,14 @@ export function FoldersPage() {
     return () => {
       cancelled = true
     }
-  }, [id, isFolder, contentsHasState, folderDeletable])
-  const canDelete = !topic && contentsHasState === false && deleteCheck != null && deleteCheck.id === id && deleteCheck.ok
+  }, [id, isFolder, contentsHasState, contentsCount, folderDeletable])
+  // An answer about what the Folder held before is no answer (see above).
+  const canDelete =
+    contentsHasState === false &&
+    deleteCheck != null &&
+    deleteCheck.id === id &&
+    deleteCheck.count === contentsCount &&
+    deleteCheck.ok
 
   /*
     Follow / unfollow the Folder itself (FOL-30): that is its general stream —

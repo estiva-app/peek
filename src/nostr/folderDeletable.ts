@@ -19,7 +19,15 @@
  *    Asked of the relay rather than of `resolveFolderContents`, which leaves
  *    out a file that resolves to nothing (an archived project, a missing
  *    manifest).
+ *  - **not placed in another Folder.** A `9008` leaves the Folder's `a` in its
+ *    parent's state, where every state read still names it (FOL-28).
  *  - **the viewer may send it:** the channel's owner, or a relay steward.
+ *
+ * Two reads. The first answers the cheap refusals, which are nearly every
+ * Folder on production; the second — placement, owner, roster — runs only for
+ * what is left, and takes those events **only from the relay's own key**, the
+ * author of the `39000`. A roster or admin list anybody else signed would
+ * otherwise decide who is a steward.
  *
  * Its own module, with no browser imports, so `scripts/probe-fol9-deletable.ts`
  * runs this very function over production's Folders.
@@ -35,32 +43,40 @@ const KIND_MEMBERSHIP_LIST = 13534
 
 export type FolderDeletable = { ok: true } | { ok: false; reason: string }
 
-/** One read: the five things above, as `me`. */
+/** The five things above, as `me`. */
 export async function folderDeletableOf(query: QueryFn, folder: string, me: string): Promise<FolderDeletable> {
-  const events = await query([
+  const first = await query([
     { kinds: [KIND_CHANNEL_METADATA], '#d': [folder], limit: 1 },
     { kinds: [KIND_FOLDER_STATE], '#d': [folder], limit: 1 },
     { kinds: FILED_KINDS, '#h': [folder], limit: 1 },
-    { kinds: [KIND_CHANNEL_ADMINS], '#d': [folder], limit: 1 },
-    { kinds: [KIND_MEMBERSHIP_LIST], limit: 1 },
   ])
-  const ofKind = (kind: number) => events.filter((e) => e.kind === kind)
-  const metadata = ofKind(KIND_CHANNEL_METADATA)[0]
+  const metadata = first.find((e) => e.kind === KIND_CHANNEL_METADATA)
   if (!metadata) return { ok: false, reason: 'This folder could not be read.' }
   // A DM's channel is not a Folder (PEE-36), and a DM names no owner, so a
   // steward would otherwise pass every check below.
   if (metadata.tags.some((t) => t[0] === 't' && t[1] === 'dm')) {
     return { ok: false, reason: 'This is a conversation, not a folder.' }
   }
-  if (ofKind(KIND_FOLDER_STATE).length) {
+  if (first.some((e) => e.kind === KIND_FOLDER_STATE)) {
     return { ok: false, reason: 'A folder that files things is not deleted from Peek: everything in it would disappear.' }
   }
   const name = metadata.tags.find((t) => t[0] === 'name')?.[1] ?? ''
   if (name.startsWith('project-')) {
     return { ok: false, reason: "This is a Ship project's folder: deleting it would hide the project's issues." }
   }
-  if (events.some((e) => FILED_KINDS.includes(e.kind))) {
+  if (first.some((e) => FILED_KINDS.includes(e.kind))) {
     return { ok: false, reason: 'Something is filed in this folder, and deleting it would hide that for everyone.' }
+  }
+
+  const relay = metadata.pubkey
+  const second = await query([
+    { kinds: [KIND_FOLDER_STATE], authors: [relay], '#a': [`${KIND_CHANNEL_METADATA}:${relay}:${folder}`], limit: 1 },
+    { kinds: [KIND_CHANNEL_ADMINS], authors: [relay], '#d': [folder], limit: 1 },
+    { kinds: [KIND_MEMBERSHIP_LIST], authors: [relay], limit: 1 },
+  ])
+  const ofKind = (kind: number) => second.filter((e) => e.kind === kind && e.pubkey === relay)
+  if (ofKind(KIND_FOLDER_STATE).length) {
+    return { ok: false, reason: 'This folder is inside another one; deleting it would leave a gap there.' }
   }
   const owner = ofKind(KIND_CHANNEL_ADMINS)[0]?.tags.find((t) => t[0] === 'p' && t[2] === 'owner')?.[1]
   const role = ofKind(KIND_MEMBERSHIP_LIST)[0]?.tags.find((t) => t[0] === 'member' && t[1] === me)?.[2]

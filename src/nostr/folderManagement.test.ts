@@ -199,7 +199,9 @@ describe('moving a file', () => {
 
 describe('deleting a folder', () => {
   const OTHER_PERSON = 'f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1'
-  const event = (kind: number, tags: string[][]) => ({ kind, tags, pubkey: AUTHOR, content: '', created_at: 0, id: '', sig: '' })
+  /** The relay's own key — the author of every `39000`, `39001`, `30890` and `13534`. */
+  const RELAY = '8b75a34d'.padEnd(64, '0')
+  const event = (kind: number, tags: string[][], pubkey = RELAY) => ({ kind, tags, pubkey, content: '', created_at: 0, id: '', sig: '' })
   const metadata = (name = 'scratch') => event(39000, [['d', FOLDER], ['name', name]])
   const admins = (owner = AUTHOR) => event(39001, [['d', FOLDER], ['p', owner, 'owner']])
   const roster = (role = 'member') => event(13534, [['member', AUTHOR, role]])
@@ -226,12 +228,31 @@ describe('deleting a folder', () => {
     ['it is a DM, which names no owner — even for a steward', [event(39000, [['d', FOLDER], ['name', 'DM'], ['t', 'dm']]), event(39001, [['d', FOLDER]]), roster('admin')], /not a folder/],
     ['the viewer is neither its owner nor a steward', [metadata(), admins(OTHER_PERSON), roster('member')], /made this folder/],
     ['the relay does not answer for it', [], /could not be read/],
+    [
+      'only a roster somebody other than the relay signed makes the viewer a steward',
+      [metadata(), admins(OTHER_PERSON), event(13534, [['member', AUTHOR, 'admin']], OTHER_PERSON)],
+      /made this folder/,
+    ],
   ])('sends nothing when %s', async (_why, events, reason) => {
     relayHolds(...events)
 
     const result = await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)
 
     expect(result.ok === false && result.reason).toMatch(reason)
+    expect(sent()).toHaveLength(0)
+  })
+
+  it("sends nothing when another Folder's state places it — the parent would keep a dead `a` (FOL-28)", async () => {
+    const address = `39000:${RELAY}:${FOLDER}`
+    queryRelay
+      .mockResolvedValueOnce({ ok: true, events: [metadata()] })
+      .mockResolvedValueOnce({ ok: true, events: [event(30890, [['d', OTHER], ['a', address]]), admins(), roster()] })
+
+    const result = await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)
+
+    const placement = (queryRelay.mock.calls[1]![1] as { kinds: number[]; '#a'?: string[]; authors?: string[] }[])[0]
+    expect(placement).toMatchObject({ kinds: [30890], '#a': [address], authors: [RELAY] })
+    expect(result.ok === false && result.reason).toMatch(/inside another/)
     expect(sent()).toHaveLength(0)
   })
 
