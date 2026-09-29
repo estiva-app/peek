@@ -130,7 +130,7 @@ handled as a generic tag filter. Not verified against other tag names.
 
 ### A6. `created_at` is too coarse to order an event-sourced record — **workaround**
 
-Found building Linear-lite's change fold (LINEAR_LITE_SPEC.md §1.3). The fold is
+Found building Ship's change fold (Ship was first called Linear-lite). The fold is
 last-write-wins per field over `kind:1851` events ordered by `created_at`, and
 `created_at` is **seconds**.
 

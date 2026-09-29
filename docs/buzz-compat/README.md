@@ -20,7 +20,7 @@ end — see [INTEROP_PROOF.md](INTEROP_PROOF.md) §0.
 
 | If you want to… | Read |
 | --- | --- |
-| **Run it on your machine** | **[RUNNING.md](RUNNING.md)** |
+| **Run it on your machine** | **`estiva-docs/local-dev/RUNNING.md`** |
 | Know whether this actually works | [INTEROP_PROOF.md](INTEROP_PROOF.md) §0 |
 | Know what to build next | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) |
 | Understand how Buzz's protocol works | [BUZZ_PROTOCOL_MODEL.md](BUZZ_PROTOCOL_MODEL.md) |
@@ -29,7 +29,6 @@ end — see [INTEROP_PROOF.md](INTEROP_PROOF.md) §0.
 | **Know which NIPs to reuse vs. write** | **[NIP_SURVEY.md](NIP_SURVEY.md)** |
 | **Know which demo scenarios are buildable now** | **[SCENARIO_FEASIBILITY.md](SCENARIO_FEASIBILITY.md)** |
 | **Update the RFC** | **[RFC_UPDATES.md](RFC_UPDATES.md)** — what to change in 0.2, by section |
-| **Build the next app** | **[LINEAR_LITE_SPEC.md](LINEAR_LITE_SPEC.md)** |
 | **Understand identity across the suite** | **[ESTIVA-ID.md](ESTIVA-ID.md)** — one human, one pubkey |
 | Understand the Folder/File/Component design | [FILES_ARCHITECTURE.md](FILES_ARCHITECTURE.md) |
 | Read the first NIP draft (superseded) | [nips/NIP-FC.md](nips/NIP-FC.md) |
