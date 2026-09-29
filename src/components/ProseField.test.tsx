@@ -48,4 +48,24 @@ describe('ProseField', () => {
     rerender(<ProseField value="From the thread" onChange={onChange} label="Description" />)
     await waitFor(() => expect(dom.textContent).toBe('From the thread'))
   })
+
+  it('keeps a quick Backspace when the text it undid comes round late', async () => {
+    // `a`, `ab`, `a`: the string repeats, so matching emissions by string
+    // alone let the late `ab` back in and undid the Backspace.
+    const onChange = vi.fn()
+    const { rerender } = render(<ProseField value="" onChange={onChange} label="Description" />)
+    const dom = (await screen.findByRole('textbox', { name: 'Description' })) as HTMLElement & {
+      editor?: { commands: { insertContent: (s: string) => void; deleteRange: (r: { from: number; to: number }) => void }; getText: () => string }
+    }
+    act(() => dom.editor!.commands.insertContent('a'))
+    act(() => dom.editor!.commands.insertContent('b'))
+    act(() => dom.editor!.commands.deleteRange({ from: 2, to: 3 }))
+    expect(onChange.mock.calls.map((c) => c[0])).toEqual(['a', 'ab', 'a'])
+
+    rerender(<ProseField value="a" onChange={onChange} label="Description" />)
+    rerender(<ProseField value="ab" onChange={onChange} label="Description" />)
+    expect(dom.editor!.getText()).toBe('a')
+    rerender(<ProseField value="a" onChange={onChange} label="Description" />)
+    expect(dom.editor!.getText()).toBe('a')
+  })
 })

@@ -27,8 +27,8 @@ import { cn } from '@/lib/utils'
  * alone, that older value looked like an outside one and was loaded over the
  * newer text — bold and whole paragraphs vanished on production when the keys
  * came back-to-back (RIC-13's probe). A value this editor wrote is never an
- * outside value, however late it arrives; the set is emptied once the draft
- * has caught up, so it holds only the edits still in flight.
+ * outside value, however late it arrives; each one is dropped once the draft
+ * has shown it, so the queue holds only the edits still in flight.
  *
  * Enter is a new paragraph: a description has several. Ctrl+Enter reaches the
  * palette's form untouched, which is what submits. No Link button: §13.3's
@@ -51,10 +51,12 @@ const contentFor = (value: string) => (value ? textToTiptapContent(value) : EMPT
 
 /** A form field written in Peek's editor and sent as a block document. */
 export function ProseField({ value, onChange, label, placeholder }: ProseFieldProps) {
-  /** What this editor has handed back and the draft has not yet caught up with. */
-  const inFlight = useRef(new Set([value]))
-  /** The newest of them — the draft has caught up when `value` equals it. */
-  const latest = useRef(value)
+  /**
+   * What this editor has handed back and the draft has not yet shown, oldest
+   * first. A queue, not a set: `a`, `ab`, `a` (a key and its Backspace) repeats
+   * a string, and matching by string alone let the late `ab` back in.
+   */
+  const inFlight = useRef<string[]>([value])
   /** The latest `onChange`, so the editor subscribes once rather than every render. */
   const changed = useRef(onChange)
   useEffect(() => {
@@ -81,8 +83,7 @@ export function ProseField({ value, onChange, label, placeholder }: ProseFieldPr
     if (!editor) return
     const handler = () => {
       const text = serializeTiptapToText(editor)
-      latest.current = text
-      inFlight.current.add(text)
+      inFlight.current.push(text)
       changed.current(text)
     }
     editor.on('update', handler)
@@ -93,14 +94,14 @@ export function ProseField({ value, onChange, label, placeholder }: ProseFieldPr
 
   useEffect(() => {
     if (!editor) return
-    if (inFlight.current.has(value)) {
-      // Our own edit coming round, possibly late. Once it is the newest, the
-      // draft has caught up and nothing older can still arrive.
-      if (value === latest.current) inFlight.current = new Set([value])
+    const at = inFlight.current.indexOf(value)
+    if (at !== -1) {
+      // Our own edit coming round, possibly late. Drafts render in order, so
+      // nothing emitted before it can still arrive: drop those, keep the rest.
+      inFlight.current = inFlight.current.slice(at + 1)
       return
     }
-    inFlight.current = new Set([value])
-    latest.current = value
+    inFlight.current = []
     editor.commands.setContent(contentFor(value), { emitUpdate: false })
   }, [editor, value])
 
