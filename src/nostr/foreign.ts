@@ -1075,6 +1075,12 @@ export async function applyActionAsViewer(
     value: string | Record<string, string>
     /** The comment answered, for a comment that is a reply — interop's `buildActionEvent` builds it (PRO-20). */
     replyTo?: { id: string; kind: number; author: string }
+    /**
+     * `'estiva-blocks-1'` when the prose value is a block document (MAN-1).
+     * The runtime accepts it only where the action declares that format, and
+     * parses the document before tagging it, so a wrong one is refused here.
+     */
+    contentFormat?: string
   },
   relayUrl: string,
   token: StoredToken,
@@ -1166,6 +1172,7 @@ export async function applyActionAsViewer(
     value,
     newId,
     replyTo: args.replyTo,
+    contentFormat: args.contentFormat,
     pubkey: token.pubkey,
     createdAtMs: Date.now(),
   })

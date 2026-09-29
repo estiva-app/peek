@@ -44,13 +44,15 @@ export interface VocabOption {
 
 /**
  * How one field is drawn. The names mirror the manifest's `input` vocabulary:
- * `string`/`text` are `type: 'string'` (single line vs prose), `enum` is
+ * `string`/`text` are `type: 'string'` (single line vs prose), `prose` is a
+ * `text` whose owner declared `format: 'estiva-blocks-1'` (SPEC §7.3, MAN-1) —
+ * drawn as the editor and sent as a block document — `enum` is
  * `enum: '<vocabulary>'`, `pubkey` is `type: 'pubkey'` (`people` is its plural — invitees), and `parent` is the
  * field implied by `emits.toAddressOf: 'self'` — the object this creation
  * hangs under, which is the half of "needs a form and a parent" that made
  * object-creating actions unrenderable before (RFC 0.4 §13.4).
  */
-export type FormControl = 'string' | 'text' | 'enum' | 'pubkey' | 'people' | 'parent'
+export type FormControl = 'string' | 'text' | 'prose' | 'enum' | 'pubkey' | 'people' | 'parent'
 
 export interface FormField {
   key: string

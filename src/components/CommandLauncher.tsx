@@ -32,7 +32,7 @@ import { draftInstruction, formSchema, prefillInstruction, threadContext, usable
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
 import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
-import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, splitSubmission, vocabulariesFrom } from '@/lib/liveAction'
+import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, proseSubmission, splitSubmission, vocabulariesFrom } from '@/lib/liveAction'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
 import { bodies } from '@/lib/conversationRegistry'
@@ -546,7 +546,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       setSubmitError(`${appLabel} has not published this action, so there is nothing to send.`)
       return
     }
-    const { parent, properties } = splitSubmission(values)
+    const { parent, properties: typed } = splitSubmission(values)
+    const { properties, contentFormat } = proseSubmission(action, typed)
     if (!parent) {
       setSubmitError('Choose where this should go before creating it.')
       return
@@ -562,7 +563,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     let result: Awaited<ReturnType<typeof applyAction>>
     try {
       // The parent is addressed, not named: `applyAction` resolves the manifest from the object.
-      result = await applyAction({ naddr: addrToNaddr(parent, []), actionId: action.id, value: properties })
+      result = await applyAction({
+        naddr: addrToNaddr(parent, []),
+        actionId: action.id,
+        value: properties,
+        ...(contentFormat ? { contentFormat } : {}),
+      })
     } catch (error) {
       setSubmitting(false)
       setSubmitError(error instanceof Error ? error.message : String(error))

@@ -13,11 +13,11 @@
  * person sees.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import type { ResolvedAction } from '@estiva-app/interop'
-import { addrToNaddr } from '@estiva-app/protocol'
+import { addrToNaddr, parseBlockDocument } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
@@ -187,6 +187,56 @@ describe('the launcher draws Ship’s form from Ship’s manifest (PRO-4)', () =
     // the runtime refuses any key the manifest did not declare.
     expect(call.value).toEqual({ title: 'Billing entry' })
     expect(call.naddr.startsWith('naddr')).toBe(true)
+  })
+})
+
+describe('a description Ship declares as a block document (MAN-1, RIC-13)', () => {
+  const withProse: ResolvedAction = {
+    ...liveAddIssue,
+    fields: [
+      { name: 'title', type: 'string', required: true },
+      { name: 'description', type: 'string', required: false, target: 'content', format: 'estiva-blocks-1' },
+    ],
+  }
+
+  async function openProseForm() {
+    creatableUnder.mockResolvedValueOnce({ actions: [withProse], parents: [{ address: PROJECT_A, title: 'Projection layer' }] })
+    open()
+    await userEvent.click(await screen.findByText('Add issue'))
+    await userEvent.type(await screen.findByRole('textbox', { name: /^title/i }), 'Billing entry')
+    await userEvent.click(screen.getByLabelText('Project'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Projection layer' }))
+  }
+
+  it('draws the editor, and a title alone publishes with no body and no format', async () => {
+    await openProseForm()
+    const editor = screen.getByRole('textbox', { name: 'Description' })
+    expect(editor).toHaveAttribute('contenteditable', 'true')
+    expect(editor).toHaveAttribute('aria-multiline', 'true')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add issue' }))
+    const call = applyAction.mock.calls.at(-1)![0] as ApplyArgs & { contentFormat?: string }
+    expect(call.value).toEqual({ title: 'Billing entry' })
+    expect(call.contentFormat).toBeUndefined()
+  })
+
+  it('publishes what was written as a block document, tagged', async () => {
+    await openProseForm()
+    /*
+      Through the editor's own command rather than `userEvent.type`: ProseMirror
+      measures the caret with `getClientRects`, which jsdom does not have. The
+      path under test — an edit, the draft, the submission — is the same.
+    */
+    const dom = screen.getByRole('textbox', { name: 'Description' }) as HTMLElement & { editor?: { commands: { insertContent: (s: string) => void } } }
+    act(() => dom.editor!.commands.insertContent('The total is wrong'))
+    await userEvent.click(screen.getByRole('button', { name: 'Add issue' }))
+
+    const call = applyAction.mock.calls.at(-1)![0] as ApplyArgs & { contentFormat?: string }
+    expect(call.contentFormat).toBe('estiva-blocks-1')
+    const value = call.value as Record<string, string>
+    const document = parseBlockDocument(value.description!)
+    expect(document.content).toHaveLength(1)
+    expect(document.content[0]).toMatchObject({ type: 'paragraph', content: [{ type: 'text', text: 'The total is wrong' }] })
   })
 })
 

@@ -58,7 +58,7 @@ export function missingFields(action: LauncherAction, draft: FormDraft): Record<
     if (!field.required || valueOf(field, draft).trim() !== '') continue
     const noun = field.label.toLowerCase()
     out[field.key] =
-      field.control === 'string' || field.control === 'text'
+      field.control === 'string' || field.control === 'text' || field.control === 'prose'
         ? `Give it ${article(noun)}.`
         : field.control === 'parent'
           ? `Choose ${article(field.parentNoun ?? noun)}.`

@@ -1,4 +1,5 @@
-import type { ResolvedAction } from '@estiva-app/interop'
+import { BLOCK_DOCUMENT_FORMAT, type ResolvedAction } from '@estiva-app/interop'
+import { markerTextToBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 import type { FormField, LauncherAction } from './launcherActions'
 
 /**
@@ -54,10 +55,18 @@ function labelFor(name: string): string {
  * draw prose instead of a single line; it does not have to, and one that
  * ignores it still publishes the right event."* Peek uses it, because a
  * one-line box for a conversation opener is the wrong shape for the thing.
+ *
+ * **`prose` is the same move one step further** (MAN-1, RIC-13). A content
+ * field may also declare `format: 'estiva-blocks-1'` — the owner accepts a
+ * block document there — and interop surfaces it as `field.format` only when
+ * it is a format this version writes. So the editor is drawn because Ship's
+ * published manifest asked for it, never because the field is called
+ * `description`.
  */
 function controlFor(field: NonNullable<ResolvedAction['fields']>[number]): FormField['control'] {
   if (field.options?.length) return 'enum'
   if (field.type === 'pubkey') return 'pubkey'
+  if (field.target === 'content' && field.format === BLOCK_DOCUMENT_FORMAT) return 'prose'
   if (field.target === 'content') return 'text'
   return 'string'
 }
@@ -145,6 +154,33 @@ export function splitSubmission(values: Record<string, string>): {
 } {
   const { [PARENT_FIELD]: parent, ...properties } = values
   return { ...(parent ? { parent } : {}), properties }
+}
+
+/**
+ * A submission's `prose` field as the block document its owner declared, and
+ * the format to tell the runtime (MAN-1, RIC-13).
+ *
+ * The editor holds marker text (SPEC §13.2) — it is Peek's one editor, the
+ * composer's, and that is what it writes — and `@estiva-app/protocol`'s bridge
+ * turns it into §13.3's document, the same function Ship reads a legacy body
+ * with. So what lands on the event is `content-format: estiva-blocks-1` and a
+ * document Ship renders as blocks, with nothing converting it on the way in.
+ * A prefilled description (PEE-5) is text in the editor like any other, and
+ * leaves the same way.
+ *
+ * An empty prose field sends nothing, as an empty text field does — a
+ * title-only capture carries no format and no body.
+ */
+export function proseSubmission(
+  action: LauncherAction,
+  properties: Record<string, string>,
+): { properties: Record<string, string>; contentFormat?: typeof BLOCK_DOCUMENT_FORMAT } {
+  const prose = action.fields.find((f) => f.control === 'prose' && properties[f.key]?.trim())
+  if (!prose) return { properties }
+  return {
+    properties: { ...properties, [prose.key]: serializeBlockDocument(markerTextToBlockDocument(properties[prose.key]!)) },
+    contentFormat: BLOCK_DOCUMENT_FORMAT,
+  }
 }
 
 /**

@@ -62,3 +62,24 @@ export const peekEditorExtensions = [
   HighlightTag,
   SlashCommands,
 ]
+
+/**
+ * The same grammar for a box that writes a **description** rather than a
+ * message — a form's prose field (MAN-1, RIC-13).
+ *
+ * Marks, blocks and the reference chips are all here, so a description reads
+ * back exactly as it was typed and a prefill carrying a `nostr:` reference
+ * loads as the chip it is. What is left out is what only a message means: `/`
+ * (its commands resolve and highlight a *conversation*), the resolution block
+ * and the highlight tag. None of those has a place in an issue's body, and a
+ * menu offering them would be offering actions that cannot succeed there.
+ */
+export const peekProseExtensions = [
+  peekStarterKit,
+  PeekMention,
+  UrgentMention,
+  TopicMention,
+  FileMention,
+  MessageMention,
+  ObjectMention,
+]

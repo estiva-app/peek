@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { ResolvedAction } from '@estiva-app/interop'
-import { PARENT_FIELD, launcherActionFrom, splitSubmission, vocabulariesFrom } from './liveAction'
+import { parseBlockDocument } from '@estiva-app/protocol'
+import { PARENT_FIELD, launcherActionFrom, proseSubmission, splitSubmission, vocabulariesFrom } from './liveAction'
 
 /** Exactly what the runtime returns for Ship's live `add-issue`. */
 const addIssue: ResolvedAction = {
@@ -110,5 +111,48 @@ describe('splitSubmission', () => {
 
   it('reports no parent rather than an empty one', () => {
     expect(splitSubmission({ title: 'x' }).parent).toBeUndefined()
+  })
+})
+
+/** Ship's `add-issue` once its description declares a block document (MAN-1). */
+const addIssueWithProse: ResolvedAction = {
+  ...addIssue,
+  fields: [
+    { name: 'title', type: 'string', required: true },
+    { name: 'description', type: 'string', required: false, target: 'content', format: 'estiva-blocks-1' },
+  ],
+}
+
+describe('a prose field (MAN-1, RIC-13)', () => {
+  it('is drawn as the editor only because the manifest declared the format', () => {
+    const prose = launcherActionFrom(addIssueWithProse)!.fields.find((f) => f.key === 'description')!
+    expect(prose.control).toBe('prose')
+    expect(prose.required).toBe(false)
+
+    // The same field without the format stays a plain textarea.
+    const plain = launcherActionFrom({
+      ...addIssue,
+      fields: [{ name: 'description', type: 'string', required: false, target: 'content' }],
+    })!
+    expect(plain.fields[0].control).toBe('text')
+  })
+
+  it('leaves as a block document, with the format to tag it', () => {
+    const action = launcherActionFrom(addIssueWithProse)!
+    const { properties, contentFormat } = proseSubmission(action, {
+      title: 'Billing entry',
+      description: '# Why\nThe **total** is wrong\n- once\n- twice',
+    })
+    expect(contentFormat).toBe('estiva-blocks-1')
+    expect(properties.title).toBe('Billing entry')
+    const document = parseBlockDocument(properties.description!)
+    expect(document.content.map((b) => b.type)).toEqual(['heading', 'paragraph', 'bulletList'])
+    expect(JSON.stringify(document)).toContain('"marks":[{"type":"bold"}]')
+  })
+
+  it('sends a title-only capture exactly as before — no body, no format', () => {
+    const action = launcherActionFrom(addIssueWithProse)!
+    expect(proseSubmission(action, { title: 'Billing entry' })).toEqual({ properties: { title: 'Billing entry' } })
+    expect(proseSubmission(action, { title: 'x', description: '  \n' }).contentFormat).toBeUndefined()
   })
 })
