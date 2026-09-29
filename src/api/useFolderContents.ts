@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import type { FolderContents, FolderSummary } from '@estiva-app/interop'
+import { RETRY_FIRST_MS, RETRY_MAX_MS, createRetryingRead } from '@estiva-app/platform'
 import { useForeignObjects } from '@/api'
 import {
   isOutage,
@@ -124,39 +125,40 @@ export function useFolderContents(folder: string | null | undefined): {
 }
 
 /**
- * The Folders a person navigates by: the top of the tree (PEE-31).
- *
- * `listFolders` answers with every channel this viewer can see, and most of
- * production's are nobody's Folder: a Ship project's record channel (forty
- * `project-…`), the channel a project's issues live in by `h`, a test topic.
- * Each is reached through the object it belongs to and was never navigation.
- * Listing them beside the five teams is what Miky objected to on 2026-09-15:
- * "in both Peek and Ship have 5 folders … under those there should be all the
- * topics and projects."
- *
- * Two facts the summary already carries decide it, with no further read:
- *
- * - **It has state.** A `kind:30890` exists once somebody has sent a Folder
- *   command at the channel — placed something in it, named it as a Folder.
- *   That is the relay's own mark that the channel is used as a Folder; a
- *   record channel or a conversation container never gets one. Peek's Create
- *   gives a new Folder state at birth for exactly this reason
- *   (`createFolderAsViewer`).
- * - **Nothing lists it.** A Folder placed in another (`listedIn`, FOL-22) is a
- *   row inside that one, not a section beside it.
- *
- * Not the five by id: a sixth team is a Folder somebody creates, not a code
- * change. A Folder this hides is still reachable at `/folders/<id>` and from
- * the object it belongs to.
+ * The Folders a person navigates by: the top of the tree (PEE-31) — a Folder
+ * with state that nothing lists. The predicate now lives in
+ * `@estiva-app/interop` (FOL-5), because Ship drew its sidebar from a copy of
+ * it word for word, and the two apps showing the same sections is the point.
  */
-export function topLevelFolders(folders: FolderSummary[]): FolderSummary[] {
-  return folders.filter((folder) => folder.hasState && !folder.listedIn?.length)
-}
+export { topLevelFolders } from '@estiva-app/interop'
 
-/** The first wait before reading a failed Folder listing again. */
-export const FOLDERS_RETRY_FIRST_MS = 5_000
+/** The first wait before reading a failed Folder listing again. The platform's, since FOL-5. */
+export const FOLDERS_RETRY_FIRST_MS = RETRY_FIRST_MS
 /** The longest wait between re-reads while the listing keeps failing. */
-export const FOLDERS_RETRY_MAX_MS = 60_000
+export const FOLDERS_RETRY_MAX_MS = RETRY_MAX_MS
+
+/**
+ * The one listing of every Folder the viewer can see (SID-2), held past the
+ * component that asked: every page mounts its own sidebar, and each used to
+ * start at `null` — the whole column a skeleton, on every page change, over
+ * Folders the tab had just drawn.
+ *
+ * `refused` and `not_a_member` are not retried: they will answer the same way.
+ * `freshMs` is the listing cache's, so a page change inside five seconds reads
+ * nothing and one after it re-reads, as before.
+ */
+const folderListing = createRetryingRead<FolderSummary[] | null>({
+  retryable: (error) => {
+    const kind = relayFailureKind(error)
+    return kind === 'unreachable' || kind === 'rate_limited'
+  },
+  freshMs: 5_000,
+})
+
+/** Empty the held listing — what `clearListingCaches` does for the others. Tests call it between cases. */
+export function clearFolderListing(): void {
+  folderListing.clear()
+}
 
 /**
  * Every Folder this viewer can see, for the navigation.
@@ -175,8 +177,8 @@ export const FOLDERS_RETRY_MAX_MS = 60_000
  * waited out at the time the relay names (`withRateLimitRetry`), and any other
  * failure the relay may change its mind about is read again on a backoff, from
  * {@link FOLDERS_RETRY_FIRST_MS} doubling to {@link FOLDERS_RETRY_MAX_MS}, until
- * one succeeds. `refused` and `not_a_member` are not retried: they will answer
- * the same way.
+ * one succeeds. Those rules are `@estiva-app/platform`'s `createRetryingRead`
+ * since FOL-5, which Ship's sidebar takes too.
  *
  * The first failure is still an empty list rather than an error: the rest of
  * the navigation is unaffected, and "no folders" is what a signed-out viewer
@@ -189,51 +191,28 @@ export function useFolders(): {
   reload: () => Promise<void>
 } {
   const { listFolders } = useForeignObjects()
-  /* Consecutive retryable failures. Each one is a new value, so the effect
-     below schedules exactly one re-read per failure, and a success ends it. */
-  const [failures, setFailures] = useState(0)
 
-  const load = useCallback(async (): Promise<ListingLoad<FolderSummary[] | null, RelayFailureKind>> => {
+  const load = useCallback(async (): Promise<FolderSummary[] | null> => {
     try {
       // `null` is the seam saying "no viewer", which is not an empty workspace.
-      const next = await withRateLimitRetry(() => listFolders())
-      setFailures(0)
-      return { ok: true, value: next }
+      return await withRateLimitRetry(() => listFolders())
     } catch (error: unknown) {
       const kind = relayFailureKind(error)
       if (isOutage(kind)) recordReadFailure(kind)
       console.warn('[nostr] folder listing read failed:', error)
-      if (kind === 'unreachable' || kind === 'rate_limited') setFailures((n) => n + 1)
-      return { ok: false, failure: kind as RelayFailureKind }
+      throw error
     }
   }, [listFolders])
 
-  /*
-    Held past this component (SID-2), like a Folder's contents: every page
-    mounts its own sidebar, and each used to start at `null` — the whole
-    column a skeleton, on every page change, over Folders the tab had just
-    drawn. A failure after a good read keeps the good one.
-  */
-  const entry = useListing(foldersCache, FOLDERS_KEY)
-  const reload = useCallback(() => foldersCache.read(FOLDERS_KEY, load), [load])
+  const snapshot = useSyncExternalStore(folderListing.subscribe, folderListing.snapshot, folderListing.snapshot)
+  const reload = useCallback(() => folderListing.reload(load), [load])
 
   useEffect(() => {
-    void foldersCache.revalidate(FOLDERS_KEY, load)
+    void folderListing.ensure(load)
   }, [load])
 
-  useEffect(() => {
-    if (failures === 0) return
-    const wait = Math.min(FOLDERS_RETRY_FIRST_MS * 2 ** (failures - 1), FOLDERS_RETRY_MAX_MS)
-    const timer = setTimeout(() => void reload(), wait)
-    return () => clearTimeout(timer)
-  }, [failures, reload])
-
-  const held = entry?.value
+  const held = snapshot.value
   // A first read that failed draws as an empty workspace, as it always has; a signed-out answer is `null`.
-  const folders = held !== undefined ? held : entry?.failure ? [] : null
+  const folders = held !== undefined ? held : snapshot.error !== undefined ? [] : null
   return { folders, signedOut: held === null, reload }
 }
-
-/** The one listing of every Folder the viewer can see (SID-2). */
-const FOLDERS_KEY = 'folders'
-const foldersCache = createListingCache<FolderSummary[] | null, RelayFailureKind>()
