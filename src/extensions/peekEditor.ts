@@ -24,10 +24,9 @@ import { SlashCommands } from './slashCommands'
  * rather than by somebody remembering.
  *
  * The list stays here rather than inside `peekStarterKit` because
- * `peekStarterKit` is what `composerFormats.test` and `keptSelection.test`
- * build a bare `@tiptap/core` editor from: it is the marks and nodes with no
- * React node views, no menus and no `@/api` behind it, and those tests are
- * better for it.
+ * `peekStarterKit` is what `composerFormats.test` builds a bare
+ * `@tiptap/core` editor from: it is the marks and nodes with no React node
+ * views, no menus and no `@/api` behind it, and that test is better for it.
  *
  * What is *not* here is anything that needs a caller: the paste handler, the
  * Enter key, the placeholder and the toolbars all differ between a box that

@@ -3,7 +3,7 @@ import { AttachmentCard, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, Too
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
-import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
+import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
 import {
@@ -20,7 +20,6 @@ import { WithTooltip } from './ui/WithTooltip'
 import { type ReactionData, type FileAttachment } from '@/api'
 import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
-import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
 import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
@@ -455,7 +454,7 @@ export function ReplyCard({
                 <div className={cn('relative min-h-[20px] transition-all', (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2')}>
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}
-                  <SelectionToolbar editor={editEditor} />
+                  <SelectionToolbar editor={editEditor} link />
                   {editEmpty && (
                     <div className="absolute inset-0 pointer-events-none flex items-center text-body-2 text-text-muted">
                       Edit message

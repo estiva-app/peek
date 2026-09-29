@@ -5,7 +5,7 @@ import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { serializeTiptapToText, textToTiptapContent } from '@/lib/textParsing'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
-import { isSuggestionActive } from '@/extensions/mention'
+import { SelectionToolbar, isSuggestionActive } from '@estiva-app/ui/editor'
 import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
 import { IconArrowUp } from '@tabler/icons-react'
@@ -16,7 +16,6 @@ import { useCanUpload, type HighlightType, type UploadedFile } from '@/api'
 import { pastedImages, pendingAttachmentNote } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { AttachFileButton } from './AttachFiles'
-import { SelectionToolbar } from './SelectionToolbar'
 import { HighlightButton } from './HighlightButton'
 import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
@@ -363,7 +362,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
               selected, and typing `/` replaces a selection. (It is not that the
               menu needs an empty composer — it stopped needing that at PEE-18,
               and the note here still said so.) */}
-          <SelectionToolbar editor={editor} />
+          <SelectionToolbar editor={editor} link />
           {isEmpty && !hasHighlight && (
             <div className="absolute inset-0 pointer-events-none flex items-center gap-1 text-body-2 text-text-muted flex-wrap">
               {placeholder === 'reply' ? (
