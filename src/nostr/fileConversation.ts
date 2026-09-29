@@ -62,7 +62,7 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { commentDecorationsOf, type CommentDecorations } from '@estiva-app/interop'
+import { commentDecorationsOf, editTargetOf, type CommentDecorations } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
@@ -152,8 +152,10 @@ const byEditOrder = (a: SignedEvent, b: SignedEvent) => editOrderMs(a) - editOrd
 /**
  * Fold every `kind:40003` onto the comment it targets.
  *
- * The target is the first unmarked `e` naming one of `targets`, which is how
- * interop's `commentDecorationsOf` reads it. Edits are replayed oldest first
+ * The target is interop's `editTargetOf` — the first `e` whose value is 64 hex,
+ * marker ignored, which is the event whose ownership the relay checked (SPEC
+ * §6.8, PEE-38). An edit whose target is not one of `targets` applies nowhere,
+ * never to another `e` it carries. Edits are replayed oldest first
  * from the comment's own body, so "byte-identical to the body it replaces" is
  * judged against the body as it stood, not the original.
  */
@@ -164,8 +166,8 @@ export function foldEdits(targets: readonly { id: string; body: string }[], even
   for (const event of events) {
     if (event.kind !== KIND.MESSAGE_EDIT || seen.has(event.id)) continue
     seen.add(event.id)
-    const target = event.tags.find((t) => t[0] === 'e' && !t[3] && bodies.has(t[1]))?.[1]
-    if (!target) continue
+    const target = editTargetOf(event)
+    if (!target || !bodies.has(target)) continue
     byTarget.set(target, [...(byTarget.get(target) ?? []), event])
   }
   const out: Record<string, EditFold> = {}
