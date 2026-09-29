@@ -306,6 +306,8 @@ export function useForeignObjects() {
       actionId: string
       /** `{ property: value }` for an object-creating action (PRO-4). */
       value: string | Record<string, string>
+      /** The prose value's format, when it is a block document (MAN-1). */
+      contentFormat?: string
     }): Promise<ActResult & { created?: string }> => {
       const v = viewer()
       if (!v) return { ok: false, reason: 'Sign in to change another app’s object.' }

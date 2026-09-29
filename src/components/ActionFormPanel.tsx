@@ -1,5 +1,6 @@
 import type { FormField, LauncherAction, LauncherApp, VocabOption } from '@/lib/launcherActions'
 import { article, valueOf, type FormDraft } from '@/lib/formDraft'
+import { ProseField } from './ProseField'
 import { Field } from './ui/Field'
 import { PersonChipInput } from './ui/PersonChipInput'
 import { Select } from './ui/Select'
@@ -13,7 +14,7 @@ import { TextInput } from './ui/TextInput'
  * Nothing in this file knows what a Ship issue is. It receives a
  * manifest-shaped `LauncherAction` (`lib/launcherActions.ts`) and renders one
  * control per declared field: `string` a text input, `text` a textarea,
- * `enum` Peek's Select fed from the owning app's declared vocabulary,
+ * `prose` Peek's editor (a block document, MAN-1), `enum` Peek's Select fed from the owning app's declared vocabulary,
  * `pubkey` the person picker, `parent` a Select over the objects the new one
  * would hang under. The owner declares which fields matter; Peek renders them
  * in its own design language — the same split `ForeignObjectWidget` makes for
@@ -89,6 +90,15 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
             placeholder={field.placeholder}
             rows={3}
             className="w-full"
+          />
+        )
+      case 'prose':
+        return (
+          <ProseField
+            value={draft.values[field.key] ?? ''}
+            onChange={(value) => set(field.key, value)}
+            label={field.label}
+            placeholder={field.placeholder}
           />
         )
       case 'enum':
