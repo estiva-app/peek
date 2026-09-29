@@ -121,6 +121,19 @@ const dms = vi.hoisted(() => ({
         : null,
   ),
 }))
+/*
+  FOL-9: whether Delete may be offered, as the relay answered it. A bare channel
+  with nothing in it says yes; a Ship record channel says no. Neither has state,
+  so the page asks — it never asks about a Folder with state.
+*/
+const BARE_CHANNEL = 'bbbbbbbb-0000-4000-8000-000000000000'
+const deletable = vi.hoisted(() => ({
+  check: vi.fn(async (uuid: string) =>
+    uuid === 'bbbbbbbb-0000-4000-8000-000000000000'
+      ? { ok: true as const }
+      : { ok: false as const, reason: "This is a Ship project's folder." },
+  ),
+}))
 const marks = vi.hoisted(() => ({
   file: vi.fn<(address: string | null | undefined) => void>(),
   container: vi.fn<(kind: string, key: string) => void>(),
@@ -143,11 +156,19 @@ vi.mock('@/api', async () => ({
     signedOut: false,
     reload: async () => {},
   }),
-  useFolderContents: () => ({
-    state: { id: FOLDER, name: 'Folders', hasState: true, source: 'state', files: relay.files },
+  useFolderContents: (folder: string | undefined) => ({
+    state:
+      folder === BARE_CHANNEL || folder === RECORD_CHANNEL
+        ? { id: folder, hasState: false, source: 'channel', files: [] }
+        : { id: FOLDER, name: 'Folders', hasState: true, source: 'state', files: relay.files },
     reload: async () => {},
   }),
-  useForeignObjects: () => ({ createFolder: created.folder, createTopic: created.topic, dmForChannel: dms.forChannel }),
+  useForeignObjects: () => ({
+    createFolder: created.folder,
+    createTopic: created.topic,
+    dmForChannel: dms.forChannel,
+    folderDeletable: deletable.check,
+  }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
   useTeamUnread: () => ({ unread: teamUnread.unread, followed: teamUnread.followed }),
@@ -260,12 +281,37 @@ describe('FoldersPage manages a topic’s Folder from where the topic went', () 
     expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL))
   })
 
-  it('still offers the delete and the rename on a Folder that is not a topic', async () => {
+  it('offers the rename, and no delete, on a Folder with state', async () => {
     mount(`/app/folders/${FOLDER}`)
     // Once the relay has said the channel is not a DM (PEE-36).
-    expect(await screen.findByRole('button', { name: 'Delete folder' })).toBeTruthy()
+    expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: "Open this folder's topic" })).toBeNull()
+    // FOL-9: every team, QA and New-folder Folder has state, and a 9008 hides
+    // everything filed in it — so it is not offered, and not even asked about.
+    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
+    expect(deletable.check).not.toHaveBeenCalledWith(FOLDER)
+  })
+})
+
+/*
+  FOL-9: a `kind:9008` hides every event carrying the Folder's `h`, Ship issues
+  included. Delete is drawn only once the relay has said the Folder holds
+  nothing, and the confirm says what happens rather than that nothing does.
+*/
+describe('FoldersPage offers Delete only where it loses nothing but the Folder', () => {
+  it('offers it on an empty channel the relay says may go, and says what goes', async () => {
+    mount(`/app/folders/${BARE_CHANNEL}`)
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete folder' }))
+    expect(await screen.findByText(/every message in it disappear for everyone/)).toBeTruthy()
+    expect(screen.queryByText(/not deleted/)).toBeNull()
+  })
+
+  it('does not offer it on a Ship record channel', async () => {
+    mount(`/app/folders/${RECORD_CHANNEL}`)
+    await waitFor(() => expect(deletable.check).toHaveBeenCalledWith(RECORD_CHANNEL))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
   })
 })
 

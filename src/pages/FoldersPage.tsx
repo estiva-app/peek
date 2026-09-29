@@ -152,6 +152,33 @@ export function FoldersPage() {
   const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder
 
   /*
+    Delete only where it loses nothing but the Folder (FOL-9). A `kind:9008`
+    hides everything carrying the Folder's `h` — Ship issues included, which is
+    how FOL-1…FOL-24 vanished on 2026-09-14 — so a Folder with state (every
+    team, QA, anything made with New folder) never offers it, and any other is
+    asked of the relay first: see `folderDeletableAsViewer`. Hidden until that
+    answers yes for this Folder; unanswered is a no.
+  */
+  const { folderDeletable } = useForeignObjects()
+  const contentsHasState = typeof state === 'object' && 'hasState' in state ? state.hasState : undefined
+  const [deleteCheck, setDeleteCheck] = useState<{ id: string; ok: boolean } | null>(null)
+  useEffect(() => {
+    if (!id || !isFolder || contentsHasState !== false) return
+    let cancelled = false
+    folderDeletable(id)
+      .then((result) => {
+        if (!cancelled) setDeleteCheck({ id, ok: result.ok })
+      })
+      .catch(() => {
+        // Unanswered: Delete stays hidden, the safe side.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id, isFolder, contentsHasState, folderDeletable])
+  const canDelete = !topic && contentsHasState === false && deleteCheck != null && deleteCheck.id === id && deleteCheck.ok
+
+  /*
     Follow / unfollow the Folder itself (FOL-30): that is its general stream —
     the messages in it that name no file — and it lights the Folder's dot on
     its own, as a followed file in it does. Same control as the file page's,
@@ -302,13 +329,15 @@ export function FoldersPage() {
                       <IconArrowUpRight size={16} stroke={1.5} />
                     </ToolbarLink>
                   ) : (
-                    <ToolbarButton
-                      tooltip="Delete folder"
-                      aria-label="Delete folder"
-                      onClick={() => setConfirmingDelete(true)}
-                    >
-                      <IconTrash size={16} stroke={1.5} />
-                    </ToolbarButton>
+                    canDelete && (
+                      <ToolbarButton
+                        tooltip="Delete folder"
+                        aria-label="Delete folder"
+                        onClick={() => setConfirmingDelete(true)}
+                      >
+                        <IconTrash size={16} stroke={1.5} />
+                      </ToolbarButton>
+                    )
                   )}
                 </Toolbar>
                 )
@@ -455,14 +484,15 @@ export function FoldersPage() {
               }}
             >
               {/*
-                Said explicitly, because a folder full of other apps' work looks
-                like it owns that work and does not. RFC 0.4 §2: a Folder is an
-                association, so deleting it unfiles its contents and destroys
-                none of them.
+                What a `kind:9008` does, and only that. It used to say "the
+                files in it are not deleted", true of the relay's rows and false
+                of what anyone could see (FOL-9). Delete is offered only on a
+                Folder with nothing filed in it, so what goes is the Folder and
+                its messages — and nothing in Peek brings them back.
               */}
               <p className="text-body-2 text-text-secondary">
-                The files in it are not deleted — they stay in their own apps and
-                simply stop being filed here. Everyone loses the folder.
+                The folder and every message in it disappear for everyone. Nothing
+                is filed in it. This can’t be undone.
               </p>
             </ConfirmDialog>
           )}
