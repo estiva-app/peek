@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
-import { isSuggestionActive, isSuggestionOpen } from '@/extensions/mention'
+import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
 import {
@@ -23,7 +23,6 @@ import { PEOPLE } from '@/api'
 import { type ReactionData, type HighlightType, type FileAttachment } from '@/api'
 import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
-import { SelectionToolbar } from './ui/SelectionToolbar'
 import { HighlightButton } from './ui/HighlightButton'
 import { HighlightPill } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
@@ -506,7 +505,7 @@ export function ConversationCard({
                 )}>
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}
-                  <SelectionToolbar editor={editEditor} />
+                  <SelectionToolbar editor={editEditor} link />
                   {editEmpty && (
                     <div className="absolute inset-0 pointer-events-none flex items-center text-body-2 text-text-muted">
                       Edit message

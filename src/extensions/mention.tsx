@@ -1,7 +1,7 @@
-import { forwardRef, useEffect, useImperativeHandle, useState, useCallback, useRef } from 'react'
-import { ReactRenderer, NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/react'
+import { NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
-import { type SuggestionOptions, type SuggestionProps } from '@tiptap/suggestion'
+import { type SuggestionOptions } from '@tiptap/suggestion'
+import { suggestionPopup } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { encodeNevent } from '@estiva-app/protocol'
@@ -9,171 +9,17 @@ import { mentionPeople, useResolvedReferences, type Person } from '@/api'
 import { mentionMessages } from '@/api/mentions'
 import { isObjectAddress, previewText } from '@/lib/textParsing'
 import { MESSAGE_KIND } from '@/nostr/manifest'
-import { MentionMenu } from '@/components/ui/MentionMenu'
+import { peopleMenu } from '@/components/ui/MentionMenu'
 import { inlineChipClassName } from '@estiva-app/ui'
-import { FilesMenu, type FilesMenuRef } from '@/components/ui/FilesMenu'
-import { filterFilesItems, type FilesMenuItem } from '@/components/ui/filesMenuItems'
-import { SuggestionPopover } from './SuggestionPopover'
+import { FILES_MENU, type FilesMenuItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
 import { Reference } from '@/components/ui/Reference'
 
-// ─── Types ───
-
-type MentionListRef = {
-  onKeyDown: (props: { event: KeyboardEvent }) => boolean
-}
-
-interface MentionListProps extends SuggestionProps {
-  isUrgent: boolean
-}
-
-// ─── React wrapper around MentionMenu with keyboard navigation ───
-
-const MentionListWrapper = forwardRef<MentionListRef, MentionListProps>(
-  (props, ref) => {
-    const [highlight, setHighlight] = useState(0)
-
-    useEffect(() => setHighlight(0), [props.items])
-
-    const selectItem = useCallback(
-      (person: Person) => props.command(person),
-      [props]
-    )
-
-    useImperativeHandle(ref, () => ({
-      // @estiva-escape(no-rebuilt-behaviour): the editor hands its arrow keys to this list; Base UI's lists need a text field of their own, and the editor is not one (D47, UIG-8; one shared part later, UIG-31)
-      onKeyDown: ({ event }: { event: KeyboardEvent }) => {
-        if (event.key === 'ArrowDown') {
-          setHighlight((h) => Math.min(h + 1, props.items.length - 1))
-          return true
-        }
-        if (event.key === 'ArrowUp') {
-          setHighlight((h) => Math.max(h - 1, 0))
-          return true
-        }
-        if (event.key === 'Enter') {
-          const person = props.items[highlight]
-          if (person) selectItem(person)
-          return true
-        }
-        return false
-      },
-    }))
-
-    if (props.items.length === 0) return null
-
-    // Nothing to show, no panel: the menu itself returns null when the list
-    // is empty, and a `Popover` around null is an empty box (D47).
-    if (props.items.length === 0) return null
-
-    return (
-      <SuggestionPopover
-        rect={props.clientRect?.() ?? null}
-        width={MENU_WIDTH}
-        maxHeight={MENU_MAX_HEIGHT}
-        ariaLabel={props.isUrgent ? 'Urgent mention' : 'People'}
-        editorElement={props.editor.view.dom}
-      >
-        <MentionMenu
-          people={props.items}
-          highlight={highlight}
-          isUrgent={props.isUrgent}
-          onSelect={selectItem}
-          onHighlightChange={setHighlight}
-        />
-      </SuggestionPopover>
-    )
-  }
-)
-MentionListWrapper.displayName = 'MentionListWrapper'
-
-/** The people and the files menus are the same box: the width the hand-built
- *  container had to be *told*, because it could not measure its own child, and
- *  the 360px cap the menus used to carry themselves. Both are the panel's now
- *  (D47) — see `SuggestionPopover` for why the cap is load-bearing. */
-const MENU_WIDTH = 'w-[658px]'
-const MENU_MAX_HEIGHT = 'max-h-[360px]'
-
-// ─── Global flag: is a suggestion popup currently open? ───
-// Counter instead of boolean - multiple suggestion plugins (mention, urgent, topic)
-// can overlap during transitions, so we track how many are open.
-let _openCount = 0
-let _lastCloseTime = 0
-
-export function isSuggestionActive(): boolean {
-  return _openCount > 0 || (Date.now() - _lastCloseTime < 100)
-}
-
-/**
- * Open *now*, with no grace period — what Escape needs.
- *
- * `isSuggestionActive` counts the 100ms after a menu closes as still busy,
- * because picking a row with Enter closes the menu and that same Enter must
- * not also send the message. Escape wants the opposite: it closes the menu on
- * the first press and must cancel the edit on the second, so a grace period
- * would eat a press somebody made deliberately.
- */
-export function isSuggestionOpen(): boolean {
-  return _openCount > 0
-}
-
-/** Report a suggestion opening / closing from outside this file — the `/`
- *  menu lives in its own extension but shares this counter, so ComposeBox
- *  keeps one answer to "is a menu open?" rather than two. */
-export function openSuggestion() {
-  _openCount++
-}
-
-export function closeSuggestion() {
-  _openCount = Math.max(0, _openCount - 1)
-  _lastCloseTime = Date.now()
-}
-
-// ─── Suggestion popup controller ───
-
-class SuggestionPopup {
-  component: ReactRenderer<MentionListRef> | null = null
-  container: HTMLDivElement | null = null
-
-  onStart(props: SuggestionProps, isUrgent: boolean) {
-    _openCount++
-    this.component = new ReactRenderer(MentionListWrapper, {
-      props: { ...props, isUrgent },
-      editor: props.editor,
-    })
-
-    // A mount point, nothing more: the panel is a `Popover` and portals
-    // itself. No position, no z-index, no arithmetic (D47).
-    this.container = document.createElement('div')
-    document.body.appendChild(this.container)
-    this.container.appendChild(this.component.element)
-  }
-
-  onUpdate(props: SuggestionProps, isUrgent: boolean) {
-    // The caret's rect rides in `props`, so re-rendering is what moves the
-    // panel — there is nothing else to update.
-    this.component?.updateProps({ ...props, isUrgent })
-  }
-
-  onKeyDown(props: { event: KeyboardEvent }) {
-    if (props.event.key === 'Escape') {
-      this.onExit()
-      return true
-    }
-    return this.component?.ref?.onKeyDown(props) ?? false
-  }
-
-  onExit() {
-    _openCount = Math.max(0, _openCount - 1)
-    _lastCloseTime = Date.now()
-    this.component?.destroy()
-    this.container?.remove()
-    this.component = null
-    this.container = null
-  }
-}
-
 // ─── Suggestion config factory ───
+//
+// The list — its box, keys, highlight and the "is a menu open?" counter the
+// editors ask — is the package's since UIG-31 (estiva-ui 0.45.0):
+// `suggestionPopup` draws `peopleMenu`'s rows as a `SuggestionMenu`.
 
 function makeSuggestion(isUrgent: boolean): Omit<SuggestionOptions<Person>, 'editor'> {
   return {
@@ -182,15 +28,7 @@ function makeSuggestion(isUrgent: boolean): Omit<SuggestionOptions<Person>, 'edi
         .filter((p) => query === '' || p.name.toLowerCase().includes(query.toLowerCase()))
         .slice(0, 6),
 
-    render: () => {
-      const popup = new SuggestionPopup()
-      return {
-        onStart: (props) => popup.onStart(props, isUrgent),
-        onUpdate: (props) => popup.onUpdate(props, isUrgent),
-        onKeyDown: (props) => popup.onKeyDown(props),
-        onExit: () => popup.onExit(),
-      }
-    },
+    render: suggestionPopup(peopleMenu(isUrgent)),
 
     command: ({ editor, range, props: person }) => {
       const nodeType = isUrgent ? 'urgentMention' : 'mention'
@@ -291,75 +129,6 @@ export const UrgentMention = Mention.extend({
 
 // ─── Files mention ([) ───
 
-const FilesListWrapper = forwardRef<FilesMenuRef, SuggestionProps>(
-  (props, ref) => {
-    const menuRef = useRef<FilesMenuRef>(null)
-
-    useImperativeHandle(ref, () => ({
-      onKeyDown: (p: { event: KeyboardEvent }) => menuRef.current?.onKeyDown(p) ?? false,
-    }))
-
-    // As above — and the query matters here, so it asks the same filter the
-    // menu draws from rather than counting the raw items.
-    if (filterFilesItems(props.items as FilesMenuItem[], props.query).length === 0) return null
-
-    return (
-      <SuggestionPopover
-        rect={props.clientRect?.() ?? null}
-        width={MENU_WIDTH}
-        maxHeight={MENU_MAX_HEIGHT}
-        ariaLabel="Topics and messages"
-        editorElement={props.editor.view.dom}
-      >
-        <FilesMenu
-          ref={menuRef}
-          items={props.items}
-          query={props.query}
-          onSelect={(item) => props.command(item)}
-        />
-      </SuggestionPopover>
-    )
-  }
-)
-FilesListWrapper.displayName = 'FilesListWrapper'
-
-class FilesSuggestionPopup {
-  component: ReactRenderer<FilesMenuRef> | null = null
-  container: HTMLDivElement | null = null
-
-  onStart(props: SuggestionProps) {
-    _openCount++
-    this.component = new ReactRenderer(FilesListWrapper, {
-      props,
-      editor: props.editor,
-    })
-    this.container = document.createElement('div')
-    document.body.appendChild(this.container)
-    this.container.appendChild(this.component.element)
-  }
-
-  onUpdate(props: SuggestionProps) {
-    this.component?.updateProps(props)
-  }
-
-  onKeyDown(props: { event: KeyboardEvent }) {
-    if (props.event.key === 'Escape') {
-      this.onExit()
-      return true
-    }
-    return this.component?.ref?.onKeyDown(props) ?? false
-  }
-
-  onExit() {
-    _openCount = Math.max(0, _openCount - 1)
-    _lastCloseTime = Date.now()
-    this.component?.destroy()
-    this.container?.remove()
-    this.component = null
-    this.container = null
-  }
-}
-
 /*
   Nothing inserts a `topicMention` since FOL-23 took topics out of the `[` menu,
   and nothing parses one out of a body. The node stays because the `[`
@@ -441,15 +210,7 @@ export const TopicMention = Mention.extend({
       return mentionMessages().map((m): FilesMenuItem => ({ kind: 'message', data: m }))
     },
 
-    render: () => {
-      const popup = new FilesSuggestionPopup()
-      return {
-        onStart: (props: SuggestionProps) => popup.onStart(props),
-        onUpdate: (props: SuggestionProps) => popup.onUpdate(props),
-        onKeyDown: (props: { event: KeyboardEvent }) => popup.onKeyDown(props),
-        onExit: () => popup.onExit(),
-      }
-    },
+    render: suggestionPopup(FILES_MENU),
 
     command: ({ editor, range, props: item }: any) => {
       // A message (RIC-11). The `fileMention` node this used to insert still
