@@ -24,7 +24,7 @@
  * ## Reads
  *
  * The roots come with the file (`resolveForeignObject`, `#a`-scoped); a reply
- * carries no `a`, so the thread read asks by `#e` ({@link threadsAsViewer});
+ * carries no `a`, so the thread read asks by `#e` (interop's `threadsOf`, which returns the events);
  * and what has been done to any of them — an edit, a reaction, a resolution —
  * names the comment rather than the file, so it is a third read by `#e`
  * (`commentDecorationsOf`, interop 0.24.0). Three round trips, each for a
@@ -67,7 +67,7 @@ import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RATE_LIMIT_MAX_WAIT_MS, RelayReadError, retryAfterMs } from './relayRead'
-import { applyActionAsViewer, threadsAsViewer, urlReferenceTagsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
+import { applyActionAsViewer, fileCommentOf, threadEventsAsViewer, urlReferenceTagsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
 import { findUrls } from '@/lib/textParsing'
 
 /** Where a conversation lives; see the module header. */
@@ -313,10 +313,11 @@ export function isCommentOn(event: Pick<SignedEvent, 'kind' | 'content' | 'tags'
  * The whole conversation below the roots: replies, and what has been done to
  * every root and reply.
  *
- * The roots are re-fetched by id inside {@link threadsAsViewer} — their `kind`
- * and their tags are reported by no projection — so this is where their
- * attachments come from too. Throws `RelayReadError` on a refused read, like
- * every read here: an unreadable conversation is not an empty one.
+ * The roots are re-fetched by id inside interop's `threadsOf` — their `kind`
+ * and their tags are reported by no projection — and it hands back the events,
+ * so this is where their attachments come from too, with no second read.
+ * Throws `RelayReadError` on a refused read, like every read here: an
+ * unreadable conversation is not an empty one.
  */
 export async function fileConversationAsViewer(
   container: FileContainer,
@@ -324,23 +325,19 @@ export async function fileConversationAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileConversation> {
-  const threads = await threadsAsViewer(container.address, rootIds, relayUrl, token)
-  const ids = new Set([...Object.keys(threads.roots), ...Object.values(threads.replies).flat().map((r) => r.id)])
-  const raw = await eventsById([...ids], relayUrl, token)
+  const threads = await threadEventsAsViewer(container.address, rootIds, relayUrl, token)
+  const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
 
   const roots = rootIds
     .map((id) => threads.roots[id])
-    .filter((root): root is FileComment => !!root)
+    .filter((root): root is SignedEvent => !!root)
     // A mention — from another file's conversation, or a topic message naming
     // this file — arrives by `#a` too, and is not a root here.
-    .filter((root) => {
-      const event = raw.get(root.id)
-      return !event || isCommentOn(event, container.address)
-    })
-    .map((root) => withTags(root, raw.get(root.id), container.address))
+    .filter((root) => isCommentOn(root, container.address))
+    .map(conversationEvent)
   const replies: Record<string, ConversationEvent[]> = {}
   for (const [rootId, list] of Object.entries(threads.replies)) {
-    replies[rootId] = list.map((reply) => withTags(reply, raw.get(reply.id), container.address))
+    replies[rootId] = list.map(conversationEvent)
   }
 
   return decorate(roots, replies, relayUrl, token)
@@ -447,28 +444,6 @@ async function decorate(
   return { roots, replies, decorations, edits: foldEdits(bodies, edits) }
 }
 
-/*
-  The raw events, for their tags. `threadsAsViewer` already fetched every one
-  of these and reports a `FileComment` without them; this asks once more by
-  id rather than widening that function's answer, because its callers — the
-  read-only page for a file Peek cannot write to — have no use for the tags
-  and its tests pin its shape. Folded into one read when CON-5 extracts the
-  view. Chunked at 100 ids per filter so no single answer is cut.
-*/
-async function eventsById(ids: string[], relayUrl: string, token: StoredToken): Promise<Map<string, SignedEvent>> {
-  const found = new Map<string, SignedEvent>()
-  if (ids.length === 0) return found
-  const filters: Record<string, unknown>[] = []
-  for (let i = 0; i < ids.length; i += 100) {
-    const chunk = ids.slice(i, i + 100)
-    filters.push({ ids: chunk, limit: chunk.length })
-  }
-  const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
-  if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-  for (const event of result.events) found.set(event.id, event)
-  return found
-}
-
 /** What a write reports: the relay's answer, and the event's id when it took it. */
 export type WriteResult = { ok: true; id: string } | { ok: false; reason: string }
 
@@ -549,9 +524,8 @@ const publish = (unsigned: UnsignedEvent, relayUrl: string, token: StoredToken, 
  * `comment` action with the composer's whole payload.
  *
  * A reply is the same event with NIP-22's lowercase trio redirected at the
- * parent ({@link replyToCommentAsViewer} has the argument); this does that
- * substitution in the same transform that adds the attachments and mentions,
- * so a reply with a picture is one event and not two rules.
+ * parent — interop's `replyTo` (PRO-20) — and the attachments and mentions are
+ * added to it, so a reply with a picture is one event and not two rules.
  */
 export async function commentAsViewer(
   args: {
@@ -563,7 +537,6 @@ export async function commentAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<WriteResult> {
-  const lowercase = new Set(['a', 'e', 'k', 'p'])
   const { container } = args
   const own = container.kind === 'file' ? container.address : ''
   /*
@@ -601,23 +574,17 @@ export async function commentAsViewer(
   }
 
   const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body), ...references]
-  const transform = (event: UnsignedActionEvent): UnsignedActionEvent => {
-    const parent = args.parent
-    const tags = parent
-      ? [
-          ...event.tags.filter((tag) => !lowercase.has(tag[0])),
-          ['e', parent.id],
-          ['k', String(parent.kind)],
-          ['p', parent.author],
-        ]
-      : [...event.tags]
-    return { ...event, tags: [...tags, ...extra] }
-  }
+  const parent = args.parent
   const result: ActResult & { id?: string } = await applyActionAsViewer(
-    { naddr: container.address, actionId: 'comment', value: args.body },
+    {
+      naddr: container.address,
+      actionId: 'comment',
+      value: args.body,
+      ...(parent ? { replyTo: { id: parent.id, kind: parent.kind, author: parent.author } } : {}),
+    },
     relayUrl,
     token,
-    transform,
+    (event: UnsignedActionEvent): UnsignedActionEvent => ({ ...event, tags: [...event.tags, ...extra] }),
   )
   return result.ok && result.id ? { ok: true, id: result.id } : { ok: false, reason: result.reason ?? 'The relay refused the comment.' }
 }
