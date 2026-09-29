@@ -76,9 +76,15 @@ export default function define(h) {
       // DialogShell did not fit the launcher; UIG-29 built the package's CommandPalette for it instead (Katerina, 15 September).
       { what: "its window is the package's CommandPalette", run: () => h.contains("src/components/CommandLauncher.tsx", /import\s*\{[^}]*\bCommandPalette\b[^}]*\}\s*from\s*['"]@estiva-app\/ui['"]/, "CommandLauncher imports CommandPalette from @estiva-app/ui") },
     ] },
-    // A first guess, from the ticket's text (much later: Katerina, 16 September).
+    // Built 29 September (estiva-ui 0.45.0): the / @ !@ [ lists and the selection toolbar are the package's.
     { ref: "UIG-31", title: "Editor menus — one shared part for the / @ [ menus", checks: [
       { what: "the / menu keeps no escape naming UIG-31", run: () => h.lacks("src/components/ui/SlashMenu.tsx", /@estiva-escape(?:\([^)]*\))?:[^\n]*UIG-31/, "SlashMenu keeps no escape naming UIG-31") },
+      { what: "no escape anywhere names UIG-31: the seven went with the code they excused", run: () => {
+        const named = h.listFiles("src", (n) => /\.(tsx?|mdx)$/.test(n)).filter((f) => /@estiva-escape(?:\([^)]*\))?:[^\n]*UIG-31/.test(h.read(f)))
+        return named.length ? h.FAIL(`still named in ${named.join(", ")}`) : h.PASS("no escape names UIG-31")
+      } },
+      { what: "the lists are drawn by the package: SuggestionPopover is gone", run: () => (h.exists("src/extensions/SuggestionPopover.tsx") ? h.FAIL("src/extensions/SuggestionPopover.tsx is still here") : h.PASS("SuggestionPopover is gone")) },
+      { what: "the selection toolbar is the package's", run: () => h.contains("src/components/ui/ComposeBox.tsx", /\bSelectionToolbar\b[^\n]*from '@estiva-app\/ui\/editor'/, "ComposeBox takes SelectionToolbar from @estiva-app/ui/editor") },
     ] },
     // Katerina's scope, 28 September: Make drawn by the palette's part, and another app's address a chip in the composer.
     { ref: "UIG-40", title: "Launcher leftovers — the chip in the composer and the Make card", checks: [

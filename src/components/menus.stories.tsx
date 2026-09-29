@@ -1,18 +1,19 @@
-import { useCallback, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useState, type ComponentProps } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { IconDotsVertical } from '@tabler/icons-react'
 import { ToolbarButton } from '@estiva-app/ui'
 import { PEOPLE, PeekDataProvider } from '@/api'
-import { SuggestionPopover } from '@/extensions/SuggestionPopover'
+import { SuggestionMenu } from '@estiva-app/ui'
+import type { SuggestionPopupOptions } from '@estiva-app/ui/editor'
 import type { ConversationMessage } from '@/lib/conversationRegistry'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { IconButton } from './ui/IconButton'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
-import { FilesMenu } from './ui/FilesMenu'
+import { FILES_MENU } from './ui/FilesMenu'
 import { filterFilesItems, type FilesMenuItem } from './ui/filesMenuItems'
-import { MentionMenu } from './ui/MentionMenu'
+import { peopleMenu } from './ui/MentionMenu'
 
 /**
  * Every menu Peek opens, on one page. The dialogs went the other way on 23
@@ -217,13 +218,13 @@ export const ScreenerLater: Story = {
 /* ── The composer's two menus ───────────────────────────────────────────── */
 
 /**
- * Both draw rows and nothing else since D47 — the box, its placement and its
- * scrolling are the package `Popover`'s, which the `[` and `@` extensions open
- * against the caret. So the stories open the same shell against a marker
- * standing in for the caret, rather than drawing a panel of their own that no
- * longer exists in the app.
+ * The list is the package's `SuggestionMenu` since UIG-31 (estiva-ui 0.45.0),
+ * which the `[` and `@` extensions open against the caret through
+ * `suggestionPopup`; Peek says only which rows and how each looks
+ * (`FILES_MENU`, `peopleMenu`). So the stories draw the same list, with the
+ * same settings, against a marker standing in for the caret.
  */
-function InTheShell({ label, children }: { label: string; children: ReactNode }) {
+function InTheShell<T>({ menu, items, query = '' }: { menu: SuggestionPopupOptions<T>; items: T[]; query?: string }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
   const caret = useCallback((el: HTMLDivElement | null) => {
     setRect(el ? el.getBoundingClientRect() : null)
@@ -233,9 +234,16 @@ function InTheShell({ label, children }: { label: string; children: ReactNode })
       <div ref={caret} className="text-body-2 text-text-secondary">
         the caret is here
       </div>
-      <SuggestionPopover rect={rect} width="w-[658px]" maxHeight="max-h-[360px]" ariaLabel={label}>
-        {children}
-      </SuggestionPopover>
+      <SuggestionMenu<T>
+        rect={rect}
+        ariaLabel={menu.ariaLabel}
+        width={menu.width}
+        maxHeight={menu.maxHeight}
+        sections={menu.sections ? menu.sections(items, query) : [{ items }]}
+        itemKey={menu.itemKey}
+        row={menu.row}
+        onSelect={noop}
+      />
     </div>
   )
 }
@@ -269,9 +277,7 @@ function files(items: FilesMenuItem[], query: string) {
       {filterFilesItems(items, query).length === 0 ? (
         <CaretAlone />
       ) : (
-        <InTheShell label="Topics and messages">
-          <FilesMenu items={items} query={query} onSelect={noop} />
-        </InTheShell>
+        <InTheShell menu={FILES_MENU} items={items} query={query} />
       )}
     </PeekDataProvider>
   )
@@ -290,20 +296,9 @@ export const FilesFilteredToMessages: Story = { render: () => files(ITEMS, 'ada'
 /** Nothing matches — the menu renders nothing rather than an empty box. */
 export const FilesNoMatches: Story = { render: () => files(ITEMS, 'zzzz') }
 
-/** The mention menu keeps its own highlight, as the extension does for it. */
+/** The people list, as `@` (or `!@`) opens it. */
 function Mentions({ people, isUrgent }: { people: typeof PEOPLE; isUrgent?: boolean }) {
-  const [highlight, setHighlight] = useState(0)
-  return (
-    <InTheShell label="People">
-      <MentionMenu
-        people={people}
-        highlight={highlight}
-        isUrgent={!!isUrgent}
-        onSelect={noop}
-        onHighlightChange={setHighlight}
-      />
-    </InTheShell>
-  )
+  return <InTheShell menu={peopleMenu(!!isUrgent)} items={people} />
 }
 
 /** The @-mention dropdown; the highlighted row shows the Enter hint. */

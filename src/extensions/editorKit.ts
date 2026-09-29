@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core'
 import { Link } from '@tiptap/extension-link'
 import StarterKit from '@tiptap/starter-kit'
-import { KeptSelection } from './keptSelection'
+import { KeptSelection } from '@estiva-app/ui/editor'
 
 /**
  * The marks and nodes every Peek editor uses (main composer + the
@@ -46,7 +46,7 @@ import { KeptSelection } from './keptSelection'
   `openOnClick: false` — a click in the composer places the caret; a link is
   followed from the sent message, never from the editor. `defaultProtocol` —
   a typed `google.com` links to https, not http; the toolbar's field
-  (composerFormats `normalizeHref`) completes a bare host the same way.
+  (the selection toolbar's `normalizeHref`, in `@estiva-app/ui/editor`) completes a bare host the same way.
 */
 const PeekLink = Link.extend({ inclusive: false }).configure({
   openOnClick: false,

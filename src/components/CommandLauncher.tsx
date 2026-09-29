@@ -38,7 +38,7 @@ import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from 
 import { bodies } from '@/lib/conversationRegistry'
 import { useLastSelection } from '@/lib/lastSelection'
 import { clearRecents, forgetRecent, useRecents } from '@/lib/recents'
-import { isApplePlatform } from '@/lib/shortcuts'
+import { isApplePlatform } from '@estiva-app/ui'
 import { previewText } from '@/lib/textParsing'
 import { useToast } from '@/lib/toast'
 import { LAUNCHER_APPS, type LauncherAction, type LauncherApp, type VocabOption } from '@/lib/launcherActions'

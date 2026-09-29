@@ -23,7 +23,16 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
-import { openSuggestion, closeSuggestion } from '@/extensions/mention'
+/* The "is a menu open?" counter is the package's since UIG-31, and only its
+   own lists move it. The test stands in for an open list by answering for it. */
+const menu = vi.hoisted(() => ({ open: false }))
+vi.mock('@estiva-app/ui/editor', async (original) => ({
+  ...(await original<typeof import('@estiva-app/ui/editor')>()),
+  isSuggestionOpen: () => menu.open,
+  isSuggestionActive: () => menu.open,
+}))
+const openSuggestion = () => void (menu.open = true)
+const closeSuggestion = () => void (menu.open = false)
 import { ConversationCard } from './ConversationCard'
 
 /* jsdom implements neither `getClientRects` nor `getBoundingClientRect` on

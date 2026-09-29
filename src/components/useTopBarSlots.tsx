@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { shortcutLabel } from '@/lib/shortcuts'
+import { shortcutLabel } from '@estiva-app/ui'
 import { IconMenu2 } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
 import { IdentityMenu, MenuItem } from '@estiva-app/ui'

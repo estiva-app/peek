@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { peekStarterKit } from '@/extensions/editorKit'
-import { FORMATS, MARKS, applyFormat, toggleMark, shortcutLabel, currentLink, applyLink, normalizeHref, type FormatId } from './composerFormats'
+import { FORMATS, applyFormat, type FormatId } from './composerFormats'
 
 /**
  * The `/` menu's Format section and the selection toolbar — PEE-18.
@@ -142,116 +142,15 @@ describe('the triggers the menu advertises', () => {
   })
 })
 
-describe('toggleMark — the selection toolbar', () => {
-  for (const mark of MARKS) {
-    it(`${mark.id} toggles on and off`, () => {
-      toggleMark(editor, mark.id)
-      expect(editor.isActive(mark.id)).toBe(true)
-      toggleMark(editor, mark.id)
-      expect(editor.isActive(mark.id)).toBe(false)
-    })
-  }
-
-  it('covers exactly bold, italic and underline', () => {
-    expect(MARKS.map((m) => m.id)).toEqual(['bold', 'italic', 'underline'])
-  })
-
-  it('marks it names are all in the composer schema', () => {
-    for (const mark of MARKS) {
-      expect(Object.keys(editor.schema.marks), mark.id).toContain(mark.id)
-    }
-  })
-})
-
-describe('shortcutLabel', () => {
-  it('says Cmd on Apple platforms', () => {
-    expect(shortcutLabel('Mod-B', true)).toBe('Cmd+B')
-    expect(shortcutLabel('Mod-Shift-B', true)).toBe('Cmd+Shift+B')
-  })
-
-  it('says Ctrl everywhere else', () => {
-    expect(shortcutLabel('Mod-B', false)).toBe('Ctrl+B')
-    expect(shortcutLabel('Mod-Shift-B', false)).toBe('Ctrl+Shift+B')
-  })
-
-  it('upper-cases a single-character key so Ctrl+b never reaches a tooltip', () => {
-    expect(shortcutLabel('Mod-b', false)).toBe('Ctrl+B')
-  })
-})
-
-describe('links — the toolbar field (PEE-19)', () => {
-  it('the schema has the link mark, so there is something to set', () => {
-    expect(editor.schema.marks.link).toBeDefined()
-  })
-
-  describe('normalizeHref — what typing in the field becomes', () => {
-    const cases: Array<[string, string | null]> = [
-      ['https://peek.estiva.app/topic/widgets', 'https://peek.estiva.app/topic/widgets'],
-      ['http://example.com', 'http://example.com'],
-      ['mailto:jan@estiva.app', 'mailto:jan@estiva.app'],
-      ['google.com', 'https://google.com'],
-      ['  www.google.com/a?b=c  ', 'https://www.google.com/a?b=c'],
-      ['localhost:5173/topic', 'https://localhost:5173/topic'],
-      ['javascript:alert(1)', null],
-      ['ftp://files.example.com', null],
-      ['two words', null],
-      ['', null],
-      ['   ', null],
-    ]
-    it.each(cases)('%j → %j', (raw, href) => {
-      expect(normalizeHref(raw)).toBe(href)
-    })
-  })
-
-  describe('applyLink — over "widgets topic" in "read the widgets topic first"', () => {
-    /** The one linked run in the document, or null. */
-    const linkOf = (): { text: string; href: string } | null => {
-      let found: { text: string; href: string } | null = null
-      editor.state.doc.descendants((node) => {
-        const link = node.marks.find((m) => m.type.name === 'link')
-        if (node.isText && link) found = { text: node.text ?? '', href: link.attrs.href as string }
-      })
-      return found
-    }
-
-    beforeEach(() => {
-      editor.commands.setContent('<p>read the widgets topic first</p>')
-      editor.commands.setTextSelection({ from: 10, to: 23 })
-    })
-
-    it('an address links the selected words, completing a bare host', () => {
-      expect(applyLink(editor, 'google.com')).toBe(true)
-      expect(linkOf()).toEqual({ text: 'widgets topic', href: 'https://google.com' })
-      expect(currentLink(editor)).toBe('https://google.com')
-    })
-
-    it('an empty field removes the link', () => {
-      applyLink(editor, 'https://google.com')
-      expect(applyLink(editor, '')).toBe(true)
-      expect(linkOf()).toBeNull()
-      expect(currentLink(editor)).toBe('')
-    })
-
-    it('a scheme a reader may not follow is refused, and nothing changes', () => {
-      expect(applyLink(editor, 'javascript:alert(1)')).toBe(false)
-      expect(linkOf()).toBeNull()
-    })
-
-    it('the caret inside a link re-addresses the whole link', () => {
-      applyLink(editor, 'https://google.com')
-      editor.commands.setTextSelection(15)
-      expect(currentLink(editor)).toBe('https://google.com')
-      expect(applyLink(editor, 'https://example.com')).toBe(true)
-      expect(linkOf()).toEqual({ text: 'widgets topic', href: 'https://example.com' })
-    })
-  })
-})
+/* toggleMark, shortcutLabel and the link field's own tests moved into estiva-ui
+   with the selection toolbar (UIG-31): `SelectionToolbar.test.ts` there. */
 
 describe('a link ends where its words end (Katerina, 2026-09-07)', () => {
   it('typing at the end of a link is plain text, not more link', () => {
     editor.commands.setContent('<p>read the widgets topic first</p>')
     editor.commands.setTextSelection({ from: 10, to: 23 })
-    applyLink(editor, 'https://google.com')
+    // The link mark this editor kit configures — what the toolbar's field sets.
+    editor.commands.setLink({ href: 'https://google.com' })
     editor.commands.setTextSelection(23)
     type(editor, 'X')
     const linked: string[] = []
