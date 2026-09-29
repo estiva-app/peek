@@ -19,7 +19,7 @@ const seam = vi.hoisted(() => ({ listFolders: vi.fn<() => Promise<FolderSummary[
 vi.mock('@/api', () => ({ useForeignObjects: () => seam }))
 vi.mock('@/nostr/freshness', () => ({ recordReadFailure: vi.fn() }))
 
-import { FOLDERS_RETRY_FIRST_MS, FOLDERS_RETRY_MAX_MS, useFolders } from './useFolderContents'
+import { FOLDERS_RETRY_FIRST_MS, FOLDERS_RETRY_MAX_MS, clearFolderListing, useFolders } from './useFolderContents'
 
 const TEAM: FolderSummary = { id: 'team', name: 'Team', hasState: true }
 const PLACED: FolderSummary = { id: 'talk', name: 'project-talk', hasState: false, listedIn: ['team'] }
@@ -31,6 +31,9 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   seam.listFolders.mockReset()
+  // Held past the component since SID-2, and the platform's since FOL-5 — so
+  // not among the listing caches the setup file empties.
+  clearFolderListing()
 })
 afterEach(() => {
   vi.useRealTimers()
