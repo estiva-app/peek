@@ -481,6 +481,23 @@ describe('foldEdits — the body and the attachments fold separately (RFC 0.4 §
     const elsewhere = { ...editOf('1', 'Other', at), tags: [['h', FOLDER], ['e', 'e'.repeat(64)], imeta('aaa')] }
     expect(foldEdits([target], [elsewhere])).toEqual({})
   })
+
+  // PEE-38, SPEC §6.8: the relay checks ownership of the first 64-hex `e`,
+  // marker ignored, and refuses nothing for a second one.
+  it('applies an edit only to its first 64-hex e — never to a second e the relay did not check', () => {
+    const mine = { id: 'd'.repeat(64), body: 'Mine' }
+    const marked = { ...editOf('1', 'FORGED', at), pubkey: MIKY, tags: [['h', FOLDER], ['e', mine.id, '', 'mention'], ['e', target.id]] }
+    const unmarked = { ...editOf('2', 'FORGED', at), pubkey: MIKY, tags: [['h', FOLDER], ['e', mine.id], ['e', target.id]] }
+    // The writer's own message off screen: both shapes used to land on the victim.
+    expect(foldEdits([target], [marked, unmarked])).toEqual({})
+    // On screen, the edit is the writer's own message's — what the relay accepted.
+    const fold = foldEdits([target, mine], [marked])
+    expect(fold[target.id]).toBeUndefined()
+    expect(fold[mine.id].body).toBe('FORGED')
+    // A non-hex `e` is passed over, as the relay passes it over.
+    const pastNonHex = { ...editOf('3', 'Reworded', at), tags: [['h', FOLDER], ['e', 'not-an-id'], ['e', target.id]] }
+    expect(foldEdits([target], [pastNonHex])[target.id].body).toBe('Reworded')
+  })
 })
 
 /*
