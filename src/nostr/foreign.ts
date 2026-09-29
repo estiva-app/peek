@@ -1195,15 +1195,14 @@ export async function applyActionAsViewer(
     widget that resolves to nothing, for ever. A silent wrong answer, which is
     the failure INT-9 is named for arriving one layer along.
 
-    So a message gets no reference, and that is a real gap rather than a fix:
-    it *has* an identity — its event id, which is why the manifest declares an
-    `nevent` web template — but `findNaddrs` scans for `nostr:naddr1…` only,
-    so an `nevent` in a body is prose rather than a widget. Widening that is a
-    change to the reference grammar RFC 0.5 §7 settles, and §7.3's argument
-    against bech32 in URLs is live there; it is not this ticket's to make in
-    passing. Filed as its own issue.
+    So a message gets no `created` address. It still has an identity — its
+    event id, which is why the manifest declares an `nevent` web template — and
+    a `nostr:nevent1…` in a body renders as a widget since RIC-11
+    (`MessageBody`: a chip inline, attached when alone on its line). What is
+    left out is only the launcher dropping one into the composer for a message
+    it just created (PRO-19 closed on that).
 
-    Meanwhile the honest outcome: the conversation is created and the launcher
+    So the honest outcome: the conversation is created and the launcher
     says so, with nothing dropped into the composer. For the ordinary case —
     starting a conversation in the topic you are reading — it appears in the
     thread on its own, which a self-referencing widget would only duplicate.
