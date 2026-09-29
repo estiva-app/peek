@@ -73,6 +73,11 @@ export const peekEditorExtensions = [
  * (its commands resolve and highlight a *conversation*), the resolution block
  * and the highlight tag. None of those has a place in an issue's body, and a
  * menu offering them would be offering actions that cannot succeed there.
+ *
+ * `UrgentMention` stays although urgency means nothing in a description:
+ * `textToTiptapContent` reads `!@Name` back as that node, and an editor
+ * without it could not load such a prefill. Its urgency has no wire form, so
+ * a person with a key is written as a plain `nostr:npub` reference anyway.
  */
 export const peekProseExtensions = [
   peekStarterKit,

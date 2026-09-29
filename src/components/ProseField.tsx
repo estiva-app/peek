@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { SelectionToolbar } from '@estiva-app/ui/editor'
 import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
@@ -46,10 +46,17 @@ const contentFor = (value: string) => (value ? textToTiptapContent(value) : EMPT
 export function ProseField({ value, onChange, label, placeholder }: ProseFieldProps) {
   /** What this editor last handed back — so the draft coming round again is not reloaded. */
   const emitted = useRef(value)
+  /** The latest `onChange`, so the editor subscribes once rather than every render. */
+  const changed = useRef(onChange)
+  useEffect(() => {
+    changed.current = onChange
+  }, [onChange])
+  // Read once: the editor takes `content` only when it is created.
+  const [initial] = useState(() => contentFor(value))
 
   const editor = useEditor({
     extensions: peekProseExtensions,
-    content: contentFor(value),
+    content: initial,
     editorProps: {
       attributes: {
         class: cn(PEEK_EDITOR_CLASSES, 'min-h-12'),
@@ -66,13 +73,13 @@ export function ProseField({ value, onChange, label, placeholder }: ProseFieldPr
     const handler = () => {
       const text = serializeTiptapToText(editor)
       emitted.current = text
-      onChange(text)
+      changed.current(text)
     }
     editor.on('update', handler)
     return () => {
       editor.off('update', handler)
     }
-  }, [editor, onChange])
+  }, [editor])
 
   useEffect(() => {
     if (!editor || value === emitted.current) return
