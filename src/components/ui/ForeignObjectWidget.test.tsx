@@ -330,7 +330,8 @@ describe('ForeignObjectWidget', () => {
       expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
     })
 
-    it('draws no one-line box for a prose field, nor for a move (MAN-4)', async () => {
+    // A row: on a card the prose field is the body's own editor (MAN-9), tested below.
+    it('draws no one-line box in the action row for a prose field, nor for a move (MAN-4)', async () => {
       resolveObject.mockResolvedValue(
         object({
           // What interop 0.36.0 resolves for Ship's describe-issue and
@@ -562,6 +563,34 @@ describe('a block-document body', () => {
     })
     expect(await screen.findByText('Only members of this Folder can edit it.')).toBeInTheDocument()
     expect(box.textContent).toContain('Today.')
+  })
+
+  it('publishes nothing while typing when the card re-renders', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const onAct = vi.fn(async () => true)
+    const { rerender } = render(<ForeignObjectCard object={described()} onAct={onAct} />)
+    const editor = editorOf(await settled())
+    await act(async () => {
+      editor.commands.focus('end', { scrollIntoView: false })
+      editor.commands.insertContent(' Today.')
+    })
+    // A conversation re-renders its cards all the time; each one is a new `onAct`.
+    rerender(<ForeignObjectCard object={described()} onAct={async () => true} />)
+    rerender(<ForeignObjectCard object={described()} onAct={onAct} />)
+    expect(onAct).not.toHaveBeenCalled()
+  })
+
+  it('offers no editor over a value it cannot show', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    // No body slot, and the field holds something: an empty editor would replace it on the first save.
+    const held = { ...describeIssue, current: stored }
+    const { container, rerender } = render(
+      <ForeignObjectCard object={described({ slots: { title: { value: 'Payments' } }, actions: [held] })} onAct={() => {}} />,
+    )
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    // Really empty: the editor stands where the body would.
+    rerender(<ForeignObjectCard object={described({ slots: { title: { value: 'Payments' } } })} onAct={() => {}} />)
+    expect(await screen.findByRole('textbox', { name: 'Edit description' })).toBeInTheDocument()
   })
 
   it('stays a reading view where there is nothing to write with', async () => {

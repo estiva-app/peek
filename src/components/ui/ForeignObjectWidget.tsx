@@ -416,9 +416,12 @@ export function ForeignObjectCard({
    *
    * Chosen by the declaration, as every control here is: a `format` Peek
    * writes, on the field the body slot reads. A body on some other field is
-   * not what that action sets, so it keeps its reading view. With no body yet
-   * there is no slot to compare, and the editor stands where the body would.
-   * A card only, for the reason the body is.
+   * not what that action sets, so it keeps its reading view. With no body slot
+   * the editor stands where the body would only while the field is really
+   * empty: interop drops an empty slot, and also one that reads elsewhere, and
+   * an empty editor over a value it never showed would replace that value —
+   * and every id in it — on the first save. A card only, for the reason the
+   * body is.
    */
   const prose =
     onAct && widget === 'card'
@@ -426,7 +429,7 @@ export function ForeignObjectCard({
           (action) =>
             action.format === BLOCK_DOCUMENT_FORMAT &&
             !!action.field &&
-            (!slots.body || slots.body.field === action.field),
+            (slots.body ? slots.body.field === action.field : !action.current?.trim()),
         )
       : undefined
 
@@ -601,9 +604,8 @@ export function ForeignObjectWidget({
   const [actionError, setActionError] = useState<string | undefined>()
 
   const reload = useCallback(
-    () => {
-      resolve(naddr).then(setObject).catch(() => setObject(null))
-    },
+    // Returned, so an action's `await reload()` waits for the re-read it names.
+    () => resolve(naddr).then(setObject).catch(() => setObject(null)),
     [naddr, resolve],
   )
 

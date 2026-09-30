@@ -73,6 +73,18 @@ export function BlockDocumentField({
     },
     [onCommit],
   )
+  /*
+    The latest `save`, for the two callers that must not re-subscribe: the
+    editor's `onBlur`, created once, and the unmount below. A cleanup keyed on
+    `save` itself ran on every render the card's inline `onCommit` caused —
+    publishing mid-typing whenever the conversation re-rendered.
+  */
+  const latestSave = useRef(save)
+  useEffect(() => {
+    latestSave.current = save
+  }, [save])
+  // Read once: the editor takes `content` only when it is created.
+  const [initial] = useState(() => toEditorDocument(documentForEditing(value, format)))
 
   const editor = useEditor(
     {
@@ -86,7 +98,7 @@ export function BlockDocumentField({
         UnknownBlock,
         AttachmentNode,
       ],
-      content: toEditorDocument(documentForEditing(value, format)),
+      content: initial,
       editorProps: {
         attributes: {
           'aria-label': label,
@@ -111,7 +123,7 @@ export function BlockDocumentField({
         typed.current = e.getJSON() as EditorDocument
         setEmpty(e.isEmpty)
       },
-      onBlur: () => void save(typed.current),
+      onBlur: () => void latestSave.current(typed.current),
     },
     [],
   )
@@ -130,7 +142,7 @@ export function BlockDocumentField({
     setEmpty(value.trim() === '')
   }, [editor, value, format])
 
-  useEffect(() => () => void save(typed.current), [save])
+  useEffect(() => () => void latestSave.current(typed.current), [])
 
   return (
     <div className="relative">
