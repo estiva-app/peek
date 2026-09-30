@@ -332,7 +332,8 @@ export async function fileConversationAsViewer(
 ): Promise<FileConversation> {
   const [threads, onFile] = await Promise.all([
     threadEventsAsViewer(container.address, rootIds, relayUrl, token),
-    commentsOnFileAsViewer(container.address, relayUrl, token),
+    // Only for replies whose comment was deleted: a refusal here costs those, not the conversation.
+    commentsOnFileAsViewer(container.address, relayUrl, token).catch(() => []),
   ])
   const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
 
@@ -348,8 +349,12 @@ export async function fileConversationAsViewer(
     replies[rootId] = list.map(conversationEvent)
   }
 
-  const known = new Set([...rootIds, ...Object.values(threads.replies).flat().map((e) => e.id)])
-  const orphaned = await deletedRootsOf(onFile, known, container.address, relayUrl, token)
+  // What the relay still holds and this read reached. Not `rootIds`: a re-read
+  // right after a delete still asks about the deleted root, and its replies,
+  // which `#e` still returns, would hang from a root that is not drawn.
+  const known = new Set(Object.keys(threads.roots))
+  for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
+  const orphaned = await deletedRootsOf(onFile, known, container.address, relayUrl, token).catch(() => ({ roots: [], replies: {} }))
   for (const [rootId, list] of Object.entries(orphaned.replies)) replies[rootId] = list.map(conversationEvent)
   // Oldest first. A stand-in is dated by its first reply — the nearest time the relay still holds.
   const allRoots = orphaned.roots.length ? [...roots, ...orphaned.roots].sort((a, b) => a.createdAt - b.createdAt) : roots
@@ -358,7 +363,7 @@ export async function fileConversationAsViewer(
 }
 
 /** How many of a file's comments the `#A` read asks for — Buzz's clamp per filter. */
-export const FILE_COMMENTS_LIMIT = 1_000
+const FILE_COMMENTS_LIMIT = 1_000
 
 /** Every `kind:1111` whose NIP-22 root is the file — roots and replies alike. */
 async function commentsOnFileAsViewer(address: string, relayUrl: string, token: StoredToken): Promise<SignedEvent[]> {
@@ -393,7 +398,7 @@ async function deletedRootsOf(
   const byParent = new Map<string, SignedEvent[]>()
   for (const event of onFile) {
     if (known.has(event.id) || !isCommentOn(event, address)) continue
-    const parent = replyTargetOf(event)
+    const parent = parentOfComment(event)
     if (!parent || known.has(parent)) continue
     byParent.set(parent, [...(byParent.get(parent) ?? []), event])
   }
@@ -413,6 +418,16 @@ async function deletedRootsOf(
     roots.push({ id: parent, author: '', body: '', createdAt: thread[0].created_at, kind: KIND.COMMENT, files: [], references: [], deleted: true })
   }
   return { roots, replies }
+}
+
+/**
+ * A `kind:1111`'s parent: NIP-22's one lowercase `e`, or the `reply`-marked one
+ * when a writer marks it. Several unmarked is ambiguous — one may be a quote,
+ * which is why interop's `threadsOf` never takes the first — so it is none.
+ */
+function parentOfComment(event: Pick<SignedEvent, 'tags'>): string | null {
+  const es = event.tags.filter((t) => t[0] === 'e' && typeof t[1] === 'string' && t[1])
+  return es.find((t) => t[3] === 'reply')?.[1] ?? (es.length === 1 ? es[0][1] : null)
 }
 
 type FileContainer = Extract<ConversationContainer, { kind: 'file' }>

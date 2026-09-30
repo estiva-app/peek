@@ -331,7 +331,8 @@ export function useFileConversationView({
         eventId: m.id,
         conversationId: root.id,
       })
-      return [asMessage(root), ...projected.byId[root.id].replies.map(asMessage)]
+      // A deleted root has no author or words to cite; its replies still do.
+      return [...(root.isDeleted ? [] : [asMessage(root)]), ...projected.byId[root.id].replies.map(asMessage)]
     })
     registerTopicConversation({ references: [], messages })
     return unregisterTopicConversation

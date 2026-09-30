@@ -267,6 +267,31 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       expect(found.roots.map((r) => r.id)).toEqual([GONE])
     })
 
+    it('draws them on the re-read right after the delete, while the roots asked about still name it', async () => {
+      queryRelay.mockImplementation(relayOver(world))
+      const found = await fileConversationAsViewer(container, [root.id, GONE], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id, GONE])
+      expect(found.roots[1].deleted).toBe(true)
+      expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
+    })
+
+    it('still draws the conversation when the read for them is refused', async () => {
+      const relay = relayOver(world)
+      queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
+        filters.some((f) => '#A' in f) ? { ok: false as const, reason: 'rate-limited: slow down' } : relay(url, filters),
+      )
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+      expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
+    })
+
+    it('does not guess a parent among several unmarked e tags', async () => {
+      const ambiguous = event({ kind: COMMENT, content: 'Quote and parent', tags: [['A', ADDRESS], ['e', 'c'.repeat(64)], ['e', GONE], ['h', FOLDER]] })
+      queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), ambiguous]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+    })
+
     it('leaves alone a reply whose parent the relay still holds', async () => {
       const toHeld = event({ kind: COMMENT, content: 'On a root not asked about', tags: [['A', ADDRESS], ['e', withPicture.id], ['h', FOLDER]] })
       queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), toHeld]))
