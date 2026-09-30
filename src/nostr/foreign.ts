@@ -47,7 +47,8 @@ import {
   KIND_CHANNEL_METADATA,
   matchObjectUrl,
   urlPatternsOf,
-  buildActionEvent,
+  buildActionEvents,
+  KIND_FOLDER_STATE,
   folderOf,
   createPeopleCache,
   createProjectionCache,
@@ -530,6 +531,25 @@ export async function createFolderAsViewer(
  * shared with Ship, and each app keeps its own signing and its own words for a
  * refusal part-way through — which `index` is what lets the caller choose.
  */
+const dOf = (event: SignedEvent) => event.tags.find((t) => t[0] === 'd')?.[1]
+
+/**
+ * The `kind:30890` states `filter` finds, keeping only those signed by the key
+ * that signed their Folder's channel record (`kind:39000`, same `d`) — the
+ * relay, which writes both. Two reads, each one filter; nothing when no state
+ * matched.
+ */
+async function relayStates(query: QueryFn, filter: Record<string, unknown>): Promise<SignedEvent[]> {
+  const states = await query([filter])
+  const ids = [...new Set(states.map(dOf).filter((id): id is string => !!id))]
+  if (ids.length === 0) return []
+  const channels = await query([{ kinds: [KIND_CHANNEL_METADATA], '#d': ids, limit: ids.length * 2 }])
+  const signers = new Set(channels.map((channel) => `${dOf(channel)}:${channel.pubkey}`))
+  const kept = states.filter((state) => signers.has(`${dOf(state)}:${state.pubkey}`))
+  // One per Folder: a replaceable state has one current version per signer.
+  return [...new Map(kept.map((state) => [dOf(state)!, state])).values()]
+}
+
 async function publishInOrder(
   events: UnsignedEvent[],
   relayUrl: string,
@@ -1085,7 +1105,7 @@ export async function applyActionAsViewer(
      * object-creating action, whose form has several fields (PRO-4).
      */
     value: string | Record<string, string>
-    /** The comment answered, for a comment that is a reply — interop's `buildActionEvent` builds it (PRO-20). */
+    /** The comment answered, for a comment that is a reply — interop's `buildActionEvents` builds it (PRO-20). */
     replyTo?: { id: string; kind: number; author: string }
     /**
      * `'estiva-blocks-1'` when the prose value is a block document (MAN-1).
@@ -1098,7 +1118,8 @@ export async function applyActionAsViewer(
   token: StoredToken,
   /**
    * The one seam where a caller may amend the bytes the runtime built, applied
-   * after `buildActionEvent` and before signing.
+   * to the action's first event after `buildActionEvents` and before signing
+   * — never to the Folder commands a `listed` action is followed by.
    *
    * It exists for a single case and is documented as such rather than offered:
    * the composer's own tags on a comment — attachments, mentions, references
@@ -1108,7 +1129,16 @@ export async function applyActionAsViewer(
    * A reply's parent is not this seam's: that is `replyTo`.
    */
   transform?: (event: UnsignedActionEvent) => UnsignedActionEvent,
-): Promise<ActResult & { created?: string; id?: string }> {
+): Promise<
+  ActResult & {
+    created?: string
+    id?: string
+    /** The action's Folder commands were built and sent here (`emits.listed`). */
+    listed?: true
+    /** The root was accepted and a Folder command after it was refused — the relay's words. */
+    incomplete?: string
+  }
+> {
   let pointer
   try {
     // Same tolerance as reading: a widget rendered from an `a` tag address must
@@ -1174,7 +1204,54 @@ export async function applyActionAsViewer(
   */
   const newId = typeof args.value === 'string' ? undefined : crypto.randomUUID()
 
-  const built = buildActionEvent({
+  /*
+    What a `listed` action needs, read now (SPEC §7.3, MAN-4).
+
+    Ship's `add-project` and `delete-project` are followed by a Folder command —
+    the new project named in its Folder's state, or the deleted one taken out
+    of every state naming it — and the runtime builds those only from a read of
+    `kind:30890`, never from a default: a guess is a project its Folder does not
+    show, or a row pointing at nothing. The same reads Ship makes before its own
+    `createProject` and `deleteProject`. Every other action reads nothing here.
+
+    **One filter each, and only the relay's states.** A deletion reads the
+    states naming this address by `#a` — not every state, which a page limit
+    would cut short and leave a Folder with a row pointing at nothing. A state
+    counts only when the key that signed its Folder's channel record signed it
+    too (7 of 7 on production, 2026-09-30): a `kind:30890` from anyone else
+    would make a stateless Folder look stateful, and the `add` that follows it
+    would emit state listing one object and hide everything else filed there.
+  */
+  const declared = resolved.manifest.actions?.find((action) => action.id === args.actionId)
+  /*
+    Only a creation or a deletion is followed by a command (SPEC §7.3), and a
+    creation is a form with `properties` — interop's `isCreationAction`, the
+    rule `buildActionEvents` and `ResolvedAction.listed` both apply. Anything
+    else declaring `listed` builds one event, and must not report that it
+    listed anything.
+  */
+  const isListed =
+    declared?.emits.listed === true &&
+    (declared.emits.kind === KIND.DELETION || (declared.input?.type === 'object' && !!declared.input.properties))
+  let listing: { folderHasState?: boolean; listedIn?: FolderRef[] } = {}
+  if (declared && isListed) {
+    try {
+      const states = await relayStates(
+        query,
+        declared.emits.kind === KIND.DELETION
+          ? { kinds: [KIND_FOLDER_STATE], '#a': [address], limit: 500 }
+          : { kinds: [KIND_FOLDER_STATE], '#d': [folder], limit: 1 },
+      )
+      listing =
+        declared.emits.kind === KIND.DELETION
+          ? { listedIn: states.map((state) => ({ id: dOf(state)!, hasState: true })) }
+          : { folderHasState: states.length > 0 }
+    } catch {
+      return fail('The Folder could not be read, so nothing was written. Try again.')
+    }
+  }
+
+  const built = buildActionEvents({
     manifest: resolved.manifest,
     kind: pointer.kind,
     address,
@@ -1187,16 +1264,32 @@ export async function applyActionAsViewer(
     contentFormat: args.contentFormat,
     pubkey: token.pubkey,
     createdAtMs: Date.now(),
+    ...listing,
   })
   if (typeof built === 'string') return fail(built)
+  const [action, ...commands] = built
 
   const signed = await signViaEstivaId(
-    transform ? transform(built) : built,
+    transform ? transform(action) : action,
     token.accessToken,
     token.pubkey,
   )
   const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
   if (!result.ok) return fail(result.reason ?? 'The relay rejected the change.')
+
+  /*
+    The Folder commands, in order, stopping at the first refusal (SPEC §7.3).
+    The root is already accepted by then, so a refusal here is not a failed
+    action: the project exists, or is gone, and only its listing is behind.
+    Reported as `incomplete` beside `ok`, as Ship reports `placed` and
+    `unlisted` beside its result, so a caller can say which half landed.
+  */
+  let incomplete: string | undefined
+  if (commands.length > 0) {
+    const followed = await publishInOrder(commands, relayUrl, token)
+    if (!followed.ok) incomplete = followed.reason ?? 'The relay refused the Folder command.'
+  }
+  const listed = isListed ? { listed: true as const, ...(incomplete ? { incomplete } : {}) } : {}
   /*
     The address of what was just created, so the caller can reference it — the
     launcher drops it into the active composer and the reply renders it as a
@@ -1235,11 +1328,11 @@ export async function applyActionAsViewer(
     mistake as the local `folderOf` above, which drifted from the runtime's the
     moment the runtime learned something.
   */
-  const identifier = built.tags.find((t) => t[0] === 'd')?.[1]
-  const created = identifier ? `${built.kind}:${token.pubkey}:${identifier}` : undefined
+  const identifier = action.tags.find((t) => t[0] === 'd')?.[1]
+  const created = identifier ? `${action.kind}:${token.pubkey}:${identifier}` : undefined
   // The event's own id as well: a comment that carries a resolution is named
   // by the `kind:9101` that follows it (FOL-31), and nothing else reports it.
-  return { ok: true, id: signed.id, ...(created ? { created } : {}) }
+  return { ok: true, id: signed.id, ...(created ? { created } : {}), ...listed }
 }
 
 /**
@@ -1293,6 +1386,18 @@ export async function deleteFileAsViewer(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const deleted = await applyActionAsViewer({ naddr: args.naddr, actionId: args.actionId, value: '' }, relayUrl, token)
   if (!deleted.ok) return { ok: false, reason: deleted.reason ?? 'The relay refused to delete the topic.' }
+  /*
+    A deletion its owner declared `listed` — Ship's `delete-project` (MAN-4) —
+    has been unlisted already, from every Folder whose state names it rather
+    than from this one alone, because the declaration says so and the runtime
+    built the commands. A second `remove` here would be this file's copy of the
+    same rule.
+  */
+  if (deleted.listed) {
+    return deleted.incomplete
+      ? { ok: false, reason: 'It was deleted but is still listed in a folder. Reload and remove it from the folder again.' }
+      : { ok: true }
+  }
   const removed = await publishInOrder(
     planUnlistFile(token.pubkey, Date.now(), { folder: args.folder, address: args.address, hasState: args.hasState }),
     relayUrl,

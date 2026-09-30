@@ -200,12 +200,16 @@ export function useFileControls({
       return
     }
     // The fact the second write depends on, read now rather than remembered.
-    let hasState: boolean
-    try {
-      hasState = (await resolveFolderContents(file.folder)).hasState
-    } catch {
-      refuse('The folder could not be read, so the topic was not deleted. Try again.')
-      return
+    // Not for a `listed` deletion (MAN-4): the runtime reads every Folder that
+    // lists it and unlists from each, so this read would go unused.
+    let hasState = false
+    if (!action.listed) {
+      try {
+        hasState = (await resolveFolderContents(file.folder)).hasState
+      } catch {
+        refuse('The folder could not be read, so the topic was not deleted. Try again.')
+        return
+      }
     }
     const result = await deleteFile({ naddr: file.naddr, actionId: action.id, address: file.address, folder: file.folder, hasState })
     if (!result.ok) {

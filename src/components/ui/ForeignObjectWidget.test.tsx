@@ -329,6 +329,27 @@ describe('ForeignObjectWidget', () => {
       expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
     })
 
+    it('draws no one-line box for a prose field, nor for a move (MAN-4)', async () => {
+      resolveObject.mockResolvedValue(
+        object({
+          // What interop 0.36.0 resolves for Ship's describe-issue and
+          // move-issue: a text change declaring a block document, and a text
+          // change on the field its list declares as `movedBy`.
+          parentField: 'project',
+          actions: [
+            { id: 'describe-issue', label: 'Edit description', control: 'text', field: 'description', format: 'estiva-blocks-1' },
+            { id: 'move-issue', label: 'Move to project', control: 'text', field: 'project' },
+            { id: 'set-issue-status', label: 'Change status', control: 'select', field: 'status', current: 'todo', options: [{ value: 'todo', label: 'Todo' }] },
+          ],
+        }),
+      )
+      render(<ForeignObjectWidget naddr={NADDR} />)
+
+      // The other controls still draw: this is a filter on two shapes, not on the row.
+      expect(await screen.findByLabelText('Change status')).toBeInTheDocument()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
     it('keeps the labels on a card with no controls to defer to', async () => {
       // The topic sidebar renders read-only. With no picker on screen the status
       // pill is the only thing saying what the status is, so it stays.

@@ -372,7 +372,17 @@ export function ForeignObjectCard({
       // Nor the move (FOL-4): its value is an address, and a text box asking
       // for `30840:<hex>:<uuid>` is not a control. The tree and the file's
       // menu offer it, picking from the team.
-      action.field !== object.parentField,
+      action.field !== object.parentField &&
+      /*
+        Nor a prose value (MAN-4): Ship's `describe-issue` and
+        `describe-project` declare `format: 'estiva-blocks-1'`, and this row's
+        one-line box would replace a whole block-document description with a
+        sentence. Peek's prose editor holds marker text, which carries no block
+        ids, so rewriting a description through it would also unanchor every
+        comment on one of its blocks — it waits for an editor that keeps them,
+        and until then the description is edited in its app.
+      */
+      !action.format,
   )
 
   /**

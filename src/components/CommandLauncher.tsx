@@ -595,6 +595,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         return
       }
     }
+    // A `listed` creation whose Folder command was refused (SPEC §7.3): the
+    // object exists and its Folder does not show it, which is not a success.
+    if (result.incomplete) {
+      setSubmitError(`Created, but its folder does not list it yet: ${result.incomplete}`)
+      return
+    }
     const title = properties.title?.trim()
     // C5: say it worked, where the person is looking.
     showToast({ label: title ? `“${title}” created in ${appLabel}` : `Created in ${appLabel}`, type: 'success' })

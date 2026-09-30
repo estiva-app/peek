@@ -54,6 +54,13 @@ export function MoveUnderDialog({
   const [moving, setMoving] = useState(false)
   const formId = useId()
   const title = file.slots.title?.value ?? 'this file'
+  /*
+    The empty target is "the top" only for a file that may sit under any file.
+    One whose move names a kind (`parentKind` — a Ship issue, whose move is a
+    `project` change, MAN-4) is taken out of its parent by it, not placed in
+    the tree, so the row says that instead.
+  */
+  const topLabel = file.parentKind === undefined ? `The top of ${teamName}` : 'None — under none of these'
 
   async function move() {
     if (!to || moving) return
@@ -95,7 +102,7 @@ export function MoveUnderDialog({
               onChange={setTo}
               options={targets.map((target) => ({
                 value: valueOf(target),
-                label: target.file ? target.path.join(' › ') : `The top of ${teamName}`,
+                label: target.file ? target.path.join(' › ') : topLabel,
               }))}
               ariaLabel="Put it under"
             />
