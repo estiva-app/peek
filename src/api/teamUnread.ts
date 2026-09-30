@@ -1,3 +1,4 @@
+import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
 import { containerContext, fileContext, threadContext } from '@/nostr/readState'
 import { fileHasUnread } from './fileUnread'
@@ -106,6 +107,75 @@ export function streamsOf(
     }
   }
   return streams
+}
+
+/**
+ * Each Folder's messages, with a moved file's talk handed to the Folder it
+ * now lives in (FOL-49).
+ *
+ * The read is by `h` (`channelStreams.ts`), and a move does not change `h`:
+ * FOL-7 re-parents a file by `kind:1852` alone, and its conversation stays in
+ * the channel it was filed in. So a file talked about in one Folder's channel
+ * and listed by another's state belongs to the other — the Folder it is drawn
+ * under — and its stream is judged there.
+ *
+ * Moved only out of a Folder **with state** that does not list the file. A
+ * Folder read by containment lists whatever carries its `h`, so it has not
+ * lost the file; and a stateless channel — a Ship project's record channel —
+ * is already folded into the team that lists it (`listedIn`, FOL-22), which a
+ * move updates. A file no state lists stays where it is talked about: that is
+ * every issue, which no Folder lists and which is reached through its project.
+ *
+ * A message naming a moved file and one that stayed is in both Folders, each
+ * with only the files that live there. A Folder the caller holds no messages
+ * for gets none moved into it: it was not answered, and a few moved messages
+ * would pass for a judged Folder with nothing else said in it.
+ *
+ * `handed` says, per channel, which Folders its talk was moved into: the
+ * socket signals by `h`, and an open section's rows (FOL-44) re-read on the
+ * Folder the file is drawn under, so the signal has to travel the same way.
+ */
+export function placeStreams(
+  held: Readonly<Record<string, readonly StreamMessage[]>>,
+  folders: readonly FolderSummary[],
+): { streams: Record<string, StreamMessage[]>; handed: Record<string, string[]> } {
+  const lists = new Map<string, ReadonlySet<string>>()
+  const listedBy = new Map<string, string[]>()
+  for (const folder of folders) {
+    if (!folder.hasState) continue
+    lists.set(folder.id, new Set(folder.addresses))
+    for (const address of folder.addresses ?? []) {
+      const containers = listedBy.get(address) ?? []
+      if (!containers.includes(folder.id)) containers.push(folder.id)
+      listedBy.set(address, containers)
+    }
+  }
+  const placed: Record<string, StreamMessage[]> = {}
+  const handed: Record<string, string[]> = {}
+  for (const id of Object.keys(held)) placed[id] = []
+  for (const [id, messages] of Object.entries(held)) {
+    const state = lists.get(id)
+    for (const message of messages) {
+      const files = message.about.filter((address) => fileContext(address) !== undefined)
+      const moved = state ? files.filter((address) => !state.has(address) && listedBy.has(address)) : []
+      if (moved.length === 0) {
+        placed[id].push(message)
+        continue
+      }
+      const stayed = files.filter((address) => !moved.includes(address))
+      if (stayed.length > 0) placed[id].push({ ...message, about: stayed })
+      const into = new Map<string, string[]>()
+      for (const address of moved) {
+        for (const container of listedBy.get(address)!) into.set(container, [...(into.get(container) ?? []), address])
+      }
+      for (const [container, about] of into) {
+        placed[container]?.push({ ...message, about })
+        const to = (handed[id] ??= [])
+        if (!to.includes(container)) to.push(container)
+      }
+    }
+  }
+  return { streams: placed, handed }
 }
 
 /**
