@@ -459,7 +459,8 @@ export function useFileConversationView({
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
-        composerNotice={openView.data.isDeleted ? <MetaText>The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
+        // MetaText is a single line; a sentence in a narrow panel has to wrap.
+        composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
         onDeleteReply={(id) => remove(id, 'Reply')}
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyFilesChange={(id, f) => editFiles(id, f)}
