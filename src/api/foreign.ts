@@ -325,7 +325,7 @@ export function useForeignObjects() {
       value: string | Record<string, string>
       /** The prose value's format, when it is a block document (MAN-1). */
       contentFormat?: string
-    }): Promise<ActResult & { created?: string }> => {
+    }): Promise<ActResult & { created?: string; incomplete?: string }> => {
       const v = viewer()
       if (!v) return { ok: false, reason: 'Sign in to change another app’s object.' }
       return applyActionAsViewer(args, v.relayUrl, v.token)
