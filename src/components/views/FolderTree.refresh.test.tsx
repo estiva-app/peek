@@ -144,6 +144,11 @@ const dots = vi.hoisted(() => ({
 const deliver = (channel: string) => {
   for (const heard of dots.deliveries) heard(channel)
 }
+/** No file's parent known (FOL-50): every issue stays where it is talked about. */
+vi.mock('@/api/useFileParents', () => {
+  const none = {}
+  return { useFileParents: () => none }
+})
 vi.mock('@/api/useChannelStreams', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')
   return {

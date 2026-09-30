@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { placeStreams, teamHasFollowedStream, teamHasUnread } from './teamUnread'
+import { placeStreams, teamHasFollowedStream, teamHasUnread, unlistedFiles } from './teamUnread'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const ME = 'c'.repeat(64)
@@ -283,5 +283,89 @@ describe('placeStreams — a moved file is judged where its Folder lists it', ()
       [folder(A, true, []), folder(B, true, [PROJECT])],
     )
     expect(handed).toEqual({ [A]: [B] })
+  })
+})
+
+/*
+  FOL-50. An issue's comment carries only the issue's `a`, and no state lists an
+  issue, so after its project moved from A to B it stayed in A. The done-when is
+  the first block: it lights B for a follower of the issue, and not A.
+*/
+describe('placeStreams — an issue lives where its project does', () => {
+  const A = FOLDER
+  const B = '22222222-2222-4222-8222-222222222222'
+  const PROJECT = `30850:${PK}:project`
+  const OTHER = `30850:${PK}:other`
+  const folder = (id: string, hasState: boolean, addresses?: string[]): FolderSummary => ({
+    id,
+    hasState,
+    ...(addresses ? { addresses } : {}),
+  })
+  const issue = (key: string) => key === FOL18
+  const moved = [folder(A, true, [OTHER]), folder(B, true, [PROJECT])]
+
+  it('lights the Folder the project moved to for a follower of the issue, and not the old one', () => {
+    const { streams } = placeStreams({ [A]: [said('c', NOW - 10, [FOL18])], [B]: [] }, moved, { [FOL18]: PROJECT })
+    expect(teamHasUnread(B, streams[B], frontier({}, ME, issue))).toBe(true)
+    expect(teamHasUnread(A, streams[A], frontier({}, ME, issue))).toBe(false)
+  })
+
+  it('hands over the issue’s own stream — its address, judged by its marker', () => {
+    const { streams, handed } = placeStreams({ [A]: [said('c', NOW - 10, [FOL18])], [B]: [] }, moved, {
+      [FOL18]: PROJECT,
+    })
+    expect(streams[B].map((message) => message.about)).toEqual([[FOL18]])
+    expect(teamHasUnread(B, streams[B], frontier({ [FOL18]: NOW }, ME, issue))).toBe(false)
+    expect(handed).toEqual({ [A]: [B] })
+  })
+
+  it('keeps an issue whose project its Folder still lists', () => {
+    const held = { [A]: [said('c', NOW - 10, [FOL18])], [B]: [] }
+    expect(placeStreams(held, moved, { [FOL18]: OTHER }).streams).toEqual(held)
+  })
+
+  it('keeps an issue until its parent is known, at the top, or under a project no state lists', () => {
+    const held = { [A]: [said('c', NOW - 10, [FOL18])], [B]: [] }
+    for (const parents of [{}, { [FOL18]: null }, { [FOL18]: `30850:${PK}:nowhere` }]) {
+      expect(placeStreams(held, moved, parents).streams).toEqual(held)
+    }
+  })
+
+  /* The rule is the parent's, not the kind's: a topic nested under a project is drawn under it. */
+  it('moves talk about a topic nested under the moved project too', () => {
+    const TOPIC = `39000:${PK}:44444444-4444-4444-8444-444444444444`
+    const { streams } = placeStreams({ [A]: [said('c', NOW - 10, [TOPIC])], [B]: [] }, moved, { [TOPIC]: PROJECT })
+    expect(streams[A]).toEqual([])
+    expect(streams[B].map((message) => message.about)).toEqual([[TOPIC]])
+  })
+
+  it('splits a comment about a moved issue and an issue that stayed', () => {
+    const { streams } = placeStreams({ [A]: [said('c', NOW - 10, [FOL18, FOL16])], [B]: [] }, moved, {
+      [FOL18]: PROJECT,
+      [FOL16]: OTHER,
+    })
+    expect(streams[A].map((message) => message.about)).toEqual([[FOL16]])
+    expect(streams[B].map((message) => message.about)).toEqual([[FOL18]])
+  })
+})
+
+describe('unlistedFiles — what placeStreams needs a parent for', () => {
+  const B = '22222222-2222-4222-8222-222222222222'
+  const RECORD = '33333333-3333-4333-8333-333333333333'
+  const PROJECT = `30850:${PK}:project`
+
+  it('asks about files named in a Folder with state that no state lists, once each', () => {
+    const held = {
+      [FOLDER]: [said('c', NOW - 10, [FOL18, PROJECT]), said('d', NOW - 5, [FOL18, 'not an address'])],
+      [B]: [said('e', NOW - 5, [FOL16])],
+    }
+    expect(unlistedFiles(held, [{ id: FOLDER, hasState: true, addresses: [PROJECT] }, { id: B, hasState: true }])).toEqual([
+      FOL16,
+      FOL18,
+    ])
+  })
+
+  it('asks nothing of a Folder with no state, which nothing is moved out of', () => {
+    expect(unlistedFiles({ [RECORD]: [said('c', NOW - 10, [FOL18])] }, [{ id: RECORD, hasState: false }])).toEqual([])
   })
 })

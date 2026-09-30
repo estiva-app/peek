@@ -61,6 +61,7 @@ import {
   resolveForeignObjects,
   resolveManifest,
   resolveActingManifest,
+  resolveParents,
   topLevelFolders,
   type FolderContents,
   type FolderSummary,
@@ -447,6 +448,25 @@ export async function resolveObjectsAsViewer(
     ),
   ])
   return { ...pooled, ...Object.fromEntries(singles) }
+}
+
+/**
+ * The parent each file sits under, for a set — FOL-50.
+ *
+ * Interop's `resolveParents`: the roots, and the moves where a kind can be
+ * moved, in one POST for the set once the manifests are cached — where
+ * `resolveObjectsAsViewer` would read every file's comments and children too.
+ * A parent's address, `null` at the top, and no key where nothing can be told.
+ *
+ * **Throws `RelayReadError` when the read is refused**, like the pooled object
+ * read: an unanswered set is not a set of files at the top.
+ */
+export async function resolveParentsAsViewer(
+  references: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<Record<string, string | null>> {
+  return resolveParents(references, viewerQuery(relayUrl, token), manifests)
 }
 
 /** `nostr:nevent1…`, `nostr:note1…`, or a bare 64-hex event id. */

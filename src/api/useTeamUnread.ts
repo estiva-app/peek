@@ -7,8 +7,9 @@ import { relayFailureKind } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { type TeamUnreadProbe, type TeamUnreadTrigger, teamUnreadProbe } from './teamUnreadDiagnostic'
-import { placeStreams, teamHasFollowedStream, teamHasUnread } from './teamUnread'
+import { placeStreams, teamHasFollowedStream, teamHasUnread, unlistedFiles } from './teamUnread'
 import { onChannelStoreDelivery, onChannelStoreRead, useChannelStreams } from './useChannelStreams'
+import { useFileParents } from './useFileParents'
 
 /** How long the socket's activity is gathered before an open section is told once (FOL-44). */
 export const TEAM_UNREAD_SETTLE_MS = 1_000
@@ -175,10 +176,16 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     }
   }, [ids, bump])
 
-  // A moved file's talk is judged in the Folder that lists it now (FOL-49).
+  /*
+    A moved file's talk is judged in the Folder that lists it now (FOL-49), and
+    a file no state lists — an issue — where its parent is listed (FOL-50).
+    Until a parent is known the file stays where it is talked about.
+  */
+  const unlisted = useMemo(() => unlistedFiles(held.streams, folders ?? []), [held, folders])
+  const parents = useFileParents(unlisted)
   const placed = useMemo(
-    () => ({ at: held.at, ...placeStreams(held.streams, folders ?? []) }),
-    [held, folders],
+    () => ({ at: held.at, ...placeStreams(held.streams, folders ?? [], parents) }),
+    [held, folders, parents],
   )
 
   /*
