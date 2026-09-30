@@ -7,7 +7,7 @@ import { relayFailureKind } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { type TeamUnreadProbe, type TeamUnreadTrigger, teamUnreadProbe } from './teamUnreadDiagnostic'
-import { teamHasFollowedStream, teamHasUnread } from './teamUnread'
+import { placeStreams, teamHasFollowedStream, teamHasUnread } from './teamUnread'
 import { onChannelStoreDelivery, onChannelStoreRead, useChannelStreams } from './useChannelStreams'
 
 /** How long the socket's activity is gathered before an open section is told once (FOL-44). */
@@ -175,6 +175,12 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     }
   }, [ids, bump])
 
+  // A moved file's talk is judged in the Folder that lists it now (FOL-49).
+  const placed = useMemo(
+    () => ({ at: held.at, ...placeStreams(held.streams, folders ?? []) }),
+    [held, folders],
+  )
+
   /*
     Judged on every frontier change, not only when the messages arrive — the
     frontier moves when this tab records a read, and that is what turns a dot
@@ -190,7 +196,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     if (!frontier.ready || follows.state === 'unknown') return { unread, followed: followedIn }
     const me = validToken()?.pubkey
     for (const folder of ids) {
-      const messages = held.streams[folder]
+      const messages = placed.streams[folder]
       /*
         Judged before the messages are, because half of it does not need them:
         following the Folder follows its general chat, and a Folder nobody has
@@ -205,7 +211,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
         marker: frontier.marker,
         followed: follows.isFollowed,
         me,
-        nowSeconds: held.at,
+        nowSeconds: placed.at,
         horizonSeconds: HORIZON_SECONDS,
       })
     }
@@ -231,7 +237,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       }
     }
     return { unread, followed: followedIn }
-  }, [held, frontier, follows.state, follows.isFollowed, ids, folders])
+  }, [placed, frontier, follows.state, follows.isFollowed, ids, folders])
 
   /*
     Handed over after the commit, not during the render that produced it: the
@@ -249,11 +255,11 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       follows: follows.state,
       isFollowed: follows.isFollowed,
       me: validToken()?.pubkey,
-      held,
+      held: { at: placed.at, streams: placed.streams },
       horizonSeconds: HORIZON_SECONDS,
       result: judged,
     })
-  }, [ids, folders, live, relayState, frontier, follows.state, follows.isFollowed, held, judged])
+  }, [ids, folders, live, relayState, frontier, follows.state, follows.isFollowed, placed, judged])
 
   /*
     A topic or a project's conversation channel is a Folder of its own placed
@@ -269,8 +275,14 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       if (!own || !folder.listedIn) continue
       for (const container of folder.listedIn) out[container] = (out[container] ?? 0) + own
     }
+    // And to wherever a moved file's talk in it is judged (FOL-49).
+    for (const [from, into] of Object.entries(placed.handed)) {
+      const own = signalled[from]
+      if (!own) continue
+      for (const container of into) out[container] = (out[container] ?? 0) + own
+    }
     return out
-  }, [signalled, folders])
+  }, [signalled, folders, placed.handed])
 
   return useMemo(() => ({ ...judged, activity }), [judged, activity])
 }

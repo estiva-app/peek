@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { teamHasFollowedStream, teamHasUnread } from './teamUnread'
+import { placeStreams, teamHasFollowedStream, teamHasUnread } from './teamUnread'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const ME = 'c'.repeat(64)
@@ -200,5 +201,87 @@ describe('teamHasFollowedStream — does this Folder hold anything followed', ()
     expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], only('not-an-address'))).toBe(
       false,
     )
+  })
+})
+
+/*
+  FOL-49. A project moved from A to B by `kind:1852` keeps its conversation in
+  A's channel, so the read by `h` hands its comments to A. The done-when is the
+  first block: they light B for a follower of the project, and not A.
+*/
+describe('placeStreams — a moved file is judged where its Folder lists it', () => {
+  const A = FOLDER
+  const B = '22222222-2222-4222-8222-222222222222'
+  const RECORD = '33333333-3333-4333-8333-333333333333'
+  const PROJECT = `30850:${PK}:project`
+  const folder = (id: string, hasState: boolean, addresses?: string[]): FolderSummary => ({
+    id,
+    hasState,
+    ...(addresses ? { addresses } : {}),
+  })
+  const project = (key: string) => key === PROJECT
+  const place = (...args: Parameters<typeof placeStreams>) => placeStreams(...args).streams
+
+  it('lights the Folder the project moved to, and not the one it was talked in', () => {
+    const placed = place({ [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }, [
+      folder(A, true, []),
+      folder(B, true, [PROJECT]),
+    ])
+    expect(teamHasUnread(B, placed[B], frontier({}, ME, project))).toBe(true)
+    expect(teamHasUnread(A, placed[A], frontier({}, ME, project))).toBe(false)
+  })
+
+  it('does not leave the moved comment in the old Folder’s general stream', () => {
+    const placed = place({ [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }, [
+      folder(A, true, []),
+      folder(B, true, [PROJECT]),
+    ])
+    expect(placed[A]).toEqual([])
+    expect(teamHasUnread(A, placed[A], frontier())).toBe(false)
+  })
+
+  it('keeps a file its own Folder still lists', () => {
+    const held = { [A]: [said('c', NOW - 10, [PROJECT])], [B]: [] }
+    const placed = place(held, [folder(A, true, [PROJECT]), folder(B, true, [])])
+    expect(placed).toEqual(held)
+  })
+
+  /* Every issue: talked about under its project's `h`, and listed by no state. */
+  it('keeps a file no state lists', () => {
+    const held = { [A]: [said('c', NOW - 10, [FOL18])], [B]: [] }
+    expect(place(held, [folder(A, true, []), folder(B, true, [PROJECT])])).toEqual(held)
+  })
+
+  /* A record channel has no state; `listedIn` already folds it into its team. */
+  it('keeps talk in a Folder with no state', () => {
+    const held = { [RECORD]: [said('c', NOW - 10, [PROJECT])], [B]: [] }
+    expect(place(held, [folder(RECORD, false), folder(B, true, [PROJECT])])).toEqual(held)
+  })
+
+  it('splits a message about a moved file and one that stayed', () => {
+    const placed = place({ [A]: [said('c', NOW - 10, [PROJECT, FOL16])], [B]: [] }, [
+      folder(A, true, [FOL16]),
+      folder(B, true, [PROJECT]),
+    ])
+    expect(placed[A].map((message) => message.about)).toEqual([[FOL16]])
+    expect(placed[B].map((message) => message.about)).toEqual([[PROJECT]])
+  })
+
+  /* Not answered is not "nothing said": a moved message must not pass for a judged Folder. */
+  it('moves nothing into a Folder the caller holds no messages for', () => {
+    const placed = place({ [A]: [said('c', NOW - 10, [PROJECT])] }, [
+      folder(A, true, []),
+      folder(B, true, [PROJECT]),
+    ])
+    expect(placed[B]).toBeUndefined()
+  })
+
+  /* FOL-44's signal arrives by `h`; an open section under B must hear it too. */
+  it('says which Folders a channel handed talk to, and none for talk that stayed', () => {
+    const { handed } = placeStreams(
+      { [A]: [said('c', NOW - 10, [PROJECT]), said('d', NOW - 5, [PROJECT])], [B]: [said('e', NOW - 5)] },
+      [folder(A, true, []), folder(B, true, [PROJECT])],
+    )
+    expect(handed).toEqual({ [A]: [B] })
   })
 })
