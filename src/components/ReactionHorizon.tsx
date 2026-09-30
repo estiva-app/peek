@@ -1,11 +1,11 @@
-import { REACTION_TARGET_LIMIT } from '@/nostr/reactionHorizon'
+import { REACTION_HORIZON } from '@estiva-app/conversation'
 
 /**
  * A quiet line under a conversation saying how many older messages' reactions
  * were not checked: the reaction horizon, said out loud — SPEC §6.6, PEE-21.
  *
  * A reaction is fetched addressed by target, and Peek asks about at most
- * `REACTION_TARGET_LIMIT` messages and replies per topic. Past that, a message
+ * `REACTION_HORIZON` messages and replies per topic. Past that, a message
  * with reactions looks exactly like a message nobody reacted to — §6.6's
  * finding, and why reporting the cap is a MUST rather than a SHOULD. On this
  * workspace it has never bitten (the busiest container holds 77 against a cap
@@ -31,16 +31,29 @@ import { REACTION_TARGET_LIMIT } from '@/nostr/reactionHorizon'
  */
 export function ReactionHorizon({
   omitted,
+  cut = false,
   container = 'topic',
 }: {
   omitted: number
+  /**
+   * A reaction read came back at the relay's page ceiling, so some reaction
+   * *events* may be missing even inside the horizon — §6.6 makes reporting
+   * this cut a MUST too. Ship says it in the same words.
+   */
+  cut?: boolean
   container?: 'topic' | 'conversation'
 }) {
-  if (omitted <= 0) return null
+  if (omitted <= 0 && !cut) return null
   return (
     <p className="text-caption text-text-muted">
-      Reactions are shown for {REACTION_TARGET_LIMIT} messages and replies in this {container}.{' '}
-      {omitted} older {omitted === 1 ? 'one was' : 'ones were'} not checked.
+      {omitted > 0 && (
+        <>
+          Reactions are shown for {REACTION_HORIZON} messages and replies in this {container}.{' '}
+          {omitted} older {omitted === 1 ? 'one was' : 'ones were'} not checked.
+        </>
+      )}
+      {omitted > 0 && cut && ' '}
+      {cut && 'Some reactions may be missing.'}
     </p>
   )
 }

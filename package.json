@@ -21,10 +21,11 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
+    "@estiva-app/conversation": "^0.1.0",
     "@estiva-app/identity": "^0.2.1",
-    "@estiva-app/interop": "^0.40.0",
+    "@estiva-app/interop": "^0.41.0",
     "@estiva-app/platform": "^0.4.0",
-    "@estiva-app/protocol": "^0.24.0",
+    "@estiva-app/protocol": "^0.25.0",
     "@estiva-app/ui": "^0.45.0",
     "@tabler/icons-react": "^3.41.1",
     "@tiptap/extension-link": "^3.22.1",

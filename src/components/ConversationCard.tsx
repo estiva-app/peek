@@ -44,6 +44,8 @@ interface ConversationCardProps {
   body: string
   /** When the body was last edited, ms — draws the marker (CON-8). */
   editedAt?: number
+  /** Offer Edit and Delete (SPEC §6.5). Absent: only on the viewer's own ("You") message. */
+  canEditAndDelete?: boolean
   reactions?: ReactionData[]
   replyCount?: number
   /** Reply-author names for the signal theme's facepile reply row (ignored elsewhere). */
@@ -97,6 +99,7 @@ export function ConversationCard({
   timestamp,
   body,
   editedAt,
+  canEditAndDelete,
   reactions,
   replyCount,
   replyAuthors,
@@ -348,11 +351,11 @@ export function ConversationCard({
     onResolvedChange?.(false)
   }
 
-  // Only the author edits or deletes (PEE-32). Every seam maps the viewer's
-  // own rows to `CURRENT_USER_NAME` — `toConversationData` by Convex author
-  // id, `useFileConversationView`'s `project` by pubkey — so the label is the
-  // one signal the card has, and the same one the "You" header reads.
-  const isOwnMessage = isCurrentUser(authorName)
+  // Edit and Delete on the viewer's own message and on an agent's (SPEC §6.5,
+  // CON-5): a seam that reads profiles says so in `canEditAndDelete`. One that
+  // does not falls back to the author label (PEE-32) — every seam maps the
+  // viewer's own rows to `CURRENT_USER_NAME`, the same label "You" reads.
+  const isOwnMessage = canEditAndDelete ?? isCurrentUser(authorName)
 
   // Delete asks first (D56): the menu row opens the question, the delete runs on Yes.
   const [confirmingDelete, setConfirmingDelete] = useState(false)

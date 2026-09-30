@@ -11,7 +11,8 @@
  */
 import { queryRelay } from '@/nostr/bridge'
 import { resolveObjectAsViewer } from '@/nostr/foreign'
-import { fileConversationAsViewer, isCommentOn } from '@/nostr/fileConversation'
+import { anchorsOf } from '@estiva-app/conversation'
+import { fileConversationAsViewer } from '@/nostr/fileConversation'
 import type { StoredToken } from '@/auth/estivaId'
 
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
@@ -56,7 +57,7 @@ export default async function main() {
 
     const byA = await queryRelay(RELAY_URL, [{ kinds: [1111], '#A': [address], limit: 1000 }], token.accessToken, token.pubkey)
     if (!byA.ok) throw new Error(`#A read refused: ${byA.reason}`)
-    const notDrawn = byA.events.filter((e) => isCommentOn(e, address) && !drawn.has(e.id))
+    const notDrawn = byA.events.filter((e) => anchorsOf(e).includes(address) && !drawn.has(e.id))
     hidden += notDrawn.length
 
     const deleted = conversation.roots.filter((r) => r.deleted)

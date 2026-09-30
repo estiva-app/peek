@@ -420,6 +420,7 @@ export function ThreadPanel({
               timestamp={rootTimestamp}
               body={conversation.body}
               editedAt={conversation.editedAt}
+              canEditAndDelete={conversation.canEditAndDelete}
               files={conversation.files}
               reactions={initialReactions}
               highlightType={initialHighlightType}
@@ -462,6 +463,7 @@ export function ThreadPanel({
                     timestamp={reply.timestamp}
                     body={reply.body}
                     editedAt={reply.editedAt}
+                    canEditAndDelete={reply.canEditAndDelete}
                     files={reply.files}
                     highlightType={reply.highlightType}
                     reactions={reply.reactions}

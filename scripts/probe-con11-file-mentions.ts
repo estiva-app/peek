@@ -16,7 +16,7 @@
 import { addrToNaddr } from '@estiva-app/protocol'
 import { queryRelay } from '@/nostr/bridge'
 import { fileMentionsAsViewer, fileMentionsOf } from '@/nostr/fileMentions'
-import { isCommentOn } from '@/nostr/fileConversation'
+import { isCommentOn } from '@estiva-app/conversation'
 import type { StoredToken } from '@/auth/estivaId'
 
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'

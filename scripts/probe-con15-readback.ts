@@ -10,7 +10,7 @@
  */
 import { queryRelay } from '@/nostr/bridge'
 import { conversationsAsViewer, resolveObjectAsViewer } from '@/nostr/foreign'
-import { isCommentOn } from '@/nostr/fileConversation'
+import { isCommentOn } from '@estiva-app/conversation'
 import type { StoredToken } from '@/auth/estivaId'
 import { createRequire } from 'node:module'
 
