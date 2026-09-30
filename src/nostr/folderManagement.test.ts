@@ -169,6 +169,18 @@ describe('moving a file', () => {
     expect(tag(sent()[0]!, 'op')).toEqual(['add'])
   })
 
+  it('moves what is listed under the file with it, every add before any remove (FOL-45)', async () => {
+    const SUB = `${ADDRESS}-sub`
+    await moveFileAsViewer([ADDRESS, SUB], here, there, 'https://relay.test', token)
+
+    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'a')[0]])).toEqual([
+      ['add', OTHER, ADDRESS],
+      ['add', OTHER, SUB],
+      ['remove', FOLDER, ADDRESS],
+      ['remove', FOLDER, SUB],
+    ])
+  })
+
   it('writes nothing when the destination is where it already is', async () => {
     const result = await moveFileAsViewer(ADDRESS, here, here, 'https://relay.test', token)
 

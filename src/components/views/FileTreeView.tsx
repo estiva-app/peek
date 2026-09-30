@@ -11,7 +11,7 @@ import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
-import { canStartInside, fileControlsOf } from '@/lib/fileControls'
+import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
 
 /**
  * A line where the tree's rows would be: empty, or unreadable. Level with the
@@ -256,7 +256,7 @@ function TreeRow({
           onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
           onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
           onNewSubTopic={inside ? () => onControl?.('inside', file) : undefined}
-          onMove={controls.move ? () => onControl?.('move', file) : undefined}
+          onMove={onControl && canMove(file) ? () => onControl('move', file) : undefined}
           openWorkAction={openWorkAction}
           onToggleOpenWork={
             followKey && openWorkAction

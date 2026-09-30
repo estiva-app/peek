@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
@@ -108,6 +109,7 @@ const threads = vi.hoisted(() => ({
 const writes = vi.hoisted(() => ({
   replyToComment: vi.fn(async () => ({ ok: true })),
   applyAction: vi.fn(async () => ({ ok: true })),
+  moveFile: vi.fn<(...args: unknown[]) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // The reference widget's own read (FOL-29) — never made for the file the page has already resolved.
   resolveObject: vi.fn(async () => null),
   renameFile: vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: string }> => ({ ok: true })),
@@ -1083,17 +1085,18 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${TOPIC_SHORT}`))
   })
 
-  it('the header of a Ship issue has nothing from the manifest — only Open work (FOL-34)', () => {
+  it('the header of a Ship issue has nothing from the manifest — only Move, a topic inside and Open work', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
     expect(within(middle).getByRole('link', { name: 'Open folder' })).toBeInTheDocument()
     // Open work is the reader's, not the manifest's: any addressable file can be put there.
     // So is a topic inside it (FOL-4): any kind may hold one, and no manifest says so.
-    expect(openHeaderMenu()).toEqual(['New topic inside', 'Add to Open work'])
+    // And Move (FOL-45): a Folder lists addresses, so any addressable file can change Folder.
+    expect(openHeaderMenu()).toEqual(['New topic inside', 'Move…', 'Add to Open work'])
   })
 
-  it('the tree row of a bare file has the same menu, and an issue’s row has only Open work and Follow', () => {
+  it('the tree row of a bare file has the same menu, and an issue’s row has only Move, Open work and Follow', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     // The issue as a peer rather than under its collapsed project, so its row is drawn.
     relay.files = [project, bareFile, { ...shipIssue, parentRef: undefined }]
@@ -1115,12 +1118,13 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 
     // Nothing from the manifest — but Follow and Open work are the reader's, not
     // the manifest's (FOL-30, FOL-34): any addressable file can be followed or
-    // put in Open work, a Ship issue included.
+    // put in Open work, a Ship issue included — and moved to another Folder (FOL-45).
     const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
     hover(issueRow)
     fireEvent.click(within(issueRow).getByRole('button', { name: 'More options' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'New topic inside',
+      'Move…',
       'Add to Open work',
       'Follow',
     ])
@@ -1369,6 +1373,80 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     fireEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
     expect(writes.applyAction).toHaveBeenCalledWith({ naddr: deep.naddr, actionId: 'move', value: '' })
+  })
+
+  it('moves a topic to the top of another Folder: its listing with what is under it, then its parent (FOL-45)', async () => {
+    const under = bare('under', 'Under it', deep.address)
+    const listing = [project, brief, notes, deep, under, elsewhere]
+    writes.listFolders.mockResolvedValueOnce([
+      { id: FOLDER, name: 'Folders', hasState: true, addresses: listing.map((f) => f.address!) },
+      { id: 'steer', name: 'Steer', hasState: true, addresses: [] },
+    ] as never)
+    writes.resolveFolderContents.mockImplementation(async (id: string) =>
+      id === FOLDER
+        ? ({ id, name: 'Folders', hasState: true, source: 'state', files: listing } as never)
+        : { id, name: 'Steer', hasState: true, source: 'state', files: [] },
+    )
+    writes.moveFile.mockClear()
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
+    expect(screen.getAllByRole('option').map((option) => option.textContent?.replace('✔️', ''))).toEqual(['The top of Steer'])
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
+    expect(writes.moveFile).toHaveBeenCalledWith(
+      [deep.address, under.address],
+      { id: FOLDER, hasState: true },
+      { id: 'steer', hasState: true },
+    )
+    // Out from under `notes`, which stayed behind: the top of Steer is an empty parent.
+    expect(writes.applyAction).toHaveBeenCalledWith({ naddr: deep.naddr, actionId: 'move', value: '' })
+    expect(writes.moveFile.mock.invocationCallOrder[0]).toBeLessThan(writes.applyAction.mock.invocationCallOrder[0])
+    writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
+  })
+
+  it('moves an issue to another Folder by its project, and lists nothing (FOL-45)', async () => {
+    const steerProject = foreign({ ...project, ref: `30850:${CATH}:steer-project`, address: `30850:${CATH}:steer-project`, slots: { title: { value: 'Steer work' } } })
+    // Ship's manifest declares the issue's `project` as what moves it (MAN-4), and `move-issue` sets it.
+    const moving = {
+      ...issue,
+      parentRef: PROJECT_ADDRESS,
+      parentField: 'project',
+      parentKind: 30850,
+      actions: [{ id: 'move-issue', label: 'Move to project', control: 'text', effect: 'writes', field: 'project' }],
+    } as unknown as ForeignObject
+    objects.byAddress[ISSUE_ADDRESS] = moving
+    // Not once: the issue's page reads the Folders itself too, to place the issue in the tree (SID-2).
+    const listFolders = writes.listFolders.getMockImplementation()
+    writes.listFolders.mockResolvedValue([
+      { id: FOLDER, name: 'Folders', hasState: true, addresses: [PROJECT_ADDRESS] },
+      { id: 'steer', name: 'Steer', hasState: true, addresses: [steerProject.address!] },
+    ] as never)
+    writes.resolveFolderContents.mockImplementation(async (id: string) =>
+      id === FOLDER
+        ? ({ id, name: 'Folders', hasState: true, source: 'state', files: [project] } as never)
+        : ({ id, name: 'Steer', hasState: true, source: 'state', files: [steerProject] } as never),
+    )
+    writes.moveFile.mockClear()
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
+    // Only Steer's projects: an issue under no project is in no Folder.
+    expect(screen.getAllByRole('option').map((option) => option.textContent?.replace('✔️', ''))).toEqual(['Steer work'])
+    await userEvent.click(screen.getByRole('option', { name: 'Steer work' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
+    await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
+    expect(writes.applyAction).toHaveBeenCalledWith({ naddr: moving.naddr, actionId: 'move-issue', value: steerProject.address })
+    expect(writes.moveFile).not.toHaveBeenCalled()
+    writes.listFolders.mockImplementation(listFolders!)
+    writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
   })
 
   it('starts a topic inside the file, in the file’s own team, and opens it', async () => {

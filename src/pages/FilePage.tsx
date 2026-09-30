@@ -19,7 +19,7 @@ import {
 } from '@/api'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { kindNoun } from '@/lib/archiveWords'
-import { canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
+import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useFolderPath } from '@/lib/useFolderPath'
@@ -414,7 +414,7 @@ export function FilePage() {
                     a Ship issue's header has nothing to put here, and a button
                     that opens nothing would say otherwise.
                   */}
-                  {(hasFileControls(controls) || startsInside || toggleOpenWork) && (
+                  {(hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
                     <TopicMoreMenu
                       trigger={
                         <ToolbarButton tooltip="More actions" aria-label="More actions">
@@ -429,7 +429,7 @@ export function FilePage() {
                       onToggleOpenWork={toggleOpenWork}
                       onRename={controls.rename ? () => fileControls.open('rename', file) : undefined}
                       onNewSubTopic={startsInside && file ? () => fileControls.open('inside', file) : undefined}
-                      onMove={controls.move && file ? () => fileControls.open('move', file) : undefined}
+                      onMove={canMove(file) && file ? () => fileControls.open('move', file) : undefined}
                       onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
                     />
                   )}

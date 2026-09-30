@@ -664,25 +664,35 @@ export async function deleteFolderAsViewer(
  * (FOL-10). An `add` to one emits state listing only the moved file and hides
  * everything else filed there; a `remove` from one emits state listing nothing.
  * So each side's `hasState` comes from a read, as a rename's does.
+ *
+ * **What is under the file moves with it** (FOL-45). A sub-topic is listed by
+ * its team's state beside its parent, so moving only the parent would leave the
+ * sub-topic in the old Folder, drawn at its top because its parent is no longer
+ * in that listing. `addresses` is the file and every file listed under it; each
+ * is planned by `planMoveFile`, and every add is sent before any remove, so the
+ * same "both, never neither" holds for the whole set.
  */
 export async function moveFileAsViewer(
-  address: string,
+  addresses: string | readonly string[],
   from: FolderRef,
   to: FolderRef,
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const plan = planMoveFile(token.pubkey, Date.now(), { address, from, to })
-  if (!plan.ok) {
+  const plans = [addresses].flat().map((address) => planMoveFile(token.pubkey, Date.now(), { address, from, to }))
+  const refused = plans.find((plan) => !plan.ok)
+  if (refused && !refused.ok) {
     return {
       ok: false,
       reason:
-        plan.reason === 'source-has-no-state'
+        refused.reason === 'source-has-no-state'
           ? 'Files can’t be moved out of this folder yet: it has no list of its own, so moving one would hide the rest.'
           : 'That folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
-  const result = await publishInOrder(plan.events, relayUrl, token)
+  const events = plans.flatMap((plan) => (plan.ok ? plan.events : []))
+  const isAdd = (event: UnsignedEvent) => event.tags.some(([name, value]) => name === 'op' && value === 'add')
+  const result = await publishInOrder([...events.filter(isAdd), ...events.filter((event) => !isAdd(event))], relayUrl, token)
   if (result.ok) return { ok: true }
   if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
   return { ok: false, reason: 'Added to the new folder, but it is still in the old one. Try moving it again.' }

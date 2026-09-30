@@ -29,7 +29,7 @@ import { TextInput } from './ui/TextInput'
  * from a Folder or a row, the destination is that Folder and the dialog only
  * names it. Started from the column header (FOL-41) there is no Folder in
  * hand, so `folders` is passed and the dialog asks — a `Select`, the same
- * shape and for the same reason as `MoveFileDialog`'s: one value out of a list
+ * shape and for the same reason as `MoveDialog`'s: one value out of a list
  * that runs to dozens.
  *
  * **Not the old Start topic dialog** ([CreateTopicDialog]), whose second field
@@ -74,7 +74,7 @@ export function StartTopicDialog({
   /*
     A Folder with no state event carries only its channel's name, and an
     app-created channel may carry none — so the id is the ordinary fallback
-    here, as it is in the tree and in `MoveFileDialog`, not a defensive branch.
+    here, as it is in the tree and in `MoveDialog`, not a defensive branch.
   */
   const chosen = folders?.find((f) => f.id === folder)
   const where = choosing ? (chosen?.name ?? chosen?.id ?? 'the folder') : (folderName ?? 'this folder')
