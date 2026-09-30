@@ -25,7 +25,7 @@ const STEER = { id: 'steer', name: 'Steer' }
 const optionsOf = async (name: string) => {
   await userEvent.click(screen.getByRole('combobox', { name }))
   // The package's Select marks the chosen option with a check; the label is the rest.
-  return screen.getAllByRole('option').map((option) => option.textContent?.replace('✔️', ''))
+  return (await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))
 }
 
 describe('MoveDialog (FOL-45)', () => {
@@ -52,7 +52,7 @@ describe('MoveDialog (FOL-45)', () => {
       <MoveDialog file={NOTES} from="hq" folders={[HQ, STEER]} nests targets={[]} targetsIn={targetsIn} onMove={onMove} onClose={vi.fn()} />,
     )
     await userEvent.click(screen.getByRole('combobox', { name: 'Folder' }))
-    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     expect(targetsIn).toHaveBeenCalledWith('steer')
     expect(await optionsOf('Put it under')).toEqual(['The top of Steer', 'Brief'])
     await userEvent.keyboard('{Escape}')
@@ -67,7 +67,7 @@ describe('MoveDialog (FOL-45)', () => {
     // Nothing preselected: a Move pressed straight away would be a move nobody chose.
     expect(screen.getByRole('button', { name: 'Move' })).toBeDisabled()
     expect(await optionsOf('Folder')).toEqual(['Steer'])
-    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(onMove).toHaveBeenCalledWith({ folder: 'steer' }))
   })
@@ -78,11 +78,11 @@ describe('MoveDialog (FOL-45)', () => {
     const live = { file: topic('live', 'A live project', { kind: 30850 } as Partial<ForeignObject>), path: ['A live project'] }
     render(<MoveDialog file={issue} from="hq" folders={[HQ, STEER]} nests targets={[]} targetsIn={async () => [live]} onMove={onMove} onClose={vi.fn()} />)
     await userEvent.click(screen.getByRole('combobox', { name: 'Folder' }))
-    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await screen.findByRole('combobox', { name: 'Put it under' })
     expect(screen.getByRole('button', { name: 'Move' })).toBeDisabled()
     await userEvent.click(screen.getByRole('combobox', { name: 'Put it under' }))
-    await userEvent.click(screen.getByRole('option', { name: 'A live project' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'A live project' }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(onMove).toHaveBeenCalledWith({ folder: 'steer', parent: live.file.address }))
   })
@@ -91,7 +91,7 @@ describe('MoveDialog (FOL-45)', () => {
     const issue = topic('issue', 'An issue', { kind: 30851, parentKind: 30850 } as Partial<ForeignObject>)
     render(<MoveDialog file={issue} from="hq" folders={[HQ, STEER]} nests targets={[]} targetsIn={async () => []} onMove={vi.fn()} onClose={vi.fn()} />)
     await userEvent.click(screen.getByRole('combobox', { name: 'Folder' }))
-    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     expect(await screen.findByText('There is nowhere in Steer to put it.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move' })).toBeDisabled()
   })
@@ -100,7 +100,7 @@ describe('MoveDialog (FOL-45)', () => {
     const targetsIn = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce([{ path: [] }])
     render(<MoveDialog file={NOTES} from="hq" folders={[HQ, STEER]} nests targets={[]} targetsIn={targetsIn} onMove={vi.fn()} onClose={vi.fn()} />)
     await userEvent.click(screen.getByRole('combobox', { name: 'Folder' }))
-    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     expect(await screen.findByText('Steer could not be read.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move' })).toBeDisabled()
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
