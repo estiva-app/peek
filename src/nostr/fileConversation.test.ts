@@ -236,6 +236,70 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     expect(found.roots.map((r) => r.id)).toEqual([root.id])
   })
 
+  describe('a deleted comment whose replies stay (PER-24)', () => {
+    const GONE = 'd'.repeat(64)
+    const orphan = (content: string, at: number) =>
+      event({
+        kind: COMMENT,
+        content,
+        pubkey: MIKY,
+        created_at: at,
+        tags: [['A', ADDRESS], ['K', String(BARE_FILE)], ['P', CATH], ['e', GONE], ['k', String(COMMENT)], ['p', CATH], ['h', FOLDER]],
+      })
+    const later = orphan('Still here', 1_800_000_200)
+    const earlier = orphan('Me too', 1_800_000_100)
+    const world = [manifest, peekManifest, file, linked, root, withPicture, reply, edit, reaction, resolved, later, earlier]
+
+    it('draws them under a stand-in for the deleted root, dated by its first reply', async () => {
+      queryRelay.mockImplementation(relayOver(world))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      const standIn = found.roots.find((r) => r.id === GONE)
+      expect(standIn).toMatchObject({ deleted: true, author: '', body: '', createdAt: earlier.created_at })
+      expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
+      // Nothing is asked about the stand-in itself; its replies are targets as usual.
+      expect(found.decorations.byId[GONE]).toBeUndefined()
+      expect(found.decorations.byId[later.id]).toEqual({ reactions: [], resolutions: [] })
+    })
+
+    it('draws them when the deleted comment was the file’s only one', async () => {
+      queryRelay.mockImplementation(relayOver(world))
+      const found = await fileConversationAsViewer(container, [], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([GONE])
+    })
+
+    it('draws them on the re-read right after the delete, while the roots asked about still name it', async () => {
+      queryRelay.mockImplementation(relayOver(world))
+      const found = await fileConversationAsViewer(container, [root.id, GONE], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id, GONE])
+      expect(found.roots[1].deleted).toBe(true)
+      expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
+    })
+
+    it('still draws the conversation when the read for them is refused', async () => {
+      const relay = relayOver(world)
+      queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
+        filters.some((f) => '#A' in f) ? { ok: false as const, reason: 'rate-limited: slow down' } : relay(url, filters),
+      )
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+      expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
+    })
+
+    it('does not guess a parent among several unmarked e tags', async () => {
+      const ambiguous = event({ kind: COMMENT, content: 'Quote and parent', tags: [['A', ADDRESS], ['e', 'c'.repeat(64)], ['e', GONE], ['h', FOLDER]] })
+      queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), ambiguous]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+    })
+
+    it('leaves alone a reply whose parent the relay still holds', async () => {
+      const toHeld = event({ kind: COMMENT, content: 'On a root not asked about', tags: [['A', ADDRESS], ['e', withPicture.id], ['h', FOLDER]] })
+      queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), toHeld]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+    })
+  })
+
   it('reports a refused read as a failure, never as an empty conversation', async () => {
     queryRelay.mockImplementation(async () => ({ ok: false as const, reason: 'restricted: relay_membership_required' }))
     await expect(fileConversationAsViewer(container, [root.id], 'https://relay.test', token)).rejects.toMatchObject({

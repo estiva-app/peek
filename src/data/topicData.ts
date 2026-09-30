@@ -145,6 +145,8 @@ export interface ConversationData {
    * distinct from an anchor that no longer resolves.
    */
   nostrBlockId?: string
+  /** It was deleted and its replies stay (PER-24): drawn as a placeholder, with nothing to act on. */
+  isDeleted?: boolean
 }
 
 export interface ConvGroup {

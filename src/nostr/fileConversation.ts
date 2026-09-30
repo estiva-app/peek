@@ -105,6 +105,11 @@ export interface ConversationEvent extends FileComment {
   files: RelayAttachment[]
   /** `a` tags, plus NIP-22's `A` — objects this comment is about, the file itself excluded. */
   references: string[]
+  /**
+   * A root that was deleted while replies to it stay (PER-24): a stand-in with
+   * the deleted event's id, no author and no body, dated by its first reply.
+   */
+  deleted?: true
 }
 
 /** Everything the view draws, after the three reads. */
@@ -325,7 +330,11 @@ export async function fileConversationAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileConversation> {
-  const threads = await threadEventsAsViewer(container.address, rootIds, relayUrl, token)
+  const [threads, onFile] = await Promise.all([
+    threadEventsAsViewer(container.address, rootIds, relayUrl, token),
+    // Only for replies whose comment was deleted: a refusal here costs those, not the conversation.
+    commentsOnFileAsViewer(container.address, relayUrl, token).catch(() => []),
+  ])
   const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
 
   const roots = rootIds
@@ -340,7 +349,85 @@ export async function fileConversationAsViewer(
     replies[rootId] = list.map(conversationEvent)
   }
 
-  return decorate(roots, replies, relayUrl, token)
+  // What the relay still holds and this read reached. Not `rootIds`: a re-read
+  // right after a delete still asks about the deleted root, and its replies,
+  // which `#e` still returns, would hang from a root that is not drawn.
+  const known = new Set(Object.keys(threads.roots))
+  for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
+  const orphaned = await deletedRootsOf(onFile, known, container.address, relayUrl, token).catch(() => ({ roots: [], replies: {} }))
+  for (const [rootId, list] of Object.entries(orphaned.replies)) replies[rootId] = list.map(conversationEvent)
+  // Oldest first. A stand-in is dated by its first reply — the nearest time the relay still holds.
+  const allRoots = orphaned.roots.length ? [...roots, ...orphaned.roots].sort((a, b) => a.createdAt - b.createdAt) : roots
+
+  return decorate(allRoots, replies, relayUrl, token)
+}
+
+/** How many of a file's comments the `#A` read asks for — Buzz's clamp per filter. */
+const FILE_COMMENTS_LIMIT = 1_000
+
+/** Every `kind:1111` whose NIP-22 root is the file — roots and replies alike. */
+async function commentsOnFileAsViewer(address: string, relayUrl: string, token: StoredToken): Promise<SignedEvent[]> {
+  const filter = { kinds: [KIND.COMMENT], '#A': [address], limit: FILE_COMMENTS_LIMIT }
+  const result = await queryRelay(relayUrl, [filter], token.accessToken, token.pubkey)
+  if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+  return result.events
+}
+
+/**
+ * The replies whose comment was deleted, each set under a stand-in for it (PER-24).
+ *
+ * Deleting a comment deletes that one event: NIP-09 lets an author delete only
+ * their own, the relay deletes exactly what is named, and `ConfirmDelete` tells
+ * the person deleting that the replies stay. They do — but the `#e` thread read
+ * asks about the roots it knows, and the deleted one is no longer among them,
+ * so they are found by NIP-22's `A` instead (the same answer at any `limit`
+ * since PER-9) and drawn under a deleted root, as Buzz draws a thread whose
+ * first message was deleted.
+ *
+ * A parent counts as deleted only when a read by its id returns nothing: a
+ * parent this conversation did not ask about but the relay still holds is not
+ * a deleted one, and a reply to a reply here is left where it was.
+ */
+async function deletedRootsOf(
+  onFile: readonly SignedEvent[],
+  known: ReadonlySet<string>,
+  address: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ roots: ConversationEvent[]; replies: Record<string, SignedEvent[]> }> {
+  const byParent = new Map<string, SignedEvent[]>()
+  for (const event of onFile) {
+    if (known.has(event.id) || !isCommentOn(event, address)) continue
+    const parent = parentOfComment(event)
+    if (!parent || known.has(parent)) continue
+    byParent.set(parent, [...(byParent.get(parent) ?? []), event])
+  }
+  if (byParent.size === 0) return { roots: [], replies: {} }
+
+  const ids = [...byParent.keys()]
+  const result = await queryRelay(relayUrl, [{ ids, limit: ids.length }], token.accessToken, token.pubkey)
+  if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+  const held = new Set(result.events.map((e) => e.id))
+
+  const roots: ConversationEvent[] = []
+  const replies: Record<string, SignedEvent[]> = {}
+  for (const [parent, list] of byParent) {
+    if (held.has(parent)) continue
+    const thread = [...list].sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1))
+    replies[parent] = thread
+    roots.push({ id: parent, author: '', body: '', createdAt: thread[0].created_at, kind: KIND.COMMENT, files: [], references: [], deleted: true })
+  }
+  return { roots, replies }
+}
+
+/**
+ * A `kind:1111`'s parent: NIP-22's one lowercase `e`, or the `reply`-marked one
+ * when a writer marks it. Several unmarked is ambiguous — one may be a quote,
+ * which is why interop's `threadsOf` never takes the first — so it is none.
+ */
+function parentOfComment(event: Pick<SignedEvent, 'tags'>): string | null {
+  const es = event.tags.filter((t) => t[0] === 'e' && typeof t[1] === 'string' && t[1])
+  return es.find((t) => t[3] === 'reply')?.[1] ?? (es.length === 1 ? es[0][1] : null)
 }
 
 type FileContainer = Extract<ConversationContainer, { kind: 'file' }>
@@ -429,7 +516,8 @@ async function decorate(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileConversation> {
-  const targets = [...roots, ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt }))
+  // A deleted root's stand-in has nothing done to it that anyone can see.
+  const targets = [...roots.filter((r) => !r.deleted), ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt }))
   // The edits come back on the decorations read, but interop keeps only the
   // newest one's body. The attachment fold (CON-5) needs every edit, so they
   // are kept here as they pass through rather than asked for a second time.

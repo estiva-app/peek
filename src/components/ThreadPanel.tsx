@@ -179,6 +179,12 @@ interface ThreadPanelProps {
    * Convex topic's thread since CON-8. The replies keep no hover menu either.
    */
   readOnlyNotice?: ReactNode
+  /**
+   * Drawn where the composer would be, while the replies keep their menus — a
+   * thread whose first message was deleted takes no new replies, and each
+   * reply's author can still edit or delete their own (PER-24).
+   */
+  composerNotice?: ReactNode
   onDeleteReply?: (id: string) => void
   onInitialBodyChange?: (newBody: string) => void
   /** The root message's files after an edit — PEE-16. */
@@ -260,6 +266,7 @@ export function ThreadPanel({
   onClose,
   onSendReply,
   readOnlyNotice,
+  composerNotice,
   onDeleteReply,
   onInitialBodyChange,
   onInitialFilesChange,
@@ -355,7 +362,7 @@ export function ThreadPanel({
       bodyClassName="flex flex-col"
       footer={
         <div className="p-3">
-          {readOnlyNotice ?? (
+          {readOnlyNotice ?? composerNotice ?? (
             <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
           )}
         </div>
@@ -430,6 +437,7 @@ export function ThreadPanel({
               timestamp={rootTimestamp}
               body={conversation.body}
               highlightType={conversation.highlightType}
+              deleted={conversation.isDeleted}
             />
           )}
         </div>

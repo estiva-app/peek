@@ -16,13 +16,25 @@ export interface PinnedMessageProps {
   timestamp: string
   body: string
   highlightType?: HighlightType
+  /** The message was deleted and its replies stay (PER-24): said instead of drawn. */
+  deleted?: boolean
 }
 
 /**
  * The first message of a conversation pinned at the top of the replies panel:
  * its author, time and one shortened line of text.
  */
-export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, highlightType }: PinnedMessageProps) {
+export function PinnedMessage({ authorName, authorAvatarSrc, timestamp, body, highlightType, deleted = false }: PinnedMessageProps) {
+  if (deleted) {
+    return (
+      <Card fill="elevated" clip>
+        <div className="p-2">
+          <MetaText>This comment was deleted.</MetaText>
+        </div>
+      </Card>
+    )
+  }
+
   // Strip newlines AND formatting markers — previews are plain snippets.
   const flatBody = previewText(body).replace(/\n/g, ' ')
 
