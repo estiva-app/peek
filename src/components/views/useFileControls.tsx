@@ -233,7 +233,7 @@ export function useFileControls({
           from: team,
           fromHasState: contents.hasState,
           listing: contents.files,
-          teams: topLevelFolders(folders).filter((folder) => folder.hasState),
+          teams: topLevelFolders(folders),
           nests,
           targets: nests ? moveTargetsIn(contents.files, here, { sameFolder: true }) : undefined,
         })

@@ -1356,10 +1356,9 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
-    const picker = await screen.findByRole('combobox', { name: 'Put it under' })
-    fireEvent.click(picker)
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
     // The package's Select marks the chosen option with a check; the label is the rest.
-    const options = screen.getAllByRole('option').map((option) => option.textContent?.replace('✔️', ''))
+    const options = (await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))
     // The top, then each place by its path; `Notes` is where it is already.
     expect(options).toEqual([
       'The top of Folders',
@@ -1367,10 +1366,9 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
       'Folders: navigation for the whole suite › Brief',
       'Elsewhere',
     ])
-    // The first choice is the top, and a move there is an empty `parent` — a move,
-    // not an absence (SPEC §6.7). jsdom cannot drive the package Select's pick.
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
-    fireEvent.click(screen.getByRole('button', { name: 'Move' }))
+    // A move to the top is an empty `parent` — a move, not an absence (SPEC §6.7).
+    await userEvent.click(screen.getByRole('option', { name: /The top of Folders/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
     expect(writes.applyAction).toHaveBeenCalledWith({ naddr: deep.naddr, actionId: 'move', value: '' })
   })
@@ -1378,7 +1376,9 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
   it('moves a topic to the top of another Folder: its listing with what is under it, then its parent (FOL-45)', async () => {
     const under = bare('under', 'Under it', deep.address)
     const listing = [project, brief, notes, deep, under, elsewhere]
-    writes.listFolders.mockResolvedValueOnce([
+    // Not once: the page may read the Folders itself before Move does.
+    const listFolders = writes.listFolders.getMockImplementation()
+    writes.listFolders.mockResolvedValue([
       { id: FOLDER, name: 'Folders', hasState: true, addresses: listing.map((f) => f.address!) },
       { id: 'steer', name: 'Steer', hasState: true, addresses: [] },
     ] as never)
@@ -1392,10 +1392,10 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
-    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
-    expect(screen.getAllByRole('option').map((option) => option.textContent?.replace('✔️', ''))).toEqual(['The top of Steer'])
-    await userEvent.keyboard('{Escape}')
+    expect((await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))).toEqual(['The top of Steer'])
+    await userEvent.click(screen.getByRole('option', { name: /The top of Steer/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
     expect(writes.moveFile).toHaveBeenCalledWith(
@@ -1406,6 +1406,7 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     // Out from under `notes`, which stayed behind: the top of Steer is an empty parent.
     expect(writes.applyAction).toHaveBeenCalledWith({ naddr: deep.naddr, actionId: 'move', value: '' })
     expect(writes.moveFile.mock.invocationCallOrder[0]).toBeLessThan(writes.applyAction.mock.invocationCallOrder[0])
+    writes.listFolders.mockImplementation(listFolders!)
     writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
   })
 
@@ -1436,18 +1437,18 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'More actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move…' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
-    await userEvent.click(screen.getByRole('option', { name: 'Steer' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer' }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Put it under' }))
     // Only Steer's projects: an issue under no project is in no Folder.
-    expect(screen.getAllByRole('option').map((option) => option.textContent?.replace('✔️', ''))).toEqual(['Steer work'])
-    await userEvent.click(screen.getByRole('option', { name: 'Steer work' }))
+    expect((await screen.findAllByRole('option')).map((option) => option.textContent?.replace('✔️', ''))).toEqual(['Steer work'])
+    await userEvent.click(await screen.findByRole('option', { name: 'Steer work' }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
     expect(writes.applyAction).toHaveBeenCalledWith({ naddr: moving.naddr, actionId: 'move-issue', value: steerProject.address })
     expect(writes.moveFile).not.toHaveBeenCalled()
     writes.listFolders.mockImplementation(listFolders!)
     writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
-  })
+  }, 15_000) // the first mount of this page in a run is slow on its own
 
   it('starts a topic inside the file, in the file’s own team, and opens it', async () => {
     mount(`/topic/${TOPIC_ADDRESS}`)

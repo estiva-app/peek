@@ -36,6 +36,12 @@ describe('currentFolderOf (FOL-45)', () => {
     expect(currentFolderOf(topic, folders, after)).toBe('steer')
   })
 
+  it('is a nested Folder that lists it, not the team that Folder is in', () => {
+    const nested = { id: 'nested', hasState: true, listedIn: ['hq'], addresses: [`30840:${PK}:deep`] } as FolderSummary
+    const deep = file(30840, 'deep', { folder: 'nested' })
+    expect(currentFolderOf(deep, [...folders, nested], teams)).toBe('nested')
+  })
+
   it('is its project’s team for an issue, which no state lists', () => {
     expect(currentFolderOf(issue, folders, teams)).toBe('hq')
     expect(currentFolderOf({ ...issue, parentRef: other.address }, folders, teams)).toBe('steer')

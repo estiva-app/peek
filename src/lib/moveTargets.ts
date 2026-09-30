@@ -11,7 +11,8 @@ export interface MoveTarget {
 }
 
 /**
- * The top-level Folder a file is in now (FOL-45) — the one the tree draws it under.
+ * The Folder a file is in now (FOL-45) — the one the tree draws it under: a
+ * team, or a Folder nested in one.
  *
  * **The listing, not the file's own `h`.** A move between Folders re-lists a
  * file and leaves its `h` where it was filed (FOL-7), so after one move a
@@ -29,8 +30,14 @@ export function currentFolderOf(
   folders: readonly FolderSummary[],
   teams: readonly FolderSummary[],
 ): string | undefined {
+  // A team first, then any Folder with state: a file in a nested Folder is listed
+  // by that Folder, not by the team it sits in, and removing it from the team
+  // would leave it where it was.
   const listing = (address: string | undefined) =>
-    address ? teams.find((team) => team.addresses?.includes(address))?.id : undefined
+    address
+      ? (teams.find((team) => team.addresses?.includes(address)) ??
+          folders.find((folder) => folder.hasState && folder.addresses?.includes(address)))?.id
+      : undefined
   const own = folders.find((folder) => folder.id === file.folder)
   return (
     listing(file.address) ??
