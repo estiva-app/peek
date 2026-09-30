@@ -510,6 +510,19 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
   const reactionsById: Record<string, ReactionEvent[]> = {}
   const roots = [...conversation.roots].sort((a, b) => a.createdAt - b.createdAt)
 
+  // SPEC §6.5: the viewer's own message, or an agent's. A profile the directory
+  // does not hold offers them, as Ship does — the relay adjudicates. Nothing is
+  // offered with no viewer to sign, on a deleted root (no author), or on
+  // somebody else's while the directory is still loading: offered and then
+  // withdrawn a moment later would be a menu that lies for one round trip.
+  const offersControls = (event: ConversationEvent): boolean => {
+    if (!viewerPubkey || event.deleted) return false
+    if (event.author === viewerPubkey) return true
+    if (!people) return false
+    const profile = people[event.author]
+    return offersEditAndDelete({ viewer: viewerPubkey, author: event.author, authorIsBot: profile ? profile.bot === true : undefined })
+  }
+
   const decorate = (event: ConversationEvent) => {
     const decoration = conversation.decorations.byId[event.id.toLowerCase()]
     const edit = decoration?.edit
@@ -520,15 +533,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       files: (edit?.attachments?.map(relayAttachmentOf) ?? event.files).map(asAttachment),
       reactions: pillsOf(event.id, decoration?.reactions ?? [], viewerPubkey, nameOf),
       resolutions: decoration?.resolutions ?? [],
-      // SPEC §6.5: the viewer's own, or an agent's. A profile not read offers
-      // them, as Ship does — the relay adjudicates. A deleted root has no author.
-      canEditAndDelete:
-        !event.deleted &&
-        offersEditAndDelete({
-          viewer: viewerPubkey,
-          author: event.author,
-          authorIsBot: people?.[event.author] ? people[event.author].bot === true : undefined,
-        }),
+      canEditAndDelete: offersControls(event),
     }
   }
 

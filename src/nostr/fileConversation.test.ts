@@ -289,6 +289,15 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       expect(found.replies[GONE]?.map((r) => r.id)).toEqual([quoting.id])
     })
 
+    it('with several unmarked e, the parent is the first — a quote goes in q or a mention-marked e (SPEC §6.4)', async () => {
+      const QUOTED = 'c'.repeat(64)
+      const unmarked = event({ kind: COMMENT, content: 'Two e', tags: [['A', ADDRESS], ['e', QUOTED], ['e', GONE], ['h', FOLDER]] })
+      queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), unmarked]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.replies[QUOTED]?.map((r) => r.id)).toEqual([unmarked.id])
+      expect(found.replies[GONE]).toBeUndefined()
+    })
+
     it('leaves alone a reply whose parent the relay still holds', async () => {
       const toHeld = event({ kind: COMMENT, content: 'On a root not asked about', tags: [['A', ADDRESS], ['e', withPicture.id], ['h', FOLDER]] })
       queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), toHeld]))

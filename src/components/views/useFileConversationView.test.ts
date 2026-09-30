@@ -117,6 +117,10 @@ describe('project', () => {
     expect(view.roots.map((r) => r.canEditAndDelete)).toEqual([false, true, true])
     expect(view.byId[rootA.id].replies[0].canEditAndDelete).toBe(true)
     // STRANGER has no profile in the directory: offered, and the relay decides.
+    // Nothing on somebody else's while the directory loads, and nothing with no viewer.
+    expect(project(conversation({ roots: [rootA, rootB, byBot] }), ME, undefined).roots.map((r) => r.canEditAndDelete)).toEqual([false, false, false])
+    expect(project(conversation(), ME, undefined).byId[rootA.id].replies[0].canEditAndDelete).toBe(true)
+    expect(project(conversation({ roots: [rootA, rootB, byBot] }), null, withBot).roots.map((r) => r.canEditAndDelete)).toEqual([false, false, false])
   })
 
   it('the last resolution decides: resolved with its rationale and the reply that carried it, or reopened', () => {
