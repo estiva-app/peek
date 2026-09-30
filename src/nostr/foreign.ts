@@ -1119,7 +1119,16 @@ export async function creatableUnderAsViewer(
   const borrowed = resolved.actions.filter((a) => a.declaredBy)
   if (parentKind !== KIND_CHANNEL_METADATA || borrowed.length === 0) return { ...resolved, parents }
 
-  const folders = topLevelFolders(await listFolders(query)).flatMap((folder) =>
+  let listing: FolderSummary[]
+  try {
+    listing = await listFolders(query)
+  } catch (error: unknown) {
+    // The borrowed rows go, not the owner's: a refused Folder listing must not
+    // cost Peek its own Start a conversation, which needs none of it.
+    console.warn('[nostr] listing Folders for another app’s creation failed:', error)
+    return { ...resolved, actions: resolved.actions.filter((a) => !a.declaredBy), parents }
+  }
+  const folders = topLevelFolders(listing).flatMap((folder) =>
     folder.channel ? [{ address: folder.channel, title: folder.name ?? folder.id }] : [],
   )
   return { ...resolved, parents, parentsFor: Object.fromEntries(borrowed.map((a) => [a.id, folders])) }
