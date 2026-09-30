@@ -188,6 +188,8 @@ export function useFolders(): {
   /** `null` while the first read is in flight, or when signed out. */
   folders: FolderSummary[] | null
   signedOut: boolean
+  /** The first read failed, so `folders` is `[]` without the relay having said so (PEE-42). */
+  failed: boolean
   reload: () => Promise<void>
 } {
   const { listFolders } = useForeignObjects()
@@ -214,5 +216,5 @@ export function useFolders(): {
   const held = snapshot.value
   // A first read that failed draws as an empty workspace, as it always has; a signed-out answer is `null`.
   const folders = held !== undefined ? held : snapshot.error !== undefined ? [] : null
-  return { folders, signedOut: held === null, reload }
+  return { folders, signedOut: held === null, failed: held === undefined && snapshot.error !== undefined, reload }
 }
