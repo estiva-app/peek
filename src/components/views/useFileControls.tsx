@@ -28,6 +28,8 @@ interface MoveState {
   /** The Folder it is in now, and whether that Folder has state — both from the read the dialog opened on. */
   from: string
   fromHasState: boolean
+  /** Any other Folder with state that lists it too — after a partial move — which it leaves as well. */
+  alsoIn: string[]
   /** Every file `from` lists: what is under the file moves with it. */
   listing: ForeignObject[]
   /** The top-level Folders, which are where it may go. */
@@ -195,7 +197,8 @@ export function useFileControls({
       if (control !== 'move' && control !== 'inside') {
         return setDialog({ kind: 'details', file, editing: control === 'rename' })
       }
-      if (!file.folder || (control === 'inside' && !canStartInside(file))) {
+      const ownFolder = file.folder
+      if (!ownFolder || (control === 'inside' && !canStartInside(file))) {
         return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
       }
       void (async () => {
@@ -212,10 +215,14 @@ export function useFileControls({
             "Conversation standard"). And a topic moved to another Folder keeps
             the `h` it was filed with (FOL-45).
           */
+          // The file's own Folder is read beside the listing, not after it: it is
+          // the current one unless the file was moved, so one round trip usually does.
+          const own = resolveFolderContents(ownFolder)
+          own.catch(() => {})
           folders = (await listFolders()) ?? []
           team = currentFolderOf(file, folders, topLevelFolders(folders))
           if (!team) throw new Error('no team')
-          contents = await resolveFolderContents(team)
+          contents = await (team === ownFolder ? own : resolveFolderContents(team))
         } catch {
           refuse('The team could not be read. Try again.')
           return
@@ -232,6 +239,9 @@ export function useFileControls({
           file: here,
           from: team,
           fromHasState: contents.hasState,
+          alsoIn: folders
+            .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
+            .map((folder) => folder.id),
           listing: contents.files,
           teams: topLevelFolders(folders),
           nests,
@@ -253,7 +263,20 @@ export function useFileControls({
     type Step = () => Promise<{ ok: true } | { ok: false; reason?: string }>
     const relist: Step | undefined =
       changesFolder && listed.length
-        ? () => moveFile(listed, { id: from, hasState: state.fromHasState }, { id: to.id, hasState: to.hasState })
+        ? async () => {
+            const result = await moveFile(listed, { id: from, hasState: state.fromHasState }, { id: to.id, hasState: to.hasState })
+            if (!result.ok) return result
+            // Out of every other Folder that still lists it, as Ship's move does (`placedIn`).
+            for (const other of state.alsoIn.filter((id) => id !== to.id)) {
+              const also = await moveFile(listed, { id: other, hasState: true }, { id: to.id, hasState: to.hasState })
+              // It did arrive: a refused clean-up is a partial move, not a failed one.
+              if (!also.ok) {
+                refuse(`Moved to ${to.name ?? 'the folder'}, but it is still listed in another folder too: ${also.reason}. Try moving it again.`)
+                break
+              }
+            }
+            return result
+          }
         : undefined
     const action = fileControlsOf(file).move
     const reparent: Step | undefined = changesParent

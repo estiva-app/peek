@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Form } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { MoveTarget } from '@/lib/moveTargets'
@@ -89,12 +89,19 @@ export function MoveDialog({
   const [moving, setMoving] = useState(false)
   const formId = useId()
 
+  // The Folders read or being read, known now rather than at the next render:
+  // two picks of one Folder before its read lands would otherwise read it twice.
+  const requested = useRef(new Set(initialTargets ? [from] : []))
   const readTargets = (id: string) => {
-    if (!nests || (read[id] && read[id] !== 'failed')) return
+    if (!nests || requested.current.has(id)) return
+    requested.current.add(id)
     setRead((current) => ({ ...current, [id]: 'reading' }))
     targetsIn(id).then(
       (targets) => setRead((current) => ({ ...current, [id]: targets })),
-      () => setRead((current) => ({ ...current, [id]: 'failed' })),
+      () => {
+        requested.current.delete(id)
+        setRead((current) => ({ ...current, [id]: 'failed' }))
+      },
     )
   }
   const chooseFolder = (id: string) => {
