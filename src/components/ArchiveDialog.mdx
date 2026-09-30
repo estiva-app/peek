@@ -1,0 +1,55 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as ArchiveDialogStories from './ArchiveDialog.stories'
+
+<Meta of={ArchiveDialogStories} />
+
+# ArchiveDialog
+
+The question asked before archiving a file or a Folder — what goes out of the
+lists with it, counted, and an optional resolution summary — on the package's
+`ConfirmDialog` (FOL-46).
+
+**Seen in** — its stories, **A project**, **A topic** and **A Folder**. The
+dialog shell is the package's `ConfirmDialog` and has its stories there.
+
+## When
+
+- Before archiving anything whose manifest declares an archive action — a
+  topic, a Ship project or issue — or a Folder. Read the counts first, with
+  interop's `archiveImpact`, and word them with `archiveImpactWords`.
+
+## When not
+
+- For a deletion. That is `ConfirmDelete`, whose words are about asking a relay
+  to drop something; an archive drops nothing.
+- For Unarchive. It only brings back what was there, so it runs on the click.
+- With counts you have not read. A warning that says it hides nothing because
+  the read failed is worse than no warning — refuse and say why instead.
+
+## How
+
+```tsx
+import { ArchiveDialog } from '@/components/ArchiveDialog'
+
+<ArchiveDialog
+  title="Conversation standard"
+  what="project"
+  hides={['14 issues']}
+  staysVisible={['2 files also in Steer']}
+  onArchive={(resolution) => archive(resolution || undefined)}
+  onClose={close}
+/>
+```
+
+- `onArchive` resolves `false` to keep the dialog open once the caller has said
+  why; the resolution arrives trimmed.
+
+## What it owns
+
+- **Ship's sentences, word for word**, so a person archiving in either app reads
+  the same thing about the same file. The numbers are interop's, the same in
+  every app.
+- **Not destructive.** The confirm is the ordinary one, and the last line says
+  that nothing is deleted and Unarchive brings everything back.
+- **The resolution field**, optional, shown first to anyone who opens the
+  archived file (`ArchivedNotice`).
