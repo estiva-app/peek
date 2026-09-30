@@ -16,4 +16,5 @@ from events e
 left join channels c on c.id = e.channel_id
 where e.deleted_at is null
   and e.kind <> 30078
+  and c.deleted_at is null
   and (c.channel_type is null or c.channel_type <> 'dm');

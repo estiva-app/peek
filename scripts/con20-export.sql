@@ -10,8 +10,11 @@
 \t on
 \a
 \pset footer off
+-- A deleted channel's events are served to nobody and cannot be written to (`not a channel
+-- member`): 20 comment-shaped kind:9 in Miky's 15 deleted test channels on 2026-09-30. Left out.
 create temp table conv as
-  select id from events where deleted_at is null and ((kind = 9 and channel_id is not null) or kind = 1111);
+  select e.id from events e left join channels c on c.id = e.channel_id
+  where e.deleted_at is null and c.deleted_at is null and ((e.kind = 9 and e.channel_id is not null) or e.kind = 1111);
 create temp table conv_hex as select encode(id, 'hex') id from conv;
 create index on conv_hex (id);
 select json_build_object(

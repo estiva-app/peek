@@ -61,6 +61,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import {
   authorizationHeaderFor,
+  buildAddMember,
   buildDeletion,
   buildUnsignedAuthEvent,
   computeEventId,
@@ -81,6 +82,7 @@ const CLIENT_ID = process.env.ESTIVA_ID_CLIENT_ID ?? ''
 const CLIENT_SECRET = process.env.ESTIVA_ID_CLIENT_SECRET ?? ''
 const KEYS = process.env.CON20_KEYS ?? `${homedir()}/.keys.json`
 const EXPORT = process.env.CON20_EXPORT ?? `${homedir()}/con20-scratch/export.jsonl`
+const MEMBERS = process.env.CON20_MEMBERS ?? `${homedir()}/con20-scratch/members.jsonl`
 const PLAN_OUT = process.env.CON20_PLAN ?? `${homedir()}/con20-scratch/plan.json`
 /** Only the threads in this Folder — the rehearsal in QA (`a78e60b1-…`) before the real run. */
 const ONLY_H = process.env.CON20_ONLY_H
@@ -194,6 +196,8 @@ interface Plan {
   /** Events outside the moved set whose body quotes a moved id — left as they are, and reported. */
   staleQuotes: { id: string; kind: number; author: string; quotes: string[] }[]
   mentionsKept: string[]
+  /** The export, for what a copy names that is not itself moving. */
+  byId: Map<string, SignedEvent>
 }
 
 /** A copy of a copy keeps the `orig` that names the first original. */
@@ -264,10 +268,14 @@ function buildPlan(index: Index): Plan {
   */
   const sameMessage = (e: Pick<SignedEvent, 'pubkey' | 'created_at' | 'content'>) => `${e.pubkey}|${e.created_at}|${e.content}`
   const migrated = new Map<string, SignedEvent>()
-  for (const e of index.byId.values()) if (e.kind === COMMENT && e.tags.some((t) => t[0] === 'migration')) migrated.set(sameMessage(e), e)
+  // This run's own copies are not "copied before": a resumed run plans the same ids and skips them.
+  for (const e of index.byId.values()) {
+    if (e.kind === COMMENT && e.tags.some((t) => t[0] === 'migration' && t[1] !== MIGRATION)) migrated.set(sameMessage(e), e)
+  }
   const copiedAs = new Map<string, SignedEvent>()
   for (const e of index.byId.values()) {
-    const orig = e.kind === COMMENT ? index.byId.get(valuesOf(e, 'orig')[0] ?? '') : undefined
+    const ours = valuesOf(e, 'migration').includes(MIGRATION)
+    const orig = e.kind === COMMENT && !ours ? index.byId.get(valuesOf(e, 'orig')[0] ?? '') : undefined
     if (orig?.kind === MESSAGE && orig.content === e.content) copiedAs.set(orig.id, e)
   }
   for (const m of messages) {
@@ -380,7 +388,7 @@ function buildPlan(index: Index): Plan {
     const quotes = quotedIn(e.content, gone)
     if (quotes.length) staleQuotes.push({ id: e.id, kind: e.kind, author: e.pubkey, quotes })
   }
-  return { copies, staleQuotes, mentionsKept }
+  return { copies, staleQuotes, mentionsKept, byId: index.byId }
 }
 
 function summarise(plan: Plan) {
@@ -486,12 +494,84 @@ async function readBack(copies: readonly Copy[], idOf: (c: Copy) => string, sign
   return out
 }
 
+/** `h` → pubkey → role, from `con20-members.sql`. */
+function loadMembers(): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>()
+  for (const line of readFileSync(MEMBERS, 'utf8').split('\n')) {
+    if (!line.startsWith('{')) continue
+    const m = JSON.parse(line) as { h: string; pubkey: string; role: string }
+    if (!out.has(m.h)) out.set(m.h, new Map())
+    out.get(m.h)!.set(m.pubkey, m.role)
+  }
+  return out
+}
+
+/**
+ * The Folder each copy is written into: its own `h`, or for a reaction (which
+ * has none) the `h` of what it names — buzz files a reaction under its target's
+ * channel.
+ */
+function folderOfCopy(c: Copy, byNewId: Map<string, Copy>, byOldId: Map<string, Copy>, byId: Map<string, SignedEvent>): string | undefined {
+  const own = valuesOf(c.next ?? c.old, 'h')[0]
+  if (own) return own
+  const target = valuesOf(c.next ?? c.old, 'e').at(-1) ?? ''
+  const t = byNewId.get(target) ?? byOldId.get(target)
+  if (t) return valuesOf(t.next ?? t.old, 'h')[0]
+  const standing = byId.get(target)
+  return standing ? valuesOf(standing, 'h')[0] : undefined
+}
+
+/** Folder → the authors who must be added to it before their copies can be written there. */
+function joinsNeeded(plan: Plan, members: Map<string, Map<string, string>>): Map<string, Set<string>> {
+  const byNewId = new Map(plan.copies.flatMap((c): [string, Copy][] => (c.next ? [[c.next.id, c]] : [])))
+  const byOldId = new Map(plan.copies.map((c): [string, Copy] => [c.old.id, c]))
+  const joins = new Map<string, Set<string>>()
+  for (const c of plan.copies) {
+    const h = folderOfCopy(c, byNewId, byOldId, plan.byId)
+    if (!h) throw new Error(`${c.old.id}: no Folder to write into`)
+    if (!members.get(h)?.has(c.old.pubkey)) joins.set(h, new Set([...(joins.get(h) ?? []), c.old.pubkey]))
+  }
+  return joins
+}
+
 async function apply(plan: Plan) {
   const agent = await agentIdentity()
+  const keys = loadKeys()
   const signers = new Map<string, Identity>([[agent.pubkey, agent]])
-  for (const [pk, sk] of loadKeys()) if (pk !== agent.pubkey) signers.set(pk, { pubkey: pk, sign: async (u) => signEvent(u, sk) })
+  for (const [pk, sk] of keys) if (pk !== agent.pubkey) signers.set(pk, { pubkey: pk, sign: async (u) => signEvent(u, sk) })
   const missing = [...new Set(plan.copies.map((c) => c.old.pubkey))].filter((pk) => !signers.has(pk))
-  if (missing.length) throw new Error(`no key in ${KEYS} for: ${missing.join(', ')} — nothing published`)
+  if (missing.length) {
+    throw new Error(`no key ${existsSync(KEYS) ? `in ${KEYS}` : `(${KEYS} does not exist — export the keys first)`} for: ${missing.join(', ')} — nothing published`)
+  }
+
+  /*
+    Buzz refuses a write from a non-member ("restricted: not a channel member"),
+    and 110 of the originals were written before it did — the agent into ten
+    Folders, Miky into three, Katerina into one, none of which they ever joined.
+    Each Folder's owner adds them first with a kind:9000, and they stay members
+    (Miky, 2026-09-30). A raw key signs it: the agent's app may not sign 9000
+    through Estiva ID, so an agent that owns a Folder needs its key exported too.
+  */
+  const members = loadMembers()
+  const joins = joinsNeeded(plan, members)
+  const adders = new Map<string, string>()
+  for (const h of joins.keys()) {
+    const admin = [...(members.get(h) ?? [])].find(([pk, role]) => (role === 'owner' || role === 'admin') && keys.has(pk))
+    if (!admin) {
+      const admins = [...(members.get(h) ?? [])].filter(([, role]) => role === 'owner' || role === 'admin').map(([pk]) => pk)
+      throw new Error(`Folder ${h}: no key for an owner or admin (${admins.join(', ') || 'none'}) to add ${[...joins.get(h)!].join(', ')} — nothing published`)
+    }
+    adders.set(h, admin[0])
+  }
+  for (const [h, authors] of joins) {
+    const admin = adders.get(h)!
+    const as: Identity = { pubkey: admin, sign: async (u) => signEvent(u, keys.get(admin)!) }
+    for (const author of authors) {
+      await publish(signEvent(buildAddMember(admin, Date.now(), { channelUuid: h, targetPubkey: author }), keys.get(admin)!), as)
+      console.log(`+  ${author.slice(0, 8)} added to Folder ${h} by ${admin.slice(0, 8)}`)
+      await sleep(WRITE_GAP_MS)
+    }
+  }
 
   const copies = plan.copies.filter((c): c is Copy & { next: NonNullable<Copy['next']> } => !!c.next)
   const already = await readBack(copies, (c) => c.next!.id, signers)
@@ -543,6 +623,13 @@ async function main() {
   if (mode === 'plan') {
     writeFileSync(PLAN_OUT, JSON.stringify(plan.copies.map((c) => ({ why: c.why, depth: c.depth, about: c.about, copy: c.copy, old: c.old, next: c.next })), null, 1))
     console.log(`\nplan written to ${PLAN_OUT}`)
+    if (existsSync(MEMBERS)) {
+      const members = loadMembers()
+      for (const [h, authors] of joinsNeeded(plan, members)) {
+        const admins = [...(members.get(h) ?? [])].filter(([, role]) => role === 'owner' || role === 'admin').map(([pk, role]) => `${pk.slice(0, 8)}:${role}`)
+        console.log(`join: ${[...authors].map((a) => a.slice(0, 8)).join(', ')} into ${h}, added by ${admins.join(' / ') || 'NOBODY'}`)
+      }
+    }
     // /sign must reproduce the planned id with the old created_at, or apply cannot sign the agent's copies.
     if (CLIENT_ID) {
       const agent = await agentIdentity()
