@@ -19,7 +19,7 @@ const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
 
 vi.mock('./bridge', () => ({ queryRelay, publishSigned, signViaEstivaId }))
 
-import { applyActionAsViewer, deleteFileAsViewer } from './foreign'
+import { applyActionAsViewer, deleteFileAsViewer, forgetUrlShapes } from './foreign'
 
 const AUTHOR = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const RELAY = 'cd'.repeat(32)
@@ -250,5 +250,70 @@ describe('a listed creation', () => {
 
     expect(result).toMatchObject({ ok: true, listed: true, incomplete: 'restricted: not a channel member' })
     expect(result.created).toMatch(/^30850:/)
+  })
+})
+
+describe('a creation another app declares on a Folder (MAN-8)', () => {
+  /*
+    Production's shape, which the fixture above is not: a Folder is drawn by
+    Peek's manifest, and Ship's projects no `39000`. So the Folder resolves
+    through Peek's, which has no `add-project` — and the creation is built only
+    because the caller names Ship's manifest as the one that declared it.
+  */
+  const PEEK_APP = 'ee'.repeat(32)
+  const peekManifest = event({
+    kind: 31990,
+    pubkey: PEEK_APP,
+    tags: [['d', 'estiva-peek'], ['k', '39000'], ['k', '9']],
+    content: JSON.stringify({
+      name: 'Peek',
+      projections: { 39000: { widget: 'card', slots: { title: { tag: 'name' } } }, 9: { widget: 'card', slots: {} } },
+      actions: [],
+    }),
+  })
+  // The fixture above, less its `39000` projection and `k` tag: Ship is not a Folder's owner here.
+  const { 39000: _folder, ...shipProjections } = JSON.parse(manifest.content).projections
+  const shipOnly = event({
+    kind: 31990,
+    tags: [['d', 'estiva-ship'], ['k', String(PROJECT)], ['k', String(ISSUE)]],
+    content: JSON.stringify({ ...JSON.parse(manifest.content), projections: shipProjections }),
+  })
+  const SHIP_MANIFEST = `31990:${AUTHOR}:estiva-ship`
+
+  beforeEach(() => forgetUrlShapes())
+
+  it('files the project with Ship’s manifest, and lists it in the Folder', async () => {
+    queryRelay.mockImplementation(relayOver([peekManifest, shipOnly, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' }, declaredBy: SHIP_MANIFEST },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result).toMatchObject({ ok: true, listed: true })
+    expect(published()).toEqual([String(PROJECT), `1852 add ${FOLDER}`])
+    const [record] = signViaEstivaId.mock.calls.map(([e]) => e as { kind: number; tags: string[][] })
+    expect(tag(record, 'buzz-channel')).toBe(FOLDER)
+    expect(tag(record, 'name')).toBe('Launch')
+  })
+
+  it('refuses without it — the Folder’s own manifest does not declare the action', async () => {
+    queryRelay.mockImplementation(relayOver([peekManifest, shipOnly, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer({ naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' } }, 'https://relay.test', token)
+
+    expect(result.ok).toBe(false)
+    expect(published()).toEqual([])
+  })
+
+  it('refuses a manifest nothing offered, rather than acting with it', async () => {
+    queryRelay.mockImplementation(relayOver([peekManifest, shipOnly, channel(FOLDER), state(FOLDER, [])]))
+    const result = await applyActionAsViewer(
+      { naddr: FOLDER_RECORD, actionId: 'add-project', value: { name: 'Launch' }, declaredBy: `31990:${RELAY}:made-up` },
+      'https://relay.test',
+      token,
+    )
+
+    expect(result).toEqual({ ok: false, reason: 'That app no longer offers this action here.' })
+    expect(published()).toEqual([])
   })
 })

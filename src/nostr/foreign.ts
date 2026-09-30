@@ -21,6 +21,7 @@
  */
 import type { StoredToken } from '@/auth/estivaId'
 import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
+import type { CreatableKindRead } from '@/lib/liveAction'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
@@ -59,6 +60,8 @@ import {
   resolveForeignObject,
   resolveForeignObjects,
   resolveManifest,
+  resolveActingManifest,
+  topLevelFolders,
   type FolderContents,
   type FolderSummary,
   type FolderProject,
@@ -1058,13 +1061,25 @@ export function commentedFileOf(event: SignedEvent): string | null {
  * app that declares no creating action for it. The launcher then shows what it
  * always showed, which is the right degradation — an action that cannot succeed
  * should not be listed.
+ *
+ * **Some of the actions are another app's** (MAN-8): interop 0.40.0 offers, on
+ * an object, the creations other apps declare on its kind, each carrying
+ * `declaredBy`. Ship's `add-project` arrives here on a Folder, beside Peek's
+ * own `start-a-conversation`. `manifest` is the kind's owner's address, so a
+ * caller can tell which app an action belongs to; `noun` is what the owner's
+ * projection calls one of these, when it says.
+ *
+ * A borrowed creation on a Folder puts a file in it, so its choices are the
+ * Folders a person navigates by (`topLevelFolders`) — `parentsFor`, keyed by
+ * action id — and not the newest `kind:39000`s, which include DMs and record
+ * channels. Peek's own conversation keeps the list it always had.
  */
 export async function creatableUnderAsViewer(
   parentKind: number,
   relayUrl: string,
   token: StoredToken,
   limit = 50,
-): Promise<{ actions: ResolvedAction[]; parents: { address: string; title: string }[] } | null> {
+): Promise<CreatableKindRead | null> {
   const query = viewerQuery(relayUrl, token)
   const roots = await query([{ kinds: [parentKind], limit }])
   if (roots.length === 0) return null
@@ -1074,16 +1089,23 @@ export async function creatableUnderAsViewer(
   const ordered = [...roots].sort((a, b) => b.created_at - a.created_at)
 
   const parents: { address: string; title: string }[] = []
-  let actions: ResolvedAction[] | null = null
+  let resolved: { actions: ResolvedAction[]; manifest?: string; noun?: string } | null = null
   for (const root of ordered) {
     const identifier = root.tags.find((t) => t[0] === 'd')?.[1]
     if (!identifier) continue
-    const address = pointerToAddress({ kind: root.kind, pubkey: root.pubkey, identifier, relays: [] })
-    if (!actions) {
+    const pointer = { kind: root.kind, pubkey: root.pubkey, identifier, relays: [] }
+    const address = pointerToAddress(pointer)
+    if (!resolved) {
       // The one resolve. Its projection is the kind's, not this object's.
       const object = await resolveForeignObject(address, query, people, 0, manifests)
       if (!object) continue
-      actions = object.actions.filter((a) => a.control === 'form')
+      // Already memoised by the resolve above; asked for its address alone.
+      const owner = await resolveManifest(pointer, query, manifests)
+      resolved = {
+        actions: object.actions.filter((a) => a.control === 'form'),
+        ...(owner ? { manifest: owner.address } : {}),
+        ...(object.noun ? { noun: object.noun } : {}),
+      }
       parents.push({ address, title: object.slots.title?.value ?? identifier })
       continue
     }
@@ -1093,8 +1115,14 @@ export async function creatableUnderAsViewer(
     parents.push({ address, title: root.tags.find((t) => t[0] === 'title' || t[0] === 'name')?.[1] ?? identifier })
   }
 
-  if (!actions || actions.length === 0) return null
-  return { actions, parents }
+  if (!resolved || resolved.actions.length === 0) return null
+  const borrowed = resolved.actions.filter((a) => a.declaredBy)
+  if (parentKind !== KIND_CHANNEL_METADATA || borrowed.length === 0) return { ...resolved, parents }
+
+  const folders = topLevelFolders(await listFolders(query)).flatMap((folder) =>
+    folder.channel ? [{ address: folder.channel, title: folder.name ?? folder.id }] : [],
+  )
+  return { ...resolved, parents, parentsFor: Object.fromEntries(borrowed.map((a) => [a.id, folders])) }
 }
 
 /**
@@ -1135,6 +1163,12 @@ export async function applyActionAsViewer(
      * goes with the archive in one event.
      */
     note?: string
+    /**
+     * The manifest that declared the action, when it is not the object's own —
+     * the action's `declaredBy.address` (MAN-8). Ship's `add-project` on a
+     * Folder is built with Ship's manifest; Peek's has no such action.
+     */
+    declaredBy?: string
   },
   relayUrl: string,
   token: StoredToken,
@@ -1172,8 +1206,20 @@ export async function applyActionAsViewer(
   const address = pointerToAddress(pointer)
   const query = viewerQuery(relayUrl, token)
 
-  const resolved = await resolveManifest(pointer, query, manifests)
-  if (!resolved) return fail('No app claims this kind, so there is nothing to act on.')
+  /*
+    The declaring manifest, which is the object's own unless the action came
+    from another app (MAN-8). interop answers with a borrowed manifest only when
+    resolving the object would have offered the action from it, so naming an
+    address cannot make Peek act with a manifest nobody offered.
+  */
+  const resolved = await resolveActingManifest(pointer, args.declaredBy, query, manifests)
+  if (!resolved) {
+    return fail(
+      args.declaredBy
+        ? 'That app no longer offers this action here.'
+        : 'No app claims this kind, so there is nothing to act on.',
+    )
+  }
 
   // The Folder has to come off the object itself: it is required on the event
   // about to be published, and asking the user for it would be absurd.

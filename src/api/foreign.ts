@@ -369,6 +369,8 @@ export function useForeignObjects() {
       value: string | Record<string, string>
       /** The prose value's format, when it is a block document (MAN-1). */
       contentFormat?: string
+      /** The declaring manifest, for another app's action on this object (MAN-8). */
+      declaredBy?: string
     }): Promise<ActResult & { created?: string; incomplete?: string }> => {
       const v = viewer()
       if (!v) return { ok: false, reason: 'Sign in to change another app’s object.' }

@@ -86,6 +86,12 @@ export interface LauncherAction {
   /** The whole action exists in the live manifest (vs proposed). */
   declaredToday?: boolean
   /**
+   * The manifest that declared it, when that is not the parent's own — Ship's
+   * `add-project` on a Folder (MAN-8). Passed to `applyAction` so the runtime
+   * builds with the declaring manifest.
+   */
+  declaredBy?: string
+  /**
    * The object this action changes, as an address (PEE-3).
    *
    * Set only for a **field-setting** action, where the target already exists

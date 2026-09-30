@@ -32,7 +32,17 @@ import { draftInstruction, formSchema, prefillInstruction, threadContext, usable
 import { answerInstruction, parseAnswer, selectMessages, type NumberedMessage } from '@/lib/askThread'
 import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
-import { PARENT_FIELD, changeActionFrom, changeVocabulariesFrom, launcherActionFrom, proseSubmission, splitSubmission, vocabulariesFrom } from '@/lib/liveAction'
+import {
+  PARENT_FIELD,
+  changeActionFrom,
+  changeVocabulariesFrom,
+  creationsFor,
+  launcherActionFrom,
+  proseSubmission,
+  splitSubmission,
+  vocabulariesFrom,
+  type CreatableKindRead,
+} from '@/lib/liveAction'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
 import { bodies } from '@/lib/conversationRegistry'
@@ -113,7 +123,8 @@ interface AskAnswer {
 /** What an app's manifest says it can create, read when first needed. */
 type LiveRead =
   | { state: 'loading' }
-  | { state: 'ready'; actions: LauncherAction[]; parents: VocabOption[] }
+  /** `parents` by action id: Ship's issue goes under a project, its project in a Folder (MAN-8). */
+  | { state: 'ready'; actions: LauncherAction[]; parents: Record<string, VocabOption[]> }
   | { state: 'none' }
   | { state: 'failed' }
 
@@ -252,27 +263,66 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   */
   const [live, setLive] = useState<Record<string, LiveRead>>({})
   const asked = useRef(new Set<string>())
+  /*
+    One read per parent kind, shared by every app — MAN-8. An app's creations
+    are no longer all on its own kind: Ship's `add-project` is on a Folder,
+    which is Peek's, so Ship's section reads Peek's kind too and Peek's reads
+    it once for both. `creationsFor` sorts the actions back to the app that
+    declared them.
+  */
+  const kindReads = useRef(new Map<number, Promise<CreatableKindRead | null>>())
+  const readKinds = useCallback(
+    // Rejects only when `required` — the app's own kind — could not be read;
+    // another kind that failed is read as nothing there.
+    async (required: number): Promise<Map<number, CreatableKindRead | null>> => {
+      const kinds = [...new Set(probeable(LAUNCHER_APPS).map((app) => app.parentKind as number))]
+      const reads = await Promise.allSettled(
+        kinds.map((kind) => {
+          let read = kindReads.current.get(kind)
+          if (!read) {
+            read = creatableUnder(kind)
+            // A failure is not kept, so the next visit asks again.
+            read.catch(() => kindReads.current.delete(kind))
+            kindReads.current.set(kind, read)
+          }
+          return read
+        }),
+      )
+      const out = new Map<number, CreatableKindRead | null>()
+      kinds.forEach((kind, i) => {
+        const read = reads[i]
+        if (read.status === 'fulfilled') out.set(kind, read.value)
+        else if (kind === required) throw read.reason
+        else out.set(kind, null)
+      })
+      return out
+    },
+    [creatableUnder],
+  )
   const readLive = useCallback(
     (app: LauncherApp) => {
       // An app with no parent kind is never probed: nothing about it is live.
       if (typeof app.parentKind !== 'number' || asked.current.has(app.id)) return
       asked.current.add(app.id)
       setLive((l) => ({ ...l, [app.id]: { state: 'loading' } }))
-      creatableUnder(app.parentKind)
-        .then((found) => {
+      readKinds(app.parentKind)
+        .then((reads) => {
+          const found = creationsFor(app, reads)
           if (!found) {
             // Signed out, or the app declares nothing creatable. Not an error.
             setLive((l) => ({ ...l, [app.id]: { state: 'none' } }))
             return
           }
-          const actions = found.actions
-            // The app's own noun, not a literal 'project' (INT-9).
-            .map((a) => launcherActionFrom(a, { parentNoun: app.parentNoun, submitLabel: a.label }))
-            .filter((a): a is LauncherAction => a !== null)
-          setLive((l) => ({
-            ...l,
-            [app.id]: { state: 'ready', actions, parents: found.parents.map((p) => ({ value: p.address, label: p.title })) },
-          }))
+          const actions: LauncherAction[] = []
+          const parents: Record<string, VocabOption[]> = {}
+          for (const creation of found) {
+            // The noun of the kind it goes on — the app's own for its own kind (INT-9), "Folder" on a Folder.
+            const action = launcherActionFrom(creation.action, { parentNoun: creation.parentNoun, submitLabel: creation.action.label })
+            if (!action) continue
+            actions.push(action)
+            parents[action.id] = creation.parents
+          }
+          setLive((l) => ({ ...l, [app.id]: { state: 'ready', actions, parents } }))
         })
         .catch((error: unknown) => {
           // A read that fails must produce a sentence, not silence.
@@ -280,7 +330,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           setLive((l) => ({ ...l, [app.id]: { state: 'failed' } }))
         })
     },
-    [creatableUnder],
+    [readKinds],
   )
   useEffect(() => {
     if (level.kind === 'app') readLive(level.app)
@@ -371,11 +421,12 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         const found = await Promise.all(
           probeable(LAUNCHER_APPS).map(async (app) => {
             try {
-              const read = await creatableUnder(app.parentKind as number)
-              if (!read) return []
-              return read.actions.filter(isProposable).flatMap((action) => {
+              // Every kind, sorted back to the declaring app, as a section reads it (MAN-8).
+              const found = creationsFor(app, await readKinds(app.parentKind as number))
+              if (!found) return []
+              return found.filter(({ action }) => isProposable(action)).flatMap(({ action, parents, parentNoun }) => {
                 // The app's own word for the parent, not "Parent" (R10).
-                const launcher = launcherActionFrom(action, { parentNoun: app.parentNoun ?? 'parent', submitLabel: action.label })
+                const launcher = launcherActionFrom(action, { parentNoun, submitLabel: action.label })
                 if (!launcher) return []
                 return [
                   {
@@ -384,7 +435,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
                     action,
                     launcher,
                     vocabularies: vocabulariesFrom(action),
-                    parents: read.parents.map((p) => ({ value: p.address, label: p.title })),
+                    parents,
                   },
                 ]
               })
@@ -435,7 +486,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request, bodies(context.conversation).join('\u0000'), creatableUnder])
+  }, [request, bodies(context.conversation).join('\u0000'), readKinds])
 
   /** Go into Ask, Draft or Make with what was typed on the first level (R8: leaving keeps it). */
   const openIntent = (intent: Intent) => {
@@ -499,7 +550,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     const live39000 = (options: VocabOption[]) =>
       options.filter((p) => !(p.value.startsWith('39000:') && legacyTopicByChannel(p.value.split(':')[2] ?? '')))
     const read = form.app ? live[form.app.id] : undefined
-    if (read?.state === 'ready') out[PARENT_FIELD] = live39000(read.parents)
+    if (read?.state === 'ready') out[PARENT_FIELD] = live39000(read.parents[form.action.id] ?? [])
     if (!form.app && form.entry) out[PARENT_FIELD] = live39000(form.entry.parents)
     return out
   }
@@ -562,12 +613,14 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
     setSubmitError(null)
     let result: Awaited<ReturnType<typeof applyAction>>
     try {
-      // The parent is addressed, not named: `applyAction` resolves the manifest from the object.
+      // The parent is addressed, not named: `applyAction` resolves the manifest from the object —
+      // or, for another app's creation on it, the manifest that declared it (MAN-8).
       result = await applyAction({
         naddr: addrToNaddr(parent, []),
         actionId: action.id,
         value: properties,
         ...(contentFormat ? { contentFormat } : {}),
+        ...(action.declaredBy ? { declaredBy: action.declaredBy } : {}),
       })
     } catch (error) {
       setSubmitting(false)

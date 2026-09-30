@@ -21,6 +21,7 @@ import { addrToNaddr, parseBlockDocument } from '@estiva-app/protocol'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
 import type { LauncherContext } from '@/lib/launcherContext'
+import type { CreatableKindRead } from '@/lib/liveAction'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { ToastProvider } from '@/lib/toast'
 import { CommandLauncher } from './CommandLauncher'
@@ -60,7 +61,7 @@ const liveAddIssue: ResolvedAction = {
   which `vitest` never sees, because it strips types rather than checking them.
   `npm run build` does.
 */
-type ApplyArgs = { naddr: string; actionId: string; value: string | Record<string, string> }
+type ApplyArgs = { naddr: string; actionId: string; value: string | Record<string, string>; declaredBy?: string }
 /*
   `created` has to be an address the encoder will accept, for the same reason
   SHIP_AUTHOR does: `addrToNaddr` needs 32 bytes, and the reference insert
@@ -70,13 +71,15 @@ type ApplyArgs = { naddr: string; actionId: string; value: string | Record<strin
 */
 const CREATED = `30851:${SHIP_AUTHOR}:0f68a3f3-e44e-46c8-82dd-76432b358a18`
 const applyAction = vi.fn(async (_args: ApplyArgs) => ({ ok: true as const, created: CREATED }))
-const creatableUnder = vi.fn(async () => ({
-  actions: [liveAddIssue],
-  parents: [
-    { address: PROJECT_A, title: 'Projection layer' },
-    { address: PROJECT_B, title: 'Cross-app read state' },
-  ],
-}))
+const creatableUnder = vi.fn(
+  async (_parentKind: number): Promise<CreatableKindRead | null> => ({
+    actions: [liveAddIssue],
+    parents: [
+      { address: PROJECT_A, title: 'Projection layer' },
+      { address: PROJECT_B, title: 'Cross-app read state' },
+    ],
+  }),
+)
 
 /*
   The insert itself is covered against the real `findNaddrs`/`stripNaddrs` in
@@ -109,7 +112,7 @@ vi.mock('@/api', async () => {
   }
 })
 
-function open(context: LauncherContext = {}, onClose = vi.fn()) {
+function open(context: LauncherContext = {}, onClose = vi.fn(), appId = 'ship') {
   render(
     <MemoryRouter initialEntries={['/desk']}>
       <DebugProvider>
@@ -118,7 +121,7 @@ function open(context: LauncherContext = {}, onClose = vi.fn()) {
         <LastSelectionProvider>
 
         <ToastProvider>
-          <CommandLauncher context={context} onClose={onClose} initialAppId="ship" />
+          <CommandLauncher context={context} onClose={onClose} initialAppId={appId} />
         </ToastProvider>
 
         </LastSelectionProvider>
@@ -351,5 +354,78 @@ describe('the created object leaves a trace in the thread (PEE-2)', () => {
 
     expect(await screen.findByText(/^Created, but/i)).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('Ship’s New project, offered on a Folder (MAN-8)', () => {
+  /*
+    Ship declares `add-project` on a Folder, which is Peek's kind — so it
+    arrives on the Folder read with `declaredBy` naming Ship's manifest, beside
+    Peek's own `start-a-conversation`. It belongs in Ship's section, with the
+    Folders to choose from, and is built with Ship's manifest.
+  */
+  const RELAY = 'f'.repeat(64)
+  const SHIP_MANIFEST = `31990:${'8'.repeat(64)}:estiva-ship`
+  const QA_FOLDER = `39000:${RELAY}:a78e60b1-a41f-48c9-bcb0-6ceacdee8c69`
+  const addProject: ResolvedAction = {
+    id: 'add-project',
+    label: 'New project',
+    description: 'Start a project in a Folder.',
+    effect: 'writes',
+    control: 'form',
+    fields: [
+      { name: 'name', type: 'string', required: true },
+      { name: 'description', type: 'string', required: false },
+    ],
+    listed: true,
+    declaredBy: { address: SHIP_MANIFEST, appName: 'Estiva Ship' },
+  }
+  const startConversation: ResolvedAction = {
+    id: 'start-a-conversation',
+    label: 'Start a conversation',
+    control: 'form',
+    fields: [{ name: 'message', type: 'string', required: true, target: 'content' }],
+    createsUnder: 'self',
+  }
+
+  beforeEach(() => {
+    applyAction.mockClear()
+    creatableUnder.mockImplementation(async (kind) =>
+      kind === 39000
+        ? {
+            actions: [startConversation, addProject],
+            parents: [{ address: `39000:${RELAY}:0e2f4c1a-5b6d-4e7f-8a9b-0c1d2e3f4a5b`, title: 'A DM' }],
+            manifest: `31990:${'0'.repeat(64)}:estiva-peek`,
+            parentsFor: { 'add-project': [{ address: QA_FOLDER, title: 'QA' }] },
+          }
+        : {
+            actions: [liveAddIssue],
+            parents: [{ address: PROJECT_A, title: 'Projection layer' }],
+            manifest: SHIP_MANIFEST,
+          },
+    )
+  })
+
+  it('is in Ship’s section, asks for a Folder, and files with Ship’s manifest', async () => {
+    open()
+    await userEvent.click(await screen.findByText('New project'))
+    await userEvent.type(await screen.findByRole('textbox', { name: /^name/i }), 'MAN-8 prod check')
+    await userEvent.click(screen.getByLabelText('Folder'))
+    expect(screen.queryByRole('option', { name: 'A DM' })).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('option', { name: 'QA' }))
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }))
+
+    expect(applyAction).toHaveBeenCalledTimes(1)
+    const call = applyAction.mock.calls[0][0]
+    expect(call.actionId).toBe('add-project')
+    expect(call.declaredBy).toBe(SHIP_MANIFEST)
+    expect(call.naddr).toBe(addrToNaddr(QA_FOLDER, []))
+    expect(call.value).toEqual({ name: 'MAN-8 prod check' })
+  })
+
+  it('is not in Peek’s section, though it arrived on Peek’s kind', async () => {
+    open({}, vi.fn(), 'peek')
+    expect(await screen.findByText('Start a conversation')).toBeInTheDocument()
+    expect(screen.queryByText('New project')).not.toBeInTheDocument()
   })
 })

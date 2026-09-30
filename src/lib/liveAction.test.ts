@@ -8,7 +8,15 @@
 import { describe, expect, it } from 'vitest'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { parseBlockDocument } from '@estiva-app/protocol'
-import { PARENT_FIELD, launcherActionFrom, proseSubmission, splitSubmission, vocabulariesFrom } from './liveAction'
+import {
+  PARENT_FIELD,
+  creationsFor,
+  launcherActionFrom,
+  proseSubmission,
+  splitSubmission,
+  vocabulariesFrom,
+  type CreatableKindRead,
+} from './liveAction'
 
 /** Exactly what the runtime returns for Ship's live `add-issue`. */
 const addIssue: ResolvedAction = {
@@ -43,11 +51,72 @@ describe('launcherActionFrom', () => {
     expect(parent.parentNoun).toBe('project')
   })
 
-  it('adds no parent when the action does not create under one', () => {
-    const loose = launcherActionFrom({ ...addIssue, createsUnder: undefined })!
-    expect(loose.fields.some((f) => f.key === PARENT_FIELD)).toBe(false)
+  it('asks where even for a creation that names no parent — it is made in the object it is invoked on (MAN-8)', () => {
+    /*
+      This asserted the opposite until MAN-8: no `createsUnder`, no picker. Ship's
+      `add-project` is the case that broke it — it is placed *in* a Folder rather
+      than hung under one, and without the field the form could never be sent.
+    */
+    const inFolder = launcherActionFrom({ ...addIssue, id: 'add-project', createsUnder: undefined }, { parentNoun: 'Folder' })!
+    const parent = inFolder.fields.find((f) => f.key === PARENT_FIELD)!
+    expect(parent.required).toBe(true)
+    expect(parent.label).toBe('Folder')
   })
 
+  it('carries the declaring manifest of another app’s action, and nothing for the owner’s', () => {
+    const ship = '31990:88ac:estiva-ship'
+    expect(launcherActionFrom({ ...addIssue, declaredBy: { address: ship, appName: 'Estiva Ship' } })!.declaredBy).toBe(ship)
+    expect(launcherActionFrom(addIssue)!).not.toHaveProperty('declaredBy')
+  })
+})
+
+describe('creationsFor — an action goes to the app that declared it (MAN-8)', () => {
+  const PEEK_MANIFEST = '31990:0a59:estiva-peek'
+  const SHIP_MANIFEST = '31990:88ac:estiva-ship'
+  const startConversation: ResolvedAction = { ...addIssue, id: 'start-a-conversation', label: 'Start a conversation' }
+  const addProject: ResolvedAction = {
+    ...addIssue,
+    id: 'add-project',
+    label: 'New project',
+    createsUnder: undefined,
+    listed: true,
+    declaredBy: { address: SHIP_MANIFEST, appName: 'Estiva Ship' },
+  }
+  const reads = new Map<number, CreatableKindRead | null>([
+    [30850, { actions: [addIssue], parents: [{ address: '30850:88ac:p1', title: 'Payments' }], manifest: SHIP_MANIFEST }],
+    [
+      39000,
+      {
+        actions: [startConversation, addProject],
+        parents: [{ address: '39000:relay:dm', title: 'A DM' }],
+        manifest: PEEK_MANIFEST,
+        parentsFor: { 'add-project': [{ address: '39000:relay:qa', title: 'QA' }] },
+      },
+    ],
+  ])
+
+  it('gives Ship its own issue and its project on a Folder, each with its own parents', () => {
+    const ship = creationsFor({ parentKind: 30850, parentNoun: 'project' }, reads)!
+    expect(ship.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label)])).toEqual([
+      ['add-issue', 'project', ['Payments']],
+      ['add-project', 'Folder', ['QA']],
+    ])
+  })
+
+  it('keeps Ship’s action out of Peek’s section, though it arrived on Peek’s kind', () => {
+    const peek = creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)!
+    expect(peek.map((c) => c.action.id)).toEqual(['start-a-conversation'])
+    expect(peek[0].parents.map((p) => p.label)).toEqual(['A DM'])
+  })
+
+  it('is nothing when the app’s own kind read nothing, and ignores a kind that failed', () => {
+    expect(creationsFor({ parentKind: 30850 }, new Map([[30850, null]]))).toBeNull()
+    const own = new Map<number, CreatableKindRead | null>([[30850, reads.get(30850)!], [39000, null]])
+    expect(creationsFor({ parentKind: 30850 }, own)!.map((c) => c.action.id)).toEqual(['add-issue'])
+  })
+})
+
+describe('launcherActionFrom — its fields', () => {
   it('renders a declared vocabulary as a select, already looked up', () => {
     const withEnum: ResolvedAction = {
       ...addIssue,

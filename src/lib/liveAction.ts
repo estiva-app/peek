@@ -1,6 +1,6 @@
-import { BLOCK_DOCUMENT_FORMAT, type ResolvedAction } from '@estiva-app/interop'
+import { BLOCK_DOCUMENT_FORMAT, KIND_CHANNEL_METADATA, type ResolvedAction } from '@estiva-app/interop'
 import { markerTextToBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
-import type { FormField, LauncherAction } from './launcherActions'
+import type { FormField, LauncherAction, VocabOption } from './launcherActions'
 
 /**
  * A live manifest's action, in the shape the launcher's form already draws.
@@ -106,16 +106,22 @@ export function launcherActionFrom(
     declaredToday: true,
   }))
 
-  if (action.createsUnder === 'self') {
-    fields.push({
-      key: PARENT_FIELD,
-      label: options.parentNoun ? labelFor(options.parentNoun) : 'Parent',
-      control: 'parent',
-      required: true,
-      parentNoun: options.parentNoun ?? 'object',
-      declaredToday: true,
-    })
-  }
+  /*
+    Every creation is invoked on an object, so every one needs it picked —
+    `createsUnder` says only whether the new object also names it as a parent.
+    Ship's `add-project` has none: it is made *in* a Folder (`placement`), and
+    the Folder is still what the action is performed on (MAN-8). Without the
+    field the form could never be submitted — `submitAction` refuses a
+    creation with nowhere to go.
+  */
+  fields.push({
+    key: PARENT_FIELD,
+    label: options.parentNoun ? labelFor(options.parentNoun) : 'Parent',
+    control: 'parent',
+    required: true,
+    parentNoun: options.parentNoun ?? 'object',
+    declaredToday: true,
+  })
 
   return {
     id: action.id,
@@ -123,7 +129,78 @@ export function launcherActionFrom(
     fields,
     submitLabel: options.submitLabel ?? action.label,
     declaredToday: true,
+    ...(action.declaredBy ? { declaredBy: action.declaredBy.address } : {}),
   }
+}
+
+/** One parent kind's read — `creatableUnderAsViewer`'s answer. */
+export interface CreatableKindRead {
+  actions: ResolvedAction[]
+  parents: { address: string; title: string }[]
+  /** The address of the manifest that owns the kind — whose actions are the ones without `declaredBy`. */
+  manifest?: string
+  /** What the owner's projection calls one of these, when it says. */
+  noun?: string
+  /** An action's own choices, when they are not `parents` — a borrowed creation on a Folder. */
+  parentsFor?: Record<string, { address: string; title: string }[]>
+}
+
+/** A creation an app offers, with where it can go and what that is called. */
+export interface AppCreation {
+  action: ResolvedAction
+  parents: VocabOption[]
+  parentNoun: string
+}
+
+/**
+ * Every creation an app offers, across every parent kind the launcher read —
+ * MAN-8.
+ *
+ * An app's section used to be the actions on its own `parentKind`. Since
+ * interop 0.40.0 an object also carries the creations *other* apps declare on
+ * its kind, so the reads split the other way: Ship's `add-project` arrives on
+ * a Folder (Peek's kind), and belongs in Ship's section with Folders to pick
+ * from; Peek's section, reading the same Folder, must not show it.
+ *
+ * So an action belongs to the app whose manifest declared it — `declaredBy`,
+ * or the kind's owner when absent — and an app's manifest is the owner of its
+ * own `parentKind`, the one read that names it. Null when that read found
+ * nothing, which is the section's "none".
+ */
+export function creationsFor(
+  app: { parentKind?: number; parentNoun?: string },
+  reads: ReadonlyMap<number, CreatableKindRead | null>,
+): AppCreation[] | null {
+  if (typeof app.parentKind !== 'number') return null
+  const own = reads.get(app.parentKind)
+  if (!own) return null
+  const out: AppCreation[] = []
+  const seen = new Set<string>()
+  // Its own kind first, so its rows keep their order.
+  const kinds = [app.parentKind, ...[...reads.keys()].filter((kind) => kind !== app.parentKind)]
+  for (const kind of kinds) {
+    const read = reads.get(kind)
+    if (!read) continue
+    for (const action of read.actions) {
+      const mine =
+        kind === app.parentKind
+          ? !action.declaredBy || action.declaredBy.address === own.manifest
+          : own.manifest !== undefined && action.declaredBy?.address === own.manifest
+      if (!mine || seen.has(action.id)) continue
+      seen.add(action.id)
+      out.push({
+        action,
+        parents: (read.parentsFor?.[action.id] ?? read.parents).map((p) => ({ value: p.address, label: p.title })),
+        // The app's own noun for its own kind (INT-9); for another's, what that
+        // kind's projection says, and a Folder is a Folder whoever draws it.
+        parentNoun:
+          kind === app.parentKind
+            ? (app.parentNoun ?? 'parent')
+            : (read.noun ?? (kind === KIND_CHANNEL_METADATA ? 'Folder' : 'parent')),
+      })
+    }
+  }
+  return out
 }
 
 /**
