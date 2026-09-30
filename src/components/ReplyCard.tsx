@@ -106,6 +106,8 @@ interface ReplyCardProps {
   body: string
   /** When the body was last edited, ms — draws the marker (CON-8). */
   editedAt?: number
+  /** Offer Edit and Delete (SPEC §6.5). Absent: only on the viewer's own ("You") message. */
+  canEditAndDelete?: boolean
   reactions?: ReactionData[]
   highlightType?: HighlightType
   /** Figma frame ids attached to the reply (rendered as preview cards). */
@@ -154,6 +156,7 @@ export function ReplyCard({
   timestamp,
   body,
   editedAt,
+  canEditAndDelete,
   reactions,
   highlightType,
   files,
@@ -383,9 +386,9 @@ export function ReplyCard({
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
 
-  // Only the author edits or deletes (PEE-32) — the seams label the viewer's
-  // own rows `CURRENT_USER_NAME`, as `ConversationCard` reads it.
-  const isOwnMessage = isCurrentUser(authorName)
+  // Edit and Delete on the viewer's own message and on an agent's (SPEC §6.5)
+  // when the seam says so; else the author label (PEE-32), as `ConversationCard` reads it.
+  const isOwnMessage = canEditAndDelete ?? isCurrentUser(authorName)
 
   // Delete asks first (D56).
   const [confirmingDelete, setConfirmingDelete] = useState(false)

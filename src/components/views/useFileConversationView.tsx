@@ -16,6 +16,7 @@ import { useToast } from '@/lib/toast'
 import {
   CURRENT_USER_NAME,
   conversationKeyOf,
+  relayAttachmentOf,
   formatDateLabel,
   formatReplyTimestamp,
   useFileConversation,
@@ -32,7 +33,8 @@ import {
   type ThreadReply,
   type WriteResult,
 } from '@/api'
-import type { CommentDecoration, CommentReaction, People } from '@estiva-app/interop'
+import { groupReactions, offersEditAndDelete, type ReactionEvent } from '@estiva-app/conversation'
+import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
 
 interface UseFileConversationViewArgs {
@@ -390,6 +392,7 @@ export function useFileConversationView({
                   timestamp={c.timestamp}
                   body={c.body}
                   editedAt={c.editedAt}
+                  canEditAndDelete={c.canEditAndDelete}
                   files={c.files}
                   reactions={c.reactions}
                   replyCount={c.replyCount}
@@ -418,7 +421,7 @@ export function useFileConversationView({
             one drawn with none may well have some, and the reader is told
             rather than left to conclude nobody reacted.
           */}
-          {view && <ReactionHorizon omitted={view.reactionTargetsOmitted} container="conversation" />}
+          {view && <ReactionHorizon omitted={view.reactionTargetsOmitted} cut={view.reactionEventsCut} container="conversation" />}
         </div>
     </>
   )
@@ -484,8 +487,10 @@ interface ProjectedConversation {
   roots: ConversationData[]
   byId: Record<string, RootView>
   /** Every reaction by target, the viewer's own among them — what a toggle looks up. */
-  reactionsById: Record<string, CommentReaction[]>
+  reactionsById: Record<string, ReactionEvent[]>
   reactionTargetsOmitted: number
+  /** A reaction read came back at the relay's page ceiling (SPEC §6.6). */
+  reactionEventsCut: boolean
 }
 
 /**
@@ -502,19 +507,33 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
   const avatarOf = (pubkey: string) => people?.[pubkey]?.picture
 
   const byId: Record<string, RootView> = {}
-  const reactionsById: Record<string, CommentReaction[]> = {}
+  const reactionsById: Record<string, ReactionEvent[]> = {}
   const roots = [...conversation.roots].sort((a, b) => a.createdAt - b.createdAt)
 
+  // SPEC §6.5: the viewer's own message, or an agent's. A profile the directory
+  // does not hold offers them, as Ship does — the relay adjudicates. Nothing is
+  // offered with no viewer to sign, on a deleted root (no author), or on
+  // somebody else's while the directory is still loading: offered and then
+  // withdrawn a moment later would be a menu that lies for one round trip.
+  const offersControls = (event: ConversationEvent): boolean => {
+    if (!viewerPubkey || event.deleted) return false
+    if (event.author === viewerPubkey) return true
+    if (!people) return false
+    const profile = people[event.author]
+    return offersEditAndDelete({ viewer: viewerPubkey, author: event.author, authorIsBot: profile ? profile.bot === true : undefined })
+  }
+
   const decorate = (event: ConversationEvent) => {
-    const decoration: CommentDecoration | undefined = conversation.decorations.byId[event.id]
-    const edit = conversation.edits[event.id]
+    const decoration = conversation.decorations.byId[event.id.toLowerCase()]
+    const edit = decoration?.edit
     reactionsById[event.id] = decoration?.reactions ?? []
     return {
       body: edit?.body ?? event.body,
-      editedAt: edit?.editedAt !== undefined ? edit.editedAt * 1000 : undefined,
-      files: (edit?.files ?? event.files).map(asAttachment),
-      reactions: groupReactions(decoration?.reactions ?? [], viewerPubkey, nameOf),
+      editedAt: edit?.editedAt,
+      files: (edit?.attachments?.map(relayAttachmentOf) ?? event.files).map(asAttachment),
+      reactions: pillsOf(event.id, decoration?.reactions ?? [], viewerPubkey, nameOf),
       resolutions: decoration?.resolutions ?? [],
+      canEditAndDelete: offersControls(event),
     }
   }
 
@@ -527,6 +546,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       timestamp: formatReplyTimestamp(reply.createdAt * 1000),
       body: d.body,
       editedAt: d.editedAt,
+      canEditAndDelete: d.canEditAndDelete,
       createdAtMs: reply.createdAt * 1000,
       files: d.files,
       nostrReferences: reply.references,
@@ -553,6 +573,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       timestamp: formatTimestamp(root.createdAt * 1000),
       body: d.body,
       editedAt: d.editedAt,
+      canEditAndDelete: d.canEditAndDelete,
       createdAtMs: root.createdAt * 1000,
       reactions: d.reactions,
       replyCount: replies.length,
@@ -583,26 +604,25 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
     return data
   })
 
-  return { roots: rootData, byId, reactionsById, reactionTargetsOmitted: conversation.decorations.reactionTargetsOmitted }
+  return {
+    roots: rootData,
+    byId,
+    reactionsById,
+    reactionTargetsOmitted: conversation.decorations.reactionTargetsOmitted,
+    reactionEventsCut: conversation.decorations.reactionEventsCut,
+  }
 }
 
-/** One pill per emoji, the viewer's own marked, reactors in reaction order. */
-function groupReactions(reactions: readonly CommentReaction[], viewerPubkey: string | null, nameOf: (pubkey: string) => string): ReactionData[] {
-  const byEmoji = new Map<string, ReactionData>()
-  for (const r of reactions) {
-    const pill = byEmoji.get(r.emoji) ?? { emoji: r.emoji, count: 0, owner: 'others' as const, names: [] as string[] }
-    pill.count += 1
-    pill.names!.push(nameOf(r.by))
-    if (r.by === viewerPubkey) pill.owner = 'yours'
-    byEmoji.set(r.emoji, pill)
-  }
-  return [...byEmoji.values()]
+/** One pill per emoji (`@estiva-app/conversation`'s `groupReactions`, SPEC §6.6), the viewer's own marked, reactors in reaction order. */
+function pillsOf(target: string, reactions: readonly ReactionEvent[], viewerPubkey: string | null, nameOf: (pubkey: string) => string): ReactionData[] {
+  const grouped = groupReactions(reactions, viewerPubkey ?? undefined)[target.toLowerCase()] ?? []
+  return grouped.map((r) => ({ emoji: r.emoji, count: r.count, owner: r.mine ? ('yours' as const) : ('others' as const), names: r.by.map(nameOf) }))
 }
 
 /** A root's or a reply's body as it stands — its latest edit's, else its own. */
 function currentBody(conversation: FileConversation, id: string): string | undefined {
   const event = [...conversation.roots, ...Object.values(conversation.replies).flat()].find((e) => e.id === id)
-  return event ? (conversation.edits[id]?.body ?? event.body) : undefined
+  return event ? (conversation.decorations.byId[id.toLowerCase()]?.edit?.body ?? event.body) : undefined
 }
 
 const asAttachment = (f: ConversationEvent['files'][number]): FileAttachment => ({

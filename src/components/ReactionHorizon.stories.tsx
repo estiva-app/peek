@@ -37,3 +37,9 @@ export const Nothing: Story = { args: { omitted: 0 } }
  * one, so the noun changes and nothing else does.
  */
 export const InAConversation: Story = { args: { omitted: 14, container: 'conversation' } }
+
+/**
+ * A reaction read came back at the relay's page ceiling (SPEC §6.6): some
+ * reaction events may be missing inside the horizon. Ship says the same words.
+ */
+export const Cut: Story = { args: { omitted: 0, cut: true } }

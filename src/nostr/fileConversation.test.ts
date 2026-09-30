@@ -2,7 +2,7 @@
  * A file's conversation as Peek's own view reads and writes it — FOL-31.
  *
  * The read folds three relay answers — threads by `#e`, the raw events for
- * their tags, and the decorations interop reports (edits, reactions,
+ * their tags, and the decorations `@estiva-app/conversation` folds (edits, reactions,
  * resolutions) — into one shape the view draws from. The writes are the
  * kinds the rest of the suite already agrees on: `1111` for a comment and a
  * reply, `40003` for an edit, `7` for a reaction, `9101` for a resolution,
@@ -30,10 +30,6 @@ import {
   editCommentAsViewer,
   fileConversationAsViewer,
   fileThreadsAsViewer,
-  foldEdits,
-  isCommentOn,
-  mentionTagsFor,
-  referenceTagsFor,
   reactAsViewer,
   resolveAsViewer,
   type ConversationContainer,
@@ -137,7 +133,7 @@ const topicMessageNamingThis = event({
   content: `Let's talk about ${OWN_NADDR}`,
   tags: [['h', OTHER_FOLDER], ['a', ADDRESS]],
 })
-/** A topic message anchored to this file before REW-10 — its body does not name it, and it is a comment for good. */
+/** A topic message anchored to this file before REW-10 — a comment only where the owner declares kind:9 (§7.3 `alsoRead`), which the projection has already checked. */
 const legacyTopicComment = event({ kind: 9, content: 'Anchored the old way', tags: [['h', FOLDER], ['a', ADDRESS]] })
 const reply = event({
   kind: COMMENT,
@@ -205,16 +201,15 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
   it('carries what was done to each root and reply: the edit, the reactions, the resolution', async () => {
     const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
     const d = found.decorations.byId[root.id]
-    expect(d.edit).toEqual({ body: 'First, corrected', at: edit.created_at, by: CATH })
-    expect(d.reactions).toEqual([{ id: reaction.id, emoji: '👍', by: MIKY, at: reaction.created_at }])
+    // The edit folded for the body, the mark and the files (`@estiva-app/conversation`, CON-5).
+    expect(d.edit).toEqual({ body: 'First, corrected', edited: true, editedAt: edit.created_at * 1000, editedBy: CATH })
+    expect(d.reactions).toEqual([{ id: reaction.id, target: root.id, emoji: '👍', by: MIKY, at: reaction.created_at }])
     expect(d.resolutions).toEqual([
       { id: resolved.id, action: 'resolved', by: MIKY, at: resolved.created_at, message: 'done', supportingEventId: reply.id },
     ])
     // A reply is a target too, so a reaction on it would be found.
     expect(found.decorations.byId[reply.id]).toEqual({ reactions: [], resolutions: [] })
-    expect(found.decorations.reactionTargetsOmitted).toBe(0)
-    // The same edit, folded here for the body, the mark and the files (CON-5).
-    expect(found.edits).toEqual({ [root.id]: { body: 'First, corrected', editedAt: edit.created_at } })
+    expect(found.decorations).toMatchObject({ reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false })
   })
 
   it('drops a root that is a comment on another file naming this one — that is Activity, not the conversation', async () => {
@@ -222,7 +217,7 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
     expect(found.roots.map((r) => r.id)).toEqual([root.id])
   })
 
-  it('drops a topic message whose body names this file, and keeps one anchored to it the pre-REW-10 way (CON-14)', async () => {
+  it('drops a topic message whose body names this file, and keeps a kind:9 the owner declares, anchored the pre-REW-10 way (CON-14, §7.3)', async () => {
     const found = await fileConversationAsViewer(
       container,
       [root.id, topicMessageNamingThis.id, legacyTopicComment.id],
@@ -286,11 +281,21 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
     })
 
-    it('does not guess a parent among several unmarked e tags', async () => {
-      const ambiguous = event({ kind: COMMENT, content: 'Quote and parent', tags: [['A', ADDRESS], ['e', 'c'.repeat(64)], ['e', GONE], ['h', FOLDER]] })
-      queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), ambiguous]))
+    it('takes the parent SPEC §6.4 names — never a mention-marked e, which quotes (CON-5)', async () => {
+      const quoting = event({ kind: COMMENT, content: 'Quote and parent', tags: [['A', ADDRESS], ['e', 'c'.repeat(64), '', 'mention'], ['e', GONE], ['h', FOLDER]] })
+      queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), quoting]))
       const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
-      expect(found.roots.map((r) => r.id)).toEqual([root.id])
+      expect(found.roots.map((r) => r.id)).toEqual([root.id, GONE])
+      expect(found.replies[GONE]?.map((r) => r.id)).toEqual([quoting.id])
+    })
+
+    it('with several unmarked e, the parent is the first — a quote goes in q or a mention-marked e (SPEC §6.4)', async () => {
+      const QUOTED = 'c'.repeat(64)
+      const unmarked = event({ kind: COMMENT, content: 'Two e', tags: [['A', ADDRESS], ['e', QUOTED], ['e', GONE], ['h', FOLDER]] })
+      queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), unmarked]))
+      const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
+      expect(found.replies[QUOTED]?.map((r) => r.id)).toEqual([unmarked.id])
+      expect(found.replies[GONE]).toBeUndefined()
     })
 
     it('leaves alone a reply whose parent the relay still holds', async () => {
@@ -470,125 +475,12 @@ describe('the decorations are written as the suite agrees them', () => {
   })
 })
 
-describe('referenceTagsFor', () => {
-  it('names each file once, skips the file the comment is on, and ignores a broken pointer', () => {
-    expect(referenceTagsFor(`${OTHER_NADDR} and ${OTHER_NADDR} and nostr:naddr1broken`, ADDRESS)).toEqual([['a', OTHER]])
-    expect(referenceTagsFor(OWN_NADDR, ADDRESS)).toEqual([])
-  })
-})
-
-describe('isCommentOn — SPEC §6.4’s per-tag rule', () => {
-  it('a kind:1111 is what the A names; a root without one is kept', () => {
-    expect(isCommentOn(root, ADDRESS)).toBe(true)
-    expect(isCommentOn(withPicture, ADDRESS)).toBe(true)
-    expect(isCommentOn(mentionFromElsewhere, ADDRESS)).toBe(false)
-  })
-
-  /* A kind:9 has no A, so its a is read against its body (CON-14). */
-  it('a kind:9 whose body names the file is a mention — the a is the index of the reference', () => {
-    const topicMessage = event({ kind: 9, content: `See ${OWN_NADDR}`, tags: [['h', OTHER_FOLDER], ['a', ADDRESS]] })
-    expect(isCommentOn(topicMessage, ADDRESS)).toBe(false)
-  })
-
-  it('a kind:9 whose body does not name the file is a pre-REW-10 comment anchor, read for good', () => {
-    const legacy = event({ kind: 9, content: 'Written before comments moved to 1111', tags: [['h', OTHER_FOLDER], ['a', ADDRESS]] })
-    expect(isCommentOn(legacy, ADDRESS)).toBe(true)
-  })
-
-  it('a kind:9 that does not carry the file as a is not a comment on it, whatever its body says', () => {
-    const named = event({ kind: 9, content: `See ${OWN_NADDR}`, tags: [['h', OTHER_FOLDER]] })
-    expect(isCommentOn(named, ADDRESS)).toBe(false)
-  })
-})
-
-describe('mentionTagsFor', () => {
-  it('names each mentioned person once, and ignores anything that is not an npub', () => {
-    const npub = encodeNpub(CATH)
-    expect(mentionTagsFor(`hi nostr:${npub} and again nostr:${npub}, see nostr:nevent1qqs`)).toEqual([['p', CATH]])
-  })
-})
-
-describe('foldEdits — the body and the attachments fold separately (RFC 0.4 §7.2.1, amended 2026-09-23, CON-5)', () => {
-  const target = { id: 'f'.repeat(64), body: 'Original' }
-  const imeta = (x: string) => ['imeta', `url https://relay.test/media/${x}`, 'm image/png', `x ${x}`, 'size 10', `filename ${x}.png`]
-  const at = 1_800_000_000
-  const editOf = (id: string, content: string, created_at: number, extra: string[][] = []): TestEvent => ({
-    id: id.repeat(64).slice(0, 64),
-    sig: '',
-    pubkey: CATH,
-    created_at,
-    kind: 40003,
-    tags: [['h', FOLDER], ['e', target.id], ...extra],
-    content,
-  })
-  const shas = (fold: ReturnType<typeof foldEdits>) => fold[target.id]?.files?.map((f) => f.sha256)
-
-  it('a later edit carrying imeta replaces the set — it does not append', () => {
-    const first = editOf('1', 'Original', at, [imeta('aaa'), imeta('bbb')])
-    const second = editOf('2', 'Original', at + 5, [imeta('ccc')])
-    expect(shas(foldEdits([target], [second, first]))).toEqual(['ccc'])
-  })
-
-  it('an edit without imeta leaves the attachments as they were', () => {
-    const attach = editOf('1', 'Original', at, [imeta('aaa')])
-    const reword = editOf('2', 'Reworded', at + 5)
-    const fold = foldEdits([target], [attach, reword])[target.id]
-    expect(fold.body).toBe('Reworded')
-    expect(fold.files?.map((f) => f.sha256)).toEqual(['aaa'])
-    // And with no edit carrying any, there is no set: the comment's own stands.
-    expect(foldEdits([target], [reword])[target.id].files).toBeUndefined()
-  })
-
-  it('the latest edit carrying imeta wins, by ts then created_at then id', () => {
-    const early = editOf('1', 'Original', at, [imeta('aaa'), ['ts', String(at * 1000 + 900)]])
-    const late = editOf('2', 'Original', at, [imeta('bbb'), ['ts', String(at * 1000 + 100)]])
-    expect(shas(foldEdits([target], [late, early]))).toEqual(['aaa'])
-    // A ts that disagrees with created_at is ignored, so the id breaks the tie.
-    const lying = editOf('3', 'Original', at, [imeta('ccc'), ['ts', String((at + 3600) * 1000)]])
-    const other = editOf('4', 'Original', at, [imeta('ddd')])
-    expect(shas(foldEdits([target], [other, lying]))).toEqual(['ddd'])
-    // A newer edit without imeta does not take the set with it.
-    expect(shas(foldEdits([target], [early, late, editOf('5', 'Changed', at + 60)]))).toEqual(['aaa'])
-  })
-
-  it('an edit whose body is byte-identical to the one it replaces is not marked edited', () => {
-    const attachOnly = editOf('1', 'Original', at, [imeta('aaa')])
-    expect(foldEdits([target], [attachOnly])[target.id]).toEqual({ body: 'Original', files: [expect.objectContaining({ sha256: 'aaa' })] })
-    // The mark stays with the last edit that changed the body, judged against the body as it then stood.
-    const reword = editOf('2', 'Reworded', at + 5)
-    const reattach = editOf('3', 'Reworded', at + 10, [imeta('bbb')])
-    expect(foldEdits([target], [attachOnly, reword, reattach])[target.id].editedAt).toBe(at + 5)
-    const back = editOf('4', 'Original', at + 20)
-    expect(foldEdits([target], [reword, back])[target.id].editedAt).toBe(at + 20)
-  })
-
-  it('ignores an edit of something that is not one of the targets', () => {
-    const elsewhere = { ...editOf('1', 'Other', at), tags: [['h', FOLDER], ['e', 'e'.repeat(64)], imeta('aaa')] }
-    expect(foldEdits([target], [elsewhere])).toEqual({})
-  })
-
-  // PEE-38, SPEC §6.8: the relay checks ownership of the first 64-hex `e`,
-  // marker ignored, and refuses nothing for a second one.
-  it('applies an edit only to its first 64-hex e — never to a second e the relay did not check', () => {
-    const mine = { id: 'd'.repeat(64), body: 'Mine' }
-    const marked = { ...editOf('1', 'FORGED', at), pubkey: MIKY, tags: [['h', FOLDER], ['e', mine.id, '', 'mention'], ['e', target.id]] }
-    const unmarked = { ...editOf('2', 'FORGED', at), pubkey: MIKY, tags: [['h', FOLDER], ['e', mine.id], ['e', target.id]] }
-    // The writer's own message off screen: both shapes used to land on the victim.
-    expect(foldEdits([target], [marked, unmarked])).toEqual({})
-    // On screen, the edit is the writer's own message's — what the relay accepted.
-    const fold = foldEdits([target, mine], [marked])
-    expect(fold[target.id]).toBeUndefined()
-    expect(fold[mine.id].body).toBe('FORGED')
-    // A non-hex `e` is passed over, as the relay passes it over.
-    const pastNonHex = { ...editOf('3', 'Reworded', at), tags: [['h', FOLDER], ['e', 'not-an-id'], ['e', target.id]] }
-    expect(foldEdits([target], [pastNonHex])[target.id].body).toBe('Reworded')
-  })
-})
-
 /*
   REM-1 — a DM is a channel container: its `kind:9` messages, read by `#h` and
-  written with `buildMessage`. The fold is the one Convex's `nostr/sync.ts`
-  drew a DM with until then.
+  written with `buildMessage`, threaded by `@estiva-app/conversation` (CON-5).
+  The rules themselves — which tag is a comment, how edits and reactions fold —
+  are the package's, with its conformance tests (C10–C16); this file tests
+  Peek's reads and writes around them.
 */
 describe('a channel conversation (REM-1)', () => {
   const DM = '3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f'
@@ -600,7 +492,7 @@ describe('a channel conversation (REM-1)', () => {
     tags: [['h', DM], ['imeta', 'url https://relay.test/media/def', 'm image/jpeg', 'x def456', 'size 4096', 'filename photo.jpg']],
   })
   const answer = event({ kind: 9, content: 'Hi!', tags: [['h', DM], ['e', hello.id, '', 'reply']] })
-  /** A reply to a reply: the importer never had a row to hang it from, and neither does this. */
+  /** A reply to a reply: filed under its thread's root, the `root`-marked `e` (SPEC §6.4, CON-5). */
   const nested = event({ kind: 9, pubkey: MIKY, content: 'deep', tags: [['h', DM], ['e', hello.id, '', 'root'], ['e', answer.id, '', 'reply']] })
   /** Another channel's message: `#h` is the whole membership of the read. */
   const elsewhere = event({ kind: 9, content: 'not here', tags: [['h', FOLDER]] })
@@ -613,15 +505,15 @@ describe('a channel conversation (REM-1)', () => {
     queryRelay.mockImplementation(relayOver([hello, picture, answer, nested, elsewhere, helloEdited, liked, done]))
   })
 
-  it('reads the messages by #h, puts each reply under its message, and folds what was done to them', async () => {
+  it('reads the messages by #h, puts each reply under its thread, and folds what was done to them', async () => {
     const found = await channelConversationAsViewer(DM, 'https://relay.test', token)
     expect(found.roots.map((r) => r.body)).toEqual(['Hello', 'Here it is'])
-    expect(found.replies[hello.id]?.map((r) => r.body)).toEqual(['Hi!'])
+    expect(found.replies[hello.id]?.map((r) => r.body)).toEqual(['Hi!', 'deep'])
     expect(Object.keys(found.replies)).toEqual([hello.id])
     expect(found.roots[1].files).toEqual([
       { name: 'photo.jpg', contentType: 'image/jpeg', size: 4096, sha256: 'def456', mediaUrl: 'https://relay.test/media/def' },
     ])
-    expect(found.edits[hello.id]?.body).toBe('Hello there')
+    expect(found.decorations.byId[hello.id].edit?.body).toBe('Hello there')
     expect(found.decorations.byId[answer.id].reactions.map((r) => r.emoji)).toEqual(['❤️'])
     expect(found.decorations.byId[hello.id].resolutions.map((r) => r.action)).toEqual(['resolved'])
     // A kind list on every `#h` read: a kindless one is refused outright.

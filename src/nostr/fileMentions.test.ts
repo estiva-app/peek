@@ -47,9 +47,9 @@ describe('fileMentionsOf reads a topic message by SPEC §6.4 (CON-14)', () => {
     expect(m).toMatchObject({ id: 'said-in-topic', kind: 9, folder: OTHER_H, saidIn: `39000:${RELAY}:${OTHER_H}`, threadId: 'said-in-topic' })
   })
 
-  it('one whose body does not name the file is a pre-REW-10 comment on it, not a mention', () => {
+  it('one whose body does not name the file is a mention too — a kind:9 is chat, never a comment (SPEC §6.4, CON-20, CON-5)', () => {
     const legacy = event('legacy-anchor', { kind: 9, h: OTHER_H, a: [THIS], content: 'anchored the old way' })
-    expect(fileMentionsOf([legacy], THIS, RELAY)).toEqual([])
+    expect(fileMentionsOf([legacy], THIS, RELAY)).toMatchObject([{ id: 'legacy-anchor', kind: 9, saidIn: `39000:${RELAY}:${OTHER_H}` }])
   })
 
   it('is left out when the relay’s key is unknown, and the comments stay', () => {

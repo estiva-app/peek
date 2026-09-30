@@ -25,7 +25,7 @@ import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useLiveFile } from '@/nostr/useLiveFile'
 
 export type { ConversationContainer, ConversationEvent, FileConversation, OutgoingAttachment, WriteResult }
-export { conversationKeyOf } from '@/nostr/fileConversation'
+export { conversationKeyOf, relayAttachmentOf } from '@/nostr/fileConversation'
 
 /** What a file's conversation is, once asked: the events, or why not. */
 export type FileConversationState = FileConversation | 'loading' | { failed: RelayFailureKind }
@@ -75,8 +75,8 @@ const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTI
  * the read for a file the viewer can *write* to, and it asks for more because
  * the view draws more: the replies under each comment (by `#e`), every
  * comment's tags (attachments, references), and what has been done to each
- * one since — edits, reactions, resolutions — through interop's
- * `commentDecorationsOf`. Three round trips after the object's own, and the
+ * one since — edits, reactions, resolutions — through
+ * `@estiva-app/conversation`'s `decorationsOf`. Three round trips after the object's own, and the
  * view pays them once, whichever app owns the file.
  *
  * ## Parameterised by container, never by kind

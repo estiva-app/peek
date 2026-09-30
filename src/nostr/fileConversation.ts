@@ -14,12 +14,12 @@
  *
  * ## A channel
  *
- * The fold is the one Convex's `nostr/sync.ts` drew a DM with until REM-1: a
- * `kind:9` with an `e` is a reply to the
- * message that `e` names ({@link replyTargetOf}), one without is a message, and
- * a reply to something that is not a message here is dropped rather than
- * guessed at. Edits, reactions and resolutions are the same `#e` read a file's
- * comments get. A deleted message is simply not returned.
+ * Threaded by `@estiva-app/conversation`'s `groupThreads` (SPEC §6.4, CON-5):
+ * a `kind:9` with an `e` is a reply, filed under its thread's root — a nested
+ * reply under the `root`-marked `e`, not its parent — and one without is a
+ * message. A reply to something that is not a message here is dropped rather
+ * than guessed at. Edits, reactions and resolutions are the same `#e` read a
+ * file's comments get. A deleted message is simply not returned.
  *
  * ## Reads
  *
@@ -27,7 +27,7 @@
  * carries no `a`, so the thread read asks by `#e` (interop's `threadsOf`, which returns the events);
  * and what has been done to any of them — an edit, a reaction, a resolution —
  * names the comment rather than the file, so it is a third read by `#e`
- * (`commentDecorationsOf`, interop 0.24.0). Three round trips, each for a
+ * (`@estiva-app/conversation`'s `decorationsOf`, CON-5). Three round trips, each for a
  * reason that is NIP-22's and not this module's.
  *
  * ## Writes
@@ -48,21 +48,18 @@ import {
   buildMessage,
   buildReaction,
   buildResolution,
-  decodeNaddr,
-  decodeNpub,
-  findNaddrs,
-  findNostrUris,
   imetaOf,
-  pointerToAddress,
   imetaTag,
   KIND,
+  type Imeta,
   type NostrTag,
   type PublishResult,
   type ResolutionAction,
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { commentDecorationsOf, editTargetOf, type CommentDecorations, type Threads } from '@estiva-app/interop'
+import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, referenceTagsFor, type Decorations } from '@estiva-app/conversation'
+import type { Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
@@ -118,77 +115,12 @@ export interface FileConversation {
   roots: ConversationEvent[]
   /** Direct replies per root, oldest first. A root with none is absent. */
   replies: Record<string, ConversationEvent[]>
-  decorations: CommentDecorations
-  /** Each edited root's or reply's edits, folded ({@link foldEdits}). A comment never edited is absent. */
-  edits: Record<string, EditFold>
-}
-
-/**
- * A comment's `kind:40003`s, folded — RFC 0.4 §7.2.1 as amended 2026-09-23
- * (CON-5). The body and the attachments fold separately, in the same order.
- */
-export interface EditFold {
-  /** The body to show: the latest edit's content. */
-  body: string
   /**
-   * When the body last changed, epoch seconds. An edit whose content is
-   * byte-identical to the body it replaces changes attachments only and is not
-   * an edit of the body, so it does not move this; absent when no edit did.
+   * What has been done to every root and reply — edits (with their attachment
+   * fold), reactions, resolutions — keyed by lowercase id, and what the reads
+   * could not reach (`@estiva-app/conversation`'s `decorationsOf`, CON-5).
    */
-  editedAt?: number
-  /**
-   * The `imeta` set of the latest edit that carries at least one. A set
-   * replaces, it does not append. Absent when no edit carries one — the
-   * comment's own attachments stand, since an edit with no `imeta` means
-   * "unchanged", never "none".
-   */
-  files?: RelayAttachment[]
-}
-
-/** An edit's order: `ts` when it agrees with `created_at` to the second, then `created_at`, then id (SPEC §6.3). */
-function editOrderMs(event: SignedEvent): number {
-  const raw = Number.parseInt(event.tags.find((t) => t[0] === 'ts')?.[1] ?? '', 10)
-  if (Number.isFinite(raw) && Math.abs(Math.floor(raw / 1000) - event.created_at) <= 1) return raw
-  return event.created_at * 1000
-}
-
-const byEditOrder = (a: SignedEvent, b: SignedEvent) => editOrderMs(a) - editOrderMs(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-
-/**
- * Fold every `kind:40003` onto the comment it targets.
- *
- * The target is interop's `editTargetOf` — the first `e` whose value is 64 hex,
- * marker ignored, which is the event whose ownership the relay checked (SPEC
- * §6.8, PEE-38). An edit whose target is not one of `targets` applies nowhere,
- * never to another `e` it carries. Edits are replayed oldest first
- * from the comment's own body, so "byte-identical to the body it replaces" is
- * judged against the body as it stood, not the original.
- */
-export function foldEdits(targets: readonly { id: string; body: string }[], events: readonly SignedEvent[]): Record<string, EditFold> {
-  const bodies = new Map(targets.map((t) => [t.id, t.body]))
-  const byTarget = new Map<string, SignedEvent[]>()
-  const seen = new Set<string>()
-  for (const event of events) {
-    if (event.kind !== KIND.MESSAGE_EDIT || seen.has(event.id)) continue
-    seen.add(event.id)
-    const target = editTargetOf(event)
-    if (!target || !bodies.has(target)) continue
-    byTarget.set(target, [...(byTarget.get(target) ?? []), event])
-  }
-  const out: Record<string, EditFold> = {}
-  for (const [target, edits] of byTarget) {
-    let body = bodies.get(target)!
-    let editedAt: number | undefined
-    let files: RelayAttachment[] | undefined
-    for (const edit of [...edits].sort(byEditOrder)) {
-      if (edit.content !== body) editedAt = edit.created_at
-      body = edit.content
-      const attached = attachmentsOf(edit)
-      if (attached.length > 0) files = attached
-    }
-    out[target] = { body, ...(editedAt !== undefined ? { editedAt } : {}), ...(files ? { files } : {}) }
-  }
-  return out
+  decorations: Decorations
 }
 
 /** An attachment the composer uploaded — what `UploadedFile` carries once the blob reached the relay. */
@@ -209,16 +141,19 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
 
 /** The `imeta` attachments of an event, as {@link RelayAttachment}. Mirrors `convex/nostr/sync.ts`'s `attachmentsOf`. */
 export function attachmentsOf(event: { tags: NostrTag[] }): RelayAttachment[] {
-  return imetaOf(event).map((f) => ({
-    name: f.filename ?? f.alt ?? 'attachment',
-    contentType: f.m,
-    size: f.size,
-    sha256: f.x,
-    mediaUrl: f.url,
-    ...(f.thumb ? { thumbUrl: f.thumb } : {}),
-    ...(f.dim ? { dim: f.dim } : {}),
-  }))
+  return imetaOf(event).map(relayAttachmentOf)
 }
+
+/** One `imeta` as {@link RelayAttachment} — also what an edit's attachment fold (`EditFold.attachments`) is drawn with. */
+export const relayAttachmentOf = (f: Imeta): RelayAttachment => ({
+  name: f.filename ?? f.alt ?? 'attachment',
+  contentType: f.m,
+  size: f.size,
+  sha256: f.x,
+  mediaUrl: f.url,
+  ...(f.thumb ? { thumbUrl: f.thumb } : {}),
+  ...(f.dim ? { dim: f.dim } : {}),
+})
 
 /** The addresses a comment names besides the file it is on — `a` and NIP-22's `A`. */
 function referencesOf(event: SignedEvent, address: string): string[] {
@@ -241,77 +176,6 @@ export function imetaTagsFor(files: readonly OutgoingAttachment[]): NostrTag[] {
     out.push(imetaTag({ url: f.mediaUrl, m: f.contentType, x: f.sha256, size: f.size, thumb: f.thumbUrl, filename: f.name }))
   }
   return out
-}
-
-/** The people a body mentions by `nostr:npub…`, as `p` tags — what `buildMessage` does for a `kind:9`. */
-export function mentionTagsFor(body: string): NostrTag[] {
-  const pubkeys = new Set<string>()
-  for (const uri of findNostrUris(body)) {
-    if (!/^nostr:npub1/i.test(uri)) continue
-    try {
-      pubkeys.add(decodeNpub(uri))
-    } catch {
-      // A malformed key is prose.
-    }
-  }
-  return [...pubkeys].slice(0, 50).map((p) => ['p', p])
-}
-
-/**
- * The files a body names by `nostr:naddr…`, as `a` tags — the mention half of
- * Activity (CON-11). Mirrors `convex/nostr/refs.ts`'s `referencedAddresses`,
- * which is what a `kind:9` gets: the body is the source and the tag is the
- * index, so one `#a` filter answers "who named this file" without reading
- * every conversation the viewer can see (`fileMentions.ts`).
- *
- * The file the comment is on is left out. A root already carries it as `a`
- * and `A`, and on a reply NIP-22's lowercase `a` would name the parent — a
- * second copy would say the reply is a root.
- */
-export function referenceTagsFor(body: string, own: string): NostrTag[] {
-  const addresses = namedInBody(body)
-  addresses.delete(own)
-  return [...addresses].map((a) => ['a', a])
-}
-
-/** The addresses a body names by `nostr:naddr…`; a pointer that will not decode is prose. */
-export function namedInBody(body: string): Set<string> {
-  const addresses = new Set<string>()
-  for (const naddr of findNaddrs(body)) {
-    try {
-      addresses.add(pointerToAddress(decodeNaddr(naddr)))
-    } catch {
-      // A malformed pointer is prose.
-    }
-  }
-  return addresses
-}
-
-/**
- * Is this root a comment on the file, rather than a message elsewhere that
- * merely names it? Both arrive by the object's `#a` read, and drawn as one
- * list a mention would look as if somebody had said it here. SPEC §6.4 says
- * which tag carries which strength, per kind (CON-13, CON-14):
- *
- * - A `kind:1111`'s `A` is the comment — NIP-22's root object. A root whose
- *   `A` is another file is that file's conversation and this file's Activity
- *   (`fileMentions.ts`); its `a` for this file is the index of a reference
- *   (`referenceTagsFor`). A root with no `A` at all is malformed and read as
- *   a comment, the way §6.4 says to read it rather than drop the thread.
- * - A `kind:9` has no `A`, so its `a` is read against its body. One the body
- *   also names is the index of that reference — what Peek writes for every
- *   `[`-menu reference in a topic message (RIC-11) — and a mention. One the
- *   body does not name is the anchor of a comment written before REW-10
- *   moved comments to `1111`, which nothing writes any more and which is not
- *   replaceable, so it is read as a comment for good.
- */
-export function isCommentOn(event: Pick<SignedEvent, 'kind' | 'content' | 'tags'>, address: string): boolean {
-  if (event.kind === KIND.STREAM_MESSAGE) {
-    const anchored = event.tags.some((tag) => tag[0] === 'a' && tag[1] === address)
-    return anchored && !namedInBody(event.content).has(address)
-  }
-  const root = event.tags.find((tag) => tag[0] === 'A')?.[1]
-  return !root || root === address
 }
 
 /**
@@ -337,8 +201,12 @@ export async function fileConversationAsViewer(
     .map((id) => threads.roots[id])
     .filter((root): root is SignedEvent => !!root)
     // A mention — from another file's conversation, or a topic message naming
-    // this file — arrives by `#a` too, and is not a root here.
-    .filter((root) => isCommentOn(root, container.address))
+    // this file — arrives by `#a` too, and is not a root here (SPEC §6.4).
+    // Which kinds count is the owner's manifest, and the projection that
+    // produced `rootIds` already kept only those (interop's `conversationsOf`);
+    // a `kind:9` among them is one the owner declares, so both are allowed here
+    // and this re-reads only the tags.
+    .filter((root) => isCommentOn(root, container.address, DECLARABLE_COMMENT_KINDS))
     .map(conversationEvent)
   const replies: Record<string, ConversationEvent[]> = {}
   for (const [rootId, list] of Object.entries(threads.replies)) {
@@ -428,8 +296,9 @@ async function deletedRootsOf(
 ): Promise<{ roots: ConversationEvent[]; replies: Record<string, SignedEvent[]> }> {
   const byParent = new Map<string, SignedEvent[]>()
   for (const event of onFile) {
-    if (known.has(event.id) || !isCommentOn(event, address)) continue
-    const parent = parentOfComment(event)
+    // A reply is never a comment (SPEC §6.4); what places it on this file is its thread's `A`.
+    if (known.has(event.id) || !anchorsOf(event).includes(address)) continue
+    const parent = parentOf(event)
     if (!parent || known.has(parent)) continue
     byParent.set(parent, [...(byParent.get(parent) ?? []), event])
   }
@@ -451,17 +320,10 @@ async function deletedRootsOf(
   return { roots, replies }
 }
 
-/**
- * A `kind:1111`'s parent: NIP-22's one lowercase `e`, or the `reply`-marked one
- * when a writer marks it. Several unmarked is ambiguous — one may be a quote,
- * which is why interop's `threadsOf` never takes the first — so it is none.
- */
-function parentOfComment(event: Pick<SignedEvent, 'tags'>): string | null {
-  const es = event.tags.filter((t) => t[0] === 'e' && typeof t[1] === 'string' && t[1])
-  return es.find((t) => t[3] === 'reply')?.[1] ?? (es.length === 1 ? es[0][1] : null)
-}
-
 type FileContainer = Extract<ConversationContainer, { kind: 'file' }>
+
+/** The comment kinds an owner can declare (§7.3 `emits.kind` and `alsoRead`) — what a projected root may be. */
+const DECLARABLE_COMMENT_KINDS = [KIND.COMMENT, KIND.STREAM_MESSAGE]
 
 /** The conversation in a container, read the way its kind is read. `rootIds` is a file's; a channel finds its own. */
 export function conversationAsViewer(
@@ -513,31 +375,16 @@ export async function channelConversationAsViewer(h: string, relayUrl: string, t
     files: attachmentsOf(event),
     references: referencesOf(event, ''),
   })
-  const oldestFirst = (a: SignedEvent, b: SignedEvent) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1)
-  const sorted = [...messages.values()].sort(oldestFirst)
-  const roots = sorted.filter((e) => !replyTargetOf(e)).map(asEvent)
-  const rootIds = new Set(roots.map((r) => r.id))
+  const threaded = groupThreads([...messages.values()])
+  const roots = threaded.roots.map(asEvent)
   const replies: Record<string, ConversationEvent[]> = {}
-  for (const event of sorted) {
-    const parent = replyTargetOf(event)
-    // A reply to a reply, or to a message this channel does not hold: the
-    // importer skipped these too, rather than strand one under the wrong root.
-    if (!parent || !rootIds.has(parent)) continue
-    ;(replies[parent] ??= []).push(asEvent(event))
+  // A reply whose thread's root this channel does not hold is dropped rather
+  // than stranded under a stand-in: a DM's messages are never deleted from under replies.
+  for (const root of threaded.roots) {
+    const list = threaded.replies[root.id]
+    if (list) replies[root.id] = list.map(asEvent)
   }
   return decorate(roots, replies, relayUrl, token)
-}
-
-/**
- * The message a `kind:9` replies to, or null for a message — `convex/nostr/sync.ts`'s
- * `replyTargetOf`, which is what put a DM's replies under their messages until REM-1.
- * Buzz's direct reply carries one `e` marked `reply`; a nested one adds `root`.
- */
-export function replyTargetOf(event: Pick<SignedEvent, 'tags'>): string | null {
-  const eTags = event.tags.filter((t) => t[0] === 'e' && typeof t[1] === 'string')
-  if (eTags.length === 0) return null
-  const marked = (marker: string) => eTags.find((t) => t[3] === marker)?.[1]
-  return marked('reply') ?? marked('root') ?? eTags[0][1] ?? null
 }
 
 /** What has been done to every root and reply: the third read, whichever container they came from. */
@@ -548,19 +395,14 @@ async function decorate(
   token: StoredToken,
 ): Promise<FileConversation> {
   // A deleted root's stand-in has nothing done to it that anyone can see.
-  const targets = [...roots.filter((r) => !r.deleted), ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt }))
-  // The edits come back on the decorations read, but interop keeps only the
-  // newest one's body. The attachment fold (CON-5) needs every edit, so they
-  // are kept here as they pass through rather than asked for a second time.
-  const edits: SignedEvent[] = []
-  const decorations = await commentDecorationsOf(targets, async (filters) => {
+  // Each target's body goes with it, so "edited" means the body changed (SPEC §6.8).
+  const targets = [...roots.filter((r) => !r.deleted), ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt, body: e.body }))
+  const decorations = await decorationsOf(targets, async (filters) => {
     const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-    for (const event of result.events) if (event.kind === KIND.MESSAGE_EDIT) edits.push(event)
     return result.events
   })
-  const bodies = [...roots, ...Object.values(replies).flat()].map((e) => ({ id: e.id, body: e.body }))
-  return { roots, replies, decorations, edits: foldEdits(bodies, edits) }
+  return { roots, replies, decorations }
 }
 
 /** What a write reports: the relay's answer, and the event's id when it took it. */
@@ -712,7 +554,7 @@ export async function commentAsViewer(
  * Edit a comment or a reply — `kind:40003`, newest wins for every reader (CON-8).
  *
  * `files`, when given, is the attachment set after the edit, as `imeta` — RFC
- * 0.4 §7.2.1 as amended 2026-09-23 (CON-5), which {@link foldEdits} reads. A
+ * 0.4 §7.2.1 as amended 2026-09-23 (CON-5), which `@estiva-app/conversation`'s `foldEdits` reads. A
  * set replaces the one before it, and an edit carrying none leaves the
  * attachments as they were, so an empty set cannot be said: the caller refuses
  * it before it gets here.

@@ -70,3 +70,23 @@ describe('a reply card', () => {
     expect(screen.queryByText('Delete')).toBeNull()
   })
 })
+
+// SPEC §6.5 (CON-5): a seam that reads profiles decides, and the label is only the fallback.
+describe('a seam that says who may edit', () => {
+  it("offers both on somebody else's when the seam says so — an agent's message", async () => {
+    await openMore(<ConversationCard authorName="Helper" canEditAndDelete timestamp="10:24" body="Done." />)
+    expect(screen.getByText('Edit message')).toBeTruthy()
+    expect(screen.getByText('Delete')).toBeTruthy()
+  })
+
+  it('offers neither when the seam says no, whatever the label', async () => {
+    await openMore(<ReplyCard authorName="You" canEditAndDelete={false} timestamp="10:25" body="Mine." />)
+    expect(screen.queryByText('Edit message')).toBeNull()
+    expect(screen.queryByText('Delete')).toBeNull()
+  })
+
+  it("offers both on an agent's reply", async () => {
+    await openMore(<ReplyCard authorName="Helper" canEditAndDelete timestamp="10:25" body="Done." />)
+    expect(screen.getByText('Edit message')).toBeTruthy()
+  })
+})

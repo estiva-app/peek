@@ -21,6 +21,8 @@ export interface ReplyData {
   createdAtMs?: number
   /** When the body was last edited, ms — see `ConversationData.editedAt`. */
   editedAt?: number
+  /** Whether the card offers Edit and Delete — see `ConversationData.canEditAndDelete`. */
+  canEditAndDelete?: boolean
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
   /** The published event's id — what a message link names (PEE-17). Absent

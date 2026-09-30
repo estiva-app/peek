@@ -9,7 +9,8 @@
  */
 import { queryRelay } from '@/nostr/bridge'
 import { fileMentionsAsViewer } from '@/nostr/fileMentions'
-import { fileConversationAsViewer, isCommentOn } from '@/nostr/fileConversation'
+import { isCommentOn } from '@estiva-app/conversation'
+import { fileConversationAsViewer } from '@/nostr/fileConversation'
 import type { StoredToken } from '@/auth/estivaId'
 
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'

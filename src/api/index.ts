@@ -77,6 +77,7 @@ export {
 export {
   useFileConversation,
   conversationKeyOf,
+  relayAttachmentOf,
   type FileConversationState,
   type FileConversationActions,
   type ConversationContainer,

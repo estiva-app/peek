@@ -43,8 +43,7 @@ const reply = event('3', ME, 'Agreed', T + 120)
 const conversation: FileConversation = {
   roots: [rootB, rootA],
   replies: { [rootA.id]: [reply] },
-  decorations: { byId: {}, reactionTargetsOmitted: 0 },
-  edits: {},
+  decorations: { byId: {}, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
 }
 
 function mount(openThreadId?: string) {

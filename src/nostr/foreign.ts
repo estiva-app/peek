@@ -22,7 +22,7 @@
 import type { StoredToken } from '@/auth/estivaId'
 import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
 import type { CreatableKindRead } from '@/lib/liveAction'
-import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import { KIND, parseProfile, type SignedEvent } from '@estiva-app/protocol'
 
 /** NIP-29 channel metadata — Peek's Topic. Its `d` is the channel uuid. */
 export const KIND_TOPIC = 39000
@@ -1626,14 +1626,14 @@ export async function directoryAsViewer(relayUrl: string, token: StoredToken): P
   const people: People = {}
   for (const event of events) {
     try {
-      const content = JSON.parse(event.content) as { display_name?: string; name?: string; picture?: string }
-      people[event.pubkey] = {
-        displayName: content.display_name ?? content.name,
-        picture: content.picture,
-      }
+      JSON.parse(event.content)
     } catch {
       // skip: an unreadable profile is not a reason to lose the rest
+      continue
     }
+    // The protocol's reading, so NIP-24's `bot` arrives too — what offers Edit
+    // and Delete on an agent's message (SPEC §6.5, CON-5).
+    people[event.pubkey] = parseProfile(event)
   }
   return people
 }

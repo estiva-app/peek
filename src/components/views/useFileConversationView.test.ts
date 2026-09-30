@@ -37,8 +37,14 @@ const reply = event('3', ME, 'Agreed', T + 120)
 const conversation = (over: Partial<FileConversation> = {}): FileConversation => ({
   roots: [rootB, rootA],
   replies: { [rootA.id]: [reply] },
-  decorations: { byId: {}, reactionTargetsOmitted: 0 },
-  edits: {},
+  decorations: { byId: {}, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
+  ...over,
+})
+const decorations = (byId: FileConversation['decorations']['byId'], over: Partial<FileConversation['decorations']> = {}): FileConversation['decorations'] => ({
+  byId,
+  reactionTargetsOmitted: 0,
+  reactionEventsCut: false,
+  editEventsCut: false,
   ...over,
 })
 
@@ -53,7 +59,8 @@ describe('project', () => {
   })
 
   it('shows the newest edit as the body and tells the card when it happened', () => {
-    const view = project(conversation({ edits: { [rootA.id]: { body: 'First, corrected', editedAt: T + 30 } } }), ME, people)
+    const edit = { body: 'First, corrected', edited: true, editedAt: (T + 30) * 1000 }
+    const view = project(conversation({ decorations: decorations({ [rootA.id]: { edit, reactions: [], resolutions: [] } }) }), ME, people)
     expect(view.roots[0].body).toBe('First, corrected')
     expect(view.roots[0].editedAt).toBe((T + 30) * 1000)
     expect(view.roots[1].editedAt).toBeUndefined()
@@ -61,10 +68,17 @@ describe('project', () => {
 
   it("draws an edit's attachment set in place of the comment's own, and an attach-only edit unmarked (CON-5)", () => {
     const own = { name: 'old.png', contentType: 'image/png', size: 1, sha256: 'old', mediaUrl: 'https://m/old' }
-    const added = { name: 'new.png', contentType: 'image/png', size: 2, sha256: 'new', mediaUrl: 'https://m/new' }
+    const imeta = (name: string, x: string, size: number) => ({ url: `https://m/${x}`, m: 'image/png', x, size, filename: name })
     const withFile = { ...rootA, files: [own] }
     const view = project(
-      conversation({ roots: [withFile, rootB], replies: { [rootA.id]: [reply] }, edits: { [rootA.id]: { body: 'First', files: [own, added] }, [reply.id]: { body: 'Agreed' } } }),
+      conversation({
+        roots: [withFile, rootB],
+        replies: { [rootA.id]: [reply] },
+        decorations: decorations({
+          [rootA.id]: { edit: { body: 'First', edited: false, attachments: [imeta('old.png', 'old', 1), imeta('new.png', 'new', 2)] }, reactions: [], resolutions: [] },
+          [reply.id]: { edit: { body: 'Agreed', edited: false }, reactions: [], resolutions: [] },
+        }),
+      }),
       ME,
       people,
     )
@@ -76,12 +90,12 @@ describe('project', () => {
   })
 
   it('groups reactions per emoji, marks the pill the viewer is in, and keeps every reaction for the toggle', () => {
-    const r1 = { id: 'r1', emoji: '👍', by: CATH, at: T + 1 }
-    const r2 = { id: 'r2', emoji: '👍', by: ME, at: T + 2 }
-    const r3 = { id: 'r3', emoji: '🎉', by: CATH, at: T + 3 }
+    const r1 = { id: 'r1', target: rootA.id, emoji: '👍', by: CATH, at: T + 1 }
+    const r2 = { id: 'r2', target: rootA.id, emoji: '👍', by: ME, at: T + 2 }
+    const r3 = { id: 'r3', target: rootA.id, emoji: '🎉', by: CATH, at: T + 3 }
     const view = project(
       conversation({
-        decorations: { byId: { [rootA.id]: { reactions: [r1, r2, r3], resolutions: [] } }, reactionTargetsOmitted: 7 },
+        decorations: decorations({ [rootA.id]: { reactions: [r1, r2, r3], resolutions: [] } }, { reactionTargetsOmitted: 7, reactionEventsCut: true }),
       }),
       ME,
       people,
@@ -92,13 +106,28 @@ describe('project', () => {
     ])
     expect(view.reactionsById[rootA.id]).toEqual([r1, r2, r3])
     expect(view.reactionTargetsOmitted).toBe(7)
+    expect(view.reactionEventsCut).toBe(true)
+  })
+
+  it("offers Edit and Delete on the viewer's own and an agent's, not another person's, and on an unread profile (SPEC §6.5, CON-5)", () => {
+    const BOT = 'd'.repeat(64)
+    const byBot = event('4', BOT, 'Done', T + 180)
+    const withBot = { ...people, [BOT]: { displayName: 'Helper', bot: true } } as unknown as People
+    const view = project(conversation({ roots: [rootA, rootB, byBot] }), ME, withBot)
+    expect(view.roots.map((r) => r.canEditAndDelete)).toEqual([false, true, true])
+    expect(view.byId[rootA.id].replies[0].canEditAndDelete).toBe(true)
+    // STRANGER has no profile in the directory: offered, and the relay decides.
+    // Nothing on somebody else's while the directory loads, and nothing with no viewer.
+    expect(project(conversation({ roots: [rootA, rootB, byBot] }), ME, undefined).roots.map((r) => r.canEditAndDelete)).toEqual([false, false, false])
+    expect(project(conversation(), ME, undefined).byId[rootA.id].replies[0].canEditAndDelete).toBe(true)
+    expect(project(conversation({ roots: [rootA, rootB, byBot] }), null, withBot).roots.map((r) => r.canEditAndDelete)).toEqual([false, false, false])
   })
 
   it('the last resolution decides: resolved with its rationale and the reply that carried it, or reopened', () => {
     const resolved = { id: 'x1', action: 'resolved' as const, by: ME, at: T + 200, message: 'shipped', supportingEventId: reply.id }
     const reopened = { id: 'x2', action: 'reopened' as const, by: CATH, at: T + 300 }
     const once = project(
-      conversation({ decorations: { byId: { [rootA.id]: { reactions: [], resolutions: [resolved] } }, reactionTargetsOmitted: 0 } }),
+      conversation({ decorations: { byId: { [rootA.id]: { reactions: [], resolutions: [resolved] } }, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false } }),
       ME,
       people,
     )
@@ -110,7 +139,7 @@ describe('project', () => {
 
     const twice = project(
       conversation({
-        decorations: { byId: { [rootA.id]: { reactions: [], resolutions: [resolved, reopened] } }, reactionTargetsOmitted: 0 },
+        decorations: { byId: { [rootA.id]: { reactions: [], resolutions: [resolved, reopened] } }, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
       }),
       ME,
       people,

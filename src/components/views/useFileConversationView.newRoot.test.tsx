@@ -75,8 +75,7 @@ const rootB = event('2', 'Second', T + 60)
 const conversationOf = (...roots: ReturnType<typeof event>[]): FileConversation => ({
   roots: [...roots].reverse(),
   replies: {},
-  decorations: { byId: {}, reactionTargetsOmitted: 0 },
-  edits: {},
+  decorations: { byId: {}, reactionTargetsOmitted: 0, reactionEventsCut: false, editEventsCut: false },
 })
 
 type Props = { address: string; rootIds: string[] }

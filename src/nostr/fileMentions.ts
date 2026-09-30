@@ -18,13 +18,13 @@
  * either can name a file: a topic message carries every `[`-menu reference as
  * `a` too (RIC-11, `convex/nostr/refs.ts`). The same `#a` read is how a file's
  * *own* comments are found (`resolveForeignObject`), so the answer holds both
- * strengths and SPEC §6.4's per-tag rule tells them apart, as `isCommentOn`
- * reads it (CON-13, CON-14). A `kind:1111` whose `A` is this file is its
- * conversation, and *identity merges* — it is already in the stream; one whose
- * `A` is another file is that file's conversation and this file's Activity.
- * A `kind:9`'s `a` is read against its body: one the body names is a mention,
- * said in its topic; one the body does not name is a pre-REW-10 comment
- * anchor, and the file's own conversation.
+ * strengths and SPEC §6.4's per-tag rule tells them apart, as
+ * `@estiva-app/conversation` reads it (CON-13, CON-14, CON-5). A `kind:1111`
+ * whose thread is about this file (its `A`) is its conversation, root or
+ * reply, and *identity merges* — it is already in the stream; one whose `A`
+ * is another file is that file's conversation and this file's Activity. A
+ * `kind:9` is chat: whatever `a` it carries, it is a mention, said in its
+ * topic (CON-20 moved the pre-REW-10 comment anchors to `kind:1111`).
  *
  * Nothing is thrown away for having an `e` tag. A reply that carries the
  * address is still somebody naming the file, and the row opens the thread it
@@ -45,7 +45,8 @@ import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay } from './bridge'
 import { RelayReadError } from './relayRead'
-import { attachmentsOf, isCommentOn, type RelayAttachment } from './fileConversation'
+import { anchorsOf } from '@estiva-app/conversation'
+import { attachmentsOf, type RelayAttachment } from './fileConversation'
 import { relaySigningKeyAsViewer } from './foreign'
 import { TOPIC_KIND } from './manifest'
 
@@ -101,7 +102,8 @@ export function fileMentionsOf(events: readonly SignedEvent[], address: string, 
   const out: FileMention[] = []
   for (const event of events) {
     if (seen.has(event.id)) continue
-    if (isCommentOn(event, address)) continue
+    // This file's own conversation, root or reply, is not a mention of it.
+    if (anchorsOf(event).includes(address)) continue
     const folder = tagsNamed(event, 'h')[0]
     const saidIn =
       event.kind === KIND.STREAM_MESSAGE

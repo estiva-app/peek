@@ -127,6 +127,13 @@ export interface ConversationData {
    * relay-read conversation (FOL-31); Peek's own rows do not carry it yet.
    */
   editedAt?: number
+  /**
+   * Whether the card offers Edit and Delete — SPEC §6.5, the package's
+   * `offersEditAndDelete`: the viewer's own message, or an agent's
+   * (`bot: true`). A seam that does not know leaves it absent and the card
+   * falls back to the "You" label (PEE-32).
+   */
+  canEditAndDelete?: boolean
   /** Distinct reply authors in first-reply order — the reply row's facepile
    *  (signal theme). Server rows carry it; mock rows derive it from REPLIES. */
   replyAuthors?: { name: string; avatarSrc?: string }[]
