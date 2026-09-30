@@ -280,7 +280,9 @@ function buildPlan(index: Index): Plan {
   }
   for (const m of messages) {
     const copy = migrated.get(sameMessage(m))
-    if (copy && !copiedAs.has(m.id)) copiedAs.set(m.id, copy)
+    // The same message only in the same thread: the copy's parent is the original's thread.
+    const thread = threadOf(m)
+    if (copy && thread && valuesOf(copy, 'e').includes(thread) && !copiedAs.has(m.id)) copiedAs.set(m.id, copy)
   }
   for (const id of roots.keys()) if (copiedAs.has(id)) throw new Error(`${id}: a legacy root that was copied before — not handled`)
   const standing = new Map<string, string>()

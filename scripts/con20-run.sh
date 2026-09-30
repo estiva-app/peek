@@ -14,9 +14,13 @@ KEYS=${CON20_KEYS:-~/.keys.json}
 [ -f "$KEYS" ] || { echo "no $KEYS — export the keys first"; exit 1; }
 set -a; . ~/.estiva-agent.env; set +a
 
+OPENED=0
+# Restores only the backup this run took, and consumes it, so a later run never reverts .env to an old copy.
 close() {
-  ssh "$BOX" 'cd /opt/buzz && [ -f .env.bak-con20 ] && cp .env.bak-con20 .env && ./run.sh restart >/dev/null 2>&1; sleep 20; docker compose exec -T relay env | grep -c BUZZ_CREATED_AT_FLOOR_SECS || true' \
-    | sed 's/^0$/floor window closed/'
+  if [ "$OPENED" = 1 ]; then
+    ssh "$BOX" 'cd /opt/buzz && mv .env.bak-con20 .env && ./run.sh restart >/dev/null 2>&1; sleep 20; docker compose exec -T relay env | grep -c BUZZ_CREATED_AT_FLOOR_SECS || true' \
+      | sed 's/^0$/floor window closed/'
+  fi
   shred -u "$KEYS" 2>/dev/null && echo "keys shredded" || true
 }
 trap close EXIT
@@ -25,6 +29,10 @@ scripts/con20-export.sh > "$S/export.jsonl"
 scripts/con20-export.sh scripts/con20-members.sql > "$S/members.jsonl"
 scripts/con20-export.sh scripts/con20-snapshot.sql > "$S/before.jsonl"
 
-ssh "$BOX" 'cd /opt/buzz && grep -q "^BUZZ_CREATED_AT_FLOOR_SECS=" .env || { cp .env .env.bak-con20 && printf "BUZZ_CREATED_AT_FLOOR_SECS=4500000\nBUZZ_MAX_TIMESTAMP_DRIFT_SECS=4500000\n" >> .env; }; ./run.sh restart >/dev/null 2>&1; sleep 20; docker compose exec -T relay env | grep BUZZ_CREATED_AT_FLOOR_SECS'
+# Refuses rather than guess when the window is already open: whoever opened it owns closing it.
+ssh "$BOX" 'cd /opt/buzz && ! grep -q "^BUZZ_CREATED_AT_FLOOR_SECS=" .env && cp .env .env.bak-con20 && printf "BUZZ_CREATED_AT_FLOOR_SECS=4500000\nBUZZ_MAX_TIMESTAMP_DRIFT_SECS=4500000\n" >> .env' \
+  || { echo "the floor window is already open in /opt/buzz/.env — close it first"; exit 1; }
+OPENED=1
+ssh "$BOX" 'cd /opt/buzz && ./run.sh restart >/dev/null 2>&1; sleep 20; docker compose exec -T relay env | grep BUZZ_CREATED_AT_FLOOR_SECS'
 
 CON20_KEYS="$KEYS" npx tsx --tsconfig tsconfig.app.json scripts/con20-kind9-to-1111.ts apply 2>&1 | tee "$S/apply.log"
