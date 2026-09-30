@@ -101,6 +101,15 @@ export async function present(ids: readonly string[], who: Identity): Promise<Se
   return out
 }
 
+/** Per author, which of the rows' ids the relay returns — read as the author, who can read their own Folder. */
+export async function readBack<R extends { old: { pubkey: string } }>(rows: readonly R[], idOf: (r: R) => string, signers: ReadonlyMap<string, Identity>): Promise<Set<string>> {
+  const out = new Set<string>()
+  for (const [pk, who] of signers) {
+    for (const id of await present(rows.filter((r) => r.old.pubkey === pk).map(idOf), who)) out.add(id)
+  }
+  return out
+}
+
 /** pubkey → secret hex; each secret is checked against the pubkey it is filed under. Empty when the file does not exist. */
 export function loadKeys(path: string): Map<string, string> {
   const keys = new Map<string, string>()

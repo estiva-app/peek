@@ -68,8 +68,8 @@ import {
   loadExport as loadExportFrom,
   loadKeys as loadKeysFrom,
   loadMembers as loadMembersFrom,
-  present,
   publish,
+  readBack,
   signersFrom,
   sleep,
   valuesOf,
@@ -380,15 +380,6 @@ function summarise(plan: Plan) {
 
 const loadKeys = () => loadKeysFrom(KEYS)
 const loadMembers = () => loadMembersFrom(MEMBERS)
-
-/** Per author, which of `ids` the relay returns — read as the author, who can read their own Folder. */
-async function readBack(copies: readonly Copy[], idOf: (c: Copy) => string, signers: Map<string, Identity>): Promise<Set<string>> {
-  const out = new Set<string>()
-  for (const [pk, who] of signers) {
-    for (const id of await present(copies.filter((c) => c.old.pubkey === pk).map(idOf), who)) out.add(id)
-  }
-  return out
-}
 
 
 /**

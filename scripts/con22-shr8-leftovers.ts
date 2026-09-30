@@ -42,7 +42,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { buildAddMember, buildDeletion, computeEventId, decodeNevent, signEvent } from '@estiva-app/protocol'
 import type { NostrTag, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
-import { WRITE_GAP_MS, agentIdentity, loadExport, loadKeys, loadMembers, present, publish, signersFrom, sleep, valuesOf } from './relay-migration'
+import { WRITE_GAP_MS, agentIdentity, loadExport, loadKeys, loadMembers, publish, readBack, signersFrom, sleep, valuesOf } from './relay-migration'
 import type { Identity, Index } from './relay-migration'
 
 const S = `${homedir()}/con22-scratch`
@@ -179,28 +179,6 @@ function buildPlan(index: Index, convex: ReadonlyMap<string, string>): Plan {
       continue
     }
     standing.set(x.id, c.id)
-    /*
-      SHR-8 copied a Convex row's body and not its files, and CON-5 later gave
-      the relay `kind:9` its screenshots (as `imeta`, mostly on an edit). The
-      copy's body is the row's, so it stands; the original's files move onto
-      it with an attachments-only edit — its content byte-identical to the
-      copy's, so no reader marks it edited (RFC 0.4 §7.2.1) — dated as the
-      original's own last change. The original's edits are then only deleted.
-    */
-    const files = imetaOf(shown(x))
-    let next: Row['next'] = null
-    if (files.length && JSON.stringify(files) !== JSON.stringify(imetaOf(shown(c)))) {
-      const at = shown(x).created_at
-      if ((editsOf.get(c.id)?.at(-1)?.created_at ?? -1) >= at) throw new Error(`${c.id}: the copy has an edit newer than its original's files`)
-      next = finish({
-        pubkey: c.pubkey,
-        created_at: at,
-        kind: EDIT,
-        content: shown(c).content,
-        tags: [['h', valuesOf(c, 'h')[0]], ['e', c.id], ...files, ...provenance(shown(x))],
-      })
-    }
-    rows.push({ old: x, next, why: 'original', depth: valuesOf(x, 'e').length ? 1 : 0, about: aOf(c), copy: c.id })
   }
   const mismatched: string[] = []
   for (const [xId, c] of copyOf) {
@@ -242,6 +220,36 @@ function buildPlan(index: Index, convex: ReadonlyMap<string, string>): Plan {
     rows.push({ old: r, next, why: 'reparent', depth: 1, about: aOf(target), alsoAbout: aOf(r) !== aOf(target) ? aOf(r) : undefined })
   }
 
+  // Each original, once its copy's final id is known (a copy can itself be reparented above).
+  for (const [xId, c] of copyOf) {
+    if (strays.has(c.id)) continue
+    const x = byId.get(xId)!
+    const final = moved.get(c.id) ?? c.id
+    /*
+      SHR-8 copied a Convex row's body and not its files, and CON-5 later gave
+      the relay `kind:9` its screenshots (as `imeta`, mostly on an edit). The
+      copy's body is the row's, so it stands; the original's files move onto
+      it with an attachments-only edit — its content byte-identical to the
+      copy's, so no reader marks it edited (RFC 0.4 §7.2.1) — dated as the
+      original's own last change. The original's edits are then only deleted.
+    */
+    const files = imetaOf(shown(x))
+    let next: Row['next'] = null
+    if (files.length && JSON.stringify(files) !== JSON.stringify(imetaOf(shown(c)))) {
+      const at = shown(x).created_at
+      if ((editsOf.get(c.id)?.at(-1)?.created_at ?? -1) >= at) throw new Error(`${c.id}: the copy has an edit newer than its original's files`)
+      next = finish({
+        pubkey: c.pubkey,
+        created_at: at,
+        kind: EDIT,
+        content: shown(c).content,
+        tags: [['h', valuesOf(c, 'h')[0]], ['e', final], ...files, ...provenance(shown(x))],
+      })
+    }
+    // Published after a reparented copy (depth 1), deleted after the original's own dependents.
+    rows.push({ old: x, next, why: 'original', depth: valuesOf(x, 'e').length ? 1 : 0, about: aOf(nextOf.get(c.id) ?? c), copy: final })
+  }
+
   // Dependents, to the end: whatever names a deleted id by `e` or `q`.
   const handled = (id: string) => moved.has(id) || standing.has(id)
   const dependents = new Map<string, SignedEvent>()
@@ -280,8 +288,8 @@ function buildPlan(index: Index, convex: ReadonlyMap<string, string>): Plan {
         const target = valuesOf(old, 'e').find((id) => /^[0-9a-f]{64}$/.test(id))
         const to = target && finalOf(target)
         if (!to) throw new Error(`${old.id}: an edit whose target ${target} did not move, found by another e`)
-        // An original's copy keeps its own body, and its files came across above.
-        if (copyOf.has(target)) {
+        // An original's copy keeps its own body, and its files came across above; a stray copy's edit was of the copy's body, not the original's.
+        if (copyOf.has(target) || strays.has(target)) {
           standing.set(old.id, to)
           rows.push({ old, next: null, why: 'dependent', depth, copy: to })
           continue
@@ -298,7 +306,7 @@ function buildPlan(index: Index, convex: ReadonlyMap<string, string>): Plan {
       }
       const candidate = { pubkey: old.pubkey, kind: old.kind, content: old.content, tags }
       const already = said.get(statement(candidate))
-      if (already) {
+      if (already && !handled(already)) {
         // The copy already has this reaction or resolution: the original's is only deleted.
         standing.set(old.id, already)
         rows.push({ old, next: null, why: 'dependent', depth, copy: already })
@@ -315,10 +323,12 @@ function buildPlan(index: Index, convex: ReadonlyMap<string, string>): Plan {
   const staleQuotes: Plan['staleQuotes'] = []
   for (const e of byId.values()) {
     const quotes: string[] = []
-    for (const [, bech] of e.content.matchAll(/nostr:(nevent1[02-9ac-hj-np-z]+)/g)) {
+    for (const [, bech] of e.content.matchAll(/nostr:((?:nevent|note)1[02-9ac-hj-np-z]+)/g)) {
       try {
-        const id = decodeNevent(bech).id
-        if (handled(id)) quotes.push(id)
+        // A `note1` is not decoded here (as in CON-20): reported, so a person decides.
+        const id = bech.startsWith('note') ? null : decodeNevent(bech).id
+        if (!id) quotes.push(`undecoded ${bech.slice(0, 16)}…`)
+        else if (handled(id)) quotes.push(id)
       } catch {
         // prose
       }
@@ -338,7 +348,9 @@ function summarise(plan: Plan) {
   if (plan.rows.length) {
     console.log(`  by role:    ${count((r) => `${r.why}(${r.old.kind}→${r.next ? r.next.kind : r.copy ? 'kept ' + r.copy.slice(0, 8) : 'gone'})`.replace(/kept [0-9a-f]+/, 'standing'))}`)
     console.log(`  by author:  ${count((r) => r.old.pubkey.slice(0, 8))}`)
-    console.log(`  by signer:  ${count((r) => `${r.old.pubkey.slice(0, 8)} kind:${r.next?.kind ?? 5}`)}`)
+    const signed = new Map<string, number>()
+    for (const r of plan.rows) for (const k of [...(r.next ? [r.next.kind] : []), 5]) signed.set(`${r.old.pubkey.slice(0, 8)} kind:${k}`, (signed.get(`${r.old.pubkey.slice(0, 8)} kind:${k}`) ?? 0) + 1)
+    console.log(`  by signer:  ${[...signed].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ')}`)
     console.log(`  by Folder:  ${count((r) => valuesOf(r.old, 'h')[0]?.slice(0, 8) ?? 'none')}`)
   }
   const list = (label: string, xs: string[]) => console.log(`${label}: ${xs.length}${xs.map((x) => `\n  ${x}`).join('')}`)
@@ -362,15 +374,6 @@ function measure(index: Index, convex: ReadonlyMap<string, string>) {
 }
 
 // ---------------------------------------------------------------- the relay (apply only)
-
-/** Per author, which of `ids` the relay returns — read as the author, who can read their own Folder. */
-async function readBack(rows: readonly Row[], idOf: (r: Row) => string, signers: Map<string, Identity>): Promise<Set<string>> {
-  const out = new Set<string>()
-  for (const [pk, who] of signers) {
-    for (const id of await present(rows.filter((r) => r.old.pubkey === pk).map(idOf), who)) out.add(id)
-  }
-  return out
-}
 
 /** The Folder a row's event is written into: its own `h`, or for a reaction the `h` of what it names. */
 function folderOf(r: Row, byId: Map<string, SignedEvent>, nextById: Map<string, UnsignedEvent>): string | undefined {
@@ -415,7 +418,9 @@ async function apply(plan: Plan) {
   const republished = plan.rows.filter((r): r is Row & { next: NonNullable<Row['next']> } => !!r.next)
   const already = await readBack(republished, (r) => r.next!.id, signers)
   let published = 0
-  for (const r of [...republished].sort((a, b) => a.depth - b.depth || a.old.created_at - b.old.created_at)) {
+  // An original's attachments edit names its copy, which may itself be a reparented reply (depth 1): after it.
+  const order = (r: Row) => (r.why === 'original' ? 1.5 : r.depth)
+  for (const r of [...republished].sort((a, b) => order(a) - order(b) || a.old.created_at - b.old.created_at)) {
     const label = `${r.why} ${r.old.id.slice(0, 8)}→${r.next.id.slice(0, 8)} kind:${r.next.kind} by ${r.old.pubkey.slice(0, 8)}`
     if (already.has(r.next.id)) {
       console.log(`·  ${label} — already on the relay`)
@@ -434,9 +439,10 @@ async function apply(plan: Plan) {
   const back = await readBack(republished, (r) => r.next!.id, signers)
   const absent = republished.filter((r) => !back.has(r.next.id))
   if (absent.length) throw new Error(`${absent.length} republished events do not read back, so nothing is deleted: ${absent.map((r) => r.next.id).join(' ')}`)
-  const kept = [...new Set(plan.rows.flatMap((r) => (r.copy ? [r.copy] : [])))]
-  const keptBack = new Set<string>()
-  for (const who of signers.values()) for (const id of await present(kept, who)) keptBack.add(id)
+  // Read as the row's author, who writes in that Folder.
+  const standingRows = plan.rows.filter((r) => r.copy)
+  const keptBack = await readBack(standingRows, (r) => r.copy!, signers)
+  const kept = [...new Set(standingRows.map((r) => r.copy!))]
   const keptAbsent = kept.filter((id) => !keptBack.has(id))
   if (keptAbsent.length) throw new Error(`${keptAbsent.length} standing events do not read back, so nothing is deleted: ${keptAbsent.join(' ')}`)
   console.log(`\n${published} published; all ${republished.length} republished and ${kept.length} standing events read back. Deleting ${plan.rows.length}, dependents first.`)
