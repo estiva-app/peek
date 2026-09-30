@@ -1,4 +1,4 @@
-import type { ForeignObject, ResolvedAction } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, type ForeignObject, type ResolvedAction } from '@estiva-app/interop'
 
 /**
  * Which of a file's controls its manifest offers — Rename and Delete, read off
@@ -34,6 +34,14 @@ export interface FileControls {
    * Ship's does not, so an issue offers no Move.
    */
   move?: ResolvedAction
+  /**
+   * The action that archives the file and restores it (FOL-46) — found by
+   * field, `archived`, whatever the manifest called it: Ship's
+   * `archive-project` and `archive-issue`, the bare file's `archive`. The one
+   * concept for every kind, so a project, an issue and a topic offer the same
+   * Archive, and an app that declares none offers nothing.
+   */
+  archive?: ResolvedAction
 }
 
 export function fileControlsOf(
@@ -47,12 +55,18 @@ export function fileControlsOf(
   const rename = titleField ? file.actions.find((a) => a.control === 'text' && a.field === titleField) : undefined
   const remove = file.actions.find((a) => a.control === 'confirm')
   const move = file.parentField ? file.actions.find((a) => a.field === file.parentField) : undefined
-  return { ...(rename ? { rename } : {}), ...(remove ? { delete: remove } : {}), ...(move ? { move } : {}) }
+  const archive = file.actions.find((a) => a.field === ARCHIVED_FIELD)
+  return {
+    ...(rename ? { rename } : {}),
+    ...(remove ? { delete: remove } : {}),
+    ...(move ? { move } : {}),
+    ...(archive ? { archive } : {}),
+  }
 }
 
 /** True when the file offers at least one control, so a menu is worth drawing. */
 export function hasFileControls(controls: FileControls): boolean {
-  return !!controls.rename || !!controls.delete || !!controls.move
+  return !!controls.rename || !!controls.delete || !!controls.move || !!controls.archive
 }
 
 /**

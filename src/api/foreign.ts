@@ -17,6 +17,9 @@ import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { RELAY_URL, hasRelay } from './relayUrl'
 import {
   applyActionAsViewer,
+  archiveFileAsViewer,
+  archiveFolderAsViewer,
+  archiveImpactAsViewer,
   fileAddressAsViewer,
   fileFolderAsViewer,
   routeWordsAsViewer,
@@ -56,6 +59,8 @@ import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/o
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import type {
+  ArchiveImpact,
+  ArchiveReadOptions,
   ConversationMessage,
   FolderContents,
   FolderProject,
@@ -107,9 +112,9 @@ export function useForeignObjects() {
   const viewer = useRelayViewer()
 
   const resolveObject = useCallback(
-    async (naddr: string): Promise<ForeignObject | null> => {
+    async (naddr: string, options?: ArchiveReadOptions): Promise<ForeignObject | null> => {
       const v = viewer()
-      return v ? resolveObjectAsViewer(naddr, v.relayUrl, v.token) : null
+      return v ? resolveObjectAsViewer(naddr, v.relayUrl, v.token, options) : null
     },
     [viewer],
   )
@@ -308,6 +313,44 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * Archive a file, or restore it, through its manifest's archive action
+   * (FOL-46) — see `archiveFileAsViewer`. `actionId` is
+   * `fileControlsOf(file).archive.id`.
+   */
+  const archiveFile = useCallback(
+    async (args: { naddr: string; actionId: string; archived: boolean; resolution?: string }) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to archive a file.' }
+      return archiveFileAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /** Archive a Folder, or restore it — see `archiveFolderAsViewer`. */
+  const archiveFolder = useCallback(
+    async (args: { folder: string; channel: string; archived: boolean; resolution?: string; into?: string }) => {
+      const v = viewer()
+      if (!v) return { ok: false as const, reason: 'Sign in to archive a folder.' }
+      return archiveFolderAsViewer(args, v.relayUrl, v.token)
+    },
+    [viewer],
+  )
+
+  /**
+   * What archiving a file or a Folder (its channel address) would hide — the
+   * read the dialog counts from. Throws when it cannot be read: a warning with
+   * no counts would say it hides nothing.
+   */
+  const archiveImpact = useCallback(
+    async (address: string, folders?: FolderSummary[]): Promise<ArchiveImpact> => {
+      const v = viewer()
+      if (!v) throw new Error('Sign in to archive.')
+      return archiveImpactAsViewer(address, v.relayUrl, v.token, folders)
+    },
+    [viewer],
+  )
+
   /** Create a Folder. Refuses rather than pretending when signed out. */
   const createFolder = useCallback(
     async (name: string) => {
@@ -412,6 +455,9 @@ export function useForeignObjects() {
     createTopic,
     renameFile,
     deleteFile,
+    archiveFile,
+    archiveFolder,
+    archiveImpact,
     renameFolder,
     folderDeletable,
     deleteFolder,

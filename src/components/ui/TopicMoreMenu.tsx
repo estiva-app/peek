@@ -64,6 +64,13 @@ export interface TopicMoreMenuProps {
    * again brings it back. Offered only when the hide can succeed.
    */
   onHideDm?: () => void
+  /**
+   * Archive or unarchive the file (FOL-46), offered when its manifest declares
+   * an archive action. Same shape as open work: the label states the direction
+   * that will work. "Archive…" opens the dialog that counts what it hides.
+   */
+  archiveAction?: 'archive' | 'unarchive'
+  onToggleArchive?: () => void
 }
 
 export function TopicMoreMenu({
@@ -80,6 +87,8 @@ export function TopicMoreMenu({
   onNewSubTopic,
   onMove,
   onHideDm,
+  archiveAction,
+  onToggleArchive,
 }: TopicMoreMenuProps) {
   return (
     /* No `run(action)` wrapper any more: a `MenuItem` closes the menu itself,
@@ -100,6 +109,9 @@ export function TopicMoreMenu({
         <MenuItem label={followAction === 'follow' ? 'Follow' : 'Unfollow'} onClick={onToggleFollow} />
       )}
       {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
+      {archiveAction && onToggleArchive && (
+        <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />
+      )}
       {onDeleteTopic && <MenuItem label="Delete topic" destructive onClick={onDeleteTopic} />}
     </Menu>
   )

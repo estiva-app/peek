@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import {
+  IconArchive,
   IconArrowUpRight,
   IconBell,
   IconBellFilled,
@@ -32,10 +33,14 @@ import {
   useFollows,
   useForeignObjects,
   useTeamUnread,
+  useWorkspaceDirectory,
 } from '@/api'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { ForeignObject } from '@estiva-app/interop'
 import { EditableText } from '@/components/ui/EditableText'
+import { ArchiveDialog } from '@/components/ArchiveDialog'
+import { ArchivedNotice } from '@/components/ArchivedNotice'
+import { archiveImpactWords, kindNoun } from '@/lib/archiveWords'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
 import { MoveFileDialog } from '@/components/MoveFileDialog'
@@ -63,7 +68,8 @@ export function FoldersPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { state, reload: reloadContents } = useFolderContents(id)
-  const { createFolder, createTopic, renameFolder, folderDeletable, deleteFolder, moveFile } = useForeignObjects()
+  const { createFolder, createTopic, renameFolder, folderDeletable, deleteFolder, moveFile, archiveFolder, archiveImpact } =
+    useForeignObjects()
   const { showToast } = useToast()
   /** The New folder dialog, open or not — the header's first action (FOL-41). */
   const [creatingFolder, setCreatingFolder] = useState(false)
@@ -197,6 +203,62 @@ export function FoldersPage() {
   const followed = id ? follows.isFollowed(id) : false
   const toggleFollow = id && follows.state !== 'unknown' ? () => void follows.setFollowed(id, !followed) : undefined
 
+  /*
+    Archive the Folder (FOL-46) — the change on its channel address that every
+    reader folds, never a `kind:9008`: its contents, its state and its channel
+    are untouched, so Unarchive brings back exactly what was there. Offered on
+    any Folder with a channel, a member's as much as an admin's, and it opens
+    on a read of what it would hide. An archived Folder leaves the list on the
+    left and stays open here, under its notice.
+  */
+  const people = useWorkspaceDirectory()
+  const [archivingFolder, setArchivingFolder] = useState<{ hides: string[]; staysVisible: string[] } | null>(null)
+  const folderArchive = selected?.archived
+  const canArchive = !topic && isFolder && !!selected?.channel
+  // One count at a time: a second click would read the whole Folder again.
+  const [countingArchive, setCountingArchive] = useState(false)
+  const startArchive = () => {
+    if (!selected?.channel || countingArchive) return
+    setCountingArchive(true)
+    archiveImpact(selected.channel, folders ?? undefined)
+      .then((impact) => setArchivingFolder(archiveImpactWords(impact)))
+      .catch(() =>
+        showToast({ label: 'What archiving would hide could not be read, so nothing was archived. Try again.', type: 'error' }),
+      )
+      .finally(() => setCountingArchive(false))
+  }
+  async function setFolderArchived(archived: boolean, resolution?: string): Promise<boolean> {
+    if (!id || !selected?.channel) return false
+    // A refused sign throws (a 429 under load); say so rather than closing silently.
+    const result = await archiveFolder({
+      folder: id,
+      channel: selected.channel,
+      archived,
+      resolution,
+      into: selected.listedIn?.[0],
+    }).catch((error: unknown) => ({
+      ok: false as const,
+      reason: `Nothing was archived: ${(error as Error)?.message ?? 'the write failed'}. Try again.`,
+    }))
+    if (!result.ok) {
+      showToast({ label: result.reason, type: 'error' })
+      return false
+    }
+    await Promise.all([reload(), reloadContents()])
+    return true
+  }
+  const archivedWith = folderArchive?.with
+  const folderNotice =
+    folderArchive && canArchive ? (
+      <ArchivedNotice
+        archive={folderArchive}
+        by={people?.[folderArchive.by]?.displayName ?? `${folderArchive.by.slice(0, 8)}…`}
+        withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
+        onUnarchive={archivedWith ? undefined : () => void setFolderArchived(false)}
+        onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
+      />
+    ) : undefined
+
   async function create(trimmed: string) {
     const result = await createFolder(trimmed)
     if (!result.ok) {
@@ -224,6 +286,7 @@ export function FoldersPage() {
   return (
     <>
       <FoldersPageView
+        banner={folderNotice}
         railClosed={railClosed}
         signedOut={signedOut}
         folders={topLevel}
@@ -317,6 +380,11 @@ export function FoldersPage() {
                       onClick={toggleFollow}
                     >
                       {followed ? <IconBellFilled size={16} stroke={1.5} /> : <IconBell size={16} stroke={1.5} />}
+                    </ToolbarButton>
+                  )}
+                  {canArchive && !folderArchive && (
+                    <ToolbarButton tooltip="Archive folder" aria-label="Archive folder" onClick={startArchive}>
+                      <IconArchive size={16} stroke={1.5} />
                     </ToolbarButton>
                   )}
                   {topic ? (
@@ -474,6 +542,16 @@ export function FoldersPage() {
               }}
             />
           )}
+          {archivingFolder && selected && (
+            <ArchiveDialog
+              title={selected.name ?? 'Untitled folder'}
+              what="folder"
+              hides={archivingFolder.hides}
+              staysVisible={archivingFolder.staysVisible}
+              onClose={() => setArchivingFolder(null)}
+              onArchive={(resolution) => setFolderArchived(true, resolution || undefined)}
+            />
+          )}
           {confirmingDelete && id && (
             <ConfirmDialog
               title="Delete this folder?"
@@ -538,7 +616,10 @@ export function FoldersPageView({
   onSelect,
   onOpenFolder,
   rightPanel,
+  banner,
 }: {
+  /** An archived Folder's notice (FOL-46), at the top of the content area. */
+  banner?: ReactNode
   railClosed: boolean
   /** Nobody is signed in. A different sentence from "still loading". */
   signedOut: boolean
@@ -557,6 +638,7 @@ export function FoldersPageView({
 }) {
   return (
     <AppShell
+      banner={banner}
       leftPanel={
         <ListColumn
           title="Folders"

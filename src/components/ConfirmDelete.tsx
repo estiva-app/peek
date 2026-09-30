@@ -1,4 +1,4 @@
-import { ConfirmDialog } from '@estiva-app/ui'
+import { Button, ConfirmDialog } from '@estiva-app/ui'
 
 /**
  * The question asked before a deletion — a message, a reply, a huddle or a
@@ -13,12 +13,19 @@ import { ConfirmDialog } from '@estiva-app/ui'
 export function ConfirmDelete({
   what,
   replies = 0,
+  onArchiveInstead,
   onConfirm,
   onClose,
 }: {
   what: 'message' | 'reply' | 'huddle' | 'topic'
   /** How many replies a message would leave behind — they are separate events. */
   replies?: number
+  /**
+   * The safer answer, for a topic its manifest lets you archive (FOL-46):
+   * hidden from every list and restorable, where a deletion is neither.
+   * Closes this question and opens the archive's.
+   */
+  onArchiveInstead?: () => void
   onConfirm: () => Promise<boolean | void> | boolean | void
   onClose: () => void
 }) {
@@ -36,6 +43,14 @@ export function ConfirmDelete({
       </p>
       {what === 'topic' && (
         <p>If the relay keeps the topic, Peek will say so; other apps can still read it until then.</p>
+      )}
+      {onArchiveInstead && (
+        <div className="flex flex-col items-start gap-2">
+          <p>To take it out of every list and keep it readable, archive it instead.</p>
+          <Button variant="outlined" size="small" onClick={onArchiveInstead}>
+            Archive instead
+          </Button>
+        </div>
       )}
       {replies > 0 && (
         <p>

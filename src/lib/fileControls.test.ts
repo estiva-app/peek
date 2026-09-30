@@ -60,4 +60,20 @@ describe('fileControlsOf', () => {
     expect(fileControlsOf(file({ naddr: undefined, actions: [rename, remove] }))).toEqual({})
     expect(fileControlsOf(null)).toEqual({})
   })
+
+  it('archive is the action setting `archived`, whatever each app called it (FOL-46)', () => {
+    const issue = fileControlsOf(
+      file({ kind: 30851, actions: [{ id: 'archive-issue', control: 'select', field: 'archived', options: [] }] }),
+    )
+    expect(issue.archive?.id).toBe('archive-issue')
+    expect(hasFileControls(issue)).toBe(true)
+    const topic = fileControlsOf(
+      file({ kind: 30840, actions: [rename, { id: 'archive', control: 'select', field: 'archived', options: [] }] }),
+    )
+    expect(topic.archive?.id).toBe('archive')
+  })
+
+  it('a manifest with no archive action offers no Archive', () => {
+    expect(fileControlsOf(file({ kind: 30840, actions: [rename, remove] })).archive).toBeUndefined()
+  })
 })
