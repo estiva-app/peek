@@ -6,6 +6,7 @@ import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { DateDivider } from '@/components/ui/DateDivider'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { MetaText } from '@/components/ui/MetaText'
 import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
@@ -397,6 +398,7 @@ export function useFileConversationView({
                   resolvedBy={c.resolvedBy}
                   resolutionMessage={c.resolutionMessage}
                   nostrReferences={c.nostrReferences}
+                  deleted={c.isDeleted}
                   isSelected={openThreadId === c.id}
                   onResolvedChange={(resolved, _by, message) => setResolution(c.id, resolved, message)}
                   onReactionsChange={(_next, emoji) => toggleReaction(c.id, emoji)}
@@ -456,6 +458,7 @@ export function useFileConversationView({
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
+        composerNotice={openView.data.isDeleted ? <MetaText>The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
         onDeleteReply={(id) => remove(id, 'Reply')}
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyFilesChange={(id, f) => editFiles(id, f)}
@@ -542,8 +545,9 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
     const lastReply = replies[replies.length - 1]
     const data: ConversationData = {
       id: root.id,
-      authorName: nameOf(root.author),
-      authorAvatarSrc: avatarOf(root.author),
+      authorName: root.deleted ? '' : nameOf(root.author),
+      authorAvatarSrc: root.deleted ? undefined : avatarOf(root.author),
+      isDeleted: root.deleted,
       timestamp: formatTimestamp(root.createdAt * 1000),
       body: d.body,
       editedAt: d.editedAt,

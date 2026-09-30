@@ -81,6 +81,9 @@ interface ConversationCardProps {
   /** Show it with no way to change it: no hover menu, reactions not toggleable.
    *  A Convex topic's messages since CON-8. Opening the thread still works. */
   readOnly?: boolean
+  /** It was deleted and its replies stay (PER-24): said in place of the author
+   *  and body, read-only, and still opens its thread. */
+  deleted?: boolean
   className?: string
 }
 
@@ -119,9 +122,11 @@ export function ConversationCard({
   onReply,
   onClick,
   onMore,
-  readOnly = false,
+  readOnly: readOnlyProp = false,
+  deleted = false,
   className,
 }: ConversationCardProps) {
+  const readOnly = readOnlyProp || deleted
   const [isHovered, setIsHovered] = useState(false)
   // The ⋯ menu: the quick-menu's measured rect, or closed. The shared Menu
   // shell owns placement and every exit (2026-09-03).
@@ -547,6 +552,12 @@ export function ConversationCard({
         ) : (
         /* Normal layout: header + body + reactions + replies */
         <div className="flex flex-col items-start pt-2 px-2">
+          {deleted ? (
+            <div className="pl-8 pr-2 pb-2 w-full">
+              <MetaText>This comment was deleted.</MetaText>
+            </div>
+          ) : (
+          <>
           {/* Header */}
           <div className={cn('flex items-center gap-2 w-full', hasNewMessage && 'justify-between')}>
             <div className="flex items-center gap-2 shrink-0">
@@ -569,6 +580,8 @@ export function ConversationCard({
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
             <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} />
           </div>
+          </>
+          )}
 
           {/* Uploaded files — image thumbnails / file chips.
               `items-start` because they are not the same height: a file row is

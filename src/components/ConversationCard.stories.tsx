@@ -91,6 +91,15 @@ export const WithReplies: Story = {
   args: { replyCount: 3, ...replyRow },
 }
 
+/**
+ * **Deleted, replies kept** (PER-24). Deleting a comment deletes that event
+ * only, so its replies stay: the card says so in place of the author and
+ * body, offers nothing to act on, and still opens its thread.
+ */
+export const DeletedWithReplies: Story = {
+  args: { deleted: true, authorName: '', body: '', replyCount: 2, ...replyRow },
+}
+
 /** New top-level message — soft blue border + blue dot by the author's name. */
 /**
  * **Edited.** "(edited)" beside the time, with when in its tooltip — the
