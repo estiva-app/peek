@@ -24,7 +24,7 @@ export { default as RECORDED_SHIP_ISSUE } from '@/data/recordedShipIssue.json'
 /**
  * One Ship project, standing in for the file a topic starts under or that a
  * person moves between Folders. Shared because two dialogs need the same one:
- * `StartTopicDialog` names it as the parent, `MoveFileDialog` moves it.
+ * `StartTopicDialog` names it as the parent, `MoveDialog` moves it.
  */
 export const SHIP_PROJECT = {
   ref: '30850:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:0ebd5fdd',

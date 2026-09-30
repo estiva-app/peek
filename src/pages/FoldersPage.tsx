@@ -43,7 +43,7 @@ import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { archiveImpactWords, kindNoun } from '@/lib/archiveWords'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
-import { MoveFileDialog } from '@/components/MoveFileDialog'
+import { useFileControls } from '@/components/views/useFileControls'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { TREE_FILTERS, type TreeFilter } from '@/components/views/treeFilter'
 import { useToast } from '@/lib/toast'
@@ -68,15 +68,19 @@ export function FoldersPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { state, reload: reloadContents } = useFolderContents(id)
-  const { createFolder, createTopic, renameFolder, folderDeletable, deleteFolder, moveFile, archiveFolder, archiveImpact } =
+  const { createFolder, createTopic, renameFolder, folderDeletable, deleteFolder, archiveFolder, archiveImpact } =
     useForeignObjects()
   const { showToast } = useToast()
   /** The New folder dialog, open or not — the header's first action (FOL-41). */
   const [creatingFolder, setCreatingFolder] = useState(false)
   /** What the column is showing — the header's third action (FOL-41). */
   const [filter, setFilter] = useState<TreeFilter>('all')
-  /** The file whose destination is being chosen, if any. */
-  const [movingFile, setMovingFile] = useState<ForeignObject | null>(null)
+  /*
+    Move is the file menu's own dialog (FOL-45), so the pane and the file page
+    move the same way. The file left this Folder, or went under another file
+    in it: both reads are stale.
+  */
+  const fileControls = useFileControls({ onMoved: () => void Promise.all([reload(), reloadContents()]) })
   /*
     A topic being started — SPEC §6.7. `parent` is the file it will sit under
     when it was started from a row; `undefined` from the folder header means a
@@ -451,7 +455,11 @@ export function FoldersPage() {
                   rest of the Folder, so the planner refuses — and an action
                   that cannot succeed is not offered.
                 */
-                onMove={typeof state === 'object' && 'hasState' in state && state.hasState ? setMovingFile : undefined}
+                onMove={
+                  typeof state === 'object' && 'hasState' in state && state.hasState
+                    ? (file) => fileControls.open('move', file)
+                    : undefined
+                }
                 onStartTopic={(file) => setStartingTopic({ parent: file })}
                 counts={counts}
                 unread={unread}
@@ -533,32 +541,7 @@ export function FoldersPage() {
               }}
             />
           )}
-          {movingFile && (
-            <MoveFileDialog
-              file={movingFile}
-              from={id ?? ''}
-              folders={folders ?? []}
-              onClose={() => setMovingFile(null)}
-              onMove={async (to) => {
-                const address = movingFile.address
-                if (!address || !id) return false
-                // Both sides' state from a read, as a rename's is: a move into
-                // or out of a Folder with none is refused rather than emptying it.
-                const result = await moveFile(
-                  address,
-                  { id, hasState: typeof state === 'object' && 'hasState' in state && state.hasState },
-                  { id: to, hasState: folders?.find((candidate) => candidate.id === to)?.hasState ?? false },
-                )
-                if (!result.ok) {
-                  showToast({ label: result.reason, type: 'error' })
-                  return false
-                }
-                // The file left this Folder, so this Folder's read is stale.
-                await reload()
-                return true
-              }}
-            />
-          )}
+          {fileControls.dialogs}
           {archivingFolder && selected && (
             <ArchiveDialog
               title={selected.name ?? 'Untitled folder'}

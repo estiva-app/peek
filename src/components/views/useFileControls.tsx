@@ -1,24 +1,42 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { isArchived, KIND_BARE_FILE, nestingOf } from '@estiva-app/interop'
-import type { ForeignObject } from '@estiva-app/interop'
+import { isArchived, topLevelFolders } from '@estiva-app/interop'
+import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { useFollows, useForeignObjects } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
-import { MoveUnderDialog, type MoveTarget } from '@/components/MoveUnderDialog'
+import { MoveDialog, type MoveChoice } from '@/components/MoveDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { archiveImpactWords, kindNoun } from '@/lib/archiveWords'
 import { canStartInside, fileControlsOf } from '@/lib/fileControls'
+import { currentFolderOf, listedUnder, moveTargetsIn, type MoveTarget } from '@/lib/moveTargets'
 import { useToast } from '@/lib/toast'
 
 /**
  * What a menu asks for on a file: its details, a rename, a deletion, a move
- * under another file, or a new topic inside it (FOL-4).
+ * to another Folder or under another file (FOL-45), or a new topic inside it
+ * (FOL-4).
  */
 export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive'
 
 const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
+
+interface MoveState {
+  kind: 'move'
+  file: ForeignObject
+  /** The Folder it is in now, and whether that Folder has state — both from the read the dialog opened on. */
+  from: string
+  fromHasState: boolean
+  /** Any other Folder with state that lists it too — after a partial move — which it leaves as well. */
+  alsoIn: string[]
+  /** Every file `from` lists: what is under the file moves with it. */
+  listing: ForeignObject[]
+  /** The top-level Folders, which are where it may go. */
+  teams: FolderSummary[]
+  nests: boolean
+  targets?: MoveTarget[]
+}
 
 /**
  * The dialogs behind a file's more-menu, wherever the menu is (FOL-33).
@@ -52,10 +70,22 @@ const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
  *
  * Both are questions about the whole team, so both open on a fresh read of
  * its listing — the one read that folds every `parent` change (SPEC §6.7) —
- * rather than on whatever the tree last drew. Move offers
- * `nestingOf(...).moveTargetsOf`, each as its path; a new topic goes in the
- * parent's own team, which is the file's `h`, and `hasState` comes from the
- * same read, for the reason the delete takes it fresh.
+ * rather than on whatever the tree last drew. The team is the top-level Folder
+ * that lists the file (`currentFolderOf`), not its `h`: a move between Folders
+ * leaves the `h` where the file was filed. A new topic goes in that team, and
+ * `hasState` comes from the same read, for the reason the delete takes it fresh.
+ *
+ * ## Move is one dialog, and the order of its writes is per kind (FOL-45)
+ *
+ * The Folder, then what it goes under there (`MoveDialog`). A topic or a
+ * project changes Folder by its listing — `kind:1852` add to the new one, then
+ * remove from the old, carrying everything listed under it — and a topic then
+ * takes its new parent, the manifest's move action. An issue is listed by no
+ * Folder: it changes Folder by changing project (Ship's `move-issue`), so the
+ * parent goes first and anything listed under the issue follows. Either way,
+ * a second write refused after a first one landed is said as a partial move,
+ * because the file did go somewhere and "it failed" would send a person to
+ * look for it where it no longer is.
  *
  * ## Archive counts first, and Unarchive does not ask (FOL-46)
  *
@@ -89,14 +119,14 @@ export function useFileControls({
   /** The dialogs, rendered by the page that owns them. */
   dialogs: ReactNode
 } {
-  const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact } =
+  const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
   const follows = useFollows()
   const { showToast } = useToast()
   const [dialog, setDialog] = useState<
     | { kind: 'details'; file: ForeignObject; editing: boolean }
     | { kind: 'confirm'; file: ForeignObject }
-    | { kind: 'move'; file: ForeignObject; teamName: string; targets: MoveTarget[] }
+    | MoveState
     | { kind: 'inside'; file: ForeignObject; team: string; teamName: string; hasState: boolean }
     | { kind: 'archive'; file: ForeignObject; hides: string[]; staysVisible: string[] }
     | null
@@ -167,28 +197,32 @@ export function useFileControls({
       if (control !== 'move' && control !== 'inside') {
         return setDialog({ kind: 'details', file, editing: control === 'rename' })
       }
-      const own = file.folder
-      if (!own || (control === 'inside' && !canStartInside(file))) {
+      const ownFolder = file.folder
+      if (!ownFolder || (control === 'inside' && !canStartInside(file))) {
         return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
       }
       void (async () => {
         let contents: Awaited<ReturnType<typeof resolveFolderContents>>
-        let team = own
+        let folders: FolderSummary[]
+        let team: string | undefined
         try {
           /*
-            A bare file's `h` is its team. Another kind's may not be: a Ship
-            project's Folder is its own record channel (its `buzz-channel`),
-            which has no state and is listed under the team that holds the
-            project (`listedIn`, interop 0.28). A topic started there went
-            into the record channel, where neither the team's tree nor Ship's
-            Related lists it — found on production on "Conversation standard"
-            (FOL-4). The team is the Folder that lists it, as SPEC §6.7 says.
+            The team is the top-level Folder that lists the file (SPEC §6.7),
+            never assumed from its `h`. A Ship project's Folder is its own
+            record channel, listed under the team that holds the project
+            (`listedIn`, interop 0.28): a topic started there went where
+            neither the team's tree nor Ship's Related lists it (FOL-4, on
+            "Conversation standard"). And a topic moved to another Folder keeps
+            the `h` it was filed with (FOL-45).
           */
-          if (file.kind !== KIND_BARE_FILE) {
-            const summary = (await listFolders())?.find((folder) => folder.id === own)
-            team = summary?.listedIn?.[0] ?? own
-          }
-          contents = await resolveFolderContents(team)
+          // The file's own Folder is read beside the listing, not after it: it is
+          // the current one unless the file was moved, so one round trip usually does.
+          const own = resolveFolderContents(ownFolder)
+          own.catch(() => {})
+          folders = (await listFolders()) ?? []
+          team = currentFolderOf(file, folders, topLevelFolders(folders))
+          if (!team) throw new Error('no team')
+          contents = await (team === ownFolder ? own : resolveFolderContents(team))
         } catch {
           refuse('The team could not be read. Try again.')
           return
@@ -198,31 +232,82 @@ export function useFileControls({
           setDialog({ kind: 'inside', file, team, teamName, hasState: contents.hasState })
           return
         }
-        const nesting = nestingOf(contents.files)
         const here = contents.files.find((candidate) => candidate.ref === file.ref) ?? file
-        const targets = nesting.moveTargetsOf(here).map((target) =>
-          target ? { file: target, path: [...nesting.ancestorsOf(target), target].map(titleOf) } : { path: [] },
-        )
-        setDialog({ kind: 'move', file: here, teamName, targets })
+        const nests = !!fileControlsOf(here).move
+        setDialog({
+          kind: 'move',
+          file: here,
+          from: team,
+          fromHasState: contents.hasState,
+          alsoIn: folders
+            .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
+            .map((folder) => folder.id),
+          listing: contents.files,
+          teams: topLevelFolders(folders),
+          nests,
+          targets: nests ? moveTargetsIn(contents.files, here, { sameFolder: true }) : undefined,
+        })
       })()
     },
     [refuse, resolveFolderContents, listFolders, archiveImpact, setArchived],
   )
 
-  const move = async (file: ForeignObject, parent: string): Promise<boolean> => {
+  const move = async (state: MoveState, choice: MoveChoice): Promise<boolean> => {
+    const { file, from } = state
+    const to = state.teams.find((team) => team.id === choice.folder)
+    if (!to) return false
+    const changesFolder = to.id !== from
+    const changesParent = choice.parent !== undefined && choice.parent !== (file.parentRef ?? '')
+    // An issue is listed by no Folder — its project is. What is listed under it still is.
+    const listed = [...(file.parentKind === undefined && file.address ? [file.address] : []), ...listedUnder(state.listing, file)]
+    type Step = () => Promise<{ ok: true } | { ok: false; reason?: string }>
+    const relist: Step | undefined =
+      changesFolder && listed.length
+        ? async () => {
+            const result = await moveFile(listed, { id: from, hasState: state.fromHasState }, { id: to.id, hasState: to.hasState })
+            if (!result.ok) return result
+            // Out of every other Folder that still lists it, as Ship's move does (`placedIn`).
+            for (const other of state.alsoIn.filter((id) => id !== to.id)) {
+              const also = await moveFile(listed, { id: other, hasState: true }, { id: to.id, hasState: to.hasState })
+              // It did arrive: a refused clean-up is a partial move, not a failed one.
+              if (!also.ok) {
+                refuse(`Moved to ${to.name ?? 'the folder'}, but it is still listed in another folder too: ${also.reason}. Try moving it again.`)
+                break
+              }
+            }
+            return result
+          }
+        : undefined
     const action = fileControlsOf(file).move
-    if (!action || !file.naddr) {
-      refuse('This file cannot be moved from here.')
-      return false
-    }
-    const result = await applyAction({ naddr: file.naddr, actionId: action.id, value: parent })
-    if (!result.ok) {
-      refuse(result.reason ?? 'The relay refused the move.')
-      return false
+    const reparent: Step | undefined = changesParent
+      ? async () =>
+          action && file.naddr
+            ? applyAction({ naddr: file.naddr, actionId: action.id, value: choice.parent ?? '' }).catch((error: unknown) => ({
+                ok: false as const,
+                reason: (error as Error)?.message,
+              }))
+            : { ok: false as const, reason: 'This file cannot be put under another from here.' }
+      : undefined
+    const steps = (file.parentKind === undefined ? [relist, reparent] : [reparent, relist]).filter((step): step is Step => !!step)
+    let moved = false
+    for (const step of steps) {
+      const result = await step()
+      if (!result.ok) {
+        if (!moved) {
+          refuse(result.reason ?? 'The relay refused the move.')
+          return false
+        }
+        refuse(`Moved to ${to.name ?? 'the folder'}, but not all of it: ${result.reason ?? 'the rest was refused'}. Try moving it again.`)
+        break
+      }
+      moved = true
     }
     onMoved?.(file)
     return true
   }
+
+  const targetsIn = async (state: MoveState, folder: string): Promise<MoveTarget[]> =>
+    moveTargetsIn((await resolveFolderContents(folder)).files, state.file, { sameFolder: folder === state.from })
 
   const startInside = async (
     parent: ForeignObject,
@@ -309,11 +394,14 @@ export function useFileControls({
         onClose={() => setDialog(null)}
       />
     ) : dialog.kind === 'move' ? (
-      <MoveUnderDialog
+      <MoveDialog
         file={dialog.file}
-        teamName={dialog.teamName}
+        from={dialog.from}
+        folders={dialog.teams.map((team) => ({ id: team.id, name: team.name ?? 'Untitled folder' }))}
+        nests={dialog.nests}
         targets={dialog.targets}
-        onMove={(parent) => move(dialog.file, parent)}
+        targetsIn={(folder) => targetsIn(dialog, folder)}
+        onMove={(choice) => move(dialog, choice)}
         onClose={() => setDialog(null)}
       />
     ) : dialog.kind === 'inside' ? (

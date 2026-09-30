@@ -260,13 +260,14 @@ export function useForeignObjects() {
   /**
    * Move a file between Folders — adds to the target first. Each side's
    * `hasState` comes from a read: a move into or out of a Folder with no state
-   * is refused, because either command would empty it (FOL-10).
+   * is refused, because either command would empty it (FOL-10). `addresses`
+   * is the file and what is listed under it, which moves with it (FOL-45).
    */
   const moveFile = useCallback(
-    async (address: string, from: FolderRef, to: FolderRef) => {
+    async (addresses: string | readonly string[], from: FolderRef, to: FolderRef) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to move a file.' }
-      return moveFileAsViewer(address, from, to, v.relayUrl, v.token)
+      return moveFileAsViewer(addresses, from, to, v.relayUrl, v.token)
     },
     [viewer],
   )

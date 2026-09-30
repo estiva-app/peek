@@ -30,8 +30,9 @@ export interface FileControls {
   delete?: ResolvedAction
   /**
    * The action that re-parents the file (FOL-4) — found, like the rename, by
-   * field: the one setting `parentField`. A bare file's manifest declares it;
-   * Ship's does not, so an issue offers no Move.
+   * field: the one setting `parentField`. A bare file's manifest declares it,
+   * and Ship's declares an issue's `project` (MAN-4); a project has none. Not
+   * whether Move is offered — any listed file can change Folder (`canMove`).
    */
   move?: ResolvedAction
   /**
@@ -62,6 +63,17 @@ export function fileControlsOf(
     ...(move ? { move } : {}),
     ...(archive ? { archive } : {}),
   }
+}
+
+/**
+ * Whether Move is offered (FOL-45). Every file with an address can be listed in
+ * another Folder — a Folder lists addresses, whatever app owns them — and one
+ * whose manifest declares a parent can also be put under another file. Whether
+ * a Folder may be left or entered is the move's to answer (FOL-10), with a
+ * reason, not the menu's.
+ */
+export function canMove(file: Pick<ForeignObject, 'address' | 'naddr'> | null | undefined): boolean {
+  return !!file?.address && !!file.naddr
 }
 
 /** True when the file offers at least one control, so a menu is worth drawing. */

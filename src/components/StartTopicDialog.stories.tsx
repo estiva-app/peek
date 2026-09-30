@@ -43,7 +43,7 @@ export const UnderAFile: Story = {
 /**
  * The third case, and the one FOL-41 added: started from the column header,
  * where there is no Folder in hand. The dialog asks — a second field, the same
- * `Select` as `MoveFileDialog`'s and for the same reason — and the sentence
+ * `Select` as `MoveDialog`'s and for the same reason — and the sentence
  * above names whichever Folder is chosen, so it changes as the picker does.
  *
  * What the old Start topic dialog asks for second is people to invite. That one
@@ -56,7 +56,7 @@ export const ChoosingAFolder: Story = {
 }
 
 /**
- * Nowhere to start one. The same rule as `MoveFileDialog`'s empty case: a
+ * Nowhere to start one. The same rule as `MoveDialog`'s empty case: a
  * picker with no rows is an action that cannot succeed, so the dialog says so
  * instead of drawing one.
  */
