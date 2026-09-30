@@ -21,8 +21,9 @@ if (!out) throw new Error('usage: con20-read-peek.ts <out.json>')
 const RELAY = process.env.CON20_RELAY ?? 'http://localhost:7781'
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
 
-const plan = JSON.parse(readFileSync(process.env.CON20_PLAN ?? `${homedir()}/con20-scratch/plan.json`, 'utf8')) as { about?: string }[]
-const addresses = [...new Set(plan.flatMap((row) => (row.about ? [row.about] : [])))].sort()
+// `alsoAbout`: a second object a row changes (CON-22's reparented replies leave their old `A`).
+const plan = JSON.parse(readFileSync(process.env.CON20_PLAN ?? `${homedir()}/con20-scratch/plan.json`, 'utf8')) as { about?: string; alsoAbout?: string }[]
+const addresses = [...new Set(plan.flatMap((row) => [row.about, row.alsoAbout].filter((a): a is string => !!a)))].sort()
 
 const res = await fetch(`${ID_ORIGIN}/token`, {
   method: 'POST',
