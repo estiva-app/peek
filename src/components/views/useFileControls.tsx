@@ -277,7 +277,7 @@ export function useFileControls({
       try {
         hasState = (await resolveFolderContents(file.folder)).hasState
       } catch {
-        refuse('The folder could not be read, so the topic was not deleted. Try again.')
+        refuse('The folder could not be read, so nothing was deleted. Try again.')
         return
       }
     }

@@ -22,10 +22,10 @@ interface PersonRowProps {
    *  item from the list. */
   onRemove?: () => void
   /** When provided, the hover 3-dot opens a more-menu with a destructive
-   *  "Delete topic" item calling this handler (topic-list rows, QA #2.8).
+   *  "Delete" item calling this handler (topic-list rows, QA #2.8).
    *  Without it the 3-dot stays inert, exactly as before. */
   onDeleteTopic?: () => void
-  /** Adds "Topic details" to the more-menu (PEE-2). The same item the
+  /** Adds "Details" to the more-menu (PEE-2). The same item the
    *  conversation header offers — one menu, two places to open it. */
   onOpenDetails?: () => void
   /** Adds "Rename" to the more-menu (FOL-33) — a bare-file row whose manifest

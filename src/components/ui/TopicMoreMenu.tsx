@@ -94,7 +94,9 @@ export function TopicMoreMenu({
     /* No `run(action)` wrapper any more: a `MenuItem` closes the menu itself,
        so an action no longer has to close it first. */
     <Menu trigger={trigger} align="right" onOpenChange={onOpenChange}>
-      {onOpenDetails && <MenuItem label="Topic details" onClick={onOpenDetails} />}
+      {/* The object is the one the menu hangs off, so its items do not name it:
+          a Ship issue is not a topic, and "Delete" is true of both (PEE-41). */}
+      {onOpenDetails && <MenuItem label="Details" onClick={onOpenDetails} />}
       {onRename && <MenuItem label="Rename" onClick={onRename} />}
       {onNewSubTopic && <MenuItem label="New topic inside" onClick={onNewSubTopic} />}
       {onMove && <MenuItem label="Move…" onClick={onMove} />}
@@ -112,7 +114,7 @@ export function TopicMoreMenu({
       {archiveAction && onToggleArchive && (
         <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />
       )}
-      {onDeleteTopic && <MenuItem label="Delete topic" destructive onClick={onDeleteTopic} />}
+      {onDeleteTopic && <MenuItem label="Delete" destructive onClick={onDeleteTopic} />}
     </Menu>
   )
 }
