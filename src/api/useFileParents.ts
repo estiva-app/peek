@@ -26,14 +26,20 @@ import { useRelayViewer } from './foreign'
  * the next load; a project moved between Folders is not affected, because
  * where a project lives is the Folder state the listing re-reads.
  *
- * A refused read is logged and forgotten, and so is a file the relay could say
- * nothing about, so the next change in what the dots name asks again; until
- * then those files stay where they are talked about, which is what they did
- * before this existed.
+ * A refused read is logged, forgotten and asked again `FILE_PARENTS_RETRY_MS`
+ * later, even when the dots name nothing new. A file the relay could say
+ * nothing about is asked again with the next file the dots name. Until then
+ * those files stay where they are talked about, which is what they did before
+ * this existed.
  */
 let cache: { viewer: string; parents: Map<string, string | null>; asked: Set<string> } | null = null
 let version = 0
+/** Bumped a while after a refused read, so a sidebar naming nothing new still asks again. */
+let retries = 0
 const listeners = new Set<() => void>()
+
+/** How long after a refused read the files it asked about are asked again. */
+export const FILE_PARENTS_RETRY_MS = 30_000
 
 function cacheFor(viewer: string) {
   if (cache?.viewer !== viewer) cache = { viewer, parents: new Map(), asked: new Set() }
@@ -46,16 +52,25 @@ function subscribe(listener: () => void): () => void {
 }
 
 const currentVersion = () => version
+const currentRetries = () => retries
 
 function changed(): void {
   version += 1
   for (const listener of listeners) listener()
 }
 
+function retryLater(): void {
+  setTimeout(() => {
+    retries += 1
+    for (const listener of listeners) listener()
+  }, FILE_PARENTS_RETRY_MS)
+}
+
 /** Tests only: forget every parent, so each test starts with none asked. */
 export function resetFileParentsForTests(): void {
   cache = null
   version = 0
+  retries = 0
 }
 
 /**
@@ -66,6 +81,7 @@ export function resetFileParentsForTests(): void {
 export function useFileParents(addresses: readonly string[]): Readonly<Record<string, string | null>> {
   const viewer = useRelayViewer()
   const seen = useSyncExternalStore(subscribe, currentVersion)
+  const retry = useSyncExternalStore(subscribe, currentRetries)
 
   // Keyed on the addresses, not the array: the caller derives a fresh one per render.
   const key = useMemo(() => [...new Set(addresses)].sort().join(','), [addresses])
@@ -91,9 +107,10 @@ export function useFileParents(addresses: readonly string[]): Readonly<Record<st
       (error) => {
         relayLog('file parents read failed', error)
         for (const address of missing) held.asked.delete(address)
+        retryLater()
       },
     )
-  }, [key, viewer])
+  }, [key, viewer, retry])
 
   return useMemo(() => {
     const v = viewer()

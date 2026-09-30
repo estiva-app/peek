@@ -331,6 +331,14 @@ describe('placeStreams — an issue lives where its project does', () => {
     }
   })
 
+  /* The rule is the parent's, not the kind's: a topic nested under a project is drawn under it. */
+  it('moves talk about a topic nested under the moved project too', () => {
+    const TOPIC = `39000:${PK}:44444444-4444-4444-8444-444444444444`
+    const { streams } = placeStreams({ [A]: [said('c', NOW - 10, [TOPIC])], [B]: [] }, moved, { [TOPIC]: PROJECT })
+    expect(streams[A]).toEqual([])
+    expect(streams[B].map((message) => message.about)).toEqual([[TOPIC]])
+  })
+
   it('splits a comment about a moved issue and an issue that stayed', () => {
     const { streams } = placeStreams({ [A]: [said('c', NOW - 10, [FOL18, FOL16])], [B]: [] }, moved, {
       [FOL18]: PROJECT,

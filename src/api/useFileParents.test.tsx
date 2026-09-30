@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 
 /*
   FOL-50. The dots ask each file's parent once per viewer per tab: the read is
@@ -32,7 +32,7 @@ vi.mock('./foreign', async () => {
 vi.mock('@/nostr/liveTopics', () => ({ relayLog: () => {} }))
 
 import { RelayReadError } from '@/nostr/relayRead'
-import { resetFileParentsForTests, useFileParents } from './useFileParents'
+import { FILE_PARENTS_RETRY_MS, resetFileParentsForTests, useFileParents } from './useFileParents'
 
 const PK = 'b'.repeat(64)
 const I1 = `30851:${PK}:i1`
@@ -91,6 +91,23 @@ describe('useFileParents', () => {
     rerender({ addresses: [I1, I2] })
     await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT, [I2]: PROJECT }))
     expect(relay.asked).toEqual([[I1], [I1, I2]])
+  })
+
+  it('asks again a while after a refused read, with nothing new named', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      relay.answer = () => new RelayReadError('refused: not a member')
+      const { result } = renderHook(() => useFileParents([I1]))
+      await waitFor(() => expect(relay.asked).toEqual([[I1]]))
+      relay.answer = (references) => Object.fromEntries(references.map((reference) => [reference, PROJECT]))
+      act(() => {
+        vi.advanceTimersByTime(FILE_PARENTS_RETRY_MS)
+      })
+      await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT }))
+      expect(relay.asked).toEqual([[I1], [I1]])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('starts afresh for another viewer', async () => {
