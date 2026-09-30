@@ -127,6 +127,8 @@ const dms = vi.hoisted(() => ({
   so the page asks — it never asks about a Folder with state.
 */
 const BARE_CHANNEL = 'bbbbbbbb-0000-4000-8000-000000000000'
+// PEE-42: a listing read that failed hands back `[]`, which is not "no Folders".
+const listing = vi.hoisted(() => ({ failed: false }))
 const deletable = vi.hoisted(() => ({
   check: vi.fn(async (uuid: string) =>
     uuid === 'bbbbbbbb-0000-4000-8000-000000000000'
@@ -152,8 +154,11 @@ vi.mock('@/api', async () => ({
       { id: TOPIC_CHANNEL, name: 'For testing', hasState: true },
       // A Ship record channel: in the list the relay answers, never a section (PEE-31).
       { id: RECORD_CHANNEL, name: 'project-0804b906', hasState: false },
-    ],
+      // A bare channel: listed by its `39000`, with no state and no name.
+      { id: BARE_CHANNEL, hasState: false },
+    ].filter(() => !listing.failed),
     signedOut: false,
+    failed: listing.failed,
     reload: async () => {},
   }),
   useFolderContents: (folder: string | undefined) => ({
@@ -333,6 +338,38 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Start a topic in this folder' })).toBeNull()
+  })
+
+  /*
+    PEE-42: a DM the viewer is not in hides its `39000`, so the DM check says
+    "not a DM" — and the page offered rename, a topic and follow on it, titled
+    with the uuid. A channel the relay does not list as a Folder is not one.
+  */
+  it('offers no Folder actions on a channel the relay does not list', async () => {
+    const unlisted = 'cccccccc-0000-4000-8000-000000000000'
+    mount(`/app/folders/${unlisted}`)
+    expect(await screen.findByText('This is not a folder.')).toBeTruthy()
+    await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(unlisted))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.getByText('Not a folder')).toBeTruthy()
+    expect(screen.queryByText(unlisted)).toBeNull()
+    expect(screen.queryByRole('toolbar', { name: 'Folder actions' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
+  })
+
+  it('does not call a Folder "not a folder" when the listing read failed', async () => {
+    listing.failed = true
+    try {
+      mount(`/app/folders/${FOLDER}`)
+      await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
+      await new Promise((r) => setTimeout(r, 0))
+      expect(screen.queryByText('This is not a folder.')).toBeNull()
+      expect(screen.queryByText('Not a folder')).toBeNull()
+      // Unanswered is not "a Folder" either: no actions.
+      expect(screen.queryByRole('toolbar', { name: 'Folder actions' })).toBeNull()
+    } finally {
+      listing.failed = false
+    }
   })
 })
 

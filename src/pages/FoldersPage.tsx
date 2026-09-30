@@ -64,7 +64,7 @@ import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks
  */
 export function FoldersPage() {
   const railClosed = useRailClosed()
-  const { folders, signedOut, reload } = useFolders()
+  const { folders, signedOut, failed: foldersFailed, reload } = useFolders()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { state, reload: reloadContents } = useFolderContents(id)
@@ -155,7 +155,17 @@ export function FoldersPage() {
       cancelled = true
     }
   }, [id, topic, dmForChannel, navigate])
-  const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder
+  /*
+    "Not a DM" is not "a Folder" (PEE-42). A DM the viewer is not in hides its
+    `39000` from them, so the check above answers null for it, and the page
+    offered to rename it, start a topic in it and follow it. A Folder is one
+    the relay lists to this viewer — `selected` — and nothing else is.
+  */
+  const isFolder = dmCheck != null && dmCheck.id === id && dmCheck.isFolder && !!selected
+  // Said only on an answer: a listing that failed is empty without meaning it.
+  const notAFolder =
+    !topic &&
+    ((dmCheck != null && dmCheck.id === id && !dmCheck.isFolder) || (folders != null && !foldersFailed && !selected))
 
   /*
     Delete only where it loses nothing but the Folder (FOL-9). A `kind:9008`
@@ -322,6 +332,9 @@ export function FoldersPage() {
                     as the editable one below.
                   */
                   topic.title
+                ) : !isFolder ? (
+                  // Never the uuid, and never a name field on what is not a Folder.
+                  notAFolder ? 'Not a folder' : ''
                 ) : (
                 <div className="-ml-2 min-w-0 text-body-2-strong">
                 <EditableText
@@ -419,6 +432,9 @@ export function FoldersPage() {
                 )
               }
           >
+              {notAFolder ? (
+                <EmptyState message="This is not a folder." />
+              ) : (
               <FolderContentsView
                 state={state}
                 /*
@@ -440,6 +456,7 @@ export function FoldersPage() {
                 counts={counts}
                 unread={unread}
               />
+              )}
           </Panel>
         ) : (
           <EmptyState message="Select a folder." />
