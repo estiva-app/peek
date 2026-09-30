@@ -37,8 +37,19 @@ export default async function main() {
   const token = await agentToken()
 
   // Every comment on a file, grouped by the file its `A` names, then kept only where its parent is gone.
-  const comments = await queryRelay(RELAY_URL, [{ kinds: [1111], limit: 1000 }], token.accessToken, token.pubkey)
-  if (!comments.ok) throw new Error(`comment read refused: ${comments.reason}`)
+  // Every page of them: Buzz clamps a filter at 1,000, and an old orphan is as hidden as a new one.
+  const events: Awaited<ReturnType<typeof queryRelay>>['events'] = []
+  const seen = new Set<string>()
+  for (let until: number | undefined; ; ) {
+    const page = await queryRelay(RELAY_URL, [{ kinds: [1111], limit: 1000, ...(until ? { until } : {}) }], token.accessToken, token.pubkey)
+    if (!page.ok) throw new Error(`comment read refused: ${page.reason}`)
+    const fresh = page.events.filter((e) => !seen.has(e.id))
+    for (const e of fresh) seen.add(e.id)
+    events.push(...fresh)
+    if (page.events.length < 1000 || fresh.length === 0) break
+    until = Math.min(...page.events.map((e) => e.created_at))
+  }
+  const comments = { events }
   const parents = new Map<string, Set<string>>()
   for (const e of comments.events) {
     const address = e.tags.find((t) => t[0] === 'A')?.[1]
