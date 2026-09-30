@@ -92,6 +92,16 @@ try {
     },
   ])
   const page = await context.newPage()
+  // Every WebSocket the tab opens, and whether it closed before the run ended:
+  // "one relay connection per tab" is otherwise invisible from the page.
+  report.sockets = []
+  page.on('websocket', (ws) => {
+    const socket = { url: ws.url(), closed: false }
+    report.sockets.push(socket)
+    ws.on('close', () => {
+      socket.closed = true
+    })
+  })
   page.on('pageerror', (e) => {
     const frame = e.stack?.split('\n').find((line) => line.trim().startsWith('at '))?.trim()
     report.errors.push(`${String(e).slice(0, 300)} (on ${page.url().slice(0, 200)}${frame ? `, ${frame.slice(0, 200)}` : ''})`)
@@ -211,7 +221,9 @@ function controls(page) {
  * `peek.estivaId` in `sessionStorage`, Ship's `ship.estiva-id` in
  * `localStorage` (Ship's `src/auth/estivaId.ts`). Knowing only Peek's made
  * `--base https://ship.estiva.app` report signed out and stop before its first
- * step, though Ship had signed in (RIC-13).
+ * step, though Ship had signed in (RIC-13). Leaf repeated it with
+ * `leaf.estiva-id`, so any `<app>.estiva-id` key in `localStorage` counts: it
+ * is what `create-estiva-app` scaffolds, so the next app is covered too.
  */
 async function signedIn(page) {
   const base = new URL(options.base).origin
@@ -221,7 +233,7 @@ async function signedIn(page) {
         location.origin === origin &&
         location.pathname !== '/auth/callback' &&
         (Object.keys(sessionStorage).some((key) => key.startsWith('peek.estivaId') && /token/i.test(key)) ||
-          Object.keys(localStorage).some((key) => key.startsWith('ship.estiva-id') && /token/i.test(key))),
+          Object.keys(localStorage).some((key) => /^[a-z0-9-]+\.estiva-id\b/.test(key) && /token/i.test(key))),
       base,
       { timeout, polling: 250 },
     )
