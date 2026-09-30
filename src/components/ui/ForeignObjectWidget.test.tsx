@@ -593,6 +593,50 @@ describe('a block-document body', () => {
     expect(await screen.findByRole('textbox', { name: 'Edit description' })).toBeInTheDocument()
   })
 
+  it('edits a row on its own page, where Ship itself edits it', async () => {
+    // Ship declares an issue a `row`: one line in a message, the subject on its page (MAN-9, on production).
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const onAct = vi.fn(async () => true)
+    const { container, rerender } = render(<ForeignObjectCard object={described({ widget: 'row' })} onAct={onAct} />)
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    expect(container.querySelector('[data-foreign-body]')).toBeNull()
+    rerender(<ForeignObjectCard object={described({ widget: 'row' })} onAct={onAct} page />)
+    const box = await settled()
+    expect([...box.querySelectorAll('[data-block-id]')].map((el) => el.getAttribute('data-block-id'))).toEqual(ids)
+    const editor = editorOf(box)
+    await act(async () => {
+      editor.commands.focus('end', { scrollIntoView: false })
+      editor.commands.insertContent(' Today.')
+      editor.commands.blur()
+    })
+    await waitFor(() => expect(onAct).toHaveBeenCalledTimes(1))
+    const [actionId, value, contentFormat] = onAct.mock.calls[0] as unknown as [string, string, string]
+    expect([actionId, contentFormat]).toEqual(['describe-issue', 'estiva-blocks-1'])
+    expect(parseBlockDocument(value).content.map((b) => b.id)).toEqual(ids)
+  })
+
+  it('on its page, takes the page’s newer object', async () => {
+    // Someone else's edit, re-read by the page: the widget must not keep its first copy.
+    const edited = serializeBlockDocument(markerTextToBlockDocument('# Goal\n\nChanged in Ship.'))
+    const { container, rerender } = render(<ForeignObjectWidget naddr={NADDR} resolved={described({ widget: 'row', actions: [] })} page />)
+    expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
+    rerender(
+      <ForeignObjectWidget
+        naddr={NADDR}
+        resolved={described({ widget: 'row', actions: [], slots: { title: { value: 'Payments' }, body: { value: edited, format: 'blocks', field: 'description' } } })}
+        page
+      />,
+    )
+    await waitFor(() => expect(container.textContent).toContain('Changed in Ship.'))
+  })
+
+  it('draws a row’s body on its own page when there is nothing to write with', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const { container } = render(<ForeignObjectCard object={described({ widget: 'row', actions: [] })} onAct={() => {}} page />)
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
+  })
+
   it('stays a reading view where there is nothing to write with', async () => {
     const { ForeignObjectCard } = await import('./ForeignObjectWidget')
     // Read-only (the topic sidebar), a row, and a body on a field the action does not set.

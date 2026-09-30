@@ -312,6 +312,7 @@ export function ForeignObjectCard({
   error,
   onAct,
   directory,
+  page = false,
   className,
 }: {
   object: ForeignObject
@@ -325,6 +326,15 @@ export function ForeignObjectCard({
   onAct?: (actionId: string, value: string, contentFormat?: string) => void | Promise<boolean>
   /** The workspace directory, for the assignee picker (PEE-1). */
   directory?: People
+  /**
+   * Drawn on the object's own page (`FileWidgetPanel`), not in a message
+   * (MAN-9). A `row` is one line in a conversation, but on its own page the
+   * object is the subject, so the subtitle and the body are drawn — and the
+   * body is its editor when the manifest declares one — whatever the widget.
+   * Ship declares an issue a `row`, and this is where Ship itself edits the
+   * description: the issue's page.
+   */
+  page?: boolean
   className?: string
 }) {
   const { slots, meta } = object
@@ -338,6 +348,8 @@ export function ForeignObjectCard({
     because Peek only consumes Ship, whose widgets are bare strings.
   */
   const widget = pickWidget(object.widget, ['card', 'row', 'table', 'stat'] as const, 'card')
+  /** More than one line: a card anywhere, and any object on its own page (MAN-9). */
+  const whole = widget === 'card' || page
   /*
     A title that is a person — `as: "pubkey"` on the title slot, which is how
     Peek's own manifest titles a message, by its author (RIC-11). The same
@@ -420,11 +432,11 @@ export function ForeignObjectCard({
    * the editor stands where the body would only while the field is really
    * empty: interop drops an empty slot, and also one that reads elsewhere, and
    * an empty editor over a value it never showed would replace that value —
-   * and every id in it — on the first save. A card only, for the reason the
-   * body is.
+   * and every id in it — on the first save. Wherever the body is drawn: a
+   * card, or the object's own page.
    */
   const prose =
-    onAct && widget === 'card'
+    onAct && whole
       ? object.actions.find(
           (action) =>
             action.format === BLOCK_DOCUMENT_FORMAT &&
@@ -499,13 +511,12 @@ export function ForeignObjectCard({
         <SectionLabel className="shrink-0">{object.appName}</SectionLabel>
       </div>
       {/* A card shows the subtitle; a row is a single line by definition —
-          except in the sidebar, where the description is what makes a
-          ticket scannable without opening it. */}
-      {widget === 'card' && slots.subtitle && (
+          except on the object's own page, where it is the subject (MAN-9). */}
+      {whole && slots.subtitle && (
         <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
       )}
       {/* The description, in whichever content model its own app writes —
-          PRO-2. A card only, for the reason the subtitle is: a row is a
+          PRO-2. Where the subtitle is, for its reason: a row in a message is a
           single line by definition and a body is not one. */}
       {prose && onAct ? (
         <div className="mt-1">
@@ -519,7 +530,7 @@ export function ForeignObjectCard({
           {error && !actions.length && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
         </div>
       ) : (
-        widget === 'card' && slots.body && <ForeignBody slot={slots.body} className="mt-1" />
+        whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" />
       )}
       {visibleMeta.length > 0 && (
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -585,9 +596,12 @@ export function ForeignObjectWidget({
   naddr,
   resolved,
   quiet = false,
+  page = false,
 }: {
   /** An `naddr`, an `nevent`, an address, or a pasted app URL (PRO-15). */
   naddr: string
+  /** On the object's own page — `ForeignObjectCard`'s `page` (MAN-9). */
+  page?: boolean
   /**
    * Draw nothing while resolving, for a reference that might not be one.
    * See the branch below.
@@ -632,8 +646,12 @@ export function ForeignObjectWidget({
   )
 
   useEffect(() => {
-    // Already in hand — nothing to resolve (see `resolved` above).
-    if (resolved) return
+    // Already in hand — nothing to resolve (see `resolved` above). A newer one
+    // from the page is taken, so an edit made elsewhere reaches the editor (MAN-9).
+    if (resolved) {
+      setObject(resolved)
+      return
+    }
     // Peek runs without a relay in tests, Storybook and checkouts with no
     // `VITE_RELAY_URL` (`hasRelay`). There is nothing to ask in that mode, so
     // resolve to nothing.
@@ -701,6 +719,7 @@ export function ForeignObjectWidget({
       error={actionError}
       onAct={onAct}
       directory={directory}
+      page={page}
       className="mt-1"
     />
   )
