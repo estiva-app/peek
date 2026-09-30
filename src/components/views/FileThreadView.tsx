@@ -4,7 +4,7 @@ import type { FileThreadsState } from '@/api'
 import type { FileComment } from '@/nostr/foreign'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { CommentRow } from '@/components/views/CommentRow'
+import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 
 /**
  * One comment and what was said under it — Peek's thread pane, pointed at
@@ -29,8 +29,8 @@ export function FileThreadView({
   state,
   people,
 }: {
-  /** The comment the thread hangs from, from the conversation beside it. */
-  root: { id: string; author: string; body: string; createdAt: number }
+  /** The comment the thread hangs from, from the conversation beside it — or its stand-in, when it was deleted. */
+  root: DrawableComment
   state: FileThreadsState
   /** Names and avatars for authors. Absent renders shortened keys. */
   people?: People

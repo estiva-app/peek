@@ -4,7 +4,7 @@ import type { ForeignConversationState } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { CommentRow } from '@/components/views/CommentRow'
+import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 
 /** The box the comments live in, written once: the comments, or the line that says why there are none. */
 const COMMENTS = 'flex flex-col gap-1 p-4'
@@ -38,6 +38,7 @@ export function ForeignConversationView({
   onOpenThread,
   openThreadId,
   replyCounts,
+  deletedRoots,
 }: {
   state: ForeignConversationState
   /** Names and avatars for comment authors. Absent renders shortened keys. */
@@ -57,6 +58,12 @@ export function ForeignConversationView({
    * number cannot be derived here.
    */
   replyCounts?: Record<string, number>
+  /**
+   * Comments deleted under their replies (PER-24): each drawn where it stood,
+   * as a line saying so, with its thread still there to open. From the thread
+   * read — the conversation no longer holds them.
+   */
+  deletedRoots?: readonly { id: string; createdAt: number }[]
 }) {
   if (state === 'loading') {
     return (
@@ -101,7 +108,11 @@ export function ForeignConversationView({
     happened is the thing you want. A conversation is read the other way, and
     the resolved order is the relay's, which is neither.
   */
-  const comments = [...object.comments].sort((a, b) => a.createdAt - b.createdAt)
+  const live = new Set(object.comments.map((c) => c.id))
+  const standIns: DrawableComment[] = (deletedRoots ?? [])
+    .filter((d) => !live.has(d.id))
+    .map((d) => ({ id: d.id, author: '', body: '', createdAt: d.createdAt, deleted: true }))
+  const comments: DrawableComment[] = [...object.comments, ...standIns].sort((a, b) => a.createdAt - b.createdAt)
 
   if (comments.length === 0) {
     // Where the first comment would be: in the comments' box, never padded itself (Katerina, 2026-09-14).

@@ -793,6 +793,12 @@ export interface FileThreads {
   roots: Record<string, FileComment>
   /** Direct replies, oldest first. A root with none is absent, not `[]`. */
   replies: Record<string, FileComment[]>
+  /**
+   * Comments deleted under their replies, oldest first (PER-24, PEE-40): each
+   * is the id its replies still name and the time of its first reply, and the
+   * replies are in `replies` under that id. Only the file pane's read asks.
+   */
+  deleted?: { id: string; createdAt: number }[]
 }
 
 /**
