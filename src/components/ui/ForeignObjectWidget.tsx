@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ARCHIVED_FIELD, pickWidget } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
 import type {
   ForeignObject,
   People,
@@ -8,6 +8,7 @@ import type {
 } from '@estiva-app/interop'
 import { hasRelay, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
+import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
 import { Person } from './Person'
@@ -316,8 +317,12 @@ export function ForeignObjectCard({
   object: ForeignObject
   busy?: boolean
   error?: string
-  /** Omit to render the object read-only, with no manifest controls. */
-  onAct?: (actionId: string, value: string) => void
+  /**
+   * Omit to render the object read-only, with no manifest controls.
+   * `contentFormat` rides along for a block-document value (MAN-9); a promise
+   * of false says the write was refused, so the editor keeps it unsaved.
+   */
+  onAct?: (actionId: string, value: string, contentFormat?: string) => void | Promise<boolean>
   /** The workspace directory, for the assignee picker (PEE-1). */
   directory?: People
   className?: string
@@ -377,10 +382,7 @@ export function ForeignObjectCard({
         Nor a prose value (MAN-4): Ship's `describe-issue` and
         `describe-project` declare `format: 'estiva-blocks-1'`, and this row's
         one-line box would replace a whole block-document description with a
-        sentence. Peek's prose editor holds marker text, which carries no block
-        ids, so rewriting a description through it would also unanchor every
-        comment on one of its blocks — it waits for an editor that keeps them,
-        and until then the description is edited in its app.
+        sentence. The body is its control instead — `prose`, below (MAN-9).
       */
       !action.format &&
       // Nor the archive (FOL-46): as a select it would archive the file and
@@ -407,6 +409,29 @@ export function ForeignObjectCard({
 
   const status = shown(slots.status)
   const visibleMeta = meta.filter(shown)
+
+  /**
+   * The action that sets the body as a block document, drawn as the body
+   * itself (MAN-9) — Ship's `describe-issue` / `describe-project`.
+   *
+   * Chosen by the declaration, as every control here is: a `format` Peek
+   * writes, on the field the body slot reads. A body on some other field is
+   * not what that action sets, so it keeps its reading view. With no body slot
+   * the editor stands where the body would only while the field is really
+   * empty: interop drops an empty slot, and also one that reads elsewhere, and
+   * an empty editor over a value it never showed would replace that value —
+   * and every id in it — on the first save. A card only, for the reason the
+   * body is.
+   */
+  const prose =
+    onAct && widget === 'card'
+      ? object.actions.find(
+          (action) =>
+            action.format === BLOCK_DOCUMENT_FORMAT &&
+            !!action.field &&
+            (slots.body ? slots.body.field === action.field : !action.current?.trim()),
+        )
+      : undefined
 
   return (
     <Card
@@ -482,7 +507,20 @@ export function ForeignObjectCard({
       {/* The description, in whichever content model its own app writes —
           PRO-2. A card only, for the reason the subtitle is: a row is a
           single line by definition and a body is not one. */}
-      {widget === 'card' && slots.body && <ForeignBody slot={slots.body} className="mt-1" />}
+      {prose && onAct ? (
+        <div className="mt-1">
+          <BlockDocumentField
+            value={slots.body?.value ?? ''}
+            format={slots.body?.format ?? 'marker'}
+            label={prose.label}
+            onCommit={async (value, contentFormat) => (await onAct(prose.id, value, contentFormat)) !== false}
+          />
+          {/* The refusal, where the write was made, when no action row is drawn to carry it. */}
+          {error && !actions.length && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
+        </div>
+      ) : (
+        widget === 'card' && slots.body && <ForeignBody slot={slots.body} className="mt-1" />
+      )}
       {visibleMeta.length > 0 && (
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
           {visibleMeta.map((slot, i) => (
@@ -566,25 +604,26 @@ export function ForeignObjectWidget({
   const [actionError, setActionError] = useState<string | undefined>()
 
   const reload = useCallback(
-    () => {
-      resolve(naddr).then(setObject).catch(() => setObject(null))
-    },
+    // Returned, so an action's `await reload()` waits for the re-read it names.
+    () => resolve(naddr).then(setObject).catch(() => setObject(null)),
     [naddr, resolve],
   )
 
   const onAct = useCallback(
-    async (actionId: string, value: string) => {
+    async (actionId: string, value: string, contentFormat?: string) => {
       setBusy(true)
       setActionError(undefined)
       try {
-        const result = await applyAction({ naddr, actionId, value })
+        const result = await applyAction({ naddr, actionId, value, ...(contentFormat ? { contentFormat } : {}) })
         // The relay is the authority on whether this happened, so re-read rather
         // than patching local state optimistically. Slower, and it means the
         // widget can never claim a change the shared record does not have.
         if (result.ok) await reload()
         else setActionError(result.reason)
+        return result.ok
       } catch (e) {
         setActionError((e as Error).message)
+        return false
       } finally {
         setBusy(false)
       }

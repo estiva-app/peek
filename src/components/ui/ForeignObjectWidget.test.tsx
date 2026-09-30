@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '@estiva-app/interop'
+import { markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 
 /**
  * The widget renders whatever the manifest said, and nothing else.
@@ -329,7 +330,8 @@ describe('ForeignObjectWidget', () => {
       expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
     })
 
-    it('draws no one-line box for a prose field, nor for a move (MAN-4)', async () => {
+    // A row: on a card the prose field is the body's own editor (MAN-9), tested below.
+    it('draws no one-line box in the action row for a prose field, nor for a move (MAN-4)', async () => {
       resolveObject.mockResolvedValue(
         object({
           // What interop 0.36.0 resolves for Ship's describe-issue and
@@ -462,6 +464,150 @@ describe('the body slot', () => {
     const { container } = render(<ForeignObjectCard object={object({ widget: 'card' })} />)
     expect(container.querySelector('[data-foreign-body]')).toBeNull()
     expect(container.textContent).toContain('Billing entry')
+  })
+})
+
+/**
+ * The body as its own editor, for an app that declares a block-document action
+ * on it (MAN-9). What matters is what a save publishes: the document with the
+ * ids it opened with, so a comment anchored to one of its blocks stays there
+ * (SPEC §13.6), and the format it is written in.
+ */
+describe('a block-document body', () => {
+  const stored = serializeBlockDocument(markerTextToBlockDocument('# Goal\n\nStripe **Checkout**.'))
+  const ids = parseBlockDocument(stored).content.map((b) => b.id)
+  const describeIssue = {
+    id: 'describe-issue',
+    label: 'Edit description',
+    control: 'text',
+    field: 'description',
+    format: 'estiva-blocks-1',
+  } as unknown as ForeignObject['actions'][number]
+  const described = (overrides: Partial<ForeignObject> = {}) =>
+    object({
+      widget: 'card',
+      slots: {
+        title: { value: 'Payments', field: 'title' },
+        body: { value: stored, format: 'blocks', field: 'description' },
+      },
+      actions: [describeIssue],
+      ...overrides,
+    })
+  type Pm = { commands: { focus: (at?: string, options?: { scrollIntoView?: boolean }) => void; insertContent: (text: string) => void; blur: () => void } }
+  // The textbox is the ProseMirror node, and Tiptap hangs the editor on it.
+  const editorOf = (box: HTMLElement) => (box as unknown as { editor: Pm }).editor
+  /*
+    The textbox once its editor is live. The card arrives after the resolve,
+    outside `act`, and Tiptap's first instance is replaced as it mounts — so
+    the first node found can be the discarded one (an editor's view mounts
+    after its first render, and until then Tiptap counts it destroyed).
+  */
+  const settled = async () => {
+    await screen.findByRole('textbox', { name: 'Edit description' })
+    await act(() => new Promise((r) => setTimeout(r, 10)))
+    const box = screen.getByRole('textbox', { name: 'Edit description' })
+    expect(editorOf(box)).toBeDefined()
+    return box
+  }
+
+  it('opens the stored document, its ids on its blocks', async () => {
+    resolveObject.mockResolvedValue(described())
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    const box = await settled()
+    expect(box.querySelector('h1')?.textContent).toBe('Goal')
+    expect([...box.querySelectorAll('[data-block-id]')].map((el) => el.getAttribute('data-block-id'))).toEqual(ids)
+  })
+
+  it('saves on leaving with the same ids and the declared format', async () => {
+    resolveObject.mockResolvedValue(described())
+    applyAction.mockResolvedValue({ ok: true })
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    const box = await settled()
+    const editor = editorOf(box)
+    await act(async () => {
+      editor.commands.focus('end', { scrollIntoView: false })
+      editor.commands.insertContent(' Today.')
+      editor.commands.blur()
+    })
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledTimes(1))
+    const [args] = applyAction.mock.calls[0]
+    expect(args).toMatchObject({ actionId: 'describe-issue', contentFormat: 'estiva-blocks-1' })
+    const saved = parseBlockDocument(args.value)
+    expect(saved.content.map((b) => b.id)).toEqual(ids)
+    expect(JSON.stringify(saved)).toContain('Today.')
+  })
+
+  it('publishes nothing when leaving without a change', async () => {
+    resolveObject.mockResolvedValue(described())
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    const box = await settled()
+    const editor = editorOf(box)
+    await act(async () => {
+      editor.commands.focus('end', { scrollIntoView: false })
+      editor.commands.blur()
+    })
+    expect(applyAction).not.toHaveBeenCalled()
+  })
+
+  it('says why a refused save was refused, and keeps the text', async () => {
+    resolveObject.mockResolvedValue(described())
+    applyAction.mockResolvedValue({ ok: false, reason: 'Only members of this Folder can edit it.' })
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    const box = await settled()
+    const editor = editorOf(box)
+    await act(async () => {
+      editor.commands.focus('end', { scrollIntoView: false })
+      editor.commands.insertContent(' Today.')
+      editor.commands.blur()
+    })
+    expect(await screen.findByText('Only members of this Folder can edit it.')).toBeInTheDocument()
+    expect(box.textContent).toContain('Today.')
+  })
+
+  it('publishes nothing while typing when the card re-renders', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const onAct = vi.fn(async () => true)
+    const { rerender } = render(<ForeignObjectCard object={described()} onAct={onAct} />)
+    const editor = editorOf(await settled())
+    await act(async () => {
+      editor.commands.focus('end', { scrollIntoView: false })
+      editor.commands.insertContent(' Today.')
+    })
+    // A conversation re-renders its cards all the time; each one is a new `onAct`.
+    rerender(<ForeignObjectCard object={described()} onAct={async () => true} />)
+    rerender(<ForeignObjectCard object={described()} onAct={onAct} />)
+    expect(onAct).not.toHaveBeenCalled()
+  })
+
+  it('offers no editor over a value it cannot show', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    // No body slot, and the field holds something: an empty editor would replace it on the first save.
+    const held = { ...describeIssue, current: stored }
+    const { container, rerender } = render(
+      <ForeignObjectCard object={described({ slots: { title: { value: 'Payments' } }, actions: [held] })} onAct={() => {}} />,
+    )
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    // Really empty: the editor stands where the body would.
+    rerender(<ForeignObjectCard object={described({ slots: { title: { value: 'Payments' } } })} onAct={() => {}} />)
+    expect(await screen.findByRole('textbox', { name: 'Edit description' })).toBeInTheDocument()
+  })
+
+  it('stays a reading view where there is nothing to write with', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    // Read-only (the topic sidebar), a row, and a body on a field the action does not set.
+    const { container, rerender } = render(<ForeignObjectCard object={described()} />)
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    rerender(<ForeignObjectCard object={described({ widget: 'row' })} onAct={() => {}} />)
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    rerender(
+      <ForeignObjectCard
+        object={described({ slots: { title: { value: 'Payments' }, body: { value: stored, format: 'blocks', field: 'summary' } } })}
+        onAct={() => {}}
+      />,
+    )
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
   })
 })
 
