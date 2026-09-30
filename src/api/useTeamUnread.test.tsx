@@ -89,6 +89,14 @@ vi.mock('@/api', async () => {
     },
   }
 })
+/* Each file's parent (FOL-50): none known, unless a test says; what was asked is kept. */
+const parents = vi.hoisted(() => ({ known: {} as Record<string, string | null>, asked: [] as string[][] }))
+vi.mock('./useFileParents', () => ({
+  useFileParents: (addresses: readonly string[]) => {
+    parents.asked.push([...addresses])
+    return parents.known
+  },
+}))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'c'.repeat(64) }) }))
 vi.mock('@/nostr/useLiveClient', () => {
   const client = {}
@@ -180,6 +188,8 @@ beforeEach(() => {
   store.asked = []
   store.streams = {}
   store.at = 0
+  parents.known = {}
+  parents.asked = []
 })
 afterEach(() => {
   store.listeners.clear()
@@ -212,6 +222,21 @@ describe('useTeamUnread', () => {
     // Reading the file does.
     advance({ [FOL18]: NOW })
     expect(result.current.unread[FOLDER_A]).toBe(false)
+  })
+
+  it("lights the Folder an issue's project moved to, and not the one it is talked in (FOL-50)", async () => {
+    const PROJECT = `30850:${'b'.repeat(64)}:project`
+    parents.known = { [FOL18]: PROJECT }
+    const moved = [
+      { id: FOLDER_A, name: 'A', hasState: true, addresses: [] },
+      { id: FOLDER_B, name: 'B', hasState: true, addresses: [PROJECT] },
+    ]
+    const { result } = renderHook(() => useTeamUnread(moved))
+    hold(HELD)
+    advance({})
+    await waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: true }))
+    // Asked about the one file no state lists — the issue, not the project.
+    expect(parents.asked.at(-1)).toEqual([FOL18])
   })
 
   it('a message the socket delivers lights the team without the hook asking anything', async () => {
