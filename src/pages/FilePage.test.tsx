@@ -1063,13 +1063,13 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     mount(`/topic/${TOPIC_ADDRESS}`)
     expect(openHeaderMenu()).toEqual([
-      'Topic details',
+      'Details',
       'Rename',
       'New topic inside',
       'Move…',
       'Copy link',
       'Add to Open work',
-      'Delete topic',
+      'Delete',
     ])
   })
 
@@ -1103,13 +1103,13 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     hover(topicRow)
     fireEvent.click(within(topicRow).getByRole('button', { name: 'More options' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
-      'Topic details',
+      'Details',
       'Rename',
       'New topic inside',
       'Move…',
       'Add to Open work',
       'Follow',
-      'Delete topic',
+      'Delete',
     ])
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
 
@@ -1131,7 +1131,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     mount(`/topic/${TOPIC_ADDRESS}`)
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
-    const field = await screen.findByRole('textbox', { name: 'Topic name' })
+    const field = await screen.findByRole('textbox', { name: 'Name' })
     fireEvent.change(field, { target: { value: 'FOL-15 test topic, renamed' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(writes.renameFile).toHaveBeenCalledTimes(1))
@@ -1141,7 +1141,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       title: 'FOL-15 test topic, renamed',
     })
     // The relay accepted it: the dialog shows the new name, no field open.
-    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Topic name' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Name' })).toBeNull())
     expect(screen.getByText('FOL-15 test topic, renamed')).toBeInTheDocument()
   })
 
@@ -1151,20 +1151,39 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     mount(`/topic/${TOPIC_ADDRESS}`)
     openHeaderMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
-    fireEvent.change(await screen.findByRole('textbox', { name: 'Topic name' }), { target: { value: 'Nope' } })
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Name' }), { target: { value: 'Nope' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('relay_membership_required')).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Topic name' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Name' })).toBeInTheDocument()
+  })
+
+  it('a Ship issue’s menu and confirm never call it a topic (PEE-41)', async () => {
+    objects.byAddress[ISSUE_ADDRESS] = {
+      ...shipIssue,
+      actions: [
+        ...shipIssue.actions,
+        { id: 'delete-issue', label: 'Delete', control: 'confirm', effect: 'destructive', listed: true },
+      ],
+    }
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    const items = openHeaderMenu()
+    expect(items).toEqual(expect.arrayContaining(['Details', 'Delete']))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    expect(await screen.findByText('Delete?')).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/topic details|delete topic|this topic|keeps the topic/i)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(writes.deleteFile).toHaveBeenCalledTimes(1))
+    expect(writes.deleteFile.mock.calls[0][0]).toMatchObject({ actionId: 'delete-issue', address: ISSUE_ADDRESS })
   })
 
   it('Delete asks first, reads the Folder for hasState, deletes, and lands on the team', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     mount(`/topic/${TOPIC_ADDRESS}`)
     openHeaderMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
     // Nothing is written by the menu item itself (D56).
     expect(writes.deleteFile).not.toHaveBeenCalled()
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(writes.deleteFile).toHaveBeenCalledTimes(1))
     expect(writes.resolveFolderContents).toHaveBeenCalledWith(FOLDER)
     expect(writes.deleteFile).toHaveBeenCalledWith({
@@ -1183,8 +1202,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     writes.resolveFolderContents.mockResolvedValueOnce({ id: FOLDER, name: 'Folders', hasState: false, source: 'containment', files: [] })
     mount(`/topic/${TOPIC_ADDRESS}`)
     openHeaderMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(writes.deleteFile).toHaveBeenCalledTimes(1))
     expect(writes.deleteFile.mock.calls[0][0]).toMatchObject({ hasState: false })
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${FOLDER}`))
@@ -1195,8 +1214,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     writes.deleteFile.mockResolvedValueOnce({ ok: false, reason: 'invalid: must be event author' })
     mount(`/topic/${TOPIC_ADDRESS}`)
     openHeaderMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(toasts.shown).toHaveLength(1))
     expect(toasts.shown[0]).toMatchObject({ label: 'invalid: must be event author', type: 'warning' })
     // Stays — at the short form the page canonicalised the long link to (FOL-37).
@@ -1208,8 +1227,8 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     writes.resolveFolderContents.mockRejectedValueOnce(new Error('relay_membership_required'))
     mount(`/topic/${TOPIC_ADDRESS}`)
     openHeaderMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete topic' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete topic' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(toasts.shown).toHaveLength(1))
     expect(writes.deleteFile).not.toHaveBeenCalled()
   })

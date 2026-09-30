@@ -29,11 +29,14 @@ export function ConfirmDelete({
   onConfirm: () => Promise<boolean | void> | boolean | void
   onClose: () => void
 }) {
-  const noun = what === 'topic' ? 'topic' : what === 'huddle' ? 'huddle' : what === 'reply' ? 'reply' : 'message'
+  const noun = what === 'huddle' ? 'huddle' : what === 'reply' ? 'reply' : 'message'
   return (
     <ConfirmDialog
-      title={`Delete this ${noun}?`}
-      confirmLabel={`Delete ${noun}`}
+      // A topic's is asked from its own menu, about the object the person is
+      // on — which may be a Ship issue or project, not a topic (PEE-41). The
+      // question does not name it.
+      title={what === 'topic' ? 'Delete?' : `Delete this ${noun}?`}
+      confirmLabel={what === 'topic' ? 'Delete' : `Delete ${noun}`}
       destructive
       onConfirm={onConfirm}
       onClose={onClose}
@@ -42,7 +45,7 @@ export function ConfirmDelete({
         Peek asks the relay to delete it. The relay decides, and copies held by other apps are unaffected.
       </p>
       {what === 'topic' && (
-        <p>If the relay keeps the topic, Peek will say so; other apps can still read it until then.</p>
+        <p>If the relay keeps it, Peek will say so; other apps can still read it until then.</p>
       )}
       {onArchiveInstead && (
         <div className="flex flex-col items-start gap-2">
