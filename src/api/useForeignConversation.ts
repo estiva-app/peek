@@ -280,6 +280,8 @@ export type FileThreadsState = FileThreads | 'loading' | { failed: RelayFailureK
  * NIP-22 nothing below a comment carries the file's address, so the replies
  * cannot come with them (see {@link threadsAsViewer}). Keyed on the comment ids
  * rather than the file, so a new comment re-asks and a re-render does not.
+ * A comment deleted under its replies comes back in `deleted`, its replies
+ * still under its id (PEE-40), as Peek's own view draws them.
  *
  * An empty answer is a real one — nobody has replied to anything — and a
  * failure is kept apart from it for the reason the whole of this file exists:
@@ -289,7 +291,7 @@ export function useFileThreads(
   reference: string | null | undefined,
   rootIds: readonly string[],
 ): { state: FileThreadsState; reload: () => Promise<void> } {
-  const { threads } = useForeignObjects()
+  const { fileThreads: threads } = useForeignObjects()
   const [answer, setAnswer] = useState<{
     key: string
     threads?: FileThreads

@@ -62,7 +62,7 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { commentDecorationsOf, editTargetOf, type CommentDecorations } from '@estiva-app/interop'
+import { commentDecorationsOf, editTargetOf, type CommentDecorations, type Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
@@ -330,11 +330,7 @@ export async function fileConversationAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileConversation> {
-  const [threads, onFile] = await Promise.all([
-    threadEventsAsViewer(container.address, rootIds, relayUrl, token),
-    // Only for replies whose comment was deleted: a refusal here costs those, not the conversation.
-    commentsOnFileAsViewer(container.address, relayUrl, token).catch(() => []),
-  ])
+  const { threads, orphaned } = await threadsWithDeletedRootsAsViewer(container.address, rootIds, relayUrl, token)
   const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
 
   const roots = rootIds
@@ -348,18 +344,53 @@ export async function fileConversationAsViewer(
   for (const [rootId, list] of Object.entries(threads.replies)) {
     replies[rootId] = list.map(conversationEvent)
   }
-
-  // What the relay still holds and this read reached. Not `rootIds`: a re-read
-  // right after a delete still asks about the deleted root, and its replies,
-  // which `#e` still returns, would hang from a root that is not drawn.
-  const known = new Set(Object.keys(threads.roots))
-  for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
-  const orphaned = await deletedRootsOf(onFile, known, container.address, relayUrl, token).catch(() => ({ roots: [], replies: {} }))
   for (const [rootId, list] of Object.entries(orphaned.replies)) replies[rootId] = list.map(conversationEvent)
   // Oldest first. A stand-in is dated by its first reply — the nearest time the relay still holds.
   const allRoots = orphaned.roots.length ? [...roots, ...orphaned.roots].sort((a, b) => a.createdAt - b.createdAt) : roots
 
   return decorate(allRoots, replies, relayUrl, token)
+}
+
+/**
+ * The read-only panes' threads (PEE-40): {@link threadsAsViewer}'s answer, with
+ * the replies whose comment was deleted set under it the way Peek's own view
+ * sets them — `deleted` names each stand-in, `replies` holds what hangs from it.
+ */
+export async function fileThreadsAsViewer(
+  address: string,
+  rootIds: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<FileThreads> {
+  const { threads, orphaned } = await threadsWithDeletedRootsAsViewer(address, rootIds, relayUrl, token)
+  const replies: Record<string, FileComment[]> = {}
+  for (const [rootId, list] of [...Object.entries(threads.replies), ...Object.entries(orphaned.replies)]) replies[rootId] = list.map(fileCommentOf)
+  return {
+    roots: Object.fromEntries(Object.entries(threads.roots).map(([id, event]) => [id, fileCommentOf(event)])),
+    replies,
+    deleted: orphaned.roots.map(({ id, createdAt }) => ({ id, createdAt })),
+  }
+}
+
+/** interop's thread read, and beside it the replies whose comment was deleted — both file panes' read. */
+async function threadsWithDeletedRootsAsViewer(
+  address: string,
+  rootIds: readonly string[],
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ threads: Threads; orphaned: Awaited<ReturnType<typeof deletedRootsOf>> }> {
+  const [threads, onFile] = await Promise.all([
+    threadEventsAsViewer(address, rootIds, relayUrl, token),
+    // Only for replies whose comment was deleted: a refusal here costs those, not the conversation.
+    commentsOnFileAsViewer(address, relayUrl, token).catch(() => []),
+  ])
+  // What the relay still holds and this read reached. Not `rootIds`: a re-read
+  // right after a delete still asks about the deleted root, and its replies,
+  // which `#e` still returns, would hang from a root that is not drawn.
+  const known = new Set(Object.keys(threads.roots))
+  for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
+  const orphaned = await deletedRootsOf(onFile, known, address, relayUrl, token).catch(() => ({ roots: [], replies: {} }))
+  return { threads, orphaned }
 }
 
 /** How many of a file's comments the `#A` read asks for — Buzz's clamp per filter. */

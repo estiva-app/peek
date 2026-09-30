@@ -3,6 +3,7 @@ import type { People } from '@estiva-app/interop'
 import { Avatar } from '@/components/ui/Avatar'
 import { WithTooltip } from '@estiva-app/ui'
 import { MessageBody } from '@/components/ui/MessageBody'
+import { MetaText } from '@/components/ui/MetaText'
 import { whenLabel } from '@/components/ui/ActivityTimeline'
 
 /** The part of a comment this row draws. Both panes' shapes satisfy it. */
@@ -12,6 +13,8 @@ export interface DrawableComment {
   body: string
   /** Nostr seconds. */
   createdAt: number
+  /** A comment deleted under its replies (PER-24): drawn as a line saying so, no author and no body. */
+  deleted?: boolean
 }
 
 /**
@@ -50,6 +53,17 @@ export function CommentRow({
   below?: ReactNode
   className?: string
 }) {
+  if (comment.deleted) {
+    // Where the body would be, past the avatar's 24px and its gap — as `ConversationCard` draws it.
+    return (
+      <article className={className} data-comment={comment.id} data-deleted="">
+        <div className="pl-8">
+          <MetaText>This comment was deleted.</MetaText>
+          {below && <div className="mt-1 flex items-center gap-2">{below}</div>}
+        </div>
+      </article>
+    )
+  }
   const profile = people?.[comment.author]
   /*
     A shortened key, not "Unknown". Whoever wrote this has an identity even when

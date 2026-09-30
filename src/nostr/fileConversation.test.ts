@@ -29,6 +29,7 @@ import {
   publishConfirmed,
   editCommentAsViewer,
   fileConversationAsViewer,
+  fileThreadsAsViewer,
   foldEdits,
   isCommentOn,
   mentionTagsFor,
@@ -297,6 +298,26 @@ describe('fileConversationAsViewer reads the whole conversation below the roots'
       queryRelay.mockImplementation(relayOver([...world.filter((e) => e !== later && e !== earlier), toHeld]))
       const found = await fileConversationAsViewer(container, [root.id], 'https://relay.test', token)
       expect(found.roots.map((r) => r.id)).toEqual([root.id])
+    })
+
+    // The read-only panes, used where the viewer cannot comment, read the same way (PEE-40).
+    it('the read-only panes’ thread read finds them too', async () => {
+      queryRelay.mockImplementation(relayOver(world))
+      const found = await fileThreadsAsViewer(ADDRESS, [root.id], 'https://relay.test', token)
+      expect(found.deleted).toEqual([{ id: GONE, createdAt: earlier.created_at }])
+      expect(found.replies[GONE]?.map((r) => r.body)).toEqual(['Me too', 'Still here'])
+      expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
+      expect(Object.keys(found.roots)).toEqual([root.id])
+    })
+
+    it('the read-only panes keep their threads when the read for them is refused', async () => {
+      const relay = relayOver(world)
+      queryRelay.mockImplementation(async (url: string, filters: Record<string, unknown>[]) =>
+        filters.some((f) => '#A' in f) ? { ok: false as const, reason: 'rate-limited: slow down' } : relay(url, filters),
+      )
+      const found = await fileThreadsAsViewer(ADDRESS, [root.id], 'https://relay.test', token)
+      expect(found.deleted).toEqual([])
+      expect(found.replies[root.id]?.map((r) => r.body)).toEqual(['Agreed'])
     })
   })
 

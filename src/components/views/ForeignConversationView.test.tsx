@@ -185,6 +185,39 @@ describe('ForeignConversationView', () => {
 
       expect(screen.getByRole('button', { name: '9 replies', current: true })).toBeInTheDocument()
     })
+
+    it('draws a comment deleted under its replies where it stood, with its thread (PEE-40)', () => {
+      const opened: string[] = []
+      const { container } = render(
+        <ForeignConversationView
+          people={PEOPLE}
+          state={two}
+          onOpenThread={(id) => opened.push(id)}
+          replyCounts={{ gone: 2 }}
+          deletedRoots={[{ id: 'gone', createdAt: at(600) }]}
+        />,
+      )
+
+      const rows = [...container.querySelectorAll('[data-comment]')].map((r) => r.getAttribute('data-comment'))
+      expect(rows).toEqual(['c1', 'gone', 'c2'])
+      expect(screen.getByText('This comment was deleted.')).toBeInTheDocument()
+      screen.getByRole('button', { name: '2 replies' }).click()
+      expect(opened).toEqual(['gone'])
+    })
+
+    it('draws the stand-ins when every comment was deleted', () => {
+      render(
+        <ForeignConversationView
+          state={object()}
+          onOpenThread={() => {}}
+          replyCounts={{ gone: 1 }}
+          deletedRoots={[{ id: 'gone', createdAt: at(600) }]}
+        />,
+      )
+
+      expect(screen.getByText('This comment was deleted.')).toBeInTheDocument()
+      expect(screen.queryByText('Nothing said about this yet.')).not.toBeInTheDocument()
+    })
   })
 
   it('names an author with no profile by key rather than calling them Unknown', () => {

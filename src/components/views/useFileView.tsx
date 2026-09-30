@@ -123,7 +123,12 @@ export function useFileView({
       : Object.fromEntries(
           Object.entries(threads.replies).map(([id, replies]) => [id, replies.length]),
         )
-  const openThread = openThreadId ? comments.find((c) => c.id === openThreadId) : undefined
+  const deletedRoots = threads === 'loading' || 'failed' in threads ? undefined : threads.deleted
+  const openStandIn = deletedRoots?.find((d) => d.id === openThreadId)
+  const openThread = !openThreadId
+    ? undefined
+    : (comments.find((c) => c.id === openThreadId) ??
+      (openStandIn && { id: openStandIn.id, author: '', body: '', createdAt: openStandIn.createdAt, deleted: true }))
 
   // The middle column's body and footer, for the page's Panel (estiva-ui 0.37.0): the
   // Panel scrolls the body with the package's bar, and keeps the composer under it.
@@ -137,6 +142,7 @@ export function useFileView({
             onOpenThread={onOpenThread}
             openThreadId={openThreadId}
             replyCounts={replyCounts}
+            deletedRoots={deletedRoots}
           />
         ),
       }

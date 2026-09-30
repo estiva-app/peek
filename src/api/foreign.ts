@@ -49,6 +49,7 @@ import {
   type FileThreads,
 } from '@/nostr/foreign'
 import { relayFailureKind } from '@/nostr/relayRead'
+import { fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
@@ -348,6 +349,19 @@ export function useForeignObjects() {
     [viewer],
   )
 
+  /**
+   * The same for the file pane that cannot comment, with the replies whose
+   * comment was deleted under a stand-in for it — see `fileThreadsAsViewer`.
+   * One more read than `threads`, so the Desk's hover keeps that one.
+   */
+  const fileThreads = useCallback(
+    async (reference: string, rootIds: readonly string[]): Promise<FileThreads> => {
+      const v = viewer()
+      return v ? fileThreadsAsViewer(reference, rootIds, v.relayUrl, v.token) : { roots: {}, replies: {} }
+    },
+    [viewer],
+  )
+
   /** Reply to a comment on a file — see `replyToCommentAsViewer`. */
   const replyToComment = useCallback(
     async (args: { reference: string; parent: FileComment; body: string }): Promise<ActResult> => {
@@ -404,6 +418,7 @@ export function useForeignObjects() {
     moveFile,
     applyAction,
     threads,
+    fileThreads,
     replyToComment,
     creatableUnder,
     placeForReference,
