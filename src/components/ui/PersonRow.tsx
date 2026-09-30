@@ -47,6 +47,9 @@ interface PersonRowProps {
   /** Adds "Hide conversation" to the more-menu (DMS-6) — DM rows whose hide
    *  can succeed. The same item the conversation header offers. */
   onHideDm?: () => void
+  /** Adds "Archive…" or "Unarchive" (FOL-46). See `TopicMoreMenu`. */
+  archiveAction?: 'archive' | 'unarchive'
+  onToggleArchive?: () => void
   className?: string
 }
 
@@ -75,9 +78,12 @@ export function PersonRow({
   followAction,
   onToggleFollow,
   onHideDm,
+  archiveAction,
+  onToggleArchive,
   className,
 }: PersonRowProps) {
   const hasMenu =
+    !!(archiveAction && onToggleArchive) ||
     !!onDeleteTopic ||
     !!onOpenDetails ||
     !!onRename ||
@@ -170,6 +176,8 @@ export function PersonRow({
               onToggleFollow={onToggleFollow}
               onDeleteTopic={onDeleteTopic}
               onHideDm={onHideDm}
+              archiveAction={archiveAction}
+              onToggleArchive={onToggleArchive}
             />
           ) : (
             moreButton

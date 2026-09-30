@@ -32,3 +32,8 @@ export const AMessage: Story = {}
 export const ATopic: Story = {
   args: { what: 'topic', replies: 0 },
 }
+
+/** A topic its manifest lets you archive: Archive is offered as the safer answer (FOL-46). */
+export const ATopicThatCanBeArchived: Story = {
+  args: { what: 'topic', replies: 0, onArchiveInstead: noop },
+}

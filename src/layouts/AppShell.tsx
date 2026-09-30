@@ -11,6 +11,11 @@ interface AppShellProps {
   leftPanel?: ReactNode
   rightPanel?: ReactNode
   threadPanel?: ReactNode
+  /**
+   * The package frame's banner, at the top of the content area: what a page
+   * says about the whole of what it shows — an archived file's notice (FOL-46).
+   */
+  banner?: ReactNode
 }
 
 /**
@@ -26,7 +31,7 @@ interface AppShellProps {
  * The list column is the page's own: the package's `ListColumn` (UIG-14, N9),
  * with its own error boundary. The frame only tells it when the rail is closed.
  */
-export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) {
+export function AppShell({ leftPanel, rightPanel, threadPanel, banner }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
   // The launcher's context is captured ONCE at the invoking keystroke/click
   // (selection > composer > nothing) and frozen for the launcher's lifetime.
@@ -60,6 +65,7 @@ export function AppShell({ leftPanel, rightPanel, threadPanel }: AppShellProps) 
         menu={bar.menu}
         search={bar.search}
         identity={bar.identity}
+        banner={banner}
         nav={
           /*
             The rail collapses, which is Peek's (the package's page says so).

@@ -268,6 +268,9 @@ function TreeRow({
             followKey && followAction ? () => void follows.setFollowed(followKey, followAction === 'follow') : undefined
           }
           onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
+          /* A listed row is never archived — the listing leaves those out (FOL-46). */
+          archiveAction={controls.archive ? 'archive' : undefined}
+          onToggleArchive={controls.archive ? () => onControl?.('archive', file) : undefined}
         />
       </div>
       {open && (

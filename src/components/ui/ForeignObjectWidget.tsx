@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { pickWidget } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, pickWidget } from '@estiva-app/interop'
 import type {
   ForeignObject,
   People,
@@ -382,7 +382,11 @@ export function ForeignObjectCard({
         comment on one of its blocks — it waits for an editor that keeps them,
         and until then the description is edited in its app.
       */
-      !action.format,
+      !action.format &&
+      // Nor the archive (FOL-46): as a select it would archive the file and
+      // everything under it in one click, with no count of what it hides and
+      // no resolution. The file's own menu offers it, through its dialog.
+      action.field !== ARCHIVED_FIELD,
   )
 
   /**

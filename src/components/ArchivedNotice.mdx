@@ -1,0 +1,49 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import * as ArchivedNoticeStories from './ArchivedNotice.stories'
+
+<Meta of={ArchivedNoticeStories} />
+
+# ArchivedNotice
+
+The first thing an archived file or Folder shows: who archived it and when, the
+resolution they gave, and the way back — on the package's `Banner` (FOL-46).
+
+**Seen in** — its stories, **Archived** and **Archived with its project**, and
+on the file page and the Folder page, in the frame's banner slot.
+
+## When
+
+- On the page a link opens, whenever the file or Folder carries an `archived`.
+  An archived file is out of every list and a link still opens it; this is what
+  stops it reading as live work.
+
+## When not
+
+- In a list. Lists leave archived files out; a row never needs this.
+- To ask whether to archive. That is **ArchiveDialog**; this is what the page
+  says once it is done.
+- For a conversation with no messages yet, which is **NewTopicBanner**'s strip.
+
+## How
+
+```tsx
+import { ArchivedNotice } from '@/components/ArchivedNotice'
+
+<ArchivedNotice
+  archive={file.archived}
+  by={nameOf(file.archived.by)}
+  withWhat={file.archived.with ? kindNoun(kindOf(file.archived.with)) : undefined}
+  onUnarchive={unarchive}
+  onOpenParent={openParent}
+/>
+```
+
+## What it owns
+
+- **The resolution first**, under the line and above everything else on the
+  page — what Miky asked for: open an archived project and read what happened
+  to it before anything else.
+- **Where it is restored.** A file archived itself offers Unarchive; one hidden
+  with its parent offers the parent instead, because that is where Unarchive
+  is, and restoring the parent restores it.
+- **Ship's order and words**, so the notice reads the same in both apps.

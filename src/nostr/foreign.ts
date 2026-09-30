@@ -77,6 +77,10 @@ import {
   planPlaceFile,
   planRenameFolder,
   planUnlistFile,
+  planArchiveFolder,
+  archiveImpact,
+  type ArchiveImpact,
+  type ArchiveReadOptions,
   type FolderRef,
 } from '@estiva-app/interop'
 
@@ -357,6 +361,12 @@ export async function resolveObjectAsViewer(
   reference: string,
   relayUrl: string,
   token: StoredToken,
+  /**
+   * `archivedWith` for the page a link opens (FOL-46): it draws "Archived with
+   * its project", which costs a read of the parent. Every widget and card
+   * resolve leaves it off, so a refresh tick pays nothing new.
+   */
+  options?: ArchiveReadOptions,
 ): Promise<ForeignObject | null> {
   const query = viewerQuery(relayUrl, token)
   try {
@@ -377,7 +387,7 @@ export async function resolveObjectAsViewer(
       if (ref.eventId !== undefined) {
         return await resolveForeignEvent(ref.eventId, query, cachedPeople(query), manifests)
       }
-      return await resolveForeignObject(ref.address, query, cachedPeople(query), 0, manifests)
+      return await resolveForeignObject(ref.address, query, cachedPeople(query), 0, manifests, options)
     }
     /*
       A message is an event, not an address (RIC-11).
@@ -394,7 +404,7 @@ export async function resolveObjectAsViewer(
     if (isEventReference(reference)) {
       return await resolveForeignEvent(reference, query, cachedPeople(query), manifests)
     }
-    return await resolveForeignObject(reference, query, cachedPeople(query), 0, manifests)
+    return await resolveForeignObject(reference, query, cachedPeople(query), 0, manifests, options)
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error
@@ -1119,6 +1129,12 @@ export async function applyActionAsViewer(
      * parses the document before tagging it, so a wrong one is refused here.
      */
     contentFormat?: string
+    /**
+     * A change's `content` — the resolution summary of an archive (FOL-46).
+     * The runtime carries it on the change itself, so the summary lands and
+     * goes with the archive in one event.
+     */
+    note?: string
   },
   relayUrl: string,
   token: StoredToken,
@@ -1268,6 +1284,7 @@ export async function applyActionAsViewer(
     newId,
     replyTo: args.replyTo,
     contentFormat: args.contentFormat,
+    ...(args.note ? { note: args.note } : {}),
     pubkey: token.pubkey,
     createdAtMs: Date.now(),
     ...listing,
@@ -1416,6 +1433,80 @@ export async function deleteFileAsViewer(
     }
   }
   return { ok: true }
+}
+
+/**
+ * Archive a file, or restore it — its owner's archive action, as declared
+ * (FOL-46).
+ *
+ * One concept for every kind: the action setting `archived` on the file's
+ * address — Ship's `archive-project` and `archive-issue`, the bare file's
+ * `archive` — which `fileControlsOf(file).archive` finds by field, not by id.
+ * `'true'` archives and an empty value restores. The cascade is read, never
+ * written: a project's issues and a topic's sub-topics are hidden with it by
+ * every reader, and restoring it brings back exactly what was there.
+ *
+ * `resolution` is what the person said about it, carried as the change's
+ * `content`. Restoring takes none.
+ */
+export async function archiveFileAsViewer(
+  args: { naddr: string; actionId: string; archived: boolean; resolution?: string },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const result = await applyActionAsViewer(
+    {
+      naddr: args.naddr,
+      actionId: args.actionId,
+      value: args.archived ? 'true' : '',
+      ...(args.archived && args.resolution ? { note: args.resolution } : {}),
+    },
+    relayUrl,
+    token,
+  )
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason ?? 'The relay refused the archive.' }
+}
+
+/**
+ * Archive a Folder, or restore it — interop's `planArchiveFolder` (FOL-46).
+ *
+ * A change on the Folder's channel address, published in the Folder that
+ * lists it (`into`) so that Folder's readers read it too; a top-level Folder
+ * takes it in itself. Its state, its contents and its channel are untouched,
+ * which is what makes it reversible where a `kind:9008` is not.
+ */
+export async function archiveFolderAsViewer(
+  args: { folder: string; channel: string; archived: boolean; resolution?: string; into?: string },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const result = await publishInOrder(
+    planArchiveFolder(token.pubkey, Date.now(), {
+      folder: args.folder,
+      channel: args.channel,
+      archived: args.archived,
+      ...(args.archived && args.resolution ? { resolution: args.resolution } : {}),
+      ...(args.into ? { into: args.into } : {}),
+    }),
+    relayUrl,
+    token,
+  )
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason ?? 'The relay refused the archive.' }
+}
+
+/**
+ * What archiving `address` would hide, for the warning read before it
+ * (FOL-46) — interop's counts, so Peek and Ship say the same numbers. A
+ * Folder is named by its channel address. `folders` is the listing the page
+ * already holds, which saves reading it again.
+ */
+export async function archiveImpactAsViewer(
+  address: string,
+  relayUrl: string,
+  token: StoredToken,
+  folders?: FolderSummary[],
+): Promise<ArchiveImpact> {
+  return archiveImpact(address, viewerQuery(relayUrl, token), { ...(folders ? { folders } : {}), cache: manifests })
 }
 
 /**

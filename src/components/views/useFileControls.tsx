@@ -1,12 +1,14 @@
-import { useCallback, useState, type ReactNode } from 'react'
-import { KIND_BARE_FILE, nestingOf } from '@estiva-app/interop'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { isArchived, KIND_BARE_FILE, nestingOf } from '@estiva-app/interop'
 import type { ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { useFollows, useForeignObjects } from '@/api'
+import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
 import { MoveUnderDialog, type MoveTarget } from '@/components/MoveUnderDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
+import { archiveImpactWords, kindNoun } from '@/lib/archiveWords'
 import { canStartInside, fileControlsOf } from '@/lib/fileControls'
 import { useToast } from '@/lib/toast'
 
@@ -14,7 +16,7 @@ import { useToast } from '@/lib/toast'
  * What a menu asks for on a file: its details, a rename, a deletion, a move
  * under another file, or a new topic inside it (FOL-4).
  */
-export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside'
+export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive'
 
 const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 
@@ -54,12 +56,22 @@ const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
  * `nestingOf(...).moveTargetsOf`, each as its path; a new topic goes in the
  * parent's own team, which is the file's `h`, and `hasState` comes from the
  * same read, for the reason the delete takes it fresh.
+ *
+ * ## Archive counts first, and Unarchive does not ask (FOL-46)
+ *
+ * Archive opens on a read of what it would hide — interop's `archiveImpact`,
+ * the numbers Ship's dialog shows — so the warning is never a guess, and a
+ * read that fails says so rather than warning about nothing. Then one change,
+ * the manifest's archive action with the resolution as its content. Unarchive
+ * runs on the click: it only brings back what was there. The delete question
+ * offers Archive as the safer answer wherever the manifest declares one.
  */
 export function useFileControls({
   onRenamed,
   onDeleted,
   onMoved,
   onStarted,
+  onArchived,
 }: {
   /** The rename went through: re-read what shows the title. */
   onRenamed?: (file: ForeignObject) => void
@@ -69,13 +81,16 @@ export function useFileControls({
   onMoved?: (file: ForeignObject) => void
   /** A topic was started inside `parent`. */
   onStarted?: (created: { address: string; title: string }, parent: ForeignObject) => void
+  /** The archive or the unarchive went through: re-read what lists or draws the file. */
+  onArchived?: (file: ForeignObject, archived: boolean) => void
 } = {}): {
   /** Open the control the menu asked for, on this file. */
   open: (control: FileControl, file: ForeignObject) => void
   /** The dialogs, rendered by the page that owns them. */
   dialogs: ReactNode
 } {
-  const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic } = useForeignObjects()
+  const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact } =
+    useForeignObjects()
   const follows = useFollows()
   const { showToast } = useToast()
   const [dialog, setDialog] = useState<
@@ -83,6 +98,7 @@ export function useFileControls({
     | { kind: 'confirm'; file: ForeignObject }
     | { kind: 'move'; file: ForeignObject; teamName: string; targets: MoveTarget[] }
     | { kind: 'inside'; file: ForeignObject; team: string; teamName: string; hasState: boolean }
+    | { kind: 'archive'; file: ForeignObject; hides: string[]; staysVisible: string[] }
     | null
   >(null)
 
@@ -91,9 +107,63 @@ export function useFileControls({
     [showToast],
   )
 
+  /*
+    The caller's `onArchived` is an inline closure, and `open` goes to every
+    tree row as `onControl`: read through a ref, so `open` stays the stable
+    function it was before archive joined it.
+  */
+  const archivedCallback = useRef(onArchived)
+  useEffect(() => {
+    archivedCallback.current = onArchived
+  })
+  const counting = useRef(false)
+
+  const setArchived = useCallback(
+    async (file: ForeignObject, archived: boolean, resolution?: string): Promise<boolean> => {
+      const action = fileControlsOf(file).archive
+      if (!action || !file.naddr) {
+        refuse('This file cannot be archived from here.')
+        return false
+      }
+      /*
+        A refused sign throws rather than answering (a 429 from Estiva ID under
+        load, measured on production), and a rejection here would close the
+        dialog with nothing written and nothing said.
+      */
+      const result = await archiveFile({ naddr: file.naddr, actionId: action.id, archived, resolution }).catch(
+        (error: unknown) => ({ ok: false as const, reason: `Nothing was archived: ${(error as Error)?.message ?? 'the write failed'}. Try again.` }),
+      )
+      if (!result.ok) {
+        refuse(result.reason)
+        return false
+      }
+      archivedCallback.current?.(file, archived)
+      return true
+    },
+    [archiveFile, refuse],
+  )
+
   const open = useCallback(
     (control: FileControl, file: ForeignObject) => {
       if (control === 'delete') return setDialog({ kind: 'confirm', file })
+      if (control === 'unarchive') return void setArchived(file, false)
+      if (control === 'archive') {
+        const address = file.address
+        if (!address) return refuse('This file cannot be archived from here.')
+        // One count at a time, and the delete question closes now: a Delete
+        // pressed while the count is read would leave an archive to confirm
+        // for a file that is gone.
+        if (counting.current) return
+        counting.current = true
+        setDialog(null)
+        void archiveImpact(address)
+          .then((impact) => setDialog({ kind: 'archive', file, ...archiveImpactWords(impact) }))
+          .catch(() => refuse('What archiving would hide could not be read, so nothing was archived. Try again.'))
+          .finally(() => {
+            counting.current = false
+          })
+        return
+      }
       if (control !== 'move' && control !== 'inside') {
         return setDialog({ kind: 'details', file, editing: control === 'rename' })
       }
@@ -136,7 +206,7 @@ export function useFileControls({
         setDialog({ kind: 'move', file: here, teamName, targets })
       })()
     },
-    [refuse, resolveFolderContents, listFolders],
+    [refuse, resolveFolderContents, listFolders, archiveImpact, setArchived],
   )
 
   const move = async (file: ForeignObject, parent: string): Promise<boolean> => {
@@ -221,7 +291,23 @@ export function useFileControls({
 
   const dialogs = dialog ? (
     dialog.kind === 'confirm' ? (
-      <ConfirmDelete what="topic" onConfirm={() => void runDelete(dialog.file)} onClose={() => setDialog(null)} />
+      <ConfirmDelete
+        what="topic"
+        onArchiveInstead={
+          fileControlsOf(dialog.file).archive && !isArchived(dialog.file) ? () => open('archive', dialog.file) : undefined
+        }
+        onConfirm={() => void runDelete(dialog.file)}
+        onClose={() => setDialog(null)}
+      />
+    ) : dialog.kind === 'archive' ? (
+      <ArchiveDialog
+        title={titleOf(dialog.file)}
+        what={kindNoun(dialog.file.kind)}
+        hides={dialog.hides}
+        staysVisible={dialog.staysVisible}
+        onArchive={(resolution) => setArchived(dialog.file, true, resolution || undefined)}
+        onClose={() => setDialog(null)}
+      />
     ) : dialog.kind === 'move' ? (
       <MoveUnderDialog
         file={dialog.file}

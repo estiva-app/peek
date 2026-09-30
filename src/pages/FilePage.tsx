@@ -15,7 +15,10 @@ import {
   useFolderContents,
   useFollows,
   useOpenWorkFiles,
+  useWorkspaceDirectory,
 } from '@/api'
+import { ArchivedNotice } from '@/components/ArchivedNotice'
+import { kindNoun } from '@/lib/archiveWords'
 import { canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -215,7 +218,11 @@ export function FilePage() {
     delete of some other file stays here — the person was not looking at it.
   */
   const controls = fileControlsOf(file)
+  // "Topic details" and Copy link stay where they were: on a file with a
+  // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
+  const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
   const startsInside = canStartInside(file)
+  const people = useWorkspaceDirectory()
 
   /*
     Where the file sits (FOL-4): its team, then every file above it, each a
@@ -261,6 +268,12 @@ export function FilePage() {
 
   const fileControls = useFileControls({
     onRenamed: () => void reloadConversation(),
+    /*
+      The page draws the notice off the file, and the tree lists it or not —
+      both re-read. An archived row's file leaves the tree; the page stays on
+      it, since a link still opens an archived file.
+    */
+    onArchived: () => void Promise.all([reloadConversation(), reloadTeam()]),
     onDeleted: (deleted) => {
       if (deleted.folder && deleted.address === file?.address) navigate(`/app/folders/${deleted.folder}`, { replace: true })
     },
@@ -306,6 +319,27 @@ export function FilePage() {
     ? () => (inOpenWork ? openWorkFiles.remove(file.address!) : openWorkFiles.add(file.address!))
     : undefined
 
+  /*
+    Archived (FOL-46): the file is out of every list, and a link still opens
+    it — so the page says so first, with the resolution, and offers the way
+    back. Its own archive is restored here; one hidden with its parent (an
+    issue of an archived project) is restored on the parent, which the notice
+    opens instead. The menu's item states the direction that works.
+  */
+  const archive = file?.archived
+  const archivedWith = archive?.with
+  const archiveAction = controls.archive && !archivedWith ? (archive ? 'unarchive' : 'archive') : undefined
+  const notice =
+    file && archive ? (
+      <ArchivedNotice
+        archive={archive}
+        by={people?.[archive.by]?.displayName ?? `${archive.by.slice(0, 8)}…`}
+        withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
+        onUnarchive={archiveAction === 'unarchive' ? () => fileControls.open('unarchive', file) : undefined}
+        onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
+      />
+    ) : undefined
+
   if (topicIdentifier) return <Navigate to={channelDestination(topicIdentifier)} replace />
   // A Convex topic's old short link: the file its conversation moved to.
   if (identifier && legacyTopic) return <Navigate to={channelDestination(identifier)} replace />
@@ -322,6 +356,7 @@ export function FilePage() {
     <>
     {fileControls.dialogs}
       <FilePageView
+        banner={notice}
         nav={
           <FolderTree
             currentFolder={navFile?.folder}
@@ -386,8 +421,10 @@ export function FilePage() {
                           <IconDotsVertical size={16} stroke={1.5} />
                         </ToolbarButton>
                       }
-                      onOpenDetails={hasFileControls(controls) ? () => fileControls.open('details', file) : undefined}
-                      onCopyLink={hasFileControls(controls) ? copyLink : undefined}
+                      onOpenDetails={hasTopicControls ? () => fileControls.open('details', file) : undefined}
+                      onCopyLink={hasTopicControls ? copyLink : undefined}
+                      archiveAction={archiveAction}
+                      onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
                       openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
                       onToggleOpenWork={toggleOpenWork}
                       onRename={controls.rename ? () => fileControls.open('rename', file) : undefined}
@@ -423,7 +460,9 @@ export function FilePage() {
  * child whose parent is listed, so without it a Ship issue would be in the
  * Folder and drawn nowhere — the same shape of gap this route was opened for.
  */
-export function FilePageView({ nav, rightPanel, threadPanel }: {
+export function FilePageView({ nav, rightPanel, threadPanel, banner }: {
+  /** An archived file's notice (FOL-46), at the top of the content area. */
+  banner?: ReactNode
   /**
    * The navigation column. The page hands over its wired `FolderTree`; a story
    * hands over `FolderTreeView` with a fixture, which is the only way this
@@ -433,5 +472,5 @@ export function FilePageView({ nav, rightPanel, threadPanel }: {
   rightPanel?: ReactNode
   threadPanel?: ReactNode
 }) {
-  return <AppShell leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} />
+  return <AppShell leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} banner={banner} />
 }

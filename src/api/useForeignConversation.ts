@@ -83,7 +83,13 @@ function useResolvedForeign(naddr: string | null | undefined): {
 
   const load = useCallback(
     (target: string): Promise<ListingLoad<ForeignObject | null, RelayFailureKind>> =>
-      resolveObject(target)
+      /*
+        The page a link opens says "Archived with its project" (FOL-46), which
+        costs a read of the parent — paid here, and by no card or widget. An
+        archived child is already left out of `children` (interop 0.38.0), so
+        the tree's expanded project lists no archived issue.
+      */
+      resolveObject(target, { archivedWith: true })
         .then(async (object) => {
           /*
             A record with no `h` still has a Folder its conversation is written
