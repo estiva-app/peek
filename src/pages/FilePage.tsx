@@ -218,7 +218,7 @@ export function FilePage() {
     delete of some other file stays here — the person was not looking at it.
   */
   const controls = fileControlsOf(file)
-  // "Topic details" and Copy link stay where they were: on a file with a
+  // "Details" and Copy link stay where they were: on a file with a
   // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
   const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
   const startsInside = canStartInside(file)

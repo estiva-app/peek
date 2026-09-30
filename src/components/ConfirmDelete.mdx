@@ -55,7 +55,7 @@ import { ConfirmDelete } from '@/components/ConfirmDelete'
 
 | | |
 | --- | --- |
-| `what` | `message`, `reply`, `huddle` or `topic` — picks the noun |
+| `what` | `message`, `reply`, `huddle` or `topic` — picks the noun; a `topic` names none ("Delete?"), since the file may be a Ship issue (PEE-41) |
 | `replies` | how many replies would be left behind; default 0 |
 | `onConfirm` | may return a promise |
 | `onArchiveInstead` | offers "Archive instead" — for a topic whose manifest declares an archive (FOL-46) |

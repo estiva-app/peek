@@ -92,7 +92,7 @@ export function FileDetailsDialog({
 
   return (
     <DialogShell
-      title="Topic details"
+      title="Details"
       onClose={onClose}
       width={560}
       bodyClassName="flex flex-col gap-6"
@@ -113,7 +113,7 @@ export function FileDetailsDialog({
                 autoFocus
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                aria-label="Topic name"
+                aria-label="Name"
                 onKeyDown={(e) => {
                   // Escape abandons; Enter is the Form's, and saves.
                   if (e.key === 'Escape') {
