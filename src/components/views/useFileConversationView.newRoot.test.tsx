@@ -29,11 +29,11 @@ vi.mock('@/api/foreign', async () => ({
 }))
 vi.mock('@/nostr/useLiveFile', () => ({ useLiveFile: () => ({ relayState: 'live' }) }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
-const follows = vi.hoisted(() => ({ setFollowed: () => Promise.resolve() }))
+const membership = vi.hoisted(() => ({ refresh: () => Promise.resolve() }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   useWorkspaceDirectory: () => people,
-  useFollows: () => follows,
+  useMembership: () => membership,
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 // The composer is not what is under test, and its upload hooks need a Convex client.

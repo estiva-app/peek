@@ -38,12 +38,12 @@ interface PersonRowProps {
    *  more-menu — the label advertises which direction will succeed. */
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
-  /** Adds "Follow" / "Unfollow" to the more-menu (FOL-30), and marks a
-   *  followed row when idle — the state is visible without hovering, because
-   *  a followed-and-read row and an unfollowed one would otherwise look the
-   *  same, and only the first will ever light. */
-  followAction?: 'follow' | 'unfollow'
-  onToggleFollow?: () => void
+  /** Adds "Join" / "Leave" to the more-menu (SPEC §11.8), and marks a row
+   *  its person is told about when idle — the state is visible without
+   *  hovering, because a joined-and-read row and one the person is not part
+   *  of would otherwise look the same, and only the first will ever light. */
+  memberAction?: 'join' | 'leave'
+  onToggleMember?: () => void
   /** Adds "Hide conversation" to the more-menu (DMS-6) — DM rows whose hide
    *  can succeed. The same item the conversation header offers. */
   onHideDm?: () => void
@@ -75,8 +75,8 @@ export function PersonRow({
   onMove,
   openWorkAction,
   onToggleOpenWork,
-  followAction,
-  onToggleFollow,
+  memberAction,
+  onToggleMember,
   onHideDm,
   archiveAction,
   onToggleArchive,
@@ -91,8 +91,8 @@ export function PersonRow({
     !!onMove ||
     !!onHideDm ||
     !!(openWorkAction && onToggleOpenWork) ||
-    !!(followAction && onToggleFollow)
-  const isFollowed = followAction === 'unfollow'
+    !!(memberAction && onToggleMember)
+  const isTold = memberAction === 'leave'
   const [isHovered, setIsHovered] = useState(false)
   /* The menu owns its button since `@estiva-app/ui` 0.10.0, so what this file
      keeps is not a position any more — it is only whether the menu is open,
@@ -172,8 +172,8 @@ export function PersonRow({
               onMove={onMove}
               openWorkAction={openWorkAction}
               onToggleOpenWork={onToggleOpenWork}
-              followAction={followAction}
-              onToggleFollow={onToggleFollow}
+              memberAction={memberAction}
+              onToggleMember={onToggleMember}
               onDeleteTopic={onDeleteTopic}
               onHideDm={onHideDm}
               archiveAction={archiveAction}
@@ -191,11 +191,11 @@ export function PersonRow({
         </div>
       ) : isUnread ? (
         <UnreadDot />
-      ) : isFollowed ? (
-        /* Followed and nothing new: the quiet mark that says this row can light
-           (FOL-30). Information, not an affordance — the toggle is in the menu. */
-        <div className="w-6 h-6 flex items-center justify-center shrink-0" data-followed>
-          <IconBell size={12} stroke={1.5} className="text-text-muted" aria-label="Followed" />
+      ) : isTold ? (
+        /* A member and nothing new: the quiet mark that says this row can light
+           (FOL-30, §11.8). Information, not an affordance — the toggle is in the menu. */
+        <div className="w-6 h-6 flex items-center justify-center shrink-0" data-member>
+          <IconBell size={12} stroke={1.5} className="text-text-muted" aria-label="Yours" />
         </div>
       ) : null}
 

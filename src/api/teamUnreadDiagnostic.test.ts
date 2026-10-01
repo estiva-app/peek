@@ -36,12 +36,14 @@ const observation = (over: Partial<TeamUnreadObservation> = {}): TeamUnreadObser
   relayState: 'live',
   frontierReady: true,
   marker: () => undefined,
-  follows: 'present',
-  isFollowed: () => true,
+  merged: {},
+  membership: 'known',
+  termsOf: () => ({ member: true, muted: false }),
+  isMentioned: () => false,
   me: ME,
   held: { at: NOW, streams: { [FOLDER]: [said('e1', NOW - 60)] } },
   horizonSeconds: HORIZON,
-  result: { unread: { [FOLDER]: true, [TEAM]: true }, followed: { [FOLDER]: true } },
+  result: { unread: { [FOLDER]: true, [TEAM]: true }, member: { [FOLDER]: true } },
   ...over,
 })
 
@@ -141,7 +143,7 @@ describe('the team unread probe', () => {
     probe.observe(
       observation({
         held: { at: NOW, streams: {} },
-        result: { unread: {}, followed: {} },
+        result: { unread: {}, member: {} },
       }),
     )
     // `read: false` is the sentence "not judged" — the hook draws no dot, and
@@ -154,13 +156,14 @@ describe('the team unread probe', () => {
     })
   })
 
-  it('says per stream whether it is followed, and against which marker', () => {
+  it('says per stream whether the person is a member, and against which marker', () => {
     const probe = open()
     probe.observe(
       observation({
-        isFollowed: (key: string) => key === FILE,
+        termsOf: (key: string) => ({ member: key === FILE, muted: false }),
         marker: (context: string | undefined) =>
           context === channelContext(FOLDER) ? NOW - 30 : undefined,
+        merged: { [channelContext(FOLDER) as string]: NOW - 30 },
         held: {
           at: NOW,
           streams: { [FOLDER]: [said('e1', NOW - 60), said('e2', NOW - 10, [FILE])] },
@@ -171,14 +174,14 @@ describe('the team unread probe', () => {
     expect(streams).toHaveLength(2)
 
     const general = streams.find((stream) => stream.key === FOLDER)
-    // Not followed, so it cannot light however new it is — and the marker it
+    // Not a member, so it cannot light however new it is — and the marker it
     // would have been judged against is reported anyway.
-    expect(general).toMatchObject({ followed: false, unread: false, messages: 1 })
+    expect(general).toMatchObject({ member: false, unread: false, messages: 1 })
     expect(general?.context).toBe(channelContext(FOLDER))
     expect(general?.marker).toBe(new Date((NOW - 30) * 1_000).toISOString())
 
     const file = streams.find((stream) => stream.key === FILE)
-    expect(file).toMatchObject({ followed: true, unread: true, marker: null })
+    expect(file).toMatchObject({ member: true, unread: true, marker: null })
     expect(file?.newest).toMatchObject({ mine: false })
   })
 
@@ -202,8 +205,8 @@ describe('the team unread probe', () => {
 
   it('reports the two gates that empty the map before anything is judged', () => {
     const probe = open()
-    probe.observe(observation({ frontierReady: false, follows: 'unknown', result: { unread: {}, followed: {} } }))
-    expect(snapshot()[0]).toMatchObject({ frontierReady: false, follows: 'unknown', lit: [] })
+    probe.observe(observation({ frontierReady: false, membership: 'unknown', result: { unread: {}, member: {} } }))
+    expect(snapshot()[0]).toMatchObject({ frontierReady: false, membership: 'unknown', lit: [] })
   })
 
   it('lists the Folders currently lit', () => {

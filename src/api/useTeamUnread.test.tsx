@@ -61,16 +61,16 @@ const frontier = vi.hoisted(() => ({
   version: 0,
   listeners: new Set<() => void>(),
 }))
-/* The followed set (FOL-30): everything, and known, unless a test says otherwise.
+/* Membership (§11.8): a member of everything, and known, unless a test says otherwise.
    Read through the same store as the frontier so a change re-renders the hook. */
 const follows = vi.hoisted(() => ({
-  state: 'present' as 'unknown' | 'absent' | 'present',
+  state: 'known' as 'unknown' | 'known',
   keys: null as Set<string> | null,
 }))
 vi.mock('@/api', async () => {
   const { useSyncExternalStore, useMemo } = await import('react')
   return {
-    useFollows: () => {
+    useMembership: () => {
       const version = useSyncExternalStore(
         (listener) => {
           frontier.listeners.add(listener)
@@ -79,10 +79,15 @@ vi.mock('@/api', async () => {
         () => frontier.version,
       )
       return useMemo(
-        () => ({
-          state: follows.state,
-          isFollowed: (key: string) => (follows.keys ? follows.keys.has(key) : true),
-        }),
+        () => {
+          const isMember = (key: string) => (follows.keys ? follows.keys.has(key) : true)
+          return {
+            state: follows.state,
+            isMember,
+            termsOf: (key: string) => ({ member: isMember(key), muted: false }),
+            isMentioned: () => false,
+          }
+        },
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [version],
       )
@@ -116,6 +121,7 @@ vi.mock('@/nostr/useReadStateSync', async () => {
       return useMemo(
         () => ({
           marker: (context: string | undefined) => (context ? frontier.markers[context] : undefined),
+          merged: frontier.markers,
           ready: frontier.ready,
         }),
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,7 +189,7 @@ const HELD = {
 beforeEach(() => {
   frontier.ready = false
   frontier.markers = {}
-  follows.state = 'present'
+  follows.state = 'known'
   follows.keys = null
   store.asked = []
   store.streams = {}
@@ -279,19 +285,19 @@ describe('useTeamUnread', () => {
     expect(result.current.unread).toEqual({})
   })
 
-  it('judges nothing while the followed set is unknown, and only followed files once it is known (FOL-30)', async () => {
+  it('judges nothing while membership is unknown, and only member files once it is known (§11.8)', async () => {
     follows.state = 'unknown'
     const { result } = renderHook(() => useTeamUnread(folders))
     hold(HELD)
     advance({})
     // An unknown set is not an empty one: no dot goes out, none comes on.
     expect(result.current.unread).toEqual({})
-    // Known, and the file is followed: the team lights.
-    follows.state = 'present'
+    // Known, and the person is in the file: the team lights.
+    follows.state = 'known'
     follows.keys = new Set([FOL18])
     advance({})
     expect(result.current.unread).toEqual({ [FOLDER_A]: true, [FOLDER_B]: false })
-    // Unfollowed: the same messages, the same markers, and the team goes out at once.
+    // Left: the same messages, the same markers, and the team goes out at once.
     follows.keys = new Set()
     advance({})
     expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false })

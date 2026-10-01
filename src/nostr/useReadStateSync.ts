@@ -89,6 +89,8 @@ function frontierContexts(): Record<string, number> {
 export interface ReadFrontier {
   /** One context's marker in unix seconds, or `undefined` for absent. */
   marker: (context: string | undefined) => number | undefined
+  /** Every context's marker — what `@estiva-app/conversation`'s `isUnread` is judged against. */
+  merged: Readonly<Record<string, number>>
   /** False until the first merge has landed — absent-because-unfetched is not absent. */
   ready: boolean
 }
@@ -105,6 +107,7 @@ export function useReadFrontier(): ReadFrontier {
     const contexts = frontierContexts()
     return {
       marker: (context: string | undefined) => (context ? contexts[context] : undefined),
+      merged: contexts,
       ready: previousRelayMerge !== undefined,
     }
     // `version` is what the store hands out; the contexts are read behind it.

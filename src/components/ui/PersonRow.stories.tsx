@@ -70,19 +70,19 @@ export const DmHideable: Story = {
   args: { name: 'Amie Miles', type: 'DM', onHideDm: () => {} },
 }
 
-/** A followed file at rest (FOL-30): the quiet bell says this row can light; hover swaps it for the menu, whose item reads "Unfollow". */
-export const Followed: Story = {
-  args: { name: 'The file route', type: 'file', followAction: 'unfollow', onToggleFollow: () => {} },
+/** A file the person is a member of, at rest (§11.8): the quiet bell says this row can light; hover swaps it for the menu, whose item reads "Leave". */
+export const Joined: Story = {
+  args: { name: 'The file route', type: 'file', memberAction: 'leave', onToggleMember: () => {} },
 }
 
-/** Followed and unread: the dot wins the slot — the bell is only for a followed row with nothing new. */
-export const FollowedUnread: Story = {
-  args: { name: 'The file route', type: 'file', isUnread: true, followAction: 'unfollow', onToggleFollow: () => {} },
+/** A member and unread: the dot wins the slot — the bell is only for a member row with nothing new. */
+export const JoinedUnread: Story = {
+  args: { name: 'The file route', type: 'file', isUnread: true, memberAction: 'leave', onToggleMember: () => {} },
 }
 
-/** Not followed: nothing in the slot at rest, and the menu offers "Follow". */
-export const Unfollowed: Story = {
-  args: { name: 'The file route', type: 'file', followAction: 'follow', onToggleFollow: () => {} },
+/** Not a member: nothing in the slot at rest, and the menu offers "Join". */
+export const NotJoined: Story = {
+  args: { name: 'The file route', type: 'file', memberAction: 'join', onToggleMember: () => {} },
 }
 
 /** A file in the Folders tree, as `FileTreeView` draws it: press the ⋮ for Details, Rename, New topic inside, Move and Delete. */

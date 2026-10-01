@@ -11,7 +11,7 @@
  * | Rule | Decided by |
  * |---|---|
  * | 1 — someone DMs you (CON-14) | `foldDmScreenerRows`, from the channel store the DM dots read |
- * | a followed file got a comment you have not read (FOL-34) | `foldFileScreenerRows`, from the relay |
+ * | a file you are a member of got a comment you have not read (FOL-34, §11.8) | `foldFileScreenerRows`, from the relay |
  *
  * Rules 2 and 3 and the refresh rule judged Convex topics, folded here from
  * `screener.candidates`; they went with the topics in FOL-23.
@@ -47,12 +47,11 @@ import { useDmChannels } from '@/api/internal/dms'
 import { useWorkspacePeople } from '@/api/people'
 import { useChannelStreams } from '@/api/useChannelStreams'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { useFollows } from '@/api/internal/follows'
+import { useMembership } from '@/api/internal/membership'
 import { useForeignObjects } from '@/api/foreign'
 import { validToken } from '@/auth/estivaId'
 import { useScreenerSync } from '@/nostr/useScreenerSync'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
-import { fileContext } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
@@ -92,7 +91,7 @@ export type ScreenerPreviewSource =
  * How often the file half re-reads while the Desk is visible (FOL-34).
  *
  * Slower than `REFRESH_INTERVAL_MS` because it was one relay request per
- * followed file, against a quota of 300 a minute per person that every open
+ * member file, against a quota of 300 a minute per person that every open
  * tab shares. Since PER-10 the whole set is one request, so this could come
  * down; it has not, because nothing asked for fresher file rows. Focus and
  * visibility still re-read at once, which is the moment somebody actually looks.
@@ -100,16 +99,17 @@ export type ScreenerPreviewSource =
 const FILE_REFRESH_MS = 60_000
 
 /**
- * The followed files the Screener judges, read from the relay (FOL-34).
+ * The files the Screener judges — the ones the person is a member of — read
+ * from the relay (FOL-34, CON-19).
  *
  * A file's conversation never enters Convex, so this half has no server-side
- * candidates to fold: it asks the relay for the followed files directly — every
+ * candidates to fold: it asks the relay for the member files directly — every
  * file's title and top-level comments in one read (PER-10) — and
  * `foldFileScreenerRows` decides which of them screen. `[]` until asked: a
  * missing file row is the quiet failure, and a Desk held under a skeleton for a
  * relay that is down is the loud one.
  */
-function useFollowedFiles(addresses: readonly string[]): ScreenerFile[] {
+function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
   const { resolveObjects } = useForeignObjects()
   /*
     Held per address, not per set. The set changes whenever a file enters or
@@ -269,24 +269,22 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   }, [settled, pending])
 
   /*
-    The file half (FOL-34). Followed keys are file addresses and Folder uuids;
-    only an address has a file context. A file already in open work is not
-    asked about at all — PEE-6 would drop its row anyway, and the read is the
-    expensive part. Nothing is judged before the relay has said what is
-    followed, for the reason `useConversationBadges` gives.
+    The file half (FOL-34). The files the person is a member of (§11.8) are
+    asked about, by address. A file already in open work is not asked about at
+    all — PEE-6 would drop its row anyway, and the read is the expensive part.
+    Nothing is judged before the relay has said what the person is a member
+    of, for the reason `useConversationBadges` gives.
   */
-  const follows = useFollows()
+  const membership = useMembership()
   const frontier = useReadFrontier()
-  const followedFiles = useMemo(
+  const memberFiles = useMemo(
     () =>
-      follows.state === 'unknown'
+      membership.state === 'unknown'
         ? []
-        : [...follows.followed]
-            .filter((key) => fileContext(key) !== undefined && !openWork.fileAddresses.has(key))
-            .sort(),
-    [follows.state, follows.followed, openWork.fileAddresses],
+        : membership.memberFiles.filter((key) => !openWork.fileAddresses.has(key)),
+    [membership.state, membership.memberFiles, openWork.fileAddresses],
   )
-  const files = useFollowedFiles(followedFiles)
+  const files = useMemberFiles(memberFiles)
 
   const { items, previews } = useMemo<{ items: ScreenerItem[]; previews: Map<string, ScreenerPreviewSource> }>(() => {
     const previews = new Map<string, ScreenerPreviewSource>()
@@ -294,7 +292,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     if (!effective) return { items: [], previews }
 
     // Not judged until the read-state merge has landed: before it every marker
-    // is absent, and absent reads as "new" for every followed file — and every
+    // is absent, and absent reads as "new" for every member file — and every
     // DM — at once.
     if (!frontier.ready) return { items: [], previews }
     const me = validToken()?.pubkey
@@ -320,7 +318,9 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
       effective,
       openWork.fileAddresses,
       {
-        marker: (address) => frontier.marker(fileContext(address)),
+        merged: frontier.merged,
+        termsOf: membership.termsOf,
+        isMentioned: membership.isMentioned,
         me,
         nowSeconds: Math.floor(now / 1000),
         horizonSeconds,
@@ -337,7 +337,7 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     const rows: { item: ScreenerItem; at: number }[] = [...dmRows, ...fileRows]
     rows.sort((a, b) => b.at - a.at)
     return { items: rows.map((r) => r.item), previews }
-  }, [effective, dms, now, files, frontier, openWork.fileAddresses, openWork.dmIds])
+  }, [effective, dms, now, files, frontier, membership.termsOf, membership.isMentioned, openWork.fileAddresses, openWork.dmIds])
 
   /*
     Publish the decisions the person owns, not the change that produced them.

@@ -78,8 +78,20 @@ vi.mock('@/api/internal/openWork', () => ({
 */
 let followsState: 'unknown' | 'present' = 'unknown'
 let followed = new Set<string>()
-vi.mock('@/api/internal/follows', () => ({
-  useFollows: () => ({ state: followsState, followed, isFollowed: (k: string) => followed.has(k), setFollowed: vi.fn() }),
+/* Stable between renders for the same set, as the real seam's is: a fresh array each render would re-ask. */
+let memberFilesOf: { of: Set<string>; files: string[] } | undefined
+vi.mock('@/api/internal/membership', () => ({
+  useMembership: () => {
+    if (memberFilesOf?.of !== followed) memberFilesOf = { of: followed, files: [...followed].sort() }
+    return {
+      state: followsState === 'present' ? 'known' : 'unknown',
+      memberFiles: memberFilesOf.files,
+      isMember: (k: string) => followed.has(k),
+      isMuted: () => false,
+      termsOf: () => ({ member: true, muted: false }),
+      isMentioned: () => false,
+    }
+  },
 }))
 const fileObject = (address: string) => ({
   kind: 30840,
@@ -94,7 +106,12 @@ const resolveObjects = vi.fn(async (addresses: readonly string[]) => {
 /** How many files were asked about, over every read — the cost PER-10 moved. */
 const filesAsked = () => resolveObjects.mock.calls.reduce((n, [addresses]) => n + addresses.length, 0)
 vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObjects }) }))
-const FRONTIER = { ready: true, marker: () => 1_786_999_000 }
+const FRONTIER = {
+  ready: true,
+  marker: () => 1_786_999_000,
+  // Every context read at the same instant, whatever its key.
+  merged: new Proxy({}, { get: () => 1_786_999_000 }) as Record<string, number>,
+}
 vi.mock('@/nostr/useReadStateSync', () => ({ useReadFrontier: () => FRONTIER }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ pubkey: 'me' }) }))
 

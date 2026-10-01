@@ -152,11 +152,12 @@ vi.mock('@/components/views/useFileConversationView', () => ({
     }
   },
 }))
-/* The followed set (FOL-30): known and empty unless a test says otherwise. */
+/* Membership (§11.8): known, and a member of nothing, unless a test says otherwise. */
 const follows = vi.hoisted(() => ({
-  state: 'present' as 'unknown' | 'absent' | 'present',
+  state: 'known' as 'unknown' | 'known',
   keys: new Set<string>(),
-  setFollowed: vi.fn<(key: string, on: boolean) => Promise<void>>(async () => {}),
+  setMember: vi.fn<(file: string, folder: string, member: boolean) => Promise<void>>(async () => {}),
+  refresh: vi.fn<() => Promise<void>>(async () => {}),
 }))
 const marks = vi.hoisted(() => ({
   file: vi.fn<(address: string | null | undefined) => void>(),
@@ -216,11 +217,11 @@ vi.mock('@/api', async () => ({
   useFileThreads: () => ({ state: threads.state, reload: threads.reload }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
   useTeamUnread: () => ({ unread: {} }),
-  useFollows: () => ({
+  useMembership: () => ({
     state: follows.state,
-    followed: follows.keys,
-    isFollowed: (key: string) => follows.keys.has(key),
-    setFollowed: follows.setFollowed,
+    isMember: (key: string) => follows.keys.has(key),
+    setMember: follows.setMember,
+    refresh: follows.refresh,
   }),
   useWorkspaceDirectory: () => undefined,
   // The Activity column names the file a mention was said on by resolving it.
@@ -326,9 +327,9 @@ beforeEach(() => {
   objects.pending.clear()
   relay.files = [project, topic]
   threads.state = { roots: {}, replies: {} }
-  follows.state = 'present'
+  follows.state = 'known'
   follows.keys = new Set()
-  follows.setFollowed.mockClear()
+  follows.setMember.mockClear()
   marks.file.mockClear()
   marks.container.mockClear()
   marks.thread.mockClear()
@@ -1096,7 +1097,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     expect(openHeaderMenu()).toEqual(['New topic inside', 'Move…', 'Add to Open work'])
   })
 
-  it('the tree row of a bare file has the same menu, and an issue’s row has only Move, Open work and Follow', () => {
+  it('the tree row of a bare file has the same menu, and an issue’s row has only Move, Open work and Join', () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     // The issue as a peer rather than under its collapsed project, so its row is drawn.
     relay.files = [project, bareFile, { ...shipIssue, parentRef: undefined }]
@@ -1111,13 +1112,13 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       'New topic inside',
       'Move…',
       'Add to Open work',
-      'Follow',
+      'Join',
       'Delete',
     ])
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
 
-    // Nothing from the manifest — but Follow and Open work are the reader's, not
-    // the manifest's (FOL-30, FOL-34): any addressable file can be followed or
+    // Nothing from the manifest — but Join and Open work are the reader's, not
+    // the manifest's (§11.8, FOL-34): any addressable file can be joined or
     // put in Open work, a Ship issue included — and moved to another Folder (FOL-45).
     const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
     hover(issueRow)
@@ -1126,7 +1127,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
       'New topic inside',
       'Move…',
       'Add to Open work',
-      'Follow',
+      'Join',
     ])
   })
 
@@ -1239,46 +1240,53 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
 })
 
 /*
-  FOL-30. Follow / unfollow on the file page and on the row, the state visible
-  without hovering: the header's button is pressed when the file is followed,
-  a followed row carries its mark when idle, and both write through the one
-  seam the dots are judged over. Nothing is offered until the relay has said
-  what is followed — a toggle then would write a guess over the person's list.
+  SPEC §11.8. Join / leave and mute on the file page and on the row, the state
+  visible without hovering: the header's button is pressed when the person is a
+  member, a member row carries its mark when idle, and both write through the
+  one seam the dots are judged over. Nothing is offered until the relay has
+  said what the person is a member of — a toggle then would write a guess.
+  There is no mute control: muting is a private list read, not a screen.
 */
-describe('FilePage offers Follow on the header and the row (FOL-30)', () => {
-  it('the header button follows an unfollowed file', () => {
+describe('FilePage offers Join and Leave on the header and the row (§11.8)', () => {
+  it('the header button joins a file the person is not in, in the file’s Folder', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
-    const follow = screen.getByRole('button', { name: 'Follow' })
-    expect(follow).toHaveAttribute('aria-pressed', 'false')
-    fireEvent.click(follow)
-    expect(follows.setFollowed).toHaveBeenCalledWith(ISSUE_ADDRESS, true)
+    const join = screen.getByRole('button', { name: 'Join' })
+    expect(join).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(join)
+    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, true)
+    expect(screen.queryByRole('button', { name: 'Mute' })).toBeNull()
   })
 
-  it('reads pressed for a followed file, and unfollows it', () => {
+  it('reads pressed for a member, and leaves', () => {
     follows.keys = new Set([ISSUE_ADDRESS])
     mount(`/topic/${ISSUE_ADDRESS}`)
-    const unfollow = screen.getByRole('button', { name: 'Unfollow' })
-    expect(unfollow).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(unfollow)
-    expect(follows.setFollowed).toHaveBeenCalledWith(ISSUE_ADDRESS, false)
+    const leave = screen.getByRole('button', { name: 'Leave' })
+    expect(leave).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(leave)
+    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, false)
   })
 
-  it('offers nothing while the relay has not said what is followed', () => {
+  it('has no mute control: muting is not built into the screens (Miky, 2026-10-01)', () => {
+    follows.keys = new Set([ISSUE_ADDRESS])
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    for (const name of ['Mute', 'Unmute']) expect(screen.queryByRole('button', { name })).toBeNull()
+  })
+
+  it('offers nothing while the relay has not said what the person is a member of', () => {
     follows.state = 'unknown'
     mount(`/topic/${ISSUE_ADDRESS}`)
-    expect(screen.queryByRole('button', { name: 'Follow' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Unfollow' })).toBeNull()
+    for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
-  it('a followed row shows its mark when idle, and its menu says Unfollow', () => {
+  it('a member row shows its mark when idle, and its menu says Leave', () => {
     follows.keys = new Set([TOPIC_ADDRESS])
     mount(`/topic/${ISSUE_ADDRESS}`)
     const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
-    expect(row.querySelector('[data-followed]')).not.toBeNull()
+    expect(row.querySelector('[data-member]')).not.toBeNull()
     fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
     fireEvent.click(within(row).getByRole('button', { name: 'More options' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Unfollow' }))
-    expect(follows.setFollowed).toHaveBeenCalledWith(TOPIC_ADDRESS, false)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Leave' }))
+    expect(follows.setMember).toHaveBeenCalledWith(TOPIC_ADDRESS, FOLDER, false)
   })
 })
 
@@ -1463,7 +1471,8 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
       parent: TOPIC_ADDRESS,
       hasState: true,
     })
-    expect(follows.setFollowed).toHaveBeenCalledWith(`30840:${'c'.repeat(64)}:new`, true)
+    // Membership of what you create is the address's: nothing is written for it (§11.8).
+    expect(follows.setMember).not.toHaveBeenCalled()
   })
 
   it('starts a topic inside a Ship project in the team that lists it, not in the project’s record channel', async () => {

@@ -1,7 +1,7 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
-import { fileHasUnread } from './fileUnread'
+import { channelContext, fileContext } from '@estiva-app/conversation'
+import { type StreamFrontier, type StreamTerms, streamHasUnread } from './streamUnread'
 
 /**
  * Is there something new anywhere in a team — SPEC §11.3, FOL-18.
@@ -21,12 +21,13 @@ import { fileHasUnread } from './fileUnread'
  *
  * ## The same judge as the listing's dot
  *
- * Each stream is handed to `fileHasUnread` — the FOL-16 rule, unchanged, with
- * the stream's own marker where that takes the file's. So the team's dot and
- * the per-file dots under it cannot disagree: the team clears exactly when the
- * last file does, the thread frontier propagates the same way (§11.3), your
- * own messages never count, and absence is read by the 90-day horizon (§11.6)
- * for the general stream just as it is for a file's.
+ * Each stream is handed to `streamHasUnread` — SPEC §11.8's rule, from
+ * `@estiva-app/conversation` — with the stream's own marker where that takes
+ * the file's. So the team's dot and the per-file dots under it cannot
+ * disagree: the team clears exactly when the last file does, the thread
+ * frontier propagates the same way (§11.3), your own messages never count,
+ * and absence is read from the day you joined for a file and by the 90-day
+ * horizon (§11.6) for a message that names you in the general stream.
  *
  * ## Which stream a message is in
  *
@@ -41,42 +42,31 @@ import { fileHasUnread } from './fileUnread'
  * project brief, 2026-09-05), and if a tree ever draws one Folder under
  * another, the fold over children is the tree's, from this answer per Folder.
  *
- * ## Only the streams the person follows (FOL-30)
+ * ## Only the streams the person is a member of (SPEC §11.8)
  *
- * The dot exists only for what you follow. Each stream is asked of `followed`
- * by its key — the file's address, or the Folder's own id for the general
- * stream — before it is judged, and an unfollowed stream contributes nothing
- * however new its messages are. Following a Folder follows its general chat;
- * following a file follows that file's talk; neither implies the other. Read
- * state is untouched by this: a marker still moves when the person visits, so
- * following later starts from where they last were.
+ * The dot exists only for what you are a member of. Each stream is asked of
+ * `termsOf` by its key — the file's address, or the Folder's own id for the
+ * general stream — and a stream the person is not a member of, or has muted,
+ * contributes nothing unless a message in it names them. A file's membership
+ * is the fold over its events. A Folder's own chat has no members — a Folder
+ * has nothing to read (Miky, 2026-10-01) — so it lights only for a message
+ * that names the person. Read state is untouched by this: a marker still moves
+ * when the person visits.
  */
 export function teamHasUnread(
   folderId: string,
   messages: readonly StreamMessage[],
-  frontier: {
-    /** One context's merged marker, unix seconds; absent = undefined. */
-    marker: (context: string | undefined) => number | undefined
-    /** Whether the person follows a stream — by file address, or by Folder id for the general one. */
-    followed: (key: string) => boolean
-    /** The viewer's pubkey; their own messages do not count. */
-    me: string | undefined
-    /** Now and the horizon, both unix seconds — the absent-marker rule needs them. */
-    nowSeconds: number
-    horizonSeconds: number
+  frontier: StreamFrontier & {
+    /** The terms a stream is told about on — by file address, or by Folder id for the general one. */
+    termsOf: (key: string) => StreamTerms
+    /** Whether a message names the viewer: it counts through a mute and without a roster. */
+    isMentioned: (messageId: string) => boolean
   },
 ): boolean {
   for (const [key, stream] of streamsOf(folderId, messages)) {
-    if (!frontier.followed(key)) continue
     const context = key === folderId ? channelContext(folderId) : fileContext(key)
-    const unread = fileHasUnread(stream, {
-      file: frontier.marker(context),
-      thread: (root) => frontier.marker(threadContext(root)),
-      me: frontier.me,
-      nowSeconds: frontier.nowSeconds,
-      horizonSeconds: frontier.horizonSeconds,
-    })
-    if (unread) return true
+    if (!context) continue
+    if (streamHasUnread(stream, context, frontier.termsOf(key), frontier, frontier.isMentioned)) return true
   }
   return false
 }
@@ -234,8 +224,8 @@ function statesOf(folders: readonly FolderSummary[]): {
 }
 
 /**
- * Does this Folder hold anything the person follows — the `Followed` filter's
- * Folder-level question (FOL-41).
+ * Does this Folder hold a file the person is a member of — the `Mine`
+ * filter's Folder-level question (FOL-41, CON-19).
  *
  * The sibling of {@link teamHasUnread} and judged over the same messages, so
  * it costs nothing: `useTeamUnread` has already read every Folder's streams to
@@ -246,25 +236,20 @@ function statesOf(folders: readonly FolderSummary[]): {
  *
  * ## What it can and cannot see
  *
- * Following a Folder follows its general chat, so a followed Folder is one of
- * its own answers. Beyond that, a file is visible here only through a message
- * that names it: a followed file with nothing said in it inside the 90-day
- * horizon (§11.6) leaves no trace in these streams and its Folder is not
- * listed. That is the same horizon the dots are judged by, and a file nobody
- * has said anything in has nothing for the filter to lead to — but it is a
- * real limit, not a rounding, and `All` is one click away.
+ * A Folder has nothing to read (Miky, 2026-10-01), so its own chat is never an
+ * answer: only a file the person is a member of is, and a file is visible here
+ * only through a message that names it. A file with nothing said in it inside
+ * the 90-day horizon (§11.6) leaves no trace in these streams and its Folder
+ * is not listed. That is the same horizon the dots are judged by, and a file
+ * nobody has said anything in has nothing for the filter to lead to — but it
+ * is a real limit, not a rounding, and `All` is one click away.
  */
-export function teamHasFollowedStream(
-  folderId: string,
-  messages: readonly StreamMessage[],
-  followed: (key: string) => boolean,
-): boolean {
-  if (followed(folderId)) return true
+export function teamHasMemberStream(messages: readonly StreamMessage[], isMember: (key: string) => boolean): boolean {
   for (const message of messages) {
     for (const address of message.about) {
       // The same test `teamHasUnread` streams by: an `a` that is not an address
       // names no stream, and the message belongs to the general one.
-      if (fileContext(address) !== undefined && followed(address)) return true
+      if (fileContext(address) !== undefined && isMember(address)) return true
     }
   }
   return false

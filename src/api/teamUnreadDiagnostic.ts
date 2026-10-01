@@ -1,9 +1,9 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
+import { channelContext, fileContext } from '@estiva-app/conversation'
 import type { RelayFailureKind } from '@/nostr/relayRead'
-import type { FollowsState } from '@/nostr/useFollowsSync'
-import { fileHasUnread } from './fileUnread'
+import type { MembershipState } from '@/nostr/useMembershipSync'
+import { type StreamTerms, streamHasUnread } from './streamUnread'
 import { streamsOf } from './teamUnread'
 
 /**
@@ -24,12 +24,14 @@ export interface TeamUnreadLoad {
   failure?: RelayFailureKind
 }
 
-/** One followed stream inside a Folder, and why it does or does not light. */
+/** One stream inside a Folder, and why it does or does not light. */
 export interface TeamUnreadStream {
   /** The file's address, or the Folder's id for the general chat. */
   key: string
-  /** Whether the person follows it. An unfollowed stream never lights. */
-  followed: boolean
+  /** Whether the person is a member of it (SPEC §11.8). A stream they are not a member of lights only for a message that names them. */
+  member: boolean
+  /** Whether they muted it. */
+  muted: boolean
   /** Its read-state context, or absent for a key that names no stream. */
   context?: string
   /** The merged marker for that context, ISO, or null for none. */
@@ -51,7 +53,7 @@ export interface TeamUnreadFolder {
   streams: TeamUnreadStream[]
   /** The hook's own answer. `undefined` means no dot is drawn either way. */
   unread?: boolean
-  followed?: boolean
+  member?: boolean
   /** The containers it folds into (FOL-22), and whether each is lit. */
   listedIn: { container: string; unread?: boolean }[]
 }
@@ -68,7 +70,7 @@ export interface TeamUnreadSnapshot {
   lastLoad?: TeamUnreadLoad
   /** The two gates that return an empty map before anything is judged. */
   frontierReady: boolean
-  follows: FollowsState
+  membership: MembershipState
   /** Folders the last read answered for, and when it was taken. */
   held: number
   heldAt: string | null
@@ -86,12 +88,14 @@ export interface TeamUnreadObservation {
   relayState: string
   frontierReady: boolean
   marker: (context: string | undefined) => number | undefined
-  follows: FollowsState
-  isFollowed: (key: string) => boolean
+  merged: Readonly<Record<string, number>>
+  membership: MembershipState
+  termsOf: (key: string) => StreamTerms
+  isMentioned: (messageId: string) => boolean
   me: string | undefined
   held: { at: number; streams: Record<string, StreamMessage[]> }
   horizonSeconds: number
-  result: { unread: Record<string, boolean>; followed: Record<string, boolean> }
+  result: { unread: Record<string, boolean>; member: Record<string, boolean> }
 }
 
 /** What the hook writes to. Every method is safe to call before the first observation. */
@@ -143,7 +147,7 @@ export function teamUnreadProbe(): TeamUnreadProbe {
         loads,
         ...(lastLoad ? { lastLoad } : {}),
         frontierReady: seen?.frontierReady ?? false,
-        follows: seen?.follows ?? ('unknown' as FollowsState),
+        membership: seen?.membership ?? ('unknown' as MembershipState),
         held: seen ? Object.keys(seen.held.streams).length : 0,
         heldAt: seen?.held.at ? iso(seen.held.at) : null,
         lit: seen ? litIn(seen).slice(0, LIT_CAP) : [],
@@ -196,7 +200,7 @@ function explain(id: string, seen: TeamUnreadObservation): TeamUnreadFolder {
     messages: messages?.length ?? 0,
     streams: [],
     unread: seen.result.unread[id],
-    followed: seen.result.followed[id],
+    member: seen.result.member[id],
     listedIn: (summary?.listedIn ?? []).map((container) => ({
       container,
       unread: seen.result.unread[container],
@@ -206,25 +210,26 @@ function explain(id: string, seen: TeamUnreadObservation): TeamUnreadFolder {
   for (const [key, stream] of streamsOf(id, messages)) {
     const context = key === id ? channelContext(id) : fileContext(key)
     const marker = seen.marker(context)
-    const followed = seen.isFollowed(key)
+    const terms = seen.termsOf(key)
     const newest = stream.reduce((latest, message) => (message.at > latest.at ? message : latest))
     report.streams.push({
       key,
-      followed,
+      member: terms.member,
+      muted: terms.muted,
       ...(context === undefined ? {} : { context }),
       marker: marker === undefined ? null : iso(marker),
       messages: stream.length,
       newest: { at: iso(newest.at), by: newest.by.slice(0, 8), mine: newest.by === seen.me },
       // The same call the judge makes, on the same stream — not a second rule.
       unread:
-        followed &&
-        fileHasUnread(stream, {
-          file: marker,
-          thread: (root) => seen.marker(threadContext(root)),
-          me: seen.me,
-          nowSeconds: seen.held.at,
-          horizonSeconds: seen.horizonSeconds,
-        }),
+        context !== undefined &&
+        streamHasUnread(
+          stream,
+          context,
+          terms,
+          { merged: seen.merged, me: seen.me, nowSeconds: seen.held.at, horizonSeconds: seen.horizonSeconds },
+          seen.isMentioned,
+        ),
     })
   }
   return report
@@ -232,7 +237,7 @@ function explain(id: string, seen: TeamUnreadObservation): TeamUnreadFolder {
 
 /**
  * `window.__teamUnread(folder?)` — one entry per mounted hook. Installed at
- * module scope from the api barrel, as `__follows` and `__wideFilters` are,
+ * module scope from the api barrel, as `__membership` and `__wideFilters` are,
  * and not gated on a build flag for the same reason: a diagnostic absent from
  * production is never there when it is needed.
  */
