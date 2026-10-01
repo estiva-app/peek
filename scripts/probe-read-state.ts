@@ -28,21 +28,8 @@
  */
 import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
-import {
-  MAX_BLOB_BYTES,
-  MAX_CLIENT_ID_BYTES,
-  MAX_CONTEXTS_BYTES,
-  advanceContexts,
-  buildReadStateEvent,
-  capContextsToBytes,
-  parseReadStateBlob,
-  readStateDTag,
-  readStateSlotFilter,
-  serializeReadStateBlob,
-  type ReadStateBlob,
-  allSlotsFilter,
-} from '../src/nostr/readState'
-import { mergeSlots, type SlotBlob } from '../src/nostr/readStateMerge'
+import { MAX_BLOB_BYTES, MAX_CLIENT_ID_BYTES, MAX_CONTEXTS_BYTES, advanceContexts, buildReadStateEvent, capContextsToBytes, parseReadStateBlob, readStateDTag, serializeReadStateBlob, type ReadStateBlob, allSlotsFilter, mergeSlots, type SlotBlob } from '@estiva-app/conversation'
+import { readStateSlotFilter } from '../src/nostr/readState'
 
 const ID_ORIGIN = process.env.ESTIVA_ID_ORIGIN ?? 'https://id.estiva.app'
 const RELAY_URL = process.env.RELAY_URL ?? 'https://estiva.estiva.app'
@@ -297,7 +284,7 @@ async function main() {
     const blob: ReadStateBlob = {
       v: 1,
       client_id: 'probe',
-      contexts: advanceContexts({}, { [CONTAINER]: 1_700_000_000, [THREAD]: 1_700_009_999 }),
+      contexts: advanceContexts({}, { [CONTAINER]: 1_700_000_000, [THREAD]: 1_700_009_999 }).contexts,
     }
     const plaintext = serializeReadStateBlob(blob)
     const { ciphertext } = await nip44<{ ciphertext: string }>('encrypt', { plaintext }, t.accessToken)
@@ -320,7 +307,7 @@ async function main() {
   check('slot is empty before the first publish', (await readBack(t)) === undefined)
 
   // --- 1. publish a container marker ----------------------------------------
-  const first = advanceContexts({}, { [CONTAINER]: 1_700_000_000 })
+  const first = advanceContexts({}, { [CONTAINER]: 1_700_000_000 }).contexts
   const published = await publish(first, t, 'probe')
   if (!check('relay accepted the kind:30078 read-state blob', published.accepted, published.reason)) {
     process.exit(1)
@@ -340,7 +327,7 @@ async function main() {
 
   // --- 2. advance a thread; the container must not move ---------------------
   // SPEC §11.2, and the clause this whole ticket is judged on.
-  const second = advanceContexts(afterFirst?.contexts ?? {}, { [THREAD]: 1_700_009_999 })
+  const second = advanceContexts(afterFirst?.contexts ?? {}, { [THREAD]: 1_700_009_999 }).contexts
   const republished = await publish(second, t, 'probe')
   check('relay accepted the second blob', republished.accepted, republished.reason)
 
@@ -357,7 +344,7 @@ async function main() {
   )
 
   // --- 3. monotonic: an older timestamp cannot be expressed ------------------
-  const third = advanceContexts(afterSecond?.contexts ?? {}, { [CONTAINER]: 1 })
+  const third = advanceContexts(afterSecond?.contexts ?? {}, { [CONTAINER]: 1 }).contexts
   check(
     'an older marker does not lower the stored one (§11.4)',
     third[CONTAINER] === 1_700_000_000,

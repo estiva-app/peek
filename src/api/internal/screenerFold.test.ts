@@ -21,7 +21,7 @@ import {
   type ScreenerDm,
   type ScreenerFile,
 } from './screenerFold'
-import { containerContext, threadContext } from '@/nostr/readState'
+import { channelContext, threadContext } from '@estiva-app/conversation'
 import type { StreamMessage } from '@/nostr/channelStreams'
 
 const T = 1_700_000_000_000
@@ -169,7 +169,7 @@ describe('a DM screens while somebody else’s message in it is unread — rule 
       over.openWork ?? new Set(),
       {
         marker: (context) => {
-          if (context === containerContext(CHANNEL)) return over.container
+          if (context === channelContext(CHANNEL)) return over.container
           for (const [root, at] of Object.entries(over.threads ?? {})) if (context === threadContext(root)) return at
           return undefined
         },

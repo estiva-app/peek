@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { containerContext, threadContext } from '@/nostr/readState'
+import { channelContext, threadContext } from '@estiva-app/conversation'
 import { topicChannelFlags } from './topicUnread'
 
 const CHANNEL = '0d1c9f5a-6f7e-4a2b-9c3d-8e5f4a1b2c3d'
@@ -42,7 +42,7 @@ const judge = (
     horizonSeconds: HORIZON,
   })
 
-const CONTAINER = containerContext(CHANNEL) as string
+const CONTAINER = channelContext(CHANNEL) as string
 
 describe('the two signals', () => {
   it('a new ordinary message raises the dot and not the indicator', () => {

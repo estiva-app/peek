@@ -1,9 +1,8 @@
 /**
- * The relay half of read state (CRO-4).
- *
- * Split from `readState.ts` so the grammar stays free of the browser: this file
- * reaches `/sign`, `/nip44/*` and the bridge, and importing any of that from a
- * Node script fails on `import.meta.env` before it fails on anything real.
+ * The relay half of read state (CRO-4): Peek's bridge, `/sign` and `/nip44/*`
+ * plugged into `@estiva-app/conversation`'s grammar. Kept apart from
+ * `readState.ts` because importing the bridge from a Node script fails on
+ * `import.meta.env` before it fails on anything real.
  */
 import type { SignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
@@ -11,23 +10,17 @@ import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { decryptBlob, encryptBlob } from './appData'
 import type { RelaySeam } from './stars'
 import {
-  type ReadStateBlob,
-  READ_STATE_D_PREFIX,
-  type SlotIdentity,
-  PEEK_HORIZON_DAYS,
-  allSlotsFilter,
-  buildReadStateEvent,
-  readStateDTag,
-  parseReadStateBlob,
-  readStateSlotFilter,
-  serializeReadStateBlob,
-} from './readState'
-import {
   type OwnSlotVerdict,
-  type SlotBlob,
+  type QueryFn,
+  type ReadStateBlob,
+  type SlotIdentity,
+  buildReadStateEvent,
   classifyOwnSlots,
-  mergeSlots,
-} from './readStateMerge'
+  fetchReadState,
+  parseReadStateBlob,
+  serializeReadStateBlob,
+} from '@estiva-app/conversation'
+import { PEEK_HORIZON_DAYS, readStateSlotFilter } from './readState'
 
 /** What the relay could tell us about one slot. */
 export interface OwnSlotResult {
@@ -63,7 +56,11 @@ export async function fetchOwnSlot(seam: RelaySeam, slotId: string): Promise<Own
   if (!ok) return { reachable: false }
   const newest = events.sort((a, b) => b.created_at - a.created_at)[0]
   if (!newest) return { reachable: true }
-  return { reachable: true, blob: parseReadStateBlob(await decryptBlob(newest.content, seam.accessToken)) }
+  // A coordinate that holds a blob we cannot read (typically a 429 from
+  // `/nip44/decrypt`) is not an empty one: answering "empty" would let the next
+  // publish replace every marker in it with this session's few.
+  const blob = parseReadStateBlob(await decryptBlob(newest.content, seam.accessToken))
+  return blob ? { reachable: true, blob } : { reachable: false }
 }
 
 /** Encrypt, sign and publish one slot's blob. */
@@ -83,44 +80,6 @@ export async function publishReadState(
   }
   const result = await publishSigned(seam.relayUrl, signed, seam.accessToken, seam.pubkey)
   return { ok: result.ok, eventId: result.eventId, reason: result.reason }
-}
-
-/**
- * Every read-state slot this person owns, within the horizon (CRO-5).
- *
- * Each blob is decrypted individually and a failure is **skipped quietly**: the
- * realistic cause is a blob written under a rotated key, and surfacing it would
- * turn "one old installation is unreadable" into an error on a path whose whole
- * job is to be a best-effort hint. A blob that decrypts but does not validate is
- * dropped by `parseReadStateBlob` for the same reason.
- *
- * Returns `undefined` — distinct from an empty list — when the relay could not
- * be asked. The caller needs that apart from "you have read nothing", or a
- * transient failure renders as every conversation being unread.
- */
-export async function fetchAllSlots(
-  seam: RelaySeam,
-  nowMs: number = Date.now(),
-  horizonDays: number = PEEK_HORIZON_DAYS,
-): Promise<SlotBlob[] | undefined> {
-  const { ok, events } = await queryRelay(
-    seam.relayUrl,
-    [allSlotsFilter(seam.pubkey, nowMs, horizonDays)],
-    seam.accessToken,
-    seam.pubkey,
-  )
-  if (!ok) return undefined
-  const slots: SlotBlob[] = []
-  for (const event of events) {
-    const dTag = event.tags.find((t) => t[0] === 'd')?.[1]
-    // A read-state slot is exactly the §11.6 shape. Anything else answering this
-    // filter is somebody's ordinary kind:30078 that happens to carry the tag.
-    if (!dTag?.startsWith(READ_STATE_D_PREFIX)) continue
-    const blob = parseReadStateBlob(await decryptBlob(event.content, seam.accessToken))
-    if (!blob) continue
-    slots.push({ dTag, eventId: event.id, createdAt: event.created_at, blob })
-  }
-  return slots
 }
 
 /** Everything the read path needs: the frontier, and what the slots say about us. */
@@ -148,10 +107,19 @@ export async function loadMergedReadState(
   nowMs: number = Date.now(),
   horizonDays?: number,
 ): Promise<MergedReadState | undefined> {
-  const slots = await fetchAllSlots(seam, nowMs, horizonDays ?? PEEK_HORIZON_DAYS)
-  if (!slots) return undefined
-  return {
-    merged: mergeSlots(slots),
-    verdict: classifyOwnSlots(slots, identity.clientId, readStateDTag(identity.slotId)),
+  // The package reads, decrypts one slot at a time (`/nip44/decrypt` answers a
+  // burst with 429) and merges; Peek supplies the relay and the decrypt seam.
+  const query: QueryFn = async (filters) => {
+    const { ok, events } = await queryRelay(seam.relayUrl, filters, seam.accessToken, seam.pubkey)
+    if (!ok) throw new Error('relay unreachable')
+    return events
   }
+  const decrypt = async (ciphertext: string) => {
+    const plaintext = await decryptBlob(ciphertext, seam.accessToken)
+    if (plaintext === undefined) throw new Error('could not decrypt')
+    return plaintext
+  }
+  const state = await fetchReadState(query, seam.pubkey, { decrypt }, identity, nowMs, horizonDays ?? PEEK_HORIZON_DAYS)
+  if (!state.reachable) return undefined
+  return { merged: state.merged, verdict: classifyOwnSlots(state.slots, identity) }
 }

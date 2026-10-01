@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { containerContext } from '@/nostr/readState'
+import { channelContext } from '@estiva-app/conversation'
 import {
   type TeamUnreadObservation,
   type TeamUnreadProbe,
@@ -160,7 +160,7 @@ describe('the team unread probe', () => {
       observation({
         isFollowed: (key: string) => key === FILE,
         marker: (context: string | undefined) =>
-          context === containerContext(FOLDER) ? NOW - 30 : undefined,
+          context === channelContext(FOLDER) ? NOW - 30 : undefined,
         held: {
           at: NOW,
           streams: { [FOLDER]: [said('e1', NOW - 60), said('e2', NOW - 10, [FILE])] },
@@ -174,7 +174,7 @@ describe('the team unread probe', () => {
     // Not followed, so it cannot light however new it is — and the marker it
     // would have been judged against is reported anyway.
     expect(general).toMatchObject({ followed: false, unread: false, messages: 1 })
-    expect(general?.context).toBe(containerContext(FOLDER))
+    expect(general?.context).toBe(channelContext(FOLDER))
     expect(general?.marker).toBe(new Date((NOW - 30) * 1_000).toISOString())
 
     const file = streams.find((stream) => stream.key === FILE)

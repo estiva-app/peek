@@ -21,15 +21,8 @@
 import { buildUnsignedAuthEvent, authorizationHeaderFor } from '@estiva-app/protocol'
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { readChannelStreams } from '../src/nostr/channelStreams'
-import {
-  allSlotsFilter,
-  containerContext,
-  fileContext,
-  parseReadStateBlob,
-  PEEK_HORIZON_DAYS,
-  READ_STATE_D_PREFIX,
-} from '../src/nostr/readState'
-import { mergeSlots, type SlotBlob } from '../src/nostr/readStateMerge'
+import { allSlotsFilter, channelContext, fileContext, parseReadStateBlob, READ_STATE_D_PREFIX, mergeSlots, type SlotBlob } from '@estiva-app/conversation'
+import { PEEK_HORIZON_DAYS } from '../src/nostr/readState'
 import { teamHasUnread } from '../src/api/teamUnread'
 import { fileHasUnread } from '../src/api/fileUnread'
 
@@ -172,7 +165,7 @@ async function main() {
     const byStream = new Map<string, typeof messages>()
     for (const m of messages) {
       const files = m.about.map(fileContext).filter((c): c is string => c !== undefined)
-      for (const c of files.length ? files : [containerContext(folder) ?? '(no context)']) {
+      for (const c of files.length ? files : [channelContext(folder) ?? '(no context)']) {
         byStream.set(c, [...(byStream.get(c) ?? []), m])
       }
     }

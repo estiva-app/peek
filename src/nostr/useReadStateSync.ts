@@ -40,16 +40,8 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { validToken } from '@/auth/estivaId'
 import type { RelaySeam } from './stars'
-import {
-  containerContext,
-  fileContext,
-  loadSlotIdentity,
-  rotateSlotId,
-  serializeReadStateBlob,
-  threadContext,
-  toContextSeconds,
-  type SlotIdentity,
-} from './readState'
+import { channelContext, fileContext, serializeReadStateBlob, threadContext, toContextSeconds, type SlotIdentity } from '@estiva-app/conversation'
+import { loadSlotIdentity, rotateSlotId } from './readState'
 import { MAX_PLAINTEXT_BYTES } from './appData'
 import { fetchOwnSlot, loadMergedReadState, publishReadState } from './readStateRelay'
 import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
@@ -286,10 +278,10 @@ export function useReadStateSync(): void {
  *
  * `channelUuid` is the topic's Folder id or the DM's channel uuid. Anything
  * that is not a uuid — a Peek topic id, a DM's partner key, `undefined` — is
- * dropped by {@link containerContext} rather than published.
+ * dropped by `channelContext` rather than published.
  */
 export function recordContainerRead(channelUuid: string | null | undefined, atMs: number): void {
-  const context = containerContext(channelUuid)
+  const context = channelContext(channelUuid)
   if (!context) return
   ensureQueue().record(context, toContextSeconds(atMs))
   frontierChanged()
@@ -482,7 +474,7 @@ export function useMergedReadState(): MergedReadStateView {
  * that matches none of them — which is a defect, not a category.
  */
 export interface ReadStateKeySplit {
-  /** Bare channel uuid (`containerContext`). */
+  /** Bare channel uuid (`channelContext`). */
   container: number
   /** Bare `<kind>:<pubkey>:<d>` address (`fileContext`) — the most expensive. */
   file: number

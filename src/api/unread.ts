@@ -104,10 +104,13 @@ export function useReadActions() {
      * §11.2: this advances the file's own stream and nothing else — not the
      * Folder's channel, whose general chat the person did not read.
      */
-    markFileRead(address: string | null | undefined) {
+    markFileRead(address: string | null | undefined, newestAt?: number) {
       // Gated on the relay, not Convex (REM-2): Convex plays no part here.
       if (!hasRelay) return
-      recordFileRead(address, Date.now())
+      // Up to the newest message the pane drew (unix seconds), not the clock:
+      // the relay may hold one the pane has not drawn yet, and an author whose
+      // clock runs ahead would otherwise stay newer than the marker (PEE-44).
+      recordFileRead(address, newestAt !== undefined ? newestAt * 1000 : Date.now())
     },
   }
 }

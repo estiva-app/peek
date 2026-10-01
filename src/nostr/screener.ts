@@ -54,7 +54,7 @@ import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { BLOB_TAG, MAX_PLAINTEXT_BYTES, assertNotReadState, blobAddress, decryptBlob, encryptBlob } from './appData'
-import { capContextsToBytes } from './readState'
+import { capContextsToBytes } from '@estiva-app/conversation'
 import type { RelaySeam } from './openWork'
 
 /** `estiva-peek:screener:v1` — SPEC §12.2's `<client_id>:<name>:v<n>`. */
