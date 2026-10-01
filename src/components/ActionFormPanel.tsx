@@ -137,6 +137,7 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
   return (
     <>
       {action.fields.map((field) => (
+        // @estiva-escape(no-field-outside-a-form): these are the launcher's fields; CommandLauncher holds them in the package's CommandPaletteForm (UIG-29 P2)
         <Field key={field.key} label={field.label} required={field.required} error={missing[field.key]}>
           {control(field)}
         </Field>
