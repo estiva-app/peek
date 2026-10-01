@@ -63,28 +63,29 @@ export function ArchiveDialog({ title, what, hides, staysVisible = [], onClose, 
         </>
       }
     >
-      <div className="flex flex-col gap-3 text-body-2 text-text-primary">
-        <p>
-          {hides.length
-            ? `This hides the ${what} and ${listOf(hides)} from every list, in Peek and in Ship.`
-            : `This hides the ${what} from every list, in Peek and in Ship.`}
-        </p>
-        {staysVisible.length > 0 && <p>{`${listOf(staysVisible)} stay visible there.`}</p>}
-        <p className="text-text-secondary">
-          Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.
-        </p>
-        {/* The package Form (UIG-7): Ctrl+Enter archives from the resolution; Enter there is a new line. */}
-        <Form id={formId} busy={busy} onSubmit={() => void archive()}>
-          <Field label="Resolution (optional)">
-            <Textarea
-              value={resolution}
-              rows={3}
-              placeholder={`What happened with this ${what}? Shown first to anyone who opens it.`}
-              onChange={(event) => setResolution(event.target.value)}
-            />
-          </Field>
-        </Form>
-      </div>
+      {/* The package Form (UIG-7): Ctrl+Enter archives from the resolution; Enter there is a new line. */}
+      <Form id={formId} busy={busy} onSubmit={() => void archive()}>
+        {/* The words are one block, 8px apart, before the field; the Form puts 24px between them, as MoveDialog does (1 October). */}
+        <div className="flex flex-col gap-2 text-body-2 text-text-primary">
+          <p>
+            {hides.length
+              ? `This hides the ${what} and ${listOf(hides)} from every list, in Peek and in Ship.`
+              : `This hides the ${what} from every list, in Peek and in Ship.`}
+          </p>
+          {staysVisible.length > 0 && <p>{`${listOf(staysVisible)} stay visible there.`}</p>}
+          <p className="text-text-secondary">
+            Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.
+          </p>
+        </div>
+        <Field label="Resolution (optional)">
+          <Textarea
+            value={resolution}
+            rows={3}
+            placeholder={`What happened with this ${what}? Shown first to anyone who opens it.`}
+            onChange={(event) => setResolution(event.target.value)}
+          />
+        </Field>
+      </Form>
     </DialogShell>
   )
 }
