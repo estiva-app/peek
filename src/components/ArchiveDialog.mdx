@@ -7,10 +7,11 @@ import * as ArchiveDialogStories from './ArchiveDialog.stories'
 
 The question asked before archiving a file or a Folder — what goes out of the
 lists with it, counted, and an optional resolution summary — on the package's
-`ConfirmDialog` (FOL-46).
+`DialogShell`, with its field in a `Form` (FOL-46).
 
 **Seen in** — its stories, **A project**, **A topic** and **A Folder**. The
-dialog shell is the package's `ConfirmDialog` and has its stories there.
+dialog shell and the form are the package's `DialogShell` and `Form`, and have
+their stories there.
 
 ## When
 
@@ -50,6 +51,9 @@ import { ArchiveDialog } from '@/components/ArchiveDialog'
   the same thing about the same file. The numbers are interop's, the same in
   every app.
 - **Not destructive.** The confirm is the ordinary one, and the last line says
-  that nothing is deleted and Unarchive brings everything back.
+  that nothing is deleted and Unarchive brings everything back. So, unlike a
+  `ConfirmDialog`, Escape and a press outside both close it.
+- **Its form.** Ctrl+Enter in the resolution archives, and the field and the
+  buttons are switched off while it does.
 - **The resolution field**, optional, shown first to anyone who opens the
   archived file (`ArchivedNotice`).
