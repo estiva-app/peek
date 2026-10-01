@@ -4,7 +4,7 @@ import { Panel } from '@estiva-app/ui'
 import { IconButton } from '@/components/ui/IconButton'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
-import { newestMessageAt, useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
+import { useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { FileWidgetPanel } from '@/components/FileWidgetPanel'
 import {
@@ -16,7 +16,7 @@ import {
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { referenceLink } from '@/lib/referenceLink'
-import { useMarkFileRead } from '@/lib/useMarkRead'
+import { newestMessageAt, useMarkFileRead } from '@/lib/useMarkRead'
 
 /**
  * One file's conversation and its third column, off the relay — what

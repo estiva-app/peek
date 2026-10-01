@@ -48,6 +48,13 @@ export function useMarkRead(dmId: string | null, openThreadId: string | null) {
  * later stayed unread in the other app. A hidden tab marks nothing until it is
  * shown again: a pane in a background tab is not being read.
  */
+/** The latest `createdAt` (unix seconds) across a file's comments and replies, or undefined when there are none. */
+export function newestMessageAt(...lists: readonly (readonly { createdAt: number }[])[]): number | undefined {
+  let newest: number | undefined
+  for (const list of lists) for (const m of list) if (newest === undefined || m.createdAt > newest) newest = m.createdAt
+  return newest
+}
+
 export function useMarkFileRead(address: string | null | undefined, newestAt?: number) {
   const { markFileRead } = useReadActions()
 

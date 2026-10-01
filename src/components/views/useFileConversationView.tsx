@@ -11,6 +11,7 @@ import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
+import { newestMessageAt } from '@/lib/useMarkRead'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { useToast } from '@/lib/toast'
 import {
@@ -476,13 +477,6 @@ export function useFileConversationView({
     ) : undefined
 
   return { conversation: conversationSlot, conversationParts, threadPanel, newestAt }
-}
-
-/** The latest `createdAt` across a file's comments and replies, or undefined when there are none. */
-export function newestMessageAt(...lists: readonly (readonly { createdAt: number }[])[]): number | undefined {
-  let newest: number | undefined
-  for (const list of lists) for (const m of list) if (newest === undefined || m.createdAt > newest) newest = m.createdAt
-  return newest
 }
 
 // ── From the relay's events to what the cards take ──

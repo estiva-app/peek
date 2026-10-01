@@ -990,7 +990,7 @@ describe('FilePage marks the file read, and only the file', () => {
       vi.advanceTimersByTime(READ_DWELL_MS)
     })
     expect(marks.file).toHaveBeenCalledTimes(1)
-    expect(marks.file).toHaveBeenCalledWith(ISSUE_ADDRESS)
+    expect(marks.file.mock.lastCall?.[0]).toBe(ISSUE_ADDRESS)
     expect(marks.container).not.toHaveBeenCalled()
     expect(marks.thread).not.toHaveBeenCalled()
   })
@@ -1000,7 +1000,7 @@ describe('FilePage marks the file read, and only the file', () => {
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS)
     })
-    expect(marks.file).toHaveBeenCalledWith(ISSUE_ADDRESS)
+    expect(marks.file.mock.lastCall?.[0]).toBe(ISSUE_ADDRESS)
     expect(marks.container).not.toHaveBeenCalled()
     expect(marks.thread).not.toHaveBeenCalled()
   })
