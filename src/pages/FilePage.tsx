@@ -1,6 +1,6 @@
 import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { IconArrowUpRight, IconBell, IconBellOff, IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
+import { IconArrowUpRight, IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import { Breadcrumb, Panel, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import { AppShell } from '@/layouts/AppShell'
@@ -297,25 +297,19 @@ export function FilePage() {
     : undefined
 
   /*
-    Join / leave and mute (SPEC §11.8, CON-19): the unread dot exists only for
-    the files the person is a member of, and this is where they say so for the
-    file in front of them. Writing in it, being mentioned or assigned already
-    makes them one; Join is for the rest, Leave is theirs alone to give. The
-    state shows in the button itself (pressed = a member), not on hover.
-    Mute is private and only offered to a member. Absent while the relay has
-    not said what the person is a member of — a toggle then would write a
-    guess, and the seam refuses it anyway.
+    Join / leave (SPEC §11.8, CON-19): the unread dot exists only for the files
+    the person is a member of, and this is where they say so for the file in
+    front of them. Writing in it, being mentioned or assigned already makes
+    them one; Join is for the rest, Leave is theirs alone to give. The state
+    shows in the button itself (pressed = a member), not on hover. Absent while
+    the relay has not said what the person is a member of — a toggle then would
+    write a guess, and the seam refuses it anyway.
   */
   const membership = useMembership()
   const member = file?.address ? membership.isMember(file.address) : false
-  const muted = file?.address ? membership.isMuted(file.address) : false
   const toggleMember =
     file?.address && file.folder && membership.state !== 'unknown'
       ? () => void membership.setMember(file.address!, file.folder!, !member)
-      : undefined
-  const toggleMute =
-    file?.address && member && membership.state !== 'unknown'
-      ? () => void membership.setMuted(file.address!, !muted)
       : undefined
 
   /*
@@ -416,16 +410,6 @@ export function FilePage() {
                       onClick={toggleMember}
                     >
                       {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
-                    </ToolbarButton>
-                  )}
-                  {toggleMute && (
-                    <ToolbarButton
-                      tooltip={muted ? 'Unmute' : 'Mute'}
-                      aria-label={muted ? 'Unmute' : 'Mute'}
-                      pressed={muted}
-                      onClick={toggleMute}
-                    >
-                      {muted ? <IconBellOff size={16} stroke={1.5} /> : <IconBell size={16} stroke={1.5} />}
                     </ToolbarButton>
                   )}
                   {/*

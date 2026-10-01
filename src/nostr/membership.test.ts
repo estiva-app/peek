@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { encodeNpub } from '@estiva-app/protocol'
-import { authorOfAddress, foldMemberships, membershipQueries, rosterFilter, rosterOf } from './membership'
+import { authorOfAddress, foldMemberships, membershipQueries } from './membership'
 
 const ME = 'c'.repeat(64)
 const THEM = 'd'.repeat(64)
@@ -98,17 +98,5 @@ describe('authorOfAddress', () => {
   it('names the author of a file address and nothing else', () => {
     expect(authorOfAddress(MINE)).toBe(ME)
     expect(authorOfAddress(FOLDER)).toBeUndefined()
-  })
-})
-
-describe('the roster — a Folder’s membership', () => {
-  it('asks for the member lists that name the viewer', () => {
-    expect(rosterFilter(ME)).toEqual({ kinds: [39002], '#p': [ME] })
-  })
-
-  it('reads the channel uuid off the list’s d tag', () => {
-    const list = event({ kind: 39002, pubkey: 'f'.repeat(64), tags: [['d', FOLDER.toUpperCase()], ['p', ME]] })
-    const other = event({ kind: 39000, pubkey: 'f'.repeat(64), tags: [['d', 'ignored']] })
-    expect(rosterOf([list, other])).toEqual(new Set([FOLDER]))
   })
 })

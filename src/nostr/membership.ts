@@ -24,17 +24,17 @@
  * viewer's is folded with its root added, dated to the horizon's start —
  * the earliest the viewer could be told about.
  *
- * ## A Folder's general stream is the roster
+ * ## A Folder has nothing to read
  *
- * §11.8 *grain*: a Folder's members are its channel's `kind:39002` member
- * list, which the relay owns. `rosterFilter` finds the lists naming the
- * viewer in one request.
+ * Miky, 2026-10-01: a Folder is not read or unread, so nothing here asks for
+ * its roster and a Folder's own chat is judged by mentions alone. §11.8 allows
+ * an app to light nothing for a stream it has no screen for.
  *
  * ## Mentions
  *
- * A mention breaks through a mute, and it counts in a Folder the viewer is not
- * on the roster of. The messages that name the viewer arrive in the same
- * request, so their ids are kept (`mentioned`).
+ * A mention breaks through a mute, and it counts in a stream the viewer is not
+ * a member of. The messages that name the viewer arrive in the same request,
+ * so their ids are kept (`mentioned`).
  */
 import type { SignedEvent } from '@estiva-app/protocol'
 import {
@@ -52,30 +52,11 @@ import type { RelaySeam } from './stars'
 /** Per filter. Measured on production as the agent, the most-named identity there: 700 events in 90 days. */
 export const MEMBERSHIP_LIMIT = 1000
 
-/** `kind:39002`, a channel's member list (RFC 0.4 §5). */
-export const KIND_CHANNEL_MEMBERS = 39002
-
 const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
 
 /** The three filters that find every file the viewer may be a member of, bounded by the horizon. */
 export function membershipQueries(pubkey: string, nowSeconds: number, limit = MEMBERSHIP_LIMIT): Record<string, unknown>[] {
   return membershipFilters(pubkey, nowSeconds - HORIZON_SECONDS).map((filter) => ({ ...filter, limit }))
-}
-
-/** The Folders whose roster names the viewer — the grain of a general stream. */
-export function rosterFilter(pubkey: string): Record<string, unknown> {
-  return { kinds: [KIND_CHANNEL_MEMBERS], '#p': [pubkey] }
-}
-
-/** The channel uuids a roster event set names the viewer on. */
-export function rosterOf(events: readonly SignedEvent[]): Set<string> {
-  const channels = new Set<string>()
-  for (const event of events) {
-    if (event.kind !== KIND_CHANNEL_MEMBERS) continue
-    const d = event.tags.find((t) => t[0] === 'd')?.[1]
-    if (d) channels.add(d.toLowerCase())
-  }
-  return channels
 }
 
 /** What the relay says the viewer is a member of. */
@@ -125,10 +106,4 @@ export async function fetchMembership(
 ): Promise<MembershipRead | undefined> {
   const { ok, events } = await queryRelay(seam.relayUrl, membershipQueries(seam.pubkey, nowSeconds), seam.accessToken, seam.pubkey)
   return ok ? foldMemberships(seam.pubkey, events, nowSeconds) : undefined
-}
-
-/** The roster read, or `undefined` when the relay did not answer. */
-export async function fetchRoster(seam: RelaySeam): Promise<Set<string> | undefined> {
-  const { ok, events } = await queryRelay(seam.relayUrl, [rosterFilter(seam.pubkey)], seam.accessToken, seam.pubkey)
-  return ok ? rosterOf(events) : undefined
 }

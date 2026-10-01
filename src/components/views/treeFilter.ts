@@ -7,7 +7,7 @@ import type { ForeignObject } from '@estiva-app/interop'
  * hide is judged at two levels with two different sources:
  *
  * - **A Folder** by `useTeamUnread` — the union dot for `unread`, the
- *   companion verdict for `joined`. Both are read for *every* Folder before
+ *   companion verdict for `mine`: files the person is a member of. Both are read for *every* Folder before
  *   any fold opens, so this level is exact and costs nothing: a Folder is
  *   shown when something inside it matches, however deep.
  * - **A row inside an open Folder** by what that Folder's read already holds:
@@ -31,13 +31,13 @@ import type { ForeignObject } from '@estiva-app/interop'
  * the cost the tree exists to avoid (`FolderTree`'s header). The Folder still
  * says something is in there, and `All` opens it.
  */
-export type TreeFilter = 'all' | 'unread' | 'joined'
+export type TreeFilter = 'all' | 'unread' | 'mine'
 
 /** The dropdown's rows, in order. */
 export const TREE_FILTERS: { value: TreeFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'unread', label: 'Unread' },
-  { value: 'joined', label: 'Joined' },
+  { value: 'mine', label: 'Mine' },
 ]
 
 /**

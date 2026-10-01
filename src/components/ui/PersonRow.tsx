@@ -44,10 +44,6 @@ interface PersonRowProps {
    *  of would otherwise look the same, and only the first will ever light. */
   memberAction?: 'join' | 'leave'
   onToggleMember?: () => void
-  /** Adds "Mute" / "Unmute" (private). A muted row is not marked: it lights
-   *  only for a message that names the person. */
-  muteAction?: 'mute' | 'unmute'
-  onToggleMute?: () => void
   /** Adds "Hide conversation" to the more-menu (DMS-6) — DM rows whose hide
    *  can succeed. The same item the conversation header offers. */
   onHideDm?: () => void
@@ -81,8 +77,6 @@ export function PersonRow({
   onToggleOpenWork,
   memberAction,
   onToggleMember,
-  muteAction,
-  onToggleMute,
   onHideDm,
   archiveAction,
   onToggleArchive,
@@ -97,9 +91,8 @@ export function PersonRow({
     !!onMove ||
     !!onHideDm ||
     !!(openWorkAction && onToggleOpenWork) ||
-    !!(memberAction && onToggleMember) ||
-    !!(muteAction && onToggleMute)
-  const isTold = memberAction === 'leave' && muteAction !== 'unmute'
+    !!(memberAction && onToggleMember)
+  const isTold = memberAction === 'leave'
   const [isHovered, setIsHovered] = useState(false)
   /* The menu owns its button since `@estiva-app/ui` 0.10.0, so what this file
      keeps is not a position any more — it is only whether the menu is open,
@@ -181,8 +174,6 @@ export function PersonRow({
               onToggleOpenWork={onToggleOpenWork}
               memberAction={memberAction}
               onToggleMember={onToggleMember}
-              muteAction={muteAction}
-              onToggleMute={onToggleMute}
               onDeleteTopic={onDeleteTopic}
               onHideDm={onHideDm}
               archiveAction={archiveAction}
@@ -204,7 +195,7 @@ export function PersonRow({
         /* A member and nothing new: the quiet mark that says this row can light
            (FOL-30, §11.8). Information, not an affordance — the toggle is in the menu. */
         <div className="w-6 h-6 flex items-center justify-center shrink-0" data-member>
-          <IconBell size={12} stroke={1.5} className="text-text-muted" aria-label="Joined" />
+          <IconBell size={12} stroke={1.5} className="text-text-muted" aria-label="Yours" />
         </div>
       ) : null}
 

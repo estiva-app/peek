@@ -59,7 +59,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   unread: Record<string, boolean>
   /**
    * Whether each Folder holds a stream the person is a member of — the tree's
-   * `Joined` filter (FOL-41, CON-19), judged over the messages already read
+   * `Mine` filter (FOL-41, CON-19), judged over the messages already read
    * for the dots. Same rule about absence as `unread`: a Folder with no entry
    * was not judged, and a filter keeps it rather than hiding it on a guess.
    */
@@ -204,15 +204,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     const me = validToken()?.pubkey
     for (const folder of ids) {
       const messages = placed.streams[folder]
-      /*
-        Judged before the messages are, because half of it does not need them:
-        the roster is a Folder's membership of its general chat, and a Folder
-        nobody has said anything in still answers "yes" to that.
-        `teamHasUnread` below is the opposite — with nothing said there is
-        nothing unread — so it keeps the entry-or-nothing rule and an unasked
-        Folder draws no dot.
-      */
-      memberIn[folder] = teamHasMemberStream(folder, messages ?? [], membership.isMember)
+      memberIn[folder] = teamHasMemberStream(messages ?? [], membership.isMember)
       // Not asked about, or not answered yet: no entry, so no dot either way.
       if (!messages) continue
       unread[folder] = teamHasUnread(folder, messages, {

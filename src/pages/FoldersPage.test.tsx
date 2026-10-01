@@ -482,11 +482,11 @@ describe('FoldersPage filters the column', () => {
     expect(screen.queryByRole('button', { name: /For testing/ })).toBeNull()
   })
 
-  it('Joined reads the other verdict, not the dots', async () => {
+  it('Mine reads the other verdict, not the dots', async () => {
     // Lit, but nothing in it is the person's — the two questions are not the same one.
     teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
     teamUnread.member = { [FOLDER]: false, [TOPIC_CHANNEL]: true }
-    await choose('Joined')
+    await choose('Mine')
     expect(screen.getByRole('button', { name: /For testing/ })).toBeTruthy()
     expect(screen.queryAllByRole('button', { name: /^Folders/ })).toHaveLength(0)
   })

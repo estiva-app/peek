@@ -156,9 +156,7 @@ vi.mock('@/components/views/useFileConversationView', () => ({
 const follows = vi.hoisted(() => ({
   state: 'known' as 'unknown' | 'known',
   keys: new Set<string>(),
-  muted: new Set<string>(),
   setMember: vi.fn<(file: string, folder: string, member: boolean) => Promise<void>>(async () => {}),
-  setMuted: vi.fn<(key: string, on: boolean) => Promise<void>>(async () => {}),
   refresh: vi.fn<() => Promise<void>>(async () => {}),
 }))
 const marks = vi.hoisted(() => ({
@@ -222,9 +220,7 @@ vi.mock('@/api', async () => ({
   useMembership: () => ({
     state: follows.state,
     isMember: (key: string) => follows.keys.has(key),
-    isMuted: (key: string) => follows.muted.has(key),
     setMember: follows.setMember,
-    setMuted: follows.setMuted,
     refresh: follows.refresh,
   }),
   useWorkspaceDirectory: () => undefined,
@@ -333,9 +329,7 @@ beforeEach(() => {
   threads.state = { roots: {}, replies: {} }
   follows.state = 'known'
   follows.keys = new Set()
-  follows.muted = new Set()
   follows.setMember.mockClear()
-  follows.setMuted.mockClear()
   marks.file.mockClear()
   marks.container.mockClear()
   marks.thread.mockClear()
@@ -1251,9 +1245,9 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
   member, a member row carries its mark when idle, and both write through the
   one seam the dots are judged over. Nothing is offered until the relay has
   said what the person is a member of — a toggle then would write a guess.
-  Mute is a member's: it is not offered to someone who is not in the file.
+  There is no mute control: muting is a private list read, not a screen.
 */
-describe('FilePage offers Join and Mute on the header and the row (§11.8)', () => {
+describe('FilePage offers Join and Leave on the header and the row (§11.8)', () => {
   it('the header button joins a file the person is not in, in the file’s Folder', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const join = screen.getByRole('button', { name: 'Join' })
@@ -1272,27 +1266,16 @@ describe('FilePage offers Join and Mute on the header and the row (§11.8)', () 
     expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, false)
   })
 
-  it('mutes a file the person is in, and unmutes it', () => {
+  it('has no mute control: muting is not built into the screens (Miky, 2026-10-01)', () => {
     follows.keys = new Set([ISSUE_ADDRESS])
     mount(`/topic/${ISSUE_ADDRESS}`)
-    fireEvent.click(screen.getByRole('button', { name: 'Mute' }))
-    expect(follows.setMuted).toHaveBeenCalledWith(ISSUE_ADDRESS, true)
-  })
-
-  it('reads pressed for a muted file', () => {
-    follows.keys = new Set([ISSUE_ADDRESS])
-    follows.muted = new Set([ISSUE_ADDRESS])
-    mount(`/topic/${ISSUE_ADDRESS}`)
-    const unmute = screen.getByRole('button', { name: 'Unmute' })
-    expect(unmute).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(unmute)
-    expect(follows.setMuted).toHaveBeenCalledWith(ISSUE_ADDRESS, false)
+    for (const name of ['Mute', 'Unmute']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
   it('offers nothing while the relay has not said what the person is a member of', () => {
     follows.state = 'unknown'
     mount(`/topic/${ISSUE_ADDRESS}`)
-    for (const name of ['Join', 'Leave', 'Mute', 'Unmute']) expect(screen.queryByRole('button', { name })).toBeNull()
+    for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
   it('a member row shows its mark when idle, and its menu says Leave', () => {

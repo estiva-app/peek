@@ -161,18 +161,18 @@ describe('teamHasUnread — only member streams are judged (§11.8)', () => {
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false))).toBe(false)
   })
 
-  it("gates the general stream on the Folder's roster", () => {
+  it('asks the general stream the same question under its Folder’s id', () => {
     const chat = [said('m', NOW - 10)]
     expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOLDER)))).toBe(true)
     expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOL18)))).toBe(false)
   })
 
-  it('is in a file without being on its Folder’s roster, and the other way round', () => {
+  it('judges a file’s stream and the general stream apart', () => {
     const both = [said('chat', NOW - 10), said('m', NOW - 10, [FOL18])]
-    // Chat is new, but only the file is followed: the file lights, and reading it puts the team out.
+    // Chat is new, but only the file is the person's: the file lights, and reading it puts the team out.
     expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOL18)))).toBe(true)
     expect(teamHasUnread(FOLDER, both, frontier({ [FOL18]: NOW }, ME, only(FOL18)))).toBe(false)
-    // The file is new, but only the Folder is followed: the chat lights, and reading the chat puts the team out.
+    // The file is new, but only the chat is: the chat lights, and reading the chat puts the team out.
     expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOLDER)))).toBe(true)
     expect(teamHasUnread(FOLDER, both, frontier({ [FOLDER]: NOW }, ME, only(FOLDER)))).toBe(false)
   })
@@ -185,53 +185,42 @@ describe('teamHasUnread — only member streams are judged (§11.8)', () => {
 })
 
 /*
-  The `Joined` filter's Folder-level question — FOL-41. Judged over the same
+  The `Mine` filter's Folder-level question — FOL-41. Judged over the same
   messages as the dot and with no read of its own, which is what makes the
   filter affordable; what it cannot see is pinned here too, so the limit is a
   test rather than a comment.
 */
-describe('teamHasMemberStream — does this Folder hold anything the person is a member of', () => {
+describe('teamHasMemberStream — does this Folder hold a file the person is a member of', () => {
   const only =
     (...keys: string[]) =>
     (key: string) =>
       keys.includes(key)
 
-  it('is true when the Folder itself is followed — that is its general chat', () => {
-    expect(teamHasMemberStream(FOLDER, [], only(FOLDER))).toBe(true)
+  it('is true when a message names a file the person is a member of', () => {
+    expect(teamHasMemberStream([said('m', NOW - 10, [FOL18])], only(FOL18))).toBe(true)
   })
 
-  it('is true when a message names a followed file', () => {
-    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL18))).toBe(true)
+  it('is false when the talk in it is about files the person is not in', () => {
+    expect(teamHasMemberStream([said('m', NOW - 10, [FOL18])], only(FOL16))).toBe(false)
   })
 
-  it('is false when the talk in it is about files nobody follows', () => {
-    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL16))).toBe(false)
-  })
-
-  /*
-    Chat in a Folder is the Folder's own stream, not a file's, so it answers to
-    following the Folder — the same rule `teamHasUnread` streams by, and the
-    reason the dot does not light for a team whose chat you do not follow.
-  */
-  it('is false when the Folder has chat but the Folder is not followed', () => {
-    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10)], only(FOL18))).toBe(false)
+  /* A Folder has nothing to read (Miky, 2026-10-01): its own chat is not a file, so it is never an answer. */
+  it('is false for a Folder with only chat, whatever the person is a member of', () => {
+    expect(teamHasMemberStream([said('m', NOW - 10)], () => true)).toBe(false)
   })
 
   /*
-    The limit, written down: a followed file that nobody has said anything in
-    leaves no trace in these streams, so its Folder is not one of the answers.
-    `All` is the recovery, and the Folder is one click away in it.
+    The limit, written down: a file the person is in that nobody has said
+    anything in leaves no trace in these streams, so its Folder is not one of
+    the answers. `All` is the recovery, and the Folder is one click away in it.
   */
-  it('cannot see a followed file that has no messages', () => {
-    expect(teamHasMemberStream(FOLDER, [], only(FOL18))).toBe(false)
+  it('cannot see a file the person is in that has no messages', () => {
+    expect(teamHasMemberStream([], only(FOL18))).toBe(false)
   })
 
   /* An `a` that is not an address names no stream — `teamHasUnread`'s rule. */
   it('ignores an `a` that is not an address', () => {
-    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], () => true)).toBe(true)
-    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], only('not-an-address'))).toBe(
-      false,
-    )
+    expect(teamHasMemberStream([said('m', NOW - 10, ['not-an-address'])], () => true)).toBe(false)
   })
 })
 

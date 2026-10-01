@@ -77,12 +77,12 @@ export const FilteredToUnread: Story = {
 }
 
 /**
- * Filtered to what is joined — the other verdict, from the other map, so a
- * lit Folder the person is not a member of is not one of the answers.
+ * Filtered to what is mine — the other verdict, from the other map, so a lit
+ * Folder holding no file the person is a member of is not one of the answers.
  */
-export const FilteredToJoined: Story = {
+export const FilteredToMine: Story = {
   args: {
-    filter: 'joined',
+    filter: 'mine',
     unread: { [folders[0].id]: true },
     member: { [folders[1].id]: true },
   },

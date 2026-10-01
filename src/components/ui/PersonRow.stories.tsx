@@ -70,16 +70,9 @@ export const DmHideable: Story = {
   args: { name: 'Amie Miles', type: 'DM', onHideDm: () => {} },
 }
 
-/** A file the person is a member of, at rest (§11.8): the quiet bell says this row can light; hover swaps it for the menu, whose items read "Leave" and "Mute". */
+/** A file the person is a member of, at rest (§11.8): the quiet bell says this row can light; hover swaps it for the menu, whose item reads "Leave". */
 export const Joined: Story = {
-  args: {
-    name: 'The file route',
-    type: 'file',
-    memberAction: 'leave',
-    onToggleMember: () => {},
-    muteAction: 'mute',
-    onToggleMute: () => {},
-  },
+  args: { name: 'The file route', type: 'file', memberAction: 'leave', onToggleMember: () => {} },
 }
 
 /** A member and unread: the dot wins the slot — the bell is only for a member row with nothing new. */

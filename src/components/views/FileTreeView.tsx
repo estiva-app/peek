@@ -87,7 +87,7 @@ export function FileTreeView({
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined, activity)
   /*
     The same seam the rows' own join controls read, so a row kept by the
-    `Joined` filter and the bell drawn on it cannot disagree in one render.
+    `Mine` filter and the bell drawn on it cannot disagree in one render.
   */
   const { isMember } = useMembership()
 
@@ -218,13 +218,12 @@ function TreeRow({
     Join / leave and mute on the row (SPEC §11.8): the same seam the dot is
     judged over, so a toggle here and the dot beside it agree in the same
     render. A file with no address, or no Folder to name in the change, has no
-    membership to change and is offered nothing. Mute is a member's.
+    membership to change and is offered nothing.
   */
   const membership = useMembership()
   const followKey = file.address
   const isMember = followKey ? membership.isMember(followKey) : false
   const memberAction = followKey && file.folder ? (isMember ? 'leave' : 'join') : undefined
-  const muteAction = followKey && isMember ? (membership.isMuted(followKey) ? 'unmute' : 'mute') : undefined
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
   const openWorkAction = followKey ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
@@ -272,8 +271,6 @@ function TreeRow({
               ? () => void membership.setMember(followKey, file.folder!, memberAction === 'join')
               : undefined
           }
-          muteAction={muteAction}
-          onToggleMute={followKey && muteAction ? () => void membership.setMuted(followKey, muteAction === 'mute') : undefined}
           onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
           /* A listed row is never archived — the listing leaves those out (FOL-46). */
           archiveAction={controls.archive ? 'archive' : undefined}

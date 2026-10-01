@@ -32,8 +32,9 @@ export interface StreamTerms {
  * — which has no body, so whether one *names the viewer* comes from
  * `isMentioned` (the ids the relay's `#p` read returned) and is handed to the
  * package as the body it would have had. Without a marker, a file member is
- * told from the second they joined; a Folder's roster carries no join time, so
- * absence there is the horizon (§11.6).
+ * told from the second they joined; a Folder's own chat has no members here and
+ * lights only for a message that names the viewer, so absence there is the
+ * horizon (§11.6).
  */
 export function streamHasUnread(
   messages: readonly ConversationMessage[],

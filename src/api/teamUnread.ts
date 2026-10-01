@@ -27,7 +27,7 @@ import { type StreamFrontier, type StreamTerms, streamHasUnread } from './stream
  * disagree: the team clears exactly when the last file does, the thread
  * frontier propagates the same way (§11.3), your own messages never count,
  * and absence is read from the day you joined for a file and by the 90-day
- * horizon (§11.6) for the general stream.
+ * horizon (§11.6) for a message that names you in the general stream.
  *
  * ## Which stream a message is in
  *
@@ -48,9 +48,10 @@ import { type StreamFrontier, type StreamTerms, streamHasUnread } from './stream
  * `termsOf` by its key — the file's address, or the Folder's own id for the
  * general stream — and a stream the person is not a member of, or has muted,
  * contributes nothing unless a message in it names them. A file's membership
- * is the fold over its events and a Folder's is its roster; neither implies
- * the other. Read state is untouched by this: a marker still moves when the
- * person visits.
+ * is the fold over its events. A Folder's own chat has no members — a Folder
+ * has nothing to read (Miky, 2026-10-01) — so it lights only for a message
+ * that names the person. Read state is untouched by this: a marker still moves
+ * when the person visits.
  */
 export function teamHasUnread(
   folderId: string,
@@ -223,7 +224,7 @@ function statesOf(folders: readonly FolderSummary[]): {
 }
 
 /**
- * Does this Folder hold anything the person is a member of — the `Joined`
+ * Does this Folder hold a file the person is a member of — the `Mine`
  * filter's Folder-level question (FOL-41, CON-19).
  *
  * The sibling of {@link teamHasUnread} and judged over the same messages, so
@@ -235,20 +236,15 @@ function statesOf(folders: readonly FolderSummary[]): {
  *
  * ## What it can and cannot see
  *
- * A Folder the person is on the roster of is one of its own answers (its
- * general chat is theirs). Beyond that, a file is visible here only through a
- * message that names it: a file with nothing said in it inside the 90-day
- * horizon (§11.6) leaves no trace in these streams and its Folder is not
- * listed. That is the same horizon the dots are judged by, and a file nobody
- * has said anything in has nothing for the filter to lead to — but it is a
- * real limit, not a rounding, and `All` is one click away.
+ * A Folder has nothing to read (Miky, 2026-10-01), so its own chat is never an
+ * answer: only a file the person is a member of is, and a file is visible here
+ * only through a message that names it. A file with nothing said in it inside
+ * the 90-day horizon (§11.6) leaves no trace in these streams and its Folder
+ * is not listed. That is the same horizon the dots are judged by, and a file
+ * nobody has said anything in has nothing for the filter to lead to — but it
+ * is a real limit, not a rounding, and `All` is one click away.
  */
-export function teamHasMemberStream(
-  folderId: string,
-  messages: readonly StreamMessage[],
-  isMember: (key: string) => boolean,
-): boolean {
-  if (isMember(folderId)) return true
+export function teamHasMemberStream(messages: readonly StreamMessage[], isMember: (key: string) => boolean): boolean {
   for (const message of messages) {
     for (const address of message.about) {
       // The same test `teamHasUnread` streams by: an `a` that is not an address

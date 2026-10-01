@@ -248,7 +248,7 @@ export function FolderTreeView({
     return (
       <EmptyState
         scope="section"
-        message={filter === 'unread' ? 'Nothing unread.' : 'Nothing you have joined.'}
+        message={filter === 'unread' ? 'Nothing unread.' : 'Nothing yours yet. Join a file to hear about it.'}
       />
     )
   }

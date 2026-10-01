@@ -10,9 +10,10 @@
  * ## Keys
  *
  * A **file** is a key by its address; a **Folder's general stream** by its
- * uuid. A file's membership is the fold over its events, and a Folder's is the
- * roster, so `termsOf` answers both the same way for a judge: member or not,
- * since when, muted or not.
+ * uuid. A file's membership is the fold over its events. A Folder has nothing
+ * to read (Miky, 2026-10-01), so nobody is a member of its own chat and it
+ * lights only for a message that names the viewer. `termsOf` answers both the
+ * same way for a judge: member or not, since when, muted or not.
  *
  * ## Read it, do not interpret `unknown`
  *
@@ -39,9 +40,8 @@ export interface MembershipSeam {
   state: MembershipState
   /** The viewer's pubkey, or undefined with no live token. */
   me: string | undefined
-  /** Whether the viewer is a member of a file, or on a Folder's roster. For a control; a gate reads `termsOf`. */
+  /** Whether the viewer is a member of a file. For a control; a gate reads `termsOf`. */
   isMember: (key: string) => boolean
-  isMuted: (key: string) => boolean
   termsOf: (key: string) => StreamTerms
   /** Whether a message's content names the viewer: it counts through a mute (§11.8). */
   isMentioned: (messageId: string) => boolean
@@ -49,8 +49,6 @@ export interface MembershipSeam {
   memberFiles: readonly string[]
   /** Join or leave a file; local at once, then published. */
   setMember: (file: string, folder: string, member: boolean) => Promise<void>
-  /** Mute or unmute a file or a Folder's general stream; local at once, then published. */
-  setMuted: (key: string, on: boolean) => Promise<void>
   /** Re-read the relay, e.g. after the viewer wrote in a file. */
   refresh: () => Promise<void>
 }
@@ -61,34 +59,45 @@ const INERT: MembershipSeam = {
   state: 'unknown',
   me: undefined,
   isMember: () => false,
-  isMuted: () => false,
   termsOf: () => NOT_A_MEMBER,
   isMentioned: () => false,
   memberFiles: [],
   setMember: async () => {},
-  setMuted: async () => {},
   refresh: async () => {},
 }
 
 const MembershipContext = createContext<MembershipSeam | null>(null)
 
+/*
+  `validToken()` is null during every silent renewal (PEEK-108). A render in
+  that window must not read the viewer as nobody, or every dot goes out and
+  comes back: the last pubkey seen stands until a token says otherwise.
+*/
+let lastPubkey: string | undefined
+function viewerPubkey(): string | undefined {
+  const pubkey = validToken()?.pubkey
+  if (pubkey) lastPubkey = pubkey
+  return lastPubkey
+}
+
 export function MembershipProvider({ children }: { children: ReactNode }) {
   // Where the relay lives: a build-time value since REM-2, so membership works
   // with Convex unreachable.
   const sync = useMembershipSync(RELAY_URL)
-  const me = validToken()?.pubkey
+  const me = viewerPubkey()
 
   const termsOf = useCallback(
     (key: string): StreamTerms => {
       const muted = sync.muted.has(key)
-      if (fileContext(key) === undefined) return { member: sync.roster.has(key), muted }
+      // A Folder has nothing to read (Miky, 2026-10-01): its own chat is a stream nobody is a member of, so it lights only for a message that names the viewer.
+      if (fileContext(key) === undefined) return { member: false, muted }
       const folded = sync.files.get(key)
       if (folded) return { member: folded.member, since: folded.since, muted }
       // A file the viewer created is theirs unless a leave of theirs says otherwise, and a leave is among the files read.
       if (me && authorOfAddress(key) === me) return { member: true, since: sync.floor, muted }
       return { member: false, muted }
     },
-    [sync.files, sync.roster, sync.muted, sync.floor, me],
+    [sync.files, sync.muted, sync.floor, me],
   )
   const isMentioned = useCallback((id: string) => sync.mentioned.has(id), [sync.mentioned])
   const memberFiles = useMemo(
@@ -105,15 +114,13 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
       state: sync.state,
       me,
       isMember: (key) => termsOf(key).member,
-      isMuted: (key) => sync.muted.has(key),
       termsOf,
       isMentioned,
       memberFiles,
       setMember: sync.setMember,
-      setMuted: sync.setMuted,
       refresh: sync.refresh,
     }),
-    [sync.state, sync.muted, sync.setMember, sync.setMuted, sync.refresh, me, termsOf, isMentioned, memberFiles],
+    [sync.state, sync.setMember, sync.refresh, me, termsOf, isMentioned, memberFiles],
   )
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>
 }

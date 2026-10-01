@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } fro
 import {
   IconArchive,
   IconArrowUpRight,
-  IconBell,
-  IconBellOff,
   IconEdit,
   IconFilter,
   IconFolderPlus,
@@ -31,7 +29,6 @@ import {
   useFolderContents,
   useFolders,
   useForeignObjects,
-  useMembership,
   useTeamUnread,
   useWorkspaceDirectory,
 } from '@/api'
@@ -207,19 +204,6 @@ export function FoldersPage() {
     deleteCheck.ok
 
   /*
-    Mute the Folder itself (SPEC §11.8, CON-19): that is its general stream —
-    the messages in it that name no file. A Folder's members are its roster,
-    which the relay keeps, so there is nothing to join here; what the person
-    can say is that they want to hear nothing from its chat but what names
-    them. Same control as the file page's, keyed by the Folder's uuid, offered
-    to a member and absent until the relay has said what they are a member of.
-  */
-  const membership = useMembership()
-  const muted = id ? membership.isMuted(id) : false
-  const toggleMute =
-    id && membership.isMember(id) && membership.state !== 'unknown' ? () => void membership.setMuted(id, !muted) : undefined
-
-  /*
     Archive the Folder (FOL-46) — the change on its channel address that every
     reader folds, never a `kind:9008`: its contents, its state and its channel
     are untouched, so Unarchive brings back exactly what was there. Offered on
@@ -391,16 +375,6 @@ export function FoldersPage() {
                   >
                     <IconMessagePlus size={16} stroke={1.5} />
                   </ToolbarButton>
-                  {toggleMute && (
-                    <ToolbarButton
-                      tooltip={muted ? 'Unmute' : 'Mute'}
-                      aria-label={muted ? 'Unmute this folder' : 'Mute this folder'}
-                      pressed={muted}
-                      onClick={toggleMute}
-                    >
-                      {muted ? <IconBellOff size={16} stroke={1.5} /> : <IconBell size={16} stroke={1.5} />}
-                    </ToolbarButton>
-                  )}
                   {canArchive && !folderArchive && (
                     <ToolbarButton tooltip="Archive folder" aria-label="Archive folder" onClick={startArchive}>
                       <IconArchive size={16} stroke={1.5} />
