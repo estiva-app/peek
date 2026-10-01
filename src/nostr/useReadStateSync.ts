@@ -278,7 +278,7 @@ export function useReadStateSync(): void {
  *
  * `channelUuid` is the topic's Folder id or the DM's channel uuid. Anything
  * that is not a uuid — a Peek topic id, a DM's partner key, `undefined` — is
- * dropped by {@link containerContext} rather than published.
+ * dropped by `channelContext` rather than published.
  */
 export function recordContainerRead(channelUuid: string | null | undefined, atMs: number): void {
   const context = channelContext(channelUuid)
@@ -474,7 +474,7 @@ export function useMergedReadState(): MergedReadStateView {
  * that matches none of them — which is a defect, not a category.
  */
 export interface ReadStateKeySplit {
-  /** Bare channel uuid (`containerContext`). */
+  /** Bare channel uuid (`channelContext`). */
   container: number
   /** Bare `<kind>:<pubkey>:<d>` address (`fileContext`) — the most expensive. */
   file: number

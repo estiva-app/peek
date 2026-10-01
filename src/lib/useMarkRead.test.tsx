@@ -22,14 +22,18 @@ describe('useMarkFileRead (PEE-44)', () => {
     markFileRead.mockClear()
     setHidden(false)
   })
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    // Back to jsdom's own getter, so no later test reads the stub.
+    delete (document as { hidden?: boolean }).hidden
+  })
 
   it('marks the file after the dwell, not on open', () => {
     renderHook(() => useMarkFileRead(FILE, 100))
     vi.advanceTimersByTime(1499)
     expect(markFileRead).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
-    expect(markFileRead).toHaveBeenCalledWith(FILE)
+    expect(markFileRead).toHaveBeenCalledWith(FILE, 100)
   })
 
   it('marks again when a message arrives while the file is open', () => {

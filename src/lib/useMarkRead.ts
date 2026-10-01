@@ -56,7 +56,7 @@ export function useMarkFileRead(address: string | null | undefined, newestAt?: n
     let t: ReturnType<typeof setTimeout> | undefined
     const arm = () => {
       clearTimeout(t)
-      if (!document.hidden) t = setTimeout(() => markFileRead(address), READ_DWELL_MS)
+      if (!document.hidden) t = setTimeout(() => markFileRead(address, newestAt), READ_DWELL_MS)
     }
     arm()
     document.addEventListener('visibilitychange', arm)
