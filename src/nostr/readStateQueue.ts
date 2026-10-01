@@ -29,8 +29,7 @@
  * inside the budget at every step, and what the cap has cost is on the
  * diagnostic rather than in a log line: `evicted.total`.
  */
-import type { ReadStateBlob } from './readState'
-import { MAX_CONTEXTS_BYTES, advanceContexts, advanceContextsWithCap } from './readState'
+import { type ReadStateBlob, MAX_CONTEXTS_BYTES, advanceContexts } from '@estiva-app/conversation'
 
 /** Long enough to batch a burst of navigation, short enough to survive a tab close. */
 export const READ_STATE_DEBOUNCE_MS = 3000
@@ -151,7 +150,7 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
     updates: Record<string, number>,
     held: Record<string, number>,
   ): Record<string, number> {
-    const result = advanceContextsWithCap(current, updates)
+    const result = advanceContexts(current, updates)
     bytes = result.bytes
     const lost = result.evicted.filter((key) => held[key] !== undefined)
     if (lost.length > 0) {
@@ -204,7 +203,7 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
     // session.
     if (advanced[contextId] === known[contextId]) return
     known = advanced
-    pending = advanceContexts(pending, { [contextId]: seconds })
+    pending = advanceContexts(pending, { [contextId]: seconds }).contexts
     schedule()
   }
 
@@ -253,7 +252,7 @@ export function createReadStateQueue(opts: ReadStateQueueOptions): ReadStateQueu
         note('rejected')
         // Put them back, so a failed publish retries on the next marker or flush
         // rather than losing the markers it was carrying.
-        pending = advanceContexts(pending, sending)
+        pending = advanceContexts(pending, sending).contexts
       }
     })
     return inFlight

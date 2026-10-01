@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createReadStateQueue } from './readStateQueue'
-import type { ReadStateBlob } from './readState'
+import { type ReadStateBlob } from '@estiva-app/conversation'
 
 const UUID = 'b7c1e0a4-2f3d-4a86-9c15-8d0e6f2a4b91'
 const OTHER_UUID = 'c8d2f1b5-3a4e-4b97-8d26-9e1f7a3b5c02'

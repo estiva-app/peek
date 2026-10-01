@@ -1,5 +1,5 @@
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { containerContext, threadContext } from '@/nostr/readState'
+import { channelContext, threadContext } from '@estiva-app/conversation'
 import { fileHasUnread } from './fileUnread'
 
 /**
@@ -21,7 +21,7 @@ import { fileHasUnread } from './fileUnread'
  * is the one conversation the person opens, and opening it advances the
  * channel's marker and only that (`useReadActions`.`markContainerRead` →
  * `recordContainerRead(folderId)`). So every message here is judged against
- * `containerContext(channelUuid)`, including one that happens to carry an
+ * `channelContext(channelUuid)`, including one that happens to carry an
  * `a` — honouring the `a` would open a stream with a marker that nothing in
  * Peek ever advances, and the dot would never clear.
  *
@@ -51,7 +51,7 @@ export function topicChannelFlags(
     horizonSeconds: number
   },
 ): { unread: boolean; urgent: boolean } {
-  const container = frontier.marker(containerContext(channelUuid))
+  const container = frontier.marker(channelContext(channelUuid))
   const judge = (subset: readonly StreamMessage[]) =>
     subset.length > 0 &&
     fileHasUnread(subset, {

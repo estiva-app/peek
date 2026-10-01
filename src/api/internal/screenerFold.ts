@@ -20,7 +20,7 @@
 import type { ScreenerItem } from '@/api/types'
 import { fileHasUnread } from '@/api/fileUnread'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
-import { containerContext, threadContext } from '@/nostr/readState'
+import { channelContext, threadContext } from '@estiva-app/conversation'
 import type { StreamMessage } from '@/nostr/channelStreams'
 
 export interface ScreenerDecisions {
@@ -181,7 +181,7 @@ export function foldDmScreenerRows(
     const key = screenerKey('dm', dm.partner)
     const dismissedAt = decisions.dismissed[key] ?? 0
     const judge = {
-      file: frontier.marker(containerContext(dm.channel)),
+      file: frontier.marker(channelContext(dm.channel)),
       thread: (root: string) => frontier.marker(threadContext(root)),
       me: frontier.me,
       nowSeconds: frontier.nowSeconds,

@@ -1,6 +1,6 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { containerContext, fileContext, threadContext } from '@/nostr/readState'
+import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
 import { fileHasUnread } from './fileUnread'
 
 /**
@@ -68,7 +68,7 @@ export function teamHasUnread(
 ): boolean {
   for (const [key, stream] of streamsOf(folderId, messages)) {
     if (!frontier.followed(key)) continue
-    const context = key === folderId ? containerContext(folderId) : fileContext(key)
+    const context = key === folderId ? channelContext(folderId) : fileContext(key)
     const unread = fileHasUnread(stream, {
       file: frontier.marker(context),
       thread: (root) => frontier.marker(threadContext(root)),

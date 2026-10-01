@@ -4,7 +4,7 @@ import { Panel } from '@estiva-app/ui'
 import { IconButton } from '@/components/ui/IconButton'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
-import { useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
+import { newestMessageAt, useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { FileWidgetPanel } from '@/components/FileWidgetPanel'
 import {
@@ -52,14 +52,6 @@ export function useFileView({
   const conversation = override ?? resolved
   const file = typeof conversation === 'object' && 'ref' in conversation ? conversation : null
 
-  /*
-    The dwell marks this file's own stream and no container (FOL-16). Passing
-    `file?.address` rather than the address asked for is deliberate: an
-    address that resolved to nothing was never read, and marking it would clear
-    a dot for a file the person never saw.
-  */
-  useMarkFileRead(file?.address)
-
   const comments = file?.comments ?? []
   const rootIds = comments.map((comment) => comment.id)
   /*
@@ -92,6 +84,16 @@ export function useFileView({
     onCommented: reload,
   })
   const { state: threads } = useFileThreads(ownView ? null : file?.address, rootIds)
+
+  /*
+    The dwell marks this file's own stream and no container (FOL-16). Passing
+    `file?.address` rather than the address asked for is deliberate: an
+    address that resolved to nothing was never read, and marking it would clear
+    a dot for a file the person never saw. The newest message the pane holds
+    re-arms it, so what arrives while the file is open is read too (PEE-44).
+  */
+  const threadReplies = threads === 'loading' || 'failed' in threads ? [] : Object.values(threads.replies).flat()
+  useMarkFileRead(file?.address, ownView ? peek.newestAt : newestMessageAt(comments, threadReplies))
   /*
     Activity — the comments elsewhere that name this file (CON-11), read by
     `#a` off the relay for a file Peek's own view draws. It takes the third

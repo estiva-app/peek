@@ -77,6 +77,8 @@ interface ViewSlots {
   conversationParts: ConversationParts
   /** The open thread, or nothing. */
   threadPanel: ReactNode | undefined
+  /** The newest message's `createdAt`, so the read dwell re-arms when one arrives (PEE-44). */
+  newestAt: number | undefined
 }
 
 /**
@@ -158,6 +160,8 @@ export function useFileConversationView({
   const isLoading = state === 'loading'
   const failed = typeof state === 'object' && 'failed' in state ? state.failed : null
   const conversation: FileConversation | null = typeof state === 'object' && 'roots' in state ? state : null
+  // The newest message the pane holds: the file's read dwell re-arms when it moves (PEE-44).
+  const newestAt = conversation ? newestMessageAt(conversation.roots, Object.values(conversation.replies).flat()) : undefined
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
   const groups = view ? groupByDay(view.roots) : []
@@ -471,7 +475,14 @@ export function useFileConversationView({
       />
     ) : undefined
 
-  return { conversation: conversationSlot, conversationParts, threadPanel }
+  return { conversation: conversationSlot, conversationParts, threadPanel, newestAt }
+}
+
+/** The latest `createdAt` across a file's comments and replies, or undefined when there are none. */
+export function newestMessageAt(...lists: readonly (readonly { createdAt: number }[])[]): number | undefined {
+  let newest: number | undefined
+  for (const list of lists) for (const m of list) if (newest === undefined || m.createdAt > newest) newest = m.createdAt
+  return newest
 }
 
 // ── From the relay's events to what the cards take ──

@@ -41,14 +41,29 @@ export function useMarkRead(dmId: string | null, openThreadId: string | null) {
  * advanced; the Folder's channel is not, because the person read one file's
  * conversation and not the team's general chat — and the file's frontier
  * reaches its threads on its own (§11.3), so the pane needs no per-thread mark.
+ *
+ * `newestAt` is the newest message the pane holds. When it moves, the dwell
+ * runs again, so a comment that arrives while the file is open is read too —
+ * before PEE-44 the marker stopped 1.5 s after opening and everything said
+ * later stayed unread in the other app. A hidden tab marks nothing until it is
+ * shown again: a pane in a background tab is not being read.
  */
-export function useMarkFileRead(address: string | null | undefined) {
+export function useMarkFileRead(address: string | null | undefined, newestAt?: number) {
   const { markFileRead } = useReadActions()
 
   useEffect(() => {
     if (!address) return
-    const t = setTimeout(() => markFileRead(address), READ_DWELL_MS)
-    return () => clearTimeout(t)
+    let t: ReturnType<typeof setTimeout> | undefined
+    const arm = () => {
+      clearTimeout(t)
+      if (!document.hidden) t = setTimeout(() => markFileRead(address), READ_DWELL_MS)
+    }
+    arm()
+    document.addEventListener('visibilitychange', arm)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('visibilitychange', arm)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address])
+  }, [address, newestAt])
 }

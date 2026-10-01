@@ -31,7 +31,8 @@
 import type { SignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
 import { queryRelay } from './bridge'
-import { fileContext, PEEK_HORIZON_DAYS } from './readState'
+import { fileContext } from '@estiva-app/conversation'
+import { PEEK_HORIZON_DAYS } from './readState'
 import type { RelaySeam } from './stars'
 
 /** Ship's change kind (`kind:1851`) — `@estiva-app/protocol` has no name for it yet. */

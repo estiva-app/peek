@@ -1,6 +1,6 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { containerContext, fileContext, threadContext } from '@/nostr/readState'
+import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
 import type { RelayFailureKind } from '@/nostr/relayRead'
 import type { FollowsState } from '@/nostr/useFollowsSync'
 import { fileHasUnread } from './fileUnread'
@@ -204,7 +204,7 @@ function explain(id: string, seen: TeamUnreadObservation): TeamUnreadFolder {
   }
   if (!messages) return report
   for (const [key, stream] of streamsOf(id, messages)) {
-    const context = key === id ? containerContext(id) : fileContext(key)
+    const context = key === id ? channelContext(id) : fileContext(key)
     const marker = seen.marker(context)
     const followed = seen.isFollowed(key)
     const newest = stream.reduce((latest, message) => (message.at > latest.at ? message : latest))

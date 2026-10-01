@@ -11,23 +11,19 @@ import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { decryptBlob, encryptBlob } from './appData'
 import type { RelaySeam } from './stars'
 import {
+  type OwnSlotVerdict,
   type ReadStateBlob,
   READ_STATE_D_PREFIX,
+  type SlotBlob,
   type SlotIdentity,
-  PEEK_HORIZON_DAYS,
   allSlotsFilter,
   buildReadStateEvent,
-  readStateDTag,
-  parseReadStateBlob,
-  readStateSlotFilter,
-  serializeReadStateBlob,
-} from './readState'
-import {
-  type OwnSlotVerdict,
-  type SlotBlob,
   classifyOwnSlots,
   mergeSlots,
-} from './readStateMerge'
+  parseReadStateBlob,
+  serializeReadStateBlob,
+} from '@estiva-app/conversation'
+import { PEEK_HORIZON_DAYS, readStateSlotFilter } from './readState'
 
 /** What the relay could tell us about one slot. */
 export interface OwnSlotResult {
@@ -152,6 +148,6 @@ export async function loadMergedReadState(
   if (!slots) return undefined
   return {
     merged: mergeSlots(slots),
-    verdict: classifyOwnSlots(slots, identity.clientId, readStateDTag(identity.slotId)),
+    verdict: classifyOwnSlots(slots, identity),
   }
 }
