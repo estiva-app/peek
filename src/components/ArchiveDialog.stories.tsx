@@ -6,7 +6,7 @@ const noop = () => {}
 /**
  * The question before archiving a file or a Folder (FOL-46): what goes with
  * it, counted, and an optional resolution. The shell is the package's
- * `ConfirmDialog`; these show Peek's words.
+ * `DialogShell` with a `Form`; these show Peek's words.
  */
 const meta = {
   title: 'Overlays/ArchiveDialog',

@@ -31,6 +31,30 @@ describe('ArchiveDialog', () => {
     expect(onArchive).toHaveBeenCalledWith('Shipped in 0.37.')
   })
 
+  it('archives from the resolution with Ctrl+Enter, and closes when it is done', async () => {
+    const onArchive = vi.fn(async () => true)
+    const onClose = vi.fn()
+    render(<ArchiveDialog title="T" what="topic" hides={[]} onClose={onClose} onArchive={onArchive} />)
+    await userEvent.type(screen.getByLabelText('Resolution (optional)'), 'Merged{Control>}{Enter}{/Control}')
+    expect(onArchive).toHaveBeenCalledWith('Merged')
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('stays open when the archive is refused', async () => {
+    const onClose = vi.fn()
+    render(<ArchiveDialog title="T" what="topic" hides={[]} onClose={onClose} onArchive={async () => false} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Archive topic' }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Archive topic' })).toBeEnabled()
+  })
+
+  it('closes on Escape, even with the cursor in the resolution', async () => {
+    const onClose = vi.fn()
+    render(<ArchiveDialog title="T" what="topic" hides={[]} onClose={onClose} onArchive={async () => true} />)
+    await userEvent.type(screen.getByLabelText('Resolution (optional)'), 'half a thought{Escape}')
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('hides only the file when nothing is under it', () => {
     render(<ArchiveDialog title="T" what="topic" hides={[]} onClose={() => {}} onArchive={async () => true} />)
     expect(screen.getByText('This hides the topic from every list, in Peek and in Ship.')).toBeInTheDocument()
