@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FolderSummary } from '@estiva-app/interop'
-import { useFollows } from '@/api'
+import { useMembership } from '@/api'
 import { validToken } from '@/auth/estivaId'
 import { useLiveClient } from '@/nostr/useLiveClient'
 import { relayFailureKind } from '@/nostr/relayRead'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { type TeamUnreadProbe, type TeamUnreadTrigger, teamUnreadProbe } from './teamUnreadDiagnostic'
-import { placeStreams, teamHasFollowedStream, teamHasUnread, unlistedFiles } from './teamUnread'
+import { placeStreams, teamHasMemberStream, teamHasUnread, unlistedFiles } from './teamUnread'
 import { onChannelStoreDelivery, onChannelStoreRead, useChannelStreams } from './useChannelStreams'
 import { useFileParents } from './useFileParents'
 
@@ -58,12 +58,12 @@ const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
 export function useTeamUnread(folders: readonly FolderSummary[] | null | undefined): {
   unread: Record<string, boolean>
   /**
-   * Whether each Folder holds a stream the person follows — the tree's
-   * `Followed` filter (FOL-41), judged over the messages already read for the
-   * dots. Same rule about absence as `unread`: a Folder with no entry was not
-   * judged, and a filter keeps it rather than hiding it on a guess.
+   * Whether each Folder holds a stream the person is a member of — the tree's
+   * `Joined` filter (FOL-41, CON-19), judged over the messages already read
+   * for the dots. Same rule about absence as `unread`: a Folder with no entry
+   * was not judged, and a filter keeps it rather than hiding it on a guess.
    */
-  followed: Record<string, boolean>
+  member: Record<string, boolean>
   /**
    * How many times the socket has reported something said in each Folder, or
    * in a Folder it lists — a number that changes, for an open section's rows
@@ -72,7 +72,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   activity: Record<string, number>
 } {
   const frontier = useReadFrontier()
-  const follows = useFollows()
+  const membership = useMembership()
   // For the probe only: the store holds the socket now, and this says what it is doing.
   const { live, relayState } = useLiveClient()
 
@@ -195,28 +195,30 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   */
   const judged = useMemo(() => {
     const unread: Record<string, boolean> = {}
-    const followedIn: Record<string, boolean> = {}
+    const memberIn: Record<string, boolean> = {}
     // Not judged until the first merge has landed: before that every marker is
     // absent, and "absent" would light the whole sidebar. Nor until the relay
-    // has said what the person follows (FOL-30): an unknown set is not an
-    // empty one, and judging over it would put every dot out and then relight.
-    if (!frontier.ready || follows.state === 'unknown') return { unread, followed: followedIn }
+    // has said what the person is a member of (§11.8): an unknown set is not
+    // an empty one, and judging over it would put every dot out and then relight.
+    if (!frontier.ready || membership.state === 'unknown') return { unread, member: memberIn }
     const me = validToken()?.pubkey
     for (const folder of ids) {
       const messages = placed.streams[folder]
       /*
         Judged before the messages are, because half of it does not need them:
-        following the Folder follows its general chat, and a Folder nobody has
-        said anything in still answers "yes" to that. `teamHasUnread` below is
-        the opposite — with nothing said there is nothing unread — so it keeps
-        the entry-or-nothing rule and an unasked Folder draws no dot.
+        the roster is a Folder's membership of its general chat, and a Folder
+        nobody has said anything in still answers "yes" to that.
+        `teamHasUnread` below is the opposite — with nothing said there is
+        nothing unread — so it keeps the entry-or-nothing rule and an unasked
+        Folder draws no dot.
       */
-      followedIn[folder] = teamHasFollowedStream(folder, messages ?? [], follows.isFollowed)
+      memberIn[folder] = teamHasMemberStream(folder, messages ?? [], membership.isMember)
       // Not asked about, or not answered yet: no entry, so no dot either way.
       if (!messages) continue
       unread[folder] = teamHasUnread(folder, messages, {
-        marker: frontier.marker,
-        followed: follows.isFollowed,
+        merged: frontier.merged,
+        termsOf: membership.termsOf,
+        isMentioned: membership.isMentioned,
         me,
         nowSeconds: placed.at,
         horizonSeconds: HORIZON_SECONDS,
@@ -234,17 +236,17 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       if (!folder.listedIn) continue
       /*
         The same travel for both verdicts, and for the same reason: a topic is
-        a channel of its own placed in its team, so a team that holds a
-        followed topic holds something followed, exactly as it holds something
-        unread. Only a confident "yes" travels.
+        a channel of its own placed in its team, so a team that holds a topic
+        the person is on holds something of theirs, exactly as it holds
+        something unread. Only a confident "yes" travels.
       */
       for (const container of folder.listedIn) {
         if (unread[folder.id]) unread[container] = true
-        if (followedIn[folder.id]) followedIn[container] = true
+        if (memberIn[folder.id]) memberIn[container] = true
       }
     }
-    return { unread, followed: followedIn }
-  }, [placed, frontier, follows.state, follows.isFollowed, ids, folders])
+    return { unread, member: memberIn }
+  }, [placed, frontier, membership.state, membership.isMember, membership.termsOf, membership.isMentioned, ids, folders])
 
   /*
     Handed over after the commit, not during the render that produced it: the
@@ -259,14 +261,16 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       relayState,
       frontierReady: frontier.ready,
       marker: frontier.marker,
-      follows: follows.state,
-      isFollowed: follows.isFollowed,
+      merged: frontier.merged,
+      membership: membership.state,
+      termsOf: membership.termsOf,
+      isMentioned: membership.isMentioned,
       me: validToken()?.pubkey,
       held: { at: placed.at, streams: placed.streams },
       horizonSeconds: HORIZON_SECONDS,
       result: judged,
     })
-  }, [ids, folders, live, relayState, frontier, follows.state, follows.isFollowed, placed, judged])
+  }, [ids, folders, live, relayState, frontier, membership.state, membership.termsOf, membership.isMentioned, placed, judged])
 
   /*
     A topic or a project's conversation channel is a Folder of its own placed

@@ -67,7 +67,7 @@ const INERT_FILES: OpenWorkFiles = { has: () => false, add: () => {}, remove: ()
 /**
  * Open work for files — the file page's and the tree row's Add/Remove (FOL-34).
  *
- * Its own seam, like `useFollows`, rather than two more `usePeekActions` verbs:
+ * Its own seam, like `useMembership`, rather than two more `usePeekActions` verbs:
  * the list is the relay's alone (no Convex dual-write for a file), and a tree
  * row mounted without the provider — a story, a test — gets an inert value
  * instead of a throw, so the row can still be drawn on its own.

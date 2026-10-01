@@ -298,7 +298,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
 
 /**
  * Seam-internal, and `null` outside the provider rather than a throw — for a
- * control on a row that a story or a test mounts on its own (`useFollows`'s rule).
+ * control on a row that a story or a test mounts on its own (`useMembership`'s rule).
  */
 export function useOpenWorkIfMounted(): OpenWorkValue | null {
   return useContext(OpenWorkContext)

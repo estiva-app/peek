@@ -16,11 +16,15 @@ const api = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api', () => ({
-  useFollows: () => ({ state: 'present', isFollowed: () => true }),
+  useMembership: () => ({
+    state: 'known',
+    termsOf: () => ({ member: true, muted: false }),
+    isMentioned: () => false,
+  }),
   useForeignObjects: () => ({ conversations: api.conversations }),
 }))
 vi.mock('@/nostr/useReadStateSync', () => ({
-  useReadFrontier: () => ({ ready: true, marker: () => undefined }),
+  useReadFrontier: () => ({ ready: true, marker: () => undefined, merged: {} }),
 }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
 vi.mock('./useChannelStreams', () => ({

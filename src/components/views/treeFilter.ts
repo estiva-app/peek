@@ -7,7 +7,7 @@ import type { ForeignObject } from '@estiva-app/interop'
  * hide is judged at two levels with two different sources:
  *
  * - **A Folder** by `useTeamUnread` — the union dot for `unread`, the
- *   companion verdict for `followed`. Both are read for *every* Folder before
+ *   companion verdict for `joined`. Both are read for *every* Folder before
  *   any fold opens, so this level is exact and costs nothing: a Folder is
  *   shown when something inside it matches, however deep.
  * - **A row inside an open Folder** by what that Folder's read already holds:
@@ -31,13 +31,13 @@ import type { ForeignObject } from '@estiva-app/interop'
  * the cost the tree exists to avoid (`FolderTree`'s header). The Folder still
  * says something is in there, and `All` opens it.
  */
-export type TreeFilter = 'all' | 'unread' | 'followed'
+export type TreeFilter = 'all' | 'unread' | 'joined'
 
 /** The dropdown's rows, in order. */
 export const TREE_FILTERS: { value: TreeFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'unread', label: 'Unread' },
-  { value: 'followed', label: 'Followed' },
+  { value: 'joined', label: 'Joined' },
 ]
 
 /**
@@ -56,10 +56,10 @@ export function folderMatches(
   filter: TreeFilter,
   folderId: string,
   unread: Record<string, boolean>,
-  followed: Record<string, boolean>,
+  member: Record<string, boolean>,
 ): boolean {
   if (filter === 'all') return true
-  return (filter === 'unread' ? unread : followed)[folderId] === true
+  return (filter === 'unread' ? unread : member)[folderId] === true
 }
 
 /**
@@ -67,22 +67,20 @@ export function folderMatches(
  * own read listed under it.
  *
  * `unread` is the badge map `useConversationBadges` answers, keyed by `ref`
- * and holding an entry only for a followed file whose conversation was read —
- * so `=== true` here is the row's dot, exactly as it is the Folder's above.
- * `followed` is the set from the relay, keyed by address; a row with no
- * address cannot be followed and is never one of its answers.
+ * and holding an entry only for a file whose conversation was read — so
+ * `=== true` here is the row's dot, exactly as it is the Folder's above.
+ * `isMember` is the membership seam, keyed by address; a row with no address
+ * has no membership and is never one of its answers.
  */
 export function fileMatches(
   filter: TreeFilter,
   file: ForeignObject,
   children: readonly ForeignObject[],
   unread: Record<string, boolean> | undefined,
-  followed: ReadonlySet<string>,
+  isMember: (address: string) => boolean,
 ): boolean {
   if (filter === 'all') return true
   const one = (candidate: ForeignObject) =>
-    filter === 'unread'
-      ? unread?.[candidate.ref] === true
-      : !!candidate.address && followed.has(candidate.address)
+    filter === 'unread' ? unread?.[candidate.ref] === true : !!candidate.address && isMember(candidate.address)
   return one(file) || children.some(one)
 }

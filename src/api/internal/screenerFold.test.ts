@@ -28,7 +28,7 @@ const T = 1_700_000_000_000
 
 const NO_DECISIONS = { snoozed: {}, dismissed: {} }
 
-describe('a followed file screens while somebody else’s comment on it is unread (FOL-34)', () => {
+describe('a member file screens while somebody else’s comment on it is unread (FOL-34)', () => {
   const ME = 'me'
   const ADDRESS = `30840:${'b'.repeat(64)}:file-d`
   const S = Math.floor(T / 1000)
@@ -46,7 +46,9 @@ describe('a followed file screens while somebody else’s comment on it is unrea
     comments,
   })
   const frontier = (marker?: number) => ({
-    marker: () => marker,
+    merged: marker === undefined ? {} : { [ADDRESS]: marker },
+    termsOf: () => ({ member: true, muted: false }),
+    isMentioned: () => false,
     me: ME,
     nowSeconds: S + 60,
     horizonSeconds: 90 * 24 * 60 * 60,

@@ -46,12 +46,15 @@ export interface TopicMoreMenuProps {
   openWorkAction?: 'add' | 'remove'
   onToggleOpenWork?: () => void
   /**
-   * Follow or unfollow the file (FOL-30): the unread dot exists only for what
-   * the person follows. Same shape as open work — the label states the
+   * Join or leave the file (SPEC §11.8): the unread dot exists only for what
+   * the person is a member of. Same shape as open work — the label states the
    * direction that will work.
    */
-  followAction?: 'follow' | 'unfollow'
-  onToggleFollow?: () => void
+  memberAction?: 'join' | 'leave'
+  onToggleMember?: () => void
+  /** Mute or unmute it (private): a member's own, so it is offered to a member only. */
+  muteAction?: 'mute' | 'unmute'
+  onToggleMute?: () => void
   onDeleteTopic?: () => void
   /** Adds "New topic inside" — a bare file whose parent is this one (FOL-4). */
   onNewSubTopic?: () => void
@@ -81,8 +84,10 @@ export function TopicMoreMenu({
   onCopyLink,
   openWorkAction,
   onToggleOpenWork,
-  followAction,
-  onToggleFollow,
+  memberAction,
+  onToggleMember,
+  muteAction,
+  onToggleMute,
   onDeleteTopic,
   onNewSubTopic,
   onMove,
@@ -107,8 +112,11 @@ export function TopicMoreMenu({
           onClick={onToggleOpenWork}
         />
       )}
-      {followAction && onToggleFollow && (
-        <MenuItem label={followAction === 'follow' ? 'Follow' : 'Unfollow'} onClick={onToggleFollow} />
+      {memberAction && onToggleMember && (
+        <MenuItem label={memberAction === 'join' ? 'Join' : 'Leave'} onClick={onToggleMember} />
+      )}
+      {muteAction && onToggleMute && (
+        <MenuItem label={muteAction === 'mute' ? 'Mute' : 'Unmute'} onClick={onToggleMute} />
       )}
       {onHideDm && <MenuItem label="Hide conversation" onClick={onHideDm} />}
       {archiveAction && onToggleArchive && (

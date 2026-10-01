@@ -3,7 +3,7 @@ import {
   IconArchive,
   IconArrowUpRight,
   IconBell,
-  IconBellFilled,
+  IconBellOff,
   IconEdit,
   IconFilter,
   IconFolderPlus,
@@ -30,8 +30,8 @@ import {
   useConversationBadges,
   useFolderContents,
   useFolders,
-  useFollows,
   useForeignObjects,
+  useMembership,
   useTeamUnread,
   useWorkspaceDirectory,
 } from '@/api'
@@ -107,7 +107,7 @@ export function FoldersPage() {
     because somebody read the team's chat, and never because this page was
     opened, which reads nothing.
   */
-  const { unread: teamUnread, followed: teamFollowed } = useTeamUnread(folders)
+  const { unread: teamUnread, member: teamMember } = useTeamUnread(folders)
   /* Where a Folder's own control leads — its topic when it is one (FOL-21). */
   const folderPath = useFolderPath()
   /*
@@ -207,15 +207,17 @@ export function FoldersPage() {
     deleteCheck.ok
 
   /*
-    Follow / unfollow the Folder itself (FOL-30): that is its general stream —
-    the messages in it that name no file — and it lights the Folder's dot on
-    its own, as a followed file in it does. Same control as the file page's,
-    keyed by the Folder's uuid, and absent until the relay has said what is
-    followed.
+    Mute the Folder itself (SPEC §11.8, CON-19): that is its general stream —
+    the messages in it that name no file. A Folder's members are its roster,
+    which the relay keeps, so there is nothing to join here; what the person
+    can say is that they want to hear nothing from its chat but what names
+    them. Same control as the file page's, keyed by the Folder's uuid, offered
+    to a member and absent until the relay has said what they are a member of.
   */
-  const follows = useFollows()
-  const followed = id ? follows.isFollowed(id) : false
-  const toggleFollow = id && follows.state !== 'unknown' ? () => void follows.setFollowed(id, !followed) : undefined
+  const membership = useMembership()
+  const muted = id ? membership.isMuted(id) : false
+  const toggleMute =
+    id && membership.isMember(id) && membership.state !== 'unknown' ? () => void membership.setMuted(id, !muted) : undefined
 
   /*
     Archive the Folder (FOL-46) — the change on its channel address that every
@@ -305,7 +307,7 @@ export function FoldersPage() {
         signedOut={signedOut}
         folders={topLevel}
         unread={teamUnread}
-        followed={teamFollowed}
+        member={teamMember}
         filter={filter}
         onFilterChange={setFilter}
         onNewFolder={() => setCreatingFolder(true)}
@@ -389,14 +391,14 @@ export function FoldersPage() {
                   >
                     <IconMessagePlus size={16} stroke={1.5} />
                   </ToolbarButton>
-                  {toggleFollow && (
+                  {toggleMute && (
                     <ToolbarButton
-                      tooltip={followed ? 'Unfollow' : 'Follow'}
-                      aria-label={followed ? 'Unfollow this folder' : 'Follow this folder'}
-                      pressed={followed}
-                      onClick={toggleFollow}
+                      tooltip={muted ? 'Unmute' : 'Mute'}
+                      aria-label={muted ? 'Unmute this folder' : 'Mute this folder'}
+                      pressed={muted}
+                      onClick={toggleMute}
                     >
-                      {followed ? <IconBellFilled size={16} stroke={1.5} /> : <IconBell size={16} stroke={1.5} />}
+                      {muted ? <IconBellOff size={16} stroke={1.5} /> : <IconBell size={16} stroke={1.5} />}
                     </ToolbarButton>
                   )}
                   {canArchive && !folderArchive && (
@@ -523,10 +525,6 @@ export function FoldersPage() {
                   showToast({ label: result.reason, type: 'error' })
                   return false
                 }
-                // You follow what you create (FOL-30). Not awaited: the topic
-                // exists whether or not the follow lands, and its own toggle
-                // is the recovery.
-                void follows.setFollowed(result.address, true)
                 /*
                   Into the topic when it was made from the header, because that
                   is the only report there is: the tree may not be showing the
@@ -607,7 +605,7 @@ export function FoldersPageView({
   signedOut,
   folders,
   unread,
-  followed,
+  member,
   filter,
   onFilterChange,
   onNewFolder,
@@ -626,7 +624,7 @@ export function FoldersPageView({
   /** `null` while the first read is in flight, or when signed out. */
   folders: ComponentProps<typeof FolderTreeView>['folders']
   unread: ComponentProps<typeof FolderTreeView>['unread']
-  followed: ComponentProps<typeof FolderTreeView>['followed']
+  member: ComponentProps<typeof FolderTreeView>['member']
   filter: TreeFilter
   onFilterChange: (next: TreeFilter) => void
   onNewFolder: () => void
@@ -710,7 +708,7 @@ export function FoldersPageView({
             folders={folders}
             signedOut={signedOut}
             unread={unread}
-            followed={followed}
+            member={member}
             filter={filter}
             currentFolder={currentFolder}
             onSelect={onSelect}

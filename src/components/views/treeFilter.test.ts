@@ -25,7 +25,7 @@ describe('folderMatches — All keeps everything', () => {
   and draws no dot, so a filter that kept it would be showing a Folder the
   column is not claiming anything about.
 */
-describe('folderMatches — Unread and Followed read their own map', () => {
+describe('folderMatches — Unread and Joined read their own map', () => {
   it('keeps a lit Folder and drops a dark one', () => {
     expect(folderMatches('unread', FOLDER, { [FOLDER]: true }, {})).toBe(true)
     expect(folderMatches('unread', FOLDER, { [FOLDER]: false }, {})).toBe(false)
@@ -33,17 +33,21 @@ describe('folderMatches — Unread and Followed read their own map', () => {
 
   it('drops a Folder it was told nothing about', () => {
     expect(folderMatches('unread', FOLDER, {}, {})).toBe(false)
-    expect(folderMatches('followed', FOLDER, {}, {})).toBe(false)
+    expect(folderMatches('joined', FOLDER, {}, {})).toBe(false)
   })
 
-  it('does not read the dots for Followed, or the follows for Unread', () => {
-    expect(folderMatches('followed', FOLDER, { [FOLDER]: true }, {})).toBe(false)
+  it('does not read the dots for Joined, or the memberships for Unread', () => {
+    expect(folderMatches('joined', FOLDER, { [FOLDER]: true }, {})).toBe(false)
     expect(folderMatches('unread', FOLDER, {}, { [FOLDER]: true })).toBe(false)
   })
 })
 
 describe('fileMatches — a row, or a child the same read listed', () => {
-  const none = new Set<string>()
+  const none = () => false
+  const only =
+    (...keys: string[]) =>
+    (key: string) =>
+      keys.includes(key)
 
   it('keeps every row under All', () => {
     expect(fileMatches('all', A, [], {}, none)).toBe(true)
@@ -63,15 +67,15 @@ describe('fileMatches — a row, or a child the same read listed', () => {
   */
   it('keeps a row whose listed child matches', () => {
     expect(fileMatches('unread', A, [B], { [B.ref]: true }, none)).toBe(true)
-    expect(fileMatches('followed', A, [B], {}, new Set([B.address!]))).toBe(true)
+    expect(fileMatches('joined', A, [B], {}, only(B.address!))).toBe(true)
   })
 
-  it('keeps a followed row, and drops one that is merely lit', () => {
-    expect(fileMatches('followed', A, [], { [A.ref]: true }, none)).toBe(false)
-    expect(fileMatches('followed', A, [], {}, new Set([A.address!]))).toBe(true)
+  it('keeps a joined row, and drops one that is merely lit', () => {
+    expect(fileMatches('joined', A, [], { [A.ref]: true }, none)).toBe(false)
+    expect(fileMatches('joined', A, [], {}, only(A.address!))).toBe(true)
   })
 
-  it('never matches a row with no address under Followed', () => {
-    expect(fileMatches('followed', anonymous('r'), [], {}, new Set(['r']))).toBe(false)
+  it('never matches a row with no address under Joined', () => {
+    expect(fileMatches('joined', anonymous('r'), [], {}, only('r'))).toBe(false)
   })
 })

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
-import { useFollows, useForeignObjects } from '@/api'
+import { useForeignObjects } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
@@ -121,7 +121,6 @@ export function useFileControls({
 } {
   const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
-  const follows = useFollows()
   const { showToast } = useToast()
   const [dialog, setDialog] = useState<
     | { kind: 'details'; file: ForeignObject; editing: boolean }
@@ -325,8 +324,6 @@ export function useFileControls({
       showToast({ label: result.reason, type: 'error' })
       return false
     }
-    // You follow what you create (FOL-30), as the Folder page's start does.
-    void follows.setFollowed(result.address, true)
     onStarted?.({ address: result.address, title }, parent)
     return true
   }

@@ -25,9 +25,9 @@ installReadStateDiagnostic()
 import { installPromptContextDiagnostic } from '@/nostr/promptContextDiagnostic'
 installPromptContextDiagnostic()
 
-/* `window.__follows()` — see src/nostr/useFollowsSync.ts (FOL-30). Same again. */
-import { installFollowsDiagnostic } from '@/nostr/useFollowsSync'
-installFollowsDiagnostic()
+/* `window.__membership()` — see src/nostr/useMembershipSync.ts (CON-19). Same again. */
+import { installMembershipDiagnostic } from '@/nostr/useMembershipSync'
+installMembershipDiagnostic()
 
 /* `window.__wideFilters()` — see src/nostr/liveTopics.ts (FOL-40). Same again. */
 import { installWideFilterDiagnostic } from '@/nostr/liveTopics'
@@ -52,7 +52,8 @@ export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format
 export { useAvatarSrc } from './avatars'
 export { mentionPeople } from './mentions'
 export { useStarred } from '@/api/internal/starred'
-export { useFollows, type Follows } from '@/api/internal/follows'
+export { useMembership, type MembershipSeam } from '@/api/internal/membership'
+export type { StreamTerms } from '@/api/streamUnread'
 export { PeekDataProvider } from './store'
 export { RELAY_URL, hasRelay } from './relayUrl'
 export {

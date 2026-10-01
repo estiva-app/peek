@@ -21,7 +21,7 @@ import {
   formatDateLabel,
   formatReplyTimestamp,
   useFileConversation,
-  useFollows,
+  useMembership,
   useWorkspaceDirectory,
   type ConversationContainer,
   type ConversationData,
@@ -148,14 +148,14 @@ export function useFileConversationView({
   const { showToast } = useToast()
   const scrollRef = useRef<HTMLDivElement>(null)
   /*
-    You follow what you comment in (FOL-30): a root or a reply of yours puts
-    the file on your list. Not awaited and not reported — the comment is on
-    the relay whether or not the follow lands, and the header's toggle is the
-    recovery.
+    You are a member of what you comment in (SPEC §11.8): a root or a reply of
+    yours makes you one, on the relay's own events, so nothing is written for
+    it. The membership read is asked again so this tab judges the file's dot
+    at once rather than at the next refresh. Not awaited and not reported.
   */
-  const follows = useFollows()
-  const followAfterWrite = () => {
-    if (container?.kind === 'file') void follows.setFollowed(container.address, true)
+  const membership = useMembership()
+  const membershipAfterWrite = () => {
+    if (container?.kind === 'file') void membership.refresh()
   }
 
   const isLoading = state === 'loading'
@@ -258,7 +258,7 @@ export function useFileConversationView({
     if (!attachments) return false
     const result = await actions.comment(text, attachments)
     if (!refuse(result)) return false
-    followAfterWrite()
+    membershipAfterWrite()
     await onCommented?.()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
     // Your own comment always brings you down to it.
@@ -275,7 +275,7 @@ export function useFileConversationView({
     if (!attachments) return false
     const result = await actions.reply(openRoot, text, attachments)
     if (!refuse(result)) return false
-    followAfterWrite()
+    membershipAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).
     if (resolution) setResolution(openRoot.id, true, resolution.message, result.id)
     return true

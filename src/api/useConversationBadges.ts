@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
-import { useFollows, useForeignObjects } from '@/api'
+import { useForeignObjects, useMembership } from '@/api'
 import { validToken } from '@/auth/estivaId'
-import { fileContext, threadContext } from '@estiva-app/conversation'
+import { fileContext } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
-import { fileHasUnread } from './fileUnread'
+import { streamHasUnread } from './streamUnread'
 import { useChannelStreams } from './useChannelStreams'
 
 /**
@@ -45,12 +45,13 @@ import { useChannelStreams } from './useChannelStreams'
  * than Convex, which has no watermark for a file; `fileHasUnread` says how
  * absence is read.
  *
- * ## Only followed files are judged (FOL-30)
+ * ## Only files the person is a member of light a dot (SPEC §11.8)
  *
- * The dot exists only for what you follow. A file the person does not follow
- * has no `unread` entry — not judged, like an unasked one — and the listing
- * draws nothing for it however new its talk is. `counts` is not gated: how
- * much a file holds is the file's fact, not the reader's subscription.
+ * The dot exists only for what you are a member of — created, wrote in, were
+ * mentioned in, were placed on, or joined — and only for what was said since
+ * you joined. A message that names you lights it through a mute; nothing else
+ * does. `counts` is not gated: how much a file holds is the file's fact, not
+ * the reader's membership.
  *
  * ## When it re-reads
  *
@@ -71,7 +72,7 @@ export function useConversationBadges(
   const { conversations } = useForeignObjects()
   const [held, setHeld] = useState<Record<string, ConversationMessage[]>>({})
   const frontier = useReadFrontier()
-  const follows = useFollows()
+  const membership = useMembership()
 
   /*
     Keyed on the addresses, not the array.
@@ -127,25 +128,26 @@ export function useConversationBadges(
       counts[ref] = messages.length
       // Not judged until the first merge has landed: before that every marker
       // is absent, and "absent" would read as "new" for the whole listing.
-      // Nor until the relay has said what the person follows (FOL-30).
-      if (!frontier.ready || follows.state === 'unknown') continue
-      const address = byRef.get(ref)?.address
-      // The dot exists only for what you follow: an unfollowed file is not
-      // judged, and its row draws nothing however new its talk is. The count
-      // above is not gated — "how much is here" is the file's, not the reader's.
-      if (!address || !follows.isFollowed(address)) continue
-      unread[ref] = fileHasUnread(messages, {
-        file: frontier.marker(fileContext(address)),
-        thread: (root) => frontier.marker(threadContext(root)),
-        me,
-        nowSeconds,
-        horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
-      })
+      // Nor until the relay has said what the person is a member of (§11.8).
+      if (!frontier.ready || membership.state === 'unknown') continue
+      const context = fileContext(byRef.get(ref)?.address)
+      // The dot exists only for what you are a member of, or are mentioned
+      // in: a file the person has no part in judges false however new its talk
+      // is. The count above is not gated — "how much is here" is the file's,
+      // not the reader's.
+      if (!context) continue
+      unread[ref] = streamHasUnread(
+        messages,
+        context,
+        membership.termsOf(context),
+        { merged: frontier.merged, me, nowSeconds, horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60 },
+        membership.isMentioned,
+      )
     }
     return { counts, unread }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [held, frontier, follows.state, follows.isFollowed, key])
+  }, [held, frontier, membership.state, membership.termsOf, membership.isMentioned, key])
 }
 
 /**

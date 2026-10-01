@@ -13,14 +13,15 @@
  * be tested against a snooze without waiting for it.
  *
  * Both halves are folded: rule 1 (a DM) from the channel store since CON-14,
- * and a followed file from its conversation since FOL-34. Rules 2 and 3 and the
+ * and a member file from its conversation since FOL-34. Rules 2 and 3 and the
  * refresh rule judged Convex topics from `screener.candidates`, and went with
  * them (FOL-23).
  */
 import type { ScreenerItem } from '@/api/types'
 import { fileHasUnread } from '@/api/fileUnread'
+import { type StreamFrontier, type StreamTerms, streamHasUnread } from '@/api/streamUnread'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
-import { channelContext, threadContext } from '@estiva-app/conversation'
+import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
 import type { StreamMessage } from '@/nostr/channelStreams'
 
 export interface ScreenerDecisions {
@@ -29,7 +30,7 @@ export interface ScreenerDecisions {
 }
 
 /**
- * A followed file and its comments, as the relay answered them (FOL-34).
+ * A member file and its comments, as the relay answered them (FOL-34).
  *
  * `comments` is the file's own conversation — what `resolveObject` reads by
  * `#a`, top-level comments only, in any order. That is the same stream the
@@ -43,13 +44,12 @@ export interface ScreenerFile {
   comments: readonly { id: string; author: string; body: string; createdAt: number }[]
 }
 
-/** What the file half is judged against — `fileHasUnread`'s inputs, less the messages. */
-export interface ScreenerFileFrontier {
-  /** A file's merged marker (`fileContext(address)`), unix seconds; absent = undefined. */
-  marker: (address: string) => number | undefined
-  me: string | undefined
-  nowSeconds: number
-  horizonSeconds: number
+/** What the file half is judged against — `streamHasUnread`'s inputs, less the messages. */
+export interface ScreenerFileFrontier extends StreamFrontier {
+  /** The terms a file is told about on, by address (SPEC §11.8). */
+  termsOf: (address: string) => StreamTerms
+  /** Whether a comment names the viewer: it counts through a mute. */
+  isMentioned: (commentId: string) => boolean
 }
 
 export type FoldedFileItem = Extract<ScreenerItem, { kind: 'file' }>
@@ -62,13 +62,14 @@ export interface FoldedFileRow {
 }
 
 /**
- * Fold followed files into Screener rows, newest first (FOL-34).
+ * Fold member files into Screener rows, newest first (FOL-34, CON-19).
  *
- * **The rule is the dot's rule.** A file the viewer follows screens while a
- * comment somebody else wrote on it is unread — `fileHasUnread`, unchanged —
- * and the newest such comment is the preview. Following is the person asking
- * for exactly this, which is why no rule-2-style "never opened" gate applies:
- * that gate exists to keep *unasked-for* topics quiet once looked at. Reading
+ * **The rule is the dot's rule.** A file the viewer is a member of screens
+ * while a comment somebody else wrote on it since they joined is unread —
+ * `streamHasUnread`, SPEC §11.8 — and the newest such comment is the preview.
+ * Membership is the person being involved, which is why no rule-2-style "never
+ * opened" gate applies: that gate exists to keep *unasked-for* topics quiet
+ * once looked at. Reading
  * the file advances its marker and retires the row on the next render, with no
  * write, which is the property rule 2 has for topics.
  *
@@ -88,14 +89,9 @@ export function foldFileScreenerRows(
     if (openWorkAddresses.has(file.address)) continue
     const key = screenerKey('file', file.address)
     const dismissedAt = decisions.dismissed[key] ?? 0
-    const judge = {
-      file: frontier.marker(file.address),
-      // Top-level comments are their own roots, so no thread marker applies.
-      thread: () => undefined,
-      me: frontier.me,
-      nowSeconds: frontier.nowSeconds,
-      horizonSeconds: frontier.horizonSeconds,
-    }
+    const context = fileContext(file.address)
+    if (!context) continue
+    const terms = frontier.termsOf(file.address)
     let screening: ScreenerFile['comments'][number] | undefined
     for (const comment of file.comments) {
       // `<=`, as for topics: a comment at the instant of the dismissal is the
@@ -103,7 +99,8 @@ export function foldFileScreenerRows(
       if (comment.createdAt <= dismissedAt) continue
       if (screening && comment.createdAt <= screening.createdAt) continue
       const message = { id: comment.id, at: comment.createdAt, by: comment.author, root: comment.id }
-      if (fileHasUnread([message], judge)) screening = comment
+      // Top-level comments are their own roots, so no thread marker applies.
+      if (streamHasUnread([message], context, terms, frontier, frontier.isMentioned)) screening = comment
     }
     if (!screening) continue
     if ((decisions.snoozed[key] ?? 0) * 1000 > nowMs) continue

@@ -82,8 +82,8 @@ const RECORD_CHANNEL = '0804b906-1c2d-4e3f-8a5b-6c7d8e9f0a1b'
 */
 const teamUnread = vi.hoisted(() => ({
   unread: {} as Record<string, boolean>,
-  /* And which hold a followed stream — the other half of the same read (FOL-41). */
-  followed: {} as Record<string, boolean>,
+  /* And which hold a stream the person is a member of — the other half of the same read (FOL-41). */
+  member: {} as Record<string, boolean>,
 }))
 /* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
 const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
@@ -176,7 +176,7 @@ vi.mock('@/api', async () => ({
   }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
-  useTeamUnread: () => ({ unread: teamUnread.unread, followed: teamUnread.followed }),
+  useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member }),
   useWorkspaceDirectory: () => undefined,
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
@@ -439,13 +439,13 @@ describe('FoldersPage makes a Folder from its name', () => {
 describe('FoldersPage filters the column', () => {
   beforeEach(() => {
     teamUnread.unread = {}
-    teamUnread.followed = {}
+    teamUnread.member = {}
     badges.unread = {}
     relay.files = []
   })
   afterEach(() => {
     teamUnread.unread = {}
-    teamUnread.followed = {}
+    teamUnread.member = {}
     badges.unread = {}
     relay.files = []
   })
@@ -482,11 +482,11 @@ describe('FoldersPage filters the column', () => {
     expect(screen.queryByRole('button', { name: /For testing/ })).toBeNull()
   })
 
-  it('Followed reads the other verdict, not the dots', async () => {
-    // Lit, but nothing in it is followed — the two questions are not the same one.
+  it('Joined reads the other verdict, not the dots', async () => {
+    // Lit, but nothing in it is the person's — the two questions are not the same one.
     teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
-    teamUnread.followed = { [FOLDER]: false, [TOPIC_CHANNEL]: true }
-    await choose('Followed')
+    teamUnread.member = { [FOLDER]: false, [TOPIC_CHANNEL]: true }
+    await choose('Joined')
     expect(screen.getByRole('button', { name: /For testing/ })).toBeTruthy()
     expect(screen.queryAllByRole('button', { name: /^Folders/ })).toHaveLength(0)
   })

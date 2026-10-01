@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { placeStreams, teamHasFollowedStream, teamHasUnread, unlistedFiles } from './teamUnread'
+import type { StreamTerms } from './streamUnread'
+import { placeStreams, teamHasMemberStream, teamHasUnread, unlistedFiles } from './teamUnread'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const ME = 'c'.repeat(64)
@@ -32,11 +33,19 @@ const replied = (id: string, at: number, inThread: string, about: string[] = [],
   body: '',
 })
 
-/* Everything followed unless a test says otherwise: the FOL-16/18 rules are
-   judged over the followed set, and these tests are about the rules. */
-const frontier = (markers: Record<string, number> = {}, me = ME, followed: (key: string) => boolean = () => true) => ({
-  marker: (context: string | undefined) => (context ? markers[context] : undefined),
-  followed,
+/* Everything a member of unless a test says otherwise: the FOL-16/18 rules are
+   judged over the streams the person is a member of, and these tests are about
+   the rules. `terms` overrides one stream's terms (join time, mute). */
+const frontier = (
+  markers: Record<string, number> = {},
+  me = ME,
+  isMember: (key: string) => boolean = () => true,
+  terms: (key: string) => Partial<StreamTerms> = () => ({}),
+  mentioned: (id: string) => boolean = () => false,
+) => ({
+  merged: markers,
+  termsOf: (key: string): StreamTerms => ({ member: isMember(key), muted: false, ...terms(key) }),
+  isMentioned: mentioned,
   me,
   nowSeconds: NOW,
   horizonSeconds: HORIZON,
@@ -110,33 +119,55 @@ describe('teamHasUnread — the rules it inherits from the file judge', () => {
 })
 
 /*
-  FOL-30. The dot exists only for what you follow: each stream is asked of
-  `followed` by its key — the file's address, the Folder's own id for the
-  general stream — and an unfollowed stream contributes nothing however new
-  it is. The ticket's done-when in miniature: a message in a followed file
-  lights the team, the same in an unfollowed file lights nothing, and taking a
-  file off the list puts a lit team out at once, with no marker moving.
+  SPEC §11.8. The dot exists only for what you are a member of: each stream is
+  asked of `termsOf` by its key — the file's address, the Folder's own id for
+  the general stream — and a stream the person is not a member of contributes
+  nothing however new it is, unless a message in it names them. The ticket's
+  done-when in miniature: a message in a file you are in lights the team, the
+  same in a file you are not in lights nothing, and leaving a file puts a lit
+  team out at once, with no marker moving.
 */
-describe('teamHasUnread — only followed streams are judged (FOL-30)', () => {
+describe('teamHasUnread — only member streams are judged (§11.8)', () => {
   const only =
     (...keys: string[]) =>
     (key: string) =>
       keys.includes(key)
 
-  it('lights for a followed file and not for an unfollowed one, given the same message', () => {
+  it('lights from the second the person joined, and not for what was said before', () => {
+    const messages = [said('before', NOW - 100, [FOL18]), said('after', NOW - 10, [FOL18])]
+    const joined = (since: number) => frontier({}, ME, only(FOL18), () => ({ since }))
+    expect(teamHasUnread(FOLDER, messages, joined(NOW - 50))).toBe(true)
+    expect(teamHasUnread(FOLDER, [messages[0]], joined(NOW - 50))).toBe(false)
+    // The message that placed or mentioned the person counts: at the second they joined.
+    expect(teamHasUnread(FOLDER, [messages[0]], joined(NOW - 100))).toBe(true)
+  })
+
+  it('goes quiet for a muted stream, except for a message that names the person', () => {
+    const messages = [said('quiet', NOW - 20, [FOL18]), said('named', NOW - 10, [FOL18])]
+    const muted = (mentioned: (id: string) => boolean) => frontier({}, ME, only(FOL18), () => ({ muted: true }), mentioned)
+    expect(teamHasUnread(FOLDER, [messages[0]], muted(() => false))).toBe(false)
+    expect(teamHasUnread(FOLDER, messages, muted((id) => id === 'named'))).toBe(true)
+  })
+
+  it('lights for a message that names the person in a stream they are not a member of', () => {
+    const messages = [said('named', NOW - 10)]
+    expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false, () => ({}), (id) => id === 'named'))).toBe(true)
+  })
+
+  it('lights for a file you are in and not for one you are not, given the same message', () => {
     const messages = [said('m', NOW - 10, [FOL18])]
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL18)))).toBe(true)
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL16)))).toBe(false)
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false))).toBe(false)
   })
 
-  it('gates the general stream on the Folder itself being followed', () => {
+  it("gates the general stream on the Folder's roster", () => {
     const chat = [said('m', NOW - 10)]
     expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOLDER)))).toBe(true)
     expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOL18)))).toBe(false)
   })
 
-  it('follows a file without following its Folder, and the other way round', () => {
+  it('is in a file without being on its Folder’s roster, and the other way round', () => {
     const both = [said('chat', NOW - 10), said('m', NOW - 10, [FOL18])]
     // Chat is new, but only the file is followed: the file lights, and reading it puts the team out.
     expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOL18)))).toBe(true)
@@ -146,7 +177,7 @@ describe('teamHasUnread — only followed streams are judged (FOL-30)', () => {
     expect(teamHasUnread(FOLDER, both, frontier({ [FOLDER]: NOW }, ME, only(FOLDER)))).toBe(false)
   })
 
-  it('unfollowing clears a lit team at once, with no marker moving', () => {
+  it('leaving clears a lit team at once, with no marker moving', () => {
     const messages = [said('m', NOW - 10, [FOL18])]
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only(FOL18)))).toBe(true)
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, only()))).toBe(false)
@@ -154,27 +185,27 @@ describe('teamHasUnread — only followed streams are judged (FOL-30)', () => {
 })
 
 /*
-  The `Followed` filter's Folder-level question — FOL-41. Judged over the same
+  The `Joined` filter's Folder-level question — FOL-41. Judged over the same
   messages as the dot and with no read of its own, which is what makes the
   filter affordable; what it cannot see is pinned here too, so the limit is a
   test rather than a comment.
 */
-describe('teamHasFollowedStream — does this Folder hold anything followed', () => {
+describe('teamHasMemberStream — does this Folder hold anything the person is a member of', () => {
   const only =
     (...keys: string[]) =>
     (key: string) =>
       keys.includes(key)
 
   it('is true when the Folder itself is followed — that is its general chat', () => {
-    expect(teamHasFollowedStream(FOLDER, [], only(FOLDER))).toBe(true)
+    expect(teamHasMemberStream(FOLDER, [], only(FOLDER))).toBe(true)
   })
 
   it('is true when a message names a followed file', () => {
-    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL18))).toBe(true)
+    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL18))).toBe(true)
   })
 
   it('is false when the talk in it is about files nobody follows', () => {
-    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL16))).toBe(false)
+    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, [FOL18])], only(FOL16))).toBe(false)
   })
 
   /*
@@ -183,7 +214,7 @@ describe('teamHasFollowedStream — does this Folder hold anything followed', ()
     reason the dot does not light for a team whose chat you do not follow.
   */
   it('is false when the Folder has chat but the Folder is not followed', () => {
-    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10)], only(FOL18))).toBe(false)
+    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10)], only(FOL18))).toBe(false)
   })
 
   /*
@@ -192,13 +223,13 @@ describe('teamHasFollowedStream — does this Folder hold anything followed', ()
     `All` is the recovery, and the Folder is one click away in it.
   */
   it('cannot see a followed file that has no messages', () => {
-    expect(teamHasFollowedStream(FOLDER, [], only(FOL18))).toBe(false)
+    expect(teamHasMemberStream(FOLDER, [], only(FOL18))).toBe(false)
   })
 
   /* An `a` that is not an address names no stream — `teamHasUnread`'s rule. */
   it('ignores an `a` that is not an address', () => {
-    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], () => true)).toBe(true)
-    expect(teamHasFollowedStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], only('not-an-address'))).toBe(
+    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], () => true)).toBe(true)
+    expect(teamHasMemberStream(FOLDER, [said('m', NOW - 10, ['not-an-address'])], only('not-an-address'))).toBe(
       false,
     )
   })

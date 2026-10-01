@@ -154,8 +154,15 @@ async function main() {
   )
 
   const streams = await readChannelStreams(folders, nowSeconds - horizonSeconds, (f) => query(f, t))
-  // Everything followed: this probe measures the FOL-18 union, not the FOL-30 gate.
-  const judge = { marker, followed: () => true, me: t.pubkey, nowSeconds, horizonSeconds }
+  // A member of everything: this probe measures the FOL-18 union, not the §11.8 gate.
+  const judge = {
+    merged,
+    termsOf: () => ({ member: true, muted: false }),
+    isMentioned: () => false,
+    me: t.pubkey,
+    nowSeconds,
+    horizonSeconds,
+  }
   let lit = 0
   for (const folder of folders) {
     const messages = streams[folder] ?? []

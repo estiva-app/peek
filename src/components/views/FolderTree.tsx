@@ -193,7 +193,7 @@ export function FolderTreeView({
   signedOut,
   unread,
   activity = {},
-  followed = {},
+  member = {},
   filter = 'all',
   currentFolder,
   selectedRef,
@@ -213,8 +213,8 @@ export function FolderTreeView({
    * re-read their dots when theirs changes. Missing means nothing said yet.
    */
   activity?: Record<string, number>
-  /** Whether each Folder holds a followed stream (FOL-41). Missing means unjudged. */
-  followed?: Record<string, boolean>
+  /** Whether each Folder holds a stream the person is a member of (FOL-41, §11.8). Missing means unjudged. */
+  member?: Record<string, boolean>
   /** What the column is showing — `all` unless the header says otherwise (FOL-41). */
   filter?: TreeFilter
   currentFolder?: string | null
@@ -238,7 +238,7 @@ export function FolderTreeView({
   // which tells the person nothing.
   const ordered = [...folders]
     .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
-    .filter((folder) => folderMatches(filter, folder.id, unread, followed))
+    .filter((folder) => folderMatches(filter, folder.id, unread, member))
 
   /*
     A filter that matched nothing is not an empty workspace, and the two must
@@ -248,7 +248,7 @@ export function FolderTreeView({
     return (
       <EmptyState
         scope="section"
-        message={filter === 'unread' ? 'Nothing unread.' : 'Nothing you follow.'}
+        message={filter === 'unread' ? 'Nothing unread.' : 'Nothing you have joined.'}
       />
     )
   }

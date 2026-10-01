@@ -77,14 +77,14 @@ export const FilteredToUnread: Story = {
 }
 
 /**
- * Filtered to what is followed — the other verdict, from the other map, so a
- * lit Folder nobody follows is not one of the answers.
+ * Filtered to what is joined — the other verdict, from the other map, so a
+ * lit Folder the person is not a member of is not one of the answers.
  */
-export const FilteredToFollowed: Story = {
+export const FilteredToJoined: Story = {
   args: {
-    filter: 'followed',
+    filter: 'joined',
     unread: { [folders[0].id]: true },
-    followed: { [folders[1].id]: true },
+    member: { [folders[1].id]: true },
   },
 }
 

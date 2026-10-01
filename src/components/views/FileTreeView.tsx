@@ -3,7 +3,7 @@ import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { useConversationBadges, useFollows, useForeignChildren, useOpenWorkFiles } from '@/api'
+import { useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { PersonRow } from '@/components/ui/PersonRow'
@@ -86,10 +86,10 @@ export function FileTreeView({
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined, activity)
   /*
-    The same set the rows' own follow controls read, so a row kept by the
-    `Followed` filter and the bell drawn on it cannot disagree in one render.
+    The same seam the rows' own join controls read, so a row kept by the
+    `Joined` filter and the bell drawn on it cannot disagree in one render.
   */
-  const { followed } = useFollows()
+  const { isMember } = useMembership()
 
   if (state === 'loading') {
     return (
@@ -114,13 +114,13 @@ export function FileTreeView({
   */
   const peers = peersOf(folder.files)
   const kept = peers.filter((file) =>
-    fileMatches(filter, file, listedChildrenOf(file, folder.files), unread, followed),
+    fileMatches(filter, file, listedChildrenOf(file, folder.files), unread, isMember),
   )
   const openForChild =
     filter === 'all'
       ? []
       : kept
-          .filter((file) => !fileMatches(filter, file, [], unread, followed))
+          .filter((file) => !fileMatches(filter, file, [], unread, isMember))
           .map((file) => file.ref)
 
   /*
@@ -215,13 +215,16 @@ function TreeRow({
   // Details is the manifest's (FOL-33); a topic inside is the protocol's, and opens no details.
   const offers = !!controls.rename || !!controls.delete || !!controls.move
   /*
-    Follow / unfollow on the row (FOL-30): the same seam the dot is judged
-    over, so a toggle here and the dot beside it agree in the same render. A
-    file with no address cannot be followed, and is offered nothing.
+    Join / leave and mute on the row (SPEC §11.8): the same seam the dot is
+    judged over, so a toggle here and the dot beside it agree in the same
+    render. A file with no address, or no Folder to name in the change, has no
+    membership to change and is offered nothing. Mute is a member's.
   */
-  const follows = useFollows()
+  const membership = useMembership()
   const followKey = file.address
-  const followAction = followKey ? (follows.isFollowed(followKey) ? 'unfollow' : 'follow') : undefined
+  const isMember = followKey ? membership.isMember(followKey) : false
+  const memberAction = followKey && file.folder ? (isMember ? 'leave' : 'join') : undefined
+  const muteAction = followKey && isMember ? (membership.isMuted(followKey) ? 'unmute' : 'mute') : undefined
   // Open work on the row (FOL-34), by the same address — the file page's control.
   const openWorkFiles = useOpenWorkFiles()
   const openWorkAction = followKey ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
@@ -263,10 +266,14 @@ function TreeRow({
               ? () => (openWorkAction === 'add' ? openWorkFiles.add(followKey) : openWorkFiles.remove(followKey))
               : undefined
           }
-          followAction={followAction}
-          onToggleFollow={
-            followKey && followAction ? () => void follows.setFollowed(followKey, followAction === 'follow') : undefined
+          memberAction={memberAction}
+          onToggleMember={
+            followKey && file.folder && memberAction
+              ? () => void membership.setMember(followKey, file.folder!, memberAction === 'join')
+              : undefined
           }
+          muteAction={muteAction}
+          onToggleMute={followKey && muteAction ? () => void membership.setMuted(followKey, muteAction === 'mute') : undefined}
           onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
           /* A listed row is never archived — the listing leaves those out (FOL-46). */
           archiveAction={controls.archive ? 'archive' : undefined}

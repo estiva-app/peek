@@ -19,7 +19,7 @@ import { ReadStateSync } from '@/nostr/useReadStateSync'
 import { OpenWorkProvider } from '@/api/internal/openWork'
 import { ScreenerProvider } from '@/api/internal/screener'
 import { DmsProvider } from '@/api/internal/dms'
-import { FollowsProvider } from '@/api/internal/follows'
+import { MembershipProvider } from '@/api/internal/membership'
 import { AvatarRegistryProvider } from './avatars'
 import { MentionDirectorySync } from './mentions'
 
@@ -39,11 +39,11 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
         <MentionDirectorySync />
         <ReadStateSync />
         <StarredProvider>
-          {/* The followed set (FOL-30): the relay's blob alone, read by the
-              unread hooks and the follow controls. Reads no store above it,
-              and sits above the Screener, whose file half is judged over it
+          {/* Membership and mutes (CON-19, SPEC §11.8): the relay's, read by the
+              unread hooks and the join and mute controls. Reads no store above
+              it, and sits above the Screener, whose file half is judged over it
               (FOL-34). */}
-          <FollowsProvider>
+          <MembershipProvider>
             {/* DM channels and hidden DMs (DMS-6, REM-3): the relay's, keyed by
                 pubkey. It reads nothing from the stores above, and sits above
                 the Screener, whose DM half folds its channels (CON-14). */}
@@ -54,7 +54,7 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
                 <ScreenerProvider>{children}</ScreenerProvider>
               </OpenWorkProvider>
             </DmsProvider>
-          </FollowsProvider>
+          </MembershipProvider>
         </StarredProvider>
       </AvatarRegistryProvider>
     </EstivaIdSessionProvider>
