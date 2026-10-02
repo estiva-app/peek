@@ -92,6 +92,14 @@ export function manifestContent() {
     aspect: 'conversation',
 
     /**
+     * What Peek calls a file nobody owns: a topic (PRO-24, interop 0.44.0).
+     * A consumer labels a bare file by its type, and the word is the opening
+     * app's rather than the protocol's (Miky, 2026-10-02), so Ship's chip for
+     * one of these reads "Topic" because this says so.
+     */
+    fileNoun: 'topic',
+
+    /**
      * **No `records` rule, and that is a statement rather than an omission.**
      *
      * Ship declares one because a Ship issue's status lives in change events

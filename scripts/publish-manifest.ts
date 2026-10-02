@@ -374,8 +374,10 @@ async function main() {
       sweeping every manifest for `aspect: "conversation"` — a typo here is
       found by nobody until somebody clicks a card that is not one.
     */
-    const content = JSON.parse(stored.content) as { aspect?: string }
+    const content = JSON.parse(stored.content) as { aspect?: string; fileNoun?: string }
     check('the manifest declares the conversation aspect', content.aspect === 'conversation', content.aspect ?? '(none)')
+    // PRO-24: what Ship's chip for a topic reads, so the same kind of typo is found here.
+    check('the manifest calls a bare file a topic', content.fileNoun === 'topic', content.fileNoun ?? '(none)')
   }
 
   console.log(
