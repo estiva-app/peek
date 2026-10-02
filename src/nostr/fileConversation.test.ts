@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodeNaddr, encodeNpub } from '@estiva-app/protocol'
+import { messageReference } from '@estiva-app/conversation'
 
 const { queryRelay, publishSigned, signViaEstivaId } = vi.hoisted(() => ({
   queryRelay: vi.fn(),
@@ -394,6 +395,16 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     expect(tags.filter((t) => t[0] === 'e')).toEqual([])
   })
 
+  it('a [ pick earns the same q as a pasted link to that message, and the two are one tag (CON-25)', async () => {
+    const thread = 'd'.repeat(64)
+    await commentAsViewer(
+      { container, body: `${messageReference(thread, 1111)} — https://peek.estiva.app/topic/x-${LINKED_D}?thread=${thread}` },
+      'https://relay.test',
+      token,
+    )
+    expect(signed().tags.filter((t) => t[0] === 'q')).toEqual([['q', thread]])
+  })
+
   it('a pointer and its link to the same file are one a tag', async () => {
     const linkedNaddr = `nostr:${encodeNaddr({ kind: BARE_FILE, pubkey: CATH, identifier: LINKED_D, relays: [] })}`
     await commentAsViewer(
@@ -583,6 +594,18 @@ describe('a channel conversation (REM-1)', () => {
     expect(published.content).toBe(body)
     expect(published.tags).toContainEqual(['p', CATH])
     expect(published.tags.filter((t) => t[0] === 'urgent')).toEqual([['urgent', CATH]])
+  })
+
+  it('a [ reference to a message earns its q on chat too (CON-25)', async () => {
+    const picked = 'e'.repeat(64)
+    await commentAsViewer({ container: dmContainer, body: `See ${messageReference(picked, 9)}` }, 'https://relay.test', token)
+    expect(signed().tags.filter((t) => t[0] === 'q')).toEqual([['q', picked]])
+  })
+
+  it('a reply does not quote the message it answers: that is its e (CON-25)', async () => {
+    const parent = { id: hello.id, author: MIKY, body: 'Hello', createdAt: hello.created_at, kind: 9 }
+    await commentAsViewer({ container: dmContainer, body: `About ${messageReference(hello.id, 9)}`, parent }, 'https://relay.test', token)
+    expect(signed().tags.filter((t) => t[0] === 'q')).toEqual([])
   })
 
   it('a reply is the same kind:9 with Buzz’s single reply-marked e', async () => {
