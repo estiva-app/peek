@@ -8,6 +8,7 @@ import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEdit
 import { SelectionToolbar, isSuggestionActive } from '@estiva-app/ui/editor'
 import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
+import { extractUrgent } from '@/extensions/mention'
 import { IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
 import { AttachmentCard, Kbd, Toolbar } from '@estiva-app/ui'
@@ -155,6 +156,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
               text,
               resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
               highlightType: hl,
+              urgent: extractUrgent(ed),
               files: files.length > 0 ? files : undefined,
             })
             /*
@@ -336,15 +338,11 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     const hl = extractHighlightType(editor)
     const files = uploads.ready()
     if (!text && !resolution.hasResolution && files.length === 0) return
-    const urgent: string[] = []
-    editor.state.doc.descendants((node) => {
-      if (node.type.name === 'urgentMention' && node.attrs.pubkey) urgent.push(node.attrs.pubkey as string)
-    })
     onSend?.({
       text,
       resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
       highlightType: hl,
-      urgent: urgent.length > 0 ? urgent : undefined,
+      urgent: extractUrgent(editor),
       files: files.length > 0 ? files : undefined,
     })
     editor.commands.clearContent(true)

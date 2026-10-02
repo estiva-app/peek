@@ -87,7 +87,9 @@ describe('foldMemberships — SPEC §11.8 over what the relay returned', () => {
     const urgent = comment(THEIRS, THEM, { tags: [['A', THEIRS], ['p', ME], ['urgent', ME]], content: body })
     const plain = comment(THEIRS, THEM, { tags: [['A', THEIRS], ['p', ME]], content: body })
     const forSomebodyElse = comment(THEIRS, THEM, { tags: [['A', THEIRS], ['p', ME], ['urgent', THEM]], content: body })
-    expect(foldMemberships(ME, [urgent, plain, forSomebodyElse], NOW).urgent).toEqual(new Set([urgent.id]))
+    // The old text names nobody, and the builder's p on the file's author must not make it theirs.
+    const legacy = comment(THEIRS, THEM, { tags: [['A', THEIRS], ['p', ME]], content: '!@Cath look' })
+    expect(foldMemberships(ME, [urgent, plain, forSomebodyElse, legacy], NOW).urgent).toEqual(new Set([urgent.id]))
   })
 
   it('a file the viewer created is theirs, from the horizon, unless they left it', () => {

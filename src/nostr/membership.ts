@@ -46,7 +46,7 @@ import {
   type Membership,
 } from '@estiva-app/conversation'
 import { queryRelay } from './bridge'
-import { isUrgentFor } from './channelStreams'
+import { isTaggedUrgentFor } from './channelStreams'
 import { PEEK_HORIZON_DAYS } from './readState'
 import type { RelaySeam } from './stars'
 
@@ -86,7 +86,7 @@ export function foldMemberships(pubkey: string, events: readonly SignedEvent[], 
   const urgent = new Set<string>()
   for (const event of events) {
     if (mentions(event, pubkey)) mentioned.add(event.id)
-    if (isUrgentFor(event, pubkey)) urgent.add(event.id)
+    if (isTaggedUrgentFor(event, pubkey)) urgent.add(event.id)
     for (const file of candidateFilesOf(event)) {
       const list = byFile.get(file)
       if (list) list.push(event)

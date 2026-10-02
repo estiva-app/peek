@@ -87,7 +87,15 @@ export const URGENT_TAG = 'urgent'
  * mention (§11.8): a tag nobody can see in the text should not page anyone.
  */
 export function isUrgentFor(event: Pick<SignedEvent, 'content' | 'tags'>, viewer: string | undefined): boolean {
-  if (isUrgentContent(event.content)) return true
+  return isUrgentContent(event.content) || isTaggedUrgentFor(event, viewer)
+}
+
+/**
+ * The tag half of `isUrgentFor`, without the old text. For a read that holds
+ * only what `#p` returned: the comment builders tag the file's author on every
+ * comment, so an old `!@Name` meant for somebody else would page the author.
+ */
+export function isTaggedUrgentFor(event: Pick<SignedEvent, 'content' | 'tags'>, viewer: string | undefined): boolean {
   if (!viewer || !event.tags.some((t) => t[0] === URGENT_TAG && t[1] === viewer)) return false
   return mentions(event, viewer)
 }

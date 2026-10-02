@@ -120,3 +120,26 @@ describe("ComposeBox sends another app's object as its address (UIG-40)", () => 
   // story: jsdom has no clipboard, and Tiptap's simulated paste fails inside
   // Tiptap without one.
 })
+
+describe('ComposeBox sends an urgent mention with its pubkey beside the text (CON-17)', () => {
+  const ADA = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
+  const urgentAda = { type: 'urgentMention', attrs: { id: 'ada', label: 'Ada', pubkey: ADA } }
+
+  it('on Enter, the text is a plain mention and `urgent` names the person', async () => {
+    const onSend = vi.fn()
+    const { dom, editor } = await compose(onSend)
+    editor.commands.insertContent([urgentAda, { type: 'text', text: ' now' }])
+    send(dom)
+    const payload = onSend.mock.calls[0][0] as SendPayload
+    expect(payload.text).not.toContain('!@')
+    expect(payload.urgent).toEqual([ADA])
+  })
+
+  it('a plain mention carries no urgency', async () => {
+    const onSend = vi.fn()
+    const { dom, editor } = await compose(onSend)
+    editor.commands.insertContent([{ type: 'mention', attrs: { id: 'ada', label: 'Ada', pubkey: ADA } }, { type: 'text', text: ' fyi' }])
+    send(dom)
+    expect((onSend.mock.calls[0][0] as SendPayload).urgent).toBeUndefined()
+  })
+})
