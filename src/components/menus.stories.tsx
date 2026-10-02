@@ -11,9 +11,9 @@ import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
 import { IconButton } from './ui/IconButton'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
-import { FILES_MENU } from './ui/FilesMenu'
-import { filterFilesItems, type FilesMenuItem } from './ui/filesMenuItems'
-import { peopleMenu } from './ui/MentionMenu'
+import { FILES_MENU, toReferenceItem } from './ui/FilesMenu'
+import { filterReferences, type CaptionedItem } from '@estiva-app/ui/editor'
+import { peopleMenu, toMentionPerson } from './ui/MentionMenu'
 
 /**
  * Every menu Peek opens, on one page. The dialogs went the other way on 23
@@ -266,18 +266,18 @@ const MESSAGES: ConversationMessage[] = [
   { id: 'm2', author: 'Grace Hopper', timestamp: '9:44 AM', body: 'Reverted the runner image; re-running now.', eventId: 'b'.repeat(64) },
   { id: 'm3', author: 'Ada Lovelace', timestamp: '9:52 AM', body: 'Green. Leaving the pin in place until Monday.', eventId: 'c'.repeat(64) },
 ]
-const ITEMS: FilesMenuItem[] = MESSAGES.map<FilesMenuItem>((m) => ({ kind: 'message', data: m }))
+const ITEMS: CaptionedItem[] = MESSAGES.map(toReferenceItem)
 
 /* The shell opens only when there is something to draw, exactly as the `[`
    extension does: a `Popover` wrapped around a menu that returned null is an
    empty box, where the old hand-built container was invisible (D47). */
-function files(items: FilesMenuItem[], query: string) {
+function files(items: CaptionedItem[], query: string) {
   return (
     <PeekDataProvider>
-      {filterFilesItems(items, query).length === 0 ? (
+      {filterReferences(items, query).length === 0 ? (
         <CaretAlone />
       ) : (
-        <InTheShell menu={FILES_MENU} items={items} query={query} />
+        <InTheShell menu={FILES_MENU} items={filterReferences(items, query)} query={query} />
       )}
     </PeekDataProvider>
   )
@@ -298,7 +298,7 @@ export const FilesNoMatches: Story = { render: () => files(ITEMS, 'zzzz') }
 
 /** The people list, as `@` (or `!@`) opens it. */
 function Mentions({ people, isUrgent }: { people: typeof PEOPLE; isUrgent?: boolean }) {
-  return <InTheShell menu={peopleMenu(!!isUrgent)} items={people} />
+  return <InTheShell menu={peopleMenu(!!isUrgent)} items={people.map(toMentionPerson)} />
 }
 
 /** The @-mention dropdown; the highlighted row shows the Enter hint. */

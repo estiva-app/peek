@@ -1,5 +1,6 @@
 import { PEOPLE } from '@/data/peopleData'
-import { addrToNaddr, decodeNevent, decodeNpub, encodeNpub, referenceToPointer } from '@estiva-app/protocol'
+import { addrToNaddr, decodeNevent, decodeNpub, referenceToPointer } from '@estiva-app/protocol'
+import { mentionText } from '@estiva-app/conversation'
 import { personByPubkey } from '@/api/mentions'
 import { findMessageByEventId } from '@/lib/conversationRegistry'
 import { legacyTopicByChannel } from '@/lib/legacyTopicLinks'
@@ -442,17 +443,15 @@ export function serializeInline(node: TiptapNode): string {
     else if (child.type.name === 'hardBreak') {
       text += '\n'
     } else if (child.type.name === 'mention') {
-      // SPEC §13.1 — a key, when we have one. `label` is what a person typed
-      // and reads well; it is also the thing that goes stale on a rename and
-      // means nothing to another app, so it is the fallback rather than the
-      // form. Somebody with no Estiva ID key still mentions by name, which is
-      // exactly what every existing message already does.
-      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `@${child.attrs.label}`
+      // SPEC §13.1 — a key, when we have one; somebody with no Estiva ID key
+      // still mentions by name, as every existing message does. The rule is
+      // the conversation package's since CON-27, so every app writes it alike.
+      text += mentionText({ pubkey: child.attrs.pubkey, label: child.attrs.label })
     } else if (child.type.name === 'urgentMention') {
       // The text of an urgent mention is an ordinary mention: the urgency is
       // the `["urgent", <pubkey>]` tag beside it (SPEC §13.1, CON-17), which
       // the composer hands to the write as `SendPayload.urgent`.
-      text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `!@${child.attrs.label}`
+      text += mentionText({ pubkey: child.attrs.pubkey, label: child.attrs.label }, true)
     } else if (child.type.name === 'topicMention') {
       /*
         SPEC §13.1 — the topic's address, when Peek can spell it (RIC-11).

@@ -7,7 +7,6 @@ import {
   isUrgentFor,
   readChannelStreams,
   streamMessagesByFolder,
-  urgentTagsFor,
 } from './channelStreams'
 
 const FOLDER_A = '11111111-1111-4111-8111-111111111111'
@@ -120,14 +119,6 @@ describe('isUrgentFor — SPEC §13.1’s urgent tag (CON-17)', () => {
     expect(isUrgentFor({ content: named, tags: [['p', ADA]] }, ADA)).toBe(false)
     expect(isUrgentFor({ content: named, tags: [['urgent', ADA]] }, undefined)).toBe(false)
     expect(isUrgentFor({ content: '!@Ada help', tags: [] }, undefined)).toBe(true)
-  })
-})
-
-describe('urgentTagsFor', () => {
-  it('one tag per urgent person the body names, deduplicated', () => {
-    const body = `nostr:${encodeNpub(ADA)} and nostr:${encodeNpub(BEA)}`
-    expect(urgentTagsFor(body, [ADA, ADA, PK])).toEqual([['urgent', ADA]])
-    expect(urgentTagsFor(body, undefined)).toEqual([])
   })
 })
 

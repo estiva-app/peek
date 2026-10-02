@@ -1,64 +1,62 @@
 import { describe, it, expect } from 'vitest'
-import { SLASH_ITEMS, filterSlashItems } from './SlashMenu'
+import { filterSlashSections } from '@estiva-app/ui/editor'
+import { SLASH_SECTIONS } from './SlashMenu'
 
 /**
  * The `/` menu's contents and filtering — PEE-18.
  *
- * The menu itself is driven by the suggestion plugin and is covered in
- * Storybook; what is worth pinning here is the list and the query, because both
- * are what somebody sees when they type.
+ * The menu itself is the package's (CON-27) and is covered there; what is worth
+ * pinning here is Peek's list and the query, because both are what somebody
+ * sees when they type.
  */
+
+const labels = (sections: ReturnType<typeof filterSlashSections>) => sections.flatMap((s) => s.commands.map((c) => c.row.label))
+const filter = (q: string) => labels(filterSlashSections(SLASH_SECTIONS, q))
 
 describe('the menu, unfiltered', () => {
   it('runs Format, then Shortcuts, then Highlights', () => {
-    const kinds = SLASH_ITEMS.map((i) => i.kind)
-    const firstOf = (k: (typeof kinds)[number]) => kinds.indexOf(k)
-    const lastOf = (k: (typeof kinds)[number]) => kinds.lastIndexOf(k)
-    expect(lastOf('format')).toBeLessThan(firstOf('shortcut'))
-    expect(lastOf('shortcut')).toBeLessThan(firstOf('highlight'))
+    expect(SLASH_SECTIONS.map((s) => s.label)).toEqual(['Format', 'Shortcuts', 'Highlights'])
   })
 
-  it('puts Code straight after Quote', () => {
-    const labels = SLASH_ITEMS.map((i) => i.label)
-    expect(labels[labels.indexOf('Quote') + 1]).toBe('Code')
+  it('has the rows it always had, in order', () => {
+    expect(filter('')).toEqual([
+      'Text', 'Heading', 'Subheading', 'Quote', 'Code', 'Bulleted list', 'Numbered list',
+      'Mention', 'Urgent', 'Reference', 'Resolve',
+      'Insight', 'Concern', 'Conclusion', 'Question', 'Summary',
+    ])
   })
 
   it('offers no inline marks — they belong to the selection toolbar', () => {
-    const labels = SLASH_ITEMS.map((i) => i.label)
-    expect(labels).not.toContain('Bold')
-    expect(labels).not.toContain('Italic')
-    expect(labels).not.toContain('Underline')
+    expect(filter('')).not.toContain('Bold')
+    expect(filter('')).not.toContain('Italic')
+    expect(filter('')).not.toContain('Underline')
   })
 })
 
-describe('filterSlashItems', () => {
-  it('returns everything for an empty query', () => {
-    expect(filterSlashItems('')).toHaveLength(SLASH_ITEMS.length)
-  })
-
+describe('filterSlashSections', () => {
   it('narrows on a label prefix, across sections', () => {
     // Both are genuine matches: Quote is a format, Question a highlight.
-    expect(filterSlashItems('qu').map((i) => i.label)).toEqual(['Quote', 'Question'])
+    expect(filter('qu')).toEqual(['Quote', 'Question'])
   })
 
   it('reaches both lists through the id', () => {
-    expect(filterSlashItems('list').map((i) => i.label)).toEqual(['Bulleted list', 'Numbered list'])
+    expect(filter('list')).toEqual(['Bulleted list', 'Numbered list'])
   })
 
   it('matches a highlight by type as well as label', () => {
-    expect(filterSlashItems('concern').map((i) => i.label)).toEqual(['Concern'])
+    expect(filter('concern')).toEqual(['Concern'])
   })
 
   it('matches a shortcut by its description', () => {
-    expect(filterSlashItems('mention a person').map((i) => i.label)).toEqual(['Mention'])
+    expect(filter('mention a person')).toEqual(['Mention'])
   })
 
   it('is case-insensitive', () => {
     // 'subheading' contains 'head', so both are right.
-    expect(filterSlashItems('HEAD').map((i) => i.label)).toEqual(['Heading', 'Subheading'])
+    expect(filter('HEAD')).toEqual(['Heading', 'Subheading'])
   })
 
   it('returns nothing for a query that matches nothing', () => {
-    expect(filterSlashItems('zzzz')).toEqual([])
+    expect(filter('zzzz')).toEqual([])
   })
 })
