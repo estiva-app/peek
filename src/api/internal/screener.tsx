@@ -61,6 +61,8 @@ import {
   fileAddressFromScreenerRowId,
   foldDmScreenerRows,
   foldFileScreenerRows,
+  foldUrgentFiles,
+  type FoldedUrgentFile,
   type ScreenerDm,
   type ScreenerFile,
 } from '@/api/internal/screenerFold'
@@ -78,6 +80,8 @@ export interface ScreenerValue {
   snooze: (rowId: string, untilMs: number) => void
   /** What the hover card starts from, for a row on screen; undefined for any other id. */
   previewOf: (rowId: string) => ScreenerPreviewSource | undefined
+  /** Files with an unread urgent comment for the viewer, newest first — Desk's Urgent (CON-17). */
+  urgentFiles: FoldedUrgentFile[]
 }
 
 /** The fold's own facts about a row, handed to the hover card (CON-14). */
@@ -377,14 +381,35 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
 
   const previewOf = useCallback((rowId: string) => previews.get(rowId), [previews])
 
+  /*
+    Desk's Urgent for files (CON-17). The member files read above, and the ones
+    in open work, which that read skips because their rows hold the resolved
+    file already: an urgent comment on a file in open work is still urgent.
+  */
+  const urgentFiles = useMemo<FoldedUrgentFile[]>(() => {
+    if (!hasRelay || !frontier.ready || membership.state === 'unknown') return []
+    const open: ScreenerFile[] = openWork.items.flatMap((item) =>
+      item.kind === 'file' ? [{ address: item.address, kind: item.object.kind, title: item.title, comments: item.object.comments }] : [],
+    )
+    return foldUrgentFiles([...open, ...files], {
+      merged: frontier.merged,
+      termsOf: membership.termsOf,
+      isMentioned: membership.isMentioned,
+      isUrgent: membership.isUrgent,
+      me: validToken()?.pubkey,
+      nowSeconds: Math.floor(now / 1000),
+      horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60,
+    })
+  }, [files, openWork.items, frontier, now, membership.state, membership.termsOf, membership.isMentioned, membership.isUrgent])
+
   // Gated on the decisions alone. Both halves' rows are additive, so arriving
   // late costs a row a moment, where waiting on every channel and every followed
   // file would hold the whole Desk under a skeleton for the slowest read.
   const isLoading = hasRelay && effective === undefined
 
   const value = useMemo<ScreenerValue>(
-    () => ({ items, isLoading, dismiss, snooze, previewOf }),
-    [items, isLoading, dismiss, snooze, previewOf],
+    () => ({ items, isLoading, dismiss, snooze, previewOf, urgentFiles }),
+    [items, isLoading, dismiss, snooze, previewOf, urgentFiles],
   )
 
   return <ScreenerContext.Provider value={value}>{children}</ScreenerContext.Provider>

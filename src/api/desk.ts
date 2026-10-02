@@ -31,23 +31,33 @@ export function useScreenerItems(): ScreenerItem[] {
  * 2026-07-16). So Urgent is that flag, listed, and a DM is in Urgent exactly
  * when its sidebar row shows the indicator.
  *
- * Files are not in it yet: FOL-43.
+ * Files follow the DMs (CON-17, FOL-43): a file with an unread comment urgent
+ * for the viewer, folded by the Screener's provider from the files it holds.
  */
 export function useDeskItems(): { openWork: OpenWorkItem[]; urgent: UrgentItem[] } {
   const openWork = useOpenWork()
   const { partners } = useDmChannels()
   const { dmIsUrgent } = useUnread()
+  const { urgentFiles } = useScreener()
   const people = useWorkspacePeople(partners)
 
   const urgent = useMemo<UrgentItem[]>(() => {
     if (!hasRelay) return URGENT_ITEMS
     const byKey = new Map((people ?? []).map((p) => [p.id, p]))
-    return partners.flatMap((dmId) => {
+    const dms = partners.flatMap((dmId) => {
       const person = byKey.get(dmId)
       if (!person || !dmIsUrgent(dmId)) return []
       return [{ id: `urg_dm_${dmId}`, kind: 'dm' as const, dmId, name: person.name, avatarSrc: person.avatarSrc }]
     })
-  }, [partners, dmIsUrgent, people])
+    const files = urgentFiles.map((file) => ({
+      id: `urg_file_${file.address}`,
+      kind: 'file' as const,
+      address: file.address,
+      fileKind: file.kind,
+      title: file.title,
+    }))
+    return [...dms, ...files]
+  }, [partners, dmIsUrgent, people, urgentFiles])
 
   return { openWork: openWork.items, urgent }
 }

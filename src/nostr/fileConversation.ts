@@ -66,6 +66,7 @@ import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RATE_LIMIT_MAX_WAIT_MS, RelayReadError, retryAfterMs } from './relayRead'
 import { applyActionAsViewer, fileCommentOf, threadEventsAsViewer, urlReferenceTagsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
 import { findUrls } from '@/lib/textParsing'
+import { urgentTagsFor } from './channelStreams'
 
 /** Where a conversation lives; see the module header. */
 export type ConversationContainer =
@@ -494,6 +495,8 @@ export async function commentAsViewer(
     body: string
     parent?: FileComment
     files?: readonly OutgoingAttachment[]
+    /** The people the composer's urgent mentions name, by pubkey (SPEC §13.1, CON-17). */
+    urgent?: readonly string[]
   },
   relayUrl: string,
   token: StoredToken,
@@ -515,6 +518,7 @@ export async function commentAsViewer(
     seen.add(key)
     return true
   })
+  const urgent = urgentTagsFor(args.body, args.urgent)
 
   /*
     A channel's message is a `kind:9` — `buildMessage`, as `convex/nostr/outbox.ts`
@@ -530,11 +534,11 @@ export async function commentAsViewer(
       mentions: mentionTagsFor(args.body).map((tag) => tag[1]),
       mediaTags: imetaTagsFor(args.files ?? []),
     })
-    unsigned.tags.push(...references)
+    unsigned.tags.push(...urgent, ...references)
     return publish(unsigned, relayUrl, token, 'The relay refused the message.')
   }
 
-  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body), ...references]
+  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body), ...urgent, ...references]
   const parent = args.parent
   const result: ActResult & { id?: string } = await applyActionAsViewer(
     {

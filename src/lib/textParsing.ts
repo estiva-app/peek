@@ -449,8 +449,9 @@ export function serializeInline(node: TiptapNode): string {
       // exactly what every existing message already does.
       text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `@${child.attrs.label}`
     } else if (child.type.name === 'urgentMention') {
-      // The urgency is Peek's own affordance and has no wire form, so an
-      // urgent mention of somebody with a key is still just a mention of them.
+      // The text of an urgent mention is an ordinary mention: the urgency is
+      // the `["urgent", <pubkey>]` tag beside it (SPEC §13.1, CON-17), which
+      // the composer hands to the write as `SendPayload.urgent`.
       text += child.attrs.pubkey ? `nostr:${encodeNpub(child.attrs.pubkey)}` : `!@${child.attrs.label}`
     } else if (child.type.name === 'topicMention') {
       /*

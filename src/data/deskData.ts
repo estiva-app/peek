@@ -24,13 +24,23 @@ export type OpenWorkItem =
       object: ForeignObject
     }
 
-export type UrgentItem = {
-  id: string
-  kind: 'dm'
-  dmId: string
-  name: string
-  avatarSrc?: string
-}
+export type UrgentItem =
+  | {
+      id: string
+      kind: 'dm'
+      dmId: string
+      name: string
+      avatarSrc?: string
+    }
+  | {
+      id: string
+      /** A file with an unread comment urgent for the viewer (CON-17). */
+      kind: 'file'
+      address: string
+      /** The root's kind — a bare file draws as a topic. */
+      fileKind: number
+      title: string
+    }
 
 export type StarredEntry = {
   id: string

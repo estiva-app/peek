@@ -46,6 +46,8 @@ export interface MembershipSync {
   files: ReadonlyMap<string, Membership>
   /** Ids of the messages that name the viewer: they count through a mute and without a membership. */
   mentioned: ReadonlySet<string>
+  /** Ids of the ones among them urgent for the viewer (CON-17). */
+  urgent: ReadonlySet<string>
   /** File addresses the viewer muted, elsewhere or before: read, never written here. */
   muted: ReadonlySet<string>
   /** Unix seconds a created file's membership starts at. */
@@ -83,6 +85,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
   const [state, setState] = useState<MembershipState>('unknown')
   const [files, setFiles] = useState<ReadonlyMap<string, Membership>>(EMPTY_FILES)
   const [mentioned, setMentioned] = useState<ReadonlySet<string>>(EMPTY_SET)
+  const [urgent, setUrgent] = useState<ReadonlySet<string>>(EMPTY_SET)
   const [muted, setMutedSet] = useState<ReadonlySet<string>>(EMPTY_SET)
   const [floor, setFloor] = useState(0)
   /** Whether each read has answered at least once — `state` leaves `unknown` only when both have. */
@@ -122,6 +125,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       for (const [file, p] of pending.current) if (p.storedAt !== undefined && p.storedAt < startedAt) pending.current.delete(file)
       setFiles(new Map([...membership.files, ...[...pending.current].map(([file, p]) => [file, p.membership] as const)]))
       setMentioned(membership.mentioned)
+      setUrgent(membership.urgent)
       setFloor(membership.floor)
     } else console.warn('[membership] the relay did not say which files the viewer is a member of')
     if (mutesRead.state !== 'unreachable') {
@@ -206,7 +210,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
     [relayUrl, state, files],
   )
 
-  return { state, files, mentioned, muted, floor, setMember, refresh: read }
+  return { state, files, mentioned, urgent, muted, floor, setMember, refresh: read }
 }
 
 /**

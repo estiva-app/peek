@@ -82,6 +82,14 @@ describe('foldMemberships — SPEC §11.8 over what the relay returned', () => {
     expect(read.mentioned).toEqual(new Set([named.id]))
   })
 
+  it('keeps the ids of the mentions urgent for the viewer, and only those (CON-17)', () => {
+    const body = `now nostr:${encodeNpub(ME)}`
+    const urgent = comment(THEIRS, THEM, { tags: [['A', THEIRS], ['p', ME], ['urgent', ME]], content: body })
+    const plain = comment(THEIRS, THEM, { tags: [['A', THEIRS], ['p', ME]], content: body })
+    const forSomebodyElse = comment(THEIRS, THEM, { tags: [['A', THEIRS], ['p', ME], ['urgent', THEM]], content: body })
+    expect(foldMemberships(ME, [urgent, plain, forSomebodyElse], NOW).urgent).toEqual(new Set([urgent.id]))
+  })
+
   it('a file the viewer created is theirs, from the horizon, unless they left it', () => {
     const talk = comment(MINE, THEM, { tags: [['A', MINE], ['p', ME]] })
     expect(foldMemberships(ME, [talk], NOW).files.get(MINE)).toEqual({ member: true, since: NOW - 90 * DAY })

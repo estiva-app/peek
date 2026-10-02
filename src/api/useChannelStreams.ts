@@ -176,13 +176,15 @@ export function useChannelStreams(channels: readonly string[]): {
 } {
   const { live } = useLiveClient()
   const viewer = useRelayViewer()
-  const [store, setStore] = useState<ChannelStore | null>(null)
+  // The store and the viewer it is for: urgency is per reader (CON-17).
+  const [held, setHeld] = useState<{ store: ChannelStore; me: string } | null>(null)
+  const store = held?.store ?? null
 
   useEffect(() => {
     const v = viewer()
     if (!live || !v) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the store is outside React; this hands its identity in
-    setStore(storeFor(v.relayUrl, v.token.pubkey, live))
+    setHeld({ store: storeFor(v.relayUrl, v.token.pubkey, live), me: v.token.pubkey })
   }, [live, viewer])
 
   // Keyed on the ids, not the array: callers hand a fresh one per render.
@@ -201,12 +203,12 @@ export function useChannelStreams(channels: readonly string[]): {
 
   return useMemo(() => {
     const streams: Record<string, StreamMessage[]> = {}
-    if (store) {
+    if (held) {
       for (const channel of ids) {
-        const events = store.events(channel)
-        if (events) streams[channel] = streamMessagesByFolder(events, [channel])[channel]
+        const events = held.store.events(channel)
+        if (events) streams[channel] = streamMessagesByFolder(events, [channel], held.me)[channel]
       }
     }
     return { at: snapshot.at, streams }
-  }, [store, ids, snapshot])
+  }, [held, ids, snapshot])
 }

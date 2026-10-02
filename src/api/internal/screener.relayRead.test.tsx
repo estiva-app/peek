@@ -90,6 +90,7 @@ vi.mock('@/api/internal/membership', () => ({
       isMuted: () => false,
       termsOf: () => ({ member: true, muted: false }),
       isMentioned: () => false,
+      isUrgent: () => false,
     }
   },
 }))

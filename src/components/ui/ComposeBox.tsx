@@ -23,6 +23,11 @@ export interface SendPayload {
   text: string
   resolution?: { message: string }
   highlightType?: HighlightType
+  /**
+   * The pubkeys the `!@` mentions name (CON-17). `text` writes each as a
+   * plain mention, so this is the only place the urgency survives to the wire.
+   */
+  urgent?: string[]
   /** Figma frame ids attached via the command launcher's find flow. */
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
@@ -331,10 +336,15 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     const hl = extractHighlightType(editor)
     const files = uploads.ready()
     if (!text && !resolution.hasResolution && files.length === 0) return
+    const urgent: string[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'urgentMention' && node.attrs.pubkey) urgent.push(node.attrs.pubkey as string)
+    })
     onSend?.({
       text,
       resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
       highlightType: hl,
+      urgent: urgent.length > 0 ? urgent : undefined,
       files: files.length > 0 ? files : undefined,
     })
     editor.commands.clearContent(true)
