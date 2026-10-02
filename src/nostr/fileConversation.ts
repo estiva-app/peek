@@ -58,7 +58,7 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, referenceTagsFor, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
+import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, quoteTagsFor, referenceTagsFor, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
 import type { Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
@@ -507,11 +507,13 @@ export async function commentAsViewer(
     object, a `q` for an event. Resolved before the event is built because the
     address needs the relay; a URL that names nothing stays prose. The two
     sources can name one object twice — a pointer and its link in the same
-    sentence — so the union is by tag, not by source.
+    sentence — so the union is by tag, not by source. A `nostr:nevent…` the
+    body names — a `[` pick — earns its `q` the same way (CON-25, SPEC §13.1),
+    except the message a reply answers, which is its `e`.
   */
   const fromUrls = await urlReferenceTagsAsViewer(findUrls(args.body), own, relayUrl, token)
   const seen = new Set<string>()
-  const references = [...referenceTagsFor(args.body, own), ...fromUrls].filter((tag) => {
+  const references = [...referenceTagsFor(args.body, own), ...quoteTagsFor(args.body, args.parent?.id), ...fromUrls].filter((tag) => {
     const key = `${tag[0]}:${tag[1]}`
     if (seen.has(key)) return false
     seen.add(key)
