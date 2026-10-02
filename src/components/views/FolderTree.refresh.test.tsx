@@ -256,7 +256,7 @@ describe('a refresh keeps the rows it already has (FOL-40)', () => {
       </MemoryRouter>,
     )
     const expand = await screen.findByRole('button', {
-      name: 'Show what is in Folders: navigation for the whole suite',
+      name: 'Show what is under Folders: navigation for the whole suite',
     })
     fireEvent.click(expand)
     const child = await screen.findByText('The team dot does not follow the socket')
@@ -345,7 +345,7 @@ describe("an open section's rows follow the socket (FOL-44)", () => {
       </MemoryRouter>,
     )
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Show what is in Folders: navigation for the whole suite' }),
+      await screen.findByRole('button', { name: 'Show what is under Folders: navigation for the whole suite' }),
     )
     await screen.findByText('The team dot does not follow the socket')
     const childReads = () =>
@@ -381,7 +381,7 @@ describe('the tab holds what it read (SID-2)', () => {
     </MemoryRouter>
   )
   const readsOf = (folder: string) => seam.resolveFolderContents.mock.calls.filter(([f]) => f === folder).length
-  const section = (id: string) => document.querySelector(`[data-tree-folder="${id}"]`) as HTMLElement
+  const section = (id: string) => document.querySelector(`[data-nav-group="${id}"]`) as HTMLElement
 
   it('a Folder closed and opened again draws its rows at once, and asks nothing while its answer is fresh', async () => {
     render(tree(TEAM))

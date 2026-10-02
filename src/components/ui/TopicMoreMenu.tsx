@@ -73,9 +73,21 @@ export interface TopicMoreMenuProps {
   onToggleArchive?: () => void
 }
 
-export function TopicMoreMenu({
-  trigger,
-  onOpenChange,
+export function TopicMoreMenu({ trigger, onOpenChange, ...items }: TopicMoreMenuProps) {
+  return (
+    /* No `run(action)` wrapper any more: a `MenuItem` closes the menu itself,
+       so an action no longer has to close it first. */
+    <Menu trigger={trigger} align="right" onOpenChange={onOpenChange}>
+      <TopicMenuItems {...items} />
+    </Menu>
+  )
+}
+
+/**
+ * The more-menu's items alone, for a part that draws its own menu: a sidebar
+ * row (`NavItem`'s `menu`) takes the items, not a menu with a trigger.
+ */
+export function TopicMenuItems({
   onOpenDetails,
   onRename,
   onCopyLink,
@@ -89,11 +101,9 @@ export function TopicMoreMenu({
   onHideDm,
   archiveAction,
   onToggleArchive,
-}: TopicMoreMenuProps) {
+}: Omit<TopicMoreMenuProps, 'trigger' | 'onOpenChange'>) {
   return (
-    /* No `run(action)` wrapper any more: a `MenuItem` closes the menu itself,
-       so an action no longer has to close it first. */
-    <Menu trigger={trigger} align="right" onOpenChange={onOpenChange}>
+    <>
       {/* The object is the one the menu hangs off, so its items do not name it:
           a Ship issue is not a topic, and "Delete" is true of both (PEE-41). */}
       {onOpenDetails && <MenuItem label="Details" onClick={onOpenDetails} />}
@@ -115,6 +125,6 @@ export function TopicMoreMenu({
         <MenuItem label={archiveAction === 'archive' ? 'Archive…' : 'Unarchive'} onClick={onToggleArchive} />
       )}
       {onDeleteTopic && <MenuItem label="Delete" destructive onClick={onDeleteTopic} />}
-    </Menu>
+    </>
   )
 }

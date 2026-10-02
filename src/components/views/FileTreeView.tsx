@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
+import { NavItem } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
 import { useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { IconButton } from '@/components/ui/IconButton'
-import { PersonRow } from '@/components/ui/PersonRow'
+import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
+import { TopicState } from '@/components/ui/TopicState'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
 import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
+import { filePath } from '@/lib/objectUrl'
 
 /**
  * A line where the tree's rows would be: empty, or unreadable. Level with the
@@ -154,12 +155,10 @@ export function FileTreeView({
 }
 
 /**
- * One row, and the rows inside it when it is open.
- *
- * The chevron sits in a gutter beside the row rather than inside it, because
- * `PersonRow` is the Topics list's row and has no expander — a topic has
- * nothing inside it. Fixed width whether or not there is a control, so the
- * titles line up down the column.
+ * One row, and the rows inside it when it is open: the package's `NavItem`
+ * (Katerina, 2 October), drawing what `PersonRow` drew — the glyph, the name,
+ * the dot, the selection, the menu on hover. Its icon becomes the arrow while
+ * it is pointed at, so a row with rows under it is as wide as one without.
  */
 function TreeRow({
   file,
@@ -228,85 +227,98 @@ function TreeRow({
   const openWorkFiles = useOpenWorkFiles()
   const openWorkAction = followKey ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
+  const selected = file.ref === selectedRef
+  const isUnread = unread?.[file.ref] === true
+  const type = file.kind === KIND_BARE_FILE ? 'topic' : 'file'
+  const hasMenu = offers || !!controls.rename || inside || (!!onControl && canMove(file)) || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!controls.archive
+
   return (
-    <div data-file={file.ref}>
-      <div className="flex items-center">
-        <div className="flex w-6 shrink-0 justify-center">
-          {expandable && (
-            <IconButton
-              aria-label={open ? `Hide what is in ${title}` : `Show what is in ${title}`}
-              aria-expanded={open}
-              tooltip={open ? 'Collapse' : 'Expand'}
-              onClick={() => setToggled(!open)}
-            >
-              {open ? (
-                <IconChevronDown size={16} stroke={1.5} />
-              ) : (
-                <IconChevronRight size={16} stroke={1.5} />
-              )}
-            </IconButton>
-          )}
-        </div>
-        <PersonRow
-          className="min-w-0 flex-1"
-          name={title}
-          type={file.kind === KIND_BARE_FILE ? 'topic' : 'file'}
-          /* `=== true`: an unjudged file draws no dot, not a dark one. */
-          isUnread={unread?.[file.ref] === true}
-          isSelected={file.ref === selectedRef}
-          onClick={() => onSelect(file)}
-          onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
-          onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
-          onNewSubTopic={inside ? () => onControl?.('inside', file) : undefined}
-          onMove={onControl && canMove(file) ? () => onControl('move', file) : undefined}
-          openWorkAction={openWorkAction}
-          onToggleOpenWork={
-            followKey && openWorkAction
-              ? () => (openWorkAction === 'add' ? openWorkFiles.add(followKey) : openWorkFiles.remove(followKey))
-              : undefined
-          }
-          memberAction={memberAction}
-          onToggleMember={
-            followKey && file.folder && memberAction
-              ? () => void membership.setMember(followKey, file.folder!, memberAction === 'join')
-              : undefined
-          }
-          onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
-          /* A listed row is never archived — the listing leaves those out (FOL-46). */
-          archiveAction={controls.archive ? 'archive' : undefined}
-          onToggleArchive={controls.archive ? () => onControl?.('archive', file) : undefined}
+    <NavItem
+      data-file={file.ref}
+      href={file.address ? filePath(file.address, title) : '#'}
+      label={title}
+      icon={
+        <TopicState
+          type={type}
+          status={type === 'topic' ? 'unresolved' : 'default'}
+          iconClassName={selected || isUnread ? 'text-text-primary' : undefined}
         />
-      </div>
-      {open && (
-        <div className="flex flex-col gap-0.5 pl-6" data-children-of={file.ref}>
-          {fetches && file.naddr && (
-            <FetchedRows
-              naddr={file.naddr}
-              exclude={listedChildren}
-              selectedRef={selectedRef}
-              expand={expand}
-              activity={activity}
-              onSelect={onSelect}
-              onControl={onControl}
-            />
-          )}
-          {listedChildren.map((child) => (
-            <TreeRow
-              key={child.ref}
-              file={child}
-              listed={listed}
-              unread={unread}
-              selectedRef={selectedRef}
-              expand={expand}
-              activity={activity}
-              onSelect={onSelect}
-              onControl={onControl}
-              nested
-            />
-          ))}
-        </div>
-      )}
-    </div>
+      }
+      /* `=== true`: an unjudged file draws no dot, not a dark one. */
+      unread={isUnread}
+      active={selected}
+      menu={
+        hasMenu ? (
+          <TopicMenuItems
+            onOpenDetails={offers ? () => onControl?.('details', file) : undefined}
+            onRename={controls.rename ? () => onControl?.('rename', file) : undefined}
+            onNewSubTopic={inside ? () => onControl?.('inside', file) : undefined}
+            onMove={onControl && canMove(file) ? () => onControl('move', file) : undefined}
+            openWorkAction={openWorkAction}
+            onToggleOpenWork={
+              followKey && openWorkAction
+                ? () => (openWorkAction === 'add' ? openWorkFiles.add(followKey) : openWorkFiles.remove(followKey))
+                : undefined
+            }
+            memberAction={memberAction}
+            onToggleMember={
+              followKey && file.folder && memberAction
+                ? () => void membership.setMember(followKey, file.folder!, memberAction === 'join')
+                : undefined
+            }
+            onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
+            /* A listed row is never archived — the listing leaves those out (FOL-46). */
+            archiveAction={controls.archive ? 'archive' : undefined}
+            onToggleArchive={controls.archive ? () => onControl?.('archive', file) : undefined}
+          />
+        ) : undefined
+      }
+      menuLabel="More options"
+      open={open}
+      onOpenChange={(next) => setToggled(next)}
+      onClick={(event) => {
+        // The page navigates: it remembers the address first (SID-2).
+        event.preventDefault()
+        onSelect(file)
+      }}
+    >
+      {expandable
+        ? open
+          ? (
+              // Peek's 2px between rows, as the first level has them, and the
+              // marker its tests find a row's children by.
+              <div className="flex flex-col gap-0.5" data-children-of={file.ref}>
+                {fetches && file.naddr && (
+                  <FetchedRows
+                    naddr={file.naddr}
+                    exclude={listedChildren}
+                    selectedRef={selectedRef}
+                    expand={expand}
+                    activity={activity}
+                    onSelect={onSelect}
+                    onControl={onControl}
+                  />
+                )}
+                {listedChildren.map((child) => (
+                  <TreeRow
+                    key={child.ref}
+                    file={child}
+                    listed={listed}
+                    unread={unread}
+                    selectedRef={selectedRef}
+                    expand={expand}
+                    activity={activity}
+                    onSelect={onSelect}
+                    onControl={onControl}
+                    nested
+                  />
+                ))}
+              </div>
+            )
+          : // Closed: nothing is read or drawn, and the row still has its arrow.
+            <></>
+        : undefined}
+    </NavItem>
   )
 }
 

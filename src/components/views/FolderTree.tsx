@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
-import { CollapsibleSection, ListColumn } from '@estiva-app/ui'
+import { ListColumn, NavTree, NavTreeSection } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -254,7 +254,8 @@ export function FolderTreeView({
   }
 
   return (
-    <>
+    // The package's tree, each Folder a section of it that reads its own rows.
+    <NavTree>
       {ordered.map((folder) => (
         <FolderSection
           key={folder.id}
@@ -272,7 +273,7 @@ export function FolderTreeView({
           preloaded={folder.id === currentFolder ? currentContents : undefined}
         />
       ))}
-    </>
+    </NavTree>
   )
 }
 
@@ -333,16 +334,9 @@ function FolderSection({
     (`prefetchFolderContents`), so it costs at most one read per Folder.
   */
   const { resolveFolderContents } = useForeignObjects()
-  const intent = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const prefetch = () => {
     if (!open) prefetchFolderContents(resolveFolderContents, folder.id)
   }
-  const rest = () => {
-    clearTimeout(intent.current)
-    intent.current = setTimeout(prefetch, PREFETCH_INTENT_MS)
-  }
-  const leave = () => clearTimeout(intent.current)
-  useEffect(() => () => clearTimeout(intent.current), [])
   /*
     The last listing drawn stays drawn while the next read of the same Folder
     is in flight (SID-2). The read hands over between the page's and this
@@ -378,63 +372,57 @@ function FolderSection({
     : undefined
 
   return (
-    <div
-      className="shrink-0"
-      data-tree-folder={folder.id}
-      data-open={open}
-      onPointerEnter={rest}
-      onPointerLeave={leave}
-      onFocus={prefetch}
-    >
-      <CollapsibleSection
-        /*
-          The id when there is no name. A Folder with no state event has only
-          its channel's name, and a channel created by an app rather than a
-          person may carry none — the ordinary case on today's data.
-        */
-        title={folder.name ?? folder.id}
-        open={open}
-        onOpenChange={setOpen}
-        /*
-          The union dot in the slot for a count: information rather than an
-          affordance, so it does not come and go with the hover. A collapsed
-          Folder hides its rows, and this is what says one of them is new.
-        */
-        trailing={unread ? <UnreadDot /> : undefined}
-        actions={[
-          {
-            icon: <IconArrowUpRight size={16} stroke={1.5} />,
-            tooltip: 'Open folder',
-            onClick: onOpen,
-          },
-        ]}
-        contentClassName="pl-2"
+    <NavTreeSection
+      id={folder.id}
+      /*
+        The id when there is no name. A Folder with no state event has only
+        its channel's name, and a channel created by an app rather than a
+        person may carry none — the ordinary case on today's data.
+      */
+      title={folder.name ?? folder.id}
+      open={open}
+      onOpenChange={setOpen}
+      /*
+        The union dot in the slot for a count: information rather than an
+        affordance, so it does not come and go with the hover. A collapsed
+        Folder hides its rows, and this is what says one of them is new.
+      */
+      trailing={unread ? <UnreadDot /> : undefined}
+      actions={[
+        {
+          icon: <IconArrowUpRight size={16} stroke={1.5} />,
+          tooltip: 'Open folder',
+          onClick: onOpen,
+        },
+      ]}
+      // The pointer resting on a closed Folder, or the keyboard reaching it,
+      // reads it ahead (SID-2): resting, not passing, and never twice.
+      onIntent={prefetch}
       >
-        {/*
-          Rows only while open. The section keeps its panel mounted while
-          closed so find-in-page can reach into it, but a closed Folder has
-          nothing read, so there would be nothing to find — only a skeleton
-          per Folder, 147 of them, hidden.
-        */}
-        {open && (
-          <FileTreeView
-            state={state}
-            filter={filter}
-            selectedRef={selectedRef}
-            expand={expand}
-            /*
-              The rows' dots re-read on the team's signal (FOL-44). The
-              section's own dot was live and its rows were not: they stay
-              mounted while open, and their badge read was keyed only on the
-              listing, so a comment reached them on collapse and expand.
-            */
-            activity={activity}
-            onSelect={onSelect}
-            onControl={onControl}
-          />
-        )}
-      </CollapsibleSection>
-    </div>
+      {/*
+        Rows only while open. The section keeps its panel mounted while
+        closed so find-in-page can reach into it, but a closed Folder has
+        nothing read, so there would be nothing to find — only a skeleton
+        per Folder, 147 of them, hidden.
+      */}
+      {open && (
+        <FileTreeView
+          state={state}
+          filter={filter}
+          selectedRef={selectedRef}
+          expand={expand}
+          /*
+            The rows' dots re-read on the team's signal (FOL-44). The
+            section's own dot was live and its rows were not: they stay
+            mounted while open, and their badge read was keyed only on the
+            listing, so a comment reached them on collapse and expand.
+          */
+          activity={activity}
+          onSelect={onSelect}
+          onControl={onControl}
+        />
+      )}
+    </NavTreeSection>
   )
 }
 

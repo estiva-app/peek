@@ -9,8 +9,9 @@ import type { ConversationMessage } from '@/lib/conversationRegistry'
 import { ConversationMoreMenu } from './ConversationMoreMenu'
 import { ConversationQuickMenu } from './ConversationQuickMenu'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
+import { NavItem } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
-import { TopicMoreMenu } from './ui/TopicMoreMenu'
+import { TopicMenuItems, TopicMoreMenu } from './ui/TopicMoreMenu'
 import { FILES_MENU, toReferenceItem } from './ui/FilesMenu'
 import { filterReferences, type CaptionedItem } from '@estiva-app/ui/editor'
 import { peopleMenu, toMentionPerson } from './ui/MentionMenu'
@@ -309,3 +310,36 @@ export const MentionUrgent: Story = { render: () => <Mentions people={PEOPLE.sli
 
 /** One match left: the list is a single row. */
 export const MentionSingleMatch: Story = { render: () => <Mentions people={PEOPLE.slice(0, 1)} /> }
+
+/**
+ * The same items on a tree row of the Folders column: the package's `NavItem`
+ * draws its own ⋮, so it takes the items alone. Point at the row and press ⋮.
+ */
+export const TopicMenuOnATreeRow: Story = {
+  render: () => (
+    <div className="w-72 p-4">
+      <NavItem
+        href="#"
+        label="A topic"
+        menuLabel="More options"
+        menu={
+          <TopicMenuItems
+            onOpenDetails={noop}
+            onRename={noop}
+            onNewSubTopic={noop}
+            onMove={noop}
+            onCopyLink={noop}
+            openWorkAction="add"
+            onToggleOpenWork={noop}
+            memberAction="join"
+            onToggleMember={noop}
+            onHideDm={noop}
+            archiveAction="archive"
+            onToggleArchive={noop}
+            onDeleteTopic={noop}
+          />
+        }
+      />
+    </div>
+  ),
+}
