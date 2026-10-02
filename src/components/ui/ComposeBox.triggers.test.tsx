@@ -53,6 +53,7 @@ async function compose(onSend: (payload: SendPayload) => void) {
 const type = (editor: Editor, text: string) => act(() => void editor.chain().focus().insertContent(text).run())
 const enter = (dom: HTMLElement) => act(() => void fireEvent.keyDown(dom, { key: 'Enter' }))
 const sleep = (ms: number) => act(() => new Promise((resolve) => setTimeout(resolve, ms)))
+const firstInline = (editor: Editor) => editor.getJSON().content?.[0].content?.[0] as { type?: string; attrs?: Record<string, unknown> } | undefined
 const rows = (name: string) => within(screen.getByRole('listbox', { name })).getAllByRole('option').map((o) => o.textContent?.replace('↩ Enter', ''))
 
 describe('the composer’s triggers come from the packages (CON-27)', () => {
@@ -65,7 +66,7 @@ describe('the composer’s triggers come from the packages (CON-27)', () => {
     expect(people.length).toBeLessThanOrEqual(6)
     await enter(dom)
     expect(screen.queryByRole('listbox')).toBeNull()
-    const node = editor.getJSON().content?.[0].content?.[0]
+    const node = firstInline(editor)
     expect(node?.type).toBe('mention')
     await type(editor, 'hi')
     await sleep(150) // the Enter that picked must not also send; this one is a new press
@@ -81,7 +82,7 @@ describe('the composer’s triggers come from the packages (CON-27)', () => {
     await type(editor, '!@')
     expect(rows('Urgent mention').length).toBeGreaterThan(0)
     await enter(dom)
-    const node = editor.getJSON().content?.[0].content?.[0]
+    const node = firstInline(editor)
     expect(node?.type).toBe('urgentMention')
     await sleep(150)
     await enter(dom)

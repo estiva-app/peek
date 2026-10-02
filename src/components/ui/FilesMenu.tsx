@@ -10,7 +10,7 @@ import type { ConversationMessage } from '@/lib/conversationRegistry'
  * section until FOL-23 removed the Convex topics.
  *
  * The trigger, the list and the chip are the package's since CON-27 (estiva-ui
- * 0.51.0, `ReferenceTrigger`); what stays here is Peek's: the copy, and a
+ * 0.52.0, `ReferenceTrigger`); what stays here is Peek's: the copy, and a
  * message as the package's item. A message is a file in the sense that matters
  * here (Miky, 2026-09-02: *"everything you mention … is basically a file"*),
  * and it is offered from the same key.
@@ -27,14 +27,22 @@ export const FILES_MENU_COPY = { ariaLabel: 'Topics and messages', sectionLabel:
  * together, and no relay hint.
  */
 export function toReferenceItem(message: ConversationMessage): CaptionedItem {
-  return {
+  // `[` asks on every keystroke, for every message on screen; a message's item
+  // never changes, so each is built once.
+  const known = ITEMS.get(message)
+  if (known) return known
+  const item = {
     id: message.eventId as string,
     label: message.author,
     snippet: previewText(message.body),
     uri: messageReference(message.eventId as string, MESSAGE_KIND),
     search: message.body,
   }
+  ITEMS.set(message, item)
+  return item
 }
+
+const ITEMS = new WeakMap<ConversationMessage, CaptionedItem>()
 
 /** At each row's start. */
 export const FILES_MENU_ICON = <IconMessage size={16} stroke={1.5} className="text-text-secondary" />

@@ -2,7 +2,7 @@ import { SlashCommands as SharedSlashCommands } from '@estiva-app/ui/editor'
 import { SLASH_SECTIONS } from '@/components/ui/SlashMenu'
 
 /**
- * `/` as a suggestion — PEE-18, the package's since CON-27 (estiva-ui 0.51.0).
+ * `/` as a suggestion — PEE-18, the package's since CON-27 (estiva-ui 0.52.0).
  *
  * **Why this replaced a bespoke implementation.** The old `/` menu watched the
  * whole document and only opened when the composer's text *began* with `/`,

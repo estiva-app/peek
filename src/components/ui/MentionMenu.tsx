@@ -7,7 +7,7 @@ import { mentionPeople, type Person } from '@/api'
  *
  * The list itself — its rows (the face, the name, the role line, the shared
  * EnterHint while highlighted), the box, the keys — is the package's
- * `peopleMenu` since CON-27 (estiva-ui 0.51.0). What stays here is Peek's:
+ * `peopleMenu` since CON-27 (estiva-ui 0.52.0). What stays here is Peek's:
  * the directory, and the face drawn through Peek's own `Avatar`, which knows
  * the picture.
  */

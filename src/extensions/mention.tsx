@@ -15,7 +15,7 @@ import { Reference } from '@/components/ui/Reference'
 // ─── @ and !@ ───
 //
 // The triggers, their lists and their chips are the package's since CON-27
-// (estiva-ui 0.51.0); what Peek adds is who can be mentioned. What a chip
+// (estiva-ui 0.52.0); what Peek adds is who can be mentioned. What a chip
 // writes is `@estiva-app/conversation`'s `mentionText` (`serializeInline`).
 
 export const PeekMention = PersonMention.configure({ people: mentionDirectory })

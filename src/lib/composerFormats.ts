@@ -1,6 +1,6 @@
 /**
  * The formats the `/` menu offers — PEE-18. The package's since CON-27
- * (estiva-ui 0.51.0, `FORMATS` and `applyFormat` beside `formatSection`); Peek
+ * (estiva-ui 0.52.0, `FORMATS` and `applyFormat` beside `formatSection`); Peek
  * takes code inline, the default (Katerina, 29 Sep).
  *
  * **The hint is Peek's own trigger, not Tiptap's key chord.** Every one of

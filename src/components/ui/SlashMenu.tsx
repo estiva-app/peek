@@ -8,7 +8,7 @@ import type { HighlightType } from '@/api'
  * The `/` menu — PEE-18: which rows Peek adds beside the shared Format section.
  *
  * The list, the trigger and the Format section are the package's since CON-27
- * (estiva-ui 0.51.0, `SlashCommands` and `formatSection`); code stays inline
+ * (estiva-ui 0.52.0, `SlashCommands` and `formatSection`); code stays inline
  * here (Katerina, 29 Sep). What is left is only Peek's: the Shortcuts and the
  * Highlights, and how each looks.
  *
