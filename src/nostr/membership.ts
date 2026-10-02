@@ -46,6 +46,7 @@ import {
   type Membership,
 } from '@estiva-app/conversation'
 import { queryRelay } from './bridge'
+import { isTaggedUrgentFor } from './channelStreams'
 import { PEEK_HORIZON_DAYS } from './readState'
 import type { RelaySeam } from './stars'
 
@@ -65,6 +66,8 @@ export interface MembershipRead {
   files: ReadonlyMap<string, Membership>
   /** Ids of the messages whose content names the viewer. */
   mentioned: ReadonlySet<string>
+  /** Ids of the ones among them urgent for the viewer (SPEC §13.1, CON-17). */
+  urgent: ReadonlySet<string>
   /** Unix seconds a created file's membership starts at — the horizon's start. */
   floor: number
 }
@@ -80,8 +83,10 @@ export function foldMemberships(pubkey: string, events: readonly SignedEvent[], 
   const floor = nowSeconds - HORIZON_SECONDS
   const byFile = new Map<string, SignedEvent[]>()
   const mentioned = new Set<string>()
+  const urgent = new Set<string>()
   for (const event of events) {
     if (mentions(event, pubkey)) mentioned.add(event.id)
+    if (isTaggedUrgentFor(event, pubkey)) urgent.add(event.id)
     for (const file of candidateFilesOf(event)) {
       const list = byFile.get(file)
       if (list) list.push(event)
@@ -96,7 +101,7 @@ export function foldMemberships(pubkey: string, events: readonly SignedEvent[], 
     const root = own ? [{ id: '', pubkey, kind: Number(kind), created_at: floor, tags: [['d', d ?? '']], content: '', sig: '' }] : []
     files.set(file, membershipOf(file, pubkey, [...root, ...held]))
   }
-  return { files, mentioned, floor }
+  return { files, mentioned, urgent, floor }
 }
 
 /** The membership read, or `undefined` when the relay did not answer — never an empty guess. */

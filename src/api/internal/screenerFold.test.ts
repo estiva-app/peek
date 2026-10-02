@@ -18,6 +18,7 @@ import {
   fileScreenerRowId,
   foldDmScreenerRows,
   foldFileScreenerRows,
+  foldUrgentFiles,
   type ScreenerDm,
   type ScreenerFile,
 } from './screenerFold'
@@ -127,6 +128,39 @@ describe('a member file screens while somebody else’s comment on it is unread 
     // A DM row, whose dismissal must not go to a file — and the other way round.
     expect(fileAddressFromScreenerRowId(dmScreenerRowId('b'.repeat(64)))).toBeNull()
     expect(dmPartnerFromScreenerRowId(id)).toBeNull()
+  })
+})
+
+describe('a file is in Urgent while a comment urgent for the viewer is unread (CON-17)', () => {
+  // A key, not a name: an urgent comment is a mention, and a mention is judged by the viewer's npub.
+  const ME = 'e'.repeat(64)
+  const ADDRESS = `30840:${'b'.repeat(64)}:file-d`
+  const S = Math.floor(T / 1000)
+  const file = (comments: ScreenerFile['comments']): ScreenerFile => ({ address: ADDRESS, kind: 30840, title: 'The file', comments })
+  const comment = (id: string, over: Partial<ScreenerFile['comments'][number]> = {}) => ({ id, author: 'someone', body: 'b', createdAt: S, ...over })
+  const fold = (files: ScreenerFile[], marker: number | undefined, urgent: string[]) =>
+    foldUrgentFiles(files, {
+      merged: marker === undefined ? {} : { [ADDRESS]: marker },
+      termsOf: () => ({ member: true, muted: false }),
+      isMentioned: (id) => urgent.includes(id),
+      isUrgent: (id) => urgent.includes(id),
+      me: ME,
+      nowSeconds: S + 60,
+      horizonSeconds: 90 * 24 * 60 * 60,
+    })
+
+  it('an unread urgent comment puts the file in, once, at that comment', () => {
+    const f = file([comment('plain', { createdAt: S + 5 }), comment('urgent')])
+    expect(fold([f, f], S - 10, ['urgent'])).toEqual([{ address: ADDRESS, kind: 30840, title: 'The file', at: S }])
+  })
+
+  it('reading the file takes it out, and a plain unread comment never puts it in', () => {
+    expect(fold([file([comment('urgent')])], S, ['urgent'])).toEqual([])
+    expect(fold([file([comment('plain')])], S - 10, [])).toEqual([])
+  })
+
+  it('the viewer’s own urgent comment does not', () => {
+    expect(fold([file([comment('urgent', { author: ME })])], S - 10, ['urgent'])).toEqual([])
   })
 })
 

@@ -43,6 +43,7 @@
  */
 import { KIND, MAX_FILTERS_PER_QUERY, type SignedEvent } from '@estiva-app/protocol'
 import { CONVERSATION_LIMIT, type ConversationMessage, type QueryFn } from '@estiva-app/interop'
+import { mentionTagsFor, mentions } from '@estiva-app/conversation'
 
 /** A message in a Folder's channel, with the file streams it belongs to. */
 export interface StreamMessage extends ConversationMessage {
@@ -53,9 +54,8 @@ export interface StreamMessage extends ConversationMessage {
    */
   about: string[]
   /**
-   * The composer's urgent marker was in the body (SHR-5). Carried on the
-   * message because a topic's sidebar indicator is two signals, not one, and
-   * the second cannot be read off anything but the text.
+   * The message is urgent for the viewer — `isUrgentFor` (CON-17). Carried on
+   * the message because a topic's sidebar indicator is two signals, not one.
    */
   urgent: boolean
   /**
@@ -66,13 +66,49 @@ export interface StreamMessage extends ConversationMessage {
 }
 
 /**
- * `!@` — the composer's urgent marker (§2.12), read off the wire.
+ * `!@` in the text — the urgent marker as it was written before urgency had a
+ * wire form, and still is for a person with no key. Urgent for every reader,
+ * since a name cannot say whom.
  *
  * It had a twin, Convex's `isUrgentBody`, until REM-7 deleted `convex/`; this
  * is the only copy now.
  */
 export function isUrgentContent(content: string | undefined): boolean {
   return content !== undefined && content.includes('!@')
+}
+
+/** SPEC §13.1's urgent mention: `["urgent", <pubkey>]` beside that person's `p` (CON-17). */
+export const URGENT_TAG = 'urgent'
+
+/**
+ * Whether a message is urgent for `viewer` (SPEC §13.1, CON-17): an
+ * `["urgent", viewer]` tag on a message whose body names them, or the old `!@`
+ * text. The body must name them for the same reason a `p` alone is not a
+ * mention (§11.8): a tag nobody can see in the text should not page anyone.
+ */
+export function isUrgentFor(event: Pick<SignedEvent, 'content' | 'tags'>, viewer: string | undefined): boolean {
+  return isUrgentContent(event.content) || isTaggedUrgentFor(event, viewer)
+}
+
+/**
+ * The tag half of `isUrgentFor`, without the old text. For a read that holds
+ * only what `#p` returned: the comment builders tag the file's author on every
+ * comment, so an old `!@Name` meant for somebody else would page the author.
+ */
+export function isTaggedUrgentFor(event: Pick<SignedEvent, 'content' | 'tags'>, viewer: string | undefined): boolean {
+  if (!viewer || !event.tags.some((t) => t[0] === URGENT_TAG && t[1] === viewer)) return false
+  return mentions(event, viewer)
+}
+
+/**
+ * The `urgent` tags for a body: one per person in `urgent` the body names, so
+ * each carries a `p` beside it (SPEC §13.1). A person the body no longer names
+ * — their chip deleted — is dropped rather than paged.
+ */
+export function urgentTagsFor(body: string, urgent: readonly string[] | undefined): string[][] {
+  if (!urgent || urgent.length === 0) return []
+  const named = new Set(mentionTagsFor(body).map((tag) => tag[1]))
+  return [...new Set(urgent)].filter((pubkey) => named.has(pubkey)).map((pubkey) => [URGENT_TAG, pubkey])
 }
 
 /**
@@ -118,6 +154,8 @@ export function rootOf(event: SignedEvent): string {
 export function streamMessagesByFolder(
   events: readonly SignedEvent[],
   folderIds: readonly string[],
+  /** Whose urgency to read (CON-17); without one only the old `!@` text is urgent. */
+  viewer?: string,
 ): Record<string, StreamMessage[]> {
   const byFolder: Record<string, StreamMessage[]> = {}
   for (const folder of folderIds) byFolder[folder] = []
@@ -135,7 +173,7 @@ export function streamMessagesByFolder(
       by: event.pubkey,
       root: rootOf(event),
       about: event.tags.filter((t) => t[0] === 'a' && t[1]).map((t) => t[1]),
-      urgent: isUrgentContent(event.content),
+      urgent: isUrgentFor(event, viewer),
       body: event.content,
     })
   }

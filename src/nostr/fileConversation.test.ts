@@ -359,6 +359,14 @@ describe('commentAsViewer publishes the owner’s comment with the composer’s 
     expect(imeta).toContain('filename shot.png')
   })
 
+  it('an urgent mention on a comment carries an urgent tag only for a person the body names (CON-17)', async () => {
+    // MIKY's chip was deleted before sending: the composer still lists him, the text does not.
+    await commentAsViewer({ container, body: `Now please nostr:${encodeNpub(CATH)}`, urgent: [CATH, MIKY, CATH] }, 'https://relay.test', token)
+    const tags = signed().tags
+    expect(tags.filter((t) => t[0] === 'urgent')).toEqual([['urgent', CATH]])
+    expect(tags).toContainEqual(['p', CATH])
+  })
+
   it('a root that names another file carries its address as a, and never its own file twice (CON-11)', async () => {
     await commentAsViewer({ container, body: `See ${OTHER_NADDR}, unlike ${OWN_NADDR}` }, 'https://relay.test', token)
     expect(signed().tags.filter((t) => t[0] === 'a')).toEqual([['a', ADDRESS], ['a', OTHER]])
@@ -566,6 +574,15 @@ describe('a channel conversation (REM-1)', () => {
     expect(imeta).toContain('size 4096')
     expect(imeta).toContain('x def456')
     expect(published.tags.some((t) => t[0] === 'A' || t[0] === 'e')).toBe(false)
+  })
+
+  it('an urgent mention is the plain mention in the text and an urgent tag beside its p (CON-17)', async () => {
+    const body = `Need you nostr:${encodeNpub(CATH)}`
+    await commentAsViewer({ container: dmContainer, body, urgent: [CATH] }, 'https://relay.test', token)
+    const published = signed()
+    expect(published.content).toBe(body)
+    expect(published.tags).toContainEqual(['p', CATH])
+    expect(published.tags.filter((t) => t[0] === 'urgent')).toEqual([['urgent', CATH]])
   })
 
   it('a reply is the same kind:9 with Buzz’s single reply-marked e', async () => {

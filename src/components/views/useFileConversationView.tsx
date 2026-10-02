@@ -253,10 +253,10 @@ export function useFileConversationView({
     }))
   }
 
-  const handleSend = async ({ text, resolution, files }: SendPayload) => {
+  const handleSend = async ({ text, resolution, files, urgent }: SendPayload) => {
     const attachments = outgoing(files)
     if (!attachments) return false
-    const result = await actions.comment(text, attachments)
+    const result = await actions.comment(text, attachments, urgent)
     if (!refuse(result)) return false
     membershipAfterWrite()
     await onCommented?.()
@@ -269,11 +269,11 @@ export function useFileConversationView({
   const openRoot = openThreadId && conversation ? conversation.roots.find((r) => r.id === openThreadId) : undefined
   const openView = openThreadId && view ? view.byId[openThreadId] : undefined
 
-  const handleSendReply = async ({ text, resolution, files }: SendPayload) => {
+  const handleSendReply = async ({ text, resolution, files, urgent }: SendPayload) => {
     if (!openRoot) return false
     const attachments = outgoing(files)
     if (!attachments) return false
-    const result = await actions.reply(openRoot, text, attachments)
+    const result = await actions.reply(openRoot, text, attachments, urgent)
     if (!refuse(result)) return false
     membershipAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).

@@ -85,6 +85,21 @@ export const PeekMention = Mention.extend({
   suggestion: makeSuggestion(false),
 })
 
+/**
+ * The pubkeys the document's urgent mentions name (CON-17). The text writes
+ * each as a plain mention, so this is what carries the urgency to the wire; a
+ * chip with no key is still `!@Name` in the text.
+ */
+export function extractUrgent(editor: {
+  state: { doc: { descendants: (cb: (node: { type: { name: string }; attrs: Record<string, unknown> }) => boolean | void) => void } }
+}): string[] | undefined {
+  const urgent: string[] = []
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'urgentMention' && typeof node.attrs.pubkey === 'string' && node.attrs.pubkey) urgent.push(node.attrs.pubkey)
+  })
+  return urgent.length > 0 ? urgent : undefined
+}
+
 export const UrgentMention = Mention.extend({
   name: 'urgentMention',
 

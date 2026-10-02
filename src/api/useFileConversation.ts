@@ -41,8 +41,9 @@ export type FileConversationState = FileConversation | 'loading' | { failed: Rel
  * holds, which is unchanged.
  */
 export interface FileConversationActions {
-  comment: (body: string, files?: readonly OutgoingAttachment[]) => Promise<WriteResult>
-  reply: (parent: ConversationEvent, body: string, files?: readonly OutgoingAttachment[]) => Promise<WriteResult>
+  /** `urgent`: the people the body's urgent mentions name, by pubkey (CON-17). */
+  comment: (body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[]) => Promise<WriteResult>
+  reply: (parent: ConversationEvent, body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[]) => Promise<WriteResult>
   /** `files`, when given, is the whole attachment set after the edit — never empty. */
   edit: (targetEventId: string, body: string, files?: readonly OutgoingAttachment[]) => Promise<WriteResult>
   remove: (targetEventId: string) => Promise<WriteResult>
@@ -239,13 +240,13 @@ export function useFileConversation(
     // A file's new root is not in `rootIds` until the object is re-resolved,
     // so a re-read here would find nothing new; the caller re-resolves
     // instead. A channel's is found by the channel read, so that one re-reads.
-    comment: (body, files) =>
+    comment: (body, files, urgent) =>
       container
-        ? write((url, token) => commentAsViewer({ container, body, files }, url, token), container.kind === 'channel')
+        ? write((url, token) => commentAsViewer({ container, body, files, urgent }, url, token), container.kind === 'channel')
         : Promise.resolve(SIGNED_OUT),
-    reply: (parent, body, files) =>
+    reply: (parent, body, files, urgent) =>
       container
-        ? write((url, token) => commentAsViewer({ container, body, parent, files }, url, token))
+        ? write((url, token) => commentAsViewer({ container, body, parent, files, urgent }, url, token))
         : Promise.resolve(SIGNED_OUT),
     edit: (targetEventId, body, files) =>
       container

@@ -45,6 +45,8 @@ export interface MembershipSeam {
   termsOf: (key: string) => StreamTerms
   /** Whether a message's content names the viewer: it counts through a mute (§11.8). */
   isMentioned: (messageId: string) => boolean
+  /** Whether a message names the viewer urgently (SPEC §13.1, CON-17) — Desk's Urgent for a file. */
+  isUrgent: (messageId: string) => boolean
   /** File addresses the viewer is a member of — what the Screener asks the relay about. */
   memberFiles: readonly string[]
   /** Join or leave a file; local at once, then published. */
@@ -61,6 +63,7 @@ const INERT: MembershipSeam = {
   isMember: () => false,
   termsOf: () => NOT_A_MEMBER,
   isMentioned: () => false,
+  isUrgent: () => false,
   memberFiles: [],
   setMember: async () => {},
   refresh: async () => {},
@@ -100,6 +103,7 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
     [sync.files, sync.muted, sync.floor, me],
   )
   const isMentioned = useCallback((id: string) => sync.mentioned.has(id), [sync.mentioned])
+  const isUrgent = useCallback((id: string) => sync.urgent.has(id), [sync.urgent])
   const memberFiles = useMemo(
     () =>
       [...sync.files]
@@ -116,11 +120,12 @@ export function MembershipProvider({ children }: { children: ReactNode }) {
       isMember: (key) => termsOf(key).member,
       termsOf,
       isMentioned,
+      isUrgent,
       memberFiles,
       setMember: sync.setMember,
       refresh: sync.refresh,
     }),
-    [sync.state, sync.setMember, sync.refresh, me, termsOf, isMentioned, memberFiles],
+    [sync.state, sync.setMember, sync.refresh, me, termsOf, isMentioned, isUrgent, memberFiles],
   )
   return <MembershipContext.Provider value={value}>{children}</MembershipContext.Provider>
 }

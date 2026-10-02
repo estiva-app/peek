@@ -196,7 +196,7 @@ export function DeskPage() {
     const wasStarred = isDmStarred(selected.dmId)
     toggleDm({ dmId: selected.dmId, name: selected.dmName })
     if (!wasStarred) return
-    const inUrgent = urgentItems.some((u) => u.dmId === selected.dmId)
+    const inUrgent = urgentItems.some((u) => u.kind === 'dm' && u.dmId === selected.dmId)
     if (!inUrgent) setSelected(null)
     else if (selected.section === 'starred') setSelected({ ...selected, section: 'urgent' })
   }
@@ -259,16 +259,29 @@ export function DeskPage() {
       onOpenScreener={openScreener}
       onDismissScreener={dismissScreener}
       onLaterScreener={laterScreener}
-      urgent={urgentItems.map((item) => ({
-        id: item.id,
-        kind: 'dm' as const,
-        name: item.name,
-        avatarSrc: item.avatarSrc,
-        isUnread: true,
-        isUrgent: true,
-        isSelected: isSelectedIn('urgent', item.dmId),
-        onClick: () => selectDm(item.dmId, item.name, 'urgent'),
-      }))}
+      urgent={urgentItems.map((item) =>
+        item.kind === 'file'
+          ? {
+              id: item.id,
+              kind: 'file' as const,
+              name: item.title,
+              isBareFile: item.fileKind === KIND_BARE_FILE,
+              isUnread: true,
+              isUrgent: true,
+              isSelected: isOpen(item.address, 'urgent'),
+              onClick: () => openFile(item.address, item.title, 'urgent'),
+            }
+          : {
+              id: item.id,
+              kind: 'dm' as const,
+              name: item.name,
+              avatarSrc: item.avatarSrc,
+              isUnread: true,
+              isUrgent: true,
+              isSelected: isSelectedIn('urgent', item.dmId),
+              onClick: () => selectDm(item.dmId, item.name, 'urgent'),
+            },
+      )}
       openWork={openWorkItems.map((item) =>
         item.kind === 'file'
           ? {

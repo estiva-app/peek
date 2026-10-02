@@ -8,6 +8,7 @@ import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEdit
 import { SelectionToolbar, isSuggestionActive } from '@estiva-app/ui/editor'
 import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
+import { extractUrgent } from '@/extensions/mention'
 import { IconArrowUp } from '@tabler/icons-react'
 import { IconButton } from './IconButton'
 import { AttachmentCard, Kbd, Toolbar } from '@estiva-app/ui'
@@ -23,6 +24,11 @@ export interface SendPayload {
   text: string
   resolution?: { message: string }
   highlightType?: HighlightType
+  /**
+   * The pubkeys the `!@` mentions name (CON-17). `text` writes each as a
+   * plain mention, so this is the only place the urgency survives to the wire.
+   */
+  urgent?: string[]
   /** Figma frame ids attached via the command launcher's find flow. */
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
@@ -150,6 +156,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
               text,
               resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
               highlightType: hl,
+              urgent: extractUrgent(ed),
               files: files.length > 0 ? files : undefined,
             })
             /*
@@ -335,6 +342,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
       text,
       resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
       highlightType: hl,
+      urgent: extractUrgent(editor),
       files: files.length > 0 ? files : undefined,
     })
     editor.commands.clearContent(true)

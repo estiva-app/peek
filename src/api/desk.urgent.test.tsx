@@ -25,14 +25,31 @@ vi.mock('@/api/people', () => ({
   ],
 }))
 vi.mock('@/api/internal/openWork', () => ({ useOpenWork: () => ({ items: [], isLoading: false }) }))
-vi.mock('@/api/internal/screener', () => ({ useScreener: () => ({ items: [], isLoading: false }) }))
+const URGENT_FILE = `30840:${'f'.repeat(64)}:spec`
+let urgentFiles: { address: string; kind: number; title: string; at: number }[] = []
+vi.mock('@/api/internal/screener', () => ({ useScreener: () => ({ items: [], isLoading: false, urgentFiles }) }))
 
 describe('useDeskItems().urgent', () => {
   it('lists the DMs whose indicator is lit, named from the roster', async () => {
+    urgentFiles = []
     const { useDeskItems } = await import('./desk')
     const { result } = renderHook(() => useDeskItems())
     expect(result.current.urgent).toEqual([
       { id: `urg_dm_${URGENT}`, kind: 'dm', dmId: URGENT, name: 'Hallie Pratt', avatarSrc: 'hallie.png' },
     ])
+  })
+
+  it('lists the files with an unread urgent comment after the DMs (CON-17)', async () => {
+    urgentFiles = [{ address: URGENT_FILE, kind: 30840, title: 'The spec', at: 1 }]
+    const { useDeskItems } = await import('./desk')
+    const { result } = renderHook(() => useDeskItems())
+    expect(result.current.urgent.map((item) => item.id)).toEqual([`urg_dm_${URGENT}`, `urg_file_${URGENT_FILE}`])
+    expect(result.current.urgent[1]).toEqual({
+      id: `urg_file_${URGENT_FILE}`,
+      kind: 'file',
+      address: URGENT_FILE,
+      fileKind: 30840,
+      title: 'The spec',
+    })
   })
 })

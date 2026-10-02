@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { SignedEvent } from '@estiva-app/protocol'
+import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
 import {
   CHANNEL_STREAM_LIMIT,
   channelStreamFilters,
   isUrgentContent,
+  isUrgentFor,
   readChannelStreams,
   streamMessagesByFolder,
+  urgentTagsFor,
 } from './channelStreams'
 
 const FOLDER_A = '11111111-1111-4111-8111-111111111111'
@@ -13,6 +15,8 @@ const FOLDER_B = '22222222-2222-4222-8222-222222222222'
 const PK = 'a'.repeat(64)
 const ISSUE = `30851:${PK}:one`
 const PROJECT = `30850:${PK}:two`
+const ADA = 'b'.repeat(64)
+const BEA = 'c'.repeat(64)
 
 const event = (id: string, tags: string[][], over: Partial<SignedEvent> = {}): SignedEvent => ({
   id: id.padEnd(64, '0'),
@@ -90,6 +94,40 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
       true,
       false,
     ])
+  })
+
+  it('reads the urgent tag for the viewer it is given (CON-17)', () => {
+    const events = [event('1', [['h', FOLDER_A], ['p', ADA], ['urgent', ADA]], { content: `now nostr:${encodeNpub(ADA)}` })]
+    expect(streamMessagesByFolder(events, [FOLDER_A], ADA)[FOLDER_A][0].urgent).toBe(true)
+    expect(streamMessagesByFolder(events, [FOLDER_A], BEA)[FOLDER_A][0].urgent).toBe(false)
+    expect(streamMessagesByFolder(events, [FOLDER_A])[FOLDER_A][0].urgent).toBe(false)
+  })
+})
+
+describe('isUrgentFor — SPEC §13.1’s urgent tag (CON-17)', () => {
+  const named = `the build is down nostr:${encodeNpub(ADA)}`
+  it('is urgent for the person the tag names when the body names them', () => {
+    expect(isUrgentFor({ content: named, tags: [['p', ADA], ['urgent', ADA]] }, ADA)).toBe(true)
+  })
+  it('is not urgent for anybody else the message names', () => {
+    const both = `${named} cc nostr:${encodeNpub(BEA)}`
+    expect(isUrgentFor({ content: both, tags: [['p', ADA], ['p', BEA], ['urgent', ADA]] }, BEA)).toBe(false)
+  })
+  it('a tag whose person the body does not name pages nobody', () => {
+    expect(isUrgentFor({ content: 'the build is down', tags: [['p', ADA], ['urgent', ADA]] }, ADA)).toBe(false)
+  })
+  it('a plain mention is not urgent, and no viewer reads only the old text', () => {
+    expect(isUrgentFor({ content: named, tags: [['p', ADA]] }, ADA)).toBe(false)
+    expect(isUrgentFor({ content: named, tags: [['urgent', ADA]] }, undefined)).toBe(false)
+    expect(isUrgentFor({ content: '!@Ada help', tags: [] }, undefined)).toBe(true)
+  })
+})
+
+describe('urgentTagsFor', () => {
+  it('one tag per urgent person the body names, deduplicated', () => {
+    const body = `nostr:${encodeNpub(ADA)} and nostr:${encodeNpub(BEA)}`
+    expect(urgentTagsFor(body, [ADA, ADA, PK])).toEqual([['urgent', ADA]])
+    expect(urgentTagsFor(body, undefined)).toEqual([])
   })
 })
 

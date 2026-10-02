@@ -121,6 +121,49 @@ export function foldFileScreenerRows(
   return rows
 }
 
+/** A file in Desk's Urgent (CON-17). */
+export interface FoldedUrgentFile {
+  address: string
+  kind: number
+  title: string
+  /** The newest unread urgent comment's instant, unix seconds. */
+  at: number
+}
+
+/**
+ * The files with an unread comment urgent for the viewer, newest first —
+ * Desk's Urgent for files (CON-17, FOL-43).
+ *
+ * The file dot's rule over the urgent comments alone, as a DM is in Urgent
+ * exactly when its sidebar row shows the urgent indicator: somebody else's
+ * comment that names the viewer urgently (`isUrgent`, SPEC §13.1) and is past
+ * the file's marker. Reading the file retires it, with no write. The Screener's
+ * decisions and open work do not apply: Later and the X are for what can wait.
+ */
+export function foldUrgentFiles(
+  files: readonly ScreenerFile[],
+  frontier: ScreenerFileFrontier & { isUrgent: (commentId: string) => boolean },
+): FoldedUrgentFile[] {
+  const rows: FoldedUrgentFile[] = []
+  const seen = new Set<string>()
+  for (const file of files) {
+    if (seen.has(file.address)) continue
+    seen.add(file.address)
+    const context = fileContext(file.address)
+    if (!context) continue
+    const terms = frontier.termsOf(file.address)
+    let at: number | undefined
+    for (const comment of file.comments) {
+      if (!frontier.isUrgent(comment.id) || (at !== undefined && comment.createdAt <= at)) continue
+      const message = { id: comment.id, at: comment.createdAt, by: comment.author, root: comment.id }
+      if (streamHasUnread([message], context, terms, frontier, frontier.isMentioned)) at = comment.createdAt
+    }
+    if (at !== undefined) rows.push({ address: file.address, kind: file.kind, title: file.title, at })
+  }
+  rows.sort((a, b) => b.at - a.at)
+  return rows
+}
+
 /** A DM the viewer has a channel for, and what the channel store holds of it (CON-14). */
 export interface ScreenerDm {
   /** The partner's pubkey — the DM's id everywhere (REM-3). */
