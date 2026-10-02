@@ -58,7 +58,7 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, referenceTagsFor, type Decorations } from '@estiva-app/conversation'
+import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, referenceTagsFor, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
 import type { Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
@@ -66,7 +66,6 @@ import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
 import { RATE_LIMIT_MAX_WAIT_MS, RelayReadError, retryAfterMs } from './relayRead'
 import { applyActionAsViewer, fileCommentOf, threadEventsAsViewer, urlReferenceTagsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
 import { findUrls } from '@/lib/textParsing'
-import { urgentTagsFor } from './channelStreams'
 
 /** Where a conversation lives; see the module header. */
 export type ConversationContainer =

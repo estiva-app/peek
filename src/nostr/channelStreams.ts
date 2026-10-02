@@ -43,7 +43,7 @@
  */
 import { KIND, MAX_FILTERS_PER_QUERY, type SignedEvent } from '@estiva-app/protocol'
 import { CONVERSATION_LIMIT, type ConversationMessage, type QueryFn } from '@estiva-app/interop'
-import { mentionTagsFor, mentions } from '@estiva-app/conversation'
+import { mentions, URGENT_TAG } from '@estiva-app/conversation'
 
 /** A message in a Folder's channel, with the file streams it belongs to. */
 export interface StreamMessage extends ConversationMessage {
@@ -77,9 +77,6 @@ export function isUrgentContent(content: string | undefined): boolean {
   return content !== undefined && content.includes('!@')
 }
 
-/** SPEC §13.1's urgent mention: `["urgent", <pubkey>]` beside that person's `p` (CON-17). */
-export const URGENT_TAG = 'urgent'
-
 /**
  * Whether a message is urgent for `viewer` (SPEC §13.1, CON-17): an
  * `["urgent", viewer]` tag on a message whose body names them, or the old `!@`
@@ -98,17 +95,6 @@ export function isUrgentFor(event: Pick<SignedEvent, 'content' | 'tags'>, viewer
 export function isTaggedUrgentFor(event: Pick<SignedEvent, 'content' | 'tags'>, viewer: string | undefined): boolean {
   if (!viewer || !event.tags.some((t) => t[0] === URGENT_TAG && t[1] === viewer)) return false
   return mentions(event, viewer)
-}
-
-/**
- * The `urgent` tags for a body: one per person in `urgent` the body names, so
- * each carries a `p` beside it (SPEC §13.1). A person the body no longer names
- * — their chip deleted — is dropped rather than paged.
- */
-export function urgentTagsFor(body: string, urgent: readonly string[] | undefined): string[][] {
-  if (!urgent || urgent.length === 0) return []
-  const named = new Set(mentionTagsFor(body).map((tag) => tag[1]))
-  return [...new Set(urgent)].filter((pubkey) => named.has(pubkey)).map((pubkey) => [URGENT_TAG, pubkey])
 }
 
 /**

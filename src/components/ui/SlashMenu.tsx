@@ -1,78 +1,57 @@
 import { EnterHint } from '@estiva-app/ui'
-import type { SuggestionPopupOptions } from '@estiva-app/ui/editor'
+import { formatSection, typeTrigger, type SlashCommand, type SlashSection } from '@estiva-app/ui/editor'
 import { HighlightSwatch } from './HighlightPill'
-import { FORMATS, type FormatId } from '@/lib/composerFormats'
+import { insertHighlightTag } from '@/extensions/highlight'
 import type { HighlightType } from '@/api'
 
 /**
- * The `/` menu — PEE-18: which rows it has, and what each shows.
+ * The `/` menu — PEE-18: which rows Peek adds beside the shared Format section.
  *
- * The list itself — the box at the caret, the keys, the highlight, the
- * scrolling, what a screen reader is told — is the package's `SuggestionMenu`
- * since UIG-31 (estiva-ui 0.45.0), drawn by `suggestionPopup` in
- * `slashCommands.tsx`. What is left here is only Peek's: the rows, their
- * sections and how each looks.
+ * The list, the trigger and the Format section are the package's since CON-27
+ * (estiva-ui 0.51.0, `SlashCommands` and `formatSection`); code stays inline
+ * here (Katerina, 29 Sep). What is left is only Peek's: the Shortcuts and the
+ * Highlights, and how each looks.
  *
  * Order (Katerina, 2026-09-04): Format, then Shortcuts, then Highlights.
  */
 
-export type SlashItem =
-  | { kind: 'format'; id: FormatId; label: string; trigger?: string }
-  | { kind: 'shortcut'; label: string; trigger: string; input: string; description: string }
-  | { kind: 'highlight'; type: HighlightType; label: string }
+function shortcut(label: string, trigger: string, input: string, description: string): SlashCommand {
+  // The hint is the trigger this app teaches, matching the Format section rather than a column of chords.
+  return { key: `shortcut-${trigger}`, row: { label, shortcut: trigger }, keywords: [trigger, input, description], run: typeTrigger(input) }
+}
 
-export const SLASH_ITEMS: SlashItem[] = [
-  // The formats, their labels and their triggers live in one place
-  // (src/lib/composerFormats.ts) so the menu cannot drift from what the editor
-  // actually does. The hint is the trigger this app teaches (`#` for a
-  // heading), matching the Shortcuts section rather than a column of chords.
-  ...FORMATS.map((f): SlashItem => ({ kind: 'format', id: f.id, label: f.label, trigger: f.trigger })),
-  { kind: 'shortcut', label: 'Mention', trigger: '@', input: '@', description: 'Mention a person' },
-  { kind: 'shortcut', label: 'Urgent', trigger: '!@', input: '!@', description: 'Urgent mention' },
-  { kind: 'shortcut', label: 'Reference', trigger: '[', input: '[', description: 'Reference a file or topic' },
-  // `->`, not `→`: the row shows what you would type, and the resolution
-  // block's own input rule is /^->\s$/ — there is no `→` key to press. It
-  // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide
-  // against 6px for everything else.
-  { kind: 'shortcut', label: 'Resolve', trigger: '->', input: '-> ', description: 'Resolve conversation' },
-  { kind: 'highlight', type: 'insight', label: 'Insight' },
-  { kind: 'highlight', type: 'concern', label: 'Concern' },
-  { kind: 'highlight', type: 'conclusion', label: 'Conclusion' },
-  { kind: 'highlight', type: 'question', label: 'Question' },
-  { kind: 'highlight', type: 'summary', label: 'Summary' },
+function highlight(type: HighlightType, label: string): SlashCommand {
+  return {
+    key: `highlight-${type}`,
+    row: { label, leading: <HighlightSwatch type={type} />, hint: <EnterHint /> },
+    keywords: [type],
+    run: (editor) => insertHighlightTag(editor, type),
+  }
+}
+
+export const SLASH_SECTIONS: readonly SlashSection[] = [
+  formatSection('inline'),
+  {
+    label: 'Shortcuts',
+    commands: [
+      shortcut('Mention', '@', '@', 'Mention a person'),
+      shortcut('Urgent', '!@', '!@', 'Urgent mention'),
+      shortcut('Reference', '[', '[', 'Reference a file or topic'),
+      // `->`, not `→`: the row shows what you would type, and the resolution
+      // block's own input rule is /^->\s$/ — there is no `→` key to press. It
+      // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide
+      // against 6px for everything else.
+      shortcut('Resolve', '->', '-> ', 'Resolve conversation'),
+    ],
+  },
+  {
+    label: 'Highlights',
+    commands: [
+      highlight('insight', 'Insight'),
+      highlight('concern', 'Concern'),
+      highlight('conclusion', 'Conclusion'),
+      highlight('question', 'Question'),
+      highlight('summary', 'Summary'),
+    ],
+  },
 ]
-
-/** Narrow the list to a query — the text typed after the `/`. */
-export function filterSlashItems(query: string): SlashItem[] {
-  const q = query.toLowerCase()
-  if (!q) return SLASH_ITEMS
-  return SLASH_ITEMS.filter((item) => {
-    if (item.kind === 'format') return item.label.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
-    if (item.kind === 'highlight') return item.label.toLowerCase().includes(q) || item.type.includes(q)
-    return (
-      item.label.toLowerCase().includes(q) ||
-      item.trigger.includes(q) ||
-      item.input.includes(q) ||
-      item.description.toLowerCase().includes(q)
-    )
-  })
-}
-
-/** Which section a row sits in, and what it shows — the list is drawn by the package (UIG-31). */
-export const SLASH_MENU: SuggestionPopupOptions<SlashItem> = {
-  ariaLabel: 'Commands',
-  // The box's width and the 400px cap the menu has always had (D47).
-  width: 'w-[300px]',
-  maxHeight: 'max-h-[400px]',
-  sections: (items) => [
-    { label: 'Format', items: items.filter((i) => i.kind === 'format') },
-    { label: 'Shortcuts', items: items.filter((i) => i.kind === 'shortcut') },
-    { label: 'Highlights', items: items.filter((i) => i.kind === 'highlight') },
-  ],
-  itemKey: (item) => (item.kind === 'format' ? `format-${item.id}` : item.kind === 'shortcut' ? `shortcut-${item.trigger}` : `highlight-${item.type}`),
-  row: (item) =>
-    item.kind === 'highlight'
-      ? { label: item.label, leading: <HighlightSwatch type={item.type} />, hint: <EnterHint /> }
-      : // The hint is the trigger this app teaches (`#` for a heading), not a chord.
-        { label: item.label, shortcut: item.trigger },
-}

@@ -1,154 +1,43 @@
 import { NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
-import { type SuggestionOptions } from '@tiptap/suggestion'
-import { suggestionPopup } from '@estiva-app/ui/editor'
+import { CaptionedReference, PersonMention, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
-import { encodeNevent } from '@estiva-app/protocol'
-import { mentionPeople, useResolvedReferences, type Person } from '@/api'
+import { useResolvedReferences } from '@/api'
 import { mentionMessages } from '@/api/mentions'
-import { isObjectAddress, previewText } from '@/lib/textParsing'
-import { MESSAGE_KIND } from '@/nostr/manifest'
-import { peopleMenu } from '@/components/ui/MentionMenu'
+import { isObjectAddress } from '@/lib/textParsing'
+import { mentionDirectory } from '@/components/ui/MentionMenu'
 import { inlineChipClassName } from '@estiva-app/ui'
-import { FILES_MENU, type FilesMenuItem } from '@/components/ui/FilesMenu'
+import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
 import { Reference } from '@/components/ui/Reference'
 
-// ─── Suggestion config factory ───
+// ─── @ and !@ ───
 //
-// The list — its box, keys, highlight and the "is a menu open?" counter the
-// editors ask — is the package's since UIG-31 (estiva-ui 0.45.0):
-// `suggestionPopup` draws `peopleMenu`'s rows as a `SuggestionMenu`.
+// The triggers, their lists and their chips are the package's since CON-27
+// (estiva-ui 0.51.0); what Peek adds is who can be mentioned. What a chip
+// writes is `@estiva-app/conversation`'s `mentionText` (`serializeInline`).
 
-function makeSuggestion(isUrgent: boolean): Omit<SuggestionOptions<Person>, 'editor'> {
-  return {
-    items: ({ query }) =>
-      mentionPeople()
-        .filter((p) => query === '' || p.name.toLowerCase().includes(query.toLowerCase()))
-        .slice(0, 6),
+export const PeekMention = PersonMention.configure({ people: mentionDirectory })
 
-    render: suggestionPopup(peopleMenu(isUrgent)),
-
-    command: ({ editor, range, props: person }) => {
-      const nodeType = isUrgent ? 'urgentMention' : 'mention'
-      editor
-        .chain()
-        .focus()
-        .insertContentAt(range, [
-          { type: nodeType, attrs: { id: person.id, label: person.name, pubkey: person.pubkey ?? null } },
-          { type: 'text', text: ' ' },
-        ])
-        .run()
-    },
-  }
-}
-
-// ─── Extensions ───
-
-export const PeekMention = Mention.extend({
-  name: 'mention',
-
-  addAttributes() {
-    return {
-      id: { default: null },
-      label: { default: null },
-      /**
-       * The mentioned person's Nostr key, when they have one — SPEC §13.1.
-       *
-       * `id` is Peek's own identifier and means nothing to another app; this is
-       * what the body is serialised with, so a mention survives a rename and
-       * resolves for a reader who does not hold this directory.
-       */
-      pubkey: { default: null },
-    }
-  },
-
-  renderHTML({ node }) {
-    return [
-      'span',
-      {
-        'data-mention': 'true',
-        'data-id': node.attrs.id,
-        // No node view, so this spec is what the editor draws: the one chip (D67).
-        class: inlineChipClassName('person', 'cursor-default'),
-      },
-      `@${node.attrs.label}`,
-    ]
-  },
-
-  parseHTML() {
-    return [{ tag: 'span[data-mention]' }]
-  },
-}).configure({
-  HTMLAttributes: {},
-  suggestion: makeSuggestion(false),
-})
+/** `!@`. Its text is an ordinary mention; the urgency is a tag (CON-17), from {@link extractUrgent}. */
+export const UrgentMention = UrgentPersonMention.configure({ people: mentionDirectory })
 
 /**
- * The pubkeys the document's urgent mentions name (CON-17). The text writes
- * each as a plain mention, so this is what carries the urgency to the wire; a
- * chip with no key is still `!@Name` in the text.
+ * The pubkeys the document's urgent mentions name (CON-17) — what the write
+ * turns into `["urgent", <pubkey>]`. A chip with no key is still `!@Name` in
+ * the text.
  */
-export function extractUrgent(editor: {
-  state: { doc: { descendants: (cb: (node: { type: { name: string }; attrs: Record<string, unknown> }) => boolean | void) => void } }
-}): string[] | undefined {
-  const urgent: string[] = []
-  editor.state.doc.descendants((node) => {
-    if (node.type.name === 'urgentMention' && typeof node.attrs.pubkey === 'string' && node.attrs.pubkey) urgent.push(node.attrs.pubkey)
-  })
-  return urgent.length > 0 ? urgent : undefined
-}
+export const extractUrgent = urgentPubkeys
 
-export const UrgentMention = Mention.extend({
-  name: 'urgentMention',
-
-  addAttributes() {
-    return {
-      id: { default: null },
-      label: { default: null },
-      /**
-       * The mentioned person's Nostr key, when they have one — SPEC §13.1.
-       *
-       * `id` is Peek's own identifier and means nothing to another app; this is
-       * what the body is serialised with, so a mention survives a rename and
-       * resolves for a reader who does not hold this directory.
-       */
-      pubkey: { default: null },
-    }
-  },
-
-  renderHTML({ node }) {
-    return [
-      'span',
-      {
-        'data-urgent-mention': 'true',
-        'data-id': node.attrs.id,
-        // No node view, so this spec is what the editor draws: the one chip (D67).
-        class: inlineChipClassName('urgent', 'cursor-default'),
-      },
-      `@${node.attrs.label}`,
-    ]
-  },
-
-  parseHTML() {
-    return [{ tag: 'span[data-urgent-mention]' }]
-  },
-}).configure({
-  HTMLAttributes: {},
-  suggestion: {
-    ...makeSuggestion(true),
-    char: '!@',
-  },
-})
-
-// ─── Files mention ([) ───
+// ─── [ ───
 
 /*
   Nothing inserts a `topicMention` since FOL-23 took topics out of the `[` menu,
-  and nothing parses one out of a body. The node stays because the `[`
-  suggestion plugin is configured on it, and a chip already in an open editor
-  still has to draw and serialise; it draws from the snapshot it was made with.
+  and nothing parses one out of a body. A chip already in an open editor still
+  has to draw and serialise, so the node stays; it draws from the snapshot it
+  was made with. The `[` list was configured on it until CON-27, and is
+  `PeekReferenceTrigger` below.
 */
 function TopicMentionView({ node }: NodeViewProps) {
   const { label, isResolved } = node.attrs
@@ -210,123 +99,43 @@ export const TopicMention = Mention.extend({
   },
 }).configure({
   HTMLAttributes: {},
+  // It opens no list of its own any more; `[` is PeekReferenceTrigger's.
   suggestion: {
-    char: '[',
-    items: (): FilesMenuItem[] => {
-      // The messages on screen (RIC-11). Topics went with Convex (FOL-23).
-      // The Apps and Documents sections that used to sit here were mock rows
-      // — a Figma category and a handful of invented files — and they only
-      // ever appeared in mock mode, so the menu you reviewed was not the menu
-      // the app shows. Placeholders retired (Katerina, 2026-09-05), the way
-      // the prototype reference chips were in #148.
-      //
-      // APP_FILES / DOCUMENT_FILES stay in `src/data`: MessageBody still
-      // resolves them so reference chips in existing messages keep working.
-      return mentionMessages().map((m): FilesMenuItem => ({ kind: 'message', data: m }))
-    },
-
-    render: suggestionPopup(FILES_MENU),
-
-    command: ({ editor, range, props: item }: any) => {
-      // A message (RIC-11). The `fileMention` node this used to insert still
-      // exists and MessageBody still renders it — messages already sent keep
-      // their file references; there is simply no longer a way to add a new
-      // one.
-      const picked = item as FilesMenuItem
-      const node = {
-        type: 'messageMention',
-        attrs: {
-          id: picked.data.eventId,
-          label: picked.data.author,
-          snippet: previewText(picked.data.body),
-          /*
-            The kind travels in the pointer so a reader can fetch the manifest
-            and the event together rather than one after the other
-            (`resolveForeignEvent`). No relay hint: the same omission every
-            `naddr` Peek writes makes, and for the same reason — a reader on
-            this relay needs none, and one elsewhere cannot read the event
-            anyway.
-          */
-          uri: `nostr:${encodeNevent({ id: picked.data.eventId as string, relays: [], kind: MESSAGE_KIND })}`,
-        },
-      }
-      editor
-        .chain()
-        .focus()
-        .insertContentAt(range, [node, { type: 'text', text: ' ' }])
-        .run()
-    },
+    char: '\0',
+    items: () => [],
   },
 })
 
 // ─── Message mention (RIC-11) ───
 
-function MessageMentionView({ node }: NodeViewProps) {
-  const { label, snippet } = node.attrs
-  return (
-    <NodeViewWrapper as="span" className={inlineChipClassName('neutral', 'cursor-default')} style={{ maxWidth: '24ch' }}>
-      <span className="flex items-center justify-center w-4 h-4 shrink-0 text-text-secondary">
-        <IconMessage size={14} stroke={1.5} />
-      </span>
-      <span className="truncate">{snippet ? `${label}: ${snippet}` : label}</span>
-    </NodeViewWrapper>
-  )
-}
-
 /**
  * A message, mentioned mid-sentence — SPEC §13.1's reference, pointed at an
- * event rather than an address (RIC-11).
+ * event rather than an address (RIC-11). The package's `CaptionedReference`
+ * under the name Peek's bodies, drafts and parser have always used, so its
+ * HTML stays `span[data-message-mention]`.
  *
  * Its own node rather than a `topicMention` with a different icon because the
  * two serialise differently: a topic has an address and a bracket fallback, a
  * message has an event id and nothing older to fall back to — there was never
  * a way to write one before this, so `uri` is never null.
  */
-export const MessageMention = Mention.extend({
-  name: 'messageMention',
-  group: 'inline',
-  inline: true,
-  atom: true,
+export const MessageMention = CaptionedReference.extend({ name: 'messageMention' }).configure({
+  icon: <IconMessage size={14} stroke={1.5} />,
+})
 
-  addAttributes() {
-    return {
-      /** The event id. */
-      id: { default: null },
-      /** The author, as the thread showed them. */
-      label: { default: null },
-      /** The opening words, marks stripped — a caption, never parsed. */
-      snippet: { default: '' },
-      /** `nostr:nevent…`, exactly as the body carries it. */
-      uri: { default: null },
-    }
-  },
-
-  renderHTML({ node }) {
-    return [
-      'span',
-      {
-        'data-message-mention': 'true',
-        'data-id': node.attrs.id,
-        class: inlineChipClassName('neutral', 'cursor-default'),
-      },
-      node.attrs.snippet ? `${node.attrs.label}: ${node.attrs.snippet}` : node.attrs.label,
-    ]
-  },
-
-  parseHTML() {
-    return [{ tag: 'span[data-message-mention]' }]
-  },
-
-  addNodeView() {
-    return ReactNodeViewRenderer(MessageMentionView, { as: 'span' })
-  },
-}).configure({
-  HTMLAttributes: {},
-  // Inserted by the `[` menu above; it opens no menu of its own.
-  suggestion: {
-    char: '\0',
-    items: () => [],
-  },
+/**
+ * `[` — the messages on screen (RIC-11), inserted as a {@link MessageMention}.
+ * Topics went with Convex (FOL-23). The Apps and Documents sections that used
+ * to sit here were mock rows that only ever appeared in mock mode; they were
+ * retired (Katerina, 2026-09-05). APP_FILES / DOCUMENT_FILES stay in
+ * `src/data`: MessageBody still resolves them, so reference chips in existing
+ * messages keep working.
+ */
+export const PeekReferenceTrigger = ReferenceTrigger.configure({
+  items: () => mentionMessages().map(toReferenceItem),
+  nodeName: 'messageMention',
+  ...FILES_MENU_COPY,
+  icon: FILES_MENU_ICON,
 })
 
 // ─── File mention (apps & documents) ───
