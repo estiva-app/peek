@@ -16,8 +16,13 @@
  * hook to settle before reading it: a read straight after sign-in reports
  * `relayState: "connecting"` and no Folders.
  *
- * Steps run in argument order, so `--click`, `--fill`, `--press`, `--wait`,
- * `--until`, `--eval` and `--screenshot` can be repeated and interleaved.
+ * Steps run in argument order, so `--click`, `--fill`, `--press`, `--drag`,
+ * `--wait`, `--until`, `--eval` and `--screenshot` can be repeated and interleaved.
+ *
+ * `--drag "<from css> => <to css>"` drags the first match of one selector onto
+ * the other with the real mouse — pointer down, moves, pointer up — so an
+ * editor sees the browser's own dragstart and drop, not a selection rewritten
+ * in script (MAN-12 passed that shortcut and broke on production; RIC-18).
  * Nothing is printed until the run ends, and then only one JSON object on
  * stdout. A step that fails stops the run; a failed `--click` or `--fill`
  * lists the controls that were on the page instead. A screenshot is written only when asked for, because a picture costs
@@ -54,10 +59,10 @@ import { homedir } from 'node:os'
 import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url]
-  [--url path] [--click label] [--fill label=text] [--press key] [--wait ms]
-  [--until expr] [--timeout ms] [--eval expr] [--screenshot file]`
+  [--url path] [--click label] [--fill label=text] [--press key] [--drag "from => to"]
+  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--wait', '--until', '--eval', '--screenshot'])
+const STEPS = new Set(['--click', '--fill', '--press', '--drag', '--wait', '--until', '--eval', '--screenshot'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
 const steps = []
 const argv = process.argv.slice(2)
@@ -196,6 +201,13 @@ async function run(page, step, value) {
     case 'press':
       await page.keyboard.press(value)
       return true
+    case 'drag': {
+      const at = value.indexOf('=>')
+      if (at === -1) throw new Error('--drag takes "<from css> => <to css>"')
+      const [from, to] = [value.slice(0, at).trim(), value.slice(at + 2).trim()]
+      await page.locator(from).first().dragTo(page.locator(to).first(), { timeout })
+      return true
+    }
     case 'screenshot':
       await page.screenshot({ path: value })
       return value
