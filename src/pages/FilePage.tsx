@@ -251,7 +251,7 @@ export function FilePage() {
     file?.folder && ancestors.length > 0
       ? [
           {
-            label: (typeof team === 'object' && 'name' in team ? team.name : undefined) ?? 'Team',
+            label: (typeof team === 'object' && 'name' in team ? team.name : undefined) ?? 'Folder',
             href: folderPath(file.folder),
             onClick: (event: MouseEvent<HTMLAnchorElement>) => followInApp(event, () => navigate(folderPath(file.folder!))),
           },
