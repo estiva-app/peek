@@ -12,9 +12,10 @@ import { render, renderHook, waitFor } from '@testing-library/react'
 import { FILE_TIER, messageReference, type ReferenceCandidate } from '@estiva-app/conversation'
 
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
-vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'v'.repeat(64) }) }))
+vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: relay.pubkey }) }))
 
 const relay = vi.hoisted(() => ({
+  pubkey: 'v'.repeat(64),
   files: vi.fn<(files: unknown, tier: number) => Promise<unknown[]>>(async () => []),
   search: vi.fn<(text: string) => Promise<unknown[]>>(async () => []),
   merged: {} as Record<string, number>,
@@ -112,5 +113,23 @@ describe('referenceSections', () => {
 
     unsubscribe()
     sync.unmount()
+  })
+
+  it('forgets what was found for someone else once another person is signed in', async () => {
+    relay.search.mockResolvedValue([file(30850, 'theirs', 'Payroll', FILE_TIER.search)])
+    const sync = render(<ReferenceSourcesSync />)
+    const listener = vi.fn()
+    const unsubscribe = subscribeReferences(listener)
+    referenceSections('payroll')
+    await waitFor(() => expect(labels('payroll')[1]).toEqual(['Files', ['Project|Payroll']]))
+
+    // Nothing re-renders the sync: the next read notices on its own.
+    relay.pubkey = 'w'.repeat(64)
+    relay.search.mockResolvedValue([])
+    expect(referenceSections('payroll')[1].items).toEqual([])
+
+    unsubscribe()
+    sync.unmount()
+    relay.pubkey = 'v'.repeat(64)
   })
 })

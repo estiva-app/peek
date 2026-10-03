@@ -50,11 +50,25 @@ const notify = () => listeners.forEach((listener) => listener())
 
 type Viewer = ReturnType<ReturnType<typeof useRelayViewer>>
 let viewerNow: () => Viewer = () => null
+/** Whose answers the tiers hold. Checked on every read, not left to a re-render. */
+let heldFor: string | undefined
+
+function forgetIfSomeoneElse() {
+  const pubkey = viewerNow()?.token.pubkey
+  if (pubkey === heldFor) return
+  heldFor = pubkey
+  search.reset()
+  recentFiles = []
+}
 
 const search = referenceSearch({
-  search: (text) => {
+  search: async (text) => {
     const v = viewerNow()
-    return v ? searchFileReferencesAsViewer(text, v.relayUrl, v.token) : Promise.resolve([])
+    if (!v) return []
+    const found = await searchFileReferencesAsViewer(text, v.relayUrl, v.token)
+    // Read with someone else's token: never kept for whoever is signed in now.
+    if (viewerNow()?.token.pubkey !== v.token.pubkey) throw new Error('signed-in person changed')
+    return found
   },
 })
 
@@ -68,12 +82,9 @@ export function subscribeReferences(listener: () => void): () => void {
   }
 }
 
-// A message's candidate never changes, so each is built once per tier.
-const MESSAGES = new WeakMap<ConversationMessage, ReferenceCandidate>()
+// Built on each read: the caption names people, and the directory fills in late.
 function messageCandidate(message: ConversationMessage, tier: number, at: number): ReferenceCandidate {
-  const known = MESSAGES.get(message)
-  if (known && known.tier === tier && known.at === at) return known
-  const candidate: ReferenceCandidate = {
+  return {
     id: message.eventId as string,
     uri: messageReference(message.eventId as string, MESSAGE_KIND),
     type: 'message',
@@ -84,8 +95,6 @@ function messageCandidate(message: ConversationMessage, tier: number, at: number
     tier,
     at,
   }
-  MESSAGES.set(message, candidate)
-  return candidate
 }
 
 const messagesOf = (messages: ConversationMessage[], tier: number) =>
@@ -101,6 +110,7 @@ function itemOf(candidate: ReferenceCandidate): CaptionedItem {
 
 /** The two sections `[` draws for what was typed. */
 export function referenceSections(query: string): ReferenceSection[] {
+  forgetIfSomeoneElse()
   const { here, parent } = referenceConversations()
   const ranked = rankReferences({
     messages: [...messagesOf(here, MESSAGE_TIER.here), ...messagesOf(parent, MESSAGE_TIER.parent)],
@@ -135,14 +145,16 @@ export function useReferenceFolder(contents: FolderContentsState | undefined) {
     return () => {
       live = false
       folderFiles = []
+      notify()
     }
   }, [files, viewer])
 }
 
 /**
  * Keeps `[`'s recently-read tier in step with your read markers, and forgets
- * every search answer when the signed-in person changes. Draws nothing;
- * mounted by PeekDataProvider.
+ * every answer when the signed-in person changes (checked again on each
+ * read, since this sits above AuthGate). Draws nothing; mounted by
+ * PeekDataProvider.
  */
 export function ReferenceSourcesSync() {
   const viewer = useRelayViewer()
@@ -151,24 +163,28 @@ export function ReferenceSourcesSync() {
 
   useEffect(() => {
     viewerNow = viewer
-    search.reset()
-    recentFiles = []
+    forgetIfSomeoneElse()
   }, [viewer, pubkey])
 
   const recent = Object.entries(frontier.merged)
     .filter(([context]) => ADDRESS_RE.test(context))
     .sort((a, b) => b[1] - a[1])
     .slice(0, RECENT_LIMIT)
-  const key = recent.map(([address]) => address).join('\n')
+  const key = `${pubkey}\n${recent.map(([address]) => address).join('\n')}`
 
   useEffect(() => {
     const v = viewer()
-    if (!v || !key) return
+    if (!v || !recent.length) {
+      recentFiles = []
+      notify()
+      return
+    }
     let live = true
     const at = new Map(recent)
     fileCandidatesAsViewer({ addresses: [...at.keys()], at }, FILE_TIER.recent, v.relayUrl, v.token)
       .then((rows) => {
-        if (!live) return
+        // Answered for whoever asked; dropped if someone else is signed in by now.
+        if (!live || viewerNow()?.token.pubkey !== v.token.pubkey) return
         recentFiles = rows
         notify()
       })
@@ -176,7 +192,7 @@ export function ReferenceSourcesSync() {
     return () => {
       live = false
     }
-    // `key` is the addresses `recent` holds; the markers' times alone do not re-read.
+    // `key` is who is reading and the addresses `recent` holds; the markers' times alone do not re-read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, viewer])
 
