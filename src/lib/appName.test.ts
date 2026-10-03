@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { elsewhereAppName, fileHeading } from './appName'
+import { elsewhereAppName, fileHeading, objectLabel } from './appName'
 
 // A bare file is named by the app that opens it since interop 0.44 — Peek, for a topic (MAN-17, PRO-24).
 describe('elsewhereAppName', () => {
@@ -7,6 +7,14 @@ describe('elsewhereAppName', () => {
     expect(elsewhereAppName({ appName: 'Estiva Ship' })).toBe('Estiva Ship')
     expect(elsewhereAppName({ appName: 'Peek' })).toBeUndefined()
     expect(elsewhereAppName(null)).toBeUndefined()
+  })
+})
+
+describe('objectLabel', () => {
+  it('is the type, else another app, else nothing — never "Peek" or "File" (PEE-45)', () => {
+    expect(objectLabel({ noun: 'issue', appName: 'Estiva Ship' })).toBe('Issue')
+    expect(objectLabel({ appName: 'Estiva Ship' })).toBe('Estiva Ship')
+    expect(objectLabel({ appName: 'Peek' })).toBeUndefined()
   })
 })
 

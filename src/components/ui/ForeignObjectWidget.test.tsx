@@ -102,7 +102,16 @@ describe('ForeignObjectWidget', () => {
     expect(document.body.textContent).not.toContain('aaaaaaaa')
   })
 
-  it('names the owning app plainly, even when the handler was a guess', async () => {
+  it('labels the object by what it is, not by the app it is in', async () => {
+    // PRO-24: "Issue", not "Estiva Ship". An app name is only where a link goes.
+    resolveObject.mockResolvedValue(object({ noun: 'issue' }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+
+    expect(await screen.findByText('Issue')).toBeInTheDocument()
+    expect(screen.queryByText('Linear-lite')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the app name only when the app declares no noun, even when the handler was a guess', async () => {
     /*
      * There used to be a `?` here when no NIP-89 recommendation named the
      * handler. It was true and unreadable — "ESTIVA SHIP ?" reads as a broken
@@ -114,6 +123,24 @@ describe('ForeignObjectWidget', () => {
 
     expect(await screen.findByText('Linear-lite')).toBeInTheDocument()
     expect(screen.queryByText(/\?/)).not.toBeInTheDocument()
+  })
+
+  it('never labels Peek’s own object "Peek"', async () => {
+    resolveObject.mockResolvedValue(object({ appName: 'Peek' }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+
+    await screen.findByText('Billing entry + add payment method')
+    expect(screen.queryByText('Peek')).not.toBeInTheDocument()
+    // Nor "File": with no noun there is nothing true to say, so it says nothing.
+    expect(screen.queryByText('File')).not.toBeInTheDocument()
+  })
+
+  it('leaves the label to the panel on the object’s own page', async () => {
+    resolveObject.mockResolvedValue(object({ noun: 'issue' }))
+    render(<ForeignObjectWidget naddr={NADDR} page />)
+
+    await screen.findByText('Billing entry + add payment method')
+    expect(screen.queryByText('Issue')).not.toBeInTheDocument()
   })
 
   it('does not restate comments the conversation around it already shows', async () => {
@@ -151,6 +178,12 @@ describe('ForeignObjectWidget', () => {
     resolveObject.mockResolvedValue(object({ unreachable: true }))
     render(<ForeignObjectWidget naddr={NADDR} />)
     expect(await screen.findByText(/may not have access/)).toBeInTheDocument()
+  })
+
+  it('names an unreachable object by its type when the app declares one', async () => {
+    resolveObject.mockResolvedValue(object({ unreachable: true, noun: 'issue' }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText(/^Issue — you may not have access/)).toBeInTheDocument()
   })
 
   it('degrades to nothing when the reference cannot be resolved', async () => {
