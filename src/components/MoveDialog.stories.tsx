@@ -11,7 +11,7 @@ const topic = (d: string, title: string) =>
     ref: `30840:${'a'.repeat(64)}:${d}`,
     address: `30840:${'a'.repeat(64)}:${d}`,
     kind: 30840,
-    appName: 'File',
+    appName: 'Peek',
     parentField: 'parent',
     slots: { title: { value: title } },
   }) as unknown as ForeignObject

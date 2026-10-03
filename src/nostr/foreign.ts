@@ -709,7 +709,7 @@ export async function moveFileAsViewer(
         plan.reason === 'source-has-no-state'
           ? 'Files can’t be moved out of this folder yet: it has no list of its own, so moving one would hide the rest.'
           : plan.reason === 'target-is-private'
-            ? 'This can’t move into a private folder: everyone who can read it now still could.'
+            ? 'Can’t move this into a private folder: it would stay readable by everyone who can read it now.'
             : 'That folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }

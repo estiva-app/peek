@@ -28,6 +28,7 @@ import { filePath } from '@/lib/objectUrl'
 import { followInApp } from '@/lib/followInApp'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
+import { elsewhereAppName } from '@/lib/appName'
 
 type SectionKey = 'urgent' | 'openWork' | 'starred'
 
@@ -228,8 +229,8 @@ export function DeskPage() {
         title={
           <div className="min-w-0">
             <p className="truncate text-body-2-strong text-text-primary">{fileTitle}</p>
-            {fileView.file?.appName && (
-              <p className="truncate text-caption text-text-muted">In {fileView.file.appName}</p>
+            {elsewhereAppName(fileView.file) && (
+              <p className="truncate text-caption text-text-muted">In {elsewhereAppName(fileView.file)}</p>
             )}
           </div>
         }

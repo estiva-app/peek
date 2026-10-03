@@ -13,6 +13,7 @@
  * as a package until one exists.
  */
 import type { ManifestAction } from '@estiva-app/interop'
+import { PEEK_APP_NAME } from '@/lib/appName'
 
 /** The relay's own kind for a channel's discovery record. */
 export const TOPIC_KIND = 39000
@@ -73,7 +74,7 @@ const ACTIONS: ManifestAction[] = [
 
 export function manifestContent() {
   return {
-    name: 'Peek',
+    name: PEEK_APP_NAME,
     about: 'Conversations',
 
     /**
