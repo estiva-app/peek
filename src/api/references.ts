@@ -45,6 +45,7 @@ const ADDRESS_RE = /^\d+:[0-9a-f]{64}:.+$/
 
 let folderFiles: ReferenceCandidate[] = []
 let recentFiles: ReferenceCandidate[] = []
+let openFile: string | null = null
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((listener) => listener())
 
@@ -117,6 +118,7 @@ export function referenceSections(query: string): ReferenceSection[] {
     files: [...folderFiles, ...recentFiles, ...search.hits(query)],
     query,
     ownKinds: [KIND_BARE_FILE],
+    exclude: openFile ? [openFile] : [],
   })
   return [
     { label: REFERENCE_COPY.messages, items: ranked.messages.map(itemOf) },
@@ -127,9 +129,17 @@ export function referenceSections(query: string): ReferenceSection[] {
 /**
  * Publishes the Folder on screen as `[`'s first Files tier, and takes it back
  * when the page goes — a DM has no Folder, so its Files start at recently read.
+ * `address`, the file open on the page, is never offered under Files: its
+ * messages already lead Messages (Miky, 2026-10-03).
  */
-export function useReferenceFolder(contents: FolderContentsState | undefined) {
+export function useReferenceFolder(contents: FolderContentsState | undefined, address: string | null) {
   const viewer = useRelayViewer()
+  useEffect(() => {
+    openFile = address
+    return () => {
+      openFile = null
+    }
+  }, [address])
   const files = contents && typeof contents === 'object' && 'files' in contents ? (contents as FolderContents).files : undefined
   useEffect(() => {
     const v = viewer()

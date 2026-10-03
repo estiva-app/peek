@@ -81,11 +81,12 @@ describe('referenceSections', () => {
     relay.merged = { [address(30851, 'old')]: 100, 'h:not-an-address': 300, [address(30840, 'new')]: 200 }
     relay.files.mockImplementation(async (_files, tier) =>
       tier === FILE_TIER.folder
-        ? [file(30851, 'here', 'Ranking for [', tier, 'Peek: Feedback & Bugs')]
-        : [file(30840, 'new', 'Launch notes', tier)],
+        ? [file(30851, 'here', 'Ranking for [', tier, 'Peek: Feedback & Bugs'), file(30840, 'open', 'The file you are in', tier)]
+        : [file(30840, 'new', 'Launch notes', tier), file(30840, 'open', 'The file you are in', tier)],
     )
     const sync = render(<ReferenceSourcesSync />)
-    const folder = renderHook(() => useReferenceFolder({ files: [] } as never))
+    // The page's own file is in its Folder and was just read; it is offered from neither.
+    const folder = renderHook(() => useReferenceFolder({ files: [] } as never, address(30840, 'open')))
 
     await waitFor(() => expect(referenceSections('')[1].items).toHaveLength(2))
     expect(labels('')[1]).toEqual(['Files', ['Issue|Ranking for [', 'Topic|Launch notes']])
@@ -95,7 +96,8 @@ describe('referenceSections', () => {
     expect(recent.addresses).toEqual([address(30840, 'new'), address(30851, 'old')])
 
     folder.unmount()
-    expect(labels('')[1]).toEqual(['Files', ['Topic|Launch notes']])
+    // Off the page, that file is just one you read recently.
+    expect(labels('')[1]).toEqual(['Files', ['Topic|Launch notes', 'Topic|The file you are in']])
     sync.unmount()
   })
 
