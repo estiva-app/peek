@@ -160,9 +160,9 @@ const follows = vi.hoisted(() => ({
   refresh: vi.fn<() => Promise<void>>(async () => {}),
 }))
 const marks = vi.hoisted(() => ({
-  file: vi.fn<(address: string | null | undefined) => void>(),
+  file: vi.fn<(address: string | null | undefined, newestAt?: number) => void>(),
   container: vi.fn<(kind: string, key: string) => void>(),
-  thread: vi.fn<(key: string) => void>(),
+  thread: vi.fn<(key: string, newestAt?: number) => void>(),
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -996,13 +996,40 @@ describe('FilePage marks the file read, and only the file', () => {
     expect(marks.thread).not.toHaveBeenCalled()
   })
 
-  it('opening a thread marks nothing more — the thread is the file’s own talk', () => {
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${issue.comments[0].id}`)
+  /*
+    A reply is read by opening its thread, and only that (Miky, 2026-10-03):
+    the file's marker stops at its newest top-level comment, so a reply newer
+    than it keeps the file's dot until the thread is opened (PEE-44).
+  */
+  it('opening a thread marks that thread up to its newest reply, and the file only up to its comments', () => {
+    const rootId = issue.comments[0].id
+    const replyAt = Math.max(...issue.comments.map((c) => c.createdAt)) + 50
+    threads.state = {
+      roots: { [rootId]: { ...issue.comments[0], kind: 1111 } },
+      replies: { [rootId]: [{ id: 'r'.repeat(64), author: SHIP, body: 'A reply from Ship', createdAt: replyAt, kind: 9 }] },
+    }
+    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS)
     })
+    expect(marks.thread).toHaveBeenCalledWith(rootId, replyAt)
     expect(marks.file.mock.lastCall?.[0]).toBe(ISSUE_ADDRESS)
+    expect(marks.file.mock.lastCall?.[1]).toBeLessThan(replyAt)
     expect(marks.container).not.toHaveBeenCalled()
+  })
+
+  it('a reply in a thread that is not open is not read by opening the file', () => {
+    const rootId = issue.comments[0].id
+    const replyAt = Math.max(...issue.comments.map((c) => c.createdAt)) + 50
+    threads.state = {
+      roots: { [rootId]: { ...issue.comments[0], kind: 1111 } },
+      replies: { [rootId]: [{ id: 'r'.repeat(64), author: SHIP, body: 'A reply from Ship', createdAt: replyAt, kind: 9 }] },
+    }
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    act(() => {
+      vi.advanceTimersByTime(READ_DWELL_MS)
+    })
+    expect(marks.file.mock.lastCall?.[1]).toBeLessThan(replyAt)
     expect(marks.thread).not.toHaveBeenCalled()
   })
 

@@ -16,7 +16,7 @@ import {
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { referenceLink } from '@/lib/referenceLink'
-import { newestMessageAt, useMarkFileRead } from '@/lib/useMarkRead'
+import { newestMessageAt, useMarkFileRead, useMarkThreadRead } from '@/lib/useMarkRead'
 
 /**
  * One file's conversation and its third column, off the relay — what
@@ -89,11 +89,14 @@ export function useFileView({
     The dwell marks this file's own stream and no container (FOL-16). Passing
     `file?.address` rather than the address asked for is deliberate: an
     address that resolved to nothing was never read, and marking it would clear
-    a dot for a file the person never saw. The newest message the pane holds
-    re-arms it, so what arrives while the file is open is read too (PEE-44).
+    a dot for a file the person never saw. The newest top-level comment the
+    pane holds re-arms it, so what arrives while the file is open is read too
+    (PEE-44). Replies are read by opening their thread: Peek's own view marks
+    its open thread itself, and the read-only pane's is marked here.
   */
-  const threadReplies = threads === 'loading' || 'failed' in threads ? [] : Object.values(threads.replies).flat()
-  useMarkFileRead(file?.address, ownView ? peek.newestAt : newestMessageAt(comments, threadReplies))
+  const replies = threads === 'loading' || 'failed' in threads ? undefined : threads.replies
+  useMarkFileRead(file?.address, ownView ? peek.newestAt : newestMessageAt(comments))
+  useMarkThreadRead(ownView ? null : openThreadId, openThreadId && replies ? newestMessageAt(replies[openThreadId] ?? []) : undefined)
   /*
     Activity — the comments elsewhere that name this file (CON-11), read by
     `#a` off the relay for a file Peek's own view draws. It takes the third

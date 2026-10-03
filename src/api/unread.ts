@@ -1,8 +1,10 @@
 /**
  * Unread — two signals, two watermarks (§4.3; ruling 2026-07-09).
  *
- *   hasNewMessage → cleared by opening the DM (after a short dwell)
+ *   hasNewMessage → cleared by opening the DM (after a short dwell), up to
+ *                   its newest top-level message
  *   hasNewReply / isNew → cleared only by opening THAT message's thread panel
+ *                   (Miky, 2026-10-03; PEE-44 keeps the DM's marker off replies)
  *
  * Both are folded from the relay per viewer; mock mode keeps the fixture's
  * seeded flags so the demo renders identically. (The fixture is still keyed by
@@ -84,18 +86,22 @@ export function useReadActions() {
   }, [channelOf])
 
   return {
-    /** A DM was read. Its context is its channel uuid, never an app id (SPEC §11.1). */
-    markContainerRead(dmId: string) {
+    /**
+     * A DM was read, up to `newestAt` — its newest top-level message, in unix
+     * seconds (PEE-44). Its context is its channel uuid, never an app id (SPEC §11.1).
+     */
+    markContainerRead(dmId: string, newestAt?: number) {
       // Relay only (REM-3): nothing reads a DM's Convex watermark any more.
-      if (hasRelay) recordContainerRead(dmChannelOf.current(dmId), Date.now())
+      if (hasRelay) recordContainerRead(dmChannelOf.current(dmId), newestAt !== undefined ? newestAt * 1000 : Date.now())
     },
-    markThreadRead(messageKey: string) {
+    /** A thread was read, up to `newestAt` — its newest reply drawn, in unix seconds (PEE-44). */
+    markThreadRead(messageKey: string, newestAt?: number) {
       // Relay only (REM-5): the NIP-RS blob is the only read state.
       if (!hasRelay) return
       // §11.2: this advances the thread and MUST NOT touch its container.
       // For a relay-synced message the Peek key *is* the event id; for one that
       // has never been published, `recordThreadRead` finds no context and stops.
-      recordThreadRead(messageKey, Date.now())
+      recordThreadRead(messageKey, newestAt !== undefined ? newestAt * 1000 : Date.now())
     },
     /**
      * A file's conversation was read — the pane a Folder opens on a file
@@ -107,7 +113,7 @@ export function useReadActions() {
     markFileRead(address: string | null | undefined, newestAt?: number) {
       // Gated on the relay, not Convex (REM-2): Convex plays no part here.
       if (!hasRelay) return
-      // Up to the newest message the pane drew (unix seconds), not the clock:
+      // Up to the newest top-level message the pane drew (unix seconds), not the clock:
       // the relay may hold one the pane has not drawn yet, and an author whose
       // clock runs ahead would otherwise stay newer than the marker (PEE-44).
       recordFileRead(address, newestAt !== undefined ? newestAt * 1000 : Date.now())
