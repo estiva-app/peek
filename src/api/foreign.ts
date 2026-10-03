@@ -65,6 +65,7 @@ import type {
   FolderContents,
   FolderProject,
   FolderRef,
+  MovableFile,
   FolderSummary,
   ForeignObject,
   People,
@@ -215,18 +216,12 @@ export function useForeignObjects() {
     return v ? listFoldersAsViewer(v.relayUrl, v.token) : null
   }, [viewer])
 
-  /**
-   * Rename a Folder.
-   *
-   * `hasState` is passed through rather than looked up because the caller has
-   * just read it and a wrong guess is silent data loss — see
-   * {@link renameFolderAsViewer}.
-   */
+  /** Rename a Folder — its channel's name only, see {@link renameFolderAsViewer}. */
   const renameFolder = useCallback(
-    async (folder: string, name: string, hasState: boolean) => {
+    async (folder: string, name: string) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to rename a folder.' }
-      return renameFolderAsViewer(folder, name, hasState, v.relayUrl, v.token)
+      return renameFolderAsViewer(folder, name, v.relayUrl, v.token)
     },
     [viewer],
   )
@@ -260,14 +255,15 @@ export function useForeignObjects() {
   /**
    * Move a file between Folders — adds to the target first. Each side's
    * `hasState` comes from a read: a move into or out of a Folder with no state
-   * is refused, because either command would empty it (FOL-10). `addresses`
-   * is the file and what is listed under it, which moves with it (FOL-45).
+   * is refused, because either command would empty it (FOL-10). What
+   * `listing` — the source Folder's files — has beneath `file` moves with it
+   * (FOL-45, SPEC §3.3).
    */
   const moveFile = useCallback(
-    async (addresses: string | readonly string[], from: FolderRef, to: FolderRef) => {
+    async (file: MovableFile, listing: readonly MovableFile[] | null, from: FolderRef, to: FolderRef) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to move a file.' }
-      return moveFileAsViewer(addresses, from, to, v.relayUrl, v.token)
+      return moveFileAsViewer(file, listing, from, to, v.relayUrl, v.token)
     },
     [viewer],
   )
@@ -330,7 +326,7 @@ export function useForeignObjects() {
 
   /** Archive a Folder, or restore it — see `archiveFolderAsViewer`. */
   const archiveFolder = useCallback(
-    async (args: { folder: string; channel: string; archived: boolean; resolution?: string; into?: string }) => {
+    async (args: { folder: string; channel: string; archived: boolean; resolution?: string }) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to archive a folder.' }
       return archiveFolderAsViewer(args, v.relayUrl, v.token)

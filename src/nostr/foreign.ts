@@ -35,7 +35,6 @@ import { dmChannelsOf, KIND_CHANNEL_MEMBERS } from './dms'
 import { folderDeletableOf, type FolderDeletable } from './folderDeletable'
 import {
   buildBareFile,
-  buildDeleteChannel,
   decodeNevent,
   encodeNaddr,
   pointerToAddress,
@@ -77,6 +76,8 @@ import {
   threadsOf,
   type Threads,
   planCreateFolder,
+  planDeleteFolder,
+  type MovableFile,
   planMoveFile,
   planPlaceFile,
   planRenameFolder,
@@ -598,36 +599,20 @@ async function publishInOrder(
 }
 
 /**
- * Rename a Folder — and the two writes are not interchangeable.
+ * Rename a Folder: interop's `planRenameFolder`, the `kind:9002` alone (SPEC §3.3).
  *
- * **A Folder's name has two homes.** `listFolders` reads
- * `nameOf(state) ?? nameOf(channel)`, so the folder-state name *shadows* the
- * channel's. Writing only one of them is how a rename shows up on one surface
- * and not another, which is the stale-name problem the project rename already
- * produced once. So the channel is always updated, and the state's `name` too
- * when the Folder has state.
- *
- * **Never a `kind:1852` on a Folder with no state.** `handle_folder_command`
- * computes `next` from the *existing* state, and there is none — so `op: add`
- * with no addresses emits folder state listing **nothing**. The Folder would
- * stop being read by containment and instantly show empty, which for a Folder
- * whose contents are entirely implied by `h` means losing all of them. That is
- * why `hasState` is a required argument rather than something guessed here: the
- * caller has just read it, and getting it wrong is silent data loss on screen.
+ * A Folder's title is its channel's name and only that (§3.2), so there is one
+ * home to write. The relay refuses it to anybody but the channel's owners and
+ * admins, and that refusal is what a person reads.
  */
 export async function renameFolderAsViewer(
   folder: string,
   name: string,
-  hasState: boolean,
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  // `[9002]`, or `[9002, 1852 add + name]` with state: `add` of nothing keeps
-  // the contents, `set` would empty them, and there is no `rename` op.
-  const result = await publishInOrder(planRenameFolder(token.pubkey, Date.now(), { folder, name, hasState }), relayUrl, token)
-  if (result.ok) return { ok: true }
-  if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused the rename.' }
-  return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
+  const result = await publishInOrder(planRenameFolder(token.pubkey, Date.now(), { folder, name }), relayUrl, token)
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason ?? 'The relay refused the rename.' }
 }
 
 /** {@link folderDeletableOf} as the viewer — whether Delete may be offered (FOL-9). */
@@ -659,11 +644,21 @@ export async function deleteFolderAsViewer(
     (): { ok: false; reason: string } => ({ ok: false, reason: 'This folder could not be read, so it was not deleted.' }),
   )
   if (!deletable.ok) return deletable
-  const unsigned = buildDeleteChannel(token.pubkey, Date.now(), { channelUuid: folder })
-  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to delete the folder.' }
+  const result = await publishInOrder(planDeleteFolder(token.pubkey, Date.now(), { folder }), relayUrl, token)
+  if (!result.ok) return { ok: false, reason: deleteRefusalWords(result.reason) }
   return { ok: true }
+}
+
+/**
+ * The relay's refusal of a Folder delete, in a person's words. The relay names
+ * the count — "folder holds 2 file(s) (0 filed in it, 2 placed by its state) …"
+ * — and the rest of its sentence is the relay's own vocabulary.
+ */
+export function deleteRefusalWords(reason: string | undefined): string {
+  const held = reason?.match(/holds (\d+) file/)
+  if (!held) return reason ?? 'The relay refused to delete the folder.'
+  const count = Number(held[1])
+  return `This folder still has ${count} ${count === 1 ? 'file' : 'files'}. Move or delete ${count === 1 ? 'it' : 'them'} first.`
 }
 
 /**
@@ -688,34 +683,37 @@ export async function deleteFolderAsViewer(
  * everything else filed there; a `remove` from one emits state listing nothing.
  * So each side's `hasState` comes from a read, as a rename's does.
  *
- * **What is under the file moves with it** (FOL-45). A sub-topic is listed by
- * its team's state beside its parent, so moving only the parent would leave the
- * sub-topic in the old Folder, drawn at its top because its parent is no longer
- * in that listing. `addresses` is the file and every file listed under it; each
- * is planned by `planMoveFile`, and every add is sent before any remove, so the
- * same "both, never neither" holds for the whole set.
+ * **What is under the file moves with it** (FOL-45, SPEC §3.3). A sub-topic is
+ * listed by its Folder's state beside its parent, so moving only the parent
+ * would leave the sub-topic in the old Folder, drawn at its top. `listing` is
+ * the source Folder's files; interop's `planMoveFile` moves the file and every
+ * file listed beneath it as one `add` naming the set, then one `remove`, so a
+ * failure leaves the whole set in both Folders and never splits it.
+ *
+ * **Refused into a private Folder** when a moved file lives in another channel:
+ * a listing never changes who can read a file (§3.1).
  */
 export async function moveFileAsViewer(
-  addresses: string | readonly string[],
+  file: MovableFile,
+  listing: readonly MovableFile[] | null,
   from: FolderRef,
   to: FolderRef,
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const plans = [addresses].flat().map((address) => planMoveFile(token.pubkey, Date.now(), { address, from, to }))
-  const refused = plans.find((plan) => !plan.ok)
-  if (refused && !refused.ok) {
+  const plan = planMoveFile(token.pubkey, Date.now(), { file, listing, from, to })
+  if (!plan.ok) {
     return {
       ok: false,
       reason:
-        refused.reason === 'source-has-no-state'
+        plan.reason === 'source-has-no-state'
           ? 'Files can’t be moved out of this folder yet: it has no list of its own, so moving one would hide the rest.'
-          : 'That folder has no list of its own yet, so moving a file into it would hide what is already there.',
+          : plan.reason === 'target-is-private'
+            ? 'This can’t move into a private folder: everyone who can read it now still could.'
+            : 'That folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
-  const events = plans.flatMap((plan) => (plan.ok ? plan.events : []))
-  const isAdd = (event: UnsignedEvent) => event.tags.some(([name, value]) => name === 'op' && value === 'add')
-  const result = await publishInOrder([...events.filter(isAdd), ...events.filter((event) => !isAdd(event))], relayUrl, token)
+  const result = await publishInOrder(plan.events, relayUrl, token)
   if (result.ok) return { ok: true }
   if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
   return { ok: false, reason: 'Added to the new folder, but it is still in the old one. Try moving it again.' }
@@ -1555,13 +1553,13 @@ export async function archiveFileAsViewer(
 /**
  * Archive a Folder, or restore it — interop's `planArchiveFolder` (FOL-46).
  *
- * A change on the Folder's channel address, published in the Folder that
- * lists it (`into`) so that Folder's readers read it too; a top-level Folder
- * takes it in itself. Its state, its contents and its channel are untouched,
- * which is what makes it reversible where a `kind:9008` is not.
+ * A change on the Folder's channel address, always in the Folder's own `h`,
+ * and counted only from its owners and admins (SPEC §3.2). Its state, its
+ * contents and its channel are untouched, which is what makes it reversible
+ * where a `kind:9008` is not.
  */
 export async function archiveFolderAsViewer(
-  args: { folder: string; channel: string; archived: boolean; resolution?: string; into?: string },
+  args: { folder: string; channel: string; archived: boolean; resolution?: string },
   relayUrl: string,
   token: StoredToken,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -1571,7 +1569,6 @@ export async function archiveFolderAsViewer(
       channel: args.channel,
       archived: args.archived,
       ...(args.archived && args.resolution ? { resolution: args.resolution } : {}),
-      ...(args.into ? { into: args.into } : {}),
     }),
     relayUrl,
     token,

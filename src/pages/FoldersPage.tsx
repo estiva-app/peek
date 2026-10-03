@@ -28,6 +28,7 @@ import {
   useConversationBadges,
   useFolderContents,
   useFolders,
+  useCurrentUser,
   useForeignObjects,
   useTeamUnread,
   useWorkspaceDirectory,
@@ -206,15 +207,17 @@ export function FoldersPage() {
   /*
     Archive the Folder (FOL-46) — the change on its channel address that every
     reader folds, never a `kind:9008`: its contents, its state and its channel
-    are untouched, so Unarchive brings back exactly what was there. Offered on
-    any Folder with a channel, a member's as much as an admin's, and it opens
-    on a read of what it would hide. An archived Folder leaves the list on the
-    left and stays open here, under its notice.
+    are untouched, so Unarchive brings back exactly what was there. Offered
+    only to the Folder's owners and admins (SPEC §3.2): every reader ignores
+    an archive from anybody else. It opens on a read of what it would hide. An
+    archived Folder leaves the list on the left and stays open here, under its
+    notice.
   */
   const people = useWorkspaceDirectory()
+  const me = useCurrentUser()?.id
   const [archivingFolder, setArchivingFolder] = useState<{ hides: string[]; staysVisible: string[] } | null>(null)
   const folderArchive = selected?.archived
-  const canArchive = !topic && isFolder && !!selected?.channel
+  const canArchive = !topic && isFolder && !!selected?.channel && !!me && !!selected.admins?.includes(me)
   // One count at a time: a second click would read the whole Folder again.
   const [countingArchive, setCountingArchive] = useState(false)
   const startArchive = () => {
@@ -235,7 +238,6 @@ export function FoldersPage() {
       channel: selected.channel,
       archived,
       resolution,
-      into: selected.listedIn?.[0],
     }).catch((error: unknown) => ({
       ok: false as const,
       reason: `Nothing was archived: ${(error as Error)?.message ?? 'the write failed'}. Try again.`,
@@ -249,12 +251,13 @@ export function FoldersPage() {
   }
   const archivedWith = folderArchive?.with
   const folderNotice =
-    folderArchive && canArchive ? (
+    // Everyone reads that it is archived; only its owners and admins are offered Unarchive.
+    folderArchive && !topic && isFolder && selected?.channel ? (
       <ArchivedNotice
         archive={folderArchive}
         by={people?.[folderArchive.by]?.displayName ?? `${folderArchive.by.slice(0, 8)}…`}
         withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
-        onUnarchive={archivedWith ? undefined : () => void setFolderArchived(false)}
+        onUnarchive={archivedWith || !canArchive ? undefined : () => void setFolderArchived(false)}
         onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
       />
     ) : undefined
@@ -343,15 +346,7 @@ export function FoldersPage() {
                   onCommit={async (next) => {
                     const trimmed = next.trim()
                     if (!trimmed) return false
-                    /*
-                      `hasState` is passed, never guessed. A `kind:1852` name
-                      change on a Folder with no state emits state listing
-                      nothing, and a Folder read by containment would lose every
-                      file on screen. The read that is already on this page is
-                      the only honest source for it.
-                    */
-                    const hasState = typeof state === 'object' && 'hasState' in state && state.hasState
-                    const result = await renameFolder(id, trimmed, hasState)
+                    const result = await renameFolder(id, trimmed)
                     if (!result.ok) {
                       showToast({ label: result.reason, type: 'error' })
                       return false

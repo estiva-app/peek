@@ -1406,8 +1406,10 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     await userEvent.click(screen.getByRole('option', { name: /The top of Steer/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
+    // The file and the source listing: interop moves it with what is under it (MAN-17).
     expect(writes.moveFile).toHaveBeenCalledWith(
-      [deep.address, under.address],
+      expect.objectContaining({ address: deep.address }),
+      listing,
       { id: FOLDER, hasState: true },
       { id: 'steer', hasState: true },
     )

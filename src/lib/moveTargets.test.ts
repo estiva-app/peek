@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { currentFolderOf, listedUnder, moveTargetsIn } from './moveTargets'
+import { listedBeneath, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
+import { currentFolderOf, moveTargetsIn } from './moveTargets'
 
 const PK = 'a'.repeat(64)
 const file = (kind: number, d: string, extra: Partial<ForeignObject> = {}) =>
@@ -53,13 +53,16 @@ describe('currentFolderOf (FOL-45)', () => {
   })
 })
 
-describe('listedUnder (FOL-45)', () => {
+// What a move takes with it is interop's now (MAN-17); these pin Peek's two cases.
+describe('listedBeneath, as Peek moves a file (FOL-45)', () => {
+  const beneath = (files: ForeignObject[], file: ForeignObject) => listedBeneath(files, file).map((f) => f.address)
+
   it('is everything under the file however deep, and never the file', () => {
-    expect(listedUnder([topic, sub, subsub, project], topic)).toEqual([sub.address, subsub.address])
+    expect(beneath([topic, sub, subsub, project], topic)).toEqual([sub.address, subsub.address])
   })
 
   it('finds what is under an issue, although the issue is not in the listing', () => {
-    expect(listedUnder([topic, underIssue], issue)).toEqual([underIssue.address])
+    expect(beneath([topic, underIssue], issue)).toEqual([underIssue.address])
   })
 })
 

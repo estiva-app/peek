@@ -87,6 +87,8 @@ const teamUnread = vi.hoisted(() => ({
 }))
 /* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
 const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
+/* Who is signed in, and who the relay lists as the Folder's owners and admins (MAN-17). */
+const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] }))
 /*
   Making a Folder — UIG-7. The row is the package Form: Enter in the name sends
   it. Refused here, so the page stays put and the test reads only the call.
@@ -150,7 +152,7 @@ vi.mock('@/api', async () => ({
   }),
   useFolders: () => ({
     folders: [
-      { id: FOLDER, name: 'Folders', hasState: true },
+      { id: FOLDER, name: 'Folders', hasState: true, channel: `39000:${'f'.repeat(64)}:${FOLDER}`, admins: viewer.admins },
       { id: TOPIC_CHANNEL, name: 'For testing', hasState: true },
       // A Ship record channel: in the list the relay answers, never a section (PEE-31).
       { id: RECORD_CHANNEL, name: 'project-0804b906', hasState: false },
@@ -178,6 +180,7 @@ vi.mock('@/api', async () => ({
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
   useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member }),
   useWorkspaceDirectory: () => undefined,
+  useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
   useResolvedReferences: () => ({}),
@@ -296,6 +299,20 @@ describe('FoldersPage manages a topic’s Folder from where the topic went', () 
     // everything filed in it — so it is not offered, and not even asked about.
     expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
     expect(deletable.check).not.toHaveBeenCalledWith(FOLDER)
+  })
+
+  // SPEC §3.2: every reader ignores an archive from anybody but the Folder's owners and admins (MAN-17).
+  it('offers Archive only to the Folder’s owners and admins', async () => {
+    viewer.admins.splice(0)
+    const { unmount } = mount(`/app/folders/${FOLDER}`)
+    expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Archive folder' })).toBeNull()
+    unmount()
+
+    viewer.admins.push(viewer.me)
+    mount(`/app/folders/${FOLDER}`)
+    expect(await screen.findByRole('button', { name: 'Archive folder' })).toBeTruthy()
+    viewer.admins.splice(0)
   })
 })
 
