@@ -17,7 +17,6 @@ import {
 import { EmptyState } from '@/components/ui/EmptyState'
 import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { UnreadDot } from '@/components/ui/UnreadDot'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { folderMatches, type TreeFilter } from '@/components/views/treeFilter'
@@ -47,7 +46,7 @@ import { useFolderPath } from '@/lib/useFolderPath'
  * ## What is read, and when
  *
  * The list of Folders, once (`useFolders`, one `POST /query`), and one batched
- * read for every Folder's union dot (`useTeamUnread`, FOL-18 — two POSTs for
+ * read for every Folder's union of streams (`useTeamUnread`, FOL-18 — two POSTs for
  * all of production's 162). **Nothing else until a fold opens.** An open
  * Folder reads its first level (`useFolderContents`, two POSTs) and its rows'
  * dots (one more); a row with a chevron reads its children when it is
@@ -58,8 +57,10 @@ import { useFolderPath } from '@/lib/useFolderPath'
  * passing: without it a fold was 13 POSTs and a row 8, warm or cold. Measured
  * against production by `scripts/probe-fol21-tree-cost.ts`; the seam-level
  * half — that nothing is *asked* before the fold or the row opens — is
- * `FolderTree.test.tsx`. This is why the union dot exists: the tree hides
- * things, so it must say when something hidden is new.
+ * `FolderTree.test.tsx`. The union draws no dot — a Folder row carries none
+ * (Miky, 2026-10-03), only its files do. It decides what the Unread filter
+ * keeps, and its socket signal (`activity`) is what re-reads an open
+ * Folder's row dots.
  *
  * ## Which folds are open
  *
@@ -206,7 +207,11 @@ export function FolderTreeView({
   /** `null` while the first read is in flight, or when signed out. */
   folders: FolderSummary[] | null
   signedOut: boolean
-  /** The union dot per Folder id (FOL-18). Missing means unjudged. */
+  /**
+   * Whether each Folder holds something unread — the union of its streams
+   * (FOL-18). Drawn as nothing; it is what the Unread filter keeps. Missing
+   * means unjudged.
+   */
   unread: Record<string, boolean>
   /**
    * The socket's signal count per Folder id (FOL-44): an open section's rows
@@ -260,8 +265,6 @@ export function FolderTreeView({
         <FolderSection
           key={folder.id}
           folder={folder}
-          /* `=== true`: an unjudged Folder draws no dot, not a dark one. */
-          unread={unread[folder.id] === true}
           activity={activity[folder.id] ?? 0}
           filter={filter}
           current={folder.id === currentFolder}
@@ -280,7 +283,6 @@ export function FolderTreeView({
 /** One Folder: a fold, and its first level once it is open. */
 function FolderSection({
   folder,
-  unread,
   activity,
   filter,
   current,
@@ -292,7 +294,6 @@ function FolderSection({
   preloaded,
 }: {
   folder: FolderSummary
-  unread: boolean
   activity: number
   filter: TreeFilter
   current: boolean
@@ -383,11 +384,10 @@ function FolderSection({
       open={open}
       onOpenChange={setOpen}
       /*
-        The union dot in the slot for a count: information rather than an
-        affordance, so it does not come and go with the hover. A collapsed
-        Folder hides its rows, and this is what says one of them is new.
+        No dot on a Folder, open or collapsed (Miky, 2026-10-03): read state
+        is the file's, and only a file row carries one. What is new inside a
+        shut Folder is what the header's Unread filter is for.
       */
-      trailing={unread ? <UnreadDot /> : undefined}
       actions={[
         {
           icon: <IconArrowUpRight size={16} stroke={1.5} />,
@@ -398,7 +398,7 @@ function FolderSection({
       // The pointer resting on a closed Folder, or the keyboard reaching it,
       // reads it ahead (SID-2): resting, not passing, and never twice.
       onIntent={prefetch}
-      >
+    >
       {/*
         Rows only while open. The section keeps its panel mounted while
         closed so find-in-page can reach into it, but a closed Folder has

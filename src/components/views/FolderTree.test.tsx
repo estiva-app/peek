@@ -4,7 +4,7 @@
  * What the ticket's done-when promises, pinned at the seam: the Folders as
  * folds, only the current one open; a Folder's first level read when its fold
  * opens and never before; a row's children read when the row is expanded and
- * never before; the union dot on a collapsed Folder; and where a Folder and a
+ * never before; no dot on a Folder, collapsed or open; and where a Folder and a
  * row lead. The relay's side of "one query on expand" is measured by
  * `scripts/probe-fol21-tree-cost.ts`, against production; this file proves
  * *when* the read is asked for, which no probe can.
@@ -213,13 +213,18 @@ describe('the Folders, as folds', () => {
     expect(contentsAsked()).toEqual([])
   })
 
-  it('draws the union dot on a Folder that has something new, open or closed', () => {
-    dots.unread = { [OTHER]: true, [TEAM]: false }
+  /*
+    A Folder carries no dot, open or closed (Miky, 2026-10-03) — only its file
+    rows do. The rows' badges are mocked empty here, so any dot in a section
+    would be the Folder's own.
+  */
+  it('draws no dot on a Folder that holds something new, open or closed', () => {
+    dots.unread = { [OTHER]: true, [TEAM]: true }
     mount({ currentFolder: TEAM })
-    expect(section(OTHER).querySelector('[data-unread]')).not.toBeNull()
+    expect(openOf(section(TEAM))).toBe('true')
+    expect(openOf(section(OTHER))).toBe('false')
+    expect(section(OTHER).querySelector('[data-unread]')).toBeNull()
     expect(section(TEAM).querySelector('[data-unread]')).toBeNull()
-    // Unjudged is not unread.
-    expect(section(TOPIC_FOLDER).querySelector('[data-unread]')).toBeNull()
   })
 })
 
