@@ -22,14 +22,26 @@ import { READ_DWELL_MS, useReadActions } from '@/api'
  *
  * A hidden tab marks nothing until it is shown again: a pane in a background
  * tab is not being read.
+ *
+ * The mark never passes the clock. `createdAt` is the sender's to choose, and
+ * the relay accepts one up to 15 minutes ahead: marking up to it would set a
+ * grow-only marker in the future, and everything others said until then would
+ * read as read without being drawn. A message ahead of the clock is read once
+ * the clock reaches it, while the pane is still open.
  */
 function useDwell(target: string | null | undefined, newestAt: number | undefined, mark: (target: string, newestAt: number) => void) {
   useEffect(() => {
     if (!target || newestAt === undefined) return
     let t: ReturnType<typeof setTimeout> | undefined
+    const fire = () => {
+      const now = Math.floor(Date.now() / 1000)
+      mark(target, Math.min(newestAt, now))
+      // Ahead of the clock: read it once the clock gets there, if still open.
+      if (newestAt > now) t = setTimeout(fire, (newestAt - now) * 1000)
+    }
     const arm = () => {
       clearTimeout(t)
-      if (!document.hidden) t = setTimeout(() => mark(target, newestAt), READ_DWELL_MS)
+      if (!document.hidden) t = setTimeout(fire, READ_DWELL_MS)
     }
     arm()
     document.addEventListener('visibilitychange', arm)

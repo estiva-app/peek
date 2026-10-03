@@ -22,6 +22,7 @@ import {
   formatReplyTimestamp,
   useFileConversation,
   useMembership,
+  useNewReplyThreads,
   useWorkspaceDirectory,
   type ConversationContainer,
   type ConversationData,
@@ -168,6 +169,12 @@ export function useFileConversationView({
   */
   const newestAt = conversation ? newestMessageAt(conversation.roots) : undefined
   useMarkThreadRead(openThreadId, conversation && openThreadId ? newestMessageAt(conversation.replies[openThreadId] ?? []) : undefined)
+  // Which of those threads hold a reply new to the viewer: the "new reply" on its row (PEE-44).
+  const newReplies = useNewReplyThreads(
+    container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null,
+    conversation?.replies,
+    viewerPubkey,
+  )
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
   const groups = view ? groupByDay(view.roots) : []
@@ -408,6 +415,7 @@ export function useFileConversationView({
                   replyCount={c.replyCount}
                   replyAuthors={c.replyAuthors}
                   lastReplyTime={c.lastReplyTime}
+                  hasNewReply={newReplies.has(c.id)}
                   isResolved={c.isResolved}
                   resolvedBy={c.resolvedBy}
                   resolutionMessage={c.resolutionMessage}

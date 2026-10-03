@@ -37,7 +37,18 @@ vi.mock('@/api', async () => ({
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 vi.mock('@/components/ui/ComposeBox', () => ({ ComposeBox: () => null }))
-vi.mock('@/components/ConversationCard', () => ({ ConversationCard: ({ body }: { body: string }) => <article>{body}</article> }))
+vi.mock('@/components/ConversationCard', () => ({
+  ConversationCard: ({ body, hasNewReply }: { body: string; hasNewReply?: boolean }) => <article data-new-reply={String(!!hasNewReply)}>{body}</article>,
+}))
+// The DM read up to its root, before the reply: the reply's thread is new (PEE-44).
+vi.mock('@/nostr/useReadStateSync', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('@/nostr/useReadStateSync')),
+  useReadFrontier: () => ({
+    marker: (context: string | undefined) => (context === '1c7a1f52-6721-42fe-a348-9efde8565374' ? 1_700_000_000 : undefined),
+    merged: { '1c7a1f52-6721-42fe-a348-9efde8565374': 1_700_000_000 },
+    ready: true,
+  }),
+}))
 
 import { useFileConversationView } from './useFileConversationView'
 
@@ -63,7 +74,7 @@ const conversation: FileConversation = {
 
 function View({ openThreadId }: { openThreadId: string | undefined }) {
   const { conversation: view, newestAt } = useFileConversationView({
-    container: { kind: 'channel', h: 'dm-channel' },
+    container: { kind: 'channel', h: '1c7a1f52-6721-42fe-a348-9efde8565374' },
     rootIds: [],
     openThreadId,
     onOpenThread: () => {},
@@ -89,6 +100,12 @@ describe('the conversation view reads top-level messages, and threads only when 
     await waitFor(() => expect(screen.getByTestId('newest').textContent).toBe(String(T)))
     await new Promise((r) => setTimeout(r, 1700))
     expect(marks.thread).not.toHaveBeenCalled()
+  })
+
+  it('a message whose thread holds a reply newer than the DM marker says "new reply"', async () => {
+    relay.read.mockResolvedValue(conversation)
+    render(<View openThreadId={undefined} />)
+    await waitFor(() => expect(screen.getByText('Root').getAttribute('data-new-reply')).toBe('true'))
   })
 
   it('an open thread is marked up to its newest reply', async () => {

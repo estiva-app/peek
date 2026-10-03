@@ -119,6 +119,15 @@ describe('useMarkThreadRead (PEE-44)', () => {
     expect(markFileRead).not.toHaveBeenCalled()
   })
 
+  it('never marks past the clock: a reply dated ahead is read once the clock reaches it', () => {
+    vi.setSystemTime(1_000_000 * 1000)
+    renderHook(() => useMarkThreadRead(ROOT, 1_000_000 + 600))
+    vi.advanceTimersByTime(1500)
+    expect(markThreadRead).toHaveBeenLastCalledWith(ROOT, 1_000_001)
+    vi.advanceTimersByTime(600 * 1000)
+    expect(markThreadRead).toHaveBeenLastCalledWith(ROOT, 1_000_600)
+  })
+
   it('marks nothing for a thread with no replies, or no thread', () => {
     renderHook(() => useMarkThreadRead(ROOT, undefined))
     renderHook(() => useMarkThreadRead(null, 300))
