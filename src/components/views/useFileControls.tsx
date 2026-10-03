@@ -198,7 +198,7 @@ export function useFileControls({
       }
       const ownFolder = file.folder
       if (!ownFolder || (control === 'inside' && !canStartInside(file))) {
-        return refuse('This file is in no team Peek can read, so nothing can be put inside it from here.')
+        return refuse('This file is in no Folder Peek can read, so nothing can be put inside it from here.')
       }
       void (async () => {
         let contents: Awaited<ReturnType<typeof resolveFolderContents>>
@@ -223,10 +223,10 @@ export function useFileControls({
           if (!team) throw new Error('no team')
           contents = await (team === ownFolder ? own : resolveFolderContents(team))
         } catch {
-          refuse('The team could not be read. Try again.')
+          refuse('The Folder could not be read. Try again.')
           return
         }
-        const teamName = contents.name ?? 'this team'
+        const teamName = contents.name ?? 'this Folder'
         if (control === 'inside') {
           setDialog({ kind: 'inside', file, team, teamName, hasState: contents.hasState })
           return
