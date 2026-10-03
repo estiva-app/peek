@@ -11,7 +11,7 @@ import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
-import { newestMessageAt } from '@/lib/useMarkRead'
+import { newestMessageAt, useMarkThreadRead } from '@/lib/useMarkRead'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { useToast } from '@/lib/toast'
 import {
@@ -22,6 +22,7 @@ import {
   formatReplyTimestamp,
   useFileConversation,
   useMembership,
+  useNewReplyThreads,
   useWorkspaceDirectory,
   type ConversationContainer,
   type ConversationData,
@@ -78,7 +79,7 @@ interface ViewSlots {
   conversationParts: ConversationParts
   /** The open thread, or nothing. */
   threadPanel: ReactNode | undefined
-  /** The newest message's `createdAt`, so the read dwell re-arms when one arrives (PEE-44). */
+  /** The newest top-level message's `createdAt`, so the read dwell re-arms when one arrives (PEE-44). */
   newestAt: number | undefined
 }
 
@@ -161,8 +162,19 @@ export function useFileConversationView({
   const isLoading = state === 'loading'
   const failed = typeof state === 'object' && 'failed' in state ? state.failed : null
   const conversation: FileConversation | null = typeof state === 'object' && 'roots' in state ? state : null
-  // The newest message the pane holds: the file's read dwell re-arms when it moves (PEE-44).
-  const newestAt = conversation ? newestMessageAt(conversation.roots, Object.values(conversation.replies).flat()) : undefined
+  /*
+    The newest top-level message the pane holds: the DM's or file's read dwell
+    re-arms when it moves (PEE-44). Replies are not in it — a reply is read by
+    opening its thread, and that is the open thread's own mark, below.
+  */
+  const newestAt = conversation ? newestMessageAt(conversation.roots) : undefined
+  useMarkThreadRead(openThreadId, conversation && openThreadId ? newestMessageAt(conversation.replies[openThreadId] ?? []) : undefined)
+  // Which of those threads hold a reply new to the viewer: the "new reply" on its row (PEE-44).
+  const newReplies = useNewReplyThreads(
+    container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null,
+    conversation?.replies,
+    viewerPubkey,
+  )
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
   const groups = view ? groupByDay(view.roots) : []
@@ -403,6 +415,7 @@ export function useFileConversationView({
                   replyCount={c.replyCount}
                   replyAuthors={c.replyAuthors}
                   lastReplyTime={c.lastReplyTime}
+                  hasNewReply={newReplies.has(c.id)}
                   isResolved={c.isResolved}
                   resolvedBy={c.resolvedBy}
                   resolutionMessage={c.resolutionMessage}
