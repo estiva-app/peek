@@ -289,7 +289,12 @@ describe('FoldersPage manages a topic’s Folder from where the topic went', () 
     expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL))
   })
 
+  afterEach(() => {
+    viewer.admins.splice(0)
+  })
+
   it('offers the rename, and no delete, on a Folder with state', async () => {
+    viewer.admins.push(viewer.me)
     mount(`/app/folders/${FOLDER}`)
     // Once the relay has said the channel is not a DM (PEE-36).
     expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
@@ -302,17 +307,19 @@ describe('FoldersPage manages a topic’s Folder from where the topic went', () 
   })
 
   // SPEC §3.2: every reader ignores an archive from anybody but the Folder's owners and admins (MAN-17).
-  it('offers Archive only to the Folder’s owners and admins', async () => {
-    viewer.admins.splice(0)
+  // The relay refuses a rename (`kind:9002`) from the same people, so it is not offered to them either.
+  it('offers Archive and the rename only to the Folder’s owners and admins', async () => {
     const { unmount } = mount(`/app/folders/${FOLDER}`)
     expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Archive folder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
+    expect(screen.getAllByText('Folders').length).toBeGreaterThan(0)
     unmount()
 
     viewer.admins.push(viewer.me)
     mount(`/app/folders/${FOLDER}`)
     expect(await screen.findByRole('button', { name: 'Archive folder' })).toBeTruthy()
-    viewer.admins.splice(0)
+    expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
   })
 })
 

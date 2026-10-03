@@ -217,7 +217,8 @@ export function FoldersPage() {
   const me = useCurrentUser()?.id
   const [archivingFolder, setArchivingFolder] = useState<{ hides: string[]; staysVisible: string[] } | null>(null)
   const folderArchive = selected?.archived
-  const canArchive = !topic && isFolder && !!selected?.channel && !!me && !!selected.admins?.includes(me)
+  const isFolderAdmin = !!me && !!selected?.admins?.includes(me)
+  const canArchive = !topic && isFolder && !!selected?.channel && isFolderAdmin
   // One count at a time: a second click would read the whole Folder again.
   const [countingArchive, setCountingArchive] = useState(false)
   const startArchive = () => {
@@ -328,6 +329,9 @@ export function FoldersPage() {
                 ) : !isFolder ? (
                   // Never the uuid, and never a name field on what is not a Folder.
                   notAFolder ? 'Not a folder' : ''
+                ) : !isFolderAdmin ? (
+                  // The relay lets only owners and admins rename (`kind:9002`), so a member reads the name.
+                  (selected?.name ?? 'Untitled folder')
                 ) : (
                 <div className="-ml-2 min-w-0 text-body-2-strong">
                 <EditableText
