@@ -6,8 +6,10 @@ import { type StreamFrontier, type StreamTerms, streamHasUnread } from './stream
 /**
  * Is there something new anywhere in a team — SPEC §11.3, FOL-18.
  *
- * A Folder's indicator is the **union of its streams**: unread if its general
- * conversation is, or any file's conversation in it is. Each stream answers to
+ * The verdict is the **union of a Folder's streams**: unread if its general
+ * conversation is, or any file's conversation in it is. Peek draws no dot for
+ * it — a Folder row carries none (Miky, 2026-10-03) — and uses it for what
+ * the tree's Unread filter keeps. Each stream answers to
  * its own marker — the bare channel uuid for the general stream, the file's
  * bare address for a file's — and the channel's marker never reaches a file's
  * stream (§11.3): reading the team's chat says nothing about which of its

@@ -118,11 +118,12 @@ export function FolderTree({
   const navigate = useNavigate()
   const { folders, signedOut } = useFolders()
   /*
-    The dots are judged over every Folder, the sections drawn for the top-level
-    ones (FOL-22, PEE-31). A topic is a channel placed in its team by address,
-    so it is in `listFolders` like any channel, and it is a row inside the
-    team's section rather than a section of its own — but its stream is one of
-    the team's, and `useTeamUnread` folds its verdict into the team's dot. A
+    The verdicts are judged over every Folder, the sections drawn for the
+    top-level ones (FOL-22, PEE-31). A topic is a channel placed in its Folder
+    by address, so it is in `listFolders` like any channel, and it is a row
+    inside that Folder's section rather than a section of its own — but its
+    stream is one of the Folder's, and `useTeamUnread` folds its verdict into
+    the Folder's. A
     record channel is in `listFolders` too and is nobody's section:
     `topLevelFolders` says which are.
   */
