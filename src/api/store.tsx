@@ -22,6 +22,7 @@ import { DmsProvider } from '@/api/internal/dms'
 import { MembershipProvider } from '@/api/internal/membership'
 import { AvatarRegistryProvider } from './avatars'
 import { MentionDirectorySync } from './mentions'
+import { ReferenceSourcesSync } from './references'
 
 /**
  * Mounts every store Peek's pages read from — people's pictures, starred, read
@@ -38,6 +39,7 @@ export function PeekDataProvider({ children }: { children: ReactNode }) {
       <AvatarRegistryProvider>
         <MentionDirectorySync />
         <ReadStateSync />
+        <ReferenceSourcesSync />
         <StarredProvider>
           {/* Membership and mutes (CON-19, SPEC §11.8): the relay's, read by the
               unread hooks and the join and mute controls. Reads no store above

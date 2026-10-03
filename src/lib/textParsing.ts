@@ -185,13 +185,43 @@ export function serializeTextChild(child: TiptapInlineChild): string {
   return wrapInlineMarks(linked, markNames)
 }
 
+/** A `nostr:` reference in a body, as a preview line names it. */
+const NOSTR_REFERENCE_RE = /nostr:(?:npub1|nprofile1|nevent1|note1|naddr1)[a-z0-9]+/gi
+/** What a referenced address is, by its kind — the type word its chip wears. */
+const REFERENCE_TYPE_WORDS: Record<number, string> = { 30850: 'Project', 30851: 'Issue', 30840: 'Topic' }
+
+function previewReference(uri: string): string {
+  if (/^nostr:npub1/i.test(uri)) {
+    let pubkey: string | null = null
+    try {
+      pubkey = decodeNpub(uri)
+    } catch {
+      pubkey = null
+    }
+    return `@${(pubkey && personByPubkey(pubkey)?.name) || shortUri(uri)}`
+  }
+  if (/^nostr:naddr1/i.test(uri)) {
+    try {
+      return REFERENCE_TYPE_WORDS[referenceToPointer(uri).kind] ?? 'File'
+    } catch {
+      return 'File'
+    }
+  }
+  if (/^nostr:(?:nevent1|note1)/i.test(uri)) return 'Message'
+  return `@${shortUri(uri)}`
+}
+
 /**
  * A body as plain words for a preview line: marks stripped, a link reduced
- * to its label. The package strips what it knows; the link is Peek's until
+ * to its label, and a `nostr:` reference to what its chip would say — a person
+ * as `@Name`, a message or a file by its type word (PEE-21: `[` rows showed the
+ * raw bech32). The package strips what it knows; the link is Peek's until
  * PEE-25.
  */
 export function previewText(body: string): string {
-  return stripInlineFormatting(body).replace(LINK_SPLIT_RE, (token) => matchLink(token)?.label ?? token)
+  return stripInlineFormatting(body)
+    .replace(LINK_SPLIT_RE, (token) => matchLink(token)?.label ?? token)
+    .replace(NOSTR_REFERENCE_RE, previewReference)
 }
 
 /** Tokenizer for read-only rendering: URLs, mentions and [refs].

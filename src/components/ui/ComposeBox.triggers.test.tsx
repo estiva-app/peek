@@ -99,7 +99,7 @@ describe('the composer’s triggers come from the packages (CON-27)', () => {
     const onSend = vi.fn()
     const { dom, editor } = await compose(onSend)
     await type(editor, '[')
-    expect(rows('Topics and messages')).toEqual(['Ada: Build #4821 failed.'])
+    expect(rows('Messages and files')).toEqual(['Ada: Build #4821 failed.'])
     await enter(dom)
     expect(editor.getJSON().content?.[0].content?.[0]).toMatchObject({ type: 'messageMention', attrs: { id: EVENT, label: 'Ada', snippet: 'Build #4821 failed.' } })
     await sleep(150)
