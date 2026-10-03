@@ -845,8 +845,8 @@ describe("FilePage puts another app's widget in the third column", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const column = screen.getByTestId('thread')
     expect(widget()).not.toBeNull()
-    // The column's bar names the app, and the card carries its own label: twice, by design.
-    expect(within(column).getAllByText('Estiva Ship')).toHaveLength(2)
+    // The column's bar says what it is; the card on its own page does not say it again (PEE-45).
+    expect(within(column).getAllByText('Estiva Ship')).toHaveLength(1)
     expect(within(column).getByRole('link', { name: 'The file route' })).toHaveAttribute('href', shipIssue.openUrl)
     expect(within(column).getByText('In Progress')).toBeInTheDocument()
     // The same card `data-foreign-object` marks anywhere else; the tree beside it still draws rows.
