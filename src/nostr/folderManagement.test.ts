@@ -4,12 +4,8 @@
  * Each has one property worth pinning, and in each case it is the thing that
  * goes wrong silently rather than the happy path:
  *
- *  - **Rename must not publish a `kind:1852` on a Folder with no state.**
- *    `handle_folder_command` builds the next contents from the *existing* state,
- *    so `op: add` with no addresses against no state emits folder state listing
- *    nothing. The Folder stops being read by containment and shows empty, which
- *    for a Folder whose contents are entirely implied by `h` is every file on
- *    screen. Nothing errors.
+ *  - **No command carries a name** (MAN-17). A Folder's title is its channel's
+ *    name, so a rename is the `kind:9002` alone.
  *  - **Move must add before it removes.** There is no atomic move, so the order
  *    decides what a failure between the two leaves behind: in both Folders
  *    (visible, fixable) or in neither (looks like it was never there).
@@ -68,7 +64,9 @@ describe('creating a folder', () => {
     expect(sent().map((e) => e.kind)).toEqual([9007, 1852])
     const command = sent()[1]!
     expect(tag(command, 'h')).toEqual([(result as { id: string }).id])
-    expect(tag(command, 'name')).toEqual(['Leaf'])
+    // The title is the channel's: a command carries no name (MAN-17).
+    expect(tag(command, 'name')).toEqual([])
+    expect(tag(sent()[0]!, 'name')).toEqual(['Leaf'])
     expect(tag(command, 'op')).toEqual(['add'])
     // Nothing to list: the channel was created a moment ago.
     expect(tag(command, 'a')).toEqual([])
@@ -94,49 +92,30 @@ describe('creating a folder', () => {
 })
 
 describe('renaming a folder', () => {
-  it('writes only the channel when the folder has no state', async () => {
-    const result = await renameFolderAsViewer(FOLDER, 'Renamed', false, 'https://relay.test', token)
+  it('writes the channel and nothing else — the title is the 39000 name (SPEC §3.2)', async () => {
+    const result = await renameFolderAsViewer(FOLDER, 'Renamed', 'https://relay.test', token)
 
     expect(result).toEqual({ ok: true })
-    // One event, and emphatically not a 1852 — see this file's header.
+    // One event, and never a 1852 — a command carries no name (MAN-17).
     expect(sent().map((e) => e.kind)).toEqual([9002])
+    expect(tag(sent()[0]!, 'name')).toEqual(['Renamed'])
   })
 
-  it('writes both when the folder has state, because state shadows the channel', async () => {
-    /*
-      `listFolders` reads `nameOf(state) ?? nameOf(channel)`. Writing only the
-      channel would rename it nowhere a reader looks; writing only the state
-      would leave every non-Folder surface on the old name, which is the stale
-      name the project rename already produced once.
-    */
-    await renameFolderAsViewer(FOLDER, 'Renamed', true, 'https://relay.test', token)
-
-    const kinds = sent().map((e) => e.kind)
-    expect(kinds).toEqual([9002, 1852])
-    const command = sent()[1]!
-    expect(tag(command, 'name')).toEqual(['Renamed'])
-    // `add` of nothing, which the handler resolves to `next = current`. `set`
-    // would empty the Folder and there is no `rename` op.
-    expect(tag(command, 'op')).toEqual(['add'])
-    expect(tag(command, 'a')).toEqual([])
-  })
-
-  it('does not write the state name when the channel rename was refused', async () => {
+  it('says the relay’s refusal — only owners and admins may rename', async () => {
     publishSigned.mockResolvedValueOnce({ ok: false, reason: 'refused' })
 
-    const result = await renameFolderAsViewer(FOLDER, 'Renamed', true, 'https://relay.test', token)
-
-    expect(result).toEqual({ ok: false, reason: 'refused' })
-    expect(sent().map((e) => e.kind)).toEqual([9002])
+    expect(await renameFolderAsViewer(FOLDER, 'Renamed', 'https://relay.test', token)).toEqual({ ok: false, reason: 'refused' })
   })
 })
 
 describe('moving a file', () => {
   const here = { id: FOLDER, hasState: true }
   const there = { id: OTHER, hasState: true }
+  const file = { ref: ADDRESS, address: ADDRESS, folder: FOLDER }
+  const listing = [file]
 
   it('adds to the destination before removing from the source', async () => {
-    await moveFileAsViewer(ADDRESS, here, there, 'https://relay.test', token)
+    await moveFileAsViewer(file, listing, here, there, 'https://relay.test', token)
 
     const [add, remove] = sent()
     expect(tag(add!, 'h')).toEqual([OTHER])
@@ -149,7 +128,7 @@ describe('moving a file', () => {
   it('leaves the file in both folders when the remove fails, and says so', async () => {
     publishSigned.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })
 
-    const result = await moveFileAsViewer(ADDRESS, here, there, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, listing, here, there, 'https://relay.test', token)
 
     // Not "the move failed": the file did arrive, and saying it failed would
     // send somebody looking for it in the folder it already left.
@@ -162,27 +141,33 @@ describe('moving a file', () => {
     // the file ends up in neither folder.
     publishSigned.mockResolvedValueOnce({ ok: false, reason: 'refused' })
 
-    const result = await moveFileAsViewer(ADDRESS, here, there, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, listing, here, there, 'https://relay.test', token)
 
     expect(result).toEqual({ ok: false, reason: 'refused' })
     expect(sent()).toHaveLength(1)
     expect(tag(sent()[0]!, 'op')).toEqual(['add'])
   })
 
-  it('moves what is listed under the file with it, every add before any remove (FOL-45)', async () => {
+  it('moves what is listed under the file with it: one add naming the set, then one remove (FOL-45, MAN-17)', async () => {
     const SUB = `${ADDRESS}-sub`
-    await moveFileAsViewer([ADDRESS, SUB], here, there, 'https://relay.test', token)
+    const sub = { ref: SUB, address: SUB, folder: FOLDER, parentRef: ADDRESS }
+    await moveFileAsViewer(file, [file, sub], here, there, 'https://relay.test', token)
 
-    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'a')[0]])).toEqual([
-      ['add', OTHER, ADDRESS],
-      ['add', OTHER, SUB],
-      ['remove', FOLDER, ADDRESS],
-      ['remove', FOLDER, SUB],
+    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'a')])).toEqual([
+      ['add', OTHER, [ADDRESS, SUB]],
+      ['remove', FOLDER, [ADDRESS, SUB]],
     ])
   })
 
+  it('sends nothing into a private folder when the file lives in another channel', async () => {
+    const result = await moveFileAsViewer(file, listing, here, { ...there, private: true }, 'https://relay.test', token)
+
+    expect(result.ok === false && result.reason).toMatch(/private folder/)
+    expect(sent()).toHaveLength(0)
+  })
+
   it('writes nothing when the destination is where it already is', async () => {
-    const result = await moveFileAsViewer(ADDRESS, here, here, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, listing, here, here, 'https://relay.test', token)
 
     expect(result).toEqual({ ok: true })
     expect(sent()).toHaveLength(0)
@@ -195,14 +180,14 @@ describe('moving a file', () => {
     it. Nothing is sent, and the page is told why.
   */
   it('sends nothing when moving into a folder with no state', async () => {
-    const result = await moveFileAsViewer(ADDRESS, here, { id: OTHER, hasState: false }, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, listing, here, { id: OTHER, hasState: false }, 'https://relay.test', token)
 
     expect(result.ok === false && result.reason).toMatch(/into it would hide/)
     expect(sent()).toHaveLength(0)
   })
 
   it('sends nothing when moving out of a folder with no state', async () => {
-    const result = await moveFileAsViewer(ADDRESS, { id: FOLDER, hasState: false }, there, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, listing, { id: FOLDER, hasState: false }, there, 'https://relay.test', token)
 
     expect(result.ok === false && result.reason).toMatch(/out of this folder/)
     expect(sent()).toHaveLength(0)
@@ -301,6 +286,18 @@ describe('deleting a folder', () => {
     expect(await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)).toEqual({
       ok: false,
       reason: 'not an admin',
+    })
+  })
+
+  it('says the relay’s "holds N file(s)" refusal in a person’s words (MAN-17)', async () => {
+    publishSigned.mockResolvedValue({
+      ok: false,
+      reason: 'invalid: folder holds 2 file(s) (0 filed in it, 2 placed by its state); a delete would hide them all — remove them first',
+    })
+
+    expect(await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)).toEqual({
+      ok: false,
+      reason: 'This folder still has 2 files. Move or delete them first.',
     })
   })
 })

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { isArchived, topLevelFolders } from '@estiva-app/interop'
+import { isArchived, listedBeneath, topLevelFolders } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { useForeignObjects } from '@/api'
@@ -10,7 +10,7 @@ import { MoveDialog, type MoveChoice } from '@/components/MoveDialog'
 import { StartTopicDialog } from '@/components/StartTopicDialog'
 import { archiveImpactWords, kindNoun } from '@/lib/archiveWords'
 import { canStartInside, fileControlsOf } from '@/lib/fileControls'
-import { currentFolderOf, listedUnder, moveTargetsIn, type MoveTarget } from '@/lib/moveTargets'
+import { currentFolderOf, moveTargetsIn, type MoveTarget } from '@/lib/moveTargets'
 import { useToast } from '@/lib/toast'
 
 /**
@@ -257,17 +257,19 @@ export function useFileControls({
     if (!to) return false
     const changesFolder = to.id !== from
     const changesParent = choice.parent !== undefined && choice.parent !== (file.parentRef ?? '')
-    // An issue is listed by no Folder — its project is. What is listed under it still is.
-    const listed = [...(file.parentKind === undefined && file.address ? [file.address] : []), ...listedUnder(state.listing, file)]
+    // The file and what the listing has beneath it, planned by interop (SPEC §3.3). An issue is
+    // listed by no Folder — its project is — so only what is listed under it moves.
+    const target = { id: to.id, hasState: to.hasState, private: to.private }
+    const listsAny = state.listing.some((listed) => listed.ref === file.ref) || listedBeneath(state.listing, file).length > 0
     type Step = () => Promise<{ ok: true } | { ok: false; reason?: string }>
     const relist: Step | undefined =
-      changesFolder && listed.length
+      changesFolder && listsAny
         ? async () => {
-            const result = await moveFile(listed, { id: from, hasState: state.fromHasState }, { id: to.id, hasState: to.hasState })
+            const result = await moveFile(file, state.listing, { id: from, hasState: state.fromHasState }, target)
             if (!result.ok) return result
             // Out of every other Folder that still lists it, as Ship's move does (`placedIn`).
             for (const other of state.alsoIn.filter((id) => id !== to.id)) {
-              const also = await moveFile(listed, { id: other, hasState: true }, { id: to.id, hasState: to.hasState })
+              const also = await moveFile(file, state.listing, { id: other, hasState: true }, target)
               // It did arrive: a refused clean-up is a partial move, not a failed one.
               if (!also.ok) {
                 refuse(`Moved to ${to.name ?? 'the folder'}, but it is still listed in another folder too: ${also.reason}. Try moving it again.`)

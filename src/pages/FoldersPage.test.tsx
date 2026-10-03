@@ -87,6 +87,8 @@ const teamUnread = vi.hoisted(() => ({
 }))
 /* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
 const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
+/* Who is signed in, and who the relay lists as the Folder's owners and admins (MAN-17). */
+const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] }))
 /*
   Making a Folder — UIG-7. The row is the package Form: Enter in the name sends
   it. Refused here, so the page stays put and the test reads only the call.
@@ -150,7 +152,7 @@ vi.mock('@/api', async () => ({
   }),
   useFolders: () => ({
     folders: [
-      { id: FOLDER, name: 'Folders', hasState: true },
+      { id: FOLDER, name: 'Folders', hasState: true, channel: `39000:${'f'.repeat(64)}:${FOLDER}`, admins: viewer.admins },
       { id: TOPIC_CHANNEL, name: 'For testing', hasState: true },
       // A Ship record channel: in the list the relay answers, never a section (PEE-31).
       { id: RECORD_CHANNEL, name: 'project-0804b906', hasState: false },
@@ -178,6 +180,7 @@ vi.mock('@/api', async () => ({
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
   useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member }),
   useWorkspaceDirectory: () => undefined,
+  useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
   useResolvedReferences: () => ({}),
@@ -286,7 +289,12 @@ describe('FoldersPage manages a topic’s Folder from where the topic went', () 
     expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL))
   })
 
+  afterEach(() => {
+    viewer.admins.splice(0)
+  })
+
   it('offers the rename, and no delete, on a Folder with state', async () => {
+    viewer.admins.push(viewer.me)
     mount(`/app/folders/${FOLDER}`)
     // Once the relay has said the channel is not a DM (PEE-36).
     expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
@@ -296,6 +304,22 @@ describe('FoldersPage manages a topic’s Folder from where the topic went', () 
     // everything filed in it — so it is not offered, and not even asked about.
     expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
     expect(deletable.check).not.toHaveBeenCalledWith(FOLDER)
+  })
+
+  // SPEC §3.2: every reader ignores an archive from anybody but the Folder's owners and admins (MAN-17).
+  // The relay refuses a rename (`kind:9002`) from the same people, so it is not offered to them either.
+  it('offers Archive and the rename only to the Folder’s owners and admins', async () => {
+    const { unmount } = mount(`/app/folders/${FOLDER}`)
+    expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Archive folder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
+    expect(screen.getAllByText('Folders').length).toBeGreaterThan(0)
+    unmount()
+
+    viewer.admins.push(viewer.me)
+    mount(`/app/folders/${FOLDER}`)
+    expect(await screen.findByRole('button', { name: 'Archive folder' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
   })
 })
 

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Panel } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from '@/components/ui/ForeignObjectWidget'
+import { fileHeading } from '@/lib/appName'
 
 /**
  * **Another app's file, as its widget, in the third column while no thread is
@@ -43,7 +44,7 @@ export function FileWidgetPanel({ file, below }: { file: ForeignObject; /** What
     // The package's Panel (0.37.0): a long description scrolls instead of running off the column.
     // The widget carries its own `mt-1` from the message it was written for; 12px above it puts the card's edge at the column's 16px inset.
     // One scroll for the whole column (Katerina, 27 September): Activity, when there is any, is a section under the card.
-    <Panel title={file.appName ?? 'File'} bodyClassName="flex flex-col pb-4">
+    <Panel title={fileHeading(file)} bodyClassName="flex flex-col pb-4">
       <div className="px-4 pt-3" data-file-widget={file.address}>
         {/* `page`: the file is this page's subject, so its description is drawn and edited here even when its widget is a row (MAN-9).
             `key`: FilePage stays mounted from one file to the next, and a widget holding the last file's object with the next one's

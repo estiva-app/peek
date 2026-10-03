@@ -27,6 +27,7 @@ import { followInApp } from '@/lib/followInApp'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { rememberRecent } from '@/lib/recents'
+import { elsewhereAppName } from '@/lib/appName'
 import { KIND_TOPIC } from '@/nostr/foreign'
 
 /**
@@ -384,8 +385,8 @@ export function FilePage() {
                   also exactly what could mislead: without this the discussion
                   reads as something in Peek.
                 */}
-                {file?.appName && (
-                  <p className="truncate text-caption text-text-muted">In {file.appName}</p>
+                {elsewhereAppName(file) && (
+                  <p className="truncate text-caption text-text-muted">In {elsewhereAppName(file)}</p>
                 )}
               </div>
             }

@@ -48,27 +48,6 @@ export function currentFolderOf(
 }
 
 /**
- * The addresses of every file listed under `file` in one Folder's listing,
- * however deep — what moves with it to another Folder (FOL-45). Walked by
- * `parentRef` rather than through `nestingOf`, because an issue is not in the
- * team's listing and a sub-topic started under one still is.
- */
-export function listedUnder(files: readonly ForeignObject[], file: Pick<ForeignObject, 'ref'>): string[] {
-  const under: string[] = []
-  const seen = new Set([file.ref])
-  let level = [file.ref]
-  while (level.length) {
-    const next = files.filter((candidate) => candidate.parentRef && level.includes(candidate.parentRef) && !seen.has(candidate.ref))
-    for (const child of next) {
-      seen.add(child.ref)
-      if (child.address) under.push(child.address)
-    }
-    level = next.map((child) => child.ref)
-  }
-  return under
-}
-
-/**
  * Where `file` may go in a Folder whose listing is `files` (FOL-45).
  *
  * `nestingOf`'s `moveTargetsOf`: never the file itself or what is under it,
