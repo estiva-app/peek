@@ -8,7 +8,7 @@ import type {
 } from '@estiva-app/interop'
 import { hasRelay, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
-import { fileHeading } from '@/lib/appName'
+import { objectLabel } from '@/lib/appName'
 import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
 import { Avatar } from './Avatar'
@@ -511,7 +511,7 @@ export function ForeignObjectCard({
             what `SectionLabel` already is (Katerina, 2026-09-11). */}
         {/* What it is, not which app made it ("Issue", not "Estiva Ship") —
             PRO-24. On its own page the panel's title already says it. */}
-        {!page && <SectionLabel className="shrink-0">{fileHeading(object)}</SectionLabel>}
+        {!page && objectLabel(object) && <SectionLabel className="shrink-0">{objectLabel(object)}</SectionLabel>}
       </div>
       {/* A card shows the subtitle; a row is a single line by definition —
           except on the object's own page, where it is the subject (MAN-9). */}
@@ -708,7 +708,7 @@ export function ForeignObjectWidget({
       // A card that cannot be read: dashed, in both apps (Katerina, 2026-09-14).
       <Card fill="none" unreadable className="mt-1 px-3 py-2">
         <div className="text-caption text-text-secondary">
-          {object.noun ? fileHeading(object) : `${object.appName ?? 'Another app'} object`} — you may not have access to
+          {object.noun ? objectLabel(object) : `${object.appName ?? 'Another app'} object`} — you may not have access to
           this Folder.{' '}
           {object.openUrl && <OpenInApp object={object} />}
         </div>

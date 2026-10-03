@@ -131,6 +131,8 @@ describe('ForeignObjectWidget', () => {
 
     await screen.findByText('Billing entry + add payment method')
     expect(screen.queryByText('Peek')).not.toBeInTheDocument()
+    // Nor "File": with no noun there is nothing true to say, so it says nothing.
+    expect(screen.queryByText('File')).not.toBeInTheDocument()
   })
 
   it('leaves the label to the panel on the object’s own page', async () => {

@@ -51,7 +51,7 @@ import { clearRecents, forgetRecent, useRecents } from '@/lib/recents'
 import { isApplePlatform } from '@estiva-app/ui'
 import { previewText } from '@/lib/textParsing'
 import { useToast } from '@/lib/toast'
-import { fileHeading } from '@/lib/appName'
+import { objectLabel } from '@/lib/appName'
 import { LAUNCHER_APPS, type LauncherAction, type LauncherApp, type VocabOption } from '@/lib/launcherActions'
 
 /**
@@ -227,7 +227,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
             return {
               address: object.naddr,
               // Untitled, it is named by what it is — "Topic", never "Peek" (PRO-24).
-              label: object.slots?.title?.value ?? fileHeading(object),
+              label: object.slots?.title?.value ?? objectLabel(object) ?? 'Untitled',
               actions: object.actions ?? [],
             }
           })
