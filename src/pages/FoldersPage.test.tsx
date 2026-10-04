@@ -246,7 +246,7 @@ describe('FoldersPage opens a file at its own address', () => {
 
   it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
     mount(`/app/folders/${FOLDER}`)
-    const listed = [...document.querySelectorAll('[data-tree-folder]')].map((node) => (node as HTMLElement).dataset.treeFolder)
+    const listed = [...document.querySelectorAll('[data-nav-group]')].map((node) => (node as HTMLElement).dataset.navGroup)
     expect(listed.sort()).toEqual([FOLDER, TOPIC_CHANNEL].sort())
     expect(screen.queryByText('project-0804b906')).toBeNull()
   })
@@ -414,8 +414,8 @@ describe('FoldersPage draws the union dot on a Folder row', () => {
     expect(lit).toHaveLength(1)
     // The dot sits in its Folder's section header (FOL-21) — and the section
     // named "Folders" is the one the hook lit, not the open "For testing".
-    const section = lit[0].closest('[data-tree-folder]') as HTMLElement
-    expect(section.dataset.treeFolder).toBe(FOLDER)
+    const section = lit[0].closest('[data-nav-group]') as HTMLElement
+    expect(section.dataset.navGroup).toBe(FOLDER)
     expect(section.textContent).toContain('Folders')
     expect(section.textContent).not.toContain('For testing')
   })
@@ -544,7 +544,7 @@ describe('FoldersPage filters the column', () => {
     badges.unread = { [child.ref]: true }
     teamUnread.unread = { [FOLDER]: true }
     const { container } = await choose('Unread')
-    const tree = container.querySelector(`[data-tree-folder="${FOLDER}"]`)!
+    const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
     expect(tree.querySelector(`[data-file="${CSS.escape(topic.ref)}"]`)).toBeNull()
     expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
   })

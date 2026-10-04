@@ -532,7 +532,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
     // The project row is open, so the issue's place in the tree is visible.
     const projectRow = left.querySelector(`[data-file="${PROJECT_ADDRESS}"]`)
     expect(projectRow).not.toBeNull()
-    expect(within(projectRow as HTMLElement).getByRole('button', { name: /Hide what is in/ })).toBeInTheDocument()
+    expect(within((projectRow as HTMLElement).parentElement!).getByRole('button', { name: /Hide what is under/ })).toBeInTheDocument()
     expect(left.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
   })
 
@@ -573,7 +573,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     slots: { title: { value: 'Another topic' } },
   })
   const row = (ref: string) => screen.getByTestId('left').querySelector(`[data-file="${ref}"]`) as HTMLElement | null
-  const selected = (ref: string) => row(ref)?.querySelector('.bg-bg-selected') != null
+  const selected = (ref: string) => row(ref)?.getAttribute('aria-current') === 'page'
 
   beforeEach(() => {
     relay.files = [project, topic, other]
@@ -1132,7 +1132,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     hover(topicRow)
-    fireEvent.click(within(topicRow).getByRole('button', { name: 'More options' }))
+    fireEvent.click(within(topicRow.parentElement!).getByRole('button', { name: 'More options' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'Details',
       'Rename',
@@ -1149,7 +1149,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     // put in Open work, a Ship issue included — and moved to another Folder (FOL-45).
     const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
     hover(issueRow)
-    fireEvent.click(within(issueRow).getByRole('button', { name: 'More options' }))
+    fireEvent.click(within(issueRow.parentElement!).getByRole('button', { name: 'More options' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'New topic inside',
       'Move…',
@@ -1305,13 +1305,13 @@ describe('FilePage offers Join and Leave on the header and the row (§11.8)', ()
     for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
-  it('a member row shows its mark when idle, and its menu says Leave', () => {
+  it('a member row’s menu says Leave — and no mark when idle, the bell is gone (Katerina, 2 October)', () => {
     follows.keys = new Set([TOPIC_ADDRESS])
     mount(`/topic/${ISSUE_ADDRESS}`)
     const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
-    expect(row.querySelector('[data-member]')).not.toBeNull()
-    fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
-    fireEvent.click(within(row).getByRole('button', { name: 'More options' }))
+    expect(row.parentElement!.querySelector('[data-member]')).toBeNull()
+    fireEvent.mouseEnter(row)
+    fireEvent.click(within((row).parentElement!).getByRole('button', { name: 'More options' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Leave' }))
     expect(follows.setMember).toHaveBeenCalledWith(TOPIC_ADDRESS, FOLDER, false)
   })
