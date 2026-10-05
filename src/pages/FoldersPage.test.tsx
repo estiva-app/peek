@@ -246,7 +246,7 @@ describe('FoldersPage opens a file at its own address', () => {
 
   it('lists only Folders with state: a record channel is nobody\'s Folder (PEE-31)', () => {
     mount(`/app/folders/${FOLDER}`)
-    const listed = [...document.querySelectorAll('[data-tree-folder]')].map((node) => (node as HTMLElement).dataset.treeFolder)
+    const listed = [...document.querySelectorAll('[data-nav-group]')].map((node) => (node as HTMLElement).dataset.navGroup)
     expect(listed.sort()).toEqual([FOLDER, TOPIC_CHANNEL].sort())
     expect(screen.queryByText('project-0804b906')).toBeNull()
   })
@@ -398,32 +398,19 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
 })
 
 /*
-  SPEC §11.3, FOL-18: the dot on a Folder row is the union of its streams. The
-  rule is `teamHasUnread`'s; what the page owes it is a dot on exactly the rows
-  it says, and none on a row it did not judge — "not judged" is not "dark".
+  A Folder row carries no dot (Miky, 2026-10-03): the union of its streams
+  (`teamHasUnread`, SPEC §11.3) decides what the Unread filter keeps and draws
+  nothing on the row itself, open or collapsed.
 */
-describe('FoldersPage draws the union dot on a Folder row', () => {
+describe('FoldersPage draws no dot on a Folder row', () => {
   afterEach(() => {
     teamUnread.unread = {}
   })
 
-  it('lights the Folder the hook says is unread, and only that one', () => {
-    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: false }
+  it('draws none on a Folder the hook says is unread', () => {
+    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
     const { container } = mount(`/app/folders/${TOPIC_CHANNEL}`)
-    const lit = container.querySelectorAll('[data-unread]')
-    expect(lit).toHaveLength(1)
-    // The dot sits in its Folder's section header (FOL-21) — and the section
-    // named "Folders" is the one the hook lit, not the open "For testing".
-    const section = lit[0].closest('[data-tree-folder]') as HTMLElement
-    expect(section.dataset.treeFolder).toBe(FOLDER)
-    expect(section.textContent).toContain('Folders')
-    expect(section.textContent).not.toContain('For testing')
-  })
-
-  it('draws no dot for a Folder it was told nothing about', () => {
-    teamUnread.unread = {}
-    const { container } = mount(`/app/folders/${FOLDER}`)
-    expect(container.querySelectorAll('[data-unread]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-nav-group] [data-unread]')).toHaveLength(0)
   })
 })
 
@@ -544,7 +531,7 @@ describe('FoldersPage filters the column', () => {
     badges.unread = { [child.ref]: true }
     teamUnread.unread = { [FOLDER]: true }
     const { container } = await choose('Unread')
-    const tree = container.querySelector(`[data-tree-folder="${FOLDER}"]`)!
+    const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
     expect(tree.querySelector(`[data-file="${CSS.escape(topic.ref)}"]`)).toBeNull()
     expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
   })

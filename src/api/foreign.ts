@@ -253,17 +253,26 @@ export function useForeignObjects() {
   )
 
   /**
-   * Move a file between Folders — adds to the target first. Each side's
-   * `hasState` comes from a read: a move into or out of a Folder with no state
-   * is refused, because either command would empty it (FOL-10). What
-   * `listing` — the source Folder's files — has beneath `file` moves with it
-   * (FOL-45, SPEC §3.3).
+   * Move a file out of every Folder in `from` — the ones that list it now —
+   * into `to`, adding to the target first. Each side's `hasState` comes from a
+   * read: a move into or out of a Folder with no state is refused, because
+   * either command would empty it (FOL-10). What each source lists beneath
+   * `file` moves with it, archived files included, so each source is read
+   * again here, at the move (FOL-45, SHI-37, SPEC §3.3).
    */
   const moveFile = useCallback(
-    async (file: MovableFile, listing: readonly MovableFile[] | null, from: FolderRef, to: FolderRef) => {
+    async (file: MovableFile, from: readonly FolderRef[], to: FolderRef) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to move a file.' }
-      return moveFileAsViewer(file, listing, from, to, v.relayUrl, v.token)
+      // Every source, a Folder with no state too: it lists the file by containment, and the planner
+      // must see that to refuse the move rather than report one that never happened.
+      const sources = from.filter((folder) => folder.id !== to.id)
+      const read = await Promise.all(
+        sources.map((folder) => resolveFolderContentsAsViewer(folder.id, v.relayUrl, v.token, { includeArchived: true }).then((contents) => contents.files, () => null)),
+      )
+      if (read.some((files) => files === null)) return { ok: false as const, reason: 'The Folder it is in could not be read, so nothing was moved. Try again.' }
+      const listings = new Map(sources.map((folder, i) => [folder.id, read[i]!] as const))
+      return moveFileAsViewer(file, listings, from, to, v.relayUrl, v.token)
     },
     [viewer],
   )

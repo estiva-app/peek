@@ -34,6 +34,8 @@ vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   useWorkspaceDirectory: () => people,
   useMembership: () => membership,
+  // The open thread's read mark (PEE-44) is not under test here.
+  useReadActions: () => ({ markThreadRead: () => {}, markContainerRead: () => {}, markFileRead: () => {} }),
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 // The composer is not what is under test, and its upload hooks need a Convex client.

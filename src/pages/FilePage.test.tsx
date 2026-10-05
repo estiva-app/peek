@@ -160,9 +160,9 @@ const follows = vi.hoisted(() => ({
   refresh: vi.fn<() => Promise<void>>(async () => {}),
 }))
 const marks = vi.hoisted(() => ({
-  file: vi.fn<(address: string | null | undefined) => void>(),
+  file: vi.fn<(address: string | null | undefined, newestAt?: number) => void>(),
   container: vi.fn<(kind: string, key: string) => void>(),
-  thread: vi.fn<(key: string) => void>(),
+  thread: vi.fn<(key: string, newestAt?: number) => void>(),
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -532,7 +532,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
     // The project row is open, so the issue's place in the tree is visible.
     const projectRow = left.querySelector(`[data-file="${PROJECT_ADDRESS}"]`)
     expect(projectRow).not.toBeNull()
-    expect(within(projectRow as HTMLElement).getByRole('button', { name: /Hide what is in/ })).toBeInTheDocument()
+    expect(within((projectRow as HTMLElement).parentElement!).getByRole('button', { name: /Hide what is under/ })).toBeInTheDocument()
     expect(left.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
   })
 
@@ -573,7 +573,7 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     slots: { title: { value: 'Another topic' } },
   })
   const row = (ref: string) => screen.getByTestId('left').querySelector(`[data-file="${ref}"]`) as HTMLElement | null
-  const selected = (ref: string) => row(ref)?.querySelector('.bg-bg-selected') != null
+  const selected = (ref: string) => row(ref)?.getAttribute('aria-current') === 'page'
 
   beforeEach(() => {
     relay.files = [project, topic, other]
@@ -845,8 +845,8 @@ describe("FilePage puts another app's widget in the third column", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const column = screen.getByTestId('thread')
     expect(widget()).not.toBeNull()
-    // The column's bar names the app, and the card carries its own label: twice, by design.
-    expect(within(column).getAllByText('Estiva Ship')).toHaveLength(2)
+    // The column's bar says what it is; the card on its own page does not say it again (PEE-45).
+    expect(within(column).getAllByText('Estiva Ship')).toHaveLength(1)
     expect(within(column).getByRole('link', { name: 'The file route' })).toHaveAttribute('href', shipIssue.openUrl)
     expect(within(column).getByText('In Progress')).toBeInTheDocument()
     // The same card `data-foreign-object` marks anywhere else; the tree beside it still draws rows.
@@ -996,13 +996,40 @@ describe('FilePage marks the file read, and only the file', () => {
     expect(marks.thread).not.toHaveBeenCalled()
   })
 
-  it('opening a thread marks nothing more — the thread is the file’s own talk', () => {
-    mount(`/topic/${ISSUE_ADDRESS}?thread=${issue.comments[0].id}`)
+  /*
+    A reply is read by opening its thread, and only that (Miky, 2026-10-03):
+    the file's marker stops at its newest top-level comment, so a reply newer
+    than it keeps the file's dot until the thread is opened (PEE-44).
+  */
+  it('opening a thread marks that thread up to its newest reply, and the file only up to its comments', () => {
+    const rootId = issue.comments[0].id
+    const replyAt = Math.max(...issue.comments.map((c) => c.createdAt)) + 50
+    threads.state = {
+      roots: { [rootId]: { ...issue.comments[0], kind: 1111 } },
+      replies: { [rootId]: [{ id: 'r'.repeat(64), author: SHIP, body: 'A reply from Ship', createdAt: replyAt, kind: 9 }] },
+    }
+    mount(`/topic/${ISSUE_ADDRESS}?thread=${rootId}`)
     act(() => {
       vi.advanceTimersByTime(READ_DWELL_MS)
     })
+    expect(marks.thread).toHaveBeenCalledWith(rootId, replyAt)
     expect(marks.file.mock.lastCall?.[0]).toBe(ISSUE_ADDRESS)
+    expect(marks.file.mock.lastCall?.[1]).toBeLessThan(replyAt)
     expect(marks.container).not.toHaveBeenCalled()
+  })
+
+  it('a reply in a thread that is not open is not read by opening the file', () => {
+    const rootId = issue.comments[0].id
+    const replyAt = Math.max(...issue.comments.map((c) => c.createdAt)) + 50
+    threads.state = {
+      roots: { [rootId]: { ...issue.comments[0], kind: 1111 } },
+      replies: { [rootId]: [{ id: 'r'.repeat(64), author: SHIP, body: 'A reply from Ship', createdAt: replyAt, kind: 9 }] },
+    }
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    act(() => {
+      vi.advanceTimersByTime(READ_DWELL_MS)
+    })
+    expect(marks.file.mock.lastCall?.[1]).toBeLessThan(replyAt)
     expect(marks.thread).not.toHaveBeenCalled()
   })
 
@@ -1105,7 +1132,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     const left = screen.getByTestId('left')
     const topicRow = left.querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
     hover(topicRow)
-    fireEvent.click(within(topicRow).getByRole('button', { name: 'More options' }))
+    fireEvent.click(within(topicRow.parentElement!).getByRole('button', { name: 'More options' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'Details',
       'Rename',
@@ -1122,7 +1149,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     // put in Open work, a Ship issue included — and moved to another Folder (FOL-45).
     const issueRow = left.querySelector(`[data-file="${ISSUE_ADDRESS}"]`) as HTMLElement
     hover(issueRow)
-    fireEvent.click(within(issueRow).getByRole('button', { name: 'More options' }))
+    fireEvent.click(within(issueRow.parentElement!).getByRole('button', { name: 'More options' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'New topic inside',
       'Move…',
@@ -1278,13 +1305,13 @@ describe('FilePage offers Join and Leave on the header and the row (§11.8)', ()
     for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
   })
 
-  it('a member row shows its mark when idle, and its menu says Leave', () => {
+  it('a member row’s menu says Leave — and no mark when idle, the bell is gone (Katerina, 2 October)', () => {
     follows.keys = new Set([TOPIC_ADDRESS])
     mount(`/topic/${ISSUE_ADDRESS}`)
     const row = screen.getByTestId('left').querySelector(`[data-file="${TOPIC_ADDRESS}"]`) as HTMLElement
-    expect(row.querySelector('[data-member]')).not.toBeNull()
-    fireEvent.mouseEnter(row.firstElementChild!.lastElementChild!)
-    fireEvent.click(within(row).getByRole('button', { name: 'More options' }))
+    expect(row.parentElement!.querySelector('[data-member]')).toBeNull()
+    fireEvent.mouseEnter(row)
+    fireEvent.click(within((row).parentElement!).getByRole('button', { name: 'More options' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Leave' }))
     expect(follows.setMember).toHaveBeenCalledWith(TOPIC_ADDRESS, FOLDER, false)
   })
@@ -1406,11 +1433,11 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     await userEvent.click(screen.getByRole('option', { name: /The top of Steer/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
-    // The file and the source listing: interop moves it with what is under it (MAN-17).
+    // The file and the Folders it leaves, with what each one's state lists: the move reads each
+    // again, archived files included, and interop moves it with what is under it (MAN-17, SHI-37).
     expect(writes.moveFile).toHaveBeenCalledWith(
       expect.objectContaining({ address: deep.address }),
-      listing,
-      { id: FOLDER, hasState: true },
+      [{ id: FOLDER, name: 'Folders', hasState: true, addresses: listing.map((f) => f.address!) }],
       { id: 'steer', hasState: true },
     )
     // Out from under `notes`, which stayed behind: the top of Steer is an empty parent.
@@ -1455,7 +1482,9 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
     expect(writes.applyAction).toHaveBeenCalledWith({ naddr: moving.naddr, actionId: 'move-issue', value: steerProject.address })
-    expect(writes.moveFile).not.toHaveBeenCalled()
+    // Then whatever is listed under it follows; with nothing under it, `moveFileAsViewer` sends
+    // nothing (folderManagement.test.ts) — the listing it reads may hold an archived sub-file.
+    expect(writes.moveFile.mock.invocationCallOrder[0]).toBeGreaterThan(writes.applyAction.mock.invocationCallOrder[0])
     writes.listFolders.mockImplementation(listFolders!)
     writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
   }, 15_000) // the first mount of this page in a run is slow on its own

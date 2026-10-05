@@ -2,6 +2,7 @@ import { IconMessage } from '@tabler/icons-react'
 import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
 import { Button } from '@/components/ui/Button'
+import { Chip } from '@/components/ui/Chip'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
@@ -38,6 +39,7 @@ export function ForeignConversationView({
   onOpenThread,
   openThreadId,
   replyCounts,
+  newReplies,
   deletedRoots,
 }: {
   state: ForeignConversationState
@@ -58,6 +60,12 @@ export function ForeignConversationView({
    * number cannot be derived here.
    */
   replyCounts?: Record<string, number>
+  /**
+   * Comments whose thread holds a reply new to the viewer: opening the file
+   * does not read it, opening the thread does (CON-34), so the row says so, as
+   * Peek's own view's replies row does.
+   */
+  newReplies?: ReadonlySet<string>
   /**
    * Comments deleted under their replies (PER-24): each drawn where it stood,
    * as a line saying so, with its thread still there to open. From the thread
@@ -168,22 +176,25 @@ export function ForeignConversationView({
                   "Reply", which is the true offer, rather than showing a
                   count nobody has.
                 */
-                <Button
-                  variant="muted"
-                  size="small"
-                  leadingIcon={<IconMessage size={14} stroke={1.5} />}
-                  aria-current={openThreadId === comment.id ? true : undefined}
-                  onClick={() => onOpenThread(comment.id)}
-                  data-replies={replies ?? undefined}
-                >
-                  {/*
-                    A count only when we have one, and never a nought: an
-                    absence here means the replies were not asked for, and a
-                    "0" would be an assertion nobody made — `ConversationCount`
-                    takes the same line one pane to the left.
-                  */}
-                  {replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Reply'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="muted"
+                    size="small"
+                    leadingIcon={<IconMessage size={14} stroke={1.5} />}
+                    aria-current={openThreadId === comment.id ? true : undefined}
+                    onClick={() => onOpenThread(comment.id)}
+                    data-replies={replies ?? undefined}
+                  >
+                    {/*
+                      A count only when we have one, and never a nought: an
+                      absence here means the replies were not asked for, and a
+                      "0" would be an assertion nobody made — `ConversationCount`
+                      takes the same line one pane to the left.
+                    */}
+                    {replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'}` : 'Reply'}
+                  </Button>
+                  {newReplies?.has(comment.id) && <Chip type="brand" label="1 new" />}
+                </div>
               )
             }
           />

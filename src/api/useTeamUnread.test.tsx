@@ -255,7 +255,7 @@ describe('useTeamUnread', () => {
     expect(store.asked).toHaveLength(1)
   })
 
-  it("a topic placed in a team lights the team, and reading the topic's channel puts it out (FOL-22)", async () => {
+  it("a topic placed in a team lights the team for a file talked about in it, never for its own chat (FOL-22, §11.8)", async () => {
     const TOPIC = '33333333-3333-4333-8333-333333333333'
     const { result } = renderHook(() =>
       useTeamUnread([...folders, { id: TOPIC, name: 'A topic', hasState: false, listedIn: [FOLDER_B] }]),
@@ -263,18 +263,22 @@ describe('useTeamUnread', () => {
     hold({
       [FOLDER_A]: [],
       [FOLDER_B]: [],
-      // The topic's own channel: a plain message, no `about`, said an hour ago.
-      [TOPIC]: [{ id: 't', at: NOW - 3600, by: THEM, root: 't', about: [], urgent: false, body: '' }],
+      [TOPIC]: [
+        // The topic's own chat: no `about`, and no screen in Peek to read it on — never counted.
+        { id: 't', at: NOW - 3600, by: THEM, root: 't', about: [], urgent: false, body: '' },
+        // A file talked about in the topic's channel: counted, and folded into the team.
+        { id: 'f', at: NOW - 3600, by: THEM, root: 'f', about: [FOL18], urgent: false, body: '' },
+      ],
     })
     // One store call for the lot — the topic's channel is asked for with the teams'.
     expect(store.asked).toEqual([[FOLDER_A, FOLDER_B, TOPIC]])
     advance({})
     await waitFor(() => expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: true, [TOPIC]: true }))
-    // Reading the team's own chat is not reading the topic.
-    advance({ [FOLDER_B]: NOW })
+    // Reading the team's or the topic's channel is not reading the file.
+    advance({ [FOLDER_B]: NOW, [TOPIC]: NOW })
     expect(result.current.unread[FOLDER_B]).toBe(true)
-    // The topic page advances the topic's container, and that is what the team's dot follows.
-    advance({ [TOPIC]: NOW })
+    // The file's own marker is what puts both out.
+    advance({ [FOLDER_B]: NOW, [TOPIC]: NOW, [FOL18]: NOW })
     expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false, [TOPIC]: false })
   })
 

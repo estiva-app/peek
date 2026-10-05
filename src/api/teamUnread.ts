@@ -1,18 +1,17 @@
 import type { FolderSummary } from '@estiva-app/interop'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { channelContext, fileContext } from '@estiva-app/conversation'
+import { fileContext } from '@estiva-app/conversation'
 import { type StreamFrontier, type StreamTerms, streamHasUnread } from './streamUnread'
 
 /**
- * Is there something new anywhere in a team — SPEC §11.3, FOL-18.
+ * Is there a file with something new in a Folder — SPEC §11.3, FOL-18.
  *
- * A Folder's indicator is the **union of its streams**: unread if its general
- * conversation is, or any file's conversation in it is. Each stream answers to
- * its own marker — the bare channel uuid for the general stream, the file's
- * bare address for a file's — and the channel's marker never reaches a file's
- * stream (§11.3): reading the team's chat says nothing about which of its
- * files you have read, so a team with an unread issue stays lit through any
- * amount of chat.
+ * The verdict is the **union of a Folder's file streams**: unread if any
+ * file's conversation in it is. The Folder's general stream is not one of
+ * them (below). Peek draws no dot for it — a Folder row carries none (Miky,
+ * 2026-10-03) — and uses it for what the tree's Unread filter keeps. Each
+ * file's stream answers to its own bare address, and the channel's marker
+ * never reaches it (§11.3).
  *
  * It is a display rule computed here, at read time, from markers that already
  * exist. Nothing is written to express it and the reserved `folder:` grain
@@ -23,11 +22,11 @@ import { type StreamFrontier, type StreamTerms, streamHasUnread } from './stream
  *
  * Each stream is handed to `streamHasUnread` — SPEC §11.8's rule, from
  * `@estiva-app/conversation` — with the stream's own marker where that takes
- * the file's. So the team's dot and the per-file dots under it cannot
- * disagree: the team clears exactly when the last file does, the thread
+ * the file's. So the Folder's verdict and the per-file dots under it cannot
+ * disagree: the Folder clears exactly when the last file does, the thread
  * frontier propagates the same way (§11.3), your own messages never count,
- * and absence is read from the day you joined for a file and by the 90-day
- * horizon (§11.6) for a message that names you in the general stream.
+ * and absence is read from the day you joined a file, or by the 90-day
+ * horizon (§11.6) for a message that names you in a file you are not in.
  *
  * ## Which stream a message is in
  *
@@ -44,14 +43,14 @@ import { type StreamFrontier, type StreamTerms, streamHasUnread } from './stream
  *
  * ## Only the streams the person is a member of (SPEC §11.8)
  *
- * The dot exists only for what you are a member of. Each stream is asked of
- * `termsOf` by its key — the file's address, or the Folder's own id for the
- * general stream — and a stream the person is not a member of, or has muted,
- * contributes nothing unless a message in it names them. A file's membership
- * is the fold over its events. A Folder's own chat has no members — a Folder
- * has nothing to read (Miky, 2026-10-01) — so it lights only for a message
- * that names the person. Read state is untouched by this: a marker still moves
- * when the person visits.
+ * Only what you are a member of counts. Each file's stream is asked of
+ * `termsOf` by its address, and a stream the person is not a member of, or
+ * has muted, contributes nothing unless a message in it names them. A file's
+ * membership is the fold over its events. The general stream is not judged at
+ * all: a Folder has nothing to read (Miky, 2026-10-01), Peek has no screen for
+ * its own messages (2026-10-05), and §11.8 lights nothing without a screen.
+ * Read state is untouched by this: a marker still moves when the person
+ * visits.
  */
 export function teamHasUnread(
   folderId: string,
@@ -64,7 +63,14 @@ export function teamHasUnread(
   },
 ): boolean {
   for (const [key, stream] of streamsOf(folderId, messages)) {
-    const context = key === folderId ? channelContext(folderId) : fileContext(key)
+    /*
+      Not the general stream: Peek has no screen for a Folder's own messages
+      (no Folder chat — Miky, 2026-10-05), and "an app lights nothing for a
+      stream it has no screen for" (§11.8). Counting it kept a Folder in the
+      Unread filter with nothing in it anyone could open.
+    */
+    if (key === folderId) continue
+    const context = fileContext(key)
     if (!context) continue
     if (streamHasUnread(stream, context, frontier.termsOf(key), frontier, frontier.isMentioned)) return true
   }

@@ -4,7 +4,7 @@
  * What the ticket's done-when promises, pinned at the seam: the Folders as
  * folds, only the current one open; a Folder's first level read when its fold
  * opens and never before; a row's children read when the row is expanded and
- * never before; the union dot on a collapsed Folder; and where a Folder and a
+ * never before; no dot on a Folder, collapsed or open; and where a Folder and a
  * row lead. The relay's side of "one query on expand" is measured by
  * `scripts/probe-fol21-tree-cost.ts`, against production; this file proves
  * *when* the read is asked for, which no probe can.
@@ -128,7 +128,9 @@ function mount(props: Parameters<typeof FolderTree>[0] = {}) {
   return { ...view, rerender: (next: Parameters<typeof FolderTree>[0]) => view.rerender(page(next)) }
 }
 
-const section = (id: string) => document.querySelector(`[data-tree-folder="${id}"]`) as HTMLElement
+/** A group's open state: its heading's `aria-expanded`, as the package's section draws it. */
+const openOf = (group: HTMLElement) => group.querySelector('[aria-expanded]')?.getAttribute('aria-expanded') ?? undefined
+const section = (id: string) => document.querySelector(`[data-nav-group="${id}"]`) as HTMLElement
 const fold = (name: string) => screen.getByRole('button', { name })
 
 /** Folder ids `useFolderContents` was asked to read — `null` is "nothing". */
@@ -149,14 +151,14 @@ afterEach(() => {
 describe('the Folders, as folds', () => {
   it('lists the top-level Folders alphabetically, as a section each, and no topic list', () => {
     mount()
-    const titles = [...document.querySelectorAll('[data-tree-folder]')].map(
+    const titles = [...document.querySelectorAll('[data-nav-group]')].map(
       (node) => within(node as HTMLElement).getAllByRole('button')[0].textContent,
     )
     expect(titles).toEqual(['A topic of ours', 'Peek', 'Zebra'])
     // A placed channel is a row in its team; a bare record channel is nobody's
     // section (PEE-31). Both are in `listFolders`, neither is navigation.
-    expect(document.querySelector(`[data-tree-folder="${PLACED}"]`)).toBeNull()
-    expect(document.querySelector(`[data-tree-folder="${RECORD}"]`)).toBeNull()
+    expect(document.querySelector(`[data-nav-group="${PLACED}"]`)).toBeNull()
+    expect(document.querySelector(`[data-nav-group="${RECORD}"]`)).toBeNull()
     expect(screen.queryByText('project-0804b906')).toBeNull()
     expect(screen.queryByText('Your topics')).toBeNull()
     expect(screen.queryByText('Other topics')).toBeNull()
@@ -170,9 +172,9 @@ describe('the Folders, as folds', () => {
 
   it('opens only the Folder holding the page, and reads only that one — none before', () => {
     mount({ currentFolder: TEAM })
-    expect(section(TEAM).dataset.open).toBe('true')
-    expect(section(OTHER).dataset.open).toBe('false')
-    expect(section(TOPIC_FOLDER).dataset.open).toBe('false')
+    expect(openOf(section(TEAM))).toBe('true')
+    expect(openOf(section(OTHER))).toBe('false')
+    expect(openOf(section(TOPIC_FOLDER))).toBe('false')
     // The first level of the open Folder is drawn, as rows.
     expect(section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`)).not.toBeNull()
     expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
@@ -183,7 +185,7 @@ describe('the Folders, as folds', () => {
 
   it('opens nothing when no Folder is current', () => {
     mount()
-    expect([...document.querySelectorAll('[data-tree-folder]')].every((n) => (n as HTMLElement).dataset.open === 'false')).toBe(true)
+    expect([...document.querySelectorAll('[data-nav-group]')].every((n) => openOf(n as HTMLElement) === 'false')).toBe(true)
     expect(contentsAsked()).toEqual([])
   })
 
@@ -191,7 +193,7 @@ describe('the Folders, as folds', () => {
     mount()
     expect(contentsAsked()).toEqual([])
     fireEvent.click(fold('Zebra'))
-    expect(section(OTHER).dataset.open).toBe('true')
+    expect(openOf(section(OTHER))).toBe('true')
     expect(contentsAsked()).toEqual([OTHER])
     expect(window.localStorage.getItem(`peek.tree.folder.${OTHER}`)).toBe('open')
   })
@@ -199,25 +201,30 @@ describe('the Folders, as folds', () => {
   it('a fold the person opened stays open on the next mount, whatever is current', () => {
     window.localStorage.setItem(`peek.tree.folder.${OTHER}`, 'open')
     mount({ currentFolder: TEAM })
-    expect(section(OTHER).dataset.open).toBe('true')
-    expect(section(TEAM).dataset.open).toBe('true')
+    expect(openOf(section(OTHER))).toBe('true')
+    expect(openOf(section(TEAM))).toBe('true')
     expect(contentsAsked().sort()).toEqual([OTHER, TEAM].sort())
   })
 
   it("a fold the person closed stays closed even when it holds the page — the section's own ruling", () => {
     window.localStorage.setItem(`peek.tree.folder.${TEAM}`, 'closed')
     mount({ currentFolder: TEAM })
-    expect(section(TEAM).dataset.open).toBe('false')
+    expect(openOf(section(TEAM))).toBe('false')
     expect(contentsAsked()).toEqual([])
   })
 
-  it('draws the union dot on a Folder that has something new, open or closed', () => {
-    dots.unread = { [OTHER]: true, [TEAM]: false }
+  /*
+    A Folder carries no dot, open or closed (Miky, 2026-10-03) — only its file
+    rows do. The rows' badges are mocked empty here, so any dot in a section
+    would be the Folder's own.
+  */
+  it('draws no dot on a Folder that holds something new, open or closed', () => {
+    dots.unread = { [OTHER]: true, [TEAM]: true }
     mount({ currentFolder: TEAM })
-    expect(section(OTHER).querySelector('[data-unread]')).not.toBeNull()
+    expect(openOf(section(TEAM))).toBe('true')
+    expect(openOf(section(OTHER))).toBe('false')
+    expect(section(OTHER).querySelector('[data-unread]')).toBeNull()
     expect(section(TEAM).querySelector('[data-unread]')).toBeNull()
-    // Unjudged is not unread.
-    expect(section(TOPIC_FOLDER).querySelector('[data-unread]')).toBeNull()
   })
 })
 
@@ -226,9 +233,9 @@ describe('the second level', () => {
     mount({ currentFolder: TEAM })
     expect(childrenAsked()).toEqual([])
     const row = section(TEAM).querySelector(`[data-file="${PROJECT_ADDRESS}"]`) as HTMLElement
-    fireEvent.click(within(row).getByRole('button', { name: /Show what is in/ }))
+    fireEvent.click(within((row).parentElement!).getByRole('button', { name: /Show what is under/ }))
     expect(childrenAsked()).toEqual([project.naddr])
-    expect(row.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
+    expect(document.querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
   })
 
   it("expands the open file's parent row so the file is where the tree says it is", () => {
@@ -244,7 +251,7 @@ describe('a Ship project opens in the team that lists its channel (SID-2)', () =
 
   it('the team is current, reads its own listing, and opens the project row', () => {
     mount({ currentFolder: PROJECT_CHANNEL, selectedRef: PROJECT_ADDRESS, currentContents: channelListing as never })
-    expect(section(TEAM).dataset.open).toBe('true')
+    expect(openOf(section(TEAM))).toBe('true')
     // The page's read is the channel's; the team is not handed it.
     expect(contentsAsked()).toEqual([TEAM])
     expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
@@ -254,7 +261,7 @@ describe('a Ship project opens in the team that lists its channel (SID-2)', () =
     const { rerender } = mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, currentContents: teamListing as never })
     reads.pending.add(TEAM)
     rerender({ currentFolder: PROJECT_CHANNEL, selectedRef: PROJECT_ADDRESS, currentContents: channelListing as never })
-    expect(section(TEAM).dataset.open).toBe('true')
+    expect(openOf(section(TEAM))).toBe('true')
     expect(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`)).not.toBeNull()
   })
 

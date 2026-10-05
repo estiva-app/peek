@@ -1,4 +1,4 @@
-import { useMarkRead } from '@/lib/useMarkRead'
+import { useMarkDmRead } from '@/lib/useMarkRead'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { draftKeys } from '@/lib/drafts'
@@ -30,6 +30,9 @@ interface UseDmConversationViewArgs {
 interface ViewSlots {
   rightPanel: ReactNode
   threadPanel: ReactNode | undefined
+  /** The thread to open when only a reply is new: `undefined` until judged (CON-34). */
+  replyOnlyThread: string | null | undefined
+  openThread: (id: string | null) => void
 }
 
 /**
@@ -56,9 +59,6 @@ interface ViewSlots {
 export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm }: UseDmConversationViewArgs): ViewSlots {
   const [threadConvId, setThreadConvId] = useState<string | null>(null)
 
-  // Opening the DM clears new-message state; opening a thread clears that
-  // thread's new-reply state (§4.3).
-  useMarkRead(dmId, threadConvId)
   /*
     Opening the DM also gives it a channel on the relay if it has none (DMS-3):
     a DM is a channel, so there is nowhere to send the first message until the
@@ -110,6 +110,9 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
     threadMembers: dmName ? [CURRENT_USER_NAME, dmName] : [],
   })
+  // Opening the DM reads its top-level messages, and keeps reading what arrives
+  // while it is open (PEE-44); an open thread reads its replies, inside the view.
+  useMarkDmRead(dmId, dm.newestAt)
 
   /*
     A link to a DM message lands on it (PEE-36) — `ObjectPage`'s one-shot, the
@@ -135,6 +138,8 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
       // A page EmptyState fills and centres itself in the pane's column (UIG-42).
       rightPanel: <EmptyState />,
       threadPanel: undefined,
+      replyOnlyThread: undefined,
+      openThread: setThreadConvId,
     }
   }
 
@@ -150,7 +155,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     </div>
   )
 
-  return { rightPanel, threadPanel: dm.threadPanel }
+  return { rightPanel, threadPanel: dm.threadPanel, replyOnlyThread: dm.replyOnlyThread, openThread: setThreadConvId }
 }
 
 const NO_ROOTS: readonly string[] = []

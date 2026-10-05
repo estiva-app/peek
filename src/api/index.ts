@@ -89,4 +89,5 @@ export {
   type WriteResult,
 } from './useFileConversation'
 export { useConversationBadges, useLiveConversationBadges } from './useConversationBadges'
+export { useNewReplyThreads, useReplyOnlyThread, type ReplyStream } from './useNewReplyThreads'
 export { useTeamUnread } from './useTeamUnread'

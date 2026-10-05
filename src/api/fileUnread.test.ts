@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ConversationMessage } from '@estiva-app/interop'
-import { fileHasUnread } from './fileUnread'
+import { fileHasUnread, replyOnlyThread } from './fileUnread'
 
 const ME = 'c'.repeat(64)
 const THEM = 'd'.repeat(64)
@@ -16,9 +16,10 @@ const reply = (id: string, at: number, inThread: string, by = THEM): Conversatio
   root: inThread,
 })
 
-const frontier = (over: { file?: number; threads?: Record<string, number>; me?: string } = {}) => ({
+const frontier = (over: { file?: number; threads?: Record<string, number>; floor?: number; me?: string } = {}) => ({
   file: over.file,
   thread: (r: string) => over.threads?.[r],
+  floor: over.floor,
   me: over.me ?? ME,
   nowSeconds: NOW,
   horizonSeconds: HORIZON,
@@ -49,7 +50,10 @@ describe("fileHasUnread — a file's own marker decides", () => {
   })
 })
 
-describe('§11.3 — the file frontier reaches its threads', () => {
+describe('§11.3 — the thread rule, judged by the package', () => {
+  // The cut-over ships unset (THREAD_RULE_FROM = MAX_TIMESTAMP), so the file
+  // frontier still reaches every reply here; @estiva-app/conversation's own
+  // tests hold the rule with a real cut-over.
   it("clears a reply the file marker covers even when the thread's own marker is behind", () => {
     const f = frontier({ file: 9000, threads: { [ROOT]: 1000 } })
     expect(fileHasUnread([root(ROOT, 100), reply('r', 1500, ROOT)], f)).toBe(false)
@@ -63,6 +67,22 @@ describe('§11.3 — the file frontier reaches its threads', () => {
   it('still shows a reply newer than both', () => {
     const f = frontier({ file: 9000, threads: { [ROOT]: 1000 } })
     expect(fileHasUnread([root(ROOT, 100), reply('r', 9500, ROOT)], f)).toBe(true)
+  })
+
+  it('reads a reply at or before the reply floor, and not one after it', () => {
+    expect(fileHasUnread([root(ROOT, 100), reply('r', 5000, ROOT)], frontier({ file: 200, floor: 5000 }))).toBe(false)
+    expect(fileHasUnread([root(ROOT, 100), reply('r', 5001, ROOT)], frontier({ file: 200, floor: 5000 }))).toBe(true)
+  })
+
+  it('with no marker, lets the floor read a reply but never light one the horizon leaves quiet', () => {
+    const old = NOW - HORIZON - 100
+    expect(fileHasUnread([reply('r', old, ROOT)], frontier({ floor: old - 1000 }))).toBe(false)
+    expect(fileHasUnread([reply('r', NOW - 10, ROOT)], frontier({ floor: NOW - 5 }))).toBe(false)
+    expect(fileHasUnread([reply('r', NOW - 10, ROOT)], frontier({ floor: NOW - 50 }))).toBe(true)
+  })
+
+  it('does not let the reply floor read a root', () => {
+    expect(fileHasUnread([root(ROOT, 300)], frontier({ file: 200, floor: 5000 }))).toBe(true)
   })
 
   it('does not let a thread marker clear a root — a root is not in its own thread', () => {
@@ -89,5 +109,29 @@ describe('absence — new inside the horizon, quiet beyond it', () => {
     const f = frontier({ threads: { [ROOT]: NOW - 30 } })
     expect(fileHasUnread([root(ROOT, NOW - HORIZON - 1), reply('r', NOW - 60, ROOT)], f)).toBe(false)
     expect(fileHasUnread([root(ROOT, NOW - HORIZON - 1), reply('r', NOW - 10, ROOT)], f)).toBe(true)
+  })
+})
+
+// A Desk row lit only by a thread reply opens that thread (CON-34, Miky 2026-10-05).
+describe('replyOnlyThread — which thread a click on a reply-lit row opens', () => {
+  const OTHER = 'b'.repeat(64)
+
+  it('names the thread when only a reply is new', () => {
+    expect(replyOnlyThread([root(ROOT, 500)], { [ROOT]: [reply('r', 2000, ROOT)] }, frontier({ file: 1000 }))).toBe(ROOT)
+  })
+
+  it('names none when a top-level message is new: opening the conversation reads that', () => {
+    expect(replyOnlyThread([root(ROOT, 1500)], { [ROOT]: [reply('r', 2000, ROOT)] }, frontier({ file: 1000 }))).toBeNull()
+  })
+
+  it('names none when nothing is new', () => {
+    expect(replyOnlyThread([root(ROOT, 500)], { [ROOT]: [reply('r', 900, ROOT)] }, frontier({ file: 1000 }))).toBeNull()
+  })
+
+  it('names the thread with the newest new reply', () => {
+    const replies = { [ROOT]: [reply('r1', 2000, ROOT)], [OTHER]: [reply('r2', 3000, OTHER), reply('r3', 2500, OTHER)] }
+    expect(replyOnlyThread([root(ROOT, 500), root(OTHER, 600)], replies, frontier({ file: 1000 }))).toBe(OTHER)
+    // …among the new ones: a read thread's later reply does not count.
+    expect(replyOnlyThread([root(ROOT, 500), root(OTHER, 600)], replies, frontier({ file: 1000, threads: { [OTHER]: 3000 } }))).toBe(ROOT)
   })
 })

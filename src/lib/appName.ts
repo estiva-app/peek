@@ -12,8 +12,17 @@ export function elsewhereAppName(file: { appName?: string } | null | undefined):
   return file?.appName && file.appName !== PEEK_APP_NAME ? file.appName : undefined
 }
 
+/**
+ * What an object is, for a label: its noun ("Topic", "Issue"), or the app it is
+ * in when that app names none — and nothing for a noun-less object of Peek's
+ * own (a message), which is neither "Peek" nor a file.
+ */
+export function objectLabel(object: { noun?: string; appName?: string }): string | undefined {
+  if (object.noun) return object.noun.charAt(0).toUpperCase() + object.noun.slice(1)
+  return elsewhereAppName(object)
+}
+
 /** What a file is, for a heading: its noun ("Topic", "Issue"), or the app it is in, or "File". */
 export function fileHeading(file: { noun?: string; appName?: string }): string {
-  if (file.noun) return file.noun.charAt(0).toUpperCase() + file.noun.slice(1)
-  return elsewhereAppName(file) ?? 'File'
+  return objectLabel(file) ?? 'File'
 }

@@ -21,7 +21,7 @@ import type { ScreenerItem } from '@/api/types'
 import { fileHasUnread } from '@/api/fileUnread'
 import { type StreamFrontier, type StreamTerms, streamHasUnread } from '@/api/streamUnread'
 import { screenerKey, type InstantMap } from '@/nostr/screener'
-import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
+import { REPLY_FLOOR_CONTEXT, channelContext, fileContext, threadContext } from '@estiva-app/conversation'
 import type { StreamMessage } from '@/nostr/channelStreams'
 
 export interface ScreenerDecisions {
@@ -223,6 +223,7 @@ export function foldDmScreenerRows(
     const judge = {
       file: frontier.marker(channelContext(dm.channel)),
       thread: (root: string) => frontier.marker(threadContext(root)),
+      floor: frontier.marker(REPLY_FLOOR_CONTEXT),
       me: frontier.me,
       nowSeconds: frontier.nowSeconds,
       horizonSeconds: frontier.horizonSeconds,
