@@ -115,7 +115,7 @@ describe('moving a file', () => {
   const listing = [file]
 
   it('adds to the destination before removing from the source', async () => {
-    await moveFileAsViewer(file, listing, here, there, 'https://relay.test', token)
+    await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here], there, 'https://relay.test', token)
 
     const [add, remove] = sent()
     expect(tag(add!, 'h')).toEqual([OTHER])
@@ -128,12 +128,14 @@ describe('moving a file', () => {
   it('leaves the file in both folders when the remove fails, and says so', async () => {
     publishSigned.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })
 
-    const result = await moveFileAsViewer(file, listing, here, there, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here], there, 'https://relay.test', token)
 
     // Not "the move failed": the file did arrive, and saying it failed would
     // send somebody looking for it in the folder it already left.
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toMatch(/still in the old one/i)
+    expect(result.ok === false && result.reason).toMatch(/still lists it too/i)
+    // Which Folder still lists it, for the page to name (SHI-37).
+    expect(result.ok === false && 'stillIn' in result && result.stillIn).toEqual([FOLDER])
   })
 
   it('never removes from the source when the add was refused', async () => {
@@ -141,7 +143,7 @@ describe('moving a file', () => {
     // the file ends up in neither folder.
     publishSigned.mockResolvedValueOnce({ ok: false, reason: 'refused' })
 
-    const result = await moveFileAsViewer(file, listing, here, there, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here], there, 'https://relay.test', token)
 
     expect(result).toEqual({ ok: false, reason: 'refused' })
     expect(sent()).toHaveLength(1)
@@ -151,7 +153,7 @@ describe('moving a file', () => {
   it('moves what is listed under the file with it: one add naming the set, then one remove (FOL-45, MAN-17)', async () => {
     const SUB = `${ADDRESS}-sub`
     const sub = { ref: SUB, address: SUB, folder: FOLDER, parentRef: ADDRESS }
-    await moveFileAsViewer(file, [file, sub], here, there, 'https://relay.test', token)
+    await moveFileAsViewer(file, new Map([[FOLDER, [file, sub]]]), [here], there, 'https://relay.test', token)
 
     expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'a')])).toEqual([
       ['add', OTHER, [ADDRESS, SUB]],
@@ -160,14 +162,14 @@ describe('moving a file', () => {
   })
 
   it('sends nothing into a private folder when the file lives in another channel', async () => {
-    const result = await moveFileAsViewer(file, listing, here, { ...there, private: true }, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here],{ ...there, private: true }, 'https://relay.test', token)
 
-    expect(result.ok === false && result.reason).toMatch(/private folder/)
+    expect(result.ok === false && result.reason).toMatch(/private Folder/)
     expect(sent()).toHaveLength(0)
   })
 
   it('writes nothing when the destination is where it already is', async () => {
-    const result = await moveFileAsViewer(file, listing, here, here, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here],here, 'https://relay.test', token)
 
     expect(result).toEqual({ ok: true })
     expect(sent()).toHaveLength(0)
@@ -180,16 +182,61 @@ describe('moving a file', () => {
     it. Nothing is sent, and the page is told why.
   */
   it('sends nothing when moving into a folder with no state', async () => {
-    const result = await moveFileAsViewer(file, listing, here, { id: OTHER, hasState: false }, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here],{ id: OTHER, hasState: false }, 'https://relay.test', token)
 
     expect(result.ok === false && result.reason).toMatch(/into it would hide/)
     expect(sent()).toHaveLength(0)
   })
 
   it('sends nothing when moving out of a folder with no state', async () => {
-    const result = await moveFileAsViewer(file, listing, { id: FOLDER, hasState: false }, there, 'https://relay.test', token)
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [{ id: FOLDER, hasState: false }], there, 'https://relay.test', token)
 
-    expect(result.ok === false && result.reason).toMatch(/out of this folder/)
+    expect(result.ok === false && result.reason).toMatch(/out of this Folder/)
+    expect(sent()).toHaveLength(0)
+  })
+
+  /*
+    SHI-37. A file two Folders list can have a different set under it in each.
+    One add names all of it, so it lands whole or not at all; then a remove from
+    each, naming what that Folder lists — the planner Ship and the agent use.
+  */
+  it('out of two folders: one add naming what either lists under it, then a remove from each', async () => {
+    const THIRD = '33333333-3333-4333-8333-333333333333'
+    const subHere = { ref: `${ADDRESS}-a`, address: `${ADDRESS}-a`, folder: FOLDER, parentRef: ADDRESS }
+    const subThird = { ref: `${ADDRESS}-b`, address: `${ADDRESS}-b`, folder: FOLDER, parentRef: ADDRESS }
+    const listings = new Map([
+      [FOLDER, [file, subHere]],
+      [THIRD, [file, subThird]],
+    ])
+    await moveFileAsViewer(file, listings, [here, { id: THIRD, hasState: true }], there, 'https://relay.test', token)
+
+    expect(sent().map((event) => [tag(event, 'op')[0], tag(event, 'h')[0], tag(event, 'a')])).toEqual([
+      ['add', OTHER, [ADDRESS, subHere.address, subThird.address]],
+      ['remove', FOLDER, [ADDRESS, subHere.address]],
+      ['remove', THIRD, [ADDRESS, subThird.address]],
+    ])
+  })
+
+  it('out of two folders, a refused add sends no remove', async () => {
+    publishSigned.mockResolvedValueOnce({ ok: false, reason: 'refused' })
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [here, { id: '33333333-3333-4333-8333-333333333333', hasState: true, addresses: [ADDRESS] }], there, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: false, reason: 'refused' })
+    expect(sent()).toHaveLength(1)
+  })
+
+  it('refuses, rather than reporting a move, out of a folder with no state that lists the file by containment', async () => {
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [{ id: FOLDER, hasState: false, addresses: [] }], there, 'https://relay.test', token)
+
+    expect(result.ok === false && result.reason).toMatch(/out of this Folder/)
+    expect(sent()).toHaveLength(0)
+  })
+
+  it('sends nothing for a file no folder lists and nothing is listed under — an issue', async () => {
+    const issue = { ref: `30851:${'c'.repeat(64)}:i`, address: `30851:${'c'.repeat(64)}:i` }
+    const result = await moveFileAsViewer(issue, new Map([[FOLDER, listing]]), [here], there, 'https://relay.test', token)
+
+    expect(result).toEqual({ ok: true })
     expect(sent()).toHaveLength(0)
   })
 })

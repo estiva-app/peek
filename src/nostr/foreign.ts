@@ -78,7 +78,8 @@ import {
   planCreateFolder,
   planDeleteFolder,
   type MovableFile,
-  planMoveFile,
+  planMoveFromFolders,
+  listedBeneath,
   planPlaceFile,
   planRenameFolder,
   planUnlistFile,
@@ -685,38 +686,55 @@ export function deleteRefusalWords(reason: string | undefined): string {
  *
  * **What is under the file moves with it** (FOL-45, SPEC §3.3). A sub-topic is
  * listed by its Folder's state beside its parent, so moving only the parent
- * would leave the sub-topic in the old Folder, drawn at its top. `listing` is
- * the source Folder's files; interop's `planMoveFile` moves the file and every
- * file listed beneath it as one `add` naming the set, then one `remove`, so a
- * failure leaves the whole set in both Folders and never splits it.
+ * would leave the sub-topic in the old Folder, drawn at its top. `listings` are
+ * the source Folders' files, archived ones included; interop's
+ * `planMoveFromFolders` moves the file and every file listed beneath it in any
+ * of them as one `add` naming the set, then one `remove` per source, so a
+ * failure leaves the whole set in both Folders and never splits it (SHI-37).
  *
  * **Refused into a private Folder** when a moved file lives in another channel:
  * a listing never changes who can read a file (§3.1).
  */
 export async function moveFileAsViewer(
   file: MovableFile,
-  listing: readonly MovableFile[] | null,
-  from: FolderRef,
+  /** Each source's files (`FolderContents.files`, archived included), by Folder id. */
+  listings: ReadonlyMap<string, readonly MovableFile[]>,
+  /** Every Folder that lists it now, each with `hasState` and `addresses` from a read. */
+  from: readonly FolderRef[],
   to: FolderRef,
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const plan = planMoveFile(token.pubkey, Date.now(), { file, listing, from, to })
+): Promise<{ ok: true } | { ok: false; reason: string; stillIn?: string[] }> {
+  // An issue is listed by no Folder — its project is — so with nothing listed under it there is nothing to relist.
+  const lists = (folder: FolderRef) => {
+    const listing = listings.get(folder.id) ?? []
+    return (
+      (!!file.address && !!folder.addresses?.includes(file.address)) ||
+      listing.some((listed) => listed.ref === file.ref || (!!file.address && listed.address === file.address)) ||
+      listedBeneath(listing, file).length > 0
+    )
+  }
+  if (!from.some(lists)) return { ok: true }
+  // Interop's planner, the one Ship and the agent move by: one add naming everything, then a remove per source (SHI-37).
+  const plan = planMoveFromFolders(token.pubkey, Date.now(), { file, from, to, listings })
   if (!plan.ok) {
     return {
       ok: false,
       reason:
         plan.reason === 'source-has-no-state'
-          ? 'Files can’t be moved out of this folder yet: it has no list of its own, so moving one would hide the rest.'
+          ? 'Files can’t be moved out of this Folder yet: it has no list of its own, so moving one would hide the rest.'
           : plan.reason === 'target-is-private'
-            ? 'Can’t move this into a private folder: it would stay readable by everyone who can read it now.'
-            : 'That folder has no list of its own yet, so moving a file into it would hide what is already there.',
+            ? 'Can’t move this into a private Folder: it would stay readable by everyone who can read it now.'
+            : 'That Folder has no list of its own yet, so moving a file into it would hide what is already there.',
     }
   }
-  const result = await publishInOrder(plan.events, relayUrl, token)
-  if (result.ok) return { ok: true }
-  if (result.index === 0) return { ok: false, reason: result.reason ?? 'The relay refused the folder command.' }
-  return { ok: false, reason: 'Added to the new folder, but it is still in the old one. Try moving it again.' }
+  if (!plan.add) return { ok: true }
+  const added = await publishInOrder([plan.add], relayUrl, token)
+  if (!added.ok) return { ok: false, reason: added.reason ?? 'Nothing was moved. Try again.' }
+  // It did arrive: each Folder that refused to let it go still lists it too, and the caller names them.
+  const stillIn: string[] = []
+  for (const { folder, event } of plan.removes) if (!(await publishInOrder([event], relayUrl, token)).ok) stillIn.push(folder)
+  return stillIn.length ? { ok: false, reason: 'Added to the new Folder, but the Folder it came from still lists it too. Try moving it again.', stillIn } : { ok: true }
 }
 
 /**
@@ -791,9 +809,11 @@ export async function resolveFolderContentsAsViewer(
   folder: string,
   relayUrl: string,
   token: StoredToken,
+  /** `includeArchived` for the listings a move plans from: what is archived beneath a file moves with it. */
+  options?: { includeArchived?: boolean },
 ): Promise<FolderContents> {
   const query = viewerQuery(relayUrl, token)
-  return resolveFolderContents(folder, query, cachedPeople(query), manifests)
+  return resolveFolderContents(folder, query, cachedPeople(query), manifests, options)
 }
 
 /**
