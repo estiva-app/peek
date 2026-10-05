@@ -191,7 +191,15 @@ export function FilePage() {
     The one-shot is consumed only once it is answered, so a link that opens
     while the reads are still in flight is not lost to them.
   */
-  const { pendingTopicMessage, setPendingTopicMessage } = useLastSelection()
+  const { pendingTopicMessage, setPendingTopicMessage, setLastFilePath } = useLastSelection()
+  /*
+    The rail's Topics comes back here (Katerina, 5 October), as People comes
+    back to the last DM: going to Desk and back no longer drops the open file.
+    Its canonical path, once resolved — what the address bar settles on.
+  */
+  useEffect(() => {
+    if (canonicalPath) setLastFilePath(canonicalPath)
+  }, [canonicalPath, setLastFilePath])
   const { threadDrawn } = view
   useEffect(() => {
     if (!pendingTopicMessage || !rootIds.includes(pendingTopicMessage.eventId)) return
@@ -247,7 +255,10 @@ export function FilePage() {
     */
     onArchived: () => void Promise.all([reloadConversation(), reloadTeam()]),
     onDeleted: (deleted) => {
-      if (deleted.folder && deleted.address === file?.address) navigate(`/app/folders/${deleted.folder}`, { replace: true })
+      if (deleted.address !== file?.address) return
+      // Gone: the rail's Topics must not lead back to it.
+      setLastFilePath(null)
+      if (deleted.folder) navigate(`/app/folders/${deleted.folder}`, { replace: true })
     },
     // The tree draws the file's place, and reads the team.
     onMoved: () => void Promise.all([reloadConversation(), reloadTeam()]),
