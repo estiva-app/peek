@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { isArchived, listedBeneath, topLevelFolders } from '@estiva-app/interop'
-import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
+import { isArchived, topLevelFolders } from '@estiva-app/interop'
+import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
 import { useForeignObjects } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
@@ -25,13 +25,14 @@ const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 interface MoveState {
   kind: 'move'
   file: ForeignObject
-  /** The Folder it is in now, and whether that Folder has state — both from the read the dialog opened on. */
+  /** The Folder it is in now, from the read the dialog opened on. */
   from: string
-  fromHasState: boolean
-  /** Any other Folder with state that lists it too — after a partial move — which it leaves as well. */
-  alsoIn: string[]
-  /** Every file `from` lists: what is under the file moves with it. */
-  listing: ForeignObject[]
+  /**
+   * Every Folder it leaves: `from`, with `hasState` from that read, and any
+   * other Folder with state that lists it too — after a partial move — each
+   * with what its state lists (`addresses`).
+   */
+  sources: (FolderRef & { name: string })[]
   /** The top-level Folders, which are where it may go. */
   teams: FolderSummary[]
   nests: boolean
@@ -79,7 +80,8 @@ interface MoveState {
  *
  * The Folder, then what it goes under there (`MoveDialog`). A topic or a
  * project changes Folder by its listing — `kind:1852` add to the new one, then
- * remove from the old, carrying everything listed under it — and a topic then
+ * remove from each Folder that lists it, carrying everything listed under it,
+ * archived or not, through interop's `planMoveFromFolders` — and a topic then
  * takes its new parent, the manifest's move action. An issue is listed by no
  * Folder: it changes Folder by changing project (Ship's `move-issue`), so the
  * parent goes first and anything listed under the issue follows. Either way,
@@ -237,11 +239,12 @@ export function useFileControls({
           kind: 'move',
           file: here,
           from: team,
-          fromHasState: contents.hasState,
-          alsoIn: folders
-            .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
-            .map((folder) => folder.id),
-          listing: contents.files,
+          sources: [
+            { id: team, name: contents.name ?? 'Untitled Folder', hasState: contents.hasState, addresses: folders.find((folder) => folder.id === team)?.addresses ?? [] },
+            ...folders
+              .filter((folder) => folder.id !== team && folder.hasState && !!file.address && !!folder.addresses?.includes(file.address))
+              .map((folder) => ({ id: folder.id, name: folder.name ?? 'Untitled Folder', hasState: true, addresses: folder.addresses ?? [] })),
+          ],
           teams: topLevelFolders(folders),
           nests,
           targets: nests ? moveTargetsIn(contents.files, here, { sameFolder: true }) : undefined,
@@ -257,28 +260,20 @@ export function useFileControls({
     if (!to) return false
     const changesFolder = to.id !== from
     const changesParent = choice.parent !== undefined && choice.parent !== (file.parentRef ?? '')
-    // The file and what the listing has beneath it, planned by interop (SPEC §3.3). An issue is
-    // listed by no Folder — its project is — so only what is listed under it moves.
+    // The file and what each Folder it is in lists beneath it, archived files included, planned by
+    // interop as Ship's move is (SPEC §3.3, SHI-37). An issue is listed by no Folder — its project
+    // is — so only what is listed under it moves, and with nothing under it nothing is sent.
     const target = { id: to.id, hasState: to.hasState, private: to.private }
-    const listsAny = state.listing.some((listed) => listed.ref === file.ref) || listedBeneath(state.listing, file).length > 0
     type Step = () => Promise<{ ok: true } | { ok: false; reason?: string }>
-    const relist: Step | undefined =
-      changesFolder && listsAny
-        ? async () => {
-            const result = await moveFile(file, state.listing, { id: from, hasState: state.fromHasState }, target)
-            if (!result.ok) return result
-            // Out of every other Folder that still lists it, as Ship's move does (`placedIn`).
-            for (const other of state.alsoIn.filter((id) => id !== to.id)) {
-              const also = await moveFile(file, state.listing, { id: other, hasState: true }, target)
-              // It did arrive: a refused clean-up is a partial move, not a failed one.
-              if (!also.ok) {
-                refuse(`Moved to ${to.name ?? 'the folder'}, but it is still listed in another folder too: ${also.reason}. Try moving it again.`)
-                break
-              }
-            }
-            return result
-          }
-        : undefined
+    const relist: Step | undefined = changesFolder
+      ? async () => {
+          const result = await moveFile(file, state.sources, target)
+          if (result.ok || !('stillIn' in result) || !result.stillIn?.length) return result
+          // It did arrive: name each Folder that refused to let it go, as Ship's move does.
+          const names = result.stillIn.map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another Folder').join(' and ')
+          return { ok: false as const, reason: `Moved to ${to.name ?? 'the Folder'}, but ${names} still lists it too. Try moving it again.` }
+        }
+      : undefined
     const action = fileControlsOf(file).move
     const reparent: Step | undefined = changesParent
       ? async () =>
@@ -298,7 +293,7 @@ export function useFileControls({
           refuse(result.reason ?? 'The relay refused the move.')
           return false
         }
-        refuse(`Moved to ${to.name ?? 'the folder'}, but not all of it: ${result.reason ?? 'the rest was refused'}. Try moving it again.`)
+        refuse(`Moved to ${to.name ?? 'the Folder'}, but not all of it: ${result.reason ?? 'the rest was refused'}. Try moving it again.`)
         break
       }
       moved = true

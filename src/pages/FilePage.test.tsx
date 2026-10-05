@@ -1433,11 +1433,11 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     await userEvent.click(screen.getByRole('option', { name: /The top of Steer/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
-    // The file and the source listing: interop moves it with what is under it (MAN-17).
+    // The file and the Folders it leaves, with what each one's state lists: the move reads each
+    // again, archived files included, and interop moves it with what is under it (MAN-17, SHI-37).
     expect(writes.moveFile).toHaveBeenCalledWith(
       expect.objectContaining({ address: deep.address }),
-      listing,
-      { id: FOLDER, hasState: true },
+      [{ id: FOLDER, name: 'Folders', hasState: true, addresses: listing.map((f) => f.address!) }],
       { id: 'steer', hasState: true },
     )
     // Out from under `notes`, which stayed behind: the top of Steer is an empty parent.
@@ -1482,7 +1482,9 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     await userEvent.click(screen.getByRole('button', { name: 'Move' }))
     await waitFor(() => expect(writes.applyAction).toHaveBeenCalledTimes(1))
     expect(writes.applyAction).toHaveBeenCalledWith({ naddr: moving.naddr, actionId: 'move-issue', value: steerProject.address })
-    expect(writes.moveFile).not.toHaveBeenCalled()
+    // Then whatever is listed under it follows; with nothing under it, `moveFileAsViewer` sends
+    // nothing (folderManagement.test.ts) — the listing it reads may hold an archived sub-file.
+    expect(writes.moveFile.mock.invocationCallOrder[0]).toBeGreaterThan(writes.applyAction.mock.invocationCallOrder[0])
     writes.listFolders.mockImplementation(listFolders!)
     writes.resolveFolderContents.mockImplementation(async (id: string) => ({ id, name: 'Folders', hasState: true, source: 'state', files: [] }))
   }, 15_000) // the first mount of this page in a run is slow on its own

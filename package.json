@@ -23,7 +23,7 @@
   "dependencies": {
     "@estiva-app/conversation": "^0.5.0",
     "@estiva-app/identity": "^0.2.1",
-    "@estiva-app/interop": "^0.48.0",
+    "@estiva-app/interop": "^0.49.0",
     "@estiva-app/platform": "^0.4.0",
     "@estiva-app/protocol": "^0.26.2",
     "@estiva-app/ui": "^0.54.0",
