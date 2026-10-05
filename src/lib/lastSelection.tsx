@@ -10,11 +10,24 @@ export interface PendingTopicMessage {
   reply?: string
 }
 
+/**
+ * What Desk had open, for coming back to it (Katerina, 5 October): its query
+ * (`?open=…&thread=…`, a file beside the lists), the DM it had open, and the
+ * section and title the open file was clicked from.
+ */
+export interface DeskMemory {
+  search: string
+  dm?: { dmId: string; dmName: string; section: string }
+  openedFrom?: { section: string; title: string }
+}
+
 interface LastSelectionState {
   topicId: string | null
   dmId: string | null
   /** The file last open under Topics, as its path: the rail's Topics returns to it (Katerina, 5 October). */
   filePath: string | null
+  /** What Desk had open: the rail's Desk returns to it. */
+  desk: DeskMemory | null
   /** One-shot: when set, the next mounted DM view should auto-open this thread, then clear. */
   pendingDmThreadId: string | null
   /** One-shot: when set, the topic view matching topicId should auto-open this thread, then clear.
@@ -35,6 +48,7 @@ interface LastSelectionValue extends LastSelectionState {
   setLastTopicId: (id: string | null) => void
   setLastDmId: (id: string | null) => void
   setLastFilePath: (path: string | null) => void
+  setLastDesk: (desk: DeskMemory | null) => void
   setPendingDmThreadId: (id: string | null) => void
   setPendingTopicThread: (v: { topicId: string; convId: string } | null) => void
   setPendingTopicMessage: (v: PendingTopicMessage | null) => void
@@ -46,6 +60,7 @@ export function LastSelectionProvider({ children }: { children: ReactNode }) {
   const [topicId, setLastTopicId] = useState<string | null>(null)
   const [dmId, setLastDmId] = useState<string | null>(null)
   const [filePath, setLastFilePath] = useState<string | null>(null)
+  const [desk, setLastDesk] = useState<DeskMemory | null>(null)
   const [pendingDmThreadId, setPendingDmThreadId] = useState<string | null>(null)
   const [pendingTopicThread, setPendingTopicThread] = useState<{ topicId: string; convId: string } | null>(null)
   const [pendingTopicMessage, setPendingTopicMessage] = useState<PendingTopicMessage | null>(null)
@@ -55,17 +70,19 @@ export function LastSelectionProvider({ children }: { children: ReactNode }) {
       topicId,
       dmId,
       filePath,
+      desk,
       pendingDmThreadId,
       pendingTopicThread,
       pendingTopicMessage,
       setLastTopicId,
       setLastDmId,
       setLastFilePath,
+      setLastDesk,
       setPendingDmThreadId,
       setPendingTopicThread,
       setPendingTopicMessage,
     }),
-    [topicId, dmId, filePath, pendingDmThreadId, pendingTopicThread, pendingTopicMessage],
+    [topicId, dmId, filePath, desk, pendingDmThreadId, pendingTopicThread, pendingTopicMessage],
   )
 
   return <LastSelectionContext.Provider value={value}>{children}</LastSelectionContext.Provider>

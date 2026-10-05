@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLastSelection } from '@/lib/lastSelection'
 import { IconArrowUpRight, IconSortDescending } from '@tabler/icons-react'
 import { CollapsibleSection, ListColumn, Panel, Toolbar, ToolbarLink } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -57,7 +58,17 @@ export function DeskPage() {
   const actions = usePeekActions()
   const allScreenerItems = useScreenerItems()
   const { openWork: OPEN_WORK_ITEMS, urgent: URGENT_ITEMS } = useDeskItems()
-  const [selected, setSelected] = useState<Selected | null>(null)
+  /*
+    What Desk had open comes back when the person returns (Katerina, 5
+    October), as People's last DM does: the file is the URL's, which the
+    rail's Desk link carries; the DM and where the file was clicked from are
+    the session's memory, read once as the page mounts.
+  */
+  const { desk: remembered, setLastDesk } = useLastSelection()
+  const location = useLocation()
+  const [selected, setSelected] = useState<Selected | null>(() =>
+    remembered?.dm && !new URLSearchParams(location.search).get('open') ? (remembered.dm as Selected) : null,
+  )
   /*
     The file open beside the lists (SID-3), in the URL rather than in state, so
     a reload or a pasted Desk link keeps it open — and its thread with it, as
@@ -66,7 +77,12 @@ export function DeskPage() {
   const openAddress = searchParams.get('open')
   const openThreadId = searchParams.get('thread') ?? undefined
   /** Which section the open file was clicked in, and the title its row showed. Lost on a reload. */
-  const [openedFrom, setOpenedFrom] = useState<{ section: SectionKey; title: string } | null>(null)
+  const [openedFrom, setOpenedFrom] = useState<{ section: SectionKey; title: string } | null>(() =>
+    remembered?.openedFrom && remembered.search === location.search ? (remembered.openedFrom as { section: SectionKey; title: string }) : null,
+  )
+  useEffect(() => {
+    setLastDesk({ search: location.search, dm: selected ?? undefined, openedFrom: openedFrom ?? undefined })
+  }, [location.search, selected, openedFrom, setLastDesk])
   const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
   const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
   /** The file address or DM a row click just opened, until its view says whether only a reply is new (CON-34). */

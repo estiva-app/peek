@@ -17,14 +17,15 @@ import { fileRouteFromPath } from '@/lib/objectUrl'
  * People, with a small dot saying whether what is shown is current.
  */
 export function NavRail() {
-  const { dmId, filePath } = useLastSelection()
+  const { dmId, filePath, desk } = useLastSelection()
   const { pathname } = useLocation()
   // A file's page, at whatever word its manifest declared (FOL-39), is read
   // under Topics — where `/topic/<address>` always was.
   const openFile = fileRouteFromPath(pathname)
 
   const navItems = [
-    { to: '/app/desk', icon: <IconNote size={16} stroke={1.5} />, label: 'Desk', match: '/app/desk' },
+    // Back to what Desk had open: a file beside the lists is in its query; a DM the page restores (Katerina, 5 October).
+    { to: `/app/desk${desk?.search ?? ''}`, icon: <IconNote size={16} stroke={1.5} />, label: 'Desk', match: '/app/desk' },
     {
       // Back to the file last open here, as People goes back to the last DM (Katerina, 5 October).
       to: filePath ?? '/app/folders',
