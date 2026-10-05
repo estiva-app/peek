@@ -269,9 +269,10 @@ export function useFileControls({
       ? async () => {
           const result = await moveFile(file, state.sources, target)
           if (result.ok || !('stillIn' in result) || !result.stillIn?.length) return result
-          // It did arrive: name each Folder that refused to let it go, as Ship's move does.
+          // It did arrive, so the move goes on: name each Folder that refused to let it go, as Ship's move does.
           const names = result.stillIn.map((id) => state.sources.find((source) => source.id === id)?.name ?? 'another Folder').join(' and ')
-          return { ok: false as const, reason: `Moved to ${to.name ?? 'the Folder'}, but ${names} still lists it too. Try moving it again.` }
+          refuse(`Moved to ${to.name ?? 'the Folder'}, but ${names} still lists it too. Try moving it again.`)
+          return { ok: true as const }
         }
       : undefined
     const action = fileControlsOf(file).move
