@@ -121,8 +121,15 @@ export function FileTreeView({
     !!expand?.includes(file.ref) ||
     fileMatches(filter, file, listedChildrenOf(file, folder.files), unread, isMember),
   )
+  /*
+    Opened for a child's sake only under Unread, so what is new is in view
+    without a click (FOL-41) — a closed row carries no dot for what is under it.
+    In Topics a row kept for a child's sake starts closed like any other
+    (Katerina, 5 October: a project opened for one topic of yours under it
+    showed every one of its issues). The open file's chain opens either way.
+  */
   const openForChild =
-    filter === 'all'
+    filter !== 'unread' && filter !== 'mine-unread'
       ? []
       : kept
           .filter((file) => !fileMatches(filter, file, [], unread, isMember))

@@ -94,6 +94,8 @@ const teamUnread = vi.hoisted(() => ({
 }))
 /* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
 const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
+/* The files the person is a member of, by address — the membership seam a row's Topics verdict reads (§11.8). */
+const members = vi.hoisted(() => ({ addresses: [] as string[] }))
 /* Who is signed in, and who the relay lists as the Folder's owners and admins (MAN-17). */
 const viewer = vi.hoisted(() => ({ me: 'a'.repeat(64), admins: [] as string[] }))
 /*
@@ -187,6 +189,7 @@ vi.mock('@/api', async () => ({
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
   useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member }),
   useWorkspaceDirectory: () => undefined,
+  useMembership: () => ({ isMember: (address: string) => members.addresses.includes(address), setMember: async () => {} }),
   useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
@@ -509,6 +512,26 @@ describe('FoldersPage filters the column', () => {
     const { container } = await choose('Unread')
     expect(container.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
     expect(container.querySelector(`[data-file="${CSS.escape(child.ref)}"]`)).toBeTruthy()
+  })
+
+  /*
+    In Topics a row kept for a child's sake starts closed (Katerina, 5
+    October): a Ship project opened for the one topic of yours under it showed
+    every one of its issues. Only Unread opens it, so what is new is in view.
+  */
+  it('in Topics, keeps a row whose child is yours, closed', () => {
+    relay.files = [parent, child]
+    members.addresses = [child.address!]
+    teamUnread.member = { [FOLDER]: true }
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    try {
+      const { container } = mount('/app/folders')
+      const row = container.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)!
+      expect(row).toBeTruthy()
+      expect(row.closest('[data-nav-group]')!.querySelector(`[aria-label="Show what is under A parent project"]`)).toBeTruthy()
+    } finally {
+      members.addresses = []
+    }
   })
 
   it('drops the rows that hold no match', async () => {
