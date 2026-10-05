@@ -34,6 +34,9 @@ type SectionKey = 'urgent' | 'openWork' | 'starred'
 
 type Selected = { dmId: string; dmName: string; section: SectionKey }
 
+/** How long after a row click its "open the reply's thread" still applies: the views judge within a second or two. */
+const OPEN_REPLY_WINDOW_MS = 5000
+
 /**
  * The Desk page: the Screener, Urgent, Open work and Starred lists on the left,
  * and the chosen file or direct message beside them.
@@ -43,9 +46,6 @@ type Selected = { dmId: string; dmName: string; section: SectionKey }
  * still in somebody's open work or stars stays in their blob and draws nothing
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
-/** How long after a row click its "open the reply's thread" still applies: the views judge within a second or two. */
-const OPEN_REPLY_WINDOW_MS = 5000
-
 export function DeskPage() {
   const railClosed = useRailClosed()
   const { dmHasUnread } = useUnread()
