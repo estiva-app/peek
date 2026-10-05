@@ -7,7 +7,7 @@ import { FolderTreeView } from './FolderTree'
  * each a fold, the one holding the open page open.
  *
  * The fixture is the five team Folders FOL-20 leaves on production. What a
- * story can show is the column's shape — the folds, the union dots, which one
+ * story can show is the column's shape — the folds, the filters, which one
  * is open — because a Folder's rows are a relay read made when its fold
  * opens, and Storybook has no viewer, so the open Folder here reads as empty.
  * The rows themselves are `FileTreeView`'s story.
@@ -45,14 +45,17 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Every Folder folded: what a cold load costs nothing beyond the dots. */
+/**
+ * Every Folder folded. Two of them hold something unread, and neither header
+ * says so: a Folder carries no dot (2026-10-03), only the files in it do.
+ */
 export const Folded: Story = {
   args: { unread: { [folders[1].id]: true, [folders[3].id]: true } },
 }
 
 /** The Folder holding the open page is open; the others are as they were. */
 export const CurrentOpen: Story = {
-  args: { currentFolder: folders[0].id, unread: { [folders[1].id]: true } },
+  args: { currentFolder: folders[0].id },
 }
 
 export const Loading: Story = {
@@ -68,7 +71,7 @@ export const Empty: Story = {
 }
 
 /**
- * Filtered to what is unread (FOL-41). Only the Folders with a dot are drawn,
+ * Filtered to what is unread (FOL-41). Only the Folders holding an unread file are drawn,
  * and each of them starts open — the filter's job is to lead to the file, and
  * a list of shut Folders leads nowhere.
  */

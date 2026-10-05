@@ -398,32 +398,19 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
 })
 
 /*
-  SPEC §11.3, FOL-18: the dot on a Folder row is the union of its streams. The
-  rule is `teamHasUnread`'s; what the page owes it is a dot on exactly the rows
-  it says, and none on a row it did not judge — "not judged" is not "dark".
+  A Folder row carries no dot (Miky, 2026-10-03): the union of its streams
+  (`teamHasUnread`, SPEC §11.3) decides what the Unread filter keeps and draws
+  nothing on the row itself, open or collapsed.
 */
-describe('FoldersPage draws the union dot on a Folder row', () => {
+describe('FoldersPage draws no dot on a Folder row', () => {
   afterEach(() => {
     teamUnread.unread = {}
   })
 
-  it('lights the Folder the hook says is unread, and only that one', () => {
-    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: false }
+  it('draws none on a Folder the hook says is unread', () => {
+    teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
     const { container } = mount(`/app/folders/${TOPIC_CHANNEL}`)
-    const lit = container.querySelectorAll('[data-unread]')
-    expect(lit).toHaveLength(1)
-    // The dot sits in its Folder's section header (FOL-21) — and the section
-    // named "Folders" is the one the hook lit, not the open "For testing".
-    const section = lit[0].closest('[data-nav-group]') as HTMLElement
-    expect(section.dataset.navGroup).toBe(FOLDER)
-    expect(section.textContent).toContain('Folders')
-    expect(section.textContent).not.toContain('For testing')
-  })
-
-  it('draws no dot for a Folder it was told nothing about', () => {
-    teamUnread.unread = {}
-    const { container } = mount(`/app/folders/${FOLDER}`)
-    expect(container.querySelectorAll('[data-unread]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-nav-group] [data-unread]')).toHaveLength(0)
   })
 })
 

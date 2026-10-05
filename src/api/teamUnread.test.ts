@@ -52,18 +52,20 @@ const frontier = (
 })
 
 /*
-  SPEC §11.3, FOL-18. The team's dot is the union of its streams, each judged
-  against its own marker: the channel uuid for the general stream, the file's
-  address for a file's. The done-when is the second block — a Folder lights
-  for a sibling file nobody read, and only that file's marker puts it out.
+  SPEC §11.3, FOL-18. The Folder's verdict is the union of its file streams,
+  each judged against the file's own marker. A Folder lights for a sibling file
+  nobody read, and only that file's marker puts it out. The general stream is
+  not judged (§11.8: Peek has no screen for it, 2026-10-05).
 */
-describe('teamHasUnread — the general stream answers to the channel marker', () => {
-  it('lights when the chat has a root later than the channel marker', () => {
-    expect(teamHasUnread(FOLDER, [said('m', 2000)], frontier({ [FOLDER]: 1000 }))).toBe(true)
+describe('teamHasUnread — the general stream is not judged', () => {
+  it('stays dark for a message about no file, however new or unread', () => {
+    expect(teamHasUnread(FOLDER, [said('m', 2000)], frontier({ [FOLDER]: 1000 }))).toBe(false)
+    expect(teamHasUnread(FOLDER, [said('m', NOW - 10)], frontier())).toBe(false)
   })
 
-  it('is dark once the chat is read', () => {
-    expect(teamHasUnread(FOLDER, [said('m', 500)], frontier({ [FOLDER]: 1000 }))).toBe(false)
+  it('stays dark for one that names the person', () => {
+    const named = frontier({}, ME, () => false, () => ({}), (id) => id === 'named')
+    expect(teamHasUnread(FOLDER, [said('named', NOW - 10)], named)).toBe(false)
   })
 
   it('is dark with nothing said', () => {
@@ -92,10 +94,9 @@ describe("teamHasUnread — a file's stream answers to the file's marker, never 
     expect(teamHasUnread(FOLDER, both, frontier({ [FOL16]: NOW, [FOL18]: NOW }))).toBe(false)
   })
 
-  it('keeps a message whose `a` is not an address in the general stream', () => {
+  it('keeps a message whose `a` is not an address in the general stream, which is not judged', () => {
     const odd = [said('m', 1500, ['not-an-address'])]
-    expect(teamHasUnread(FOLDER, odd, frontier({ [FOLDER]: 1000 }))).toBe(true)
-    expect(teamHasUnread(FOLDER, odd, frontier({ [FOLDER]: 2000 }))).toBe(false)
+    expect(teamHasUnread(FOLDER, odd, frontier({ [FOLDER]: 1000 }))).toBe(false)
   })
 })
 
@@ -149,8 +150,8 @@ describe('teamHasUnread — only member streams are judged (§11.8)', () => {
     expect(teamHasUnread(FOLDER, messages, muted((id) => id === 'named'))).toBe(true)
   })
 
-  it('lights for a message that names the person in a stream they are not a member of', () => {
-    const messages = [said('named', NOW - 10)]
+  it('lights for a message that names the person in a file they are not a member of', () => {
+    const messages = [said('named', NOW - 10, [FOL18])]
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false, () => ({}), (id) => id === 'named'))).toBe(true)
   })
 
@@ -161,20 +162,13 @@ describe('teamHasUnread — only member streams are judged (§11.8)', () => {
     expect(teamHasUnread(FOLDER, messages, frontier({}, ME, () => false))).toBe(false)
   })
 
-  it('asks the general stream the same question under its Folder’s id', () => {
-    const chat = [said('m', NOW - 10)]
-    expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOLDER)))).toBe(true)
-    expect(teamHasUnread(FOLDER, chat, frontier({}, ME, only(FOL18)))).toBe(false)
-  })
-
-  it('judges a file’s stream and the general stream apart', () => {
+  it('judges a file’s stream and ignores the general stream beside it', () => {
     const both = [said('chat', NOW - 10), said('m', NOW - 10, [FOL18])]
-    // Chat is new, but only the file is the person's: the file lights, and reading it puts the team out.
+    // Chat is new, but only the file counts: the file lights, and reading it puts the Folder out.
     expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOL18)))).toBe(true)
     expect(teamHasUnread(FOLDER, both, frontier({ [FOL18]: NOW }, ME, only(FOL18)))).toBe(false)
-    // The file is new, but only the chat is: the chat lights, and reading the chat puts the team out.
-    expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOLDER)))).toBe(true)
-    expect(teamHasUnread(FOLDER, both, frontier({ [FOLDER]: NOW }, ME, only(FOLDER)))).toBe(false)
+    // Even a person counted a member of the general stream is not lit by it.
+    expect(teamHasUnread(FOLDER, both, frontier({}, ME, only(FOLDER)))).toBe(false)
   })
 
   it('leaving clears a lit team at once, with no marker moving', () => {

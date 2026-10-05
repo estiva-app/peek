@@ -26,12 +26,12 @@ function triggerOf(reason: string): TeamUnreadTrigger {
 const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
 
 /**
- * The dot on each Folder in a list: whether anything in it is new to the
- * viewer — SPEC §11.3, FOL-18.
+ * Whether anything in each Folder is new to the viewer — SPEC §11.3, FOL-18.
  *
- * The sidebar's question, and the one the tree (FOL-21) will collapse
- * Folders behind: a team folded shut must still be able to say something
- * inside it needs you. It is the union of the team's streams, judged by
+ * It draws no dot: a Folder row carries none, only its files do (Miky,
+ * 2026-10-03). It is what the tree's Unread filter keeps (FOL-41), and its
+ * `activity` re-reads an open Folder's row dots (FOL-44). It is the union of
+ * the Folder's streams, judged by
  * `teamHasUnread`, from one batched read of every listed Folder's channel —
  * two `POST /query` for the whole of production's 147, where the listing's
  * per-Folder shape would have been three hundred (`channelStreams.ts`).

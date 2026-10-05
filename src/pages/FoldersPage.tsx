@@ -98,12 +98,13 @@ export function FoldersPage() {
     typeof state === 'object' && 'files' in state ? peersOf(state.files) : undefined,
   )
   /*
-    The dot on each Folder row: the union of its streams (SPEC §11.3, FOL-18).
-    One batched read for every row, judged against the same frontier as the
-    listing's per-file dots, so a Folder lights while a file nobody read has a
-    new comment and goes dark only when that file's stream is read — never
-    because somebody read the team's chat, and never because this page was
-    opened, which reads nothing.
+    Whether each Folder holds something unread: the union of its streams (SPEC
+    §11.3, FOL-18). It draws no dot — a Folder row carries none (2026-10-03) —
+    it is what the Unread filter keeps. One batched read for every Folder,
+    judged against the same frontier as the listing's per-file dots, so a
+    Folder stays in the filter while a file nobody read has a new comment —
+    never because somebody read the team's chat, and never because this page
+    was opened, which reads nothing.
   */
   const { unread: teamUnread, member: teamMember } = useTeamUnread(folders)
   /* Where a Folder's own control leads — its topic when it is one (FOL-21). */
