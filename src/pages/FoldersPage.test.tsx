@@ -26,6 +26,7 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { FoldersPage } from './FoldersPage'
 import { channelDestination } from '@/lib/legacyTopicLinks'
 import { filePath } from '@/lib/objectUrl'
+import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
 
 const FOLDER = 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b'
 const ADDRESS = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
@@ -237,16 +238,25 @@ async function folderMenu(name: string) {
   await userEvent.click(screen.getByRole('button', { name: `More options for ${name}` }))
 }
 
+/** Where the rail's Topics would lead now. */
+function Remembered() {
+  const { topicsPath } = useLastSelection()
+  return <output data-testid="topics-path">{topicsPath ?? ''}</output>
+}
+
 function mount(url: string) {
   return render(
-    <MemoryRouter initialEntries={[url]}>
-      <Routes>
-        <Route path="/app/folders" element={<><FoldersPage /><Probe /></>} />
-        <Route path="/app/folders/:id" element={<><FoldersPage /><Probe /></>} />
-        {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
-        <Route path="*" element={<Probe />} />
-      </Routes>
-    </MemoryRouter>,
+    <LastSelectionProvider>
+      <MemoryRouter initialEntries={[url]}>
+        <Routes>
+          <Route path="/app/folders" element={<><FoldersPage /><Probe /></>} />
+          <Route path="/app/folders/:id" element={<><FoldersPage /><Probe /></>} />
+          {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
+          <Route path="*" element={<Probe />} />
+        </Routes>
+        <Remembered />
+      </MemoryRouter>
+    </LastSelectionProvider>,
   )
 }
 
@@ -352,6 +362,13 @@ describe("a Folder's heading offers its actions to who may take them", () => {
   included. A channel with no state is in no list, so its link is where it can
   be deleted — drawn only once the relay has said it holds nothing.
 */
+describe('the rail’s memory of Topics (Katerina, 5 October)', () => {
+  it('the Topics page with no file open is where the rail comes back to: a closed file is not brought back', () => {
+    mount('/app/folders')
+    expect(screen.getByTestId('topics-path').textContent).toBe('/app/folders')
+  })
+})
+
 describe('a stateless channel’s link (5 October)', () => {
   it('a Ship project’s channel opens the project, to be drawn open under its Folder', async () => {
     projects.resolve.mockResolvedValueOnce({ project: { address: SHIP_PROJECT, slots: { title: { value: 'Launch' } } } })

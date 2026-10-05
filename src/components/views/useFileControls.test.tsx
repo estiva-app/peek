@@ -19,6 +19,7 @@ const foreign = vi.hoisted(() => ({
 const toasts = vi.hoisted(() => ({ shown: [] as { label: string; actionLabel?: string; onAction?: () => void }[] }))
 
 vi.mock('@/api', () => ({
+  reloadFoldersOnScreen: async () => {},
   useMembership: () => {
     // Each render's seam closes over that render's state, as the real one does.
     const state = seam.state

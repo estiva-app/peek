@@ -112,7 +112,7 @@ vi.mock('@/api', async () => ({
     return { state: [], reload: async () => {} }
   },
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: dots.unread, member: dots.member }),
+  useTeamUnread: () => ({ unread: dots.unread, member: dots.member, holdsJoined: new Set<string>() }),
   useCurrentUser: () => (viewer.id ? { id: viewer.id } : undefined),
 }))
 
@@ -362,6 +362,92 @@ describe('the two views (Katerina, 5 October)', () => {
   })
 })
 
+describe('the page only shows a file the column draws (Katerina, 5 October)', () => {
+  const title = (name: string) => screen.getByRole('button', { name })
+  const LIVE = { currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: false, selectedMine: true }
+  const ARCHIVED_FILE = { ...LIVE, selectedArchived: true }
+
+  it('an archived file that arrives turns the column to Archive, for this visit only', () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    mount(ARCHIVED_FILE)
+    expect(title('Archive')).not.toBeNull()
+    expect(window.localStorage.getItem('peek.tree.view')).toBe('mine')
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
+  it('a live file that arrives while Archive is showing turns the column back to the person’s own view', () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount(LIVE)
+    expect(title('Folders')).not.toBeNull()
+  })
+
+  it('judges nothing while the file is still resolving', () => {
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount({ ...LIVE, selectedArchived: undefined })
+    expect(title('Archive')).not.toBeNull()
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
+  it('a file archived while it is open closes: it left the list it was in', () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    const { rerender } = mount(LIVE)
+    rerender(ARCHIVED_FILE)
+    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+  })
+
+  it('a file unarchived while it is open in Archive stays open, and the column goes where it now is', () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    const { rerender } = mount(ARCHIVED_FILE)
+    expect(title('Archive')).not.toBeNull()
+    rerender(LIVE)
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+    expect(title('Folders')).not.toBeNull()
+  })
+
+  it('a topic left while it is open in Topics leaves the list, and closes', () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    const { rerender } = mount(LIVE)
+    rerender({ ...LIVE, selectedMine: false })
+    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+  })
+
+  it('a file left while Folders is showing stays open: Folders draws every file', () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    const { rerender } = mount(LIVE)
+    rerender({ ...LIVE, selectedMine: false })
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
+  it('a file not joined, opened from a link, is shown in Topics where it is', () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    mount({ ...LIVE, selectedMine: false })
+    expect(title('Topics')).not.toBeNull()
+    expect(section(TEAM)).not.toBeNull()
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
+  it('the open file’s Folder opens though the person had closed it', () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    window.localStorage.setItem(`peek.tree.folder.${TEAM}`, 'closed')
+    mount(LIVE)
+    expect(openOf(section(TEAM))).toBe('true')
+  })
+
+  it('in Archive, the open file’s Folder opens, and a Folder opened there stays open on the next page', () => {
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    const first = mount(ARCHIVED_FILE)
+    expect(openOf(section(TEAM))).toBe('true')
+    fireEvent.click(within(section(OTHER)).getByRole('button', { name: /Zebra/ }))
+    expect(openOf(section(OTHER))).toBe('true')
+    // The next page draws the column again.
+    first.unmount()
+    mount({ currentFolder: OTHER })
+    expect(openOf(section(OTHER))).toBe('true')
+  })
+})
+
 describe('a project reached by its channel’s link (5 October)', () => {
   it('is selected and open, what is under it drawn', () => {
     window.localStorage.setItem('peek.tree.view', 'all')
@@ -411,14 +497,6 @@ describe('the Archive view (Katerina, 5 October)', () => {
     await userEvent.click(title('Archive'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
     expect(screen.getByTestId('url').textContent).toBe('/app/folders')
-  })
-
-  it('an archived file stays open when the column turns to Archive', async () => {
-    window.localStorage.setItem('peek.tree.view', 'all')
-    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
-    await userEvent.click(title('Folders'))
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
-    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   it('switching between Topics and Folders keeps the open file', async () => {

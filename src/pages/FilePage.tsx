@@ -192,15 +192,18 @@ export function FilePage() {
     The one-shot is consumed only once it is answered, so a link that opens
     while the reads are still in flight is not lost to them.
   */
-  const { pendingTopicMessage, setPendingTopicMessage, setLastFilePath } = useLastSelection()
+  const { pendingTopicMessage, setPendingTopicMessage, setLastTopicsPath } = useLastSelection()
   /*
     The rail's Topics comes back here (Katerina, 5 October), as People comes
     back to the last DM: going to Desk and back no longer drops the open file.
-    Its canonical path, once resolved — what the address bar settles on.
+    Its canonical path, once the address bar has settled on it, with its open
+    thread. The Topics page with no file writes its own, so a file closed —
+    by a view that does not draw it, by archiving it, by deleting it — is
+    never what the rail brings back.
   */
   useEffect(() => {
-    if (canonicalPath) setLastFilePath(canonicalPath)
-  }, [canonicalPath, setLastFilePath])
+    if (canonicalPath && location.pathname === canonicalPath) setLastTopicsPath(`${location.pathname}${location.search}`)
+  }, [canonicalPath, location.pathname, location.search, setLastTopicsPath])
   const { threadDrawn } = view
   useEffect(() => {
     if (!pendingTopicMessage || !rootIds.includes(pendingTopicMessage.eventId)) return
@@ -259,9 +262,9 @@ export function FilePage() {
     onArchived: () => void Promise.all([reloadConversation(), reloadTeam()]),
     onDeleted: (deleted) => {
       if (deleted.address !== file?.address) return
-      // Gone: the rail's Topics must not lead back to it.
-      setLastFilePath(null)
+      // Gone: its Folder's page takes the rail's memory, so Topics does not lead back to it.
       if (deleted.folder) navigate(`/app/folders/${deleted.folder}`, { replace: true })
+      else navigate('/app/folders', { replace: true })
     },
     // The tree draws the file's place, and reads the team.
     onMoved: () => void Promise.all([reloadConversation(), reloadTeam()]),
@@ -351,7 +354,9 @@ export function FilePage() {
             currentFolder={navFile?.folder}
             selectedRef={selected?.ref}
             selectedParent={selected?.parentRef}
-            selectedArchived={!!file?.archived}
+            // Unknown until the file resolves, and until the relay has said what the person joined: the column judges nothing on a guess.
+            selectedArchived={file ? !!file.archived : undefined}
+            selectedMine={file && membership.state !== 'unknown' ? member : undefined}
             // Reached from a Ship project's channel link (FoldersPage): the project opens, its issues under it.
             expandSelected={(location.state as { expandSelected?: boolean } | null)?.expandSelected === true}
             onControl={fileControls.open}

@@ -17,7 +17,7 @@ import { fileRouteFromPath } from '@/lib/objectUrl'
  * People, with a small dot saying whether what is shown is current.
  */
 export function NavRail() {
-  const { dmId, filePath, desk } = useLastSelection()
+  const { dmId, topicsPath, desk } = useLastSelection()
   const { pathname } = useLocation()
   // A file's page, at whatever word its manifest declared (FOL-39), is read
   // under Topics — where `/topic/<address>` always was.
@@ -27,8 +27,8 @@ export function NavRail() {
     // Back to what Desk had open: a file beside the lists is in its query; a DM the page restores (Katerina, 5 October).
     { to: `/app/desk${desk?.search ?? ''}`, icon: <IconNote size={16} stroke={1.5} />, label: 'Desk', match: '/app/desk' },
     {
-      // Back to the file last open here, as People goes back to the last DM (Katerina, 5 October).
-      to: filePath ?? '/app/folders',
+      // Back to where Topics was — a file, or none open — as People goes back to the last DM (Katerina, 5 October).
+      to: topicsPath ?? '/app/folders',
       // Topics' own speech bubble again, as before FOL-26 (Katerina, 5 October): the column is topics, organised by Folder.
       icon: <IconMessage2 size={16} stroke={1.5} />,
       /*
