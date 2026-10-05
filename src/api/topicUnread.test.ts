@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { channelContext, threadContext } from '@estiva-app/conversation'
+import { THREAD_RULE_FROM, channelContext, threadContext } from '@estiva-app/conversation'
 import { topicChannelFlags } from './topicUnread'
 
 const CHANNEL = '0d1c9f5a-6f7e-4a2b-9c3d-8e5f4a1b2c3d'
@@ -82,13 +82,13 @@ describe('which marker a message answers to', () => {
     expect(judge([said('m', NOW - 7200)], { [CONTAINER]: NOW - 3600 }).unread).toBe(false)
   })
 
-  it("reading the topic reads its replies too — the channel's frontier propagates (§11.3)", () => {
-    // The change from Convex, which judged a reply against its thread
-    // watermark alone and so kept the dot lit on a thread never opened.
-    const flags = judge([said(ROOT, NOW - 7200), replied('r', NOW - 7100, ROOT)], {
-      [CONTAINER]: NOW - 3600,
-    })
-    expect(flags.unread).toBe(false)
+  it("reading the topic reads a reply from before the cut-over, and not one after it (§11.3, CON-34)", () => {
+    // Before T0 the channel's frontier still propagates to its replies, so
+    // nothing read under the old rule lights up again; after it a reply waits
+    // for its thread to be opened.
+    const before = THREAD_RULE_FROM - 100
+    expect(judge([said(ROOT, before - 200), replied('r', before, ROOT)], { [CONTAINER]: before + 50 }).unread).toBe(false)
+    expect(judge([said(ROOT, NOW - 7200), replied('r', NOW - 7100, ROOT)], { [CONTAINER]: NOW - 3600 }).unread).toBe(true)
   })
 
   it('a thread marker clears a reply the channel marker does not reach', () => {
