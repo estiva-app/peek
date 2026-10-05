@@ -10,8 +10,11 @@ import { FileWidgetPanel } from '@/components/FileWidgetPanel'
 import {
   useFileThreads,
   useForeignConversation,
+  useNewReplyThreads,
+  useReplyOnlyThread,
   useWorkspaceDirectory,
   type ConversationContainer,
+  type ReplyStream,
   type ForeignConversationState,
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
@@ -97,6 +100,10 @@ export function useFileView({
   const replies = threads === 'loading' || 'failed' in threads ? undefined : threads.replies
   useMarkFileRead(file?.address, ownView ? peek.newestAt : newestMessageAt(comments))
   useMarkThreadRead(ownView ? null : openThreadId, openThreadId && replies ? newestMessageAt(replies[openThreadId] ?? []) : undefined)
+  // The read-only pane's "new reply", by the dot's own rule; Peek's own view works out its own (CON-34).
+  const readOnlyStream: ReplyStream | null = !ownView && file?.address ? { kind: 'file', address: file.address } : null
+  const newReplies = useNewReplyThreads(readOnlyStream, replies, peek.viewerPubkey)
+  const readOnlyReplyThread = useReplyOnlyThread(readOnlyStream, file ? comments : undefined, replies, peek.viewerPubkey)
   /*
     Activity — the comments elsewhere that name this file (CON-11), read by
     `#a` off the relay for a file Peek's own view draws. It takes the third
@@ -147,6 +154,7 @@ export function useFileView({
             onOpenThread={onOpenThread}
             openThreadId={openThreadId}
             replyCounts={replyCounts}
+            newReplies={newReplies}
             deletedRoots={deletedRoots}
           />
         ),
@@ -183,5 +191,7 @@ export function useFileView({
     threadPanel,
     /** The open thread has drawn its anchor, so a scroll to a comment in it can land. */
     threadDrawn: peek.threadPanel !== undefined,
+    /** The thread to open when only a reply is new: `undefined` until judged (CON-34). */
+    replyOnlyThread: ownView ? peek.replyOnlyThread : readOnlyReplyThread,
   }
 }

@@ -1,5 +1,5 @@
 import type { StreamMessage } from '@/nostr/channelStreams'
-import { channelContext, threadContext } from '@estiva-app/conversation'
+import { REPLY_FLOOR_CONTEXT, channelContext, threadContext } from '@estiva-app/conversation'
 import { fileHasUnread } from './fileUnread'
 
 /**
@@ -57,6 +57,7 @@ export function topicChannelFlags(
     fileHasUnread(subset, {
       file: container,
       thread: (root) => frontier.marker(threadContext(root)),
+      floor: frontier.marker(REPLY_FLOOR_CONTEXT),
       me: frontier.me,
       nowSeconds: frontier.nowSeconds,
       horizonSeconds: frontier.horizonSeconds,
