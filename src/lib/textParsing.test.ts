@@ -15,7 +15,7 @@ import {
 // The marker dialect lives in the package now (RIC-4). What is left here is
 // Peek's own layer on top of it: mentions, bracket references, and the Tiptap
 // builders. These stay so the swap is checked at the consumer too.
-import { parseBodySegments, stripInlineFormatting } from '@estiva-app/protocol'
+import { addrToNaddr, encodeNevent, encodeNpub, parseBodySegments, stripInlineFormatting } from '@estiva-app/protocol'
 
 // Helper to consume MENTION_RE in a way that doesn't carry state between calls
 // (it's global, so matchAll is the safe form).
@@ -453,6 +453,14 @@ describe('links — [label](url) (PEE-19)', () => {
     it('findUrls sees the target of a labelled link, and never a mailto', () => {
       expect(findUrls('see [the issue](https://ship.estiva.app/issue/x) and https://example.com')).toEqual(['https://ship.estiva.app/issue/x', 'https://example.com'])
       expect(findUrls('[write](mailto:jan@estiva.app)')).toEqual([])
+    })
+
+    it('previewText names a reference the way its chip does, never as bech32 (PEE-21)', () => {
+      const issue = `nostr:${addrToNaddr(`30851:${'a'.repeat(64)}:d1`)}`
+      const message = `nostr:${encodeNevent({ id: 'e'.repeat(64), relays: [] })}`
+      expect(previewText(`see ${issue} and ${message}`)).toBe('see Issue and Message')
+      expect(previewText(`ping nostr:${encodeNpub('c'.repeat(64))}`)).toMatch(/^ping @\S+/)
+      expect(previewText('see nostr:naddr1broken')).toBe('see File')
     })
 
     it('previewText reduces a link to its label', () => {

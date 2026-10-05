@@ -88,7 +88,11 @@ import {
   type ArchiveImpact,
   type ArchiveReadOptions,
   type FolderRef,
+  fileCandidates,
+  resolveForeignRoots,
+  searchFileReferences,
 } from '@estiva-app/interop'
+import type { ReferenceCandidate } from '@estiva-app/conversation'
 
 export interface ActResult {
   ok: boolean
@@ -415,6 +419,33 @@ export async function resolveObjectAsViewer(
     if (error instanceof RelayReadError) return null
     throw error
   }
+}
+
+/**
+ * `[`'s search tier (PEE-21): the files whose current title holds `text`, as
+ * this viewer can read them. Rejects on a refused read, which the search
+ * answers as no hits for a while.
+ */
+export function searchFileReferencesAsViewer(text: string, relayUrl: string, token: StoredToken): Promise<ReferenceCandidate[]> {
+  return searchFileReferences(text, viewerQuery(relayUrl, token), { cache: manifests })
+}
+
+/**
+ * `[`'s rows for files already in hand — a Folder's listing — or known only by
+ * address — the files read recently, `at` each one's read marker (PEE-21).
+ * Addresses are read as roots and changes alone: what a file is called now,
+ * never its conversation.
+ */
+export async function fileCandidatesAsViewer(
+  files: readonly ForeignObject[] | { addresses: readonly string[]; at: ReadonlyMap<string, number> },
+  tier: number,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<ReferenceCandidate[]> {
+  const query = viewerQuery(relayUrl, token)
+  if (!('addresses' in files)) return fileCandidates(files, tier, query, { cache: manifests })
+  const objects = await resolveForeignRoots(files.addresses, query, manifests)
+  return fileCandidates(objects, tier, query, { cache: manifests, at: files.at })
 }
 
 /**

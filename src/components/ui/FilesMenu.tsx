@@ -15,7 +15,7 @@ import type { ConversationMessage } from '@/lib/conversationRegistry'
  * here (Miky, 2026-09-02: *"everything you mention … is basically a file"*),
  * and it is offered from the same key.
  */
-export const FILES_MENU_COPY = { ariaLabel: 'Topics and messages', sectionLabel: 'Messages' }
+export const FILES_MENU_COPY = { ariaLabel: 'Messages and files', sectionLabel: 'Messages' }
 
 /**
  * A message as `[` offers it. The caption is the author and the opening words,

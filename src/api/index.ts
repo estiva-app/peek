@@ -51,6 +51,7 @@ export { useForeignObjects, useResolvedReferences, useRouteWords, useWorkspaceDi
 export { formatDateLabel, formatReplyTimestamp, formatTimestamp } from './format'
 export { useAvatarSrc } from './avatars'
 export { mentionPeople } from './mentions'
+export { referenceSections, subscribeReferences, useReferenceFolder } from './references'
 export { useStarred } from '@/api/internal/starred'
 export { useMembership, type MembershipSeam } from '@/api/internal/membership'
 export type { StreamTerms } from '@/api/streamUnread'

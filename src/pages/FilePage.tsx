@@ -14,6 +14,7 @@ import {
   useFolderContents,
   useMembership,
   useOpenWorkFiles,
+  useReferenceFolder,
   useWorkspaceDirectory,
 } from '@/api'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
@@ -236,6 +237,8 @@ export function FilePage() {
   */
   const { state: team, reload: reloadTeam } = useFolderContents(navFile?.folder)
   const teamFiles = typeof team === 'object' && 'files' in team ? team.files : undefined
+  // This Folder's files are `[`'s first Files tier while the page is open, this one left out (PEE-21).
+  useReferenceFolder(team, fileAddress)
   /*
     The row that was clicked is selected at once when the team's listing has
     it, which it does for any bare file there — the listing is already in hand,

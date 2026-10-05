@@ -143,6 +143,16 @@ export function findMessageByEventId(eventId: string): ConversationMessage | und
   return undefined
 }
 
+/**
+ * The messages `[` offers, by where they sit (PEE-21): the open thread's are
+ * *here* and its file's are the *parent*; with no thread open, the file's are
+ * here and there is no parent.
+ */
+export function referenceConversations(): { here: ConversationMessage[]; parent: ConversationMessage[] } {
+  if (active) return { here: active.messages, parent: topic?.messages ?? [] }
+  return { here: topic?.messages ?? [], parent: [] }
+}
+
 export function registerActiveConversation(snapshot: ConversationSnapshot) {
   active = snapshot
 }

@@ -3,7 +3,7 @@ import Mention from '@tiptap/extension-mention'
 import { CaptionedReference, PersonMention, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
-import { useResolvedReferences } from '@/api'
+import { referenceSections, subscribeReferences, useResolvedReferences } from '@/api'
 import { mentionMessages } from '@/api/mentions'
 import { isObjectAddress } from '@/lib/textParsing'
 import { mentionDirectory } from '@/components/ui/MentionMenu'
@@ -124,15 +124,18 @@ export const MessageMention = CaptionedReference.extend({ name: 'messageMention'
 })
 
 /**
- * `[` — the messages on screen (RIC-11), inserted as a {@link MessageMention}.
- * Topics went with Convex (FOL-23). The Apps and Documents sections that used
- * to sit here were mock rows that only ever appeared in mock mode; they were
- * retired (Katerina, 2026-09-05). APP_FILES / DOCUMENT_FILES stay in
- * `src/data`: MessageBody still resolves them, so reference chips in existing
- * messages keep working.
+ * `[` — Messages, then Files (PEE-21), inserted as a {@link MessageMention}
+ * carrying the `nevent` or `naddr` the body is written with. The sections and
+ * their order are `referenceSections`'s; `items` is what a list without them
+ * would show. The Apps and Documents sections that used to sit here were mock
+ * rows that only ever appeared in mock mode; they were retired (Katerina,
+ * 2026-09-05). APP_FILES / DOCUMENT_FILES stay in `src/data`: MessageBody
+ * still resolves them, so reference chips in existing messages keep working.
  */
 export const PeekReferenceTrigger = ReferenceTrigger.configure({
   items: () => mentionMessages().map(toReferenceItem),
+  sections: referenceSections,
+  subscribe: subscribeReferences,
   nodeName: 'messageMention',
   ...FILES_MENU_COPY,
   icon: FILES_MENU_ICON,
