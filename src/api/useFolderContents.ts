@@ -86,6 +86,22 @@ export function prefetchFolderContents(resolveFolderContents: ResolveFolderConte
   void folderContentsCache.read(folder, () => loadFolderContents(resolveFolderContents, folder))
 }
 
+/**
+ * The Folders some component on screen is reading now, each with how to read
+ * it — what a write re-reads (`reloadFoldersOnScreen`). Counted, since the
+ * page and a section can read the same Folder.
+ */
+const onScreen = new Map<string, { count: number; load: () => Promise<ListingLoad<FolderContents, RelayFailureKind>> }>()
+
+/**
+ * Read again every Folder on screen — after a row's rename, move, delete or
+ * archive, when the page cannot know which open section drew the file (a
+ * moved file leaves one and arrives in another). Bounded by what is open.
+ */
+export function reloadFoldersOnScreen(): Promise<void> {
+  return Promise.all([...onScreen].map(([folder, { load }]) => folderContentsCache.read(folder, load))).then(() => undefined)
+}
+
 export function useFolderContents(folder: string | null | undefined): {
   state: FolderContentsState
   reload: () => Promise<void>
@@ -113,6 +129,16 @@ export function useFolderContents(folder: string | null | undefined): {
 
   useEffect(() => {
     if (folder) void folderContentsCache.revalidate(folder, () => load(folder))
+  }, [folder, load])
+
+  useEffect(() => {
+    if (!folder) return
+    onScreen.set(folder, { count: (onScreen.get(folder)?.count ?? 0) + 1, load: () => load(folder) })
+    return () => {
+      const held = onScreen.get(folder)
+      if (!held || held.count <= 1) onScreen.delete(folder)
+      else onScreen.set(folder, { ...held, count: held.count - 1 })
+    }
   }, [folder, load])
 
   useRefreshTriggers(() => {

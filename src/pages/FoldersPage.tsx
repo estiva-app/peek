@@ -5,7 +5,7 @@ import { Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderTree } from '@/components/views/FolderTree'
-import { useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
+import { reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { kindNoun } from '@/lib/archiveWords'
@@ -39,8 +39,19 @@ export function FoldersPage() {
   const { showToast } = useToast()
   const people = useWorkspaceDirectory()
   const me = useCurrentUser()?.id
-  // A row's menu, the file page's own (FOL-45): the same dialogs from either page.
-  const fileControls = useFileControls({ onMoved: () => void reload() })
+  /*
+    A row's menu, the file page's own (FOL-45): the same dialogs from either
+    page, and the column re-read after each, since the rows are the only place
+    the change shows here. A new topic opens, as the header's New topic does.
+  */
+  const refreshRows = () => void reloadFoldersOnScreen()
+  const fileControls = useFileControls({
+    onRenamed: refreshRows,
+    onArchived: refreshRows,
+    onDeleted: refreshRows,
+    onMoved: () => void Promise.all([reload(), reloadFoldersOnScreen()]),
+    onStarted: (created) => navigate(filePath(created.address, created.title)),
+  })
 
   /*
     A channel that was one of Peek's old topics holds that topic's
