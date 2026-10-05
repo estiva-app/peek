@@ -72,9 +72,9 @@ export const WithAnIssue: Story = {
 /**
  * The `/` menu, open (PEE-18).
  *
- * Format first, then Shortcuts, then Highlights. Each format shows the trigger
- * you would type to get it — `#` for a heading — which is the same language the
- * Shortcuts section speaks, rather than a column of Ctrl chords.
+ * Format first, then Insert: the triggers, then the Highlights (CON-29). Each
+ * format shows the trigger you would type to get it — `#` for a heading — which
+ * is the same language the trigger rows speak, rather than a column of Ctrl chords.
  *
  * Bold, italic and underline are deliberately absent: they apply to text you
  * have already selected, and this menu only opens on an empty composer. They

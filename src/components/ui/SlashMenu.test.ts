@@ -14,8 +14,8 @@ const labels = (sections: ReturnType<typeof filterSlashSections>) => sections.fl
 const filter = (q: string) => labels(filterSlashSections(SLASH_SECTIONS, q))
 
 describe('the menu, unfiltered', () => {
-  it('runs Format, then Shortcuts, then Highlights', () => {
-    expect(SLASH_SECTIONS.map((s) => s.label)).toEqual(['Format', 'Shortcuts', 'Highlights'])
+  it('runs Format, then Insert — the heading Ship uses (CON-29)', () => {
+    expect(SLASH_SECTIONS.map((s) => s.label)).toEqual(['Format', 'Insert'])
   })
 
   it('has the rows it always had, in order', () => {
