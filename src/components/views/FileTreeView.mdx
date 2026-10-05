@@ -1,0 +1,45 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as FileTreeViewStories from './FileTreeView.stories'
+
+<Meta of={FileTreeViewStories} />
+
+# FileTreeView
+
+One Folder's files as the column's rows: a glyph, the name, the dot, and the
+rows under a row when it is open.
+
+<Canvas of={FileTreeViewStories.Default} />
+
+## When
+
+- Inside a Folder's heading in the column (`FolderTree`), which hands it the
+  Folder's listing and the view's filter.
+- On the page of a Folder with no state that is no project's channel
+  (`FoldersPage`), where it lists what the channel holds.
+
+## When not
+
+- For a list of Folders. That is `FolderTreeView`, whose headings each hold
+  one of these.
+- Reading the listing yourself to draw it. Pass the `useFolderContents` state
+  as it is: loading, failed and empty are each their own line here.
+
+## How
+
+```tsx
+import { FileTreeView } from '@/components/views/FileTreeView'
+
+<FileTreeView state={state} filter={filter} selectedRef={ref} onSelect={openFile} onControl={fileControls.open} />
+```
+
+- `onControl` gives each row its ⋮ — rename, move, join, archive or unarchive,
+  and the rest its manifest declares. Without it the rows have none.
+- `holdsJoined` keeps, in Topics, the parent of a joined file the listing does
+  not hold — a Ship project, for an issue of yours.
+
+## What it owns
+
+- **Which rows a filter keeps**, and which open for a child's sake.
+- **The three lines a listing can be** instead of rows: still loading, could
+  not be read, and nothing in it (or nothing archived in it, in Archive).
+- **Reading a row's children** only when the row opens.
