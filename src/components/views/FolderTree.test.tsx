@@ -10,11 +10,12 @@
  * *when* the read is asked for, which no probe can.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import { FolderTree } from './FolderTree'
-import { channelDestination } from '@/lib/legacyTopicLinks'
+import { ToastProvider } from '@/lib/toast'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
 const CATH = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
@@ -72,7 +73,8 @@ const RECORD = '0804b906-1c2d-4e3f-8a5b-6c7d8e9f0a1b'
 const PROJECT_CHANNEL = '5b2e7c90-3d4a-4f1b-9c8e-7a6b5c4d3e2f'
 
 const folders: FolderSummary[] = [
-  { id: OTHER, name: 'Zebra', hasState: true },
+  // Its owners and admins may rename and archive it (SPEC §3.2); its channel is what an archive names.
+  { id: OTHER, name: 'Zebra', hasState: true, admins: [CATH], channel: `39000:relay:${OTHER}` },
   { id: TEAM, name: 'Peek', hasState: true },
   { id: TOPIC_FOLDER, name: 'A topic of ours', hasState: true },
   { id: PLACED, name: 'Aardvark, placed', hasState: false, listedIn: [TEAM] },
@@ -86,7 +88,8 @@ const reads = vi.hoisted(() => ({
   contents: vi.fn<(folder: string | null | undefined) => unknown>(),
   children: vi.fn<(naddr: string | null | undefined) => unknown>(),
 }))
-const dots = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
+const dots = vi.hoisted(() => ({ unread: {} as Record<string, boolean>, member: {} as Record<string, boolean> }))
+const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
 
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
@@ -105,7 +108,8 @@ vi.mock('@/api', async () => ({
     return { state: [], reload: async () => {} }
   },
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: dots.unread }),
+  useTeamUnread: () => ({ unread: dots.unread, member: dots.member }),
+  useCurrentUser: () => (viewer.id ? { id: viewer.id } : undefined),
 }))
 
 function Probe() {
@@ -142,7 +146,11 @@ beforeEach(() => {
   reads.contents.mockClear()
   reads.children.mockClear()
   dots.unread = {}
+  dots.member = {}
+  viewer.id = undefined
   window.localStorage.clear()
+  // The tree's mechanics are the Folders view's — every Folder. Topics is `describe('The two views')`.
+  window.localStorage.setItem('peek.tree.view', 'all')
 })
 afterEach(() => {
   window.localStorage.clear()
@@ -280,27 +288,96 @@ describe('where things lead', () => {
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f')
   })
 
-  it("a Folder that was one of Peek's topics opens where the topic went (FOL-23)", () => {
+  it('a click on a Folder only folds it, and leads nowhere — the Folders page and its Open folder are gone (5 October)', () => {
     mount()
-    fireEvent.click(within(section(TOPIC_FOLDER)).getByRole('button', { name: 'Open folder' }))
-    const url = screen.getByTestId('url').textContent
-    expect(url).toBe(channelDestination(TOPIC_FOLDER))
-    expect(url).not.toContain('/app/folders/')
+    expect(within(section(OTHER)).queryByRole('button', { name: 'Open folder' })).toBeNull()
+    expect(openOf(section(OTHER))).toBe('false')
+    fireEvent.click(fold('Zebra'))
+    expect(openOf(section(OTHER))).toBe('true')
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+})
+
+describe('the two views (Katerina, 5 October)', () => {
+  /** The column's title: the view, and the button that opens their menu. */
+  const title = (name: string) => screen.getByRole('button', { name })
+
+  it('opens on Topics: the Folders you are a member of something in, and the one holding the open file', () => {
+    window.localStorage.removeItem('peek.tree.view')
+    dots.member = { [TEAM]: true }
+    mount({ currentFolder: OTHER })
+    expect(title('Topics')).not.toBeNull()
+    expect(section(TEAM)).not.toBeNull()
+    // Not yours, but the open file is in it: where the tree says it is.
+    expect(section(OTHER)).not.toBeNull()
+    expect(section(TOPIC_FOLDER)).toBeNull()
   })
 
-  it('any other Folder opens on the Folders page, for now', () => {
+  it('the title opens a menu of the views, and the choice is remembered in this browser', async () => {
+    window.localStorage.removeItem('peek.tree.view')
     mount()
-    fireEvent.click(within(section(OTHER)).getByRole('button', { name: 'Open folder' }))
-    expect(screen.getByTestId('url').textContent).toBe(`/app/folders/${OTHER}`)
+    await userEvent.click(title('Topics'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Folders' }))
+    expect(title('Folders')).not.toBeNull()
+    expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
+    expect(section(TOPIC_FOLDER)).not.toBeNull()
   })
 
-  it('offers a new topic only when the page can start one', () => {
-    const onNewTopic = vi.fn()
-    const { unmount } = mount({ onNewTopic })
-    fireEvent.click(screen.getByRole('button', { name: 'New topic' }))
-    expect(onNewTopic).toHaveBeenCalledOnce()
-    unmount()
+  it('New folder is offered in Folders only — a Folder is made where Folders are; New topic in both', async () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
     mount()
-    expect(screen.queryByRole('button', { name: 'New topic' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'New folder' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'New topic' })).not.toBeNull()
+    await userEvent.click(title('Topics'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Folders' }))
+    expect(screen.getByRole('button', { name: 'New folder' })).not.toBeNull()
+  })
+
+  it("a Folder's own link turns the column to Folders, where it is", () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    mount({ currentFolder: OTHER, showFolder: true })
+    expect(title('Folders')).not.toBeNull()
+    expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
+  })
+
+  it('in Folders each heading wears the folder icon; in Topics none does', async () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount()
+    expect(section(OTHER).querySelector('.tabler-icon-folder')).not.toBeNull()
+    await userEvent.click(title('Folders'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
+    dots.member = {}
+    expect(document.querySelector('.tabler-icon-folder')).toBeNull()
+  })
+})
+
+describe("a Folder's own menu, on its heading", () => {
+  it('offers Start a topic to anyone in it, and nothing they may not do', async () => {
+    viewer.id = SHIP
+    mount()
+    await userEvent.click(within(section(OTHER)).getByRole('button', { name: 'More options for Zebra' }))
+    expect(await screen.findByRole('menuitem', { name: 'Start a topic' })).not.toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
+    // Every Folder the tree draws has state, and a Folder with state is never deleted (FOL-9).
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull()
+  })
+
+  it('offers Rename and Archive… to its owners and admins', async () => {
+    viewer.id = CATH
+    mount()
+    await userEvent.click(within(section(OTHER)).getByRole('button', { name: 'More options for Zebra' }))
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).not.toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Archive…' })).not.toBeNull()
+  })
+
+  it('Rename opens the dialog with the name in it', async () => {
+    viewer.id = CATH
+    // A dialog reports a refused write in a toast: the app's provider, as it has at its root.
+    render(<ToastProvider>{page({})}</ToastProvider>)
+    await userEvent.click(within(section(OTHER)).getByRole('button', { name: 'More options for Zebra' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
+    expect(await screen.findByRole('dialog', { name: 'Rename folder' })).not.toBeNull()
+    expect((screen.getByRole('textbox', { name: 'Folder name' }) as HTMLInputElement).value).toBe('Zebra')
   })
 })

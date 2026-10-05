@@ -346,6 +346,8 @@ beforeEach(() => {
   mentions.asked = []
   anchor.scrollTo.mockClear()
   window.localStorage.clear()
+  // The column in Folders, every Folder: these are the file page's tests. Topics is FolderTree's `describe('The two views')`.
+  window.localStorage.setItem('peek.tree.view', 'all')
   resetRecentsForTests()
 })
 

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconArrowUpRight, IconEdit } from '@tabler/icons-react'
-import { ListColumn, NavTree, NavTreeSection } from '@estiva-app/ui'
+import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
+import { ListColumn, Menu, MenuItem, NavTree, NavTreeSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -15,15 +15,27 @@ import {
   useTeamUnread,
 } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { IconButton } from '@/components/ui/IconButton'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { FileTreeView } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
-import { folderMatches, type TreeFilter } from '@/components/views/treeFilter'
+import { TopicState } from '@/components/ui/TopicState'
+import { CreateFolderDialog } from '@/components/CreateFolderDialog'
+import { StartTopicDialog } from '@/components/StartTopicDialog'
+import { FolderActionDialog } from '@/components/views/FolderActionDialog'
+import { useFolderActions } from '@/components/views/useFolderActions'
+import {
+  folderMatches,
+  treeFilterOf,
+  TREE_FILTERS,
+  TREE_VIEWS,
+  type TreeFilter,
+  type TreeShow,
+  type TreeView,
+} from '@/components/views/treeFilter'
 import { useRailClosed } from '@/layouts/railClosed'
 import { filePath } from '@/lib/objectUrl'
 import { useRememberedOpen } from '@/lib/rememberedOpen'
-import { useFolderPath } from '@/lib/useFolderPath'
+import { useToast } from '@/lib/toast'
 
 /**
  * The left column: the Folders the person is in, each a fold over its first
@@ -87,14 +99,19 @@ import { useFolderPath } from '@/lib/useFolderPath'
  */
 export function FolderTree({
   currentFolder,
+  showFolder = false,
   selectedRef,
   selectedParent,
-  onNewTopic,
   onControl,
   currentContents,
 }: {
   /** The Folder holding the open page. Its section starts open. */
   currentFolder?: string | null
+  /**
+   * The page is a Folder's own link (`/app/folders/<id>`): the column turns to
+   * Folders, where every Folder is, with that one open.
+   */
+  showFolder?: boolean
   /** `ref` of the open file, whose row is current. */
   selectedRef?: string
   /**
@@ -103,8 +120,6 @@ export function FolderTree({
    * project's child, and `peersOf` hides a child whose parent is listed.
    */
   selectedParent?: string | null
-  /** Offered in the header when the page can start a topic. */
-  onNewTopic?: () => void
   /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
   onControl?: (control: FileControl, file: ForeignObject) => void
   /**
@@ -116,7 +131,7 @@ export function FolderTree({
 }) {
   const railClosed = useRailClosed()
   const navigate = useNavigate()
-  const { folders, signedOut } = useFolders()
+  const { folders, signedOut, reload } = useFolders()
   /*
     The verdicts are judged over every Folder, the sections drawn for the
     top-level ones (FOL-22, PEE-31). A topic is a channel placed in its Folder
@@ -127,7 +142,7 @@ export function FolderTree({
     record channel is in `listFolders` too and is nobody's section:
     `topLevelFolders` says which are.
   */
-  const { unread, activity } = useTeamUnread(folders)
+  const { unread, activity, member } = useTeamUnread(folders)
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
   /*
     The section a file is drawn in (SID-2). A Ship project's Folder is its own
@@ -142,49 +157,242 @@ export function FolderTree({
     folders?.find((folder) => folder.id === currentFolder)?.listedIn?.find((id) =>
       topLevel?.some((top) => top.id === id),
     ) ?? currentFolder
-  const folderPath = useFolderPath()
+
+  /*
+    The two views (Katerina, 5 October): Topics, what you are a member of, and
+    Folders, every Folder. The person's choice is remembered in this browser;
+    a Folder's own link turns the column to Folders, where that Folder is.
+  */
+  const [view, setView] = useRememberedView()
+  useEffect(() => {
+    if (showFolder) setView('all')
+  }, [showFolder, currentFolder, setView])
+  const [show, setShow] = useState<TreeShow>('all')
+  const { menuFor, action, close } = useFolderActions()
+  /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
+  const [making, setMaking] = useState<'folder' | 'topic' | null>(null)
 
   return (
+    <>
+      <FolderColumn
+        view={view}
+        onViewChange={setView}
+        show={show}
+        onShowChange={setShow}
+        railClosed={railClosed}
+        signedOut={signedOut}
+        onNewFolder={() => setMaking('folder')}
+        onNewTopic={() => setMaking('topic')}
+      >
+        <FolderTreeView
+          folders={topLevel}
+          signedOut={signedOut}
+          unread={unread}
+          activity={activity}
+          member={member}
+          view={view}
+          filter={treeFilterOf(view, show)}
+          currentFolder={section}
+          selectedRef={selectedRef}
+          selectedParent={selectedParent}
+          onSelect={(file) => {
+            if (!file.address) return
+            /*
+              The row has the author the short link drops, so the page needs no
+              `#d` read to recover it (SID-2) — and with the address known at
+              once, it selects the clicked row before the file resolves.
+            */
+            rememberFileAddress(file.address)
+            navigate(filePath(file.address, file.slots.title?.value))
+          }}
+          menuFor={signedOut ? undefined : menuFor}
+          onControl={onControl}
+          currentContents={section === currentFolder ? currentContents : undefined}
+        />
+      </FolderColumn>
+      {/* Mounted only while open: the writes, and the toasts that report them, are theirs. */}
+      {action && <FolderActionDialog action={action} folders={folders} reload={reload} onClose={close} />}
+      {making && (
+        <HeaderDialog
+          making={making}
+          folders={folders}
+          topLevel={topLevel}
+          section={section ?? undefined}
+          reload={reload}
+          onClose={() => setMaking(null)}
+        />
+      )}
+    </>
+  )
+}
+
+/** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
+function HeaderDialog({
+  making,
+  folders,
+  topLevel,
+  section,
+  reload,
+  onClose,
+}: {
+  making: 'folder' | 'topic'
+  folders: FolderSummary[] | null
+  topLevel: FolderSummary[] | null
+  section?: string
+  reload: () => Promise<unknown>
+  onClose: () => void
+}) {
+  const navigate = useNavigate()
+  const { showToast } = useToast()
+  const { createFolder, createTopic } = useForeignObjects()
+  if (making === 'folder') {
+    return (
+      <CreateFolderDialog
+        onClose={onClose}
+        onCreate={async (name) => {
+          const result = await createFolder(name)
+          if (!result.ok) {
+            showToast({ label: result.reason, type: 'error' })
+            return false
+          }
+          /*
+            Re-read before navigating: the relay emits the `kind:39000` this
+            list reads as a side effect of accepting the create, but the list in
+            hand does not have it yet. The new Folder's link opens it, in Folders.
+          */
+          await reload()
+          navigate(`/app/folders/${result.id}`)
+          return true
+        }}
+      />
+    )
+  }
+  return (
+    <StartTopicDialog
+      /*
+        Started from the header there is no Folder in hand, so the dialog asks —
+        the Folders the tree draws, every one of which has state.
+      */
+      folders={topLevel ?? []}
+      defaultFolder={section}
+      onClose={onClose}
+      onCreate={async (title, chosen) => {
+        const folder = chosen ?? section
+        if (!folder) return false
+        // `hasState` from the summary `listFolders` answered, never guessed: a `kind:1852` against a Folder with no state empties it.
+        const hasState = folders?.find((candidate) => candidate.id === folder)?.hasState ?? false
+        const result = await createTopic({ folder, title, hasState })
+        if (!result.ok) {
+          showToast({ label: result.reason, type: 'error' })
+          return false
+        }
+        // Into the topic: under a filter the tree may not be showing it.
+        navigate(filePath(result.address, title))
+        return true
+      }}
+    />
+  )
+}
+
+const VIEW_KEY = 'peek.tree.view'
+
+/** The view, remembered in this browser; Topics until the person chooses. */
+function useRememberedView(): [TreeView, (next: TreeView) => void] {
+  const [view, setState] = useState<TreeView>(() => {
+    try {
+      return window.localStorage.getItem(VIEW_KEY) === 'all' ? 'all' : 'mine'
+    } catch {
+      return 'mine'
+    }
+  })
+  const setView = useMemo(
+    () => (next: TreeView) => {
+      setState(next)
+      try {
+        window.localStorage.setItem(VIEW_KEY, next)
+      } catch {
+        // A browser that blocks storage still switches; it forgets.
+      }
+    },
+    [],
+  )
+  return [view, setView]
+}
+
+/**
+ * The column's frame, handed what it shows — the half a story can draw. Its
+ * title is the view, and opens a menu of the views (Katerina, 5 October: a
+ * menu, because it scales — an archive view is next); its header holds New
+ * folder (in Folders only: a Folder is made where Folders are), New topic, and
+ * the filter. The rows are its children.
+ */
+export function FolderColumn({
+  view,
+  onViewChange,
+  show,
+  onShowChange,
+  railClosed,
+  signedOut,
+  onNewFolder,
+  onNewTopic,
+  children,
+}: {
+  view: TreeView
+  onViewChange: (next: TreeView) => void
+  show: TreeShow
+  onShowChange: (next: TreeShow) => void
+  railClosed: boolean
+  /** Nobody is signed in: no header actions, since every one of them acts as somebody. */
+  signedOut: boolean
+  onNewFolder: () => void
+  onNewTopic: () => void
+  children: ReactNode
+}) {
+  return (
     <ListColumn
-      title="Folders"
+      title={TREE_VIEWS.find((option) => option.value === view)?.label ?? 'Topics'}
+      titleMenu={TREE_VIEWS.map((option) => (
+        <MenuItem key={option.value} label={option.label} selected={view === option.value} onClick={() => onViewChange(option.value)} />
+      ))}
       collapsed={railClosed}
       actions={
-        onNewTopic && (
-          <IconButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
-            <IconEdit size={16} stroke={1.5} />
-          </IconButton>
+        // One strip: one Tab stop, arrows along it (UIG-14).
+        !signedOut && (
+          <Toolbar aria-label="Topic list actions" surface={false}>
+            {view === 'all' && (
+              <ToolbarButton tooltip="New folder" aria-label="New folder" onClick={onNewFolder}>
+                <IconFolderPlus size={16} stroke={1.5} />
+              </ToolbarButton>
+            )}
+            <ToolbarButton tooltip="New topic" aria-label="New topic" onClick={onNewTopic}>
+              <IconEdit size={16} stroke={1.5} />
+            </ToolbarButton>
+            <Menu
+              align="right"
+              trigger={
+                /*
+                  Pressed while Unread is chosen: the tree is hiding rows, and
+                  nothing else on screen says so.
+                */
+                <ToolbarButton tooltip="Filter" aria-label="Filter" pressed={show !== 'all'}>
+                  <IconFilter size={16} stroke={1.5} />
+                </ToolbarButton>
+              }
+            >
+              {TREE_FILTERS.map((option) => (
+                <MenuItem key={option.value} label={option.label} selected={show === option.value} onClick={() => onShowChange(option.value)} />
+              ))}
+            </Menu>
+          </Toolbar>
         )
       }
     >
       {/*
         The list scrolls, and it is the package's bar (D40): the package's
         `ListColumn`, the same column and insets as every other list column in
-        Peek (UIG-14, N9). The list column of a three-column page, so its
-        empties are sections (D51): the line alone, left, no icon. Loading is a
-        skeleton (§4.7).
+        Peek (UIG-14, N9). Its empties are sections (D51); loading is a skeleton.
       */}
-      <FolderTreeView
-        folders={topLevel}
-        signedOut={signedOut}
-        unread={unread}
-        activity={activity}
-        currentFolder={section}
-        selectedRef={selectedRef}
-        selectedParent={selectedParent}
-        onSelect={(file) => {
-          if (!file.address) return
-          /*
-            The row has the author the short link drops, so the page needs no
-            `#d` read to recover it (SID-2) — and with the address known at
-            once, it selects the clicked row before the file resolves.
-          */
-          rememberFileAddress(file.address)
-          navigate(filePath(file.address, file.slots.title?.value))
-        }}
-        onOpenFolder={(id) => navigate(folderPath(id))}
-        onControl={onControl}
-        currentContents={section === currentFolder ? currentContents : undefined}
-      />
+      {children}
     </ListColumn>
   )
 }
@@ -196,12 +404,13 @@ export function FolderTreeView({
   unread,
   activity = {},
   member = {},
+  view = 'all',
   filter = 'all',
   currentFolder,
   selectedRef,
   selectedParent,
   onSelect,
-  onOpenFolder,
+  menuFor,
   onControl,
   currentContents,
 }: {
@@ -221,13 +430,16 @@ export function FolderTreeView({
   activity?: Record<string, number>
   /** Whether each Folder holds a stream the person is a member of (FOL-41, §11.8). Missing means unjudged. */
   member?: Record<string, boolean>
+  /** Which view: in Folders, every heading wears the folder icon (Katerina, 5 October). */
+  view?: TreeView
   /** What the column is showing — `all` unless the header says otherwise (FOL-41). */
   filter?: TreeFilter
   currentFolder?: string | null
   selectedRef?: string
   selectedParent?: string | null
   onSelect: (file: ForeignObject) => void
-  onOpenFolder: (folderId: string) => void
+  /** A Folder's heading menu — `useFolderActions`. Absent, the headings have none. */
+  menuFor?: (folder: FolderSummary) => ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
   /** `currentFolder`'s listing, already read by the page — see `FolderTree`. */
   currentContents?: FolderContentsState
@@ -244,7 +456,9 @@ export function FolderTreeView({
   // which tells the person nothing.
   const ordered = [...folders]
     .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: 'base' }))
-    .filter((folder) => folderMatches(filter, folder.id, unread, member))
+    // The Folder holding the open file stays whatever the filter: a file opened
+    // from a link, a search or a notification is shown where it is (5 October).
+    .filter((folder) => folder.id === currentFolder || folderMatches(filter, folder.id, unread, member))
 
   /*
     A filter that matched nothing is not an empty workspace, and the two must
@@ -254,7 +468,7 @@ export function FolderTreeView({
     return (
       <EmptyState
         scope="section"
-        message={filter === 'unread' ? 'Nothing unread.' : 'Nothing yours yet. Join a file to hear about it.'}
+        message={filter === 'unread' || filter === 'mine-unread' ? 'Nothing unread.' : 'Nothing yours yet. Join a file to hear about it.'}
       />
     )
   }
@@ -272,7 +486,8 @@ export function FolderTreeView({
           selectedRef={selectedRef}
           selectedParent={selectedParent}
           onSelect={onSelect}
-          onOpen={() => onOpenFolder(folder.id)}
+          icon={view === 'all'}
+          menu={menuFor?.(folder)}
           onControl={onControl}
           preloaded={folder.id === currentFolder ? currentContents : undefined}
         />
@@ -290,7 +505,8 @@ function FolderSection({
   selectedRef,
   selectedParent,
   onSelect,
-  onOpen,
+  icon,
+  menu,
   onControl,
   preloaded,
 }: {
@@ -301,7 +517,10 @@ function FolderSection({
   selectedRef?: string
   selectedParent?: string | null
   onSelect: (file: ForeignObject) => void
-  onOpen: () => void
+  /** The folder icon before the name — in Folders, not in Topics. */
+  icon: boolean
+  /** The heading's ⋮: the Folder's own actions. */
+  menu?: ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
   /** This Folder's listing, already read by the page (FOL-4) — then this section reads nothing. */
   preloaded?: FolderContentsState
@@ -389,13 +608,13 @@ function FolderSection({
         is the file's, and only a file row carries one. What is new inside a
         shut Folder is what the header's Unread filter is for.
       */
-      actions={[
-        {
-          icon: <IconArrowUpRight size={16} stroke={1.5} />,
-          tooltip: 'Open folder',
-          onClick: onOpen,
-        },
-      ]}
+      /*
+        The Folder's own actions on its heading's ⋮ — Start a topic, Rename,
+        Archive… (Katerina, 5 October): the Folders page and its "Open folder"
+        are gone, and a click on the heading only folds it.
+      */
+      icon={icon ? <TopicState type="folder" /> : undefined}
+      menu={menu}
       // The pointer resting on a closed Folder, or the keyboard reaching it,
       // reads it ahead (SID-2): resting, not passing, and never twice.
       onIntent={prefetch}

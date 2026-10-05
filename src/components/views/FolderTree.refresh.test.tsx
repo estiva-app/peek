@@ -204,6 +204,8 @@ beforeEach(() => {
     }
   })
   window.localStorage.clear()
+  // The tree's mechanics are the Folders view's — every Folder. Topics is `describe('The two views')`.
+  window.localStorage.setItem('peek.tree.view', 'all')
 })
 afterEach(() => {
   seam.resolveFolderContents.mockReset()

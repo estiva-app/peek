@@ -28,7 +28,7 @@ const meta = {
     signedOut: false,
     unread: {},
     onSelect: () => {},
-    onOpenFolder: () => {},
+
   },
   decorators: [
     (Story) => (

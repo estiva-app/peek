@@ -1,5 +1,12 @@
 /**
- * A file's conversation is a page, and this one is the way to it — FOL-19.
+ * `/app/folders` and `/app/folders/:id` — the Topics column with no file open
+ * (Katerina, 5 October: the Folders page and its cards went; a Folder is
+ * managed from its heading's ⋮, and a Folder's link opens the column on
+ * Folders with it open). What the route still decides for itself is pinned
+ * here: old topic channels, DM channels, a stateless channel's Delete, and an
+ * archived Folder's notice.
+ *
+ * A file's conversation is a page, and this one is a way to it — FOL-19.
  *
  * FOL-17 opened the conversation in a pane here, named by `?file=<address>`,
  * and the address had to be *in this listing* for the pane to find the object.
@@ -153,7 +160,7 @@ vi.mock('@/api', async () => ({
   useFolders: () => ({
     folders: [
       { id: FOLDER, name: 'Folders', hasState: true, channel: `39000:${'f'.repeat(64)}:${FOLDER}`, admins: viewer.admins },
-      { id: TOPIC_CHANNEL, name: 'For testing', hasState: true },
+      { id: TOPIC_CHANNEL, name: 'For testing', hasState: true, admins: viewer.admins },
       // A Ship record channel: in the list the relay answers, never a section (PEE-31).
       { id: RECORD_CHANNEL, name: 'project-0804b906', hasState: false },
       // A bare channel: listed by its `39000`, with no state and no name.
@@ -203,10 +210,26 @@ function Probe() {
   return <output data-testid="url">{location.pathname + location.search}</output>
 }
 
+beforeEach(() => {
+  window.localStorage.clear()
+})
+afterEach(() => {
+  window.localStorage.clear()
+  viewer.admins.splice(0)
+})
+
+/** The column's title: the view, and the button that opens the views' menu (one Folder here is called Folders too). */
+const title = (name: string) => screen.getAllByRole('button', { name }).find((button) => button.getAttribute('aria-haspopup') === 'menu' && !button.closest('[data-nav-group]'))!
+/** A Folder heading's ⋮, opened. */
+async function folderMenu(name: string) {
+  await userEvent.click(screen.getByRole('button', { name: `More options for ${name}` }))
+}
+
 function mount(url: string) {
   return render(
     <MemoryRouter initialEntries={[url]}>
       <Routes>
+        <Route path="/app/folders" element={<><FoldersPage /><Probe /></>} />
         <Route path="/app/folders/:id" element={<><FoldersPage /><Probe /></>} />
         {/* Where a topic's Folder leads: the probe alone, so the move can be read. */}
         <Route path="*" element={<Probe />} />
@@ -230,16 +253,11 @@ describe('FoldersPage opens a file at its own address', () => {
     marks.thread.mockClear()
   })
 
-  it("a row's conversation control leads to the file's own page", async () => {
+  it("a Folder's link opens the column on Folders, with it open, and a row leads to the file's own page", async () => {
     relay.files = [topic]
     mount(`/app/folders/${FOLDER}`)
-    await userEvent.click(screen.getByRole('button', { name: /Conversation/i }))
-    /*
-      The address, uncut and with its colons intact. A colon is a legal path
-      character and `%3A` would make the one part of the URL carrying meaning
-      unreadable — RFC 0.5 §7.3's objection to bech32 in URLs, arrived at from
-      the other side.
-    */
+    expect(title('Folders')).toBeTruthy()
+    await userEvent.click(screen.getByText('FOL-15 test topic 2'))
     // A bare file's link is its short form (FOL-37): the slug and the d.
     expect(screen.getByTestId('url').textContent).toBe('/topic/fol-15-test-topic-2-0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f')
   })
@@ -251,10 +269,11 @@ describe('FoldersPage opens a file at its own address', () => {
     expect(screen.queryByText('project-0804b906')).toBeNull()
   })
 
-  it('opens no pane of its own — the conversation is a page now', () => {
+  it('draws no pane of its own and no cards: the right side waits for a file', () => {
     relay.files = [topic]
     mount(`/app/folders/${FOLDER}`)
-    expect(screen.queryByRole('button', { name: 'Close conversation' })).toBeNull()
+    expect(screen.getByText('No file selected')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Conversation/i })).toBeNull()
   })
 
   it('marks nothing read: a listing is not a reading', () => {
@@ -267,68 +286,61 @@ describe('FoldersPage opens a file at its own address', () => {
 })
 
 /*
-  A topic's channel is its Folder, so every topic is in this list beside the
-  Folders people made on purpose. Deleting one here reached only the relay:
-  the topic stayed in Peek with every publish into it refused and none of its
-  messages readable by pointer, and the dialog had promised nothing in the
-  folder would be deleted. Fourteen topics went that way in the two days after
-  the delete shipped. A topic's Folder is managed from the topic.
+  A topic's channel is its Folder. Deleting or renaming one from the Folders
+  page reached only the relay, and fourteen topics went that way (FOL-23). A
+  topic's Folder is managed from where the topic went.
 */
-describe('FoldersPage manages a topic’s Folder from where the topic went', () => {
-  it('offers neither the delete nor the rename on a Folder that was a topic, and leads to where it went', async () => {
+describe('a Folder that was one of Peek’s topics', () => {
+  it('its link leads to where the topic went', async () => {
     mount(`/app/folders/${TOPIC_CHANNEL}`)
-    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
-    // The title is drawn, and drawn once: the list row and the header share it.
-    expect(screen.getAllByText('For testing').length).toBeGreaterThan(0)
-    // A real link (UIG-14, F3): the address is on it, and a plain click routes in place.
-    const open = screen.getByRole('link', { name: "Open this folder's topic" })
-    // *For testing* was discarded and has no file, so it lands on its team (FOL-26).
-    expect(open.getAttribute('href')).toBe(channelDestination(TOPIC_CHANNEL))
-    await userEvent.click(open)
-    expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL))
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(channelDestination(TOPIC_CHANNEL)))
   })
 
-  afterEach(() => {
-    viewer.admins.splice(0)
-  })
-
-  it('offers the rename, and no delete, on a Folder with state', async () => {
+  it('its heading offers Start a topic only — never the rename or the archive, even to its admins', async () => {
     viewer.admins.push(viewer.me)
     mount(`/app/folders/${FOLDER}`)
-    // Once the relay has said the channel is not a DM (PEE-36).
-    expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
-    expect(screen.queryByRole('link', { name: "Open this folder's topic" })).toBeNull()
-    // FOL-9: every team, QA and New-folder Folder has state, and a 9008 hides
-    // everything filed in it — so it is not offered, and not even asked about.
-    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
-    expect(deletable.check).not.toHaveBeenCalledWith(FOLDER)
+    await folderMenu('For testing')
+    expect(await screen.findByRole('menuitem', { name: 'Start a topic' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
   })
+})
 
-  // SPEC §3.2: every reader ignores an archive from anybody but the Folder's owners and admins (MAN-17).
-  // The relay refuses a rename (`kind:9002`) from the same people, so it is not offered to them either.
-  it('offers Archive and the rename only to the Folder’s owners and admins', async () => {
+// SPEC §3.2: every reader ignores an archive from anybody but the Folder's owners and admins (MAN-17).
+// The relay refuses a rename (`kind:9002`) from the same people, so it is not offered to them either.
+describe("a Folder's heading offers its actions to who may take them", () => {
+  it('Start a topic to anyone; Rename and Archive… only to its owners and admins', async () => {
     const { unmount } = mount(`/app/folders/${FOLDER}`)
-    expect(await screen.findByRole('toolbar', { name: 'Folder actions' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Archive folder' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
-    expect(screen.getAllByText('Folders').length).toBeGreaterThan(0)
+    await folderMenu('Folders')
+    expect(await screen.findByRole('menuitem', { name: 'Start a topic' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Archive…' })).toBeNull()
     unmount()
 
     viewer.admins.push(viewer.me)
     mount(`/app/folders/${FOLDER}`)
-    expect(await screen.findByRole('button', { name: 'Archive folder' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Edit folder name' })).toBeTruthy()
+    await folderMenu('Folders')
+    expect(await screen.findByRole('menuitem', { name: 'Rename' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Archive…' })).toBeTruthy()
+  })
+
+  it('never Delete on a Folder with state, and never asks the relay about one (FOL-9)', async () => {
+    viewer.admins.push(viewer.me)
+    mount(`/app/folders/${FOLDER}`)
+    await folderMenu('Folders')
+    await screen.findByRole('menuitem', { name: 'Rename' })
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
+    expect(deletable.check).not.toHaveBeenCalledWith(FOLDER)
   })
 })
 
 /*
   FOL-9: a `kind:9008` hides every event carrying the Folder's `h`, Ship issues
-  included. Delete is drawn only once the relay has said the Folder holds
-  nothing, and the confirm says what happens rather than that nothing does.
+  included. A channel with no state is in no list, so its link is where it can
+  be deleted — drawn only once the relay has said it holds nothing.
 */
-describe('FoldersPage offers Delete only where it loses nothing but the Folder', () => {
+describe('a stateless channel’s link offers Delete only where it loses nothing but the Folder', () => {
   it('offers it on an empty channel the relay says may go, and says what goes', async () => {
     mount(`/app/folders/${BARE_CHANNEL}`)
     await userEvent.click(await screen.findByRole('button', { name: 'Delete folder' }))
@@ -355,30 +367,23 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
     await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(`/app/people/${PARTNER}`))
   })
 
-  it('offers no Folder actions on a DM with no single partner', async () => {
+  it('says a DM with no single partner is not a folder, and offers nothing on it', async () => {
     mount(`/app/folders/${GROUP_DM_CHANNEL}`)
-    await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(GROUP_DM_CHANNEL))
-    // Let the answer land before asserting what it left.
-    await new Promise((r) => setTimeout(r, 0))
+    expect(await screen.findByText('This is not a folder.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Delete folder' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Start a topic in this folder' })).toBeNull()
   })
 
   /*
     PEE-42: a DM the viewer is not in hides its `39000`, so the DM check says
-    "not a DM" — and the page offered rename, a topic and follow on it, titled
-    with the uuid. A channel the relay does not list as a Folder is not one.
+    "not a DM". A channel the relay does not list as a Folder is not one.
   */
-  it('offers no Folder actions on a channel the relay does not list', async () => {
+  it('says a channel the relay does not list is not a folder, and never shows its uuid', async () => {
     const unlisted = 'cccccccc-0000-4000-8000-000000000000'
     mount(`/app/folders/${unlisted}`)
     expect(await screen.findByText('This is not a folder.')).toBeTruthy()
     await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(unlisted))
-    await new Promise((r) => setTimeout(r, 0))
-    expect(screen.getByText('Not a folder')).toBeTruthy()
     expect(screen.queryByText(unlisted)).toBeNull()
     expect(screen.queryByRole('toolbar', { name: 'Folder actions' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Edit folder name' })).toBeNull()
   })
 
   it('does not call a Folder "not a folder" when the listing read failed', async () => {
@@ -388,9 +393,6 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
       await waitFor(() => expect(dms.forChannel).toHaveBeenCalledWith(FOLDER))
       await new Promise((r) => setTimeout(r, 0))
       expect(screen.queryByText('This is not a folder.')).toBeNull()
-      expect(screen.queryByText('Not a folder')).toBeNull()
-      // Unanswered is not "a Folder" either: no actions.
-      expect(screen.queryByRole('toolbar', { name: 'Folder actions' })).toBeNull()
     } finally {
       listing.failed = false
     }
@@ -398,31 +400,24 @@ describe('FoldersPage never treats a DM channel as a Folder', () => {
 })
 
 /*
-  A Folder row carries no dot (Miky, 2026-10-03): the union of its streams
-  (`teamHasUnread`, SPEC §11.3) decides what the Unread filter keeps and draws
-  nothing on the row itself, open or collapsed.
+  A Folder carries no unread mark (Miky, 2026-10-03; Katerina, 5 October):
+  neither a dot nor bold. The union of its streams decides what Unread keeps.
 */
-describe('FoldersPage draws no dot on a Folder row', () => {
+describe('FoldersPage draws no unread mark on a Folder', () => {
   afterEach(() => {
     teamUnread.unread = {}
   })
 
   it('draws none on a Folder the hook says is unread', () => {
     teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
-    const { container } = mount(`/app/folders/${TOPIC_CHANNEL}`)
-    expect(container.querySelectorAll('[data-nav-group] [data-unread]')).toHaveLength(0)
+    const { container } = mount(`/app/folders/${FOLDER}`)
+    expect(container.querySelectorAll('[data-nav-group] > div > div:first-child [data-unread]')).toHaveLength(0)
   })
 })
 
-describe('FoldersPage makes a Folder from its name', () => {
+describe('FoldersPage makes a Folder from its name, in Folders', () => {
   beforeEach(() => created.folder.mockClear())
 
-  /*
-    From the header's New folder, not from a row above the list (FOL-41). The
-    field is the same field and `Form`'s Enter rule is the same rule — what
-    moved is where it is, so the test opens the dialog and then asks exactly
-    what it asked before.
-  */
   it('sends on Enter in the name, and not on Shift+Enter', async () => {
     const user = userEvent.setup()
     mount(`/app/folders/${FOLDER}`)
@@ -434,18 +429,18 @@ describe('FoldersPage makes a Folder from its name', () => {
     expect(created.folder).toHaveBeenCalledWith('Launch notes')
   })
 
-  it('has no create row above the list', () => {
-    mount(`/app/folders/${FOLDER}`)
-    expect(screen.queryByRole('textbox', { name: 'New folder name' })).toBeNull()
+  it('offers no New folder in Topics — a Folder is made where Folders are', () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    mount('/app/folders')
+    expect(title('Topics')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'New folder' })).toBeNull()
   })
 })
 
 /*
-  The header's filter — FOL-41. What is judged is unit tested in
-  `treeFilter.test.ts`; here the question is that the control is wired to the
-  column, and that the two verdicts come from the two different maps. Both
-  Folders are sections (`topLevelFolders`), and the section's title is the
-  fold's own button, so a Folder that survived is a button with its name.
+  The header's filter and the two views — FOL-41, 5 October. What is judged is
+  unit tested in `treeFilter.test.ts`; here the question is that the controls
+  are wired to the column, and that the two verdicts come from the two maps.
 */
 describe('FoldersPage filters the column', () => {
   beforeEach(() => {
@@ -461,49 +456,44 @@ describe('FoldersPage filters the column', () => {
     relay.files = []
   })
 
-  async function choose(label: string) {
+  async function choose(label: string, url = `/app/folders/${FOLDER}`) {
     const user = userEvent.setup()
-    const view = mount(`/app/folders/${FOLDER}`)
-    await user.click(screen.getByRole('button', { name: 'Filter folders' }))
+    const view = mount(url)
+    await user.click(screen.getByRole('button', { name: 'Filter' }))
     await user.click(await screen.findByRole('menuitem', { name: label }))
     return view
   }
 
-  it('shows every Folder until the filter says otherwise', () => {
+  it('shows every Folder in Folders until the filter says otherwise', () => {
     mount(`/app/folders/${FOLDER}`)
-    expect(screen.getByRole('button', { name: /For testing/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'For testing' })).toBeTruthy()
   })
 
   it('Unread keeps the Folders with a dot and drops the rest', async () => {
     teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: false }
     await choose('Unread')
-    expect(screen.queryByRole('button', { name: /For testing/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'For testing' })).toBeNull()
   })
 
-  /*
-    The unjudged Folder is the one this pins: `RECORD_CHANNEL` is not a section
-    either way, but `TOPIC_CHANNEL` here has no entry in the map at all — no
-    viewer, a read that failed, a frontier that has not landed — and it draws
-    no dot, so `Unread` must not show it. A filter that kept it would be
-    showing a Folder the column is not claiming anything about.
-  */
   it('Unread drops a Folder it was told nothing about', async () => {
     teamUnread.unread = { [FOLDER]: true }
     await choose('Unread')
-    expect(screen.queryByRole('button', { name: /For testing/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'For testing' })).toBeNull()
   })
 
-  it('Mine reads the other verdict, not the dots', async () => {
+  it('Topics reads the other verdict, not the dots', async () => {
     // Lit, but nothing in it is the person's — the two questions are not the same one.
     teamUnread.unread = { [FOLDER]: true, [TOPIC_CHANNEL]: true }
     teamUnread.member = { [FOLDER]: false, [TOPIC_CHANNEL]: true }
-    await choose('Mine')
-    expect(screen.getByRole('button', { name: /For testing/ })).toBeTruthy()
-    expect(screen.queryAllByRole('button', { name: /^Folders/ })).toHaveLength(0)
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    mount('/app/folders')
+    expect(screen.getByRole('button', { name: 'For testing' })).toBeTruthy()
+    expect(document.querySelector(`[data-nav-group="${FOLDER}"]`)).toBeNull()
   })
 
   it('says the filter is hiding them, not that there are none', async () => {
-    await choose('Unread')
+    window.localStorage.setItem('peek.tree.view', 'all')
+    await choose('Unread', '/app/folders')
     expect(screen.getByText('Nothing unread.')).toBeTruthy()
   })
 
@@ -521,12 +511,7 @@ describe('FoldersPage filters the column', () => {
     expect(container.querySelector(`[data-file="${CSS.escape(child.ref)}"]`)).toBeTruthy()
   })
 
-  /*
-    The column only. The right pane is the Folder's own listing — everything
-    in it, drawn as cards — and the header's filter is the *tree's*, so a peer
-    hidden from the column is still on the page beside it.
-  */
-  it('drops the column rows that hold no match', async () => {
+  it('drops the rows that hold no match', async () => {
     relay.files = [parent, child, topic]
     badges.unread = { [child.ref]: true }
     teamUnread.unread = { [FOLDER]: true }
@@ -538,26 +523,20 @@ describe('FoldersPage filters the column', () => {
 })
 
 /*
-  Starting a topic from the header — FOL-41. The one thing that is new is that
-  the Folder is chosen here rather than being the open one, so what is pinned
-  is which Folder the write names and that `hasState` came from that Folder's
-  own summary rather than from the page's open one.
+  Starting a topic from the header — FOL-41. The Folder is chosen here, so what
+  is pinned is which Folder the write names, and that `hasState` came from that
+  Folder's own summary.
 */
 describe('FoldersPage starts a topic from the header', () => {
   beforeEach(() => created.topic.mockClear())
 
-  it('starts it in the open Folder by default', async () => {
+  it("starts it in the link's Folder by default", async () => {
     const user = userEvent.setup()
     mount(`/app/folders/${FOLDER}`)
     await user.click(screen.getByRole('button', { name: 'New topic' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
-    expect(created.topic).toHaveBeenCalledWith({
-      folder: FOLDER,
-      title: 'Launch plan',
-      parent: undefined,
-      hasState: true,
-    })
+    expect(created.topic).toHaveBeenCalledWith({ folder: FOLDER, title: 'Launch plan', hasState: true })
   })
 
   it('starts it in the Folder that was chosen', async () => {
@@ -568,19 +547,13 @@ describe('FoldersPage starts a topic from the header', () => {
     await user.click(await screen.findByRole('option', { name: 'For testing' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
-    expect(created.topic).toHaveBeenCalledWith({
-      folder: TOPIC_CHANNEL,
-      title: 'Launch plan',
-      parent: undefined,
-      hasState: true,
-    })
+    expect(created.topic).toHaveBeenCalledWith({ folder: TOPIC_CHANNEL, title: 'Launch plan', hasState: true })
   })
 
   /*
-    The record channel is not offered. `topLevelFolders` drops it — no folder
+    The record channel is not offered: `topLevelFolders` drops it — no folder
     state — and it is exactly the Folder a `kind:1852` must never be sent
-    against, so "only offer actions that can succeed" and the writer's
-    `hasState` rule are the same rule here.
+    against.
   */
   it('offers only the Folders the tree draws', async () => {
     const user = userEvent.setup()

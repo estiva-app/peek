@@ -34,14 +34,33 @@ import type { ForeignObject } from '@estiva-app/interop'
  * exists to avoid (`FolderTree`'s header). Such a Folder is drawn open with no
  * lit row in it; `All` shows its rows.
  */
-export type TreeFilter = 'all' | 'unread' | 'mine'
+export type TreeFilter = 'all' | 'unread' | 'mine' | 'mine-unread'
 
-/** The dropdown's rows, in order. */
-export const TREE_FILTERS: { value: TreeFilter; label: string }[] = [
+/**
+ * The column's two views, its title's menu (Katerina, 5 October): Topics, the
+ * files you are a member of — the filter Mine was — and Folders, every Folder,
+ * the explorer. The Folders page went; a Folder is managed from its heading.
+ */
+export type TreeView = 'mine' | 'all'
+
+/** The title menu's rows, in order: each view's name is the column's title. */
+export const TREE_VIEWS: { value: TreeView; label: string }[] = [
+  { value: 'mine', label: 'Topics' },
+  { value: 'all', label: 'Folders' },
+]
+
+/** The filter's rows, in order, in either view. */
+export type TreeShow = 'all' | 'unread'
+export const TREE_FILTERS: { value: TreeShow; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'unread', label: 'Unread' },
-  { value: 'mine', label: 'Mine' },
 ]
+
+/** What the tree hides, from the view and the filter: Topics and Unread together is `mine-unread`. */
+export function treeFilterOf(view: TreeView, show: TreeShow): TreeFilter {
+  if (view === 'mine') return show === 'unread' ? 'mine-unread' : 'mine'
+  return show
+}
 
 /**
  * Does this Folder survive the filter — judged over the two whole-Folder
@@ -60,6 +79,9 @@ export function folderMatches(
   member: Record<string, boolean>,
 ): boolean {
   if (filter === 'all') return true
+  // Both verdicts, for Topics and Unread: a Folder of yours with something new.
+  // Each is the whole Folder's, so its open rows may hold neither on one file.
+  if (filter === 'mine-unread') return unread[folderId] === true && member[folderId] === true
   return (filter === 'unread' ? unread : member)[folderId] === true
 }
 
@@ -81,7 +103,9 @@ export function fileMatches(
   isMember: (address: string) => boolean,
 ): boolean {
   if (filter === 'all') return true
+  const isUnread = (candidate: ForeignObject) => unread?.[candidate.ref] === true
+  const mine = (candidate: ForeignObject) => !!candidate.address && isMember(candidate.address)
   const one = (candidate: ForeignObject) =>
-    filter === 'unread' ? unread?.[candidate.ref] === true : !!candidate.address && isMember(candidate.address)
+    filter === 'unread' ? isUnread(candidate) : filter === 'mine' ? mine(candidate) : isUnread(candidate) && mine(candidate)
   return one(file) || children.some(one)
 }

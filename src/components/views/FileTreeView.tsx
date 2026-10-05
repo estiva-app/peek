@@ -114,7 +114,11 @@ export function FileTreeView({
     reached without a click, which is the point of the filter.
   */
   const peers = peersOf(folder.files)
+  // The open file, and every row above it, stay whatever the filter: the open
+  // file is where the tree says it is (FOL-4), in Topics too (5 October).
   const kept = peers.filter((file) =>
+    file.ref === selectedRef ||
+    !!expand?.includes(file.ref) ||
     fileMatches(filter, file, listedChildrenOf(file, folder.files), unread, isMember),
   )
   const openForChild =

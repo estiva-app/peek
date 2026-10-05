@@ -22,14 +22,23 @@ import { TextInput } from './ui/TextInput'
  * where it goes.
  */
 export function CreateFolderDialog({
+  rename,
   onCreate,
   onClose,
 }: {
+  /**
+   * The Folder's name today: the dialog renames it instead — "Rename folder",
+   * the name filled in, a Rename button (Katerina, 5 October): with the
+   * Folders page gone, a Folder is renamed from its heading's ⋮
+   * (`useFolderActions`), and Peek had no dialog for it — the page renamed in
+   * place.
+   */
+  rename?: string
   /** Resolves false to keep the dialog open — the caller has said why. */
   onCreate: (name: string) => Promise<boolean>
   onClose: () => void
 }) {
-  const [name, setName] = useState('')
+  const [name, setName] = useState(rename ?? '')
   const [creating, setCreating] = useState(false)
   const formId = useId()
   const trimmed = name.trim()
@@ -44,7 +53,7 @@ export function CreateFolderDialog({
 
   return (
     <DialogShell
-      title="New folder"
+      title={rename !== undefined ? 'Rename folder' : 'New folder'}
       onClose={onClose}
       footer={
         <>
@@ -52,16 +61,18 @@ export function CreateFolderDialog({
             Cancel
           </Button>
           <Button variant="primary" type="submit" form={formId} disabled={!trimmed || creating}>
-            {creating ? 'Creating…' : 'Create'}
+            {rename !== undefined ? (creating ? 'Renaming…' : 'Rename') : creating ? 'Creating…' : 'Create'}
           </Button>
         </>
       }
     >
       {/* The package Form (UIG-7): Enter in the field and the footer's Create send it the same way. */}
       <Form id={formId} busy={creating} onSubmit={create}>
-        <p className="text-body-2 text-text-secondary">
-          A place for files and conversations. Everyone you add to it can read what is in it.
-        </p>
+        {rename === undefined && (
+          <p className="text-body-2 text-text-secondary">
+            A place for files and conversations. Everyone you add to it can read what is in it.
+          </p>
+        )}
         {/*
           "Folder name", the label the row above the list carried — `Field`
           wires `aria-labelledby`, which wins over an `aria-label`, so the
