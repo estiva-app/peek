@@ -39,3 +39,8 @@ export const ATopic: Story = {
 export const AFolder: Story = {
   args: { title: 'Estiva HQ', what: 'folder', hides: ['3 projects', '6 topics'], staysVisible: ['2 files also in Steer'] },
 }
+
+/** Opened before the count is in: it says it is counting, and Archive waits (5 October). */
+export const Counting: Story = {
+  args: { title: 'Estiva HQ', what: 'folder', hides: null },
+}

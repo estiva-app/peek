@@ -113,7 +113,8 @@ describe('app smoke (seam wiring)', () => {
       ['/desk', '/app/desk'],
       ['/app', '/app/desk'],
       ['/folders', '/app/folders'],
-      ['/folders/925897ad-796e-4bc6-999c-ca19df26c4aa', '/app/folders/925897ad-796e-4bc6-999c-ca19df26c4aa'],
+      // Any Folder that was not one of the old topics: those lead on to their file (FOL-23).
+      ['/folders/5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a', '/app/folders/5d4c3b2a-1f0e-4d9c-8b7a-6e5f4d3c2b1a'],
       ['/people', '/app/people'],
       ['/people/alice?x=1', '/app/people/alice?x=1'],
     ])('%s lands on %s', (from, to) => {

@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
-import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
+import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
 import type { FileControl } from '@/components/views/useFileControls'
 import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
@@ -30,7 +30,7 @@ function TreeLine({ message }: { message: string }) {
 /**
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
  *
- * **Lines, not cards.** `FolderContentsView` draws every file as a
+ * **Lines, not cards.** `FolderContentsView` (gone since 5 October) drew every file as a
  * `ForeignObjectCard`, which is right at the Folder page's full width and
  * wrong in a 290px column: a Ship project's card wraps its whole description
  * into a tower and the tree it sits in disappears (Miky, 2026-09-14). This is
@@ -54,6 +54,7 @@ export function FileTreeView({
   activity = 0,
   onSelect,
   onControl,
+  holdsJoined,
 }: {
   state: FolderContentsState
   /**
@@ -83,6 +84,11 @@ export function FileTreeView({
    * without this has no menus, exactly as before.
    */
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /**
+   * Parents of joined files this listing does not hold — a Ship project, for
+   * an issue of yours (`useTeamUnread`): Topics keeps the row, closed.
+   */
+  holdsJoined?: ReadonlySet<string>
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined, activity)
@@ -90,7 +96,9 @@ export function FileTreeView({
     The same seam the rows' own join controls read, so a row kept by the
     `Mine` filter and the bell drawn on it cannot disagree in one render.
   */
-  const { isMember } = useMembership()
+  const membership = useMembership()
+  // Yours is a file you are a member of, or one that holds a file of yours the listing does not (5 October).
+  const isMember = (address: string) => membership.isMember(address) || !!holdsJoined?.has(address)
 
   if (state === 'loading') {
     return (
@@ -105,7 +113,7 @@ export function FileTreeView({
   }
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <TreeLine message="Nothing in this folder yet." />
+    return <TreeLine message={filter === 'archive' ? 'Nothing archived in this folder.' : 'Nothing in this folder yet.'} />
   }
 
   /*
@@ -114,11 +122,22 @@ export function FileTreeView({
     reached without a click, which is the point of the filter.
   */
   const peers = peersOf(folder.files)
+  // The open file, and every row above it, stay whatever the filter: the open
+  // file is where the tree says it is (FOL-4), in Topics too (5 October).
   const kept = peers.filter((file) =>
+    file.ref === selectedRef ||
+    !!expand?.includes(file.ref) ||
     fileMatches(filter, file, listedChildrenOf(file, folder.files), unread, isMember),
   )
+  /*
+    Opened for a child's sake only under Unread, so what is new is in view
+    without a click (FOL-41) — a closed row carries no dot for what is under it.
+    In Topics a row kept for a child's sake starts closed like any other
+    (Katerina, 5 October: a project opened for one topic of yours under it
+    showed every one of its issues). The open file's chain opens either way.
+  */
   const openForChild =
-    filter === 'all'
+    filter !== 'unread' && filter !== 'mine-unread'
       ? []
       : kept
           .filter((file) => !fileMatches(filter, file, [], unread, isMember))
@@ -230,7 +249,14 @@ function TreeRow({
   const selected = file.ref === selectedRef
   const isUnread = unread?.[file.ref] === true
   const type = file.kind === KIND_BARE_FILE ? 'topic' : 'file'
-  const hasMenu = offers || !!controls.rename || inside || (!!onControl && canMove(file)) || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!controls.archive
+  /*
+    Archive… on a listed row, Unarchive on an archived one (the Archive view,
+    5 October). A file hidden only *with* an archived parent is brought back
+    by unarchiving that parent, so it offers neither.
+  */
+  const archivedNow = file.archived
+  const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
+  const hasMenu = offers || !!controls.rename || inside || (!!onControl && canMove(file)) || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
   return (
     <NavItem
@@ -263,13 +289,14 @@ function TreeRow({
             memberAction={memberAction}
             onToggleMember={
               followKey && file.folder && memberAction
-                ? () => void membership.setMember(followKey, file.folder!, memberAction === 'join')
+                ? () =>
+                    // Through the page's controls, which say what happened in a toast; on its own (a story), straight to the seam.
+                    onControl ? onControl(memberAction, file) : void membership.setMember(followKey, file.folder!, memberAction === 'join')
                 : undefined
             }
             onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
-            /* A listed row is never archived — the listing leaves those out (FOL-46). */
-            archiveAction={controls.archive ? 'archive' : undefined}
-            onToggleArchive={controls.archive ? () => onControl?.('archive', file) : undefined}
+            archiveAction={archiveAction}
+            onToggleArchive={archiveAction ? () => onControl?.(archiveAction, file) : undefined}
           />
         ) : undefined
       }

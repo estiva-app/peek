@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
-import type { FolderContents, FolderSummary } from '@estiva-app/interop'
+import { isArchived, type FolderContents, type FolderSummary } from '@estiva-app/interop'
 import { RETRY_FIRST_MS, RETRY_MAX_MS, createRetryingRead } from '@estiva-app/platform'
 import { useForeignObjects } from '@/api'
 import {
@@ -45,8 +45,33 @@ export type FolderContentsState =
 
 /** Every Folder's contents this tab has read, by Folder id (SID-2). */
 const folderContentsCache = createListingCache<FolderContents, RelayFailureKind>()
+/** And what is archived in each, for the Archive view — a read of its own, kept apart from the lists. */
+const archivedContentsCache = createListingCache<FolderContents, RelayFailureKind>()
 
-type ResolveFolderContents = (folder: string) => Promise<FolderContents>
+type ResolveFolderContents = (folder: string, options?: { includeArchived?: boolean }) => Promise<FolderContents>
+
+/**
+ * What is archived in a Folder (Katerina, 5 October: the Archive view): its
+ * archived files and those hidden with an archived parent, or — for a Folder
+ * that is itself archived — everything in it, which went with it.
+ */
+function loadArchivedContents(
+  resolveFolderContents: ResolveFolderContents,
+  folder: string,
+  folderArchived: boolean,
+): Promise<ListingLoad<FolderContents, RelayFailureKind>> {
+  return withRateLimitRetry(() => resolveFolderContents(folder, { includeArchived: true }))
+    .then((contents) => ({
+      ok: true as const,
+      value: folderArchived ? contents : { ...contents, files: contents.files.filter((file) => isArchived(file)) },
+    }))
+    .catch((error: unknown) => {
+      const kind = relayFailureKind(error)
+      if (isOutage(kind)) recordReadFailure(kind)
+      console.warn('[nostr] archived contents read failed:', error)
+      return { ok: false as const, failure: kind as RelayFailureKind }
+    })
+}
 
 function loadFolderContents(
   resolveFolderContents: ResolveFolderContents,
@@ -86,12 +111,47 @@ export function prefetchFolderContents(resolveFolderContents: ResolveFolderConte
   void folderContentsCache.read(folder, () => loadFolderContents(resolveFolderContents, folder))
 }
 
-export function useFolderContents(folder: string | null | undefined): {
+/**
+ * The Folders some component on screen is reading now, each with how to read
+ * it — what a write re-reads (`reloadFoldersOnScreen`). Counted, since the
+ * page and a section can read the same Folder.
+ */
+const onScreen = new Map<string, { count: number; load: () => Promise<ListingLoad<FolderContents, RelayFailureKind>> }>()
+
+/**
+ * Read again every Folder on screen — after a row's rename, move, delete or
+ * archive, when the page cannot know which open section drew the file (a
+ * moved file leaves one and arrives in another). Bounded by what is open.
+ */
+export function reloadFoldersOnScreen(): Promise<void> {
+  return Promise.all(
+    [...onScreen].map(([key, { load }]) =>
+      key.startsWith(ARCHIVED_KEY) ? archivedContentsCache.read(key.slice(ARCHIVED_KEY.length), load) : folderContentsCache.read(key, load),
+    ),
+  ).then(() => undefined)
+}
+
+const ARCHIVED_KEY = 'archived:'
+
+/**
+ * One Folder's files — or, with `archived`, what is archived in it (the
+ * Archive view; `folderArchived` when the Folder itself is, so all of it).
+ */
+export function useFolderContents(
+  folder: string | null | undefined,
+  { archived = false, folderArchived = false }: { archived?: boolean; folderArchived?: boolean } = {},
+): {
   state: FolderContentsState
   reload: () => Promise<void>
 } {
   const { resolveFolderContents } = useForeignObjects()
-  const load = useCallback((target: string) => loadFolderContents(resolveFolderContents, target), [resolveFolderContents])
+  const load = useCallback(
+    (target: string) =>
+      archived ? loadArchivedContents(resolveFolderContents, target, folderArchived) : loadFolderContents(resolveFolderContents, target),
+    [resolveFolderContents, archived, folderArchived],
+  )
+  const cache = archived ? archivedContentsCache : folderContentsCache
+  const screenKey = folder ? (archived ? `${ARCHIVED_KEY}${folder}` : folder) : null
 
   /*
     Held past this component (SID-2): a Folder collapsed and opened again, or
@@ -105,15 +165,25 @@ export function useFolderContents(folder: string | null | undefined): {
     put it back. A first read for this Folder still says so, because there is
     then no answer to keep.
   */
-  const entry = useListing(folderContentsCache, folder ?? null)
+  const entry = useListing(cache, folder ?? null)
 
   const reload = useCallback(async () => {
-    if (folder) await folderContentsCache.read(folder, () => load(folder))
-  }, [folder, load])
+    if (folder) await cache.read(folder, () => load(folder))
+  }, [folder, load, cache])
 
   useEffect(() => {
-    if (folder) void folderContentsCache.revalidate(folder, () => load(folder))
-  }, [folder, load])
+    if (folder) void cache.revalidate(folder, () => load(folder))
+  }, [folder, load, cache])
+
+  useEffect(() => {
+    if (!folder || !screenKey) return
+    onScreen.set(screenKey, { count: (onScreen.get(screenKey)?.count ?? 0) + 1, load: () => load(folder) })
+    return () => {
+      const held = onScreen.get(screenKey)
+      if (!held || held.count <= 1) onScreen.delete(screenKey)
+      else onScreen.set(screenKey, { ...held, count: held.count - 1 })
+    }
+  }, [folder, screenKey, load])
 
   useRefreshTriggers(() => {
     if (folder) void reload()

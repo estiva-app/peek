@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
-import { useForeignObjects } from '@/api'
+import { useForeignObjects, useMembership } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
@@ -18,7 +18,7 @@ import { useToast } from '@/lib/toast'
  * to another Folder or under another file (FOL-45), or a new topic inside it
  * (FOL-4).
  */
-export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive'
+export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive' | 'join' | 'leave'
 
 const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 
@@ -124,6 +124,17 @@ export function useFileControls({
   const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
   const { showToast } = useToast()
+  const membership = useMembership()
+  /*
+    Read through a ref, like `onArchived` below: `open` stays the stable
+    function every row holds, and still joins with the membership of now —
+    held in its closure, it kept the first render's, which had not read what
+    the person is a member of, so every Join said "not read yet" (5 October).
+  */
+  const membershipNow = useRef(membership)
+  useEffect(() => {
+    membershipNow.current = membership
+  })
   const [dialog, setDialog] = useState<
     | { kind: 'details'; file: ForeignObject; editing: boolean }
     | { kind: 'confirm'; file: ForeignObject }
@@ -169,13 +180,54 @@ export function useFileControls({
         return false
       }
       archivedCallback.current?.(file, archived)
+      /*
+        Said, and Archive undone from the toast (Katerina, 5 October): the row
+        leaves its list, and Undo — or Unarchive in the Archive view — brings
+        it back.
+      */
+      const title = file.slots.title?.value ?? 'Untitled'
+      showToast(
+        archived
+          ? { label: `Archived “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchivedRef.current(file, false) }
+          : { label: `Unarchived “${title}”`, type: 'success' },
+      )
       return true
     },
-    [archiveFile, refuse],
+    [archiveFile, refuse, showToast],
   )
+  // Undo calls back into the same function, through a ref: it is still being defined.
+  const setArchivedRef = useRef(setArchived)
+  useEffect(() => {
+    setArchivedRef.current = setArchived
+  })
 
   const open = useCallback(
     (control: FileControl, file: ForeignObject) => {
+      /*
+        Join and Leave say what happened, at the bottom left like every toast
+        (Katerina, 5 October), and what it means for what lights up (SPEC
+        §11.8): a member hears every new message; anyone else only what names
+        them. Said only once the relay holds it — a refused change undoes
+        itself, and the toast says so instead.
+      */
+      if (control === 'join' || control === 'leave') {
+        const joining = control === 'join'
+        const title = file.slots.title?.value ?? 'this file'
+        if (!file.address || !file.folder) return refuse(`“${title}” is in no Folder Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
+        void membershipNow.current.setMember(file.address, file.folder, joining).then((outcome) =>
+          showToast(
+            outcome === true
+              ? {
+                  label: joining
+                    ? `Joined “${title}”: every new message shows as unread.`
+                    : `Left “${title}”: only messages that mention you show as unread.`,
+                  type: 'success',
+                }
+              : { label: `Nothing changed: “${title}” could not be ${joining ? 'joined' : 'left'}. ${outcome}`, type: 'error' },
+          ),
+        )
+        return
+      }
       if (control === 'delete') return setDialog({ kind: 'confirm', file })
       if (control === 'unarchive') return void setArchived(file, false)
       if (control === 'archive') {
@@ -251,7 +303,7 @@ export function useFileControls({
         })
       })()
     },
-    [refuse, resolveFolderContents, listFolders, archiveImpact, setArchived],
+    [refuse, resolveFolderContents, listFolders, archiveImpact, setArchived, showToast],
   )
 
   const move = async (state: MoveState, choice: MoveChoice): Promise<boolean> => {

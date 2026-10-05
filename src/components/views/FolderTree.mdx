@@ -1,0 +1,52 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Folders/FolderTree" />
+
+# FolderTree
+
+Peek's one left column for files: its title switches between Topics, Folders
+and Archive, and each Folder is a folding heading with its own ⋮.
+
+**Seen in** — *Pages/In the shell* (its Topics, Folders and Archive stories), which draw
+its two halves with a fixture (`FolderColumn` and `FolderTreeView`), and
+*Folders/FolderTreeView* for the tree alone.
+
+## When
+
+- On a page that shows the column: the Topics page with no file open
+  (`FoldersPage`) and a file's page (`FilePage`).
+- Pass `onControl` from the page's `useFileControls`, so a row's ⋮ opens the
+  page's dialogs and the page re-reads what changed.
+
+## When not
+
+- In a story or a test that has no relay. This reads; draw `FolderColumn` with
+  `FolderTreeView` and a fixture instead.
+- Keeping a list of Folders of your own beside it. Every Folder action is on
+  its heading's ⋮ (`useFolderActions`): Start a topic, Rename, Archive…, and
+  Unarchive in Archive.
+
+## How
+
+```tsx
+import { FolderTree } from '@/components/views/FolderTree'
+
+<FolderTree currentFolder={id} showFolder={!!id} onControl={fileControls.open} />
+```
+
+- `showFolder` says the page is a Folder's own link: the column turns to
+  Folders (Archive, for an archived one) for this visit only, opens that
+  Folder and scrolls to it.
+- `selectedRef` and `selectedParent` keep the open file visible whatever the
+  view and the filter.
+
+## What it owns
+
+- **The views.** Topics is every file you joined or made; Folders is every
+  Folder; Archive is every Folder again, each read for what is archived in it
+  when it opens. The choice between Topics and Folders is saved in this
+  browser; Archive and a link's choice are not.
+- **What is read, and when.** The Folder list once, one batched read of every
+  Folder's streams, and nothing more until a heading opens.
+- **The header.** New folder in Folders only, New topic and the filter in
+  Topics and Folders, nothing in Archive.

@@ -65,8 +65,9 @@ describe('ArchivedNotice', () => {
   it('an archived file shows who archived it and its resolution, and offers Unarchive', async () => {
     const onUnarchive = vi.fn()
     render(<ArchivedNotice archive={{ by: 'x', at: 1_790_000_000, resolution: 'Done.' }} by="QA-1" onUnarchive={onUnarchive} />)
-    expect(screen.getByRole('status')).toHaveTextContent('Archived by QA-1')
-    expect(screen.getByText('Done.')).toBeInTheDocument()
+    expect(screen.getByText(/^Archived by QA-1/)).toBeInTheDocument()
+    // The resolution as a quote under the line (5 October, her pick C).
+    expect(screen.getByText('Done.').tagName).toBe('BLOCKQUOTE')
     await userEvent.click(screen.getByRole('button', { name: 'Unarchive' }))
     expect(onUnarchive).toHaveBeenCalled()
   })
@@ -81,7 +82,8 @@ describe('ArchivedNotice', () => {
         onOpenParent={() => {}}
       />,
     )
-    expect(screen.getByRole('status')).toHaveTextContent('Archived with its project by QA-1')
+    expect(screen.getByText(/^Archived with its project by QA-1/)).toBeInTheDocument()
+    expect(document.querySelector('blockquote')).toBeNull()
     expect(screen.getByRole('button', { name: 'Open project' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
   })
@@ -98,5 +100,11 @@ describe('ConfirmDelete', () => {
   it('offers nothing more where there is no archive', () => {
     render(<ConfirmDelete what="topic" onConfirm={() => {}} onClose={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Archive instead' })).toBeNull()
+  })
+
+  it('opens before the count is in: says it is counting, and Archive waits for it', () => {
+    render(<ArchiveDialog title="T" what="folder" hides={null} onClose={() => {}} onArchive={async () => true} />)
+    expect(screen.getByText('Counting what archiving this folder would hide…')).not.toBeNull()
+    expect((screen.getByRole('button', { name: 'Archive folder' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -53,7 +53,8 @@ export interface MembershipSync {
   /** Unix seconds a created file's membership starts at. */
   floor: number
   /** Join a file, or leave it: local at once, then published. Resolves when the relay has answered. */
-  setMember: (file: string, folder: string, member: boolean) => Promise<void>
+  /** `true` once the relay holds the change; otherwise why nothing changed, in words a toast can show. */
+  setMember: (file: string, folder: string, member: boolean) => Promise<true | string>
   /** Re-read the relay, discarding nothing that is still being published. */
   refresh: () => Promise<void>
 }
@@ -91,7 +92,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
   /** Whether each read has answered at least once — `state` leaves `unknown` only when both have. */
   const landed = useRef({ membership: false, mutes: false })
   /** Publishes in flight, chained so none is dropped and none overtakes another. */
-  const chain = useRef<Promise<void>>(Promise.resolve())
+  const chain = useRef<Promise<unknown>>(Promise.resolve())
   /** A read that lands after a newer local change must not undo it. */
   const generation = useRef(0)
   /**
@@ -163,16 +164,16 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       const seam = seamFrom(relayUrl)
       if (!seam) {
         console.warn('[membership] not changed: no relay origin or no live Estiva ID token in this tab')
-        return
+        return 'You are not signed in to the relay in this tab.'
       }
       if (state === 'unknown') {
         console.warn('[membership] not changed: the relay has not said what the viewer is a member of')
-        return
+        return 'Peek has not read what you are a member of yet.'
       }
       if (!FOLDER_ID.test(folder)) {
         // `buildMembershipChange` would throw; say so now rather than flipping the control and flipping it back.
         console.warn('[membership] not changed: the file has no Folder to name in the change:', folder)
-        return
+        return 'This file is in no Folder Peek can name.'
       }
       generation.current++
       const before = files.get(file)
@@ -181,7 +182,8 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       pending.current.set(file, { membership: local })
       setFiles((prev) => new Map(prev).set(file, local))
 
-      const run = async () => {
+      const run = async (): Promise<true | string> => {
+        let why = 'It could not be sent. Try again.'
         try {
           const unsigned = buildMembershipChange(seam.pubkey, now, { file, folder, person: seam.pubkey, member })
           const signed: SignedEvent = await signViaEstivaId(unsigned, seam.accessToken, seam.pubkey)
@@ -189,11 +191,14 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
           if (result.ok) {
             const held = pending.current.get(file)
             if (held) held.storedAt = Date.now()
-            return
+            return true
           }
           console.warn('[membership] publish failed:', result.reason)
+          // The relay's own words stay in the console (above); the toast says it plainly.
+          why = 'The relay said no. Try again.'
         } catch (error) {
           console.warn('[membership] publish threw:', error)
+          why = 'It could not be sent. Try again.'
         }
         // Refused: the control said something the relay does not hold. Undo this change alone.
         pending.current.delete(file)
@@ -203,9 +208,12 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
           else next.delete(file)
           return next
         })
+        return why
       }
-      chain.current = chain.current.then(run, run)
-      await chain.current
+      // One change at a time, in order; this call's own answer is what it returns.
+      const mine = chain.current.then(run, run)
+      chain.current = mine
+      return mine
     },
     [relayUrl, state, files],
   )

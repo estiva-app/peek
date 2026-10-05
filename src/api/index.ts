@@ -59,6 +59,7 @@ export { PeekDataProvider } from './store'
 export { RELAY_URL, hasRelay } from './relayUrl'
 export {
   prefetchFolderContents,
+  reloadFoldersOnScreen,
   topLevelFolders,
   useFolderContents,
   useFolders,

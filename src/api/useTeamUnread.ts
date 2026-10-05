@@ -58,12 +58,19 @@ const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
 export function useTeamUnread(folders: readonly FolderSummary[] | null | undefined): {
   unread: Record<string, boolean>
   /**
-   * Whether each Folder holds a stream the person is a member of — the tree's
-   * `Mine` filter (FOL-41, CON-19), judged over the messages already read
-   * for the dots. Same rule about absence as `unread`: a Folder with no entry
-   * was not judged, and a filter keeps it rather than hiding it on a guess.
+   * Whether each Folder holds a file the person is a member of — the Topics
+   * view (FOL-41, CON-19): one its state lists, one talked about in it, or an
+   * unlisted one whose parent it lists. Missing means not theirs, or not
+   * judged yet — `ready.member` says which.
    */
   member: Record<string, boolean>
+  /**
+   * The parents of joined files no state lists — a project, for an issue of
+   * yours — so Topics keeps that row though the file is not in the listing.
+   */
+  holdsJoined: ReadonlySet<string>
+  /** Whether `member` and `unread` have been judged yet: a filter waits for its own. */
+  ready: { member: boolean; unread: boolean }
   /**
    * How many times the socket has reported something said in each Folder, or
    * in a Folder it lists — a number that changes, for an open section's rows
@@ -182,7 +189,22 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     Until a parent is known the file stays where it is talked about.
   */
   const unlisted = useMemo(() => unlistedFiles(held.streams, folders ?? []), [held, folders])
-  const parents = useFileParents(unlisted)
+  /*
+    And every file the person joined that no state lists — an issue, listed
+    through its project — whether or not anyone has talked in it: Topics is
+    all of what they joined (Katerina, 5 October), and the parent is where it
+    is drawn. The same read, the same cache: one more address per such file.
+  */
+  const listedAnywhere = useMemo(
+    () => new Set((folders ?? []).flatMap((folder) => (folder.hasState ? (folder.addresses ?? []) : []))),
+    [folders],
+  )
+  const joinedUnlisted = useMemo(
+    () => membership.memberFiles.filter((address) => !listedAnywhere.has(address)),
+    [membership.memberFiles, listedAnywhere],
+  )
+  const asked = useMemo(() => [...unlisted, ...joinedUnlisted], [unlisted, joinedUnlisted])
+  const parents = useFileParents(asked)
   const placed = useMemo(
     () => ({ at: held.at, ...placeStreams(held.streams, folders ?? [], parents) }),
     [held, folders, parents],
@@ -287,5 +309,47 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
     return out
   }, [signalled, folders, placed.handed])
 
-  return useMemo(() => ({ ...judged, activity }), [judged, activity])
+  /*
+    Topics from what the person joined, not only from what was said (Katerina,
+    5 October): the streams above see a joined file only once somebody talks
+    in it inside the horizon, so a quiet file, or a topic just started, was
+    missing. A Folder is theirs when its state lists a file they are a member
+    of — joined, or made by them — or the parent of a joined file no state
+    lists; and a Folder listed inside another makes that one theirs, as above.
+  */
+  const { state: membershipState, isMember } = membership
+  const mine = useMemo(() => {
+    const member = { ...judged.member }
+    const holdsJoined = new Set<string>()
+    if (membershipState === 'unknown') return { member, holdsJoined }
+    for (const address of joinedUnlisted) {
+      const parent = parents[address]
+      if (parent) holdsJoined.add(parent)
+    }
+    for (const folder of folders ?? []) {
+      if (folder.hasState && folder.addresses?.some((address) => holdsJoined.has(address) || isMember(address))) {
+        member[folder.id] = true
+      }
+    }
+    for (const folder of folders ?? []) {
+      if (!member[folder.id] || !folder.listedIn) continue
+      for (const container of folder.listedIn) member[container] = true
+    }
+    return { member, holdsJoined }
+  }, [judged.member, membershipState, isMember, joinedUnlisted, parents, folders])
+
+  /*
+    Whether each verdict has been judged yet: Topics waits for membership, and
+    Unread for the read state too. Until then a filtered column is a skeleton,
+    not "Nothing yours yet".
+  */
+  const ready = useMemo(
+    () => ({ member: membership.state !== 'unknown', unread: membership.state !== 'unknown' && frontier.ready }),
+    [membership.state, frontier.ready],
+  )
+
+  return useMemo(
+    () => ({ unread: judged.unread, member: mine.member, holdsJoined: mine.holdsJoined, ready, activity }),
+    [judged.unread, mine, ready, activity],
+  )
 }

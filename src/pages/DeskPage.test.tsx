@@ -11,7 +11,8 @@
  * leaves `/app/desk`.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { LastSelectionProvider } from '@/lib/lastSelection'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DebugProvider } from '@/lib/debug'
 import { filePath } from '@/lib/objectUrl'
@@ -84,15 +85,24 @@ function Probe() {
   return <output data-testid="url">{location.pathname + location.search}</output>
 }
 
+/** A way off Desk and back, plain: what the rail does. */
+function Go({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate()
+  return <button onClick={() => navigate(to)}>{label}</button>
+}
+
 function mount(url = '/app/desk') {
   return render(
     <DebugProvider>
-      <MemoryRouter initialEntries={[url]}>
-        <Routes>
-          <Route path="/app/desk" element={<><DeskPage /><Probe /></>} />
-          <Route path="*" element={<Probe />} />
-        </Routes>
-      </MemoryRouter>
+      <LastSelectionProvider>
+        <MemoryRouter initialEntries={[url]}>
+          <Routes>
+            <Route path="/app/desk" element={<><DeskPage /><Go to="/app/people" label="Leave Desk" /><Probe /></>} />
+            <Route path="/app/people" element={<><Go to="/app/desk" label="Back to Desk" /><Probe /></>} />
+            <Route path="*" element={<Probe />} />
+          </Routes>
+        </MemoryRouter>
+      </LastSelectionProvider>
     </DebugProvider>,
   )
 }
@@ -156,6 +166,17 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
     expect(screen.queryByTestId('file-pane')).toBeNull()
     expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
     expect(pane.asked.at(-1)).toBeNull()
+  })
+
+  it('the DM Desk had open is open again when the person comes back (5 October)', () => {
+    mount(deskWith(WIDGETS_FILE))
+    fireEvent.click(screen.getByText('Ana'))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
+    // Leave Desk, and come back to it.
+    fireEvent.click(screen.getByRole('button', { name: 'Leave Desk' }))
+    expect(url()).toBe('/app/people')
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Desk' }))
+    expect(screen.getByTestId('dm-pane').textContent).toBe('dm-1')
   })
 
   it('removing the open file from Open work closes it', () => {

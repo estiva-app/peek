@@ -27,8 +27,12 @@ export interface ArchiveDialogProps {
   title: string
   /** What it is, in a word: "topic", "project", "issue", "folder". */
   what: string
-  /** What goes out of the lists with it, already counted and worded — "14 issues". Empty: nothing else. */
-  hides: string[]
+  /**
+   * What goes out of the lists with it, already counted and worded — "14
+   * issues". Empty: nothing else. `null` while it is still being counted: the
+   * dialog opens at once and says so, and Archive waits for the count.
+   */
+  hides: string[] | null
   /** What it lists that stays visible somewhere else, worded — "2 files also in Steer". */
   staysVisible?: string[]
   onClose: () => void
@@ -57,24 +61,27 @@ export function ArchiveDialog({ title, what, hides, staysVisible = [], onClose, 
           <Button variant="muted" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form={formId} disabled={busy}>
+          <Button variant="primary" type="submit" form={formId} disabled={busy || hides === null}>
             {`Archive ${what}`}
           </Button>
         </>
       }
     >
       {/* The package Form (UIG-7): Ctrl+Enter archives from the resolution; Enter there is a new line. */}
-      <Form id={formId} busy={busy} onSubmit={() => void archive()}>
+      <Form id={formId} busy={busy} onSubmit={() => void (hides !== null && archive())}>
         {/* The words are one block, 8px apart, before the field; the Form puts 24px between them, as MoveDialog does (1 October). */}
         <div className="flex flex-col gap-2 text-body-2 text-text-primary">
           <p>
-            {hides.length
+            {hides === null
+              ? `Counting what archiving this ${what} would hide…`
+              : hides.length
               ? `This hides the ${what} and ${listOf(hides)} from every list, in Peek and in Ship.`
               : `This hides the ${what} from every list, in Peek and in Ship.`}
           </p>
           {staysVisible.length > 0 && <p>{`${listOf(staysVisible)} stay visible there.`}</p>}
           <p className="text-text-secondary">
-            Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.
+            {/* Peek's own last line, not Ship's (5 October): Peek has an Archive view to point at. */}
+            Nothing is deleted: it waits under Archive, where Unarchive brings everything back as it was.
           </p>
         </div>
         <Field label="Resolution (optional)">

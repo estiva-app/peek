@@ -11,8 +11,14 @@ import { PeoplePageView, type PeopleListItem } from './PeoplePage'
 import { DeskPageView, type DeskRow } from './DeskPage'
 import { FoldersPageView } from './FoldersPage'
 import { FilePageView } from './FilePage'
-import { FolderTreeView } from '@/components/views/FolderTree'
+import { FolderColumn, FolderTreeView } from '@/components/views/FolderTree'
+import type { FolderSummary } from '@estiva-app/interop'
+import type { TreeShow, TreeView } from '@/components/views/treeFilter'
+import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
+import { Panel } from '@estiva-app/ui'
+import { ArchivedNotice } from '@/components/ArchivedNotice'
+import { DateDivider } from '@/components/ui/DateDivider'
 
 const noop = () => {}
 
@@ -225,77 +231,89 @@ export const DeskLoading: Story = {
 }
 
 /**
- * The Folders page. The tree is `FolderTreeView`, so its three states — signed
- * out, still loading, and genuinely none — are its own page's to show; here it
- * is the header's three actions that matter (FOL-41). Making a folder is a
- * dialog now, not a row above the list, so the mid-create state is
- * `Overlays/CreateFolderDialog`'s and not this page's.
+ * The Topics column with a fixture — `FolderColumn` and `FolderTreeView`, the
+ * two halves the wired `FolderTree` puts together. Its title is the view, and
+ * opens a menu of the views; its header holds New folder (in Folders only),
+ * New topic and the filter (Katerina, 5 October). An open Folder's rows are a
+ * relay read, so here every Folder is folded or reads as empty.
+ */
+function Column({ view = 'mine', show = 'all', signedOut = false, folders = FOLDERS, unread = {}, member = {}, currentFolder }: {
+  view?: TreeView
+  show?: TreeShow
+  signedOut?: boolean
+  folders?: FolderSummary[] | null
+  unread?: Record<string, boolean>
+  member?: Record<string, boolean>
+  currentFolder?: string
+}) {
+  return (
+    <FolderColumn view={view} onViewChange={noop} show={show} onShowChange={noop} railClosed={false} signedOut={signedOut} onNewFolder={noop} onNewTopic={noop}>
+      <FolderTreeView
+        folders={folders}
+        signedOut={signedOut}
+        unread={unread}
+        member={member}
+        view={view}
+        filter={treeFilterOf(view, show)}
+        currentFolder={currentFolder}
+        onSelect={noop}
+        menuFor={() => null}
+      />
+    </FolderColumn>
+  )
+}
+
+/** Every Folder the person is a member of something in. */
+const MINE = Object.fromEntries(FOLDERS.map((folder) => [folder.id, true]))
+
+/**
+ * Topics, where the rail's Topics opens: what you are a member of, grouped by
+ * Folder. Click "Topics ⌄" for the other view.
+ */
+export const Topics: Story = {
+  render: () => <FoldersPageView nav={<Column member={MINE} />} rightPanel={<EmptyState message="No file selected" />} />,
+}
+
+/**
+ * Folders: every Folder, each with the folder icon, the explorer. New folder
+ * is in this view's header only. A Folder's own link lands here, with it open.
  */
 export const Folders: Story = {
+  render: () => <FoldersPageView nav={<Column view="all" />} rightPanel={<EmptyState message="No file selected" />} />,
+}
+
+/**
+ * Archive: every Folder, the archived ones too, each closed — opening one
+ * reads what is archived in it, and an archived Folder's ⋮ is Unarchive. No
+ * header actions: nothing is made or filtered here (Katerina, 5 October).
+ */
+export const Archive: Story = {
   render: () => (
     <FoldersPageView
-      railClosed={false}
-      signedOut={false}
-      folders={FOLDERS}
-      unread={{}}
-      member={{}}
-      filter="all"
-      onFilterChange={noop}
-      onNewFolder={noop}
-      onNewTopic={noop}
-      onSelect={noop}
-      onOpenFolder={noop}
-      rightPanel={<EmptyState message="No folder selected" />}
+      nav={<Column view="archive" folders={[...FOLDERS, { id: '0a9b8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d', name: 'Old launch plan', hasState: true, archived: { by: 'a'.repeat(64), at: 1 } }]} />}
+      rightPanel={<EmptyState message="No file selected" />}
     />
   ),
 }
 
 /**
- * **Signed out.** The create row is gone entirely — not disabled — because
- * there is nothing to create into, and the tree says so in its own words. The
- * first version of this page told a signed-out viewer "No folders yet" about a
- * workspace holding eighty-one of them.
+ * **Signed out.** No header actions — every one of them acts as somebody — and
+ * the tree says so in its own words. The first version of this page told a
+ * signed-out viewer "No folders yet" about a workspace holding eighty-one.
  */
 export const FoldersSignedOut: Story = {
-  render: () => (
-    <FoldersPageView
-      railClosed={false}
-      signedOut
-      folders={null}
-      unread={{}}
-      member={{}}
-      filter="all"
-      onFilterChange={noop}
-      onNewFolder={noop}
-      onNewTopic={noop}
-      onSelect={noop}
-      onOpenFolder={noop}
-      rightPanel={<EmptyState message="No folder selected" />}
-    />
-  ),
+  render: () => <FoldersPageView nav={<Column view="all" signedOut folders={null} />} rightPanel={<EmptyState message="No file selected" />} />,
 }
 
 /**
- * **Filtered.** The filter button stays pressed while anything but `All` is
- * chosen, because the tree is hiding Folders and nothing else on screen says
- * so (FOL-41). The tree's own three filter states are `Folders/FolderTreeView`'s;
- * the pressed button is only visible here, on the page that draws the header.
+ * **Filtered to Unread.** The filter button stays pressed while Unread is
+ * chosen, because the tree is hiding rows and nothing else on screen says so.
  */
 export const FoldersFiltered: Story = {
   render: () => (
     <FoldersPageView
-      railClosed={false}
-      signedOut={false}
-      folders={FOLDERS}
-      unread={{ '3789d2ca-103c-40e5-906f-0490782db5fd': true }}
-      member={{}}
-      filter="unread"
-      onFilterChange={noop}
-      onNewFolder={noop}
-      onNewTopic={noop}
-      onSelect={noop}
-      onOpenFolder={noop}
-      rightPanel={<EmptyState message="No folder selected" />}
+      nav={<Column view="all" show="unread" unread={{ '3789d2ca-103c-40e5-906f-0490782db5fd': true }} />}
+      rightPanel={<EmptyState message="No file selected" />}
     />
   ),
 }
@@ -308,19 +326,43 @@ export const FoldersFiltered: Story = {
 export const File: Story = {
   render: () => (
     <FilePageView
-      nav={
-        <div className="flex w-[290px] shrink-0 flex-col gap-0.5 bg-bg-surface px-3 py-4">
-          <FolderTreeView
-            folders={FOLDERS}
-            signedOut={false}
-            unread={{ '3789d2ca-103c-40e5-906f-0490782db5fd': true }}
-            currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd"
-            onSelect={noop}
-            onOpenFolder={noop}
-          />
-        </div>
-      }
+      nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
       rightPanel={<EmptyState message="No file selected" />}
+    />
+  ),
+}
+
+/**
+ * **An archived file.** The package's Banner in its warning tone, at the top
+ * of the messages column, with the resolution under it — and it stays there
+ * as the stream scrolls, above the date dividers (Katerina, 5 October).
+ * Scroll the messages. The messages here are stand-ins.
+ */
+export const FileArchived: Story = {
+  render: () => (
+    <FilePageView
+      nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
+      rightPanel={
+        <Panel title="Release notes for 0.37" bodyClassName="flex min-h-full flex-col">
+          <div className="sticky top-0 z-20">
+            <ArchivedNotice
+              archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
+              by="Miky"
+              onUnarchive={noop}
+            />
+          </div>
+          {['Monday', 'Tuesday', 'Yesterday'].map((day) => (
+            <div key={day} className="flex flex-col">
+              <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />
+              {Array.from({ length: 6 }, (_, i) => (
+                <p key={i} className="px-4 py-2 text-body-2 text-text-secondary">
+                  A message from {day.toLowerCase()}, number {i + 1}.
+                </p>
+              ))}
+            </div>
+          ))}
+        </Panel>
+      }
     />
   ),
 }
@@ -343,20 +385,5 @@ export const ObjectUnopenable: Story = {
 /** **A workspace with no Folders in it at all** — which is a different sentence
  *  from "not signed in", and from a read still in flight. */
 export const FoldersEmpty: Story = {
-  render: () => (
-    <FoldersPageView
-      railClosed={false}
-      signedOut={false}
-      folders={[]}
-      unread={{}}
-      member={{}}
-      filter="all"
-      onFilterChange={noop}
-      onNewFolder={noop}
-      onNewTopic={noop}
-      onSelect={noop}
-      onOpenFolder={noop}
-      rightPanel={<EmptyState message="No folder selected" />}
-    />
-  ),
+  render: () => <FoldersPageView nav={<Column view="all" folders={[]} />} rightPanel={<EmptyState message="No file selected" />} />,
 }

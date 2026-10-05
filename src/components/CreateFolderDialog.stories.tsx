@@ -28,3 +28,9 @@ type Story = StoryObj<typeof meta>
  * mints the channel and its state from the command (§4.1).
  */
 export const Default: Story = {}
+
+/**
+ * Renaming: the same dialog from a Folder's heading ⋮ (5 October) — "Rename
+ * folder", the name filled in, no line about what a Folder is.
+ */
+export const Renaming: Story = { args: { rename: 'Design' } }
