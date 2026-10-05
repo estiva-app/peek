@@ -99,6 +99,7 @@ export function FolderTree({
   selectedRef,
   selectedParent,
   selectedArchived = false,
+  expandSelected = false,
   onControl,
   currentContents,
 }: {
@@ -119,6 +120,8 @@ export function FolderTree({
   selectedParent?: string | null
   /** The open file is archived: Archive draws it, Topics and Folders do not. */
   selectedArchived?: boolean
+  /** Open the selected row too, showing what is under it — a Ship project reached by its channel's link. */
+  expandSelected?: boolean
   /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
   onControl?: (control: FileControl, file: ForeignObject) => void
   /**
@@ -219,6 +222,7 @@ export function FolderTree({
           currentFolder={section}
           selectedRef={selectedRef}
           selectedParent={selectedParent}
+          expandSelected={expandSelected}
           onSelect={(file) => {
             if (!file.address) return
             /*
@@ -487,6 +491,7 @@ export function FolderTreeView({
   currentFolder,
   selectedRef,
   selectedParent,
+  expandSelected = false,
   onSelect,
   menuFor,
   onControl,
@@ -521,6 +526,8 @@ export function FolderTreeView({
   currentFolder?: string | null
   selectedRef?: string
   selectedParent?: string | null
+  /** Open the selected row too — see `FolderTree`. */
+  expandSelected?: boolean
   onSelect: (file: ForeignObject) => void
   /** A Folder's heading menu — `useFolderActions`. Absent, the headings have none. */
   menuFor?: (folder: FolderSummary) => ReactNode
@@ -576,6 +583,7 @@ export function FolderTreeView({
           current={folder.id === currentFolder}
           selectedRef={selectedRef}
           selectedParent={selectedParent}
+          expandSelected={expandSelected}
           onSelect={onSelect}
           icon={view !== 'mine'}
           linked={linkedFolder === folder.id}
@@ -598,6 +606,7 @@ function FolderSection({
   current,
   selectedRef,
   selectedParent,
+  expandSelected,
   onSelect,
   icon,
   linked,
@@ -612,6 +621,7 @@ function FolderSection({
   current: boolean
   selectedRef?: string
   selectedParent?: string | null
+  expandSelected?: boolean
   onSelect: (file: ForeignObject) => void
   /** The folder icon before the name — in Folders, not in Topics. */
   icon: boolean
@@ -708,13 +718,15 @@ function FolderSection({
   const parentRow = selectedParent
     ? listed?.find((candidate) => candidate.address === selectedParent)
     : undefined
-  const expand = nesting
+  const chain = nesting
     ? selectedRow
       ? nesting.ancestorsOf(selectedRow).map((row) => row.ref)
       : parentRow
         ? [...nesting.ancestorsOf(parentRow), parentRow].map((row) => row.ref)
         : undefined
     : undefined
+  // A project reached by its channel's link opens too, its issues under it (Katerina, 5 October).
+  const expand = expandSelected && selectedRow ? [...(chain ?? []), selectedRow.ref] : chain
 
   return (
     <NavTreeSection

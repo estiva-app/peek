@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForeignObject } from '@estiva-app/interop'
 import { FoldersPage } from './FoldersPage'
 import { channelDestination } from '@/lib/legacyTopicLinks'
+import { filePath } from '@/lib/objectUrl'
 
 const FOLDER = 'e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b'
 const ADDRESS = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:0f7d2c1e-2b0a-4a25-9a2a-1a2b3c4d5e6f'
@@ -140,6 +141,10 @@ const dms = vi.hoisted(() => ({
   so the page asks — it never asks about a Folder with state.
 */
 const BARE_CHANNEL = 'bbbbbbbb-0000-4000-8000-000000000000'
+/* A Ship project's channel, listed in its team, and the project it belongs to (5 October). */
+const PROJECT_CHANNEL = 'dddddddd-0000-4000-8000-000000000000'
+const SHIP_PROJECT = `30850:${'e'.repeat(64)}:launch`
+const projects = vi.hoisted(() => ({ resolve: vi.fn<(folder: string) => Promise<unknown>>(async () => null) }))
 // PEE-42: a listing read that failed hands back `[]`, which is not "no Folders".
 const listing = vi.hoisted(() => ({ failed: false }))
 const deletable = vi.hoisted(() => ({
@@ -169,6 +174,7 @@ vi.mock('@/api', async () => ({
       { id: RECORD_CHANNEL, name: 'project-0804b906', hasState: false },
       // A bare channel: listed by its `39000`, with no state and no name.
       { id: BARE_CHANNEL, hasState: false },
+      { id: PROJECT_CHANNEL, name: 'project-dddddddd', hasState: false, listedIn: [FOLDER] },
     ].filter(() => !listing.failed),
     signedOut: false,
     failed: listing.failed,
@@ -186,6 +192,7 @@ vi.mock('@/api', async () => ({
     createTopic: created.topic,
     dmForChannel: dms.forChannel,
     folderDeletable: deletable.check,
+    resolveFolderProject: projects.resolve,
   }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
@@ -345,6 +352,21 @@ describe("a Folder's heading offers its actions to who may take them", () => {
   included. A channel with no state is in no list, so its link is where it can
   be deleted — drawn only once the relay has said it holds nothing.
 */
+describe('a stateless channel’s link (5 October)', () => {
+  it('a Ship project’s channel opens the project, to be drawn open under its Folder', async () => {
+    projects.resolve.mockResolvedValueOnce({ project: { address: SHIP_PROJECT, slots: { title: { value: 'Launch' } } } })
+    mount(`/app/folders/${PROJECT_CHANNEL}`)
+    await waitFor(() => expect(screen.getByTestId('url').textContent).toBe(filePath(SHIP_PROJECT, 'Launch')))
+    expect(projects.resolve).toHaveBeenCalledWith(PROJECT_CHANNEL)
+  })
+
+  it('a channel with no project lists what it holds, not a sentence about folder state', async () => {
+    mount(`/app/folders/${BARE_CHANNEL}`)
+    expect(await screen.findByText('Nothing in this folder yet.')).toBeTruthy()
+    expect(screen.queryByText(/no folder state/)).toBeNull()
+  })
+})
+
 describe('a stateless channel’s link offers Delete only where it loses nothing but the Folder', () => {
   it('offers it on an empty channel the relay says may go, and says what goes', async () => {
     mount(`/app/folders/${BARE_CHANNEL}`)

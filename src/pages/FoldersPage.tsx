@@ -5,7 +5,9 @@ import { Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FolderTree } from '@/components/views/FolderTree'
-import { reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
+import type { ForeignObject } from '@estiva-app/interop'
+import { FileTreeView } from '@/components/views/FileTreeView'
+import { rememberFileAddress, reloadFoldersOnScreen, useCurrentUser, useFolderContents, useFolders, useForeignObjects, useWorkspaceDirectory } from '@/api'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { kindNoun } from '@/lib/archiveWords'
@@ -35,7 +37,7 @@ export function FoldersPage() {
   const { folders, failed: foldersFailed, reload } = useFolders()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
-  const { archiveFolder, dmForChannel, folderDeletable, deleteFolder } = useForeignObjects()
+  const { archiveFolder, dmForChannel, folderDeletable, deleteFolder, resolveFolderProject } = useForeignObjects()
   const { showToast } = useToast()
   const people = useWorkspaceDirectory()
   const me = useCurrentUser()?.id
@@ -52,6 +54,13 @@ export function FoldersPage() {
     onMoved: () => void Promise.all([reload(), reloadFoldersOnScreen()]),
     onStarted: (created) => navigate(filePath(created.address, created.title)),
   })
+
+  // A row of a no-state Folder's list opens its file, as the column's rows do.
+  const openRow = (file: ForeignObject) => {
+    if (!file.address) return
+    rememberFileAddress(file.address)
+    navigate(filePath(file.address, file.slots.title?.value))
+  }
 
   /*
     A channel that was one of Peek's old topics holds that topic's
@@ -104,6 +113,36 @@ export function FoldersPage() {
     changes, and unanswered is a no. A Folder with state is never asked.
   */
   const stateless = isFolder && selected?.hasState === false
+
+  /*
+    A Ship project's channel is a Folder with no state, listed in its team:
+    its link opens the project itself (Katerina, 5 October) — selected under
+    its Folder in the column, with its issues open under it — rather than a
+    list of what the channel holds. Asked once per link; a channel with no
+    project, or a read that fails, keeps the list below.
+  */
+  const [projectCheck, setProjectCheck] = useState<{ id: string; found: boolean } | null>(null)
+  useEffect(() => {
+    if (!id || !stateless || !selected?.listedIn?.length) return
+    let cancelled = false
+    resolveFolderProject(id)
+      .then((found) => {
+        if (cancelled) return
+        const project = found?.project
+        if (project?.address) {
+          navigate(filePath(project.address, project.slots.title?.value), { replace: true, state: { expandSelected: true } })
+        } else setProjectCheck({ id, found: false })
+      })
+      .catch(() => {
+        if (!cancelled) setProjectCheck({ id, found: false })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id, stateless, selected?.listedIn?.length, resolveFolderProject, navigate])
+  // Still asking which project this is: nothing drawn yet, so the list does not flash before the project opens.
+  const findingProject = stateless && !!selected?.listedIn?.length && !(projectCheck?.id === id)
+
   const { state } = useFolderContents(stateless ? id : null)
   const contentsCount = typeof state === 'object' && 'files' in state ? state.files.length : undefined
   const [deleteCheck, setDeleteCheck] = useState<{ id: string; count?: number; ok: boolean } | null>(null)
@@ -162,7 +201,9 @@ export function FoldersPage() {
         banner={folderNotice}
         nav={<FolderTree currentFolder={id} showFolder={!!id} onControl={fileControls.open} />}
         rightPanel={
-          stateless && selected ? (
+          findingProject ? (
+            <EmptyState message="Opening…" />
+          ) : stateless && selected ? (
             <Panel
               title={selected.name ?? 'Untitled folder'}
               actions={
@@ -175,7 +216,14 @@ export function FoldersPage() {
                 )
               }
             >
-              <EmptyState message="This folder has no folder state, so it is in no list." />
+              {/*
+                What the channel holds, as the column's rows (5 October): a
+                Folder with no state is in no list, so its link is the one
+                place it is seen. It used to say only that.
+              */}
+              <div className="px-2 py-2">
+                <FileTreeView state={state} onSelect={openRow} onControl={fileControls.open} />
+              </div>
             </Panel>
           ) : (
             <EmptyState message={notAFolder ? 'This is not a folder.' : 'No file selected'} />

@@ -349,6 +349,8 @@ export function FilePage() {
             selectedRef={selected?.ref}
             selectedParent={selected?.parentRef}
             selectedArchived={!!file?.archived}
+            // Reached from a Ship project's channel link (FoldersPage): the project opens, its issues under it.
+            expandSelected={(location.state as { expandSelected?: boolean } | null)?.expandSelected === true}
             onControl={fileControls.open}
             currentContents={navFile?.folder ? team : undefined}
           />

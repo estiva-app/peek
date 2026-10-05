@@ -362,6 +362,20 @@ describe('the two views (Katerina, 5 October)', () => {
   })
 })
 
+describe('a project reached by its channel’s link (5 October)', () => {
+  it('is selected and open, what is under it drawn', () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS, expandSelected: true })
+    expect(document.querySelector(`[data-children-of="${CSS.escape(PROJECT_ADDRESS)}"]`)).not.toBeNull()
+  })
+
+  it('stays closed when opened any other way', () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount({ currentFolder: TEAM, selectedRef: PROJECT_ADDRESS })
+    expect(document.querySelector(`[data-children-of="${CSS.escape(PROJECT_ADDRESS)}"]`)).toBeNull()
+  })
+})
+
 describe('the Archive view (Katerina, 5 October)', () => {
   const title = (name: string) => screen.getByRole('button', { name })
 
