@@ -182,7 +182,16 @@ export function FolderTree({
     <>
       <FolderColumn
         view={view}
-        onViewChange={setView}
+        onViewChange={(next) => {
+          setView(next)
+          /*
+            The open file is not in Archive's tree, so it closes there and the
+            page says "No file selected" (Katerina, 5 October): a selection the
+            column cannot show is a page about nothing beside it. Topics and
+            Folders both keep the open file in view, so they keep it open.
+          */
+          if (next === 'archive' && selectedRef) navigate('/app/folders')
+        }}
         show={show}
         onShowChange={setShow}
         railClosed={railClosed}

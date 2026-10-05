@@ -380,6 +380,22 @@ describe('the Archive view (Katerina, 5 October)', () => {
     expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
   })
 
+  it('switching to it closes the open file: the page says No file selected', async () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
+    await userEvent.click(title('Folders'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
+    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+  })
+
+  it('switching between Topics and Folders keeps the open file', async () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS })
+    await userEvent.click(title('Folders'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
+  })
+
   it('a Folder opened there reads what is archived in it', async () => {
     window.sessionStorage.setItem('peek.tree.visit', 'archive')
     mount()
