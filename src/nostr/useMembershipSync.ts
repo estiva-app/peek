@@ -53,8 +53,8 @@ export interface MembershipSync {
   /** Unix seconds a created file's membership starts at. */
   floor: number
   /** Join a file, or leave it: local at once, then published. Resolves when the relay has answered. */
-  /** True once the relay holds the change; false when nothing changed or it was refused. */
-  setMember: (file: string, folder: string, member: boolean) => Promise<boolean>
+  /** `true` once the relay holds the change; otherwise why nothing changed, in words a toast can show. */
+  setMember: (file: string, folder: string, member: boolean) => Promise<true | string>
   /** Re-read the relay, discarding nothing that is still being published. */
   refresh: () => Promise<void>
 }
@@ -164,16 +164,16 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       const seam = seamFrom(relayUrl)
       if (!seam) {
         console.warn('[membership] not changed: no relay origin or no live Estiva ID token in this tab')
-        return false
+        return 'You are not signed in to the relay in this tab.'
       }
       if (state === 'unknown') {
         console.warn('[membership] not changed: the relay has not said what the viewer is a member of')
-        return false
+        return 'Peek has not read what you are a member of yet.'
       }
       if (!FOLDER_ID.test(folder)) {
         // `buildMembershipChange` would throw; say so now rather than flipping the control and flipping it back.
         console.warn('[membership] not changed: the file has no Folder to name in the change:', folder)
-        return false
+        return `The file has no Folder to name in the change (${folder}).`
       }
       generation.current++
       const before = files.get(file)
@@ -182,7 +182,8 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       pending.current.set(file, { membership: local })
       setFiles((prev) => new Map(prev).set(file, local))
 
-      const run = async (): Promise<boolean> => {
+      const run = async (): Promise<true | string> => {
+        let why = 'The write failed.'
         try {
           const unsigned = buildMembershipChange(seam.pubkey, now, { file, folder, person: seam.pubkey, member })
           const signed: SignedEvent = await signViaEstivaId(unsigned, seam.accessToken, seam.pubkey)
@@ -193,8 +194,10 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
             return true
           }
           console.warn('[membership] publish failed:', result.reason)
+          why = `The relay refused it: ${result.reason}`
         } catch (error) {
           console.warn('[membership] publish threw:', error)
+          why = `The write failed: ${(error as Error)?.message ?? String(error)}`
         }
         // Refused: the control said something the relay does not hold. Undo this change alone.
         pending.current.delete(file)
@@ -204,7 +207,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
           else next.delete(file)
           return next
         })
-        return false
+        return why
       }
       // One change at a time, in order; this call's own answer is what it returns.
       const mine = chain.current.then(run, run)

@@ -188,16 +188,16 @@ export function useFileControls({
         const joining = control === 'join'
         const title = file.slots.title?.value ?? 'this file'
         if (!file.address || !file.folder) return refuse(`“${title}” is in no Folder Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
-        void membership.setMember(file.address, file.folder, joining).then((ok) =>
+        void membership.setMember(file.address, file.folder, joining).then((outcome) =>
           showToast(
-            ok
+            outcome === true
               ? {
                   label: joining
                     ? `Joined “${title}”: every new message shows as unread.`
                     : `Left “${title}”: only messages that mention you show as unread.`,
                   type: 'success',
                 }
-              : { label: `Nothing changed: “${title}” could not be ${joining ? 'joined' : 'left'}. Try again.`, type: 'error' },
+              : { label: `Nothing changed: “${title}” could not be ${joining ? 'joined' : 'left'}. ${outcome}`, type: 'error' },
           ),
         )
         return

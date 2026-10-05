@@ -80,6 +80,6 @@ describe('useMembership outside the provider', () => {
     expect(result.current.state).toBe('unknown')
     expect(result.current.isMember(THEIRS)).toBe(false)
     // Nothing changed, and it says so: a toast reads false as "nothing changed".
-    await expect(result.current.setMember(THEIRS, FOLDER, true)).resolves.toBe(false)
+    await expect(result.current.setMember(THEIRS, FOLDER, true)).resolves.toBe('Peek is not connected to the relay here.')
   })
 })
