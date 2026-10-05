@@ -264,7 +264,9 @@ export function useForeignObjects() {
     async (file: MovableFile, from: readonly FolderRef[], to: FolderRef) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to move a file.' }
-      const sources = from.filter((folder) => folder.id !== to.id && folder.hasState)
+      // Every source, a Folder with no state too: it lists the file by containment, and the planner
+      // must see that to refuse the move rather than report one that never happened.
+      const sources = from.filter((folder) => folder.id !== to.id)
       const read = await Promise.all(
         sources.map((folder) => resolveFolderContentsAsViewer(folder.id, v.relayUrl, v.token, { includeArchived: true }).then((contents) => contents.files, () => null)),
       )

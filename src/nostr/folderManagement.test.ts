@@ -225,6 +225,13 @@ describe('moving a file', () => {
     expect(sent()).toHaveLength(1)
   })
 
+  it('refuses, rather than reporting a move, out of a folder with no state that lists the file by containment', async () => {
+    const result = await moveFileAsViewer(file, new Map([[FOLDER, listing]]), [{ id: FOLDER, hasState: false, addresses: [] }], there, 'https://relay.test', token)
+
+    expect(result.ok === false && result.reason).toMatch(/out of this Folder/)
+    expect(sent()).toHaveLength(0)
+  })
+
   it('sends nothing for a file no folder lists and nothing is listed under — an issue', async () => {
     const issue = { ref: `30851:${'c'.repeat(64)}:i`, address: `30851:${'c'.repeat(64)}:i` }
     const result = await moveFileAsViewer(issue, new Map([[FOLDER, listing]]), [here], there, 'https://relay.test', token)
