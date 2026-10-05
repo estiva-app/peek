@@ -39,8 +39,8 @@ export const SLASH_SECTIONS: readonly SlashSection[] = [
     commands: [
       shortcut('Mention', '@', '@', 'Mention a person'),
       shortcut('Urgent', '!@', '!@', 'Urgent mention'),
-      // What `[` lists since PEE-21: the messages on screen first, then files.
-      shortcut('Reference', '[', '[', 'Reference a message or file'),
+      // What `[` lists since PEE-21: the messages on screen first, then files and topics.
+      shortcut('Reference', '[', '[', 'Reference a message, file or topic'),
       // `->`, not `→`: the row shows what you would type, and the resolution
       // block's own input rule is /^->\s$/ — there is no `→` key to press. It
       // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide

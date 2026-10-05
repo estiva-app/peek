@@ -51,6 +51,10 @@ describe('filterSlashSections', () => {
     expect(filter('mention a person')).toEqual(['Mention'])
   })
 
+  it('finds Reference by what `[` lists: messages, files and topics', () => {
+    for (const q of ['message', 'file', 'topic']) expect(filter(q)).toEqual(['Reference'])
+  })
+
   it('is case-insensitive', () => {
     // 'subheading' contains 'head', so both are right.
     expect(filter('HEAD')).toEqual(['Heading', 'Subheading'])
