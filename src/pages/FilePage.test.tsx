@@ -215,7 +215,7 @@ vi.mock('@/api', async () => ({
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useFileThreads: () => ({ state: threads.state, reload: threads.reload }),
   useConversationBadges: () => ({ counts: {}, unread: {} }),
-  useTeamUnread: () => ({ unread: {} }),
+  useTeamUnread: () => ({ unread: {}, member: {}, holdsJoined: new Set<string>() }),
   useMembership: () => ({
     state: follows.state,
     isMember: (key: string) => follows.keys.has(key),
@@ -274,6 +274,12 @@ function Seed({ pending }: { pending: PendingTopicMessage }) {
   return null
 }
 
+/** Where the rail's Topics would lead now. */
+function Remembered() {
+  const { topicsPath } = useLastSelection()
+  return <output data-testid="topics-path">{topicsPath ?? ''}</output>
+}
+
 function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
   return render(
     // The data provider is the real one: an Activity row is a `ConversationCard`, which reads the topic store.
@@ -290,6 +296,7 @@ function mount(url: string, opts?: { pending?: PendingTopicMessage }) {
               <Route path="/:word/:ref" element={<><FilePage /><Probe /></>} />
               <Route path="*" element={<Probe />} />
             </Routes>
+            <Remembered />
           </MemoryRouter>
         </LastSelectionProvider>
       </PeekDataProvider>
@@ -492,6 +499,11 @@ describe('FilePage serves every declared shape', () => {
     // open thread the way the bare file's does.
     mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
     expect(screen.getByTestId('url').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
+  })
+
+  it('is where the rail’s Topics comes back to: its settled address, with its open thread (5 October)', () => {
+    mount(`/topic/${ISSUE_ADDRESS}?thread=x`)
+    expect(screen.getByTestId('topics-path').textContent).toBe(`${ISSUE_SHORT}?thread=x`)
   })
 })
 

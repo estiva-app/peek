@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLastSelection } from '@/lib/lastSelection'
 import { IconTrash } from '@tabler/icons-react'
 import { Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
@@ -37,6 +38,15 @@ export function FoldersPage() {
   const { folders, failed: foldersFailed, reload } = useFolders()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
+  /*
+    Where Topics is, for the rail to come back to (Katerina, 5 October): here,
+    with no file open. A file closed on the way here is not brought back.
+  */
+  const location = useLocation()
+  const { setLastTopicsPath } = useLastSelection()
+  useEffect(() => {
+    setLastTopicsPath(`${location.pathname}${location.search}`)
+  }, [location.pathname, location.search, setLastTopicsPath])
   const { archiveFolder, dmForChannel, folderDeletable, deleteFolder, resolveFolderProject } = useForeignObjects()
   const { showToast } = useToast()
   const people = useWorkspaceDirectory()

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
-import { useForeignObjects, useMembership } from '@/api'
+import { reloadFoldersOnScreen, useForeignObjects, useMembership } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
@@ -180,6 +180,8 @@ export function useFileControls({
         return false
       }
       archivedCallback.current?.(file, archived)
+      // Whatever is drawn re-reads, whichever page asked: an Undo pressed after its page closed has no page to ask.
+      void reloadFoldersOnScreen()
       /*
         Said, and Archive undone from the toast (Katerina, 5 October): the row
         leaves its list, and Undo — or Unarchive in the Archive view — brings

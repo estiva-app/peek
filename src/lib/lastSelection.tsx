@@ -24,8 +24,12 @@ export interface DeskMemory {
 interface LastSelectionState {
   topicId: string | null
   dmId: string | null
-  /** The file last open under Topics, as its path: the rail's Topics returns to it (Katerina, 5 October). */
-  filePath: string | null
+  /**
+   * Where Topics last was — a file's path, or the column with none open — so
+   * the rail's Topics returns exactly there (Katerina, 5 October). A file the
+   * person closed is never brought back.
+   */
+  topicsPath: string | null
   /** What Desk had open: the rail's Desk returns to it. */
   desk: DeskMemory | null
   /** One-shot: when set, the next mounted DM view should auto-open this thread, then clear. */
@@ -47,7 +51,7 @@ interface LastSelectionState {
 interface LastSelectionValue extends LastSelectionState {
   setLastTopicId: (id: string | null) => void
   setLastDmId: (id: string | null) => void
-  setLastFilePath: (path: string | null) => void
+  setLastTopicsPath: (path: string | null) => void
   setLastDesk: (desk: DeskMemory | null) => void
   setPendingDmThreadId: (id: string | null) => void
   setPendingTopicThread: (v: { topicId: string; convId: string } | null) => void
@@ -59,7 +63,7 @@ const LastSelectionContext = createContext<LastSelectionValue | null>(null)
 export function LastSelectionProvider({ children }: { children: ReactNode }) {
   const [topicId, setLastTopicId] = useState<string | null>(null)
   const [dmId, setLastDmId] = useState<string | null>(null)
-  const [filePath, setLastFilePath] = useState<string | null>(null)
+  const [topicsPath, setLastTopicsPath] = useState<string | null>(null)
   const [desk, setLastDesk] = useState<DeskMemory | null>(null)
   const [pendingDmThreadId, setPendingDmThreadId] = useState<string | null>(null)
   const [pendingTopicThread, setPendingTopicThread] = useState<{ topicId: string; convId: string } | null>(null)
@@ -69,20 +73,20 @@ export function LastSelectionProvider({ children }: { children: ReactNode }) {
     () => ({
       topicId,
       dmId,
-      filePath,
+      topicsPath,
       desk,
       pendingDmThreadId,
       pendingTopicThread,
       pendingTopicMessage,
       setLastTopicId,
       setLastDmId,
-      setLastFilePath,
+      setLastTopicsPath,
       setLastDesk,
       setPendingDmThreadId,
       setPendingTopicThread,
       setPendingTopicMessage,
     }),
-    [topicId, dmId, filePath, desk, pendingDmThreadId, pendingTopicThread, pendingTopicMessage],
+    [topicId, dmId, topicsPath, desk, pendingDmThreadId, pendingTopicThread, pendingTopicMessage],
   )
 
   return <LastSelectionContext.Provider value={value}>{children}</LastSelectionContext.Provider>

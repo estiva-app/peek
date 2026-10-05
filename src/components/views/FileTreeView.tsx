@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavItem } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
@@ -247,6 +247,10 @@ function TreeRow({
   const openWorkAction = followKey ? (openWorkFiles.has(followKey) ? 'remove' : 'add') : undefined
 
   const selected = file.ref === selectedRef
+  // The open file's row is brought into view when it is drawn: a long Folder can hold it below the fold (5 October).
+  useEffect(() => {
+    if (selected) document.querySelector(`[data-file="${CSS.escape(file.ref)}"]`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [selected, file.ref])
   const isUnread = unread?.[file.ref] === true
   const type = file.kind === KIND_BARE_FILE ? 'topic' : 'file'
   /*

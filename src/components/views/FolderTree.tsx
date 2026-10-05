@@ -98,7 +98,8 @@ export function FolderTree({
   showFolder = false,
   selectedRef,
   selectedParent,
-  selectedArchived = false,
+  selectedArchived,
+  selectedMine,
   expandSelected = false,
   onControl,
   currentContents,
@@ -118,8 +119,17 @@ export function FolderTree({
    * project's child, and `peersOf` hides a child whose parent is listed.
    */
   selectedParent?: string | null
-  /** The open file is archived: Archive draws it, Topics and Folders do not. */
+  /**
+   * The open file is archived: Archive draws it, Topics and Folders do not.
+   * `undefined` while the file is still resolving — nothing is judged on a guess.
+   */
   selectedArchived?: boolean
+  /**
+   * The person is a member of the open file — joined it, or made it. Leaving
+   * it while it is open in Topics takes it out of the list, and closes it.
+   * `undefined` while that is not known yet.
+   */
+  selectedMine?: boolean
   /** Open the selected row too, showing what is under it — a Ship project reached by its channel's link. */
   expandSelected?: boolean
   /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
@@ -178,9 +188,60 @@ export function FolderTree({
   */
   // An archived Folder's link opens Archive, where it is; any other, Folders.
   const linkedArchived = !!folders?.find((folder) => folder.id === currentFolder)?.archived
-  const [view, setView] = useView(showFolder ? (currentFolder ?? null) : null, linkedArchived ? 'archive' : 'all')
-  // In Archive only: archived itself, or in a Folder that is (it went with it).
-  const openArchived = selectedArchived || !!folders?.find((folder) => folder.id === section)?.archived
+  const { view, choose: setView, follow } = useView(showFolder ? (currentFolder ?? null) : null, linkedArchived ? 'archive' : 'all')
+
+  /*
+    One rule (Katerina, 5 October): the page beside the column only ever shows
+    a file the column draws.
+    - Archive draws what is archived: the file itself, or the Folder it is in.
+    - Topics and Folders draw what is not archived. Topics lists what the
+      person joined or made, and keeps the open file in view besides — a file
+      opened from a link or a search is shown where it is (5 October) — until
+      the person leaves it there.
+    The filter (All / Unread) never hides the open file: one read is not one
+    gone. Unknown until the file has resolved, the Folders are read and the
+    relay has said what the person joined: nothing is judged on a guess.
+  */
+  const openArchived =
+    selectedRef && selectedArchived !== undefined && folders
+      ? selectedArchived || !!folders.find((folder) => folder.id === section)?.archived
+      : undefined
+  const openMine = selectedRef && selectedMine !== undefined ? selectedMine || holdsJoined.has(selectedRef) : undefined
+  const known = openArchived !== undefined && openMine !== undefined
+  const draws = (which: TreeView, file: { archived: boolean }) => (which === 'archive' ? file.archived : !file.archived)
+  /*
+    The column follows a file that arrives — a click, a link, a search, the
+    back button, the rail coming back — to a view that draws it, for this
+    visit: Archive for an archived one, the person's own view for a live one.
+    A file that leaves the open view's list while it is open closes ("No file
+    selected"), as an item leaves the list it was in: archived (the toast has
+    Undo), or left while Topics is showing (Katerina, 5 October: "when I
+    leave a topic, it disappears from the topics list"). One that is
+    unarchived while open in Archive stays open, and the column goes where it
+    now is. Set during render, once per change: neither the initialiser nor an
+    effect.
+  */
+  const [seenFile, setSeenFile] = useState<{ ref: string; archived: boolean; mine: boolean } | null>(null)
+  const [closing, setClosing] = useState(false)
+  if (
+    selectedRef &&
+    known &&
+    (seenFile?.ref !== selectedRef || seenFile.archived !== openArchived || seenFile.mine !== openMine)
+  ) {
+    const now = { archived: openArchived, mine: openMine }
+    const same = seenFile?.ref === selectedRef
+    const leftInTopics = same && view === 'mine' && seenFile.mine && !now.mine && !now.archived
+    setSeenFile({ ref: selectedRef, ...now })
+    if (leftInTopics) setClosing(true)
+    else if (!draws(view, now)) {
+      const unarchived = view === 'archive' && !now.archived
+      if (same && draws(view, seenFile) && !unarchived) setClosing(true)
+      else follow(now.archived ? 'archive' : null)
+    }
+  }
+  useEffect(() => {
+    if (closing) navigate('/app/folders')
+  }, [closing, navigate])
   const [show, setShow] = useState<TreeShow>('all')
   const { menuFor, action, close } = useFolderActions()
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
@@ -199,7 +260,11 @@ export function FolderTree({
             draws only what is archived; Topics and Folders only what is not,
             and both keep a live open file in view.
           */
-          if (selectedRef && (next === 'archive') !== openArchived) navigate('/app/folders')
+          // Topics and Folders draw the same open file, so only a turn into or out of Archive can close it.
+          const acrossArchive = (next === 'archive') !== (view === 'archive')
+          if (selectedRef && acrossArchive && (openArchived === undefined || !draws(next, { archived: openArchived }))) {
+            navigate('/app/folders')
+          }
         }}
         show={show}
         onShowChange={setShow}
@@ -326,6 +391,29 @@ function HeaderDialog({
 
 const VIEW_KEY = 'peek.tree.view'
 
+/** The Folders opened in Archive, for this visit. */
+const ARCHIVE_OPEN_KEY = 'peek.tree.archive.open'
+function archiveOpenSet(): Set<string> {
+  try {
+    return new Set(JSON.parse(window.sessionStorage.getItem(ARCHIVE_OPEN_KEY) ?? '[]') as string[])
+  } catch {
+    return new Set()
+  }
+}
+function archiveOpenHeld(folder: string): boolean {
+  return archiveOpenSet().has(folder)
+}
+function holdArchiveOpen(folder: string, open: boolean): void {
+  const held = archiveOpenSet()
+  if (open) held.add(folder)
+  else held.delete(folder)
+  try {
+    window.sessionStorage.setItem(ARCHIVE_OPEN_KEY, JSON.stringify([...held]))
+  } catch {
+    // A browser that blocks storage still opens it; it forgets on the next page.
+  }
+}
+
 /**
  * A Folder link's turn to Folders, held for this tab and not saved (Katerina,
  * 5 October): the column stays on Folders while the person moves between the
@@ -346,7 +434,19 @@ function visitView(): TreeView | null {
  * Archive is never saved either: opening Peek on it next time would be
  * opening it on what was put away.
  */
-function useView(linked: string | null, linkedView: TreeView): [TreeView, (next: TreeView) => void] {
+function useView(
+  linked: string | null,
+  linkedView: TreeView,
+): {
+  /** What the column shows. */
+  view: TreeView
+  /** The person's own choice, Topics or Folders. */
+  saved: TreeView
+  /** The person picks a view from the title menu. */
+  choose: (next: TreeView) => void
+  /** What the open file asks of the column, for this visit: `null` is the person's own view. */
+  follow: (visit: TreeView | null) => void
+} {
   const [saved, save] = useRememberedView()
   const [visit, setVisit] = useState<TreeView | null>(visitView)
   const [seen, setSeen] = useState<string | null>(null)
@@ -372,7 +472,7 @@ function useView(linked: string | null, linkedView: TreeView): [TreeView, (next:
     },
     [save],
   )
-  return [visit ?? saved, choose]
+  return { view: visit ?? saved, saved, choose, follow: setVisit }
 }
 
 /** The view, remembered in this browser; Topics until the person chooses. */
@@ -653,7 +753,19 @@ function FolderSection({
     is a read of its own, made when it opens — 160 open at once would be the
     relay's whole minute. A Folder that is itself archived is no different.
   */
-  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archiveOpen, setArchiveOpenState] = useState(() => archiveOpenHeld(folder.id))
+  /*
+    Held for the visit (sessionStorage), as the other views hold theirs: the
+    column is drawn again on every page, and a Folder opened in Archive shut
+    the moment a file in it was clicked (5 October).
+  */
+  const setArchiveOpen = useCallback(
+    (next: boolean) => {
+      setArchiveOpenState(next)
+      holdArchiveOpen(folder.id, next)
+    },
+    [folder.id],
+  )
   const archive = filter === 'archive'
   const open = archive ? archiveOpen : filter === 'all' ? remembered : filtered
   const setOpen = archive ? setArchiveOpen : filter === 'all' ? setRemembered : setFiltered
@@ -664,14 +776,27 @@ function FolderSection({
     person can close it again — and it is remembered open, as a click would.
   */
   const openNow = useRef(setOpen)
+  const openWas = useRef(open)
   useEffect(() => {
     openNow.current = setOpen
+    openWas.current = open
   })
   useEffect(() => {
     if (!linked) return
     openNow.current(true)
     document.querySelector(`[data-nav-group="${CSS.escape(folder.id)}"]`)?.scrollIntoView?.({ block: 'nearest' })
   }, [linked, folder.id])
+  /*
+    And the Folder holding the open file is open in every view (Katerina,
+    5 October): when the file arrives, and when the column turns to another
+    view. A selected row inside a shut Folder is a selection nobody can see.
+    Once per arrival or turn — the person can still close it — and only when
+    it is shut: an open default is left alone, not written down as the
+    person's choice, so the Folder still closes when the file goes.
+  */
+  useEffect(() => {
+    if (current && selectedRef && !openWas.current) openNow.current(true)
+  }, [current, selectedRef, filter])
   /*
     The read is the fold. `null` while closed is the hook's "nothing to read"
     — no request, no refresh trigger, no socket subscription — so a Folder

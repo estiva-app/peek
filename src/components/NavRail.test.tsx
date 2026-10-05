@@ -10,8 +10,8 @@ import { LastSelectionProvider, useLastSelection } from '@/lib/lastSelection'
 import { NavRail } from './NavRail'
 
 function Opened({ path, desk }: { path: string | null; desk?: string }) {
-  const { setLastFilePath, setLastDesk } = useLastSelection()
-  useEffect(() => setLastFilePath(path), [path, setLastFilePath])
+  const { setLastTopicsPath, setLastDesk } = useLastSelection()
+  useEffect(() => setLastTopicsPath(path), [path, setLastTopicsPath])
   useEffect(() => setLastDesk(desk === undefined ? null : { search: desk }), [desk, setLastDesk])
   return null
 }
