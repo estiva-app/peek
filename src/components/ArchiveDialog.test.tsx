@@ -66,9 +66,8 @@ describe('ArchivedNotice', () => {
     const onUnarchive = vi.fn()
     render(<ArchivedNotice archive={{ by: 'x', at: 1_790_000_000, resolution: 'Done.' }} by="QA-1" onUnarchive={onUnarchive} />)
     expect(screen.getByText(/^Archived by QA-1/)).toBeInTheDocument()
-    // The resolution under its own label (5 October).
-    expect(screen.getByText('Resolution')).toBeInTheDocument()
-    expect(screen.getByText('Done.')).toBeInTheDocument()
+    // The resolution as a quote under the line (5 October, her pick C).
+    expect(screen.getByText('Done.').tagName).toBe('BLOCKQUOTE')
     await userEvent.click(screen.getByRole('button', { name: 'Unarchive' }))
     expect(onUnarchive).toHaveBeenCalled()
   })
@@ -84,7 +83,7 @@ describe('ArchivedNotice', () => {
       />,
     )
     expect(screen.getByText(/^Archived with its project by QA-1/)).toBeInTheDocument()
-    expect(screen.queryByText('Resolution')).toBeNull()
+    expect(document.querySelector('blockquote')).toBeNull()
     expect(screen.getByRole('button', { name: 'Open project' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).toBeNull()
   })
