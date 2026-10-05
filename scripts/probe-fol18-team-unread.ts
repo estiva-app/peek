@@ -178,7 +178,7 @@ async function main() {
     }
     const why = [...byStream]
       .filter(([c, ms]) =>
-        fileHasUnread(ms, { file: marker(c), thread: () => undefined, me: t.pubkey, nowSeconds, horizonSeconds }),
+        fileHasUnread(ms, { file: marker(c), thread: () => undefined, floor: undefined, me: t.pubkey, nowSeconds, horizonSeconds }),
       )
       .map(([c, ms]) => {
         const newest = ms.filter((m) => m.by !== t.pubkey).sort((a, b) => b.at - a.at)[0]

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { channelContext, fileContext, threadContext } from '@estiva-app/conversation'
+import { REPLY_FLOOR_CONTEXT, channelContext, fileContext, threadContext } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { fileHasUnread } from './fileUnread'
@@ -36,6 +36,7 @@ export function useNewReplyThreads(
     const judge = {
       file: frontier.marker(context),
       thread: (root: string) => frontier.marker(threadContext(root)),
+      floor: frontier.marker(REPLY_FLOOR_CONTEXT),
       me: me ?? undefined,
       nowSeconds,
       horizonSeconds: HORIZON_SECONDS,
