@@ -16,13 +16,17 @@
  * hook to settle before reading it: a read straight after sign-in reports
  * `relayState: "connecting"` and no Folders.
  *
- * Steps run in argument order, so `--click`, `--fill`, `--press`, `--drag`,
- * `--wait`, `--until`, `--eval` and `--screenshot` can be repeated and interleaved.
+ * Steps run in argument order, so `--click`, `--fill`, `--press`, `--hover`,
+ * `--drag`, `--wait`, `--until`, `--eval` and `--screenshot` can be repeated and
+ * interleaved. `PROBE_TRACE=1` prints each step on stderr as it starts.
  *
- * `--drag "<from css> => <to css>"` drags the first match of one selector onto
- * the other with the real mouse — pointer down, moves, pointer up — so an
- * editor sees the browser's own dragstart and drop, not a selection rewritten
- * in script (MAN-12 passed that shortcut and broke on production; RIC-18).
+ * `--hover <css>` puts the pointer over the first match, for a control drawn
+ * only under it. `--drag "<from css> => <to css>"` drags the first match of one
+ * selector onto the other with the real mouse — pointer down, moves, pointer up
+ * — so an editor sees the browser's own dragstart and drop, not a selection
+ * rewritten in script (MAN-12 passed that shortcut and broke on production).
+ * It works against Storybook; against ship.estiva.app it hangs, and fails at
+ * `--timeout` (RIC-18) — dispatch the drag events with `--eval` there.
  * Nothing is printed until the run ends, and then only one JSON object on
  * stdout. A step that fails stops the run; a failed `--click` or `--fill`
  * lists the controls that were on the page instead. A screenshot is written only when asked for, because a picture costs
@@ -218,10 +222,16 @@ async function run(page, step, value) {
       const b = await page.locator(to).first().boundingBox({ timeout })
       if (!a || !b) throw new Error(`--drag: ${a ? to : from} is not on screen`)
       const [x, y] = [a.x + a.width / 2, a.y + a.height / 2]
-      await page.mouse.move(x, y)
-      await page.mouse.down()
-      for (let i = 1; i <= 10; i++) await page.mouse.move(x + 40 + i * 10, y + ((b.y + b.height - 3 - y) * i) / 10)
-      await page.mouse.up()
+      const drag = (async () => {
+        await page.mouse.move(x, y)
+        await page.mouse.down()
+        for (let i = 1; i <= 10; i++) await page.mouse.move(x + 40 + i * 10, y + ((b.y + b.height - 3 - y) * i) / 10)
+        await page.mouse.up()
+      })()
+      // The mouse takes no timeout, and a hung drag would otherwise hold the run — and its one JSON — for ever.
+      let timer
+      await Promise.race([drag, new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`--drag did not finish in ${timeout}ms`)), timeout)))])
+      clearTimeout(timer)
       return true
     }
     case 'screenshot':
