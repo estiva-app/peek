@@ -373,6 +373,9 @@ describe('the Archive view (Katerina, 5 October)', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
     expect(title('Archive')).not.toBeNull()
     expect(section(ARCHIVED)).not.toBeNull()
+    // The archived one says so beside its name; the others do not.
+    expect(within(section(ARCHIVED)).getByText('Archived')).not.toBeNull()
+    expect(within(section(OTHER)).queryByText('Archived')).toBeNull()
     expect(openOf(section(OTHER))).toBe('false')
     expect(screen.queryByRole('button', { name: 'New topic' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Filter' })).toBeNull()
@@ -386,6 +389,22 @@ describe('the Archive view (Katerina, 5 October)', () => {
     await userEvent.click(title('Folders'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
     expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+  })
+
+  it('an archived file open in Archive closes when the column turns to Topics or Folders', async () => {
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
+    await userEvent.click(title('Archive'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
+    expect(screen.getByTestId('url').textContent).toBe('/app/folders')
+  })
+
+  it('an archived file stays open when the column turns to Archive', async () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount({ currentFolder: TEAM, selectedRef: FILE_ADDRESS, selectedArchived: true })
+    await userEvent.click(title('Folders'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
+    expect(screen.getByTestId('url').textContent).toBe('/topics')
   })
 
   it('switching between Topics and Folders keeps the open file', async () => {

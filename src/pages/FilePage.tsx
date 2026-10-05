@@ -348,6 +348,7 @@ export function FilePage() {
             currentFolder={navFile?.folder}
             selectedRef={selected?.ref}
             selectedParent={selected?.parentRef}
+            selectedArchived={!!file?.archived}
             onControl={fileControls.open}
             currentContents={navFile?.folder ? team : undefined}
           />

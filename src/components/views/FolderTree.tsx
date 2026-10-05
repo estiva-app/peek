@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
-import { ListColumn, Menu, MenuItem, NavTree, NavTreeSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Chip, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -98,6 +98,7 @@ export function FolderTree({
   showFolder = false,
   selectedRef,
   selectedParent,
+  selectedArchived = false,
   onControl,
   currentContents,
 }: {
@@ -116,6 +117,8 @@ export function FolderTree({
    * project's child, and `peersOf` hides a child whose parent is listed.
    */
   selectedParent?: string | null
+  /** The open file is archived: Archive draws it, Topics and Folders do not. */
+  selectedArchived?: boolean
   /** A row's more-menu — see `FileTreeView`. The page that owns the dialogs passes it. */
   onControl?: (control: FileControl, file: ForeignObject) => void
   /**
@@ -173,6 +176,8 @@ export function FolderTree({
   // An archived Folder's link opens Archive, where it is; any other, Folders.
   const linkedArchived = !!folders?.find((folder) => folder.id === currentFolder)?.archived
   const [view, setView] = useView(showFolder ? (currentFolder ?? null) : null, linkedArchived ? 'archive' : 'all')
+  // In Archive only: archived itself, or in a Folder that is (it went with it).
+  const openArchived = selectedArchived || !!folders?.find((folder) => folder.id === section)?.archived
   const [show, setShow] = useState<TreeShow>('all')
   const { menuFor, action, close } = useFolderActions()
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
@@ -185,12 +190,13 @@ export function FolderTree({
         onViewChange={(next) => {
           setView(next)
           /*
-            The open file is not in Archive's tree, so it closes there and the
-            page says "No file selected" (Katerina, 5 October): a selection the
-            column cannot show is a page about nothing beside it. Topics and
-            Folders both keep the open file in view, so they keep it open.
+            A view that does not draw the open file closes it, and the page
+            says "No file selected" (Katerina, 5 October): a selection the
+            column cannot show is a page about nothing beside it. Archive
+            draws only what is archived; Topics and Folders only what is not,
+            and both keep a live open file in view.
           */
-          if (next === 'archive' && selectedRef) navigate('/app/folders')
+          if (selectedRef && (next === 'archive') !== openArchived) navigate('/app/folders')
         }}
         show={show}
         onShowChange={setShow}
@@ -732,6 +738,8 @@ function FolderSection({
         are gone, and a click on the heading only folds it.
       */
       icon={icon ? <TopicState type="folder" /> : undefined}
+      // In Archive, an archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
+      trailing={archive && folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       menu={menu}
       // The pointer resting on a closed Folder, or the keyboard reaching it,
       // reads it ahead (SID-2): resting, not passing, and never twice.
