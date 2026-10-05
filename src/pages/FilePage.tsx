@@ -1,7 +1,7 @@
 import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { IconArrowUpRight, IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
-import { Breadcrumb, Panel, Toolbar, ToolbarButton, ToolbarLink } from '@estiva-app/ui'
+import { IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
+import { Breadcrumb, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -394,15 +394,7 @@ export function FilePage() {
               file?.folder ? (
                 // One strip: one Tab stop, arrows along it (UIG-14).
                 <Toolbar aria-label="File actions" surface={false}>
-                  {/* A link that looks like the button (UIG-14, 4.13): a new tab works. */}
-                  <ToolbarLink
-                    tooltip="Open folder"
-                    aria-label="Open folder"
-                    href={`/app/folders/${file.folder}`}
-                    onClick={(event) => followInApp(event, () => navigate(`/app/folders/${file.folder}`))}
-                  >
-                    <IconArrowUpRight size={16} stroke={1.5} />
-                  </ToolbarLink>
+                  {/* No Open folder: the Folder is the column beside, its row open (Katerina, 5 October). */}
                   {toggleMember && (
                     <ToolbarButton
                       tooltip={member ? 'Leave' : 'Join'}

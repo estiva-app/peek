@@ -317,8 +317,8 @@ function shape() {
     comments: middle.querySelectorAll('[data-comment]').length,
     threadButtons: within(middle).queryAllByRole('button', { name: THREAD_CONTROL }).length,
     composer: within(middle).queryByRole('textbox') !== null,
-    // A link since UIG-14 (4.13): the address is real, so a new tab works.
-    openFolder: within(middle).queryByRole('link', { name: 'Open folder' })?.getAttribute('href') === `/app/folders/${FOLDER}`,
+    // No Open folder since 5 October: the Folder is the column beside, its row open.
+    openFolder: within(middle).queryByRole('link', { name: 'Open folder' }) !== null,
   }
 }
 
@@ -508,7 +508,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
       comments: 2,
       threadButtons: 2,
       composer: false,
-      openFolder: true,
+      openFolder: false,
     })
   })
 
@@ -521,7 +521,7 @@ describe('FilePage draws every app’s file in the same panes', () => {
       comments: 1,
       threadButtons: 1,
       composer: false,
-      openFolder: true,
+      openFolder: false,
     })
   })
 
@@ -1119,7 +1119,7 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
-    expect(within(middle).getByRole('link', { name: 'Open folder' })).toBeInTheDocument()
+    expect(within(middle).queryByRole('link', { name: 'Open folder' })).toBeNull()
     // Open work is the reader's, not the manifest's: any addressable file can be put there.
     // So is a topic inside it (FOL-4): any kind may hold one, and no manifest says so.
     // And Move (FOL-45): a Folder lists addresses, so any addressable file can change Folder.

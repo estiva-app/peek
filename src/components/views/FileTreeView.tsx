@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
 import { SkeletonSidebarList, SkeletonRow } from '@/components/ui/Skeleton'
-import { listedChildrenOf, peersOf } from '@/components/views/FolderContentsView'
+import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
 import type { FileControl } from '@/components/views/useFileControls'
 import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
@@ -30,7 +30,7 @@ function TreeLine({ message }: { message: string }) {
 /**
  * One Folder's files as sidebar rows — the file page's left column (FOL-19).
  *
- * **Lines, not cards.** `FolderContentsView` draws every file as a
+ * **Lines, not cards.** `FolderContentsView` (gone since 5 October) drew every file as a
  * `ForeignObjectCard`, which is right at the Folder page's full width and
  * wrong in a 290px column: a Ship project's card wraps its whole description
  * into a tower and the tree it sits in disappears (Miky, 2026-09-14). This is
