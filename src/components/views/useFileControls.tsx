@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { isArchived, topLevelFolders } from '@estiva-app/interop'
 import type { FolderRef, FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { RenameOutcome } from '@/api'
-import { useForeignObjects } from '@/api'
+import { useForeignObjects, useMembership } from '@/api'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { ConfirmDelete } from '@/components/ConfirmDelete'
 import { FileDetailsDialog } from '@/components/FileDetailsDialog'
@@ -18,7 +18,7 @@ import { useToast } from '@/lib/toast'
  * to another Folder or under another file (FOL-45), or a new topic inside it
  * (FOL-4).
  */
-export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive'
+export type FileControl = 'details' | 'rename' | 'delete' | 'move' | 'inside' | 'archive' | 'unarchive' | 'join' | 'leave'
 
 const titleOf = (file: ForeignObject) => file.slots.title?.value ?? 'Untitled'
 
@@ -124,6 +124,7 @@ export function useFileControls({
   const { renameFile, deleteFile, resolveFolderContents, listFolders, applyAction, createTopic, archiveFile, archiveImpact, moveFile } =
     useForeignObjects()
   const { showToast } = useToast()
+  const membership = useMembership()
   const [dialog, setDialog] = useState<
     | { kind: 'details'; file: ForeignObject; editing: boolean }
     | { kind: 'confirm'; file: ForeignObject }
@@ -176,6 +177,31 @@ export function useFileControls({
 
   const open = useCallback(
     (control: FileControl, file: ForeignObject) => {
+      /*
+        Join and Leave say what happened, at the bottom left like every toast
+        (Katerina, 5 October), and what it means for what lights up (SPEC
+        §11.8): a member hears every new message; anyone else only what names
+        them. Said only once the relay holds it — a refused change undoes
+        itself, and the toast says so instead.
+      */
+      if (control === 'join' || control === 'leave') {
+        const joining = control === 'join'
+        const title = file.slots.title?.value ?? 'this file'
+        if (!file.address || !file.folder) return refuse(`“${title}” is in no Folder Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
+        void membership.setMember(file.address, file.folder, joining).then((ok) =>
+          showToast(
+            ok
+              ? {
+                  label: joining
+                    ? `Joined “${title}”: every new message shows as unread.`
+                    : `Left “${title}”: only messages that mention you show as unread.`,
+                  type: 'success',
+                }
+              : { label: `Nothing changed: “${title}” could not be ${joining ? 'joined' : 'left'}. Try again.`, type: 'error' },
+          ),
+        )
+        return
+      }
       if (control === 'delete') return setDialog({ kind: 'confirm', file })
       if (control === 'unarchive') return void setArchived(file, false)
       if (control === 'archive') {

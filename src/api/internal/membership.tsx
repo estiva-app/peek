@@ -50,7 +50,8 @@ export interface MembershipSeam {
   /** File addresses the viewer is a member of — what the Screener asks the relay about. */
   memberFiles: readonly string[]
   /** Join or leave a file; local at once, then published. */
-  setMember: (file: string, folder: string, member: boolean) => Promise<void>
+  /** Resolves true once the relay holds the change; false when nothing changed (no seam, no answer yet, no Folder) or the relay refused it. */
+  setMember: (file: string, folder: string, member: boolean) => Promise<boolean>
   /** Re-read the relay, e.g. after the viewer wrote in a file. */
   refresh: () => Promise<void>
 }
@@ -65,7 +66,7 @@ const INERT: MembershipSeam = {
   isMentioned: () => false,
   isUrgent: () => false,
   memberFiles: [],
-  setMember: async () => {},
+  setMember: async () => false,
   refresh: async () => {},
 }
 

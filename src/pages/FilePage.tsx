@@ -281,7 +281,7 @@ export function FilePage() {
   const member = file?.address ? membership.isMember(file.address) : false
   const toggleMember =
     file?.address && file.folder && membership.state !== 'unknown'
-      ? () => void membership.setMember(file.address!, file.folder!, !member)
+      ? () => fileControls.open(member ? 'leave' : 'join', file)
       : undefined
 
   /*

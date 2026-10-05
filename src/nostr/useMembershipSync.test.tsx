@@ -123,7 +123,7 @@ describe('useMembershipSync', () => {
     // The join is published but not yet stored when a read is begun and answered without it…
     const stored = deferred<{ ok: boolean }>()
     relay.publishSigned.mockReturnValue(stored.promise)
-    let joining!: Promise<void>
+    let joining!: Promise<boolean>
     act(() => {
       joining = result.current.setMember(OTHER, FOLDER, true)
     })

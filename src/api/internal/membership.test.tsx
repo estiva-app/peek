@@ -79,6 +79,7 @@ describe('useMembership outside the provider', () => {
     const { result } = renderHook(() => useMembership())
     expect(result.current.state).toBe('unknown')
     expect(result.current.isMember(THEIRS)).toBe(false)
-    await expect(result.current.setMember(THEIRS, FOLDER, true)).resolves.toBeUndefined()
+    // Nothing changed, and it says so: a toast reads false as "nothing changed".
+    await expect(result.current.setMember(THEIRS, FOLDER, true)).resolves.toBe(false)
   })
 })

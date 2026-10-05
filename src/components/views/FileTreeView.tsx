@@ -274,7 +274,9 @@ function TreeRow({
             memberAction={memberAction}
             onToggleMember={
               followKey && file.folder && memberAction
-                ? () => void membership.setMember(followKey, file.folder!, memberAction === 'join')
+                ? () =>
+                    // Through the page's controls, which say what happened in a toast; on its own (a story), straight to the seam.
+                    onControl ? onControl(memberAction, file) : void membership.setMember(followKey, file.folder!, memberAction === 'join')
                 : undefined
             }
             onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
