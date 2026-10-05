@@ -39,11 +39,13 @@ import { FolderTreeView } from '@/components/views/FolderTree'
   unread={unreadByFolder}
   currentFolder={openFolderId}
   onSelect={openFile}
-  onOpenFolder={openFolder}
+  menuFor={folderMenu}
 />
 ```
 
-- `unread` is one dot per Folder id (FOL-18). **A missing key means unjudged,
+- `menuFor` is a Folder heading's ⋮ — Start a topic, Rename, Archive…
+  (`useFolderActions`). Without it the headings have none.
+- `unread` is one verdict per Folder id (FOL-18). **A missing key means unjudged,
   not read** — the two are different, and a component that treated them the same
   would quietly mark things read.
 

@@ -173,7 +173,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       if (!FOLDER_ID.test(folder)) {
         // `buildMembershipChange` would throw; say so now rather than flipping the control and flipping it back.
         console.warn('[membership] not changed: the file has no Folder to name in the change:', folder)
-        return `The file has no Folder to name in the change (${folder}).`
+        return 'This file is in no Folder Peek can name.'
       }
       generation.current++
       const before = files.get(file)
@@ -183,7 +183,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       setFiles((prev) => new Map(prev).set(file, local))
 
       const run = async (): Promise<true | string> => {
-        let why = 'The write failed.'
+        let why = 'It could not be sent. Try again.'
         try {
           const unsigned = buildMembershipChange(seam.pubkey, now, { file, folder, person: seam.pubkey, member })
           const signed: SignedEvent = await signViaEstivaId(unsigned, seam.accessToken, seam.pubkey)
@@ -194,10 +194,11 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
             return true
           }
           console.warn('[membership] publish failed:', result.reason)
-          why = `The relay refused it: ${result.reason}`
+          // The relay's own words stay in the console (above); the toast says it plainly.
+          why = 'The relay said no. Try again.'
         } catch (error) {
           console.warn('[membership] publish threw:', error)
-          why = `The write failed: ${(error as Error)?.message ?? String(error)}`
+          why = 'It could not be sent. Try again.'
         }
         // Refused: the control said something the relay does not hold. Undo this change alone.
         pending.current.delete(file)
