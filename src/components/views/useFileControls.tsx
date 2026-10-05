@@ -125,6 +125,16 @@ export function useFileControls({
     useForeignObjects()
   const { showToast } = useToast()
   const membership = useMembership()
+  /*
+    Read through a ref, like `onArchived` below: `open` stays the stable
+    function every row holds, and still joins with the membership of now —
+    held in its closure, it kept the first render's, which had not read what
+    the person is a member of, so every Join said "not read yet" (5 October).
+  */
+  const membershipNow = useRef(membership)
+  useEffect(() => {
+    membershipNow.current = membership
+  })
   const [dialog, setDialog] = useState<
     | { kind: 'details'; file: ForeignObject; editing: boolean }
     | { kind: 'confirm'; file: ForeignObject }
@@ -188,7 +198,7 @@ export function useFileControls({
         const joining = control === 'join'
         const title = file.slots.title?.value ?? 'this file'
         if (!file.address || !file.folder) return refuse(`“${title}” is in no Folder Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
-        void membership.setMember(file.address, file.folder, joining).then((outcome) =>
+        void membershipNow.current.setMember(file.address, file.folder, joining).then((outcome) =>
           showToast(
             outcome === true
               ? {
@@ -277,7 +287,7 @@ export function useFileControls({
         })
       })()
     },
-    [refuse, resolveFolderContents, listFolders, archiveImpact, setArchived],
+    [refuse, resolveFolderContents, listFolders, archiveImpact, setArchived, showToast],
   )
 
   const move = async (state: MoveState, choice: MoveChoice): Promise<boolean> => {
