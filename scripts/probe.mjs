@@ -59,10 +59,10 @@ import { homedir } from 'node:os'
 import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url]
-  [--url path] [--click label] [--fill label=text] [--press key] [--drag "from => to"]
+  [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--drag', '--wait', '--until', '--eval', '--screenshot'])
+const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
 const steps = []
 const argv = process.argv.slice(2)
@@ -129,6 +129,8 @@ try {
   for (const [step, value] of steps) {
     const entry = { [step]: value }
     report.steps.push(entry)
+    // PROBE_TRACE=1: each step on stderr as it starts, so a run that hangs says where.
+    if (process.env.PROBE_TRACE) console.error(`${new Date().toISOString()} ${step} ${String(value).slice(0, 80)}`)
     try {
       entry.result = await run(page, step, value)
     } catch (error) {
@@ -201,11 +203,25 @@ async function run(page, step, value) {
     case 'press':
       await page.keyboard.press(value)
       return true
+    // The real pointer over the first match: what draws a control that exists only under the pointer.
+    case 'hover':
+      await page.locator(value).first().hover({ timeout })
+      return true
     case 'drag': {
       const at = value.indexOf('=>')
       if (at === -1) throw new Error('--drag takes "<from css> => <to css>"')
       const [from, to] = [value.slice(0, at).trim(), value.slice(at + 2).trim()]
-      await page.locator(from).first().dragTo(page.locator(to).first(), { timeout })
+      // A person's drag: down on the source, ten moves to the target's lower edge, up — as the Storybook check that passed.
+      // Against ship.estiva.app both this and dragTo hang at the first move after down (RIC-18, 5 October); there, dispatch
+      // dragstart/dragover/drop with --eval instead (~/ric18-scratch/prod-drop.sh).
+      const a = await page.locator(from).first().boundingBox({ timeout })
+      const b = await page.locator(to).first().boundingBox({ timeout })
+      if (!a || !b) throw new Error(`--drag: ${a ? to : from} is not on screen`)
+      const [x, y] = [a.x + a.width / 2, a.y + a.height / 2]
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      for (let i = 1; i <= 10; i++) await page.mouse.move(x + 40 + i * 10, y + ((b.y + b.height - 3 - y) * i) / 10)
+      await page.mouse.up()
       return true
     }
     case 'screenshot':
