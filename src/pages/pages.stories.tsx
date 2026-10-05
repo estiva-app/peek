@@ -16,6 +16,9 @@ import type { FolderSummary } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
+import { Panel } from '@estiva-app/ui'
+import { ArchivedNotice } from '@/components/ArchivedNotice'
+import { DateDivider } from '@/components/ui/DateDivider'
 
 const noop = () => {}
 
@@ -325,6 +328,41 @@ export const File: Story = {
     <FilePageView
       nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
       rightPanel={<EmptyState message="No file selected" />}
+    />
+  ),
+}
+
+/**
+ * **An archived file.** The package's Banner in its warning tone, at the top
+ * of the messages column, with the resolution under it — and it stays there
+ * as the stream scrolls, above the date dividers (Katerina, 5 October).
+ * Scroll the messages. The messages here are stand-ins.
+ */
+export const FileArchived: Story = {
+  render: () => (
+    <FilePageView
+      nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
+      rightPanel={
+        <Panel title="Release notes for 0.37" bodyClassName="flex min-h-full flex-col">
+          <div className="sticky top-0 z-20">
+            <ArchivedNotice
+              archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
+              by="Miky"
+              onUnarchive={noop}
+            />
+          </div>
+          {['Monday', 'Tuesday', 'Yesterday'].map((day) => (
+            <div key={day} className="flex flex-col">
+              <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />
+              {Array.from({ length: 6 }, (_, i) => (
+                <p key={i} className="px-4 py-2 text-body-2 text-text-secondary">
+                  A message from {day.toLowerCase()}, number {i + 1}.
+                </p>
+              ))}
+            </div>
+          ))}
+        </Panel>
+      }
     />
   ),
 }

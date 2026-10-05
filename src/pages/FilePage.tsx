@@ -343,7 +343,6 @@ export function FilePage() {
     <>
     {fileControls.dialogs}
       <FilePageView
-        banner={notice}
         nav={
           <FolderTree
             currentFolder={navFile?.folder}
@@ -357,6 +356,19 @@ export function FilePage() {
           // The file's conversation in the package's Panel: it scrolls, and the composer stays under it.
           <Panel
             {...view.panel}
+            /*
+              An archived file's notice sits at the top of the messages column
+              (Katerina, 5 October) and stays there as the stream scrolls: the
+              stream opens at its newest message, so a notice above the first
+              one would be out of sight. Above the date dividers, which stick
+              to the same edge (z-10).
+            */
+            children={
+              <>
+                {notice && <div className="sticky top-0 z-20">{notice}</div>}
+                {view.panel.children}
+              </>
+            }
             title={
               /*
                 One row: the file's name, and whose file it is (Katerina, 5
@@ -442,9 +454,7 @@ export function FilePage() {
  * child whose parent is listed, so without it a Ship issue would be in the
  * Folder and drawn nowhere — the same shape of gap this route was opened for.
  */
-export function FilePageView({ nav, rightPanel, threadPanel, banner }: {
-  /** An archived file's notice (FOL-46), at the top of the content area. */
-  banner?: ReactNode
+export function FilePageView({ nav, rightPanel, threadPanel }: {
   /**
    * The navigation column. The page hands over its wired `FolderTree`; a story
    * hands over `FolderTreeView` with a fixture, which is the only way this
@@ -454,5 +464,6 @@ export function FilePageView({ nav, rightPanel, threadPanel, banner }: {
   rightPanel?: ReactNode
   threadPanel?: ReactNode
 }) {
-  return <AppShell leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} banner={banner} />
+  // An archived file's notice is the messages column's own (5 October), not the frame's banner.
+  return <AppShell leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} />
 }
