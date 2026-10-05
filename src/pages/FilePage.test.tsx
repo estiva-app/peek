@@ -22,7 +22,6 @@ import { DebugProvider } from '@/lib/debug'
 import { LastSelectionProvider, useLastSelection, type PendingTopicMessage } from '@/lib/lastSelection'
 import { resetRecentsForTests } from '@/lib/recents'
 import { forgetRouteWords, rememberRouteWords, routeWordsOf } from '@/lib/objectUrl'
-import { channelDestination } from '@/lib/legacyTopicLinks'
 import { FilePage } from './FilePage'
 
 const FOLDER = '925897ad-796e-4bc6-999c-ca19df26c4aa'
@@ -359,7 +358,8 @@ describe('FilePage opens a file by address, not against the listing', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
     expect(within(middle).getByText('The file route')).toBeInTheDocument()
-    expect(within(middle).getByText('In Estiva Ship')).toBeInTheDocument()
+    // Whose file it is, as a chip beside the name (5 October).
+    expect(within(middle).getByText('Estiva Ship')).toBeInTheDocument()
     expect(middle.querySelectorAll('[data-comment]')).toHaveLength(2)
   })
 
@@ -1319,7 +1319,7 @@ describe('FilePage offers Join and Leave on the header and the row (§11.8)', ()
   })
 })
 
-describe('A file may name a parent file — the trail, the tree, Move and New topic inside (FOL-4)', () => {
+describe('A file may name a parent file — the tree, Move and New topic inside (FOL-4)', () => {
   /*
     A chain three deep in one team: project › brief › notes › the open topic.
     The listing is the whole input for the trail — a moved file's parent is
@@ -1352,24 +1352,7 @@ describe('A file may name a parent file — the trail, the tree, Move and New to
     writes.createTopic.mockClear()
   })
 
-  it('draws the team and every file above, outermost first, each a link', () => {
-    mount(`/topic/${TOPIC_ADDRESS}`)
-    const trail = within(screen.getByTestId('middle')).getByRole('navigation')
-    const crumbs = within(trail).getAllByRole('link')
-    expect(crumbs.map((crumb) => crumb.textContent)).toEqual([
-      'Folders',
-      'Folders: navigation for the whole suite',
-      'Brief',
-      'Notes',
-    ])
-    // `FOLDER` is a retired topic's channel, so its crumb leads where the
-    // topic went, as every link to that channel does (FOL-26).
-    expect(crumbs[0]).toHaveAttribute('href', channelDestination(FOLDER))
-  })
-
-  it('draws no trail for a file at the top', () => {
-    objects.byAddress[TOPIC_ADDRESS] = { ...deep, parentRef: undefined }
-    relay.files = [project, { ...deep, parentRef: undefined }]
+  it('draws no trail over the file — the tree beside shows where it sits (5 October)', () => {
     mount(`/topic/${TOPIC_ADDRESS}`)
     expect(within(screen.getByTestId('middle')).queryByRole('navigation')).toBeNull()
   })

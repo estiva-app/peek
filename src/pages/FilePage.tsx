@@ -1,8 +1,7 @@
-import { useCallback, useEffect, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
-import { Breadcrumb, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { nestingOf } from '@estiva-app/interop'
+import { Chip, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { AppShell } from '@/layouts/AppShell'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
@@ -22,8 +21,6 @@ import { kindNoun } from '@/lib/archiveWords'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
-import { useFolderPath } from '@/lib/useFolderPath'
-import { followInApp } from '@/lib/followInApp'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { rememberRecent } from '@/lib/recents'
@@ -226,15 +223,9 @@ export function FilePage() {
   const people = useWorkspaceDirectory()
 
   /*
-    Where the file sits (FOL-4): its team, then every file above it, each a
-    link. Walked in the team's listing (`nestingOf`), which is the one read
-    that knows a moved file's parent and which holds every ancestor — a
-    sub-file is in its parent's team — so the trail costs no request per level.
-    The tree's section for this team is handed the same read rather than
-    making its own. Drawn only for a file with something above it: a trail of
-    one says nothing the header's title does not.
+    The team's listing (FOL-4): the one read that holds a moved file's parent,
+    handed to the tree's section for this team rather than read twice.
   */
-  const folderPath = useFolderPath()
   const { state: team, reload: reloadTeam } = useFolderContents(navFile?.folder)
   const teamFiles = typeof team === 'object' && 'files' in team ? team.files : undefined
   /*
@@ -246,26 +237,6 @@ export function FilePage() {
   const clicked =
     !file && navFile && fileAddress ? teamFiles?.find((candidate) => candidate.address === fileAddress) : undefined
   const selected = file ?? clicked ?? navFile
-  const listedSelf = file && teamFiles?.find((candidate) => candidate.ref === file.ref)
-  const ancestors = listedSelf && teamFiles ? nestingOf(teamFiles).ancestorsOf(listedSelf) : []
-  const trail =
-    file?.folder && ancestors.length > 0
-      ? [
-          {
-            label: (typeof team === 'object' && 'name' in team ? team.name : undefined) ?? 'Folder',
-            href: folderPath(file.folder),
-            onClick: (event: MouseEvent<HTMLAnchorElement>) => followInApp(event, () => navigate(folderPath(file.folder!))),
-          },
-          ...ancestors.map((above) => {
-            const path = filePath(above.address!, above.slots.title?.value)
-            return {
-              label: above.slots.title?.value ?? 'Untitled',
-              href: path,
-              onClick: (event: MouseEvent<HTMLAnchorElement>) => followInApp(event, () => navigate(path)),
-            }
-          }),
-        ]
-      : undefined
 
   const fileControls = useFileControls({
     onRenamed: () => void reloadConversation(),
@@ -278,7 +249,7 @@ export function FilePage() {
     onDeleted: (deleted) => {
       if (deleted.folder && deleted.address === file?.address) navigate(`/app/folders/${deleted.folder}`, { replace: true })
     },
-    // The trail and the tree both draw the file's place, and both read the team.
+    // The tree draws the file's place, and reads the team.
     onMoved: () => void Promise.all([reloadConversation(), reloadTeam()]),
     // Into the new topic, as the header's New topic does: it is what was asked for.
     onStarted: (created) => navigate(filePath(created.address, created.title)),
@@ -376,18 +347,21 @@ export function FilePage() {
           <Panel
             {...view.panel}
             title={
-              <div className="min-w-0">
-                {trail && <Breadcrumb items={trail} />}
+              /*
+                One row: the file's name, and whose file it is (Katerina, 5
+                October). No trail over it: the column beside shows where the
+                file sits, its Folder and every row above it open — and a trail
+                in one row cut every name short.
+              */
+              <div className="flex min-w-0 items-center gap-2">
                 <p className="truncate text-body-2-strong text-text-primary">{title}</p>
                 {/*
-                  Whose file this is, said plainly. The page draws another app's
+                  Whose file this is, said plainly: the page draws another app's
                   conversation in Peek's own language, which is the point and is
-                  also exactly what could mislead: without this the discussion
-                  reads as something in Peek.
+                  also exactly what could mislead — without it the discussion
+                  reads as something in Peek. A chip, never cut short.
                 */}
-                {elsewhereAppName(file) && (
-                  <p className="truncate text-caption text-text-muted">In {elsewhereAppName(file)}</p>
-                )}
+                {elsewhereAppName(file) && <Chip type="neutral" label={elsewhereAppName(file)!} className="shrink-0" />}
               </div>
             }
             actions={
