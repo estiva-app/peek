@@ -93,13 +93,19 @@ export function FolderActionDialog({
       />
     )
   }
-  if (!impact || !folder.channel) return null
+  if (!folder.channel) return null
+  /*
+    Open at once, counting (5 October): it used to appear only once the count
+    was in, and an Archive… chosen on another Folder meanwhile showed the first
+    one's numbers under the second's name. The dialog is keyed by its Folder
+    (`FolderTree`), so a count belongs to the dialog that asked for it.
+  */
   return (
     <ArchiveDialog
       title={name}
       what="folder"
-      hides={impact.hides}
-      staysVisible={impact.staysVisible}
+      hides={impact?.hides ?? null}
+      staysVisible={impact?.staysVisible}
       onClose={onClose}
       onArchive={async (resolution) => {
         // A refused sign throws (a 429 under load); say so rather than closing silently.

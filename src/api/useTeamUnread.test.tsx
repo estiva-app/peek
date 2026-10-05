@@ -86,6 +86,7 @@ vi.mock('@/api', async () => {
             isMember,
             termsOf: (key: string) => ({ member: isMember(key), muted: false }),
             isMentioned: () => false,
+            memberFiles: follows.keys ? [...follows.keys].sort() : [],
           }
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -305,6 +306,32 @@ describe('useTeamUnread', () => {
     follows.keys = new Set()
     advance({})
     expect(result.current.unread).toEqual({ [FOLDER_A]: false, [FOLDER_B]: false })
+  })
+
+  it('Topics is every joined file, talked about or not: a listed one, and an unlisted one through its parent (5 October)', () => {
+    const QUIET = `30851:${'b'.repeat(64)}:quiet`
+    const PROJECT = `30620:${'e'.repeat(64)}:project`
+    const ISSUE = `30621:${'e'.repeat(64)}:issue`
+    const withListings = [
+      { id: FOLDER_A, name: 'A', hasState: true, addresses: [QUIET] },
+      { id: FOLDER_B, name: 'B', hasState: true, addresses: [PROJECT] },
+    ]
+    follows.state = 'unknown'
+    follows.keys = new Set([QUIET, ISSUE])
+    parents.known = { [ISSUE]: PROJECT }
+    const { result, rerender } = renderHook(() => useTeamUnread(withListings))
+    // Nothing judged yet: Topics waits rather than saying "nothing yours".
+    expect(result.current.ready.member).toBe(false)
+    expect(result.current.member).toEqual({})
+
+    follows.state = 'known'
+    advance({}, false)
+    rerender()
+    // No message anywhere, and both Folders are theirs; the issue was asked about for its parent.
+    expect(result.current.ready.member).toBe(true)
+    expect(result.current.member).toMatchObject({ [FOLDER_A]: true, [FOLDER_B]: true })
+    expect([...result.current.holdsJoined]).toEqual([PROJECT])
+    expect(parents.asked.at(-1)).toContain(ISSUE)
   })
 })
 

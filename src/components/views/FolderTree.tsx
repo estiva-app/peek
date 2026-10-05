@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
 import { ListColumn, Menu, MenuItem, NavTree, NavTreeSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
@@ -47,13 +47,10 @@ import { useToast } from '@/lib/toast'
  * what Ship is: a Folder is a section, a file is a row, and which app owns the
  * file is the row's glyph.
  *
- * Where it is drawn: the Folders rail item (`FoldersPage`, peek#214) and the
- * file page (`FilePage`). peek#213 also put it in the Topics column in place of
- * "Your topics / Other topics", and that was taken back the same day (Miky,
- * 2026-09-14): while a topic is a Folder it is a section here, opened from a
- * hover action with no highlighted row, which is not a column to read topics
- * from. The topic list returns to the tree's place when FOL-22 makes topics
- * rows — `onNewTopic` is kept for that day.
+ * Where it is drawn: the Topics rail item (`FoldersPage`, with no file open)
+ * and the file page (`FilePage`). It is the one column (Katerina, 5 October):
+ * its title switches between Topics — what the person joined — and Folders —
+ * every Folder — and a Folder is managed from its heading's ⋮.
  *
  * ## What is read, and when
  *
@@ -85,11 +82,10 @@ import { useToast } from '@/lib/toast'
  *
  * ## Sections, not rows, for the Folders
  *
- * A Folder is a `CollapsibleSection` — the package's group-of-rows, the same
+ * A Folder is a `NavTreeSection` — the package's group-of-rows, the same
  * thing Ship's sidebar makes of its projects and Linear's of its teams — so
- * its title toggles and its rows are the files. Opening the Folder *itself* is
- * the header's action; where that leads is `useFolderPath`'s decision. Since
- * FOL-22 a topic is a channel placed in its team by address (`listedIn`), so
+ * its title folds and its rows are the files; its ⋮ holds the Folder's own
+ * actions (`useFolderActions`). Since FOL-22 a topic is a channel placed in its team by address (`listedIn`), so
  * it is a row in the team's section, and a `39000:` row opens the topic page
  * (`FilePage` sends it there). A Folder nothing lists is a section of its own.
  */
@@ -142,7 +138,7 @@ export function FolderTree({
     record channel is in `listFolders` too and is nobody's section:
     `topLevelFolders` says which are.
   */
-  const { unread, activity, member } = useTeamUnread(folders)
+  const { unread, activity, member, holdsJoined, ready } = useTeamUnread(folders)
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
   /*
     The section a file is drawn in (SID-2). A Ship project's Folder is its own
@@ -161,12 +157,10 @@ export function FolderTree({
   /*
     The two views (Katerina, 5 October): Topics, what you are a member of, and
     Folders, every Folder. The person's choice is remembered in this browser;
-    a Folder's own link turns the column to Folders, where that Folder is.
+    a Folder's own link turns the column to Folders, where that Folder is —
+    for this visit only, so the saved choice stays theirs.
   */
-  const [view, setView] = useRememberedView()
-  useEffect(() => {
-    if (showFolder) setView('all')
-  }, [showFolder, currentFolder, setView])
+  const [view, setView] = useView(showFolder ? (currentFolder ?? null) : null)
   const [show, setShow] = useState<TreeShow>('all')
   const { menuFor, action, close } = useFolderActions()
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
@@ -190,7 +184,10 @@ export function FolderTree({
           unread={unread}
           activity={activity}
           member={member}
+          holdsJoined={holdsJoined}
+          ready={ready}
           view={view}
+          linkedFolder={showFolder ? currentFolder : undefined}
           filter={treeFilterOf(view, show)}
           currentFolder={section}
           selectedRef={selectedRef}
@@ -211,7 +208,9 @@ export function FolderTree({
         />
       </FolderColumn>
       {/* Mounted only while open: the writes, and the toasts that report them, are theirs. */}
-      {action && <FolderActionDialog action={action} folders={folders} reload={reload} onClose={close} />}
+      {action && (
+        <FolderActionDialog key={`${action.kind}:${action.folder.id}`} action={action} folders={folders} reload={reload} onClose={close} />
+      )}
       {making && (
         <HeaderDialog
           making={making}
@@ -295,6 +294,48 @@ function HeaderDialog({
 }
 
 const VIEW_KEY = 'peek.tree.view'
+
+/**
+ * A Folder link's turn to Folders, held for this tab and not saved (Katerina,
+ * 5 October): the column stays on Folders while the person moves between the
+ * link and its files, and the next visit opens on their own choice again.
+ */
+const VISIT_KEY = 'peek.tree.visit'
+function visitView(): TreeView | null {
+  try {
+    return window.sessionStorage.getItem(VISIT_KEY) === 'all' ? 'all' : null
+  } catch {
+    return null
+  }
+}
+
+/** The view shown: a link's for this visit, else the person's saved choice. */
+function useView(linked: string | null): [TreeView, (next: TreeView) => void] {
+  const [saved, save] = useRememberedView()
+  const [visit, setVisit] = useState<TreeView | null>(visitView)
+  const [seen, setSeen] = useState<string | null>(null)
+  // Set during render, once per link: neither the initialiser nor an effect.
+  if (linked && linked !== seen) {
+    setSeen(linked)
+    setVisit('all')
+  }
+  useEffect(() => {
+    try {
+      if (visit) window.sessionStorage.setItem(VISIT_KEY, visit)
+      else window.sessionStorage.removeItem(VISIT_KEY)
+    } catch {
+      // A browser that blocks storage still switches; it forgets on the next page.
+    }
+  }, [visit])
+  const choose = useCallback(
+    (next: TreeView) => {
+      setVisit(null)
+      save(next)
+    },
+    [save],
+  )
+  return [visit ?? saved, choose]
+}
 
 /** The view, remembered in this browser; Topics until the person chooses. */
 function useRememberedView(): [TreeView, (next: TreeView) => void] {
@@ -404,7 +445,10 @@ export function FolderTreeView({
   unread,
   activity = {},
   member = {},
+  holdsJoined,
+  ready = { member: true, unread: true },
   view = 'all',
+  linkedFolder,
   filter = 'all',
   currentFolder,
   selectedRef,
@@ -428,10 +472,16 @@ export function FolderTreeView({
    * re-read their dots when theirs changes. Missing means nothing said yet.
    */
   activity?: Record<string, number>
-  /** Whether each Folder holds a stream the person is a member of (FOL-41, §11.8). Missing means unjudged. */
+  /** Whether each Folder holds a file the person is a member of (FOL-41, §11.8) — `useTeamUnread`. */
   member?: Record<string, boolean>
+  /** Parents of joined files no listing holds — a project, for an issue of yours: Topics keeps its row. */
+  holdsJoined?: ReadonlySet<string>
+  /** Whether `member` and `unread` are judged yet. A filter over an unjudged verdict is a skeleton. */
+  ready?: { member: boolean; unread: boolean }
   /** Which view: in Folders, every heading wears the folder icon (Katerina, 5 October). */
   view?: TreeView
+  /** The Folder a link opened (`/app/folders/<id>`): it opens, and is scrolled to. */
+  linkedFolder?: string | null
   /** What the column is showing — `all` unless the header says otherwise (FOL-41). */
   filter?: TreeFilter
   currentFolder?: string | null
@@ -451,6 +501,13 @@ export function FolderTreeView({
   if (signedOut) return <EmptyState scope="section" message="Sign in to see folders." />
   if (folders === null) return <SkeletonSidebarList />
   if (folders.length === 0) return <EmptyState scope="section" message="No folders yet." />
+  /*
+    Still loading, not empty: Topics before the relay has said what the person
+    joined, Unread before the read state is in. "Nothing yours yet" there was
+    a sentence about a question nobody had answered (5 October).
+  */
+  const waitsFor = filter === 'mine' ? ready.member : filter === 'all' ? true : ready.unread
+  if (!waitsFor) return <SkeletonSidebarList />
 
   // Alphabetical, as the topic list was. The relay's order is arrival order,
   // which tells the person nothing.
@@ -487,8 +544,10 @@ export function FolderTreeView({
           selectedParent={selectedParent}
           onSelect={onSelect}
           icon={view === 'all'}
+          linked={linkedFolder === folder.id}
           menu={menuFor?.(folder)}
           onControl={onControl}
+          holdsJoined={holdsJoined}
           preloaded={folder.id === currentFolder ? currentContents : undefined}
         />
       ))}
@@ -506,8 +565,10 @@ function FolderSection({
   selectedParent,
   onSelect,
   icon,
+  linked,
   menu,
   onControl,
+  holdsJoined,
   preloaded,
 }: {
   folder: FolderSummary
@@ -519,9 +580,12 @@ function FolderSection({
   onSelect: (file: ForeignObject) => void
   /** The folder icon before the name — in Folders, not in Topics. */
   icon: boolean
+  /** A link opened this Folder: open it, whatever was remembered, and bring it into view. */
+  linked: boolean
   /** The heading's ⋮: the Folder's own actions. */
   menu?: ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
+  holdsJoined?: ReadonlySet<string>
   /** This Folder's listing, already read by the page (FOL-4) — then this section reads nothing. */
   preloaded?: FolderContentsState
 }) {
@@ -541,6 +605,21 @@ function FolderSection({
   const [filtered, setFiltered] = useState(true)
   const open = filter === 'all' ? remembered : filtered
   const setOpen = filter === 'all' ? setRemembered : setFiltered
+  /*
+    A Folder's link always lands on it open, and scrolled to (Katerina,
+    5 October): a notification, another app or a new Folder leading to a
+    closed heading among 160 showed nothing at all. Once per arrival — the
+    person can close it again — and it is remembered open, as a click would.
+  */
+  const openNow = useRef(setOpen)
+  useEffect(() => {
+    openNow.current = setOpen
+  })
+  useEffect(() => {
+    if (!linked) return
+    openNow.current(true)
+    document.querySelector(`[data-nav-group="${CSS.escape(folder.id)}"]`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [linked, folder.id])
   /*
     The read is the fold. `null` while closed is the hook's "nothing to read"
     — no request, no refresh trigger, no socket subscription — so a Folder
@@ -640,6 +719,7 @@ function FolderSection({
           activity={activity}
           onSelect={onSelect}
           onControl={onControl}
+          holdsJoined={holdsJoined}
         />
       )}
     </NavTreeSection>

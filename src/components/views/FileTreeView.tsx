@@ -54,6 +54,7 @@ export function FileTreeView({
   activity = 0,
   onSelect,
   onControl,
+  holdsJoined,
 }: {
   state: FolderContentsState
   /**
@@ -83,6 +84,11 @@ export function FileTreeView({
    * without this has no menus, exactly as before.
    */
   onControl?: (control: FileControl, file: ForeignObject) => void
+  /**
+   * Parents of joined files this listing does not hold — a Ship project, for
+   * an issue of yours (`useTeamUnread`): Topics keeps the row, closed.
+   */
+  holdsJoined?: ReadonlySet<string>
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
   const { unread } = useConversationBadges(files ? peersOf(files) : undefined, activity)
@@ -90,7 +96,9 @@ export function FileTreeView({
     The same seam the rows' own join controls read, so a row kept by the
     `Mine` filter and the bell drawn on it cannot disagree in one render.
   */
-  const { isMember } = useMembership()
+  const membership = useMembership()
+  // Yours is a file you are a member of, or one that holds a file of yours the listing does not (5 October).
+  const isMember = (address: string) => membership.isMember(address) || !!holdsJoined?.has(address)
 
   if (state === 'loading') {
     return (

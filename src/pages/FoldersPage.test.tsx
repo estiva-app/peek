@@ -91,6 +91,8 @@ const teamUnread = vi.hoisted(() => ({
   unread: {} as Record<string, boolean>,
   /* And which hold a stream the person is a member of — the other half of the same read (FOL-41). */
   member: {} as Record<string, boolean>,
+  /* Parents of joined files no listing holds — a project, for an issue of yours (5 October). */
+  holdsJoined: new Set<string>(),
 }))
 /* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
 const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
@@ -187,7 +189,7 @@ vi.mock('@/api', async () => ({
   }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
-  useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member }),
+  useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member, holdsJoined: teamUnread.holdsJoined }),
   useWorkspaceDirectory: () => undefined,
   useMembership: () => ({ isMember: (address: string) => members.addresses.includes(address), setMember: async () => {} }),
   useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
@@ -531,6 +533,21 @@ describe('FoldersPage filters the column', () => {
       expect(row.closest('[data-nav-group]')!.querySelector(`[aria-label="Show what is under A parent project"]`)).toBeTruthy()
     } finally {
       members.addresses = []
+    }
+  })
+
+  it('in Topics, keeps a project for an issue of yours the listing does not hold (5 October)', () => {
+    relay.files = [parent, topic]
+    teamUnread.member = { [FOLDER]: true }
+    teamUnread.holdsJoined = new Set([parent.address!])
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    try {
+      const { container } = mount('/app/folders')
+      const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
+      expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
+      expect(tree.querySelector(`[data-file="${CSS.escape(topic.ref)}"]`)).toBeNull()
+    } finally {
+      teamUnread.holdsJoined = new Set()
     }
   })
 

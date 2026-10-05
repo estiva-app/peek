@@ -99,4 +99,10 @@ describe('ConfirmDelete', () => {
     render(<ConfirmDelete what="topic" onConfirm={() => {}} onClose={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Archive instead' })).toBeNull()
   })
+
+  it('opens before the count is in: says it is counting, and Archive waits for it', () => {
+    render(<ArchiveDialog title="T" what="folder" hides={null} onClose={() => {}} onArchive={async () => true} />)
+    expect(screen.getByText('Counting what archiving this folder would hide…')).not.toBeNull()
+    expect((screen.getByRole('button', { name: 'Archive folder' }) as HTMLButtonElement).disabled).toBe(true)
+  })
 })

@@ -333,11 +333,18 @@ describe('the two views (Katerina, 5 October)', () => {
     expect(screen.getByRole('button', { name: 'New folder' })).not.toBeNull()
   })
 
-  it("a Folder's own link turns the column to Folders, where it is", () => {
+  it("a Folder's own link turns the column to Folders, where it is — for this visit, not saved", () => {
     window.localStorage.setItem('peek.tree.view', 'mine')
     mount({ currentFolder: OTHER, showFolder: true })
     expect(title('Folders')).not.toBeNull()
-    expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
+    expect(window.localStorage.getItem('peek.tree.view')).toBe('mine')
+  })
+
+  it("a Folder's own link opens it, though the person had closed it", () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    window.localStorage.setItem(`peek.tree.folder.${OTHER}`, 'closed')
+    mount({ currentFolder: OTHER, showFolder: true })
+    expect(openOf(section(OTHER))).toBe('true')
   })
 
   it('in Folders each heading wears the folder icon; in Topics none does', async () => {
