@@ -1,4 +1,4 @@
-import { threadReadAt } from '@estiva-app/conversation'
+import { belowReplyFloor, threadReadAt } from '@estiva-app/conversation'
 import type { ConversationMessage } from '@estiva-app/interop'
 
 /**
@@ -52,6 +52,7 @@ export function fileHasUnread(
       ? frontier.file
       : threadReadAt({ thread: frontier.thread(message.root), stream: frontier.file, floor: frontier.floor })
     if (marker === undefined) {
+      if (!isRoot && belowReplyFloor(message.at, frontier.floor)) continue
       if (message.at > oldest) return true
       continue
     }

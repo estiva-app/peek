@@ -74,6 +74,13 @@ describe('§11.3 — the thread rule, judged by the package', () => {
     expect(fileHasUnread([root(ROOT, 100), reply('r', 5001, ROOT)], frontier({ file: 200, floor: 5000 }))).toBe(true)
   })
 
+  it('with no marker, lets the floor read a reply but never light one the horizon leaves quiet', () => {
+    const old = NOW - HORIZON - 100
+    expect(fileHasUnread([reply('r', old, ROOT)], frontier({ floor: old - 1000 }))).toBe(false)
+    expect(fileHasUnread([reply('r', NOW - 10, ROOT)], frontier({ floor: NOW - 5 }))).toBe(false)
+    expect(fileHasUnread([reply('r', NOW - 10, ROOT)], frontier({ floor: NOW - 50 }))).toBe(true)
+  })
+
   it('does not let the reply floor read a root', () => {
     expect(fileHasUnread([root(ROOT, 300)], frontier({ file: 200, floor: 5000 }))).toBe(true)
   })
