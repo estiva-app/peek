@@ -80,7 +80,8 @@ export function ArchiveDialog({ title, what, hides, staysVisible = [], onClose, 
           </p>
           {staysVisible.length > 0 && <p>{`${listOf(staysVisible)} stay visible there.`}</p>}
           <p className="text-text-secondary">
-            Nothing is deleted: a link still opens it, and Unarchive brings everything back as it was.
+            {/* Peek's own last line, not Ship's (5 October): Peek has an Archive view to point at. */}
+            Nothing is deleted: it waits under Archive, where Unarchive brings everything back as it was.
           </p>
         </div>
         <Field label="Resolution (optional)">

@@ -113,7 +113,7 @@ export function FileTreeView({
   }
   const folder = state as FolderContents
   if (folder.files.length === 0) {
-    return <TreeLine message="Nothing in this folder yet." />
+    return <TreeLine message={filter === 'archive' ? 'Nothing archived in this folder.' : 'Nothing in this folder yet.'} />
   }
 
   /*
@@ -249,7 +249,14 @@ function TreeRow({
   const selected = file.ref === selectedRef
   const isUnread = unread?.[file.ref] === true
   const type = file.kind === KIND_BARE_FILE ? 'topic' : 'file'
-  const hasMenu = offers || !!controls.rename || inside || (!!onControl && canMove(file)) || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!controls.archive
+  /*
+    Archive… on a listed row, Unarchive on an archived one (the Archive view,
+    5 October). A file hidden only *with* an archived parent is brought back
+    by unarchiving that parent, so it offers neither.
+  */
+  const archivedNow = file.archived
+  const archiveAction = controls.archive && !archivedNow?.with ? (archivedNow ? 'unarchive' : 'archive') : undefined
+  const hasMenu = offers || !!controls.rename || inside || (!!onControl && canMove(file)) || !!(openWorkAction && followKey) || !!(memberAction && followKey && file.folder) || !!controls.delete || !!archiveAction
 
   return (
     <NavItem
@@ -288,9 +295,8 @@ function TreeRow({
                 : undefined
             }
             onDeleteTopic={controls.delete ? () => onControl?.('delete', file) : undefined}
-            /* A listed row is never archived — the listing leaves those out (FOL-46). */
-            archiveAction={controls.archive ? 'archive' : undefined}
-            onToggleArchive={controls.archive ? () => onControl?.('archive', file) : undefined}
+            archiveAction={archiveAction}
+            onToggleArchive={archiveAction ? () => onControl?.(archiveAction, file) : undefined}
           />
         ) : undefined
       }

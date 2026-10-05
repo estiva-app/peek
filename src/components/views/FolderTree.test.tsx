@@ -72,6 +72,9 @@ const RECORD = '0804b906-1c2d-4e3f-8a5b-6c7d8e9f0a1b'
  */
 const PROJECT_CHANNEL = '5b2e7c90-3d4a-4f1b-9c8e-7a6b5c4d3e2f'
 
+// Archived by its admin: in no list but the Archive view's (5 October).
+const ARCHIVED = '7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2918'
+
 const folders: FolderSummary[] = [
   // Its owners and admins may rename and archive it (SPEC §3.2); its channel is what an archive names.
   { id: OTHER, name: 'Zebra', hasState: true, admins: [CATH], channel: `39000:relay:${OTHER}` },
@@ -80,12 +83,13 @@ const folders: FolderSummary[] = [
   { id: PLACED, name: 'Aardvark, placed', hasState: false, listedIn: [TEAM] },
   { id: RECORD, name: 'project-0804b906', hasState: false },
   { id: PROJECT_CHANNEL, name: 'project-5b2e7c90', hasState: false, listedIn: [TEAM] },
+  { id: ARCHIVED, name: 'Old work', hasState: true, admins: [CATH], channel: `39000:relay:${ARCHIVED}`, archived: { by: CATH, at: 1 } },
 ]
 
 const reads = vi.hoisted(() => ({
   /** Folders whose read has not answered yet. */
   pending: new Set<string>(),
-  contents: vi.fn<(folder: string | null | undefined) => unknown>(),
+  contents: vi.fn<(folder: string | null | undefined, options?: { archived?: boolean }) => unknown>(),
   children: vi.fn<(naddr: string | null | undefined) => unknown>(),
 }))
 const dots = vi.hoisted(() => ({ unread: {} as Record<string, boolean>, member: {} as Record<string, boolean> }))
@@ -94,8 +98,8 @@ const viewer = vi.hoisted(() => ({ id: undefined as string | undefined }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
   useFolders: () => ({ folders, signedOut: false, reload: async () => {} }),
-  useFolderContents: (folder: string | null | undefined) => {
-    reads.contents(folder)
+  useFolderContents: (folder: string | null | undefined, options?: { archived?: boolean }) => {
+    reads.contents(folder, options)
     return {
       state: folder && !reads.pending.has(folder)
         ? { id: folder, name: 'Peek', hasState: true, source: 'state', files: folder === TEAM ? [project, file] : [] }
@@ -355,6 +359,51 @@ describe('the two views (Katerina, 5 October)', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Topics' }))
     dots.member = {}
     expect(document.querySelector('.tabler-icon-folder')).toBeNull()
+  })
+})
+
+describe('the Archive view (Katerina, 5 October)', () => {
+  const title = (name: string) => screen.getByRole('button', { name })
+
+  it('is the title menu’s third view: every Folder, the archived too, each closed, and it makes nothing', async () => {
+    window.localStorage.setItem('peek.tree.view', 'all')
+    mount()
+    expect(section(ARCHIVED)).toBeNull()
+    await userEvent.click(title('Folders'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }))
+    expect(title('Archive')).not.toBeNull()
+    expect(section(ARCHIVED)).not.toBeNull()
+    expect(openOf(section(OTHER))).toBe('false')
+    expect(screen.queryByRole('button', { name: 'New topic' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Filter' })).toBeNull()
+    // Never saved: the next visit opens on the person's own view.
+    expect(window.localStorage.getItem('peek.tree.view')).toBe('all')
+  })
+
+  it('a Folder opened there reads what is archived in it', async () => {
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount()
+    reads.contents.mockClear()
+    fireEvent.click(within(section(OTHER)).getByRole('button', { name: /Zebra/ }))
+    expect(reads.contents).toHaveBeenCalledWith(OTHER, expect.objectContaining({ archived: true }))
+  })
+
+  it('an archived Folder offers its admins Unarchive, and nothing else', async () => {
+    viewer.id = CATH
+    window.sessionStorage.setItem('peek.tree.visit', 'archive')
+    mount()
+    await userEvent.click(within(section(ARCHIVED)).getByRole('button', { name: 'More options for Old work' }))
+    expect(await screen.findByRole('menuitem', { name: 'Unarchive' })).not.toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Start a topic' })).toBeNull()
+    // A Folder that is not archived has no menu here.
+    expect(within(section(OTHER)).queryByRole('button', { name: 'More options for Zebra' })).toBeNull()
+  })
+
+  it("an archived Folder's link opens Archive, with it open", () => {
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    mount({ currentFolder: ARCHIVED, showFolder: true })
+    expect(title('Archive')).not.toBeNull()
+    expect(openOf(section(ARCHIVED))).toBe('true')
   })
 })
 

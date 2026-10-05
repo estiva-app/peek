@@ -1,5 +1,5 @@
 /**
- * The row and header controls' Join (5 October).
+ * The row and header controls' Join, and Unarchive's toast (Katerina, 5 October).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
@@ -68,5 +68,12 @@ describe('useFileControls', () => {
     await act(async () => open('join', FILE))
     expect(seam.calls).toEqual(['known'])
     expect(toasts.shown.at(-1)?.label).toBe('Joined “Release notes”: every new message shows as unread.')
+  })
+
+  it('unarchiving says so in a toast', async () => {
+    const { result } = renderHook(() => useFileControls())
+    await act(async () => result.current.open('unarchive', FILE))
+    expect(seam.archived).toEqual([false])
+    expect(toasts.shown.at(-1)?.label).toBe('Unarchived “Release notes”')
   })
 })

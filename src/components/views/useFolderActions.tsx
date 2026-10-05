@@ -5,7 +5,7 @@ import { useCurrentUser } from '@/api'
 import { legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 
 /** One of a Folder's actions, chosen from its heading's ⋮. */
-export type FolderAction = { kind: 'topic' | 'rename' | 'archive'; folder: FolderSummary }
+export type FolderAction = { kind: 'topic' | 'rename' | 'archive' | 'unarchive'; folder: FolderSummary }
 
 /**
  * A Folder's own actions, on its heading's ⋮ (Katerina, 5 October: the
@@ -24,6 +24,9 @@ export type FolderAction = { kind: 'topic' | 'rename' | 'archive'; folder: Folde
  * - **A channel that was one of Peek's old topics** offers Start a topic only:
  *   it holds that topic's conversation, and renaming or deleting one from here
  *   once lost fourteen topics (FOL-23) — it is managed from where the topic went.
+ * - **An archived Folder** (the Archive view) offers Unarchive only, to its
+ *   owners and admins: nothing is started in, renamed or archived inside what
+ *   was put away.
  * - **Delete** is not here: the page offered it only on a Folder with no state
  *   (FOL-9 — a `kind:9008` hides everything in the Folder), and every Folder
  *   the tree draws has state.
@@ -37,13 +40,18 @@ export function useFolderActions() {
   const isAdmin = (folder: FolderSummary) => !!me && !!folder.admins?.includes(me) && !legacyTopicByChannel(folder.id)
 
   /** The heading's menu: `MenuItem`s, only what this person may do here. */
-  const menuFor = (folder: FolderSummary): ReactNode => (
+  const menuFor = (folder: FolderSummary): ReactNode =>
+    folder.archived ? (
+      isAdmin(folder) && folder.channel && !folder.archived.with ? (
+        <MenuItem label="Unarchive" onClick={() => setAction({ kind: 'unarchive', folder })} />
+      ) : undefined
+    ) : (
     <>
       <MenuItem label="Start a topic" onClick={() => setAction({ kind: 'topic', folder })} />
       {isAdmin(folder) && <MenuItem label="Rename" onClick={() => setAction({ kind: 'rename', folder })} />}
       {isAdmin(folder) && folder.channel && <MenuItem label="Archive…" onClick={() => setAction({ kind: 'archive', folder })} />}
     </>
-  )
+    )
 
   return { menuFor, action, close: () => setAction(null) }
 }

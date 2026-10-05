@@ -141,6 +141,16 @@ export function FolderTree({
   const { unread, activity, member, holdsJoined, ready } = useTeamUnread(folders)
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
   /*
+    The Archive view's Folders (5 October): every top-level one, the archived
+    included — `topLevelFolders` leaves those out, since nothing else
+    navigates by them. Judged as if none were archived, then the real ones.
+  */
+  const archiveLevel = useMemo(() => {
+    if (!folders) return null
+    const ids = new Set(topLevelFolders(folders.map((folder) => ({ ...folder, archived: undefined }))).map((folder) => folder.id))
+    return folders.filter((folder) => ids.has(folder.id))
+  }, [folders])
+  /*
     The section a file is drawn in (SID-2). A Ship project's Folder is its own
     record channel and an issue's is the same one, and neither is a section:
     the channel is `listedIn` its team. Matched by id alone, opening either
@@ -160,7 +170,9 @@ export function FolderTree({
     a Folder's own link turns the column to Folders, where that Folder is —
     for this visit only, so the saved choice stays theirs.
   */
-  const [view, setView] = useView(showFolder ? (currentFolder ?? null) : null)
+  // An archived Folder's link opens Archive, where it is; any other, Folders.
+  const linkedArchived = !!folders?.find((folder) => folder.id === currentFolder)?.archived
+  const [view, setView] = useView(showFolder ? (currentFolder ?? null) : null, linkedArchived ? 'archive' : 'all')
   const [show, setShow] = useState<TreeShow>('all')
   const { menuFor, action, close } = useFolderActions()
   /** The header's dialogs: a new Folder, and a topic with its Folder to choose. */
@@ -179,7 +191,7 @@ export function FolderTree({
         onNewTopic={() => setMaking('topic')}
       >
         <FolderTreeView
-          folders={topLevel}
+          folders={view === 'archive' ? archiveLevel : topLevel}
           signedOut={signedOut}
           unread={unread}
           activity={activity}
@@ -303,21 +315,27 @@ const VIEW_KEY = 'peek.tree.view'
 const VISIT_KEY = 'peek.tree.visit'
 function visitView(): TreeView | null {
   try {
-    return window.sessionStorage.getItem(VISIT_KEY) === 'all' ? 'all' : null
+    const held = window.sessionStorage.getItem(VISIT_KEY)
+    return held === 'all' || held === 'archive' ? held : null
   } catch {
     return null
   }
 }
 
-/** The view shown: a link's for this visit, else the person's saved choice. */
-function useView(linked: string | null): [TreeView, (next: TreeView) => void] {
+/**
+ * The view shown: a link's for this visit, else the person's saved choice.
+ * Archive is never saved either: opening Peek on it next time would be
+ * opening it on what was put away.
+ */
+function useView(linked: string | null, linkedView: TreeView): [TreeView, (next: TreeView) => void] {
   const [saved, save] = useRememberedView()
   const [visit, setVisit] = useState<TreeView | null>(visitView)
   const [seen, setSeen] = useState<string | null>(null)
-  // Set during render, once per link: neither the initialiser nor an effect.
-  if (linked && linked !== seen) {
-    setSeen(linked)
-    setVisit('all')
+  // Set during render, once per link (and again once it is known to be archived): neither the initialiser nor an effect.
+  const arrival = linked ? `${linked}|${linkedView}` : null
+  if (arrival && arrival !== seen) {
+    setSeen(arrival)
+    setVisit(linkedView)
   }
   useEffect(() => {
     try {
@@ -329,6 +347,7 @@ function useView(linked: string | null): [TreeView, (next: TreeView) => void] {
   }, [visit])
   const choose = useCallback(
     (next: TreeView) => {
+      if (next === 'archive') return setVisit('archive')
       setVisit(null)
       save(next)
     },
@@ -397,8 +416,8 @@ export function FolderColumn({
       ))}
       collapsed={railClosed}
       actions={
-        // One strip: one Tab stop, arrows along it (UIG-14).
-        !signedOut && (
+        // One strip: one Tab stop, arrows along it (UIG-14). Archive makes nothing and filters nothing.
+        !signedOut && view !== 'archive' && (
           <Toolbar aria-label="Topic list actions" surface={false}>
             {view === 'all' && (
               <ToolbarButton tooltip="New folder" aria-label="New folder" onClick={onNewFolder}>
@@ -543,9 +562,10 @@ export function FolderTreeView({
           selectedRef={selectedRef}
           selectedParent={selectedParent}
           onSelect={onSelect}
-          icon={view === 'all'}
+          icon={view !== 'mine'}
           linked={linkedFolder === folder.id}
-          menu={menuFor?.(folder)}
+          // In Archive only an archived Folder has a menu: its Unarchive.
+          menu={view === 'archive' && !folder.archived ? undefined : menuFor?.(folder)}
           onControl={onControl}
           holdsJoined={holdsJoined}
           preloaded={folder.id === currentFolder ? currentContents : undefined}
@@ -603,8 +623,15 @@ function FolderSection({
   */
   const [remembered, setRemembered] = useRememberedOpen(`peek.tree.folder.${folder.id}`, current)
   const [filtered, setFiltered] = useState(true)
-  const open = filter === 'all' ? remembered : filtered
-  const setOpen = filter === 'all' ? setRemembered : setFiltered
+  /*
+    In Archive every Folder starts closed (5 October): what is archived in one
+    is a read of its own, made when it opens — 160 open at once would be the
+    relay's whole minute. A Folder that is itself archived is no different.
+  */
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const archive = filter === 'archive'
+  const open = archive ? archiveOpen : filter === 'all' ? remembered : filtered
+  const setOpen = archive ? setArchiveOpen : filter === 'all' ? setRemembered : setFiltered
   /*
     A Folder's link always lands on it open, and scrolled to (Katerina,
     5 October): a notification, another app or a new Folder leading to a
@@ -625,7 +652,10 @@ function FolderSection({
     — no request, no refresh trigger, no socket subscription — so a Folder
     nobody opened costs the column nothing beyond its dot.
   */
-  const own = useFolderContents(open && !preloaded ? folder.id : null)
+  const own = useFolderContents(open && (archive || !preloaded) ? folder.id : null, {
+    archived: archive,
+    folderArchived: !!folder.archived,
+  })
   /*
     A closed Folder is read a moment before it is opened (SID-2): when the
     pointer rests on it, or the keyboard lands on it, so the first open draws
@@ -635,7 +665,7 @@ function FolderSection({
   */
   const { resolveFolderContents } = useForeignObjects()
   const prefetch = () => {
-    if (!open) prefetchFolderContents(resolveFolderContents, folder.id)
+    if (!open && !archive) prefetchFolderContents(resolveFolderContents, folder.id)
   }
   /*
     The last listing drawn stays drawn while the next read of the same Folder
@@ -644,7 +674,7 @@ function FolderSection({
     and each hand-over starts at 'loading' — a skeleton over rows that were
     right a moment ago. Only a listing is held; a failure is said as before.
   */
-  const fresh = preloaded ?? own.state
+  const fresh = (archive ? undefined : preloaded) ?? own.state
   const listing = typeof fresh === 'object' && 'files' in fresh ? fresh : undefined
   const [drawn, setDrawn] = useState(listing)
   // By the rows, not the wrapper: a listing rebuilt per render would set this for ever.

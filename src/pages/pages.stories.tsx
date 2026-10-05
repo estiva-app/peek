@@ -12,6 +12,7 @@ import { DeskPageView, type DeskRow } from './DeskPage'
 import { FoldersPageView } from './FoldersPage'
 import { FilePageView } from './FilePage'
 import { FolderColumn, FolderTreeView } from '@/components/views/FolderTree'
+import type { FolderSummary } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
@@ -237,7 +238,7 @@ function Column({ view = 'mine', show = 'all', signedOut = false, folders = FOLD
   view?: TreeView
   show?: TreeShow
   signedOut?: boolean
-  folders?: typeof FOLDERS | null
+  folders?: FolderSummary[] | null
   unread?: Record<string, boolean>
   member?: Record<string, boolean>
   currentFolder?: string
@@ -276,6 +277,20 @@ export const Topics: Story = {
  */
 export const Folders: Story = {
   render: () => <FoldersPageView nav={<Column view="all" />} rightPanel={<EmptyState message="No file selected" />} />,
+}
+
+/**
+ * Archive: every Folder, the archived ones too, each closed — opening one
+ * reads what is archived in it, and an archived Folder's ⋮ is Unarchive. No
+ * header actions: nothing is made or filtered here (Katerina, 5 October).
+ */
+export const Archive: Story = {
+  render: () => (
+    <FoldersPageView
+      nav={<Column view="archive" folders={[...FOLDERS, { id: '0a9b8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d', name: 'Old launch plan', hasState: true, archived: { by: 'a'.repeat(64), at: 1 } }]} />}
+      rightPanel={<EmptyState message="No file selected" />}
+    />
+  ),
 }
 
 /**

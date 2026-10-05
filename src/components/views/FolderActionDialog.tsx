@@ -43,6 +43,37 @@ export function FolderActionDialog({
       alive.current = false
     }
   }, [])
+  /*
+    Archive and Unarchive say what happened, and Archive can be undone from
+    the toast (Katerina, 5 October): the Folder leaves the list it was in,
+    and Undo — or Unarchive in the Archive view — brings it back.
+  */
+  const setArchived = async (archived: boolean, resolution?: string): Promise<boolean> => {
+    const result = await archiveFolder({ folder: folder.id, channel: folder.channel!, archived, resolution }).catch((error: unknown) => ({
+      ok: false as const,
+      reason: `Nothing was ${archived ? 'archived' : 'unarchived'}: ${(error as Error)?.message ?? 'the write failed'}. Try again.`,
+    }))
+    if (!result.ok) {
+      showToast({ label: result.reason, type: 'error' })
+      return false
+    }
+    await reload()
+    showToast(
+      archived
+        ? { label: `Archived “${name}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchived(false) }
+        : { label: `Unarchived “${name}”`, type: 'success' },
+    )
+    return true
+  }
+
+  // Unarchive asks nothing: it hides nothing, and runs as it is chosen.
+  const unarchived = useRef(false)
+  useEffect(() => {
+    if (action.kind !== 'unarchive' || !folder.channel || unarchived.current) return
+    unarchived.current = true
+    void setArchived(false).finally(onClose)
+  })
+
   useEffect(() => {
     if (action.kind !== 'archive' || !folder.channel || asked.current) return
     asked.current = true
@@ -93,7 +124,7 @@ export function FolderActionDialog({
       />
     )
   }
-  if (!folder.channel) return null
+  if (action.kind === 'unarchive' || !folder.channel) return null
   /*
     Open at once, counting (5 October): it used to appear only once the count
     was in, and an Archive… chosen on another Folder meanwhile showed the first
@@ -107,24 +138,8 @@ export function FolderActionDialog({
       hides={impact?.hides ?? null}
       staysVisible={impact?.staysVisible}
       onClose={onClose}
-      onArchive={async (resolution) => {
-        // A refused sign throws (a 429 under load); say so rather than closing silently.
-        const result = await archiveFolder({
-          folder: folder.id,
-          channel: folder.channel!,
-          archived: true,
-          resolution: resolution || undefined,
-        }).catch((error: unknown) => ({
-          ok: false as const,
-          reason: `Nothing was archived: ${(error as Error)?.message ?? 'the write failed'}. Try again.`,
-        }))
-        if (!result.ok) {
-          showToast({ label: result.reason, type: 'error' })
-          return false
-        }
-        await reload()
-        return true
-      }}
+      // A refused sign throws (a 429 under load); `setArchived` says so rather than closing silently.
+      onArchive={(resolution) => setArchived(true, resolution || undefined)}
     />
   )
 }

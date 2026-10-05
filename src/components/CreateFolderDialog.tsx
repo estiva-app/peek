@@ -42,9 +42,11 @@ export function CreateFolderDialog({
   const [creating, setCreating] = useState(false)
   const formId = useId()
   const trimmed = name.trim()
+  // A rename to the name it already has would write and change nothing (5 October).
+  const unchanged = rename !== undefined && trimmed === rename.trim()
 
   async function create() {
-    if (!trimmed || creating) return
+    if (!trimmed || unchanged || creating) return
     setCreating(true)
     const ok = await onCreate(trimmed)
     setCreating(false)
@@ -60,7 +62,7 @@ export function CreateFolderDialog({
           <Button variant="muted" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form={formId} disabled={!trimmed || creating}>
+          <Button variant="primary" type="submit" form={formId} disabled={!trimmed || unchanged || creating}>
             {rename !== undefined ? (creating ? 'Renaming…' : 'Rename') : creating ? 'Creating…' : 'Create'}
           </Button>
         </>

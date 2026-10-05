@@ -180,10 +180,26 @@ export function useFileControls({
         return false
       }
       archivedCallback.current?.(file, archived)
+      /*
+        Said, and Archive undone from the toast (Katerina, 5 October): the row
+        leaves its list, and Undo — or Unarchive in the Archive view — brings
+        it back.
+      */
+      const title = file.slots.title?.value ?? 'Untitled'
+      showToast(
+        archived
+          ? { label: `Archived “${title}”`, type: 'success', actionLabel: 'Undo', onAction: () => void setArchivedRef.current(file, false) }
+          : { label: `Unarchived “${title}”`, type: 'success' },
+      )
       return true
     },
-    [archiveFile, refuse],
+    [archiveFile, refuse, showToast],
   )
+  // Undo calls back into the same function, through a ref: it is still being defined.
+  const setArchivedRef = useRef(setArchived)
+  useEffect(() => {
+    setArchivedRef.current = setArchived
+  })
 
   const open = useCallback(
     (control: FileControl, file: ForeignObject) => {

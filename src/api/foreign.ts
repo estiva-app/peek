@@ -194,10 +194,11 @@ export function useForeignObjects() {
 
 
   const resolveFolderContents = useCallback(
-    async (folder: string): Promise<FolderContents> => {
+    /** `includeArchived`: the archived files too, each with its `archived` — the Archive view's read (5 October). */
+    async (folder: string, options?: { includeArchived?: boolean }): Promise<FolderContents> => {
       const v = viewer()
       return v
-        ? resolveFolderContentsAsViewer(folder, v.relayUrl, v.token)
+        ? resolveFolderContentsAsViewer(folder, v.relayUrl, v.token, options)
         : { id: folder, hasState: false, source: 'channel', files: [] }
     },
     [viewer],
