@@ -1,4 +1,4 @@
-import { useCallback, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { IconArrowUpRight, IconSortDescending } from '@tabler/icons-react'
 import { CollapsibleSection, ListColumn, Panel, Toolbar, ToolbarLink } from '@estiva-app/ui'
@@ -66,6 +66,8 @@ export function DeskPage() {
   const [openedFrom, setOpenedFrom] = useState<{ section: SectionKey; title: string } | null>(null)
   const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
   const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
+  /** The file address or DM a row click just opened, until its view says whether only a reply is new (CON-34). */
+  const openReplyFor = useRef<string | null>(null)
 
   // The 1–2 item caps are a demo-composition affordance for the mock dataset.
   // With a real backend the Screener IS the inbox and Urgent is real — capping
@@ -161,6 +163,7 @@ export function DeskPage() {
   const openFile = (address: string, title: string, section: SectionKey) => {
     setSelected(null)
     setOpenedFrom({ section, title })
+    openReplyFor.current = address
     setSearchParams({ open: address })
   }
   const closeFile = () => {
@@ -170,6 +173,7 @@ export function DeskPage() {
   const selectDm = (dmId: string, fallbackName: string, section: SectionKey) => {
     const dmName = dmNameById(dmId) ?? fallbackName
     if (openAddress) closeFile()
+    openReplyFor.current = dmId
     setSelected({ dmId, dmName, section })
   }
   const setOpenThread = useCallback(
@@ -220,6 +224,25 @@ export function DeskPage() {
     openThreadId,
     onOpenThread: setOpenThread,
   })
+  /*
+    A row lit only by a thread reply opens that thread (CON-34, Miky
+    2026-10-05). Opening a file or DM reads its top-level messages, not the
+    reply, so without this the click leaves the dot lit and the person hunting
+    for why. Armed by every row click and answered once the opened view has
+    judged: nothing new, or a new top-level message, opens it as before.
+  */
+  const openedTarget = selected ? selected.dmId : openAddress
+  const judgedThread = selected ? dmView.replyOnlyThread : fileView.replyOnlyThread
+  const openDmThread = dmView.openThread
+  const openedDm = selected !== null
+  useEffect(() => {
+    if (!openReplyFor.current || openReplyFor.current !== openedTarget || judgedThread === undefined) return
+    openReplyFor.current = null
+    if (!judgedThread) return
+    if (openedDm) openDmThread(judgedThread)
+    else setOpenThread(judgedThread)
+  }, [openedTarget, judgedThread, openedDm, openDmThread, setOpenThread])
+
   const fileTitle = fileView.file?.slots.title?.value ?? openedFrom?.title ?? 'File'
   const fullPage = openAddress ? filePath(openAddress, fileView.file?.slots.title?.value ?? openedFrom?.title) : null
   const filePane = fullPage ? (

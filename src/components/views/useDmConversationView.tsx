@@ -30,6 +30,9 @@ interface UseDmConversationViewArgs {
 interface ViewSlots {
   rightPanel: ReactNode
   threadPanel: ReactNode | undefined
+  /** The thread to open when only a reply is new: `undefined` until judged (CON-34). */
+  replyOnlyThread: string | null | undefined
+  openThread: (id: string | null) => void
 }
 
 /**
@@ -135,6 +138,8 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
       // A page EmptyState fills and centres itself in the pane's column (UIG-42).
       rightPanel: <EmptyState />,
       threadPanel: undefined,
+      replyOnlyThread: undefined,
+      openThread: setThreadConvId,
     }
   }
 
@@ -150,7 +155,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     </div>
   )
 
-  return { rightPanel, threadPanel: dm.threadPanel }
+  return { rightPanel, threadPanel: dm.threadPanel, replyOnlyThread: dm.replyOnlyThread, openThread: setThreadConvId }
 }
 
 const NO_ROOTS: readonly string[] = []

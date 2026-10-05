@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ConversationMessage } from '@estiva-app/interop'
-import { fileHasUnread } from './fileUnread'
+import { fileHasUnread, replyOnlyThread } from './fileUnread'
 
 const ME = 'c'.repeat(64)
 const THEM = 'd'.repeat(64)
@@ -109,5 +109,29 @@ describe('absence — new inside the horizon, quiet beyond it', () => {
     const f = frontier({ threads: { [ROOT]: NOW - 30 } })
     expect(fileHasUnread([root(ROOT, NOW - HORIZON - 1), reply('r', NOW - 60, ROOT)], f)).toBe(false)
     expect(fileHasUnread([root(ROOT, NOW - HORIZON - 1), reply('r', NOW - 10, ROOT)], f)).toBe(true)
+  })
+})
+
+// A Desk row lit only by a thread reply opens that thread (CON-34, Miky 2026-10-05).
+describe('replyOnlyThread — which thread a click on a reply-lit row opens', () => {
+  const OTHER = 'b'.repeat(64)
+
+  it('names the thread when only a reply is new', () => {
+    expect(replyOnlyThread([root(ROOT, 500)], { [ROOT]: [reply('r', 2000, ROOT)] }, frontier({ file: 1000 }))).toBe(ROOT)
+  })
+
+  it('names none when a top-level message is new: opening the conversation reads that', () => {
+    expect(replyOnlyThread([root(ROOT, 1500)], { [ROOT]: [reply('r', 2000, ROOT)] }, frontier({ file: 1000 }))).toBeNull()
+  })
+
+  it('names none when nothing is new', () => {
+    expect(replyOnlyThread([root(ROOT, 500)], { [ROOT]: [reply('r', 900, ROOT)] }, frontier({ file: 1000 }))).toBeNull()
+  })
+
+  it('names the thread with the newest new reply', () => {
+    const replies = { [ROOT]: [reply('r1', 2000, ROOT)], [OTHER]: [reply('r2', 3000, OTHER), reply('r3', 2500, OTHER)] }
+    expect(replyOnlyThread([root(ROOT, 500), root(OTHER, 600)], replies, frontier({ file: 1000 }))).toBe(OTHER)
+    // …among the new ones: a read thread's later reply does not count.
+    expect(replyOnlyThread([root(ROOT, 500), root(OTHER, 600)], replies, frontier({ file: 1000, threads: { [OTHER]: 3000 } }))).toBe(ROOT)
   })
 })

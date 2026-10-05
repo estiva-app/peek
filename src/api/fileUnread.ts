@@ -60,3 +60,25 @@ export function fileHasUnread(
   }
   return false
 }
+
+/**
+ * The thread to open for a conversation lit only by replies — clicking a Desk
+ * row whose dot a thread reply lit opens that thread, so one click reads it
+ * (CON-34, Miky 2026-10-05). The thread with the newest new reply; `null` when
+ * a top-level message is new (opening the conversation reads that) or nothing is.
+ */
+export function replyOnlyThread(
+  roots: readonly ConversationMessage[],
+  replies: Readonly<Record<string, readonly ConversationMessage[]>>,
+  frontier: Parameters<typeof fileHasUnread>[1],
+): string | null {
+  if (fileHasUnread(roots, frontier)) return null
+  let newest: ConversationMessage | undefined
+  for (const list of Object.values(replies)) {
+    for (const reply of list) {
+      if (newest && reply.at <= newest.at) continue
+      if (fileHasUnread([reply], frontier)) newest = reply
+    }
+  }
+  return newest?.root ?? null
+}

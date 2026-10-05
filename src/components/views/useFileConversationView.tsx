@@ -23,8 +23,10 @@ import {
   useFileConversation,
   useMembership,
   useNewReplyThreads,
+  useReplyOnlyThread,
   useWorkspaceDirectory,
   type ConversationContainer,
+  type ReplyStream,
   type ConversationData,
   type ConversationEvent,
   type FileAttachment,
@@ -81,6 +83,10 @@ interface ViewSlots {
   threadPanel: ReactNode | undefined
   /** The newest top-level message's `createdAt`, so the read dwell re-arms when one arrives (PEE-44). */
   newestAt: number | undefined
+  /** Who is reading, for the read-only pane's own unread rule (CON-34). */
+  viewerPubkey: string | null
+  /** The thread to open when only a reply is new (`useReplyOnlyThread`): what a Desk click opens (CON-34). */
+  replyOnlyThread: string | null | undefined
 }
 
 /**
@@ -170,11 +176,10 @@ export function useFileConversationView({
   const newestAt = conversation ? newestMessageAt(conversation.roots) : undefined
   useMarkThreadRead(openThreadId, conversation && openThreadId ? newestMessageAt(conversation.replies[openThreadId] ?? []) : undefined)
   // Which of those threads hold a reply new to the viewer: the "new reply" on its row (PEE-44).
-  const newReplies = useNewReplyThreads(
-    container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null,
-    conversation?.replies,
-    viewerPubkey,
-  )
+  const stream: ReplyStream | null =
+    container?.kind === 'file' ? { kind: 'file', address: container.address } : container ? { kind: 'channel', h: container.h } : null
+  const newReplies = useNewReplyThreads(stream, conversation?.replies, viewerPubkey)
+  const replyOnlyThread = useReplyOnlyThread(stream, conversation?.roots, conversation?.replies, viewerPubkey)
 
   const view = conversation ? project(conversation, viewerPubkey, people) : null
   const groups = view ? groupByDay(view.roots) : []
@@ -489,7 +494,7 @@ export function useFileConversationView({
       />
     ) : undefined
 
-  return { conversation: conversationSlot, conversationParts, threadPanel, newestAt }
+  return { conversation: conversationSlot, conversationParts, threadPanel, newestAt, viewerPubkey, replyOnlyThread }
 }
 
 // ── From the relay's events to what the cards take ──
