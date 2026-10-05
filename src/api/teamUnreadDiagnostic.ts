@@ -221,7 +221,9 @@ function explain(id: string, seen: TeamUnreadObservation): TeamUnreadFolder {
       messages: stream.length,
       newest: { at: iso(newest.at), by: newest.by.slice(0, 8), mine: newest.by === seen.me },
       // The same call the judge makes, on the same stream — not a second rule.
+      // The judge skips the general stream (no screen for it, §11.8), so it is never unread here.
       unread:
+        key !== id &&
         context !== undefined &&
         streamHasUnread(
           stream,
