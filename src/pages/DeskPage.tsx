@@ -43,6 +43,9 @@ type Selected = { dmId: string; dmName: string; section: SectionKey }
  * still in somebody's open work or stars stays in their blob and draws nothing
  * (`internal/openWork.tsx`, `internal/starred.tsx`).
  */
+/** How long after a row click its "open the reply's thread" still applies: the views judge within a second or two. */
+const OPEN_REPLY_WINDOW_MS = 5000
+
 export function DeskPage() {
   const railClosed = useRailClosed()
   const { dmHasUnread } = useUnread()
@@ -67,7 +70,12 @@ export function DeskPage() {
   const [dismissedScreenerIds, setDismissedScreenerIds] = useState<Set<string>>(new Set())
   const [dismissedOpenWorkIds, setDismissedOpenWorkIds] = useState<Set<string>>(new Set())
   /** The file address or DM a row click just opened, until its view says whether only a reply is new (CON-34). */
-  const openReplyFor = useRef<string | null>(null)
+  const openReplyFor = useRef<{ target: string; at?: number } | null>(null)
+  const [rowClicks, setRowClicks] = useState(0)
+  const armOpenReply = (target: string) => {
+    openReplyFor.current = { target }
+    setRowClicks((n) => n + 1)
+  }
 
   // The 1–2 item caps are a demo-composition affordance for the mock dataset.
   // With a real backend the Screener IS the inbox and Urgent is real — capping
@@ -163,7 +171,7 @@ export function DeskPage() {
   const openFile = (address: string, title: string, section: SectionKey) => {
     setSelected(null)
     setOpenedFrom({ section, title })
-    openReplyFor.current = address
+    armOpenReply(address)
     setSearchParams({ open: address })
   }
   const closeFile = () => {
@@ -173,7 +181,7 @@ export function DeskPage() {
   const selectDm = (dmId: string, fallbackName: string, section: SectionKey) => {
     const dmName = dmNameById(dmId) ?? fallbackName
     if (openAddress) closeFile()
-    openReplyFor.current = dmId
+    armOpenReply(dmId)
     setSelected({ dmId, dmName, section })
   }
   const setOpenThread = useCallback(
@@ -230,18 +238,26 @@ export function DeskPage() {
     reply, so without this the click leaves the dot lit and the person hunting
     for why. Armed by every row click and answered once the opened view has
     judged: nothing new, or a new top-level message, opens it as before.
+
+    Each click is its own answer (`rowClicks`), so a second click on the row
+    already open still opens its thread. A judgement that comes later than
+    `OPEN_REPLY_WINDOW_MS`, or after the person opened a thread themselves,
+    opens nothing: a thread appearing long after a click would be its own surprise.
   */
   const openedTarget = selected ? selected.dmId : openAddress
   const judgedThread = selected ? dmView.replyOnlyThread : fileView.replyOnlyThread
   const openDmThread = dmView.openThread
   const openedDm = selected !== null
   useEffect(() => {
-    if (!openReplyFor.current || openReplyFor.current !== openedTarget || judgedThread === undefined) return
+    const armed = openReplyFor.current
+    // Stamped by the first pass after the click: the render the click caused cannot read the clock.
+    if (armed && armed.at === undefined) armed.at = Date.now()
+    if (!armed || armed.target !== openedTarget || judgedThread === undefined) return
     openReplyFor.current = null
-    if (!judgedThread) return
+    if (!judgedThread || Date.now() - (armed.at ?? 0) > OPEN_REPLY_WINDOW_MS) return
     if (openedDm) openDmThread(judgedThread)
-    else setOpenThread(judgedThread)
-  }, [openedTarget, judgedThread, openedDm, openDmThread, setOpenThread])
+    else if (!openThreadId) setOpenThread(judgedThread)
+  }, [rowClicks, openedTarget, judgedThread, openedDm, openDmThread, setOpenThread, openThreadId])
 
   const fileTitle = fileView.file?.slots.title?.value ?? openedFrom?.title ?? 'File'
   const fullPage = openAddress ? filePath(openAddress, fileView.file?.slots.title?.value ?? openedFrom?.title) : null
