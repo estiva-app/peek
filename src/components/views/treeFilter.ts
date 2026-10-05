@@ -27,8 +27,9 @@ import type { ForeignObject } from '@estiva-app/interop'
  * A match below the rows a Folder's read returns — a Ship issue inside a
  * project, fetched only when that row is expanded — leaves its Folder shown,
  * because the Folder-level verdict sees the whole channel, but the project
- * row it is under is not itself a match and is hidden with the rest. So does
- * a mention in the Folder's own chat, which has no row. Filtering that far
+ * row it is under is not itself a match and is hidden with the rest. (A
+ * Folder's own messages, about no file, are not counted at all: Peek has no
+ * screen for them — `teamHasUnread`.) Filtering that far
  * would mean expanding every row of every Folder, which is the cost the tree
  * exists to avoid (`FolderTree`'s header). Such a Folder is drawn open with no
  * lit row in it; `All` shows its rows.
