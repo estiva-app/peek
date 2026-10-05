@@ -59,7 +59,7 @@ async function startEditing(canvasElement: HTMLElement) {
 /**
  * `/` while editing — the thing that did nothing until 2026-09-08.
  *
- * Same three sections the composer shows, at the caret rather than at the start
+ * Same sections the composer shows, at the caret rather than at the start
  * of the box: it is a suggestion plugin, so it opens mid-sentence, which is the
  * normal case here because the message is already in the box.
  */
@@ -68,8 +68,7 @@ export const SlashMenu: Story = {
     const { doc } = await startEditing(canvasElement)
     await userEvent.keyboard(' /')
     await expect(await doc.findByText('Format')).toBeInTheDocument()
-    await expect(doc.getByText('Shortcuts')).toBeInTheDocument()
-    await expect(doc.getByText('Highlights')).toBeInTheDocument()
+    await expect(doc.getByText('Insert')).toBeInTheDocument()
   },
 }
 

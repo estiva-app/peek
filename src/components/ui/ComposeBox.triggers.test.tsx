@@ -107,7 +107,7 @@ describe('the composer’s triggers come from the packages (CON-27)', () => {
     expect((onSend.mock.calls[0][0] as SendPayload).text).toBe(`nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`)
   })
 
-  it('/ opens Format, Shortcuts and Highlights, and a shortcut row opens its own list', async () => {
+  it('/ opens Format and Insert, and a shortcut row opens its own list', async () => {
     const { dom, editor } = await compose(vi.fn())
     await type(editor, '/')
     expect(rows('Commands')).toEqual([

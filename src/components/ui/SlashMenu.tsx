@@ -9,10 +9,13 @@ import type { HighlightType } from '@/api'
  *
  * The list, the trigger and the Format section are the package's since CON-27
  * (estiva-ui 0.52.0, `SlashCommands` and `formatSection`); code stays inline
- * here (Katerina, 29 Sep). What is left is only Peek's: the Shortcuts and the
- * Highlights, and how each looks.
+ * here (Katerina, 29 Sep). What is left is only Peek's: its own rows, and how
+ * each looks.
  *
- * Order (Katerina, 2026-09-04): Format, then Shortcuts, then Highlights.
+ * Format, then Peek's rows under **Insert** — the one heading every app's own
+ * section takes, as Ship's does (Miky, CON-25 kickoff, 2026-10-02; CON-29).
+ * Inside it the order is Katerina's of 2026-09-04: the triggers, then the
+ * Highlights.
  */
 
 function shortcut(label: string, trigger: string, input: string, description: string): SlashCommand {
@@ -32,21 +35,17 @@ function highlight(type: HighlightType, label: string): SlashCommand {
 export const SLASH_SECTIONS: readonly SlashSection[] = [
   formatSection('inline'),
   {
-    label: 'Shortcuts',
+    label: 'Insert',
     commands: [
       shortcut('Mention', '@', '@', 'Mention a person'),
       shortcut('Urgent', '!@', '!@', 'Urgent mention'),
-      shortcut('Reference', '[', '[', 'Reference a file or topic'),
+      // What `[` lists since PEE-21: the messages on screen first, then files and topics.
+      shortcut('Reference', '[', '[', 'Reference a message, file or topic'),
       // `->`, not `→`: the row shows what you would type, and the resolution
       // block's own input rule is /^->\s$/ — there is no `→` key to press. It
       // also keeps the chip on the grid, since Geist Mono draws `→` 10px wide
       // against 6px for everything else.
       shortcut('Resolve', '->', '-> ', 'Resolve conversation'),
-    ],
-  },
-  {
-    label: 'Highlights',
-    commands: [
       highlight('insight', 'Insight'),
       highlight('concern', 'Concern'),
       highlight('conclusion', 'Conclusion'),

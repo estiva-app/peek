@@ -5,7 +5,7 @@
  *
  * **The hint is Peek's own trigger, not Tiptap's key chord.** Every one of
  * these also has a `Mod-…` binding, but the trigger is what this app teaches:
- * the Shortcuts section beside it shows `@`, `!@`, `[` and `->`.
+ * the Insert rows beside it show `@`, `!@`, `[` and `->`.
  *
  * Each trigger is the input rule the installed extension actually registers,
  * read out of its source rather than from documentation:
