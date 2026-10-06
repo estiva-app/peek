@@ -16,9 +16,15 @@ on:
   # it stands; from any other ref it only checks, like a pull request.
   workflow_dispatch:
 
+# `concurrency` orders runs by when they were requested, not by commit, and a
+# re-run is a new request. On 2026-10-05 a re-run of an old Ship deploy finished
+# after the newest one and put the older bundle back on production with every
+# run green (80d55134); this file had the same shape. So a re-run never cancels
+# a run in progress — it could be the tip's own deploy — and `publish` checks
+# it is still main's tip first.
 concurrency:
   group: deploy-peek-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.run_attempt == 1 }}
 
 jobs:
   # The typechecks and the tests used to be one job, `check`, and the tests
@@ -108,11 +114,36 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      # Whether this run's commit is still main's tip. A re-run builds the
+      # commit it was first run for, so re-running an old deploy — a push or a
+      # dispatch — would publish an old bundle over a newer one (80d55134). A
+      # step of this job, not a job of its own: `gh run rerun --failed` re-runs
+      # only failed jobs and reuses the outputs of the ones that passed, so a
+      # separate check would answer for the first attempt. Asked of the API, not
+      # of the checkout, which only knows the commit it was given. Every later
+      # step waits on it.
+      - id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip=$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq .object.sha) \
+            || { echo "::error title=publish stopped::could not read main's tip, so this run cannot tell whether it is current"; exit 1; }
+          if [ "$tip" = "${{ github.sha }}" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            msg="Not publishing: this run is for ${{ github.sha }}, and main's tip is now $tip. Publishing would replace the newer bundle on peek.estiva.app with an older one."
+            echo "::notice title=publish skipped::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.tip.outputs.current == 'true'
+        uses: actions/checkout@v4
 
       # Node and node_modules, from the cache when the lockfile is unchanged
       # (PER-15). estiva-foundation's action since PER-16, shared with Ship.
-      - uses: estiva-app/estiva-foundation/.github/actions/install@ci-v1
+      - if: steps.tip.outputs.current == 'true'
+        uses: estiva-app/estiva-foundation/.github/actions/install@ci-v1
 
       # Runs before the image build because the image is only an envelope for
       # dist/.
@@ -123,19 +154,23 @@ jobs:
       # --cmd 'npm run build'`, which also pushed the Convex backend and set
       # VITE_CONVEX_URL.
       - name: Build the frontend
+        if: steps.tip.outputs.current == 'true'
         run: npm run build
         env:
           VITE_RELAY_URL: https://estiva.estiva.app
 
-      - uses: docker/setup-buildx-action@v3
+      - if: steps.tip.outputs.current == 'true'
+        uses: docker/setup-buildx-action@v3
 
-      - uses: docker/login-action@v3
+      - if: steps.tip.outputs.current == 'true'
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        if: steps.tip.outputs.current == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
