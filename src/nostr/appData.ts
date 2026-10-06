@@ -103,7 +103,8 @@ class Nip44Error extends Error {
  */
 function refusedForNow(error: unknown): boolean {
   if (!(error instanceof Nip44Error)) return true
-  return error.status === 429 || error.status === 401 || error.status === 403 || error.status === 408 || error.status >= 500
+  // 422 is a policy refusal for the whole app, not for this ciphertext.
+  return [401, 403, 408, 422, 429].includes(error.status) || error.status >= 500
 }
 
 /**
