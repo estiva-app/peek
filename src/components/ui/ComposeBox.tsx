@@ -310,7 +310,12 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
       text ? withUrgentMentions(textToTiptapContent(text), draft?.urgent) : { type: 'doc', content: [{ type: 'paragraph' }] },
     )
     setIsEmpty(!text)
-    setHasUrgent(!!extractUrgent(editor))
+    // Any urgent chip, keyed or not — the rule `onUpdate` draws the border by.
+    let urgent = false
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'urgentMention') urgent = true
+    })
+    setHasUrgent(urgent)
     // `drafts` is deliberately not a dependency: a caller passing a fresh store
     // object each render would otherwise re-seed and wipe what is being typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
