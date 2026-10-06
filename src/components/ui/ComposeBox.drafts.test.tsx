@@ -7,12 +7,13 @@
  * this app's schema at this version and a release that changes a node would
  * make older drafts unloadable.
  */
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import type { Editor } from '@tiptap/react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
-import { ComposeBox } from './ComposeBox'
+import { ComposeBox, type SendPayload } from './ComposeBox'
 import { createDraftStore, draftKeys } from '@/lib/drafts'
 
 /*
@@ -176,6 +177,33 @@ describe('ComposeBox — a send that did not land', () => {
 
     await press(container)
     await waitFor(() => expect(drafts.read(key)).toBeUndefined())
+  })
+
+  /*
+    CON-31. The marker text of an urgent mention with a key is the same
+    `nostr:npub…` as an ordinary one — the urgency is a tag — so a draft kept
+    as text alone came back as an ordinary mention and was sent without it.
+  */
+  it('keeps an urgent mention urgent: typed, left, restored and sent', async () => {
+    const ADA = 'a8a7d739dda599143ec2e88a1c3b2d69808cd2a50001179c786f51d00dc3c697'
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    const first = show({ draftKey: key, drafts })
+    const typed = await waitFor(() => {
+      const el = first.container.querySelector('.ProseMirror') as (HTMLElement & { editor?: Editor }) | null
+      if (!el?.editor) throw new Error('no editor yet')
+      return el.editor
+    })
+    typed.commands.insertContent([{ type: 'urgentMention', attrs: { id: 'ada', label: 'Ada', pubkey: ADA } }, { type: 'text', text: ' please sign' }])
+    await waitFor(() => expect(drafts.readDraft(key)?.urgent).toEqual([ADA]))
+    first.unmount()
+
+    const onSend = vi.fn()
+    const { container } = show({ draftKey: key, drafts, onSend })
+    await screen.findByText(/please sign/)
+    expect(container.querySelector('[data-urgent-mention]')).not.toBeNull()
+    await press(container)
+    expect((onSend.mock.calls[0][0] as SendPayload).urgent).toEqual([ADA])
   })
 
   it('forgets it on an explicit true, too', async () => {

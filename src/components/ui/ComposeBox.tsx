@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
-import { serializeTiptapToText, textToTiptapContent } from '@/lib/textParsing'
+import { serializeTiptapToText, textToTiptapContent, withUrgentMentions } from '@/lib/textParsing'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
 import { SelectionToolbar, isSuggestionActive } from '@estiva-app/ui/editor'
@@ -152,11 +152,12 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           // Hold Enter until in-flight uploads settle, so files aren't dropped.
           if (uploadsRef.current.isUploading) return true
           if (text || resolution.hasResolution || files.length > 0) {
+            const urgent = extractUrgent(ed)
             const sent = sendFnRef.current?.({
               text,
               resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
               highlightType: hl,
-              urgent: extractUrgent(ed),
+              urgent,
               files: files.length > 0 ? files : undefined,
             })
             /*
@@ -180,7 +181,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
               if (ok !== false) return
               // The draft store first, always: it survives the tab, and it is
               // the half that cannot be undone by what the person does next.
-              if (key) draftsRef.current.write(key, text)
+              if (key) draftsRef.current.write(key, text, urgent)
               /*
                 The editor only if it is still empty. Somebody who started
                 typing again in the round trip would otherwise have their new
@@ -189,7 +190,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
               */
               const current = editorRef.current
               if (current && !serializeToText(current).trim()) {
-                current.commands.setContent(textToTiptapContent(text))
+                current.commands.setContent(withUrgentMentions(textToTiptapContent(text), urgent))
               }
             })
           }
@@ -241,7 +242,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
         Marker text is what would be sent (SPEC §13.2) and what the other app
         reads, so it survives both.
       */
-      if (draftKeyRef.current) draftsRef.current.write(draftKeyRef.current, serializeToText(editor))
+      // With whom it names urgently, which the text cannot say (CON-31).
+      if (draftKeyRef.current) draftsRef.current.write(draftKeyRef.current, serializeToText(editor), extractUrgent(editor))
       const doc = editor.state.doc
       let hasNonParagraph = false
       let hasAtomNode = false
@@ -301,11 +303,14 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
 
   useEffect(() => {
     if (!editor) return
-    const text = draftKey ? (drafts.read(draftKey) ?? '') : ''
+    const draft = draftKey ? drafts.readDraft(draftKey) : undefined
+    const text = draft?.text ?? ''
+    // The urgent chips come back urgent: the text alone gives ordinary mentions (CON-31).
     editor.commands.setContent(
-      text ? textToTiptapContent(text) : { type: 'doc', content: [{ type: 'paragraph' }] },
+      text ? withUrgentMentions(textToTiptapContent(text), draft?.urgent) : { type: 'doc', content: [{ type: 'paragraph' }] },
     )
     setIsEmpty(!text)
+    setHasUrgent(!!extractUrgent(editor))
     // `drafts` is deliberately not a dependency: a caller passing a fresh store
     // object each render would otherwise re-seed and wipe what is being typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
