@@ -351,9 +351,9 @@ export function ConversationCard({
     onResolvedChange?.(false)
   }
 
-  // Edit and Delete on the viewer's own message and on an agent's (SPEC §6.5,
-  // CON-5): a seam that reads profiles says so in `canEditAndDelete`. One that
-  // does not falls back to the author label (PEE-32) — every seam maps the
+  // Edit and Delete only on the viewer's own message (SPEC §6.5, SHI-29): a
+  // seam that knows the viewer says so in `canEditAndDelete`. One that does
+  // not falls back to the author label (PEE-32) — every seam maps the
   // viewer's own rows to `CURRENT_USER_NAME`, the same label "You" reads.
   const isOwnMessage = canEditAndDelete ?? isCurrentUser(authorName)
 

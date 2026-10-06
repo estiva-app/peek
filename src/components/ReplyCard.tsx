@@ -386,7 +386,7 @@ export function ReplyCard({
   editSaveFnRef.current = handleEditSave
   editCancelFnRef.current = handleEditCancel
 
-  // Edit and Delete on the viewer's own message and on an agent's (SPEC §6.5)
+  // Edit and Delete only on the viewer's own message (SPEC §6.5, SHI-29)
   // when the seam says so; else the author label (PEE-32), as `ConversationCard` reads it.
   const isOwnMessage = canEditAndDelete ?? isCurrentUser(authorName)
 
