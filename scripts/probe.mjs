@@ -61,7 +61,9 @@
  * (Peek 23130326). Each identity now reuses one slot per app, derived from its
  * pubkey and planted in `localStorage` before the app loads. `--slot fresh`
  * leaves it out, for a check that needs a brand-new installation — and leaves
- * one more slot on the relay.
+ * one more slot on the relay. Two runs as the same identity at the same time
+ * share the slot and can overwrite each other's markers: give one of them
+ * `--slot fresh`.
  *
  * The browser is the Chromium 1228 that `playwright-core 1.61.1` matches, the
  * same one `render-story.mjs` uses.

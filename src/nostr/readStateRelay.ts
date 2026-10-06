@@ -28,7 +28,7 @@ import { PEEK_HORIZON_DAYS, readStateSlotFilter } from './readState'
 /**
  * What every slot last decrypted to, for the life of the tab (Peek 23130326).
  * Without it each 30 s refresh decrypted every slot again — 314 calls a
- * minute for an identity with 141 slots, against a limit of 120 — and each
+ * minute for an identity with 155 slots, against a limit of 120 — and each
  * refused slot dropped its markers from the merge. Resets on a new pubkey.
  */
 let slotCache: SlotCache = createSlotCache()
