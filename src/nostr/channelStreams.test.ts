@@ -51,6 +51,13 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
     expect(grouped[FOLDER_B].map((m) => m.about)).toEqual([[]])
   })
 
+  it("puts a NIP-22 reply in its file's stream by its `A` (CON-34)", () => {
+    // The shape Peek writes: the file only in `A`, the parent comment in `e`.
+    const reply = event('2', [['A', ISSUE], ['K', '30851'], ['e', '1'.padEnd(64, '0')], ['k', '1111'], ['h', FOLDER_A]])
+    const grouped = streamMessagesByFolder([event('1', [['h', FOLDER_A], ['A', ISSUE], ['a', ISSUE]]), reply], [FOLDER_A])
+    expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[ISSUE], [ISSUE]])
+  })
+
   it('keeps a quiet Folder as [] and an unasked Folder absent', () => {
     const grouped = streamMessagesByFolder([event('1', [['h', FOLDER_B]])], [FOLDER_A])
     expect(grouped[FOLDER_A]).toEqual([])

@@ -125,7 +125,8 @@ export function useConversationBadges(
     const me = validToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
     for (const [ref, messages] of Object.entries(held)) {
-      counts[ref] = messages.length
+      // Comments, not their replies, which are here for the dot (CON-34): the count `conversationCountsOf` gives.
+      counts[ref] = messages.filter((m) => m.root === m.id).length
       // Not judged until the first merge has landed: before that every marker
       // is absent, and "absent" would read as "new" for the whole listing.
       // Nor until the relay has said what the person is a member of (§11.8).
