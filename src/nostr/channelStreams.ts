@@ -43,7 +43,7 @@
  */
 import { KIND, MAX_FILTERS_PER_QUERY, type SignedEvent } from '@estiva-app/protocol'
 import { CONVERSATION_LIMIT, type ConversationMessage, type QueryFn } from '@estiva-app/interop'
-import { mentions, THREAD_RULE_FROM, URGENT_TAG } from '@estiva-app/conversation'
+import { isReply, mentions, THREAD_RULE_FROM, URGENT_TAG } from '@estiva-app/conversation'
 
 /** A message in a Folder's channel, with the file streams it belongs to. */
 export interface StreamMessage extends ConversationMessage {
@@ -140,11 +140,13 @@ export function rootOf(event: SignedEvent): string {
  * lost it from the Unread filter.
  */
 function aboutOf(event: SignedEvent): string[] {
-  // A top-level comment carries the same address in both; a reply only in `A`.
-  // Not a reply from before the thread rule's cut-over: no list ever showed
-  // one, and the Done-when keeps them dark ("lit rows are the same before and after").
-  const names = event.created_at < THREAD_RULE_FROM ? ['a'] : ['a', 'A']
-  return [...new Set(event.tags.filter((t) => names.includes(t[0]) && t[1]).map((t) => t[1]))]
+  // A reply's file is its `A` alone: an `a` on it is a mention (§6.4), and a
+  // thread attaches to a file never by mention (§11.1). Not a reply from before
+  // the thread rule's cut-over — no list ever showed one, and the Done-when keeps
+  // them dark ("lit rows are the same before and after"). Everything else is read
+  // by `a`, as it always was.
+  const tag = event.kind === KIND.COMMENT && isReply(event) && event.created_at >= THREAD_RULE_FROM ? 'A' : 'a'
+  return [...new Set(event.tags.filter((t) => t[0] === tag && t[1]).map((t) => t[1]))]
 }
 
 /**

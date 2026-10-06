@@ -58,8 +58,10 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
     const after = event('2', replyTags, { created_at: THREAD_RULE_FROM })
     // One from before the cut-over stays where it always was: no list ever showed it.
     const before = event('3', replyTags, { created_at: THREAD_RULE_FROM - 1 })
-    const grouped = streamMessagesByFolder([event('1', [['h', FOLDER_A], ['A', ISSUE], ['a', ISSUE]]), after, before], [FOLDER_A])
-    expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[ISSUE], [ISSUE], []])
+    // An `a` on a reply is a mention (§6.4): the thread stays the file's alone (§11.1).
+    const naming = event('4', [...replyTags, ['a', PROJECT]], { created_at: THREAD_RULE_FROM })
+    const grouped = streamMessagesByFolder([event('1', [['h', FOLDER_A], ['A', ISSUE], ['a', ISSUE]]), after, before, naming], [FOLDER_A])
+    expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[ISSUE], [ISSUE], [], [ISSUE]])
   })
 
   it('keeps a quiet Folder as [] and an unasked Folder absent', () => {
