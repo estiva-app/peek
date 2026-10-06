@@ -43,7 +43,7 @@ import type { RelaySeam } from './stars'
 import { channelContext, fileContext, serializeReadStateBlob, threadContext, toContextSeconds, type SlotIdentity } from '@estiva-app/conversation'
 import { loadSlotIdentity, rotateSlotId } from './readState'
 import { MAX_PLAINTEXT_BYTES } from './appData'
-import { fetchOwnSlot, loadMergedReadState, publishReadState } from './readStateRelay'
+import { fetchOwnSlot, loadMergedReadState, publishReadState, resetSlotCacheForTests } from './readStateRelay'
 import { createReadStateQueue, type ReadStateQueue } from './readStateQueue'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { RELAY_URL } from '@/api/relayUrl'
@@ -239,6 +239,7 @@ function ensureQueue(): ReadStateQueue {
 export function resetReadStateQueueForTests(): void {
   queue?.cancel()
   queue = undefined
+  resetSlotCacheForTests()
   identity = undefined
   relayOrigin = null
   previousRelayMerge = undefined

@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const queryRelay = vi.fn()
 const decryptBlob = vi.fn()
+const decryptBlobUnlessRefused = vi.fn()
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
-vi.mock('./appData', () => ({ decryptBlob, encryptBlob: vi.fn() }))
+vi.mock('./appData', () => ({ decryptBlob, decryptBlobUnlessRefused, encryptBlob: vi.fn() }))
 
-const { fetchOwnSlot, loadMergedReadState } = await import('./readStateRelay')
+const { fetchOwnSlot, loadMergedReadState, resetSlotCacheForTests } = await import('./readStateRelay')
 
 const PUBKEY = 'e'.repeat(64)
 const SLOT = '0123456789abcdef0123456789abcdef'
@@ -25,6 +26,8 @@ const blob = (clientId: string, contexts: Record<string, number>) => JSON.string
 beforeEach(() => {
   queryRelay.mockReset()
   decryptBlob.mockReset()
+  decryptBlobUnlessRefused.mockReset()
+  resetSlotCacheForTests()
 })
 
 describe('fetchOwnSlot', () => {
@@ -54,13 +57,39 @@ describe('loadMergedReadState', () => {
     const other = 'f'.repeat(32)
     const lost = 'a'.repeat(32)
     queryRelay.mockResolvedValue({ ok: true, events: [slotEvent(SLOT, 100), slotEvent(other, 90), slotEvent(lost, 80)] })
-    decryptBlob.mockImplementation(async (c: string) =>
+    decryptBlobUnlessRefused.mockImplementation(async (c: string) =>
       c === `cipher-${SLOT}` ? blob('peek-1a2b3c4d', { [FILE]: 50 }) : c === `cipher-${other}` ? blob('ship-0000aaaa', { [FILE]: 70 }) : undefined,
     )
     const state = await loadMergedReadState(seam, identity, 1_000_000)
     expect(state?.merged).toEqual({ [FILE]: 70 })
     expect(state?.verdict.mine?.dTag).toBe(`read-state:${SLOT}`)
     expect(state?.verdict.coordinateConflicted).toBe(false)
+  })
+
+  it('decrypts a slot once, and keeps its markers when a later decrypt is refused (Peek 23130326)', async () => {
+    const other = 'f'.repeat(32)
+    queryRelay.mockResolvedValue({ ok: true, events: [slotEvent(SLOT, 100), slotEvent(other, 90)] })
+    decryptBlobUnlessRefused.mockImplementation(async (c: string) =>
+      c === `cipher-${SLOT}` ? blob('peek-1a2b3c4d', { [FILE]: 50 }) : blob('ship-0000aaaa', { [FILE]: 70 }),
+    )
+    await loadMergedReadState(seam, identity, 1_000_000)
+    await loadMergedReadState(seam, identity, 1_000_000)
+    expect(decryptBlobUnlessRefused).toHaveBeenCalledTimes(2)
+
+    // The other slot changes and Estiva ID answers 429: its last markers stay in the merge.
+    queryRelay.mockResolvedValue({ ok: true, events: [slotEvent(SLOT, 100), { ...slotEvent(other, 95), content: 'cipher-new' }] })
+    decryptBlobUnlessRefused.mockRejectedValue(new Error('POST /nip44/decrypt failed: 429'))
+    const state = await loadMergedReadState(seam, identity, 1_000_000)
+    expect(state?.merged).toEqual({ [FILE]: 70 })
+    expect(decryptBlobUnlessRefused).toHaveBeenCalledTimes(3)
+  })
+
+  it('fetchOwnSlot reuses the blob the merge decrypted', async () => {
+    queryRelay.mockResolvedValue({ ok: true, events: [slotEvent(SLOT, 100)] })
+    decryptBlobUnlessRefused.mockResolvedValue(blob('peek-1a2b3c4d', { [FILE]: 50 }))
+    await loadMergedReadState(seam, identity, 1_000_000)
+    expect((await fetchOwnSlot(seam, SLOT)).blob?.contexts).toEqual({ [FILE]: 50 })
+    expect(decryptBlob).not.toHaveBeenCalled()
   })
 
   it('answers undefined, not "read nothing", when the relay cannot be asked', async () => {

@@ -82,9 +82,29 @@ async function nip44(op: 'encrypt' | 'decrypt', body: object, token: string): Pr
   if (!response.ok) {
     // 429 is a real case: the endpoint allows 120 operations per minute per app
     // per person, and a person toggling stars quickly can reach it.
-    throw new Error(`POST /nip44/${op} failed: ${response.status} ${await response.text()}`)
+    throw new Nip44Error(`POST /nip44/${op} failed: ${response.status} ${await response.text()}`, response.status)
   }
   return response.json()
+}
+
+/** `/nip44/*` answered, and not with 200. */
+class Nip44Error extends Error {
+  readonly status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+/**
+ * Whether a failed `/nip44/*` call may succeed if asked again: a 429, an
+ * expired or renewing token, the service down, or no answer at all. Anything
+ * else is a ciphertext that will never decrypt — a rotated key.
+ */
+function refusedForNow(error: unknown): boolean {
+  if (!(error instanceof Nip44Error)) return true
+  // 422 is a policy refusal for the whole app, not for this ciphertext.
+  return [401, 403, 408, 422, 429].includes(error.status) || error.status >= 500
 }
 
 /**
@@ -117,6 +137,22 @@ export async function decryptBlob(ciphertext: string, token: string): Promise<st
     const { plaintext } = (await nip44('decrypt', { ciphertext }, token)) as { plaintext: string }
     return plaintext
   } catch {
+    return undefined
+  }
+}
+
+/**
+ * {@link decryptBlob}, but a refusal that may pass — a 429 above all — throws
+ * instead of answering `undefined`. Read state needs the difference: a slot
+ * that will never decrypt is dropped, one refused for now keeps its last
+ * markers (`Nip44.decrypt` in `@estiva-app/conversation`, Peek 23130326).
+ */
+export async function decryptBlobUnlessRefused(ciphertext: string, token: string): Promise<string | undefined> {
+  try {
+    const { plaintext } = (await nip44('decrypt', { ciphertext }, token)) as { plaintext: string }
+    return plaintext
+  } catch (error) {
+    if (refusedForNow(error)) throw error
     return undefined
   }
 }

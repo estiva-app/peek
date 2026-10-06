@@ -54,15 +54,27 @@
  * `--base http://localhost:5173` runs against a dev server; `--id` names the
  * Estiva ID origin when that is not production.
  *
+ * ## Read-state slot
+ *
+ * Every run is a fresh browser, and a fresh browser used to mint a new
+ * read-state slot: QA-1 reached 141, and every tab then decrypted all of them
+ * (Peek 23130326). Each identity now reuses one slot per app, derived from its
+ * pubkey and planted in `localStorage` before the app loads. `--slot fresh`
+ * leaves it out, for a check that needs a brand-new installation — and leaves
+ * one more slot on the relay. Two runs as the same identity at the same time
+ * share the slot and can overwrite each other's markers: give one of them
+ * `--slot fresh`.
+ *
  * The browser is the Chromium 1228 that `playwright-core 1.61.1` matches, the
  * same one `render-story.mjs` uses.
  */
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { chromium } from 'playwright-core'
 
-const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url]
+const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file]`
 
@@ -100,6 +112,7 @@ try {
       sameSite: 'Lax',
     },
   ])
+  if (options.slot !== 'fresh') await context.addInitScript(pinReadStateSlot, pinnedSlots(session.pubkey, options.base))
   const page = await context.newPage()
   // Every WebSocket the tab opens, and whether it closed before the run ended:
   // "one relay connection per tab" is otherwise invisible from the page.
@@ -295,6 +308,26 @@ async function sessionFor(as) {
   const body = await response.json().catch(() => ({}))
   if (response.status !== 200) fail(`test-login ${response.status}: ${JSON.stringify(body)}`)
   return body
+}
+
+/** One read-state slot per identity and app, the same every run (see "Read-state slot"). */
+function pinnedSlots(pubkey, base) {
+  const hex = (label) => createHash('sha256').update(`probe-read-state:${label}:${pubkey}`).digest('hex')
+  return {
+    origin: new URL(base).origin,
+    slots: {
+      'estiva-peek:read-state-slot': { slotId: hex('peek').slice(0, 32), clientId: `peek-${hex('peek-client').slice(0, 8)}` },
+      'ship.readstate.slot': { slotId: hex('ship').slice(0, 32), clientId: `ship-${hex('ship-client').slice(0, 8)}` },
+    },
+  }
+}
+
+/** Runs in the page, before the app: plant the slots unless the app already holds one. */
+function pinReadStateSlot({ origin, slots }) {
+  if (location.origin !== origin) return
+  for (const [key, identity] of Object.entries(slots)) {
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(identity))
+  }
 }
 
 function fail(message) {
