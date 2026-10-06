@@ -64,7 +64,12 @@ export const Reply: Story = {
 export const WithAnIssue: Story = {
   args: {
     draftKey: 'story-with-an-issue',
-    drafts: { read: () => `Filed it for Thursday: nostr:${recorded.naddr} `, write: () => {}, clear: () => {} },
+    drafts: {
+      read: () => `Filed it for Thursday: nostr:${recorded.naddr} `,
+      readDraft: () => ({ text: `Filed it for Thursday: nostr:${recorded.naddr} ` }),
+      write: () => {},
+      clear: () => {},
+    },
     resolvedObjects: { [recorded.naddr]: recorded.object as unknown as ForeignObject },
   },
 }

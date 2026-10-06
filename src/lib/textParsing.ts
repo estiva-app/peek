@@ -587,6 +587,25 @@ export function textToTiptapContent(text: string) {
   return { type: 'doc' as const, content: docContent }
 }
 
+/**
+ * The chips for `urgent`'s keys as the urgent chips they were — CON-31.
+ *
+ * Marker text cannot carry an urgent mention of somebody with a key: it is the
+ * same `nostr:npub…` as an ordinary one (SPEC §13.1 puts the urgency in a
+ * tag), so `textToTiptapContent` gives back a `mention`. A draft keeps whom it
+ * named urgently beside its text, and this puts the chips back.
+ */
+export function withUrgentMentions<T>(node: T, urgent: readonly string[] | undefined): T {
+  if (!urgent || urgent.length === 0) return node
+  const keys = new Set(urgent)
+  const walk = (n: Record<string, unknown>): Record<string, unknown> => {
+    const attrs = n.attrs as { pubkey?: unknown } | undefined
+    if (n.type === 'mention' && typeof attrs?.pubkey === 'string' && keys.has(attrs.pubkey)) return { ...n, type: 'urgentMention' }
+    return Array.isArray(n.content) ? { ...n, content: n.content.map(walk) } : n
+  }
+  return walk(node as Record<string, unknown>) as T
+}
+
 // ── serializeTiptapToText (whole-doc serializer for edit-mode submit) ──
 //
 // We type the editor structurally with `unknown` for the doc and use a small
