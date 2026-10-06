@@ -1,7 +1,7 @@
 /**
  * The workspace directory reads profiles the protocol's way (CON-5): NIP-24's
- * `bot` has to arrive, because it is what offers Edit and Delete on an agent's
- * message (SPEC §6.5), and a profile that will not parse is still skipped.
+ * `bot` has to arrive, because it tells an agent from a person, and a profile
+ * that will not parse is still skipped.
  */
 import { describe, expect, it, vi } from 'vitest'
 

@@ -76,6 +76,9 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     })),
     nostrReferences: m.references,
     nostrEventId: m.id,
+    // Nothing here edits or deletes (SHI-29): say so, rather than let the card
+    // guess ownership from a display name anybody can set to "You".
+    canEditAndDelete: false,
   }
   /*
     A comment opens the thread it was said in, on that file's page. A topic
