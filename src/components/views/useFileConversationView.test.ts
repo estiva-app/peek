@@ -109,15 +109,14 @@ describe('project', () => {
     expect(view.reactionEventsCut).toBe(true)
   })
 
-  it("offers Edit and Delete on the viewer's own and an agent's, not another person's, and on an unread profile (SPEC §6.5, CON-5)", () => {
+  it("offers Edit and Delete only on the viewer's own — not another person's, an agent's or an unread profile's (SPEC §6.5, SHI-29)", () => {
     const BOT = 'd'.repeat(64)
     const byBot = event('4', BOT, 'Done', T + 180)
     const withBot = { ...people, [BOT]: { displayName: 'Helper', bot: true } } as unknown as People
     const view = project(conversation({ roots: [rootA, rootB, byBot] }), ME, withBot)
-    expect(view.roots.map((r) => r.canEditAndDelete)).toEqual([false, true, true])
+    expect(view.roots.map((r) => r.canEditAndDelete)).toEqual([false, false, false])
     expect(view.byId[rootA.id].replies[0].canEditAndDelete).toBe(true)
-    // STRANGER has no profile in the directory: offered, and the relay decides.
-    // Nothing on somebody else's while the directory loads, and nothing with no viewer.
+    // The same while the directory loads, and nothing with no viewer.
     expect(project(conversation({ roots: [rootA, rootB, byBot] }), ME, undefined).roots.map((r) => r.canEditAndDelete)).toEqual([false, false, false])
     expect(project(conversation(), ME, undefined).byId[rootA.id].replies[0].canEditAndDelete).toBe(true)
     expect(project(conversation({ roots: [rootA, rootB, byBot] }), null, withBot).roots.map((r) => r.canEditAndDelete)).toEqual([false, false, false])

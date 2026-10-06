@@ -129,8 +129,8 @@ export interface ConversationData {
   editedAt?: number
   /**
    * Whether the card offers Edit and Delete — SPEC §6.5, the package's
-   * `offersEditAndDelete`: the viewer's own message, or an agent's
-   * (`bot: true`). A seam that does not know leaves it absent and the card
+   * `offersEditAndDelete`: only the viewer's own message (SHI-29). A seam
+   * that does not know leaves it absent and the card
    * falls back to the "You" label (PEE-32).
    */
   canEditAndDelete?: boolean

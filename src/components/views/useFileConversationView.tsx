@@ -533,18 +533,10 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
   const reactionsById: Record<string, ReactionEvent[]> = {}
   const roots = [...conversation.roots].sort((a, b) => a.createdAt - b.createdAt)
 
-  // SPEC §6.5: the viewer's own message, or an agent's. A profile the directory
-  // does not hold offers them, as Ship does — the relay adjudicates. Nothing is
-  // offered with no viewer to sign, on a deleted root (no author), or on
-  // somebody else's while the directory is still loading: offered and then
-  // withdrawn a moment later would be a menu that lies for one round trip.
-  const offersControls = (event: ConversationEvent): boolean => {
-    if (!viewerPubkey || event.deleted) return false
-    if (event.author === viewerPubkey) return true
-    if (!people) return false
-    const profile = people[event.author]
-    return offersEditAndDelete({ viewer: viewerPubkey, author: event.author, authorIsBot: profile ? profile.bot === true : undefined })
-  }
+  // SPEC §6.5 (SHI-29): only the viewer's own message — not another person's,
+  // not an agent's. Nothing on a deleted root, which has no author.
+  const offersControls = (event: ConversationEvent): boolean =>
+    !event.deleted && offersEditAndDelete({ viewer: viewerPubkey, author: event.author })
 
   const decorate = (event: ConversationEvent) => {
     const decoration = conversation.decorations.byId[event.id.toLowerCase()]
