@@ -859,13 +859,19 @@ export async function resolveFolderContentsAsViewer(
  * The messages rather than a count (FOL-16): a count says whether a file is
  * worth opening, and whether it is *new* needs each message's time, author and
  * thread against the person's read frontier. One request either way.
+ *
+ * With the replies under them (CON-34): a reply is judged by its thread
+ * (SPEC §11.3), and a file whose only new message is a thread reply keeps its
+ * dot until the thread is opened. A NIP-22 reply names the file only in its
+ * `A`, so without them no row ever saw one. The messages are then comments and
+ * replies, told apart by `root === id`.
  */
 export async function conversationsAsViewer(
   files: ForeignObject[],
   relayUrl: string,
   token: StoredToken,
 ): Promise<Record<string, ConversationMessage[]>> {
-  return conversationsOf(files, viewerQuery(relayUrl, token), manifests)
+  return conversationsOf(files, viewerQuery(relayUrl, token), manifests, { replies: true })
 }
 
 /** One message of a file's conversation, with enough of it to draw and to reply to. */

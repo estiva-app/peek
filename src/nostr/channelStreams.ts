@@ -43,7 +43,7 @@
  */
 import { KIND, MAX_FILTERS_PER_QUERY, type SignedEvent } from '@estiva-app/protocol'
 import { CONVERSATION_LIMIT, type ConversationMessage, type QueryFn } from '@estiva-app/interop'
-import { mentions, URGENT_TAG } from '@estiva-app/conversation'
+import { isReply, mentions, THREAD_RULE_FROM, URGENT_TAG } from '@estiva-app/conversation'
 
 /** A message in a Folder's channel, with the file streams it belongs to. */
 export interface StreamMessage extends ConversationMessage {
@@ -133,6 +133,23 @@ export function rootOf(event: SignedEvent): string {
 }
 
 /**
+ * The files a message is about: every `a`, and a NIP-22 reply's `A` (CON-34).
+ * A reply's lowercase tags name its parent comment, so the file it is in is
+ * only in its uppercase `A` — read by `a` alone, every thread reply on a file
+ * fell into the Folder's general stream, which is never judged, and the Folder
+ * lost it from the Unread filter.
+ */
+function aboutOf(event: SignedEvent): string[] {
+  // A reply's file is its `A` alone: an `a` on it is a mention (§6.4), and a
+  // thread attaches to a file never by mention (§11.1). Not a reply from before
+  // the thread rule's cut-over — no list ever showed one, and the Done-when keeps
+  // them dark ("lit rows are the same before and after"). Everything else is read
+  // by `a`, as it always was.
+  const tag = event.kind === KIND.COMMENT && isReply(event) && event.created_at >= THREAD_RULE_FROM ? 'A' : 'a'
+  return [...new Set(event.tags.filter((t) => t[0] === tag && t[1]).map((t) => t[1]))]
+}
+
+/**
  * The events by Folder, as stream messages. A Folder that was asked about is
  * present with `[]` when nothing was said in it; one that was not asked about
  * is absent, so a caller can keep "quiet" and "unasked" apart.
@@ -158,7 +175,7 @@ export function streamMessagesByFolder(
       at: event.created_at,
       by: event.pubkey,
       root: rootOf(event),
-      about: event.tags.filter((t) => t[0] === 'a' && t[1]).map((t) => t[1]),
+      about: aboutOf(event),
       urgent: isUrgentFor(event, viewer),
       body: event.content,
     })

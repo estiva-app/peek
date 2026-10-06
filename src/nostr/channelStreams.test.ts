@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { encodeNpub, type SignedEvent } from '@estiva-app/protocol'
+import { THREAD_RULE_FROM } from '@estiva-app/conversation'
 import {
   CHANNEL_STREAM_LIMIT,
   channelStreamFilters,
@@ -49,6 +50,18 @@ describe('streamMessagesByFolder — which Folder, which streams, which thread',
     )
     expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[ISSUE], [ISSUE, PROJECT]])
     expect(grouped[FOLDER_B].map((m) => m.about)).toEqual([[]])
+  })
+
+  it("puts a NIP-22 reply in its file's stream by its `A` (CON-34)", () => {
+    // The shape Peek writes: the file only in `A`, the parent comment in `e`.
+    const replyTags = [['A', ISSUE], ['K', '30851'], ['e', '1'.padEnd(64, '0')], ['k', '1111'], ['h', FOLDER_A]]
+    const after = event('2', replyTags, { created_at: THREAD_RULE_FROM })
+    // One from before the cut-over stays where it always was: no list ever showed it.
+    const before = event('3', replyTags, { created_at: THREAD_RULE_FROM - 1 })
+    // An `a` on a reply is a mention (§6.4): the thread stays the file's alone (§11.1).
+    const naming = event('4', [...replyTags, ['a', PROJECT]], { created_at: THREAD_RULE_FROM })
+    const grouped = streamMessagesByFolder([event('1', [['h', FOLDER_A], ['A', ISSUE], ['a', ISSUE]]), after, before, naming], [FOLDER_A])
+    expect(grouped[FOLDER_A].map((m) => m.about)).toEqual([[ISSUE], [ISSUE], [], [ISSUE]])
   })
 
   it('keeps a quiet Folder as [] and an unasked Folder absent', () => {

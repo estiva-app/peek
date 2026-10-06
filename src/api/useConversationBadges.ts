@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
 import { useForeignObjects, useMembership } from '@/api'
 import { validToken } from '@/auth/estivaId'
-import { fileContext } from '@estiva-app/conversation'
+import { fileContext, THREAD_RULE_FROM } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { streamHasUnread } from './streamUnread'
@@ -125,7 +125,8 @@ export function useConversationBadges(
     const me = validToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
     for (const [ref, messages] of Object.entries(held)) {
-      counts[ref] = messages.length
+      // Comments, not their replies, which are here for the dot (CON-34): the count `conversationCountsOf` gives.
+      counts[ref] = messages.filter((m) => m.root === m.id).length
       // Not judged until the first merge has landed: before that every marker
       // is absent, and "absent" would read as "new" for the whole listing.
       // Nor until the relay has said what the person is a member of (§11.8).
@@ -137,7 +138,9 @@ export function useConversationBadges(
       // not the reader's.
       if (!context) continue
       unread[ref] = streamHasUnread(
-        messages,
+        // A reply from before the thread rule's cut-over never lit a row, and
+        // stays dark (CON-34's Done-when: lit rows the same before and after).
+        messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM),
         context,
         membership.termsOf(context),
         { merged: frontier.merged, me, nowSeconds, horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60 },
