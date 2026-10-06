@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
 import { useForeignObjects, useMembership } from '@/api'
 import { validToken } from '@/auth/estivaId'
-import { fileContext } from '@estiva-app/conversation'
+import { fileContext, THREAD_RULE_FROM } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { streamHasUnread } from './streamUnread'
@@ -138,7 +138,9 @@ export function useConversationBadges(
       // not the reader's.
       if (!context) continue
       unread[ref] = streamHasUnread(
-        messages,
+        // A reply from before the thread rule's cut-over never lit a row, and
+        // stays dark (CON-34's Done-when: lit rows the same before and after).
+        messages.filter((m) => m.root === m.id || m.at >= THREAD_RULE_FROM),
         context,
         membership.termsOf(context),
         { merged: frontier.merged, me, nowSeconds, horizonSeconds: PEEK_HORIZON_DAYS * 24 * 60 * 60 },

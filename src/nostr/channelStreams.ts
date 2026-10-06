@@ -43,7 +43,7 @@
  */
 import { KIND, MAX_FILTERS_PER_QUERY, type SignedEvent } from '@estiva-app/protocol'
 import { CONVERSATION_LIMIT, type ConversationMessage, type QueryFn } from '@estiva-app/interop'
-import { mentions, URGENT_TAG } from '@estiva-app/conversation'
+import { mentions, THREAD_RULE_FROM, URGENT_TAG } from '@estiva-app/conversation'
 
 /** A message in a Folder's channel, with the file streams it belongs to. */
 export interface StreamMessage extends ConversationMessage {
@@ -141,7 +141,10 @@ export function rootOf(event: SignedEvent): string {
  */
 function aboutOf(event: SignedEvent): string[] {
   // A top-level comment carries the same address in both; a reply only in `A`.
-  return [...new Set(event.tags.filter((t) => (t[0] === 'a' || t[0] === 'A') && t[1]).map((t) => t[1]))]
+  // Not a reply from before the thread rule's cut-over: no list ever showed
+  // one, and the Done-when keeps them dark ("lit rows are the same before and after").
+  const names = event.created_at < THREAD_RULE_FROM ? ['a'] : ['a', 'A']
+  return [...new Set(event.tags.filter((t) => names.includes(t[0]) && t[1]).map((t) => t[1]))]
 }
 
 /**
