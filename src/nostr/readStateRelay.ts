@@ -7,20 +7,36 @@
 import type { SignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
-import { decryptBlob, encryptBlob } from './appData'
+import { decryptBlob, decryptBlobUnlessRefused, encryptBlob } from './appData'
 import type { RelaySeam } from './stars'
 import {
   type OwnSlotVerdict,
   type QueryFn,
   type ReadStateBlob,
+  type SlotCache,
   type SlotIdentity,
   buildReadStateEvent,
   classifyOwnSlots,
+  createSlotCache,
   fetchReadState,
   parseReadStateBlob,
+  readStateDTag,
   serializeReadStateBlob,
 } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS, readStateSlotFilter } from './readState'
+
+/**
+ * What every slot last decrypted to, for the life of the tab (Peek 23130326).
+ * Without it each 30 s refresh decrypted every slot again — 314 calls a
+ * minute for an identity with 141 slots, against a limit of 120 — and each
+ * refused slot dropped its markers from the merge. Resets on a new pubkey.
+ */
+let slotCache: SlotCache = createSlotCache()
+
+/** Test seam: forget every decrypted slot. */
+export function resetSlotCacheForTests(): void {
+  slotCache = createSlotCache()
+}
 
 /** What the relay could tell us about one slot. */
 export interface OwnSlotResult {
@@ -56,6 +72,9 @@ export async function fetchOwnSlot(seam: RelaySeam, slotId: string): Promise<Own
   if (!ok) return { reachable: false }
   const newest = events.sort((a, b) => b.created_at - a.created_at)[0]
   if (!newest) return { reachable: true }
+  // The same ciphertext the merge already decrypted is the same blob.
+  const cached = slotCache.pubkey === seam.pubkey ? slotCache.slots.get(readStateDTag(slotId)) : undefined
+  if (cached?.content === newest.content) return { reachable: true, blob: cached.slot.blob }
   // A coordinate that holds a blob we cannot read (typically a 429 from
   // `/nip44/decrypt`) is not an empty one: answering "empty" would let the next
   // publish replace every marker in it with this session's few.
@@ -107,19 +126,16 @@ export async function loadMergedReadState(
   nowMs: number = Date.now(),
   horizonDays?: number,
 ): Promise<MergedReadState | undefined> {
-  // The package reads, decrypts one slot at a time (`/nip44/decrypt` answers a
-  // burst with 429) and merges; Peek supplies the relay and the decrypt seam.
+  // The package reads, decrypts only the slots that changed, one at a time
+  // (`/nip44/decrypt` answers a burst with 429), and merges; Peek supplies the
+  // relay, the decrypt seam and the cache.
   const query: QueryFn = async (filters) => {
     const { ok, events } = await queryRelay(seam.relayUrl, filters, seam.accessToken, seam.pubkey)
     if (!ok) throw new Error('relay unreachable')
     return events
   }
-  const decrypt = async (ciphertext: string) => {
-    const plaintext = await decryptBlob(ciphertext, seam.accessToken)
-    if (plaintext === undefined) throw new Error('could not decrypt')
-    return plaintext
-  }
-  const state = await fetchReadState(query, seam.pubkey, { decrypt }, identity, nowMs, horizonDays ?? PEEK_HORIZON_DAYS)
+  const decrypt = (ciphertext: string) => decryptBlobUnlessRefused(ciphertext, seam.accessToken)
+  const state = await fetchReadState(query, seam.pubkey, { decrypt }, identity, nowMs, horizonDays ?? PEEK_HORIZON_DAYS, slotCache)
   if (!state.reachable) return undefined
   return { merged: state.merged, verdict: classifyOwnSlots(state.slots, identity) }
 }
