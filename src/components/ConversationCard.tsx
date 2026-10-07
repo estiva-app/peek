@@ -33,7 +33,7 @@ import { useEditAttachments } from '@/lib/useEditAttachments'
 import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 
-import { textToTiptapContent, serializeTiptapToText, withUrgentMentions } from '@/lib/textParsing'
+import { textToTiptapContent, serializeTiptapToText, withUrgentMentions, withoutNewUrgency } from '@/lib/textParsing'
 import { MetaText } from '@/components/ui/MetaText'
 import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
@@ -379,7 +379,7 @@ export function ConversationCard({
   const handleEditSave = () => {
     if (!editEditor) return
     const wasResolved = resolved
-    const trimmed = serializeTiptapToText(editEditor)
+    const trimmed = withoutNewUrgency(serializeTiptapToText(editEditor), bodyState)
     let resolution = extractResolution(editEditor)
     let finalBody = trimmed
 

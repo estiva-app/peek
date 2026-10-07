@@ -109,6 +109,13 @@ describe('an urgent mention in the edit box', () => {
     expect(screen.queryByRole('listbox', { name: 'Urgent mention' })).toBeNull()
   })
 
+  it('saves a hand-typed !@Name as an ordinary mention, since an edit pages nobody', async () => {
+    const { editor, onBodyChange } = await openEditor({ body: 'see !@Ann about it' })
+    await type(editor, ' and !@Bob')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onBodyChange).toHaveBeenCalledWith('see !@Ann about it and @Bob')
+  })
+
   it('is not offered by /', async () => {
     const { editor } = await openEditor()
     await type(editor, ' /')

@@ -28,7 +28,7 @@ import { blobObjectUrl } from '@/nostr/media'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
-import { textToTiptapContent, serializeTiptapToText, withUrgentMentions } from '@/lib/textParsing'
+import { textToTiptapContent, serializeTiptapToText, withUrgentMentions, withoutNewUrgency } from '@/lib/textParsing'
 import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
@@ -341,7 +341,7 @@ export function ReplyCard({
 
   const handleEditSave = () => {
     if (!editEditor) return
-    const trimmed = serializeTiptapToText(editEditor)
+    const trimmed = withoutNewUrgency(serializeTiptapToText(editEditor), bodyState)
     let resolution = extractResolution(editEditor)
     let finalBody = trimmed
 
