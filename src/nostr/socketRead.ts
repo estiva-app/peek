@@ -26,17 +26,27 @@ import { validToken } from '@/auth/estivaId'
 import type { SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
 import { recordRelayRequest, refusalOf } from './relayMeter'
-import { RATE_LIMIT_DEFAULT_MS } from './relayBudget'
+import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
 
 /** Buzz parses a REQ with more and answers a bare NOTICE — no CLOSED, so the read would only time out. */
 export const MAX_FILTERS_PER_REQ = 10
 /**
  * REQs this tab sends per {@link WINDOW_MS}, of buzz's 50 per pubkey. The rest
- * is for the live watches, which subscribe outside this pacer, and another tab.
- * A read past it waits for a slot rather than being refused.
+ * is for the live watches, which subscribe outside this pacer (~7 per 5 s while
+ * clicking around), and for another tab. At 40, reads plus watches ran at 46–48
+ * and the relay refused 22 at its window edges in a 60 s `--hammer`.
  */
-export const REQS_PER_WINDOW = 40
+export const REQS_PER_WINDOW = 30
 export const WINDOW_MS = 5_000
+/**
+ * A read that has waited this long for a socket slot goes over HTTP instead, a
+ * separate meter, while this tab has spilled fewer than
+ * {@link HTTP_SPILL_PER_MINUTE} there — well under HTTP's 300, which Ship and
+ * every write share. Clicking around fast asks ~50 reads per 5 s, more than
+ * either meter allows alone.
+ */
+export const SPILL_AFTER_MS = 1_000
+export const HTTP_SPILL_PER_MINUTE = 120
 /** How long a read waits for a socket that is still connecting before it goes over HTTP. */
 export const LIVE_WAIT_MS = 3_000
 /** A REQ with no EOSE by then is closed and asked again over HTTP. */
@@ -53,36 +63,86 @@ export interface SocketReaderOptions {
   /** The pubkey the socket authenticates as, or null when the tab has no credential. */
   currentPubkey(): string | null
   budget: Pick<RelayBudget, 'noteRateLimited' | 'pausedForMs'>
+  /** HTTP's own pause (`relayBudget`): a read does not spill there while it is set. */
+  httpBudget: Pick<RelayBudget, 'pausedForMs'>
   now?: () => number
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
   log?: (message: string, detail?: Record<string, unknown>) => void
 }
 
-/** At most `perWindow` slots in any `windowMs`, handed out in the order asked. */
+export interface Pacer {
+  /**
+   * `n` slots at once (one read's REQs), or `'http'` when the read waited
+   * `spill.afterMs` and `spill.allowed()` said HTTP may take it. `n` must not
+   * exceed the window.
+   */
+  take(n: number, spill?: { afterMs: number; allowed(): boolean }): Promise<'socket' | 'http'>
+}
+
+/**
+ * A read waiting longer than this goes ahead of newer ones. Newest-first alone
+ * starved the read that draws the side tree through a whole `--hammer` minute:
+ * its topic links never came back.
+ */
+export const STARVED_AFTER_MS = 3_000
+
+/**
+ * At most `perWindow` slots in any `windowMs`, newest asker first — the reads
+ * still waiting while someone clicks on are for what they have left, and the
+ * ones for what is on screen should not queue behind them — except that a read
+ * waiting past {@link STARVED_AFTER_MS} goes first, oldest of those first.
+ */
 export function createPacer(
   perWindow: number,
   windowMs: number,
   now: () => number,
-  sleep: (ms: number) => Promise<void>,
-): { slot(): Promise<void> } {
+  setTimer: (fn: () => void, ms: number) => unknown,
+  clearTimer: (handle: unknown) => void,
+): Pacer {
   const sent: number[] = []
-  let queue: Promise<void> = Promise.resolve()
+  const waiting: { n: number; at: number; resolve: (via: 'socket' | 'http') => void; spillTimer: unknown }[] = []
+  let pumpTimer: unknown = null
+
+  function pump() {
+    pumpTimer = null
+    const floor = now() - windowMs
+    while (sent.length > 0 && sent[0] <= floor) sent.shift()
+    while (waiting.length > 0) {
+      const starved = waiting.findIndex((w) => now() - w.at >= STARVED_AFTER_MS)
+      const index = starved === -1 ? waiting.length - 1 : starved
+      const next = waiting[index]
+      if (sent.length + next.n > perWindow) break
+      waiting.splice(index, 1)
+      if (next.spillTimer !== null) clearTimer(next.spillTimer)
+      const at = now()
+      for (let i = 0; i < next.n; i++) sent.push(at)
+      next.resolve('socket')
+    }
+    if (waiting.length > 0 && pumpTimer === null && sent.length > 0) {
+      pumpTimer = setTimer(pump, Math.max(0, sent[0] + windowMs - now()))
+    }
+  }
+
   return {
-    slot() {
-      const turn = queue.then(async () => {
-        for (;;) {
-          const at = now()
-          while (sent.length > 0 && sent[0] <= at - windowMs) sent.shift()
-          if (sent.length < perWindow) {
-            sent.push(at)
+    take(n, spill) {
+      return new Promise((resolve) => {
+        const waiter = { n, at: now(), resolve, spillTimer: null as unknown }
+        // Asked again every `afterMs` while it waits: HTTP may have room later.
+        const trySpill = () => {
+          const i = waiting.indexOf(waiter)
+          if (i === -1 || !spill) return
+          if (!spill.allowed()) {
+            waiter.spillTimer = setTimer(trySpill, spill.afterMs)
             return
           }
-          await sleep(sent[0] + windowMs - at)
+          waiting.splice(i, 1)
+          resolve('http')
         }
+        if (spill) waiter.spillTimer = setTimer(trySpill, spill.afterMs)
+        waiting.push(waiter)
+        pump()
       })
-      queue = turn
-      return turn
     },
   }
 }
@@ -91,9 +151,19 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
   const now = options.now ?? Date.now
   const setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
   const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
-  const sleep = (ms: number) => new Promise<void>((done) => setTimer(done, ms))
   const log = options.log ?? (() => {})
-  const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, now, sleep)
+  const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, now, setTimer, clearTimer)
+  const spilled: number[] = []
+  const spill = {
+    afterMs: SPILL_AFTER_MS,
+    allowed() {
+      const floor = now() - 60_000
+      while (spilled.length > 0 && spilled[0] <= floor) spilled.shift()
+      if (spilled.length >= HTTP_SPILL_PER_MINUTE || options.httpBudget.pausedForMs() > 0) return false
+      spilled.push(now())
+      return true
+    },
+  }
 
   function waitForLive(client: LiveClient): Promise<boolean> {
     const state = client.state()
@@ -142,7 +212,6 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
   }
 
   async function readChunk(client: LiveClient, filters: Record<string, unknown>[]): Promise<Outcome> {
-    await pacer.slot()
     if (client.state() !== 'live') return { kind: 'lost', why: client.state() }
     let outcome = await reqOnce(client, filters)
     // A REQ naming only Folders the reader is not in is CLOSED; `/query` answers
@@ -168,6 +237,12 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
 
     const chunks: Record<string, unknown>[][] = []
     for (let i = 0; i < filters.length; i += MAX_FILTERS_PER_REQ) chunks.push(filters.slice(i, i + MAX_FILTERS_PER_REQ))
+    // One POST beats a whole window of REQs for a read this wide.
+    if (chunks.length > REQS_PER_WINDOW) return null
+    if ((await pacer.take(chunks.length, spill)) === 'http') {
+      log('socket read spilled to HTTP', { reqs: chunks.length })
+      return null
+    }
     const outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk)))
 
     const unanswered = outcomes.find((o) => o.kind === 'lost' || (o.kind === 'closed' && /^(rate-limited|auth-required|error):/.test(o.reason)))
@@ -212,6 +287,7 @@ export function createAppSocketReader(log?: SocketReaderOptions['log']): SocketR
     getClient: getLiveClient,
     currentPubkey: () => validToken()?.pubkey ?? null,
     budget: socketBudget,
+    httpBudget: relayBudget,
     log,
   })
 }

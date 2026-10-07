@@ -201,6 +201,7 @@ async function hammer({ targets, seconds, everyMs }) {
       : [...document.querySelectorAll('main *, nav *, aside *')].find((e) => e.children.length === 0 && e.textContent.trim() === what)
   const start = Date.now()
   const clicks = []
+  const skipped = []
   let i = 0
   while (Date.now() - start < seconds * 1000) {
     const target = targets[i++ % targets.length]
@@ -208,12 +209,12 @@ async function hammer({ targets, seconds, everyMs }) {
     if (el) {
       el.click()
       clicks.push({ at: Date.now(), target: target[1] })
-    }
+    } else skipped.push({ at: Date.now(), target: target[1], on: location.pathname })
     await sleep(everyMs)
   }
   // Reads started by the last clicks still land, and a refusal for them counts too.
   await sleep(8000)
-  return { start, end: Date.now(), clicks, reads: window.__relayReads?.(2) ?? null }
+  return { start, end: Date.now(), clicks, skipped, reads: window.__relayReads?.(2) ?? null }
 }
 
 const A = '/topic/switch-probe-a-'
@@ -261,14 +262,18 @@ const steps = [
 const here = dirname(fileURLToPath(import.meta.url))
 const netFile = join(mkdtempSync(join(tmpdir(), 'probe-switch-')), 'net.json')
 const hammerSeconds = option('hammer') === undefined ? null : Number(option('hammer'))
+// Each target is on the page the one before leads to, whatever has loaded: a topic page lists A and B in its
+// tree, and Desk, People and a DM have only the nav's last-topic link (`/topic/`), so the cycle never stalls on
+// a missing link — a run that skips clicks asks less of the relay and measures nothing.
 const hammerTargets = [
   ['link', A],
   ['link', B],
   ['link', '/app/desk'],
+  ['link', '/topic/'],
   ['link', A],
   ['link', '/app/people'],
   ['exact', QA2_NAME],
-  ['link', B],
+  ['link', '/topic/'],
 ]
 const source =
   hammerSeconds === null
@@ -348,7 +353,9 @@ if (hammerSeconds !== null) {
     console.log(`the run did not start${report.failure ? `: ${report.failure}` : ''}`)
     process.exit(1)
   }
-  console.log(`${run.clicks.length} clicks in ${hammerSeconds} s, then 8 s for the last reads to land`)
+  console.log(
+    `${run.clicks.length} clicks in ${hammerSeconds} s (${run.skipped?.length ?? 0} skipped: target not on screen), then 8 s for the last reads to land`,
+  )
   console.log(`HTTP ${total.http} (${total.sign} /sign), socket REQ ${total.req}, refused ${total.refused}`)
   console.log(
     `  ${Object.entries(total.counts)

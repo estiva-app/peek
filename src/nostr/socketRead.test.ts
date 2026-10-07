@@ -50,7 +50,10 @@ function fakeClient(initial: RelayState = 'live') {
 const event = (id: string) => ({ id, kind: 9, pubkey: ME, created_at: 1, tags: [], content: '', sig: '' }) as SignedEvent
 
 function reader(client: LiveClient, budget = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => 0) }, pubkey: string | null = ME) {
-  return { read: createSocketReader({ getClient: () => client, currentPubkey: () => pubkey, budget }), budget }
+  return {
+    read: createSocketReader({ getClient: () => client, currentPubkey: () => pubkey, budget, httpBudget: { pausedForMs: () => 0 } }),
+    budget,
+  }
 }
 
 afterEach(() => {
@@ -160,18 +163,59 @@ describe('socket reads', () => {
 })
 
 describe('createPacer', () => {
-  it(`hands out ${REQS_PER_WINDOW} slots per window and makes the next one wait for the oldest to age out`, async () => {
-    let now = 0
-    const sleeps: number[] = []
-    const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, () => now, async (ms) => {
-      sleeps.push(ms)
-      now += ms
-    })
-    for (let i = 0; i < REQS_PER_WINDOW; i++) await pacer.slot()
-    expect(sleeps).toEqual([])
-    now = 1_000
-    await pacer.slot()
-    expect(sleeps).toEqual([WINDOW_MS - 1_000])
+  const fakeClock = () => {
+    vi.useFakeTimers()
+    return createPacer(REQS_PER_WINDOW, WINDOW_MS, Date.now, (fn, ms) => setTimeout(fn, ms), (h) => clearTimeout(h as ReturnType<typeof setTimeout>))
+  }
+
+  it(`hands out ${REQS_PER_WINDOW} slots per window and makes the next read wait for the oldest to age out`, async () => {
+    const pacer = fakeClock()
+    expect(await pacer.take(REQS_PER_WINDOW)).toBe('socket')
+    let granted = false
+    void pacer.take(1).then(() => (granted = true))
+    await vi.advanceTimersByTimeAsync(WINDOW_MS - 1)
+    expect(granted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(granted).toBe(true)
+  })
+
+  it('serves the newest read first, so what is on screen does not queue behind what was left', async () => {
+    const pacer = fakeClock()
+    await pacer.take(REQS_PER_WINDOW)
+    await vi.advanceTimersByTimeAsync(WINDOW_MS - 1_000)
+    const order: string[] = []
+    void pacer.take(REQS_PER_WINDOW).then(() => order.push('left'))
+    void pacer.take(REQS_PER_WINDOW).then(() => order.push('on screen'))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(order).toEqual(['on screen'])
+    await vi.advanceTimersByTimeAsync(WINDOW_MS)
+    expect(order).toEqual(['on screen', 'left'])
+  })
+
+  it('serves a read that has waited too long before newer ones, so none waits for ever', async () => {
+    const pacer = fakeClock()
+    await pacer.take(REQS_PER_WINDOW)
+    const order: string[] = []
+    void pacer.take(REQS_PER_WINDOW).then(() => order.push('side tree'))
+    // Someone keeps clicking: a newer full-window read arrives every window.
+    for (let i = 0; i < 3; i++) {
+      void pacer.take(REQS_PER_WINDOW).then(() => order.push(`click ${i}`))
+      await vi.advanceTimersByTimeAsync(WINDOW_MS)
+    }
+    expect(order[0]).toBe('side tree')
+  })
+
+  it('sends a read that waited past the spill time over HTTP when HTTP may take it, and keeps one waiting when not', async () => {
+    const pacer = fakeClock()
+    await pacer.take(REQS_PER_WINDOW)
+    const spilled = pacer.take(1, { afterMs: 1_000, allowed: () => true })
+    let room = false
+    const later = pacer.take(1, { afterMs: 1_000, allowed: () => room })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(await spilled).toBe('http')
+    room = true
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(await later).toBe('http')
   })
 })
 
