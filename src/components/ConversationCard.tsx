@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
-import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
+import { PEEK_EDITOR_CLASSES, peekEditExtensions } from '@/extensions/peekEditor'
 import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
@@ -33,7 +33,7 @@ import { useEditAttachments } from '@/lib/useEditAttachments'
 import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 
-import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
+import { textToTiptapContent, serializeTiptapToText, withUrgentMentions, withoutNewUrgency } from '@/lib/textParsing'
 import { MetaText } from '@/components/ui/MetaText'
 import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
@@ -63,6 +63,8 @@ interface ConversationCardProps {
   resolutionMessage?: string
   highlightType?: HighlightType
   nostrReferences?: string[]
+  /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
+  urgentMentions?: string[]
   /** Which block of the referenced object this is about — SPEC §13.6. */
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
@@ -112,6 +114,7 @@ export function ConversationCard({
   resolvedBy: initialResolvedBy = '',
   resolutionMessage: initialResolutionMessage = '',
   nostrReferences,
+  urgentMentions,
   nostrBlockId,
   highlightType,
   onHighlightChange,
@@ -180,7 +183,7 @@ export function ConversationCard({
   const editBoxRef = useRef<HTMLDivElement>(null)
 
   const editEditor = useEditor({
-    extensions: peekEditorExtensions,
+    extensions: peekEditExtensions,
     editorProps: {
       attributes: {
         class: PEEK_EDITOR_CLASSES,
@@ -282,7 +285,8 @@ export function ConversationCard({
   useEffect(() => {
     if (!editEditor) return
     if (isEditing) {
-      const content = textToTiptapContent(bodyState)
+      // The text says only `nostr:npub…`; the urgent chips come back from the tags (CON-24).
+      const content = withUrgentMentions(textToTiptapContent(bodyState), urgentMentions)
       // If message has a highlight, prepend the tag to the first paragraph
       if (highlightState && content.content && content.content.length > 0) {
         const first = content.content[0]
@@ -375,7 +379,7 @@ export function ConversationCard({
   const handleEditSave = () => {
     if (!editEditor) return
     const wasResolved = resolved
-    const trimmed = serializeTiptapToText(editEditor)
+    const trimmed = withoutNewUrgency(serializeTiptapToText(editEditor), bodyState)
     let resolution = extractResolution(editEditor)
     let finalBody = trimmed
 
@@ -581,7 +585,7 @@ export function ConversationCard({
           </div>
 
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
-            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} />
+            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} />
           </div>
           </>
           )}

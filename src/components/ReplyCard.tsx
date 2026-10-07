@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, type ReactElement } from 'react'
 import { AttachmentCard, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { shareableMessageUrl } from '@/lib/objectUrl'
-import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
+import { PEEK_EDITOR_CLASSES, peekEditExtensions } from '@/extensions/peekEditor'
 import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
@@ -28,7 +28,7 @@ import { blobObjectUrl } from '@/nostr/media'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
 import { HIGHLIGHT_META, type HighlightType } from '@/api'
-import { textToTiptapContent, serializeTiptapToText } from '@/lib/textParsing'
+import { textToTiptapContent, serializeTiptapToText, withUrgentMentions, withoutNewUrgency } from '@/lib/textParsing'
 import type { ForeignObject } from '@estiva-app/interop'
 import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
@@ -133,6 +133,8 @@ interface ReplyCardProps {
    *  - resolved=false → parent reopens (user removed the resolution from the editor) */
   onResolutionChange?: (resolved: boolean, message?: string) => void
   nostrReferences?: string[]
+  /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
+  urgentMentions?: string[]
   /** The published event's id. When present the timestamp becomes the
    *  message's permalink — see the render below (PEE-17). */
   nostrEventId?: string
@@ -171,6 +173,7 @@ export function ReplyCard({
   resolutionMsg,
   onResolutionChange,
   nostrReferences,
+  urgentMentions,
   nostrEventId,
   nostrBlockId,
   resolvedObjects,
@@ -219,7 +222,7 @@ export function ReplyCard({
   const editBoxRef = useRef<HTMLDivElement>(null)
 
   const editEditor = useEditor({
-    extensions: peekEditorExtensions,
+    extensions: peekEditExtensions,
     editorProps: {
       attributes: {
         class: PEEK_EDITOR_CLASSES,
@@ -303,7 +306,8 @@ export function ReplyCard({
   useEffect(() => {
     if (!editEditor) return
     if (isEditing) {
-      const content = textToTiptapContent(bodyState)
+      // The text says only `nostr:npub…`; the urgent chips come back from the tags (CON-24).
+      const content = withUrgentMentions(textToTiptapContent(bodyState), urgentMentions)
       // If message has a highlight, prepend the tag to the first paragraph
       if (highlightState && content.content && content.content.length > 0) {
         const first = content.content[0]
@@ -337,7 +341,7 @@ export function ReplyCard({
 
   const handleEditSave = () => {
     if (!editEditor) return
-    const trimmed = serializeTiptapToText(editEditor)
+    const trimmed = withoutNewUrgency(serializeTiptapToText(editEditor), bodyState)
     let resolution = extractResolution(editEditor)
     let finalBody = trimmed
 
@@ -535,7 +539,7 @@ export function ReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} />
+              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} />
             </div>
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a

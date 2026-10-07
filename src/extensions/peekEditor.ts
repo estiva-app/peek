@@ -1,9 +1,9 @@
 import { richTextClassName } from '@estiva-app/ui'
 import { peekStarterKit } from './editorKit'
-import { PeekMention, UrgentMention, TopicMention, PeekReferenceTrigger, FileMention, MessageMention, ObjectMention } from './mention'
+import { PeekMention, UrgentMention, EditUrgentMention, TopicMention, PeekReferenceTrigger, FileMention, MessageMention, ObjectMention } from './mention'
 import { ResolutionBlock } from './resolution'
 import { HighlightTag } from './highlight'
-import { SlashCommands } from './slashCommands'
+import { EditSlashCommands, SlashCommands } from './slashCommands'
 
 /**
  * Everything a Peek editor can do, in one list.
@@ -63,6 +63,17 @@ export const peekEditorExtensions = [
   HighlightTag,
   SlashCommands,
 ]
+
+/**
+ * The grammar of the two boxes that edit a sent message (`ConversationCard`,
+ * `ReplyCard`). The same list, with one difference: urgency. An edit
+ * (kind:40003) carries no tags, so the urgent chips the message was sent with
+ * load and stay urgent, and neither `!@` nor `/` offers a new one (Miky,
+ * CON-24 kickoff, 2026-10-07).
+ */
+export const peekEditExtensions = peekEditorExtensions.map((extension) =>
+  extension === UrgentMention ? EditUrgentMention : extension === SlashCommands ? EditSlashCommands : extension,
+)
 
 /**
  * The same grammar for a box that writes a **description** rather than a

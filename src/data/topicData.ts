@@ -141,6 +141,8 @@ export interface ConversationData {
   lastReplyTime?: string
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
+  urgentMentions?: string[]
   /** The published event's id — what a mention of this message names (RIC-11).
    *  Absent until it reaches the relay, and for anything never published. */
   nostrEventId?: string

@@ -58,7 +58,7 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, quoteTagsFor, referenceTagsFor, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
+import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, quoteTagsFor, referenceTagsFor, URGENT_TAG, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
 import type { Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
@@ -102,6 +102,8 @@ export interface ConversationEvent extends FileComment {
   files: RelayAttachment[]
   /** `a` tags, plus NIP-22's `A` — objects this comment is about, the file itself excluded. */
   references: string[]
+  /** Whom the text names urgently — its `["urgent", <pubkey>]` tags (SPEC §13.1, CON-24). Absent: nobody. */
+  urgent?: string[]
   /**
    * A root that was deleted while replies to it stay (PER-24): a stand-in with
    * the deleted event's id, no author and no body, dated by its first reply.
@@ -137,6 +139,7 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
   ...comment,
   files: event ? attachmentsOf(event) : [],
   references: event ? referencesOf(event, address) : [],
+  urgent: event ? urgentOf(event) : [],
 })
 
 /** The `imeta` attachments of an event, as {@link RelayAttachment}. Mirrors `convex/nostr/sync.ts`'s `attachmentsOf`. */
@@ -162,6 +165,16 @@ function referencesOf(event: SignedEvent, address: string): string[] {
     if ((tag[0] === 'a' || tag[0] === 'A') && tag[1] && tag[1] !== address) out.add(tag[1])
   }
   return [...out]
+}
+
+/**
+ * Whom a message names urgently: the keys of its `urgent` tags. The text holds
+ * the same `nostr:npub…` for an urgent mention as for an ordinary one, so the
+ * chip's tone can come only from here (CON-24). A tag for somebody the text
+ * does not name draws nothing, since there is no chip to colour.
+ */
+export function urgentOf(event: Pick<SignedEvent, 'tags'>): string[] {
+  return [...new Set(event.tags.filter((t) => t[0] === URGENT_TAG && t[1]).map((t) => t[1]))]
 }
 
 /**
@@ -315,7 +328,7 @@ async function deletedRootsOf(
     if (held.has(parent)) continue
     const thread = [...list].sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1))
     replies[parent] = thread
-    roots.push({ id: parent, author: '', body: '', createdAt: thread[0].created_at, kind: KIND.COMMENT, files: [], references: [], deleted: true })
+    roots.push({ id: parent, author: '', body: '', createdAt: thread[0].created_at, kind: KIND.COMMENT, files: [], references: [], urgent: [], deleted: true })
   }
   return { roots, replies }
 }
@@ -374,6 +387,7 @@ export async function channelConversationAsViewer(h: string, relayUrl: string, t
     kind: event.kind,
     files: attachmentsOf(event),
     references: referencesOf(event, ''),
+    urgent: urgentOf(event),
   })
   const threaded = groupThreads([...messages.values()])
   const roots = threaded.roots.map(asEvent)

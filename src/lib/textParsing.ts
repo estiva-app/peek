@@ -606,6 +606,19 @@ export function withUrgentMentions<T>(node: T, urgent: readonly string[] | undef
   return walk(node as Record<string, unknown>) as T
 }
 
+/**
+ * An edit's text with any `!@Name` the message did not already hold written as
+ * an ordinary `@Name` — CON-24.
+ *
+ * An edit carries no tags, so it cannot make anybody urgent (Miky, kickoff,
+ * 2026-10-07), and the edit box offers no urgent pick. But `!@Name` typed by
+ * hand is the old urgent text, which every reader still draws urgent while it
+ * pages nobody. The ones the message was sent with stay as they were.
+ */
+export function withoutNewUrgency(text: string, original: string): string {
+  return text.replace(/!@([^\s!@]+)/g, (whole, name: string) => (original.includes(whole) ? whole : `@${name}`))
+}
+
 // ── serializeTiptapToText (whole-doc serializer for edit-mode submit) ──
 //
 // We type the editor structurally with `unknown` for the doc and use a small

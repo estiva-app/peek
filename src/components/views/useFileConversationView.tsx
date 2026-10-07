@@ -425,6 +425,7 @@ export function useFileConversationView({
                   resolvedBy={c.resolvedBy}
                   resolutionMessage={c.resolutionMessage}
                   nostrReferences={c.nostrReferences}
+                  urgentMentions={c.urgentMentions}
                   deleted={c.isDeleted}
                   isSelected={openThreadId === c.id}
                   onResolvedChange={(resolved, _by, message) => setResolution(c.id, resolved, message)}
@@ -565,6 +566,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       createdAtMs: reply.createdAt * 1000,
       files: d.files,
       nostrReferences: reply.references,
+      urgentMentions: reply.urgent,
       nostrEventId: reply.id,
       reactions: d.reactions,
     }
@@ -599,6 +601,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       resolutionMessage: isResolved ? last.message : undefined,
       files: d.files,
       nostrReferences: root.references,
+      urgentMentions: root.urgent,
       nostrEventId: root.id,
     }
     byId[root.id] = {

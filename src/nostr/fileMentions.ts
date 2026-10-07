@@ -46,7 +46,7 @@ import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay } from './bridge'
 import { RelayReadError } from './relayRead'
 import { anchorsOf } from '@estiva-app/conversation'
-import { attachmentsOf, type RelayAttachment } from './fileConversation'
+import { attachmentsOf, urgentOf, type RelayAttachment } from './fileConversation'
 import { relaySigningKeyAsViewer } from './foreign'
 import { TOPIC_KIND } from './manifest'
 
@@ -71,6 +71,8 @@ export interface FileMention {
   threadId: string
   /** Every address it names, the mentioned file included, in tag order. */
   references: string[]
+  /** Whom it names urgently — its `urgent` tags (SPEC §13.1, CON-24). */
+  urgent: string[]
   files: RelayAttachment[]
 }
 
@@ -125,6 +127,7 @@ export function fileMentionsOf(events: readonly SignedEvent[], address: string, 
       saidIn,
       threadId: tagsNamed(event, 'e')[0] ?? event.id,
       references,
+      urgent: urgentOf(event),
       files: attachmentsOf(event),
     })
   }
