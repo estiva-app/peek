@@ -143,6 +143,8 @@ export interface ConversationData {
   nostrReferences?: string[]
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
+  /** The blocks of other objects it shows — its `part` tags (SPEC §13.6.1, COM-2). */
+  parts?: { address: string; block: string }[]
   /** The published event's id — what a mention of this message names (RIC-11).
    *  Absent until it reaches the relay, and for anything never published. */
   nostrEventId?: string
