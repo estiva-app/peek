@@ -383,6 +383,16 @@ export function getLiveTopics(relayUrl: string): LiveTopics {
   return wiring.topics
 }
 
+/**
+ * The tab's live client itself, for one-shot reads over the same socket
+ * (`socketRead.ts`, OPT-2). Built on first use, like `getLiveTopics`, so a read
+ * at boot opens the connection the first topic would have opened anyway.
+ */
+export function getLiveClient(relayUrl: string): LiveClient {
+  getLiveTopics(relayUrl)
+  return wiring!.client
+}
+
 /** Test seam. Drops the instance so the next `getLiveTopics` builds a new one. */
 export function resetLiveTopicsForTests(): void {
   wiring = null

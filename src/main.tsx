@@ -14,6 +14,13 @@ import { PeekSetup } from './lib/PeekSetup'
 import { ErrorBoundary, TooltipProvider } from '@estiva-app/ui'
 import './index.css'
 import App from './App.tsx'
+import { setSocketReader } from './nostr/bridge'
+import { relayLog } from './nostr/liveTopics'
+import { createAppSocketReader } from './nostr/socketRead'
+
+// Reads go over the open connection, one round trip each (OPT-2). Here rather
+// than in `@/api`, which tests import, so a test keeps the HTTP path.
+setSocketReader(createAppSocketReader(relayLog))
 
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
