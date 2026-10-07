@@ -142,7 +142,7 @@ async function seedTopic(address: string, title: string, other: string, people: 
     if (i === 40) body = `The ticket this topic exists for:\n\nnostr:${encodeNaddr({ ...SHIP_ISSUE, relays: [] })}`
     if (i === 80) body = `The other long topic:\n\nnostr:${naddrOf(other)}`
     if (i === 120 && previous)
-      body = `Quoting the message before:\n\nnostr:${encodeNevent({ id: previous.id, author: previous.author, kind: 1111, relays: [] })}`
+      body = `Quoting the message before:\n\nnostr:${encodeNevent({ id: previous.id, pubkey: previous.author, kind: 1111, relays: [] })}`
     const id = await write(`${address.slice(-6)} #${i}`, () => commentAsViewer({ container, body }, RELAY_URL, author))
     const comment: FileComment = {
       id,
