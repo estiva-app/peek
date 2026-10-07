@@ -837,17 +837,32 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
   })
 
-  it('hiding it is remembered: the next file opens hidden, mentions and all', () => {
+  it('closing it is remembered for that file only: back on it, closed; another file with something to show, open', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    objects.byAddress[ISSUE_ADDRESS] = foreign({ ...issue, openUrl: 'https://ship.estiva.app/issue/the-file-route' })
     const first = mount(`/topic/${TOPIC_ADDRESS}`)
     expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Hide side panel' }))
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     first.unmount()
+    const other = mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(within(screen.getByTestId('thread')).getByText('Overview')).toBeInTheDocument()
+    other.unmount()
     mount(`/topic/${TOPIC_ADDRESS}`)
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
     expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' })).toBeInTheDocument()
+  })
+
+  it('opening it again on that file forgets the close', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    const first = mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Hide side panel' }))
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
+    first.unmount()
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
   })
 
   it('an open thread wins the column', () => {

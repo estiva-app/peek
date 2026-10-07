@@ -1,51 +1,56 @@
 import { useState } from 'react'
 
-const KEY = 'peek.sidePanel'
-const HIDDEN = 'hidden'
+const KEY = 'peek.sidePanel.hidden'
+/** The 7 October first cut remembered one choice for every file; read once, then dropped. */
+const LEGACY_KEY = 'peek.sidePanel'
+/** The files remembered, newest last; the oldest go first past this. */
+const LIMIT = 500
 
 /**
  * Whether a file's third column, its Overview, is shown (Katerina, 7 October).
  *
- * - Shown when there is something to show — another app's card, or a
- *   mention — and hidden when there is nothing, so a file nobody has named
+ * - **Open** when the file has something to show: another app's card, or a
+ *   mention in Activity.
+ * - **Closed** when there is nothing to show, so a file nobody has named
  *   keeps its two columns.
- * - The header's sidebar button changes that. Hiding it is remembered in
- *   this browser, for every file, until the button shows it again. Showing it
- *   on a file with nothing to show holds for that file only: the next empty
- *   one opens hidden, by the first rule.
+ * - **Closed** on a file the person closed it on before, when they come back
+ *   to it: remembered per file, in this browser. Opening it again forgets
+ *   that.
+ *
+ * Opening it by hand on a file with nothing to show holds for that visit
+ * only; the next time, the file opens closed by the second rule.
  *
  * A browser that blocks storage still gets a working button; it forgets.
  */
 export function useSidePanel(address: string | undefined, somethingToShow: boolean): { open: boolean; toggle: () => void } {
   const [hidden, setHidden] = useState(readHidden)
-  // The file the person opened it on by hand, where the first rule would have hidden it.
+  // The file it was opened on by hand, where the rules above would keep it closed.
   const [shownOn, setShownOn] = useState<string | null>(null)
-  const open = !hidden && (somethingToShow || (address != null && shownOn === address))
+  const open = address != null && !hidden.includes(address) && (somethingToShow || shownOn === address)
   const toggle = () => {
-    if (open) {
-      setHidden(true)
-      setShownOn(null)
-      writeHidden(true)
-    } else {
-      setHidden(false)
-      setShownOn(address ?? null)
-      writeHidden(false)
-    }
+    if (address == null) return
+    const rest = hidden.filter((one) => one !== address)
+    const next = open ? [...rest, address].slice(-LIMIT) : rest
+    setHidden(next)
+    setShownOn(open ? null : address)
+    writeHidden(next)
   }
   return { open, toggle }
 }
 
-function readHidden(): boolean {
+function readHidden(): string[] {
   try {
-    return window.localStorage.getItem(KEY) === HIDDEN
+    window.localStorage.removeItem(LEGACY_KEY)
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(KEY) ?? '[]')
+    return Array.isArray(parsed) ? parsed.filter((one): one is string => typeof one === 'string') : []
   } catch {
-    return false
+    return []
   }
 }
 
-function writeHidden(hidden: boolean) {
+function writeHidden(hidden: string[]) {
   try {
-    if (hidden) window.localStorage.setItem(KEY, HIDDEN)
+    if (hidden.length) window.localStorage.setItem(KEY, JSON.stringify(hidden))
     else window.localStorage.removeItem(KEY)
   } catch {
     // Nothing to do: the button still works for this visit.
