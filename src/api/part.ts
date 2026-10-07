@@ -19,6 +19,7 @@ import { resolvePart, type Block } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { validToken } from '@/auth/estivaId'
 import { absenceAsViewer, blockLinkAsViewer, resolveObjectAsViewer } from '@/nostr/foreign'
+import { relayBudget } from '@/nostr/relayBudget'
 import { RELAY_URL, hasRelay } from './relayUrl'
 
 /**
@@ -79,34 +80,63 @@ export function usePart(pointer: { address: string; block: string }): PartView {
 
   useEffect(() => {
     if (!hasRelay) return
-    let cancelled = false
-    let shown = false
+    return watchPart(`${address}\u0000${block}`, { address, block }, setView)
+  }, [address, block])
+
+  return hasRelay ? view : { state: 'unreadable' }
+}
+
+/**
+ * One poll per `address#block`, however many cards show it — an issue with a
+ * dozen anchored comments is read once per tick, not a dozen times — and none
+ * while the relay has asked every client to pause (`relayBudget`, PER-13).
+ */
+interface Poll {
+  listeners: Set<(view: PartView) => void>
+  last?: PartView
+  stop: () => void
+}
+const polls = new Map<string, Poll>()
+
+function watchPart(key: string, pointer: { address: string; block: string }, listener: (view: PartView) => void): () => void {
+  let poll = polls.get(key)
+  if (!poll) {
+    const created: Poll = { listeners: new Set(), stop: () => undefined }
     let retry: ReturnType<typeof setTimeout> | undefined
     const read = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      readPart({ address, block })
+      if (relayBudget.pausedForMs() > 0) return
+      readPart(pointer)
         .then((next) => {
-          if (cancelled) return
-          shown = true
-          setView(next ?? { state: 'unreadable' })
+          created.last = next ?? { state: 'unreadable' }
+          for (const notify of created.listeners) notify(created.last)
         })
         // A failed read keeps what was shown: a network blip is not a deletion.
         // Nothing shown yet means a skeleton, so try again soon rather than in a full interval.
         .catch(() => {
-          if (!cancelled && !shown) retry = setTimeout(read, FIRST_RETRY_MS)
+          if (!created.last && polls.get(key) === created) retry = setTimeout(read, FIRST_RETRY_MS)
         })
     }
-    read()
     const timer = setInterval(read, PART_REFRESH_MS)
     const onVisible = () => document.visibilityState === 'visible' && read()
     document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      cancelled = true
+    created.stop = () => {
       clearInterval(timer)
       if (retry) clearTimeout(retry)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [address, block])
-
-  return hasRelay ? view : { state: 'unreadable' }
+    polls.set(key, created)
+    poll = created
+    read()
+  }
+  const current = poll
+  current.listeners.add(listener)
+  if (current.last) listener(current.last)
+  return () => {
+    current.listeners.delete(listener)
+    if (current.listeners.size === 0) {
+      current.stop()
+      polls.delete(key)
+    }
+  }
 }

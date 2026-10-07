@@ -83,6 +83,9 @@ function renderTokens(text: string): ReactNode {
  * than dropped: the widget renders nothing for it, which is the same outcome,
  * and silently discarding references here would hide the reason.
  */
+/** At most this many blocks are drawn live in one message (SPEC §13.6.1); the rest stay links. */
+const MAX_PARTS_PER_MESSAGE = 6
+
 /**
  * Whether a pasted app link names this address: its path ends in the address's
  * `d` (§7.2 puts the identity last, `…/<slug>-<d>`), and that `d` is long enough
@@ -222,10 +225,14 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   // A comment's anchor (§13.6) is what it is about, not something it names, so
   // it is drawn above the text whatever the body says — with the same card.
   const anchored = (parts ?? []).filter((part) => part.anchor)
-  const shown = (parts ?? []).filter(({ address, anchor }) => {
-    if (anchor) return false
-    return named.has(address) || urls.some((url) => urlNames(url, address))
-  })
+  const shown = (parts ?? [])
+    .filter(({ address, anchor }) => {
+      if (anchor) return false
+      return named.has(address) || urls.some((url) => urlNames(url, address))
+    })
+    // Each card reads the relay on its own schedule; a message is a remark, not
+    // a dashboard, and one with dozens of links would spend every viewer's quota.
+    .slice(0, MAX_PARTS_PER_MESSAGE)
   const shownAddresses = new Set(shown.map((part) => part.address))
   const attachments = [
     ...references.filter((ref) => !drawnInline.has(addressOf(ref)) && !shownAddresses.has(addressOf(ref))),
