@@ -336,24 +336,30 @@ export const File: Story = {
 }
 
 /**
- * **An archived file.** The package's Banner in its warning tone, at the top
- * of the messages column, with the resolution under it — and it stays there
- * as the stream scrolls, above the date dividers (Katerina, 5 October).
- * Scroll the messages. The messages here are stand-ins.
+ * **An archived file.** Read-only until it is unarchived (Katerina, 7
+ * October): no composer, and the notice in its place, as a card — who
+ * archived it and when, the resolution, and Unarchive. The messages here are
+ * stand-ins.
  */
 export const FileArchived: Story = {
   render: () => (
     <FilePageView
       nav={<Column view="all" currentFolder="3789d2ca-103c-40e5-906f-0490782db5fd" />}
       rightPanel={
-        <Panel title="Release notes for 0.37" bodyClassName="flex min-h-full flex-col">
-          <div className="sticky top-0 z-20">
-            <ArchivedNotice
-              archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
-              by="Miky"
-              onUnarchive={noop}
-            />
-          </div>
+        <Panel
+          title="Release notes for 0.37"
+          bodyClassName="flex min-h-full flex-col"
+          footer={
+            <div className="p-3">
+              <ArchivedNotice
+                archive={{ by: 'x', at: Math.floor(Date.now() / 1000) - 86_400 * 2, resolution: 'Shipped in 0.37. What was left moved to the 0.38 topic.' }}
+                by="Miky"
+                onUnarchive={noop}
+                look="card"
+              />
+            </div>
+          }
+        >
           {['Monday', 'Tuesday', 'Yesterday'].map((day) => (
             <div key={day} className="flex flex-col">
               <DateDivider label={day} className="sticky top-0 z-10 bg-bg-surface" />

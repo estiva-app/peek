@@ -297,8 +297,16 @@ export function FilePage() {
   */
   const membership = useMembership()
   const member = file?.address ? membership.isMember(file.address) : false
+  /*
+    An archived file is read-only until it is unarchived (Katerina, 7
+    October): its menu keeps what reads it, the way back and Delete —
+    Details, Copy link, Unarchive, Delete — and nothing that changes it or
+    puts it back in a list: no Rename, Move, New topic inside, Open work, or
+    Join and Leave.
+  */
+  const readOnly = !!file?.archived
   const toggleMember =
-    file?.address && file.folder && membership.state !== 'unknown'
+    file?.address && file.folder && !readOnly && membership.state !== 'unknown'
       ? () => fileControls.open(member ? 'leave' : 'join', file)
       : undefined
 
@@ -309,7 +317,7 @@ export function FilePage() {
   */
   const openWorkFiles = useOpenWorkFiles()
   const inOpenWork = file?.address ? openWorkFiles.has(file.address) : false
-  const toggleOpenWork = file?.address
+  const toggleOpenWork = file?.address && !readOnly
     ? () => (inOpenWork ? openWorkFiles.remove(file.address!) : openWorkFiles.add(file.address!))
     : undefined
 
@@ -331,6 +339,7 @@ export function FilePage() {
         withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
         onUnarchive={archiveAction === 'unarchive' ? () => fileControls.open('unarchive', file) : undefined}
         onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
+        look="card"
       />
     ) : undefined
 
@@ -369,18 +378,11 @@ export function FilePage() {
           <Panel
             {...view.panel}
             /*
-              An archived file's notice sits at the top of the messages column
-              (Katerina, 5 October) and stays there as the stream scrolls: the
-              stream opens at its newest message, so a notice above the first
-              one would be out of sight. Above the date dividers, which stick
-              to the same edge (z-10).
+              An archived file is read-only (Katerina, 7 October): no composer,
+              and its notice in the composer's place, in the composer's own
+              padding — under the messages, where the newest one is.
             */
-            children={
-              <>
-                {notice && <div className="sticky top-0 z-20">{notice}</div>}
-                {view.panel.children}
-              </>
-            }
+            footer={notice ? <div className="p-3">{notice}</div> : view.panel.footer}
             title={
               /*
                 One row: the file's name, and whose file it is (Katerina, 5
@@ -435,9 +437,9 @@ export function FilePage() {
                       onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
                       openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
                       onToggleOpenWork={toggleOpenWork}
-                      onRename={controls.rename ? () => fileControls.open('rename', file) : undefined}
-                      onNewSubTopic={startsInside && file ? () => fileControls.open('inside', file) : undefined}
-                      onMove={canMove(file) && file ? () => fileControls.open('move', file) : undefined}
+                      onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
+                      onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
+                      onMove={canMove(file) && file && !readOnly ? () => fileControls.open('move', file) : undefined}
                       onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
                     />
                   )}
@@ -478,6 +480,6 @@ export function FilePageView({ nav, rightPanel, threadPanel }: {
   rightPanel?: ReactNode
   threadPanel?: ReactNode
 }) {
-  // An archived file's notice is the messages column's own (5 October), not the frame's banner.
+  // An archived file's notice is in the messages column, in the composer's place (7 October), not the frame's banner.
   return <AppShell leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} />
 }

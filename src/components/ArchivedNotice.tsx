@@ -1,5 +1,5 @@
 import { IconArchive } from '@tabler/icons-react'
-import { Banner } from '@estiva-app/ui'
+import { Banner, Button, Card } from '@estiva-app/ui'
 import type { Archive } from '@estiva-app/interop'
 import { formatDateLabel } from '@/api'
 
@@ -23,6 +23,12 @@ import { formatDateLabel } from '@/api'
  * the archiver wrote, not more of the line. Both sit on the panel's surface,
  * since the page floats them over the stream as it scrolls and Peek's
  * warning wash is see-through.
+ *
+ * On an archived file's page it is a **card** instead (Katerina, 7 October),
+ * in the composer's place: the file is read-only, so there is nothing to
+ * write, and the card says why. Ship's notice, drawn the same way — the
+ * package's Card on its `inset` fill and Button, outlined and small — with
+ * the resolution a step smaller, in the caption size.
  * @registry reusable: stays in Peek: estiva-ui's Banner with Peek's archive words
  */
 export interface ArchivedNoticeProps {
@@ -35,9 +41,11 @@ export interface ArchivedNoticeProps {
   onUnarchive?: () => void
   /** Open the parent it is archived with. */
   onOpenParent?: () => void
+  /** `banner`: the strip at the top of a page (a Folder's). `card`: in the composer's place on a read-only file's page. */
+  look?: 'banner' | 'card'
 }
 
-export function ArchivedNotice({ archive, by, withWhat, onUnarchive, onOpenParent }: ArchivedNoticeProps) {
+export function ArchivedNotice({ archive, by, withWhat, onUnarchive, onOpenParent, look = 'banner' }: ArchivedNoticeProps) {
   const when = formatDateLabel(archive.at * 1000)
   const line = archive.with
     ? `Archived with its ${withWhat ?? 'parent'} by ${by} · ${when}`
@@ -45,6 +53,22 @@ export function ArchivedNotice({ archive, by, withWhat, onUnarchive, onOpenParen
   const action = archive.with
     ? onOpenParent && { label: `Open ${withWhat ?? 'parent'}`, onClick: onOpenParent }
     : onUnarchive && { label: 'Unarchive', onClick: onUnarchive }
+  if (look === 'card') {
+    return (
+      <Card fill="inset" className="flex items-start gap-3 px-4 py-3">
+        <IconArchive size={16} stroke={1.5} className="mt-0.5 shrink-0 text-text-muted" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-body-2-strong text-text-primary">{line}</span>
+          {archive.resolution && <p className="whitespace-pre-wrap text-caption text-text-secondary">{archive.resolution}</p>}
+        </div>
+        {action && (
+          <Button variant="outlined" size="small" className="shrink-0" onClick={action.onClick}>
+            {action.label}
+          </Button>
+        )}
+      </Card>
+    )
+  }
   return (
     <div className="flex flex-col bg-bg-surface">
       <Banner tone="warning" icon={<IconArchive size={16} stroke={1.5} />} {...(action ? { action } : {})}>

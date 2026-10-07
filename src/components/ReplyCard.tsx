@@ -436,7 +436,8 @@ export function ReplyCard({
           holds while this reply's menu or picker is open. */}
       <Card
         fill="surface"
-        hover="fill"
+        // Read-only: a reply opens nothing and offers nothing, so nothing on hover.
+        hover={readOnly ? 'none' : 'fill'}
         quietUntilHover
         hovered={isHovered}
         active={isEditing}
