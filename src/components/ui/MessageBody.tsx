@@ -83,6 +83,19 @@ function renderTokens(text: string): ReactNode {
  * than dropped: the widget renders nothing for it, which is the same outcome,
  * and silently discarding references here would hide the reason.
  */
+/**
+ * Whether a pasted app link names this address: its path ends in the address's
+ * `d` (§7.2 puts the identity last, `…/<slug>-<d>`), and that `d` is long enough
+ * to be one. A `d` comes from somebody's tag, so a short one would otherwise
+ * match half the links in the body.
+ */
+function urlNames(url: string, address: string): boolean {
+  const d = address.split(':')[2] ?? ''
+  if (d.length < 8) return false
+  const path = url.split(/[?#]/)[0].replace(/\/+$/, '')
+  return path.endsWith(`-${d}`) || path.endsWith(`/${d}`)
+}
+
 function addressOf(ref: string): string {
   try {
     return pointerToAddress(referenceToPointer(ref))
@@ -211,11 +224,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const anchored = (parts ?? []).filter((part) => part.anchor)
   const shown = (parts ?? []).filter(({ address, anchor }) => {
     if (anchor) return false
-    const d = address.split(':')[2]
-    return named.has(address) || (!!d && urls.some((url) => url.includes(d)))
+    return named.has(address) || urls.some((url) => urlNames(url, address))
   })
   const shownAddresses = new Set(shown.map((part) => part.address))
-  const shownDs = shown.map((part) => part.address.split(':')[2])
   const attachments = [
     ...references.filter((ref) => !drawnInline.has(addressOf(ref)) && !shownAddresses.has(addressOf(ref))),
     ...attachedEvents,
@@ -251,7 +262,7 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
         ordinary link meanwhile would be worse than the gap it fills.
       */}
       {urls
-        .filter((url) => !shownDs.some((d) => url.includes(d)))
+        .filter((url) => !shown.some((part) => urlNames(url, part.address)))
         .map((url) => (
           <ForeignObjectWidget key={url} naddr={url} resolved={resolvedObjects?.[url]} quiet />
         ))}

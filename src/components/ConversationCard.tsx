@@ -66,7 +66,7 @@ interface ConversationCardProps {
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
   /** The blocks of other objects the message shows (SPEC §13.6.1, COM-2). */
-  parts?: { address: string; block: string }[]
+  parts?: { address: string; block: string; anchor?: true }[]
   /** Which block of the referenced object this is about — SPEC §13.6. */
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void

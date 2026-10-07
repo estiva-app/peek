@@ -51,6 +51,14 @@ describe('a part is drawn while the body names its object', () => {
     expect(widgets).not.toContain(LINK)
   })
 
+  it('is not named by a link that merely contains a short d', () => {
+    const SHORT = `30851:${AUTHOR}:s`
+    const { container } = show({ state: 'resolved', block: blockOf('Ship it'), object }, 'see https://example.com/posts', [
+      { address: SHORT, block: 'p1' },
+    ])
+    expect(card(container)).toBeNull()
+  })
+
   it('draws nothing once an edit took the link out', () => {
     const { container } = show({ state: 'resolved', block: blockOf('Ship it'), object }, 'never mind')
     expect(card(container)).toBeNull()

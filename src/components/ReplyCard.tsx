@@ -136,7 +136,7 @@ interface ReplyCardProps {
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
   /** The blocks of other objects the reply shows (SPEC §13.6.1, COM-2). */
-  parts?: { address: string; block: string }[]
+  parts?: { address: string; block: string; anchor?: true }[]
   /** The published event's id. When present the timestamp becomes the
    *  message's permalink — see the render below (PEE-17). */
   nostrEventId?: string

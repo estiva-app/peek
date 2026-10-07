@@ -21,8 +21,18 @@ import { validToken } from '@/auth/estivaId'
 import { absenceAsViewer, blockLinkAsViewer, resolveObjectAsViewer } from '@/nostr/foreign'
 import { RELAY_URL, hasRelay } from './relayUrl'
 
-/** How often a shown part is read again while its tab is visible. */
-export const PART_REFRESH_MS = 15_000
+/**
+ * How often a shown part is read again while its tab is visible. Every card
+ * reads on its own, and the relay meters `/query`, so this stays well above
+ * the rate at which a description is edited during a conversation about it.
+ */
+export const PART_REFRESH_MS = 30_000
+
+/** A first read that failed is tried again this soon, rather than a whole interval later. */
+const FIRST_RETRY_MS = 3_000
+
+/** The Open link per address, title and block: it changes only on a rename, so it is built once. */
+const links = new Map<string, Promise<string | undefined>>()
 
 /** What a part draws. The five states of `resolvePart`, plus waiting. */
 export type PartView =
@@ -49,9 +59,12 @@ async function readPart(pointer: { address: string; block: string }): Promise<Pa
     : ({ state: 'unaddressable' } as const)
   // `resolvePart` only says deleted or unreadable when told so, and it was not.
   if (part.state === 'deleted' || part.state === 'unreadable') return { state: 'unreadable' }
-  const link =
-    (await blockLinkAsViewer({ address: pointer.address, title: object.slots.title?.value, block: pointer.block }, RELAY_URL, token)) ??
-    object.openUrl
+  const title = object.slots.title?.value
+  const key = `${pointer.address}\u0000${pointer.block}\u0000${title ?? ''}`
+  if (!links.has(key)) {
+    links.set(key, blockLinkAsViewer({ address: pointer.address, title, block: pointer.block }, RELAY_URL, token).catch(() => undefined))
+  }
+  const link = (await links.get(key)) ?? object.openUrl
   return part.state === 'resolved' ? { state: 'resolved', block: part.block, object, link } : { state: part.state, object, link }
 }
 
@@ -67,12 +80,21 @@ export function usePart(pointer: { address: string; block: string }): PartView {
   useEffect(() => {
     if (!hasRelay) return
     let cancelled = false
+    let shown = false
+    let retry: ReturnType<typeof setTimeout> | undefined
     const read = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       readPart({ address, block })
-        .then((next) => !cancelled && setView(next ?? { state: 'unreadable' }))
+        .then((next) => {
+          if (cancelled) return
+          shown = true
+          setView(next ?? { state: 'unreadable' })
+        })
         // A failed read keeps what was shown: a network blip is not a deletion.
-        .catch(() => undefined)
+        // Nothing shown yet means a skeleton, so try again soon rather than in a full interval.
+        .catch(() => {
+          if (!cancelled && !shown) retry = setTimeout(read, FIRST_RETRY_MS)
+        })
     }
     read()
     const timer = setInterval(read, PART_REFRESH_MS)
@@ -81,6 +103,7 @@ export function usePart(pointer: { address: string; block: string }): PartView {
     return () => {
       cancelled = true
       clearInterval(timer)
+      if (retry) clearTimeout(retry)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [address, block])
