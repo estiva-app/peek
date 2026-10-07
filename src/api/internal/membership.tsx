@@ -51,7 +51,7 @@ export interface MembershipSeam {
   memberFiles: readonly string[]
   /** Join or leave a file; local at once, then published. */
   /** Resolves `true` once the relay holds the change; otherwise why nothing changed — no seam, no answer yet, no Folder, or the relay's refusal — in words a toast can show. */
-  setMember: (file: string, folder: string, member: boolean) => Promise<true | string>
+  setMember: (file: string, folder: string, member: boolean, person?: string) => Promise<true | string>
   /** Re-read the relay, e.g. after the viewer wrote in a file. */
   refresh: () => Promise<void>
 }
