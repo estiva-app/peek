@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Membership } from '@estiva-app/conversation'
 import { validToken } from '@/auth/estivaId'
 import { RELAY_URL } from '@/api/relayUrl'
@@ -27,25 +27,35 @@ const lastRead = new Map<string, ReadonlyMap<string, Membership>>()
  * Everyone who is a member of one file, for its Members dialog (REA-3).
  * `members` is `undefined` until the relay has answered for this address —
  * nothing is drawn rather than a wrong count — and keeps the last answer when
- * a later read fails. `reload` re-reads it after a change.
+ * a later read fails. `failed` says the relay did not answer for this address
+ * and nothing is held, so the page can offer Join some other way. `reload`
+ * re-reads it after a change.
  */
-export function useFileMembers(address: string | undefined): { members: ReadonlyMap<string, Membership> | undefined; reload: () => Promise<void> } {
-  const [read, setRead] = useState<{ address: string; members: ReadonlyMap<string, Membership> }>()
-  const reload = useCallback(
-    () =>
-      address
-        ? readMembers(address).then((members) => {
-            if (!members) return
-            lastRead.set(address, members)
-            setRead({ address, members })
-          })
-        : Promise.resolve(),
-    [address],
-  )
+export function useFileMembers(address: string | undefined): {
+  members: ReadonlyMap<string, Membership> | undefined
+  failed: boolean
+  reload: () => Promise<void>
+} {
+  const [read, setRead] = useState<{ address: string; members?: ReadonlyMap<string, Membership> }>()
+  /** Reads in order of starting: one that lands after a newer one began is dropped, so a read begun before a Join cannot undo it. */
+  const started = useRef(0)
+  const reload = useCallback(() => {
+    if (!address) return Promise.resolve()
+    const mine = ++started.current
+    return readMembers(address).then((members) => {
+      if (mine !== started.current) return
+      if (members) lastRead.set(address, members)
+      // A failed read keeps what was held; it is marked only so `failed` can say so.
+      setRead((prev) => (members ? { address, members } : prev?.address === address && prev.members ? prev : { address }))
+    })
+  }, [address])
   useEffect(() => {
     void reload()
   }, [reload])
-  // Somebody else joins, leaves or adds: re-read on the triggers the listings use.
-  useRefreshTriggers(() => void reload(), { enabled: !!address && !!RELAY_URL })
-  return { members: read && read.address === address ? read.members : address ? lastRead.get(address) : undefined, reload }
+  // Somebody else joins, leaves or adds: re-read when the person comes back to the tab. Not on the 30 s
+  // interval: every relay read costs an Estiva ID /sign, and the membership sync already polls.
+  useRefreshTriggers(() => void reload(), { enabled: !!address && !!RELAY_URL, interval: false })
+  const own = read && read.address === address ? read : undefined
+  const members = own?.members ?? (address ? lastRead.get(address) : undefined)
+  return { members, failed: !members && !!own, reload }
 }

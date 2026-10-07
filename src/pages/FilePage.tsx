@@ -351,7 +351,8 @@ export function FilePage() {
         onAdd={(pubkeys) => fileControls.addMembers(file, pubkeys, nameOf)}
       />
     ) : undefined
-  const showToggle = toggleMember && fileMembers.members?.size === 0
+  // Also when the roster could not be read: no pill then, and Join must not go with it.
+  const showToggle = toggleMember && (fileMembers.members?.size === 0 || fileMembers.failed)
 
   /*
     Open work (FOL-34): the topic menu's Add/Remove, for a file, by its address.

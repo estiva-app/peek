@@ -230,7 +230,7 @@ vi.mock('@/api', async () => ({
     setMember: follows.setMember,
     refresh: follows.refresh,
   }),
-  useFileMembers: () => ({ members: roster.members, reload: roster.reload }),
+  useFileMembers: () => ({ members: roster.members, failed: roster.members === undefined, reload: roster.reload }),
   useWorkspaceDirectory: () => roster.directory,
   // The Activity column names the file a mention was said on by resolving it.
   useResolvedReferences: (refs: readonly string[]) =>
@@ -1408,6 +1408,14 @@ describe('FilePage offers Join and Leave on the header and the row (§11.8)', ()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Join' }))
     expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, true)
     await waitFor(() => expect(roster.reload).toHaveBeenCalled())
+  })
+
+  it('keeps the toolbar Join when the roster could not be read: no pill, and Join does not go with it', () => {
+    roster.members = undefined
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.queryByRole('button', { name: /members?$/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }))
+    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, true)
   })
 
   it('a project says that leaving it does not leave its issues', () => {
