@@ -180,6 +180,11 @@ interface ThreadPanelProps {
    */
   readOnlyNotice?: ReactNode
   /**
+   * Read-only with nothing where the composer was — an archived file's thread:
+   * no composer, no menus, nothing on hover. `readOnlyNotice` draws a notice there instead.
+   */
+  readOnly?: boolean
+  /**
    * Drawn where the composer would be, while the replies keep their menus — a
    * thread whose first message was deleted takes no new replies, and each
    * reply's author can still edit or delete their own (PER-24).
@@ -266,6 +271,7 @@ export function ThreadPanel({
   onClose,
   onSendReply,
   readOnlyNotice,
+  readOnly: readOnlyProp = false,
   composerNotice,
   onDeleteReply,
   onInitialBodyChange,
@@ -276,6 +282,7 @@ export function ThreadPanel({
   onReplyReactionsChange,
 }: ThreadPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const readOnly = readOnlyProp || readOnlyNotice != null
 
   /*
     Publish what this thread refers to, so Cmd+K can offer those objects as the
@@ -361,11 +368,13 @@ export function ThreadPanel({
       bodyRef={scrollRef}
       bodyClassName="flex flex-col"
       footer={
-        <div className="p-3">
-          {readOnlyNotice ?? composerNotice ?? (
-            <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
-          )}
-        </div>
+        readOnlyProp && readOnlyNotice == null ? undefined : (
+          <div className="p-3">
+            {readOnlyNotice ?? composerNotice ?? (
+              <ComposeBox onSend={onSendReply} placeholder="reply" contextLabel={`Reply to ${conversation.authorName}`} draftKey={draftKeys.thread(conversation.id)} />
+            )}
+          </div>
+        )
       }
         title={
             <div className="flex items-center gap-2">
@@ -430,7 +439,7 @@ export function ThreadPanel({
               onFilesChange={onInitialFilesChange}
               onReactionsChange={onInitialReactionsChange}
               onHighlightChange={onInitialHighlightChange}
-              readOnly={readOnlyNotice != null}
+              readOnly={readOnly}
             />
           ) : (
             <PinnedMessage
@@ -481,7 +490,7 @@ export function ThreadPanel({
                     onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
                     onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
                     onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
-                    readOnly={readOnlyNotice != null}
+                    readOnly={readOnly}
                   />
                 </div>
               )

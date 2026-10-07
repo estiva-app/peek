@@ -63,6 +63,12 @@ interface UseFileConversationViewArgs {
   empty?: ReactNode
   /** Who is in the conversation, for the thread's members pill — a DM's two people. */
   threadMembers?: string[]
+  /**
+   * Nothing can be written (Katerina, 7 October): an archived file. No
+   * composer in either pane, nothing on a message — no menu, no reactions to
+   * toggle, nothing on hover — and only a message with replies opens anything.
+   */
+  readOnly?: boolean
 }
 
 /** The stream and its composer as a `Panel` takes them: spread them onto one. */
@@ -147,6 +153,7 @@ export function useFileConversationView({
   draftKey,
   empty,
   threadMembers,
+  readOnly = false,
 }: UseFileConversationViewArgs): ViewSlots {
   const { state, actions, viewerPubkey } = useFileConversation(container, rootIds, {
     onActivity: () => void onCommented?.(),
@@ -432,7 +439,8 @@ export function useFileConversationView({
                   onReactionsChange={(_next, emoji) => toggleReaction(c.id, emoji)}
                   onBodyChange={(b) => editBody(c.id, b)}
                   onFilesChange={(f) => editFiles(c.id, f)}
-                  onClick={() => onOpenThread(c.id)}
+                  readOnly={readOnly}
+                  onClick={readOnly && !c.replyCount ? undefined : () => onOpenThread(c.id)}
                   onReply={() => onOpenThread(c.id)}
                   onDelete={() => remove(c.id, 'Comment')}
                 />
@@ -449,7 +457,7 @@ export function useFileConversationView({
         </div>
     </>
   )
-  const composer = (
+  const composer = readOnly ? undefined : (
       <div className="p-3">
         <ComposeBox
           onSend={handleSend}
@@ -486,6 +494,7 @@ export function useFileConversationView({
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
+        readOnly={readOnly}
         // MetaText is a single line; a sentence in a narrow panel has to wrap.
         composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
         onDeleteReply={(id) => remove(id, 'Reply')}

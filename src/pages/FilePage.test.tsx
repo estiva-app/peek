@@ -1155,6 +1155,25 @@ describe('FilePage offers Rename and Delete when the manifest does, and never by
     ])
   })
 
+  /*
+    An archived file is read-only until it is unarchived (Katerina, 7 October):
+    the menu keeps what reads it, the way back and Delete; the header drops
+    Join; the conversation is handed read-only; the notice is drawn.
+  */
+  it('an archived file offers Details, Copy link, Unarchive and Delete — and no Join', () => {
+    objects.byAddress[TOPIC_ADDRESS] = {
+      ...bareFile,
+      archived: { by: CATH, at: 1_790_000_000, resolution: 'Done.' },
+      actions: [...(bareFile.actions ?? []), { id: 'archive', label: 'Archive', control: 'toggle', effect: 'writes', field: 'archived' }],
+    }
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    expect(within(middle).getByText(/^Archived by/)).toBeInTheDocument()
+    expect(within(middle).queryByRole('button', { name: 'Join' })).toBeNull()
+    expect(peekView.args.at(-1)!.readOnly).toBe(true)
+    expect(openHeaderMenu()).toEqual(['Details', 'Copy link', 'Unarchive', 'Delete'])
+  })
+
   it('Copy link hands out the short form — the ticket’s done-when (FOL-37)', async () => {
     objects.byAddress[TOPIC_ADDRESS] = bareFile
     const writeText = vi.fn(async () => {})

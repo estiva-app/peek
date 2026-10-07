@@ -32,3 +32,21 @@ export const ArchivedWithItsProject: Story = {
     onOpenParent: noop,
   },
 }
+
+/** **As a card** (7 October): on an archived file's page, in the composer's place. The resolution is a step smaller. */
+export const AsACard: Story = {
+  args: { look: 'card' },
+  decorators: [(Story) => <div className="w-[640px]"><Story /></div>],
+}
+
+/** As a card, with no resolution given: the one line and Unarchive. */
+export const AsACardNoResolution: Story = {
+  args: { look: 'card', archive: { by: 'x', at: Math.floor(Date.now() / 1000) } },
+  decorators: [(Story) => <div className="w-[640px]"><Story /></div>],
+}
+
+/** As a card, hidden with its project: it opens the project. */
+export const AsACardWithItsProject: Story = {
+  args: { look: 'card', archive: { by: 'x', at: Math.floor(Date.now() / 1000), with: PROJECT }, withWhat: 'project', onOpenParent: noop },
+  decorators: [(Story) => <div className="w-[640px]"><Story /></div>],
+}

@@ -473,7 +473,8 @@ export function ConversationCard({
       */}
       <Card
         fill={subdued ? 'none' : 'surface'}
-        hover="fill"
+        // Read-only with nothing to open (an archived file's message with no replies): nothing on hover.
+        hover={readOnly && !onClick ? 'none' : 'fill'}
         quietUntilHover
         hovered={isHovered}
         selected={isSelected}

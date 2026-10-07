@@ -86,6 +86,8 @@ export function useFileView({
     onOpenThread,
     title,
     onCommented: reload,
+    // An archived file is read-only until it is unarchived (Katerina, 7 October).
+    readOnly: !!file?.archived,
   })
   const { state: threads } = useFileThreads(ownView ? null : file?.address, rootIds)
 
