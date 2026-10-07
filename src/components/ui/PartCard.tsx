@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { renderTreeText, serializeBlockDocument, toRenderTree, type Block } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Button, Card, Link, RichText } from '@estiva-app/ui'
+import { AttachmentCard, Button, Card, Link, RichText, type RichTextBlock } from '@estiva-app/ui'
 import { usePart } from '@/api'
 import { objectLabel } from '@/lib/appName'
+import { postedAttachment } from '@/lib/fileAttachments'
+import { blobObjectUrl } from '@/nostr/media'
 import { cn } from '@/lib/utils'
 import { DialogShell } from './DialogShell'
 import { ForeignObjectSkeleton } from './ForeignObjectWidget'
@@ -82,7 +84,7 @@ export function PartCard({ address, block }: { address: string; block: string })
            in is a Button under the cut rather than the cut itself. */
         <>
           <div className="relative max-h-40 overflow-hidden">
-            <RichText blocks={blocks} size="small" />
+            <RichText blocks={blocks} size="small" renderBlock={renderAttachment} />
             <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-bg-inset" />
           </div>
           <Button variant="muted" size="small" data-part-open className="self-start" onClick={() => setOpen(true)}>
@@ -90,7 +92,7 @@ export function PartCard({ address, block }: { address: string; block: string })
           </Button>
         </>
       ) : (
-        <RichText blocks={blocks} size="small" />
+        <RichText blocks={blocks} size="small" renderBlock={renderAttachment} />
       )}
       {open && (
         <DialogShell
@@ -105,10 +107,28 @@ export function PartCard({ address, block }: { address: string; block: string })
             ) : undefined
           }
         >
-          <RichText blocks={blocks} size="small" />
+          <RichText blocks={blocks} size="small" renderBlock={renderAttachment} />
         </DialogShell>
       )}
     </Card>
+  )
+}
+
+/**
+ * An attachment block — an image is one (SPEC §13.3) — drawn as a message's
+ * attachment is, through the same card and the same authenticated fetch.
+ * `RichText` has no design of its own for it.
+ */
+function renderAttachment(block: RichTextBlock) {
+  if (block.type !== 'attachment') return undefined
+  const attr = (key: string) => (typeof block.attrs?.[key] === 'string' ? (block.attrs[key] as string) : undefined)
+  const size = typeof block.attrs?.size === 'number' ? block.attrs.size : 0
+  return (
+    <AttachmentCard
+      {...postedAttachment({ name: attr('filename') ?? 'Attachment', size, contentType: attr('m') ?? '', mediaUrl: attr('url'), thumbUrl: attr('thumb') })}
+      fetchImage={blobObjectUrl}
+      download
+    />
   )
 }
 
@@ -119,9 +139,13 @@ function headingOf(object: ForeignObject): string {
   return [label, title].filter(Boolean).join(' · ') || 'Untitled'
 }
 
-/** Long enough to cut: lengthy text, any image, or a table of more than a few rows. */
+/**
+ * Long enough to cut: lengthy text, or a table of more than a few rows. Never an
+ * attachment (an image is one, §13.3): its card is already the thumbnail, and a
+ * click on it opens the full picture as it does on a message's own attachment.
+ */
 function isLong(block: Block, text: string): boolean {
-  if (block.type === 'image') return true
+  if (block.type === 'attachment') return false
   if (block.type === 'table') return (block.content?.length ?? 0) > LONG_TABLE_ROWS
   return text.length > LONG_TEXT
 }

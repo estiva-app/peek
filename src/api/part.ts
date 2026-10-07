@@ -37,7 +37,9 @@ async function readPart(pointer: { address: string; block: string }): Promise<Pa
   const token = validToken()
   if (!RELAY_URL || !token) return null
   const object = await resolveObjectAsViewer(pointer.address, RELAY_URL, token)
-  if (!object) {
+  // `unreachable` is interop's stand-in for an address the read could not see
+  // (it carries the noun from the manifest and nothing else): the same empty read.
+  if (!object || object.unreachable) {
     return (await absenceAsViewer(pointer.address, RELAY_URL, token)) === 'deleted' ? { state: 'deleted' } : { state: 'unreadable' }
   }
   const body = object.slots.body
