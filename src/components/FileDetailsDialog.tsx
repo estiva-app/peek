@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { IconCopy, IconPencil } from '@tabler/icons-react'
 import type { ForeignObject } from '@estiva-app/interop'
-import type { RenameOutcome } from '@/api'
+import { useWorkspaceDirectory, type RenameOutcome } from '@/api'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { IconButton } from './ui/IconButton'
@@ -51,6 +51,14 @@ export function FileDetailsDialog({
   // The author is the address's second segment (SPEC §6.1) — the one identity
   // a file carries that no change event can move.
   const author = file.address?.split(':')[1]
+  /*
+    The author's name, from everyone with a profile. The resolved file's own
+    `people` holds only the keys its fields name (an assignee, a lead), and the
+    author is in none of them, so "Created by" read it alone and drew the em
+    dash for every file.
+  */
+  const directory = useWorkspaceDirectory()
+  const people = author && file.people?.[author] ? file.people : directory
   const [editing, setEditing] = useState((initialEditing ?? false) && !!onRename)
   const [draft, setDraft] = useState('')
   const [outcome, setOutcome] = useState<RenameOutcome>(
@@ -160,7 +168,7 @@ export function FileDetailsDialog({
 
       {author && (
         <Section label="Created by">
-          <Person pubkey={author} people={file.people} size={24} />
+          <Person pubkey={author} people={people} size={24} />
         </Section>
       )}
 
