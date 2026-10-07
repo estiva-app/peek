@@ -6,6 +6,8 @@ import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessa
 import { referenceSections, subscribeReferences, useResolvedReferences } from '@/api'
 import { mentionMessages } from '@/api/mentions'
 import { isObjectAddress } from '@/lib/textParsing'
+import { referenceGlyphOfUri } from '@/lib/fileGlyph'
+import { GlyphIcon } from '@/components/ui/GlyphIcon'
 import { mentionDirectory } from '@/components/ui/MentionMenu'
 import { inlineChipClassName } from '@estiva-app/ui'
 import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
@@ -128,7 +130,23 @@ export const TopicMention = Mention.extend({
  */
 export const MessageMention = CaptionedReference.extend({ name: 'messageMention' }).configure({
   icon: <IconMessage size={14} stroke={1.5} />,
+  // What it points at, as its row in the list showed it: a topic, a Ship project or issue, a file, a message (7 October).
+  iconFor: (uri) => {
+    const glyph = referenceGlyphOfUri(uri)
+    return glyph ? <GlyphIcon glyph={glyph} /> : undefined
+  },
 })
+
+/** Each `[` row with the icon of what it is — the chip it inserts wears the same, from its URI (7 October). */
+function withGlyphs(sections: ReturnType<typeof referenceSections>): ReturnType<typeof referenceSections> {
+  return sections.map((section) => ({
+    ...section,
+    items: section.items.map((item) => {
+      const glyph = referenceGlyphOfUri(item.uri)
+      return glyph ? { ...item, icon: <GlyphIcon glyph={glyph} size={16} className="text-text-secondary" /> } : item
+    }),
+  }))
+}
 
 /**
  * `[` — Messages, then Files (PEE-21), inserted as a {@link MessageMention}
@@ -141,7 +159,7 @@ export const MessageMention = CaptionedReference.extend({ name: 'messageMention'
  */
 export const PeekReferenceTrigger = ReferenceTrigger.configure({
   items: () => mentionMessages().map(toReferenceItem),
-  sections: referenceSections,
+  sections: (query) => withGlyphs(referenceSections(query)),
   subscribe: subscribeReferences,
   nodeName: 'messageMention',
   ...FILES_MENU_COPY,
