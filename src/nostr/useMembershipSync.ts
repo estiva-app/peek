@@ -25,8 +25,10 @@
  * `kind:1851` change (`buildMembershipChange`).
  *
  * Nothing here signs a membership change for anything but the person's own
- * click: SPEC §11.8 *Following, retired* forbids turning the old private
- * follows into public memberships.
+ * click — joining, leaving, or adding somebody from the Members dialog
+ * (REA-3): SPEC §11.8 *Following, retired* forbids turning the old private
+ * follows into public memberships. Adding somebody else is not optimistic:
+ * the local set is the viewer's own, and the dialog re-reads the file.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SignedEvent } from '@estiva-app/protocol'
@@ -53,8 +55,8 @@ export interface MembershipSync {
   /** Unix seconds a created file's membership starts at. */
   floor: number
   /** Join a file, or leave it: local at once, then published. Resolves when the relay has answered. */
-  /** `true` once the relay holds the change; otherwise why nothing changed, in words a toast can show. */
-  setMember: (file: string, folder: string, member: boolean) => Promise<true | string>
+  /** `true` once the relay holds the change; otherwise why nothing changed, in words a toast can show. `person` adds somebody else (only `member: true` counts for them, §11.8). */
+  setMember: (file: string, folder: string, member: boolean, person?: string) => Promise<true | string>
   /** Re-read the relay, discarding nothing that is still being published. */
   refresh: () => Promise<void>
 }
@@ -160,7 +162,7 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
   }, [state, files, mentioned, muted])
 
   const setMember = useCallback(
-    async (file: string, folder: string, member: boolean) => {
+    async (file: string, folder: string, member: boolean, person?: string) => {
       const seam = seamFrom(relayUrl)
       if (!seam) {
         console.warn('[membership] not changed: no relay origin or no live Estiva ID token in this tab')
@@ -174,6 +176,26 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
         // `buildMembershipChange` would throw; say so now rather than flipping the control and flipping it back.
         console.warn('[membership] not changed: the file has no Folder to name in the change:', folder)
         return 'This file is in no Folder Peek can name.'
+      }
+      if (person !== undefined && person !== seam.pubkey) {
+        // Only the person may leave (§11.8): a leave signed for somebody else would be ignored by every reader.
+        if (!member) return 'Only they can leave it.'
+        const add = async (): Promise<true | string> => {
+          try {
+            const unsigned = buildMembershipChange(seam.pubkey, Date.now(), { file, folder, person, member: true })
+            const signed: SignedEvent = await signViaEstivaId(unsigned, seam.accessToken, seam.pubkey)
+            const result = await publishSigned(seam.relayUrl, signed, seam.accessToken, seam.pubkey)
+            if (result.ok) return true
+            console.warn('[membership] add refused:', result.reason)
+            return 'The relay said no. Try again.'
+          } catch (error) {
+            console.warn('[membership] add threw:', error)
+            return 'It could not be sent. Try again.'
+          }
+        }
+        const mine = chain.current.then(add, add)
+        chain.current = mine
+        return mine
       }
       generation.current++
       const before = files.get(file)

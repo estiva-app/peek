@@ -9,9 +9,11 @@ import { FolderTree } from '@/components/views/FolderTree'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useFileView } from '@/components/views/useFileView'
 import { SidePanelButton } from '@/components/SidePanelButton'
+import { Members } from '@/components/Members'
 import {
   useFileAddress,
   rememberFileAddress,
+  useFileMembers,
   useFolderContents,
   useMembership,
   useOpenWorkFiles,
@@ -253,8 +255,11 @@ export function FilePage() {
     !file && navFile && fileAddress ? teamFiles?.find((candidate) => candidate.address === fileAddress) : undefined
   const selected = file ?? clicked ?? navFile
 
+  // Who is in the file, for the members pill (REA-3): re-read after a join, a leave or an add.
+  const fileMembers = useFileMembers(file?.address)
   const fileControls = useFileControls({
     onRenamed: () => void reloadConversation(),
+    onMembership: () => void fileMembers.reload(),
     /*
       The page draws the notice off the file, and the tree lists it or not —
       both re-read. An archived row's file leaves the tree; the page stays on
@@ -309,6 +314,44 @@ export function FilePage() {
     file?.address && file.folder && !readOnly && membership.state !== 'unknown'
       ? () => fileControls.open(member ? 'leave' : 'join', file)
       : undefined
+
+  /*
+    Who is in it (REA-3, as Ship's SHI-31): the members pill opens the Members
+    dialog — Join or Leave, and "Add members". The roles are the file's author
+    and whatever person fields its owner's manifest draws ("Assignee", "Lead"),
+    so the page still knows nothing of Ship. A file that lists children (a
+    project) says that leaving it does not leave them.
+
+    The toolbar toggle stays only while nobody is in the file: the pill draws
+    nothing at zero until REA-8 gives it an empty state (Miky, 7 October).
+  */
+  const me = membership.me
+  const roles = file?.address
+    ? [
+        { pubkey: file.address.split(':')[1] ?? '', role: 'Author' },
+        ...file.meta.filter((slot) => slot.isPubkey && slot.label && slot.value).map((slot) => ({ pubkey: slot.value, role: slot.label! })),
+      ]
+    : []
+  const childKind = file?.listsChildren ? file.children?.[0]?.kind : undefined
+  const membersNote = childKind !== undefined ? `Your ${kindNoun(childKind)}s here still notify you.` : undefined
+  const nameOf = (pubkey: string) => people?.[pubkey]?.displayName ?? file?.people?.[pubkey]?.displayName ?? '—'
+  const members =
+    file && me ? (
+      <Members
+        // A new file is a new dialog: an open one must not carry over to the next page.
+        key={file.address}
+        members={fileMembers.members}
+        me={me}
+        directory={people}
+        people={file.people}
+        roles={roles}
+        note={membersNote}
+        readOnly={!toggleMember}
+        onSetMine={(join) => fileControls.open(join ? 'join' : 'leave', file)}
+        onAdd={(pubkeys) => fileControls.addMembers(file, pubkeys, nameOf)}
+      />
+    ) : undefined
+  const showToggle = toggleMember && fileMembers.members?.size === 0
 
   /*
     Open work (FOL-34): the topic menu's Add/Remove, for a file, by its address.
@@ -403,10 +446,13 @@ export function FilePage() {
             }
             actions={
               file?.folder || view.sidePanel ? (
-                // One strip: one Tab stop, arrows along it (UIG-14).
+                <div className="flex shrink-0 items-center gap-2">
+                {/* The pill before the strip, as Ship's header has it: it opens a dialog, not an action. */}
+                {members}
+                {/* One strip: one Tab stop, arrows along it (UIG-14). */}
                 <Toolbar aria-label="File actions" surface={false}>
                   {/* No Open folder: the Folder is the column beside, its row open (Katerina, 5 October). */}
-                  {toggleMember && (
+                  {showToggle && (
                     <ToolbarButton
                       tooltip={member ? 'Leave' : 'Join'}
                       aria-label={member ? 'Leave' : 'Join'}
@@ -444,6 +490,7 @@ export function FilePage() {
                     />
                   )}
                 </Toolbar>
+                </div>
               ) : undefined
             }
           />

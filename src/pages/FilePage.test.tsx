@@ -155,9 +155,16 @@ vi.mock('@/components/views/useFileConversationView', () => ({
 const follows = vi.hoisted(() => ({
   state: 'known' as 'unknown' | 'known',
   keys: new Set<string>(),
-  setMember: vi.fn<(file: string, folder: string, member: boolean) => Promise<void>>(async () => {}),
+  setMember: vi.fn<(file: string, folder: string, member: boolean, person?: string) => Promise<true | string>>(async () => true),
   refresh: vi.fn<() => Promise<void>>(async () => {}),
 }))
+/* The open file's members (REA-3): nobody, unless a test says otherwise — the toolbar's Join then stands in for the pill. */
+const roster = vi.hoisted(() => ({
+  members: new Map<string, { member: boolean }>() as Map<string, { member: boolean }> | undefined,
+  reload: vi.fn<() => Promise<void>>(async () => {}),
+  directory: undefined as Record<string, { displayName?: string }> | undefined,
+}))
+const ME = 'f'.repeat(64)
 const marks = vi.hoisted(() => ({
   file: vi.fn<(address: string | null | undefined, newestAt?: number) => void>(),
   container: vi.fn<(kind: string, key: string) => void>(),
@@ -218,11 +225,13 @@ vi.mock('@/api', async () => ({
   useTeamUnread: () => ({ unread: {}, member: {}, holdsJoined: new Set<string>() }),
   useMembership: () => ({
     state: follows.state,
+    me: ME,
     isMember: (key: string) => follows.keys.has(key),
     setMember: follows.setMember,
     refresh: follows.refresh,
   }),
-  useWorkspaceDirectory: () => undefined,
+  useFileMembers: () => ({ members: roster.members, reload: roster.reload }),
+  useWorkspaceDirectory: () => roster.directory,
   // The Activity column names the file a mention was said on by resolving it.
   useResolvedReferences: (refs: readonly string[]) =>
     Object.fromEntries(refs.map((ref) => [ref, objects.byAddress[ref] ?? null])),
@@ -336,6 +345,9 @@ beforeEach(() => {
   follows.state = 'known'
   follows.keys = new Set()
   follows.setMember.mockClear()
+  roster.members = new Map()
+  roster.reload.mockClear()
+  roster.directory = undefined
   marks.file.mockClear()
   marks.container.mockClear()
   marks.thread.mockClear()
@@ -1362,6 +1374,62 @@ describe('FilePage offers Join and Leave on the header and the row (§11.8)', ()
     expect(leave).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(leave)
     expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, false)
+  })
+
+  /*
+    REA-3, as Ship's SHI-31: once anybody is in the file, the members pill
+    stands where the toggle was, and its dialog lists them — you first, the
+    author and the owner's person fields as second lines, whoever holds a part
+    and left as "· not following" — with Join or Leave and "Add members".
+  */
+  it('once somebody is in, the pill replaces the toggle and its dialog lists who, with their parts', () => {
+    objects.byAddress[ISSUE_ADDRESS] = { ...issue, meta: [{ label: 'Assignee', value: CATH, isPubkey: true }] } as ForeignObject
+    roster.members = new Map([[ME, { member: true }]])
+    roster.directory = { [ME]: { displayName: 'Miky' }, [CATH]: { displayName: 'Cath' }, [SHIP]: { displayName: 'Ship bot' } }
+    follows.keys = new Set([ISSUE_ADDRESS])
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    for (const name of ['Join', 'Leave']) expect(screen.queryByRole('button', { name })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '1 member' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('You')).toBeInTheDocument()
+    expect(within(dialog).getByText('Assignee · not following')).toBeInTheDocument()
+    expect(within(dialog).getByText('Author · not following')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Leave' }))
+    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, false)
+  })
+
+  it('Join from the dialog for somebody not in, and the roster is read again once the relay holds it', async () => {
+    roster.members = new Map([[CATH, { member: true }]])
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(screen.getByRole('button', { name: '1 member' }))
+    const dialog = screen.getByRole('dialog')
+    // Only a member brings others in, as in Ship.
+    expect(within(dialog).queryByText('Add members')).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Join' }))
+    expect(follows.setMember).toHaveBeenCalledWith(ISSUE_ADDRESS, FOLDER, true)
+    await waitFor(() => expect(roster.reload).toHaveBeenCalled())
+  })
+
+  it('a project says that leaving it does not leave its issues', () => {
+    // The child's noun is the owner's own word for it, from its manifest.
+    rememberRouteWords(routeWordsOf([{ pattern: 'https://ship.estiva.app/issue/<slug>-<d>', kind: 30851 }]))
+    objects.byAddress[PROJECT_ADDRESS] = { ...project, children: [issue] } as ForeignObject
+    roster.members = new Map([[ME, { member: true }]])
+    mount(`/topic/${PROJECT_ADDRESS}`)
+    fireEvent.click(screen.getByRole('button', { name: '1 member' }))
+    expect(within(screen.getByRole('dialog')).getByText('Your issues here still notify you.')).toBeInTheDocument()
+    forgetRouteWords()
+  })
+
+  it('an archived file lists its members and offers no Join, Leave or Add', () => {
+    objects.byAddress[ISSUE_ADDRESS] = { ...issue, archived: { by: CATH, at: 1_790_000_000 } } as ForeignObject
+    roster.members = new Map([[ME, { member: true }]])
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(screen.getByRole('button', { name: '1 member' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('You')).toBeInTheDocument()
+    for (const name of ['Join', 'Leave']) expect(within(dialog).queryByRole('button', { name })).toBeNull()
+    expect(within(dialog).queryByText('Add members')).toBeNull()
   })
 
   it('has no mute control: muting is not built into the screens (Miky, 2026-10-01)', () => {
