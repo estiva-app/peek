@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Panel, SectionHeader } from '@estiva-app/ui'
+import { SectionHeader } from '@estiva-app/ui'
 import { KIND } from '@estiva-app/protocol'
 import { formatTimestamp, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
 import type { FileMention } from '@/nostr/fileMentions'
@@ -26,15 +26,13 @@ import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivit
  *
  * ## The column it lives in
  *
- * The third column, where a thread opens (`FilePage`). A thread is what
- * somebody just asked for and wins; Activity is context the page shows when
- * there is some — a file nobody has named keeps its two columns, since a
- * third that says only "No related conversations yet." would change every
- * file's page for the few that have one. Another app's file has its widget
- * above this in the same column (`FileWidgetPanel`, FOL-29), and this takes
- * the room the widget leaves.
+ * A section of the file's Overview, the third column (`OverviewPanel`): under
+ * another app's card, or alone. A thread is what somebody just asked for and
+ * takes the column while it is open. The column is shown when there is
+ * something in it and hidden when there is not, and the header's sidebar
+ * button shows it anyway, with this section's empty line (`useSidePanel`).
  */
-export function FileActivityPanel({ mentions, as }: { mentions: FileMention[]; /** `section` under the file's widget: one scroll for the column. */ as?: 'panel' | 'section' }) {
+export function FileActivityPanel({ mentions }: { mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()
   /*
     The file each mention was said on, by address, for its title — one
@@ -53,7 +51,7 @@ export function FileActivityPanel({ mentions, as }: { mentions: FileMention[]; /
     return labels
   }, [saidIn, objects])
   const items = useMemo(() => mentions.map((m) => mentionItem(m, people)), [mentions, people])
-  return <FileActivityPanelView items={items} labelFor={labelFor} as={as} />
+  return <FileActivityPanelView items={items} labelFor={labelFor} />
 }
 
 /** One mention as the row `TopicActivity` draws: the same card the stream draws, opening the thread it was said in. */
@@ -91,50 +89,32 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
 }
 
 /**
- * The column as drawn: a header saying Activity and how many, over the rows. Pure, for the story.
+ * Activity as drawn: its heading with how many, over the rows. Pure, for the story.
  *
- * `as="section"` draws it as a section of another panel instead — a heading and the
- * rows, no panel of its own — under the file's widget, so the column has one scroll
- * (Katerina, 27 September: two scrolls in one column were two cramped boxes).
+ * A section of the Overview panel (`OverviewPanel`), never a panel of its own:
+ * under another app's card, or alone on a file Peek owns, in the one scroll
+ * the column has (Katerina, 27 September).
  */
 export function FileActivityPanelView({
   items,
   labelFor,
-  as = 'panel',
 }: {
   items: TopicActivityItem[]
   /** Address → the title of the file a mention was said on. Missing while it resolves. */
   labelFor: Map<string, string>
-  as?: 'panel' | 'section'
 }) {
-  if (as === 'section') {
-    return (
-      <div className="flex flex-col">
-        {/* 16px under the card, and the heading's own 8px inset brought to the card's 16px edge. */}
-        <div className="px-2 pt-4">
-        <SectionHeader title="Activity" trailing={items.length > 0 ? <span className="font-mono text-caption text-text-muted">{items.length}</span> : undefined} />
-        </div>
-        <TopicActivity items={items} labelFor={labelFor} onOpenThread={() => {}} />
-      </div>
-    )
-  }
   return (
-    // The column's contract (D46): the room left, never `h-full` — under the file's widget (FOL-29) that room is what remains.
-    // The package's Panel (0.37.0) takes that room and scrolls the rows.
-    <Panel
-        title={
-          <div className="flex items-center gap-2">
-            <span className="text-body-2-strong text-text-primary">Activity</span>
-            {items.length > 0 && <span className="font-mono text-caption text-text-muted">{items.length}</span>}
-          </div>
-        }
-    >
+    <div className="flex flex-col">
+      {/* 16px above the heading, and its own 8px inset brought to the card's 16px edge. The count beside the title (7 October). */}
+      <div className="px-2 pt-4">
+        <SectionHeader title="Activity" count={items.length > 0 ? items.length : undefined} />
+      </div>
       {/*
         Every row has an `href` — its thread is on another file's page — so
         nothing here is ever selected and the thread opener is never reached;
         both props are the component's.
       */}
       <TopicActivity items={items} labelFor={labelFor} onOpenThread={() => {}} />
-    </Panel>
+    </div>
   )
 }

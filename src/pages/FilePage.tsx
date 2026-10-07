@@ -8,6 +8,7 @@ import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { FolderTree } from '@/components/views/FolderTree'
 import { useFileControls } from '@/components/views/useFileControls'
 import { useFileView } from '@/components/views/useFileView'
+import { SidePanelButton } from '@/components/SidePanelButton'
 import {
   useFileAddress,
   rememberFileAddress,
@@ -399,7 +400,7 @@ export function FilePage() {
               </div>
             }
             actions={
-              file?.folder ? (
+              file?.folder || view.sidePanel ? (
                 // One strip: one Tab stop, arrows along it (UIG-14).
                 <Toolbar aria-label="File actions" surface={false}>
                   {/* No Open folder: the Folder is the column beside, its row open (Katerina, 5 October). */}
@@ -413,13 +414,15 @@ export function FilePage() {
                       {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
                     </ToolbarButton>
                   )}
+                  {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
+                  {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}
                   {/*
                     The topic's menu, when the manifest offers anything for it
                     to hold (FOL-33) — and absent, not inert, when it does not:
                     a Ship issue's header has nothing to put here, and a button
                     that opens nothing would say otherwise.
                   */}
-                  {(hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
+                  {file?.folder && (hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
                     <TopicMoreMenu
                       trigger={
                         <ToolbarButton tooltip="More actions" aria-label="More actions">

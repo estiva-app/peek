@@ -2,16 +2,16 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { MemoryRouter } from 'react-router-dom'
 import type { ForeignObject } from '@estiva-app/interop'
 import { PeekDataProvider } from '@/api'
-import { FileWidgetPanel } from './FileWidgetPanel'
+import { OverviewPanel } from './OverviewPanel'
 import { FileActivityPanelView } from './FileActivityPanel'
 import type { TopicActivityItem } from './TopicActivity'
 
 /**
- * A file page's third column while no thread is open, for a file another app
- * owns (FOL-29): the owning app's widget, and under it the Activity when
- * there is any. Opening a thread replaces the whole column; closing it brings
- * this back. A bare file draws nothing here — the page hands the column
- * nothing, so there is no empty state to show.
+ * A file's third column while no thread is open: its Overview (Katerina,
+ * 7 October). Another app's card when the file is that app's (FOL-29), its
+ * long description cut behind "Show more", and Activity under it, with its
+ * empty line when nobody has named the file. Opening a thread replaces the
+ * whole column; closing it brings this back.
  *
  * The object is handed in already resolved, as the page hands it: the widget
  * makes no read of its own here, and the controls it draws would land on the
@@ -104,8 +104,8 @@ const MENTION: TopicActivityItem = {
 }
 
 const meta = {
-  title: 'Folders/FileWidgetPanel',
-  component: FileWidgetPanel,
+  title: 'Folders/OverviewPanel',
+  component: OverviewPanel,
   parameters: { layout: 'fullscreen' },
   decorators: [
     (Story) => (
@@ -120,36 +120,33 @@ const meta = {
     ),
   ],
   args: { file: issue },
-} satisfies Meta<typeof FileWidgetPanel>
+} satisfies Meta<typeof OverviewPanel>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A Ship issue: its title is the link into Ship, its status and assignee are the manifest's controls. */
-export const Issue: Story = {}
+const labels = new Map([['30840:aa:roadmap', 'Roadmap']])
+const activity = (items: TopicActivityItem[]) => <FileActivityPanelView items={items} labelFor={labels} />
+
+/** A Ship issue: its title is the link into Ship, its status and assignee are the manifest's controls; nobody has named it yet. */
+export const Issue: Story = { args: { activity: activity([]) } }
 
 /** A Ship project: the same card, with the description its manifest gives the subtitle. */
-export const Project: Story = { args: { file: project } }
+export const Project: Story = { args: { file: project, activity: activity([]) } }
 
 const LONG = Array.from({ length: 14 }, (_, i) =>
   `Part ${i + 1}. What this project delivers, who it is for, and what it leaves for later, written out in full the way a real brief is.`,
 ).join(' ')
 const longProject: ForeignObject = { ...project, slots: { ...project.slots, subtitle: { value: LONG } } }
 
-/** A description longer than the column: the panel scrolls, so its end and the controls under it are always reachable. */
-export const ALongDescription: Story = { args: { file: longProject } }
+/** A description longer than the card allows: cut behind a fade, "Show more" under it, the controls and Activity still in view. */
+export const ALongDescription: Story = { args: { file: longProject, activity: activity([MENTION]) } }
 
-/** The same with Activity: one scroll for the whole column, and Activity a section under the card. */
-export const ALongDescriptionWithActivity: Story = {
-  args: { file: longProject },
-  render: (args) => (
-    <FileWidgetPanel {...args} below={<FileActivityPanelView as="section" items={[MENTION]} labelFor={new Map([['30840:aa:roadmap', 'Roadmap']])} />} />
-  ),
-}
+/** A comment elsewhere named the issue: Activity, with its count beside the title. */
+export const WithActivity: Story = { args: { activity: activity([MENTION]) } }
 
-/** The widget with Activity under it, in the same panel: a file another app owns that a comment elsewhere has named. */
-export const WithActivity: Story = {
-  render: (args) => (
-    <FileWidgetPanel {...args} below={<FileActivityPanelView as="section" items={[MENTION]} labelFor={new Map([['30840:aa:roadmap', 'Roadmap']])} />} />
-  ),
-}
+/** A file Peek owns, that others have named: no card, Activity alone. */
+export const PeekFileWithMentions: Story = { args: { file: undefined, activity: activity([MENTION]) } }
+
+/** A file Peek owns that nobody has named, shown by the header's button: Activity's empty line. */
+export const PeekFileNothingYet: Story = { args: { file: undefined, activity: activity([]) } }

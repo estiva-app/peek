@@ -6,7 +6,7 @@ import { ForeignConversationView } from '@/components/views/ForeignConversationV
 import { FileThreadView } from '@/components/views/FileThreadView'
 import { useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
-import { FileWidgetPanel } from '@/components/FileWidgetPanel'
+import { OverviewPanel } from '@/components/OverviewPanel'
 import {
   useFileThreads,
   useForeignConversation,
@@ -19,6 +19,7 @@ import {
 } from '@/api'
 import { useFileMentions } from '@/api/useFileMentions'
 import { referenceLink } from '@/lib/referenceLink'
+import { useSidePanel } from '@/lib/sidePanel'
 import { newestMessageAt, useMarkFileRead, useMarkThreadRead } from '@/lib/useMarkRead'
 
 /**
@@ -113,22 +114,30 @@ export function useFileView({
   */
   const { mentions } = useFileMentions(ownView ? file?.address : null)
   /*
-    The third column while no thread is open (FOL-29): another app's file has
-    its widget there, and under it the Activity above when there is any. A
-    bare file gets no widget — it is nobody's, so there is no other app whose
-    part of it the column could show, and its title is already the header —
-    and a file nobody has named keeps its two columns as before. "Another
-    app's" is `referenceLink`'s answer, the one place Peek says which files
-    live inside it: a file whose way in is a link out to its owner is the one
-    whose widget is worth a column. No kind number here, and a manifest from
-    an app nobody has written lands the same way Ship's does.
+    The third column while no thread is open: the file's Overview (Katerina,
+    7 October). Another app's file has its card there (FOL-29); a bare file
+    gets none — it is nobody's, so there is no other app whose part of it the
+    column could show, and its title is already the header. "Another app's"
+    is `referenceLink`'s answer, the one place Peek says which files live
+    inside it: a file whose way in is a link out to its owner is the one whose
+    card is worth a column. No kind number here, and a manifest from an app
+    nobody has written lands the same way Ship's does.
+
+    Activity is under it wherever mentions are read — Peek's own view — with
+    its empty line when there are none. A read-only file's are never asked
+    for, and an empty line there would claim what nobody looked at.
+
+    Shown when there is something to show, hidden when there is not, and the
+    header's sidebar button says otherwise (`useSidePanel`).
   */
   const home = file ? referenceLink(file.naddr ?? file.address ?? file.ref, file) : null
-  // One scroll for the whole column (Katerina, 27 September): with another app's widget,
-  // Activity is a section under the card in the same Panel; alone, it is its own Panel.
-  const widget = file && home?.place === 'app' && (file.naddr ?? file.address) ? <FileWidgetPanel file={file} below={mentions.length > 0 ? <FileActivityPanel mentions={mentions} as="section" /> : undefined} /> : undefined
-  const activity = !widget && mentions.length > 0 ? <FileActivityPanel mentions={mentions} /> : undefined
-  const aside = widget ?? activity
+  const cardFile = file && home?.place === 'app' && (file.naddr ?? file.address) ? file : undefined
+  const sidePanel = useSidePanel(file?.address, !!cardFile || mentions.length > 0)
+  const canShow = !!cardFile || ownView
+  const aside =
+    sidePanel.open && canShow ? (
+      <OverviewPanel file={cardFile} activity={ownView ? <FileActivityPanel mentions={mentions} /> : undefined} />
+    ) : undefined
   const replyCounts =
     threads === 'loading' || 'failed' in threads
       ? undefined
@@ -193,5 +202,11 @@ export function useFileView({
     threadDrawn: peek.threadPanel !== undefined,
     /** The thread to open when only a reply is new: `undefined` until judged (CON-34). */
     replyOnlyThread: ownView ? peek.replyOnlyThread : readOnlyReplyThread,
+    /**
+     * The header's sidebar button: whether the Overview is shown, and the
+     * toggle. Absent when the file has nothing the column could ever hold —
+     * a read-only file with no card.
+     */
+    sidePanel: canShow ? sidePanel : undefined,
   }
 }

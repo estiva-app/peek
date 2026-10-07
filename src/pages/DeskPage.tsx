@@ -11,6 +11,7 @@ import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
+import { SidePanelButton } from '@/components/SidePanelButton'
 import { useFileView } from '@/components/views/useFileView'
 import {
   dmNameById,
@@ -291,6 +292,8 @@ export function DeskPage() {
         }
         actions={
           <Toolbar aria-label="File actions" surface={false}>
+            {/* The Overview, shown and hidden, as on the file's own page (Katerina, 7 October). */}
+            {fileView.sidePanel && <SidePanelButton open={fileView.sidePanel.open} onToggle={fileView.sidePanel.toggle} />}
             <ToolbarLink
               tooltip="Open full page"
               aria-label="Open full page"

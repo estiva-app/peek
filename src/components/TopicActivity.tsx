@@ -78,7 +78,8 @@ const RELATION: Record<ActivityRelation, { label: string; muted: boolean }> = {
 }
 
 /** The box the rows live in, written once: the list and its empty line both sit in it. */
-const LIST = 'flex flex-col px-4 py-4 gap-3'
+// 4px under the heading, so the rows and the empty line read as its own (Katerina, 7 October).
+const LIST = 'flex flex-col px-4 pt-1 pb-4 gap-3'
 
 export function TopicActivity({
   items,
