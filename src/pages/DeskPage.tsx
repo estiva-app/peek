@@ -24,8 +24,8 @@ import {
   useLiveConversationBadges,
   useOpenWorkFiles,
 } from '@/api'
-import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { filePath } from '@/lib/objectUrl'
+import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { followInApp } from '@/lib/followInApp'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
@@ -321,7 +321,7 @@ export function DeskPage() {
               id: item.id,
               kind: 'file' as const,
               name: item.title,
-              isBareFile: item.fileKind === KIND_BARE_FILE,
+              glyph: fileGlyph(item.fileKind),
               isUnread: true,
               isUrgent: true,
               isSelected: isOpen(item.address, 'urgent'),
@@ -344,7 +344,7 @@ export function DeskPage() {
               id: item.id,
               kind: 'file' as const,
               name: item.title,
-              isBareFile: item.object.kind === KIND_BARE_FILE,
+              glyph: fileGlyph(item.object.kind),
               isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
               isSelected: isOpen(item.address, 'openWork'),
               onClick: () => openFile(item.address, item.title, 'openWork'),
@@ -391,8 +391,8 @@ export interface DeskRow {
   kind: 'dm' | 'file'
   name: string
   avatarSrc?: string
-  /** Files only: a bare-file topic wears the topic glyph, anything else the file one. */
-  isBareFile?: boolean
+  /** Files only: the glyph `fileGlyph` gives it — a topic, a Ship project or issue, or a file. */
+  glyph?: FileGlyph
   isUnread: boolean
   isUrgent?: boolean
   isSelected: boolean
@@ -408,7 +408,7 @@ function DeskRows({ rows }: { rows: DeskRow[] }) {
         <PersonRow
           key={row.id}
           name={row.name}
-          type={row.kind === 'dm' ? 'DM' : row.isBareFile ? 'topic' : 'file'}
+          type={row.kind === 'dm' ? 'DM' : (row.glyph ?? 'file')}
           avatarSrc={row.avatarSrc}
           isUnread={row.isUnread}
           isUrgent={row.isUrgent}

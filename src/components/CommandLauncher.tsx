@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { IconDownload, IconEraser, IconFileText, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
+import { IconBox, IconCircleDashed, IconDownload, IconEraser, IconFileText, IconListDetails, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
 import {
   CommandPalette,
   CommandPaletteAnswer,
@@ -17,14 +17,14 @@ import {
 import { Avatar } from './ui/Avatar'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
-import { TopicState } from './ui/TopicState'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
 import { formatDateLabel, useForeignObjects, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
-import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
+import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
+import { fileGlyphOfAddress, type FileGlyph } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
@@ -140,6 +140,9 @@ interface CommandLauncherProps {
 }
 
 const icon = (Glyph: typeof IconPencil) => <Glyph size={16} stroke={1.5} />
+
+/** A recent file's glyph on the row's tile: the ones `TopicState` draws for it elsewhere. */
+const FILE_ICONS: Record<FileGlyph, typeof IconPencil> = { topic: IconCircleDashed, project: IconBox, issue: IconListDetails, file: IconFileText }
 
 const appMark = (app: { id: string }, size = 14) =>
   app.id === 'peek' ? <PeekLogoMark height={size} /> : <ShipLogoMark height={size} />
@@ -672,15 +675,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   /*
     A file the person opened — a bare-file topic, a Ship issue — by its address
     and the title it had then (FOL-36, `lib/recents`). A bare file is Peek's
-    own topic and gets the topic's icon; anything else is another app's object
-    and is drawn as a file, since nothing here knows what it is.
+    own topic; a Ship project or issue wears Ship's glyph (`fileGlyph`); anything
+    else is a file. Every one on the row's tile (Katerina, 7 October): here a
+    topic's circle is never a status — a recent does not know whether the topic
+    is resolved — so it is an icon like the others, not a mark of its own.
   */
   const fileRow = (f: { id: string; title: string }, forget?: () => void): CommandPaletteRow => ({
     id: `file-${f.id}`,
     label: f.title,
-    ...(f.id.startsWith(`${KIND_BARE_FILE}:`)
-      ? { leading: <TopicState type="topic" status="unresolved" /> }
-      : { icon: icon(IconFileText) }),
+    icon: icon(FILE_ICONS[fileGlyphOfAddress(f.id)]),
     onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
   })

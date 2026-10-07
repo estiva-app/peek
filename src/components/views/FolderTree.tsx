@@ -621,7 +621,7 @@ export function FolderTreeView({
   joinedUnder?: Readonly<Record<string, readonly string[]>>
   /** Whether `member` and `unread` are judged yet. A filter over an unjudged verdict is a skeleton. */
   ready?: { member: boolean; unread: boolean }
-  /** Which view: in Folders, every heading wears the folder icon (Katerina, 5 October). */
+  /** Which view: Topics, Folders or Archive. */
   view?: TreeView
   /** The Folder a link opened (`/app/folders/<id>`): it opens, and is scrolled to. */
   linkedFolder?: string | null
@@ -689,7 +689,6 @@ export function FolderTreeView({
           selectedParent={selectedParent}
           expandSelected={expandSelected}
           onSelect={onSelect}
-          icon={view !== 'mine'}
           linked={linkedFolder === folder.id}
           // In Archive only an archived Folder has a menu: its Unarchive.
           menu={view === 'archive' && !folder.archived ? undefined : menuFor?.(folder)}
@@ -713,7 +712,6 @@ function FolderSection({
   selectedParent,
   expandSelected,
   onSelect,
-  icon,
   linked,
   menu,
   onControl,
@@ -729,8 +727,6 @@ function FolderSection({
   selectedParent?: string | null
   expandSelected?: boolean
   onSelect: (file: ForeignObject) => void
-  /** The folder icon before the name — in Folders, not in Topics. */
-  icon: boolean
   /** A link opened this Folder: open it, whatever was remembered, and bring it into view. */
   linked: boolean
   /** The heading's ⋮: the Folder's own actions. */
@@ -881,7 +877,8 @@ function FolderSection({
         Archive… (Katerina, 5 October): the Folders page and its "Open folder"
         are gone, and a click on the heading only folds it.
       */
-      icon={icon ? <TopicState type="folder" /> : undefined}
+      // The folder icon in every view, Topics too (Katerina, 7 October): a heading is a Folder wherever it is drawn.
+      icon={<TopicState type="folder" />}
       // In Archive, an archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
       trailing={archive && folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       menu={menu}

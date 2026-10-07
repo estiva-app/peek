@@ -86,7 +86,7 @@ export const FileItem: Story = {
   },
 }
 
-/** A file that is not a bare-file topic — a Ship issue — draws the file glyph. */
+/** A Ship issue wears Ship's list glyph, as everywhere Peek draws one (7 October). */
 export const ForeignFileItem: Story = {
   args: {
     item: {

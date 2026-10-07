@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import { IconX } from '@tabler/icons-react'
-import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { PreviewCard } from '@estiva-app/ui'
 import { ScreenerPreviewContent } from './ScreenerPreviewCard'
 import { ScreenerLaterMenu } from './ScreenerLaterMenu'
@@ -10,6 +9,7 @@ import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import { hasRelay } from '@/api'
 import { previewText } from '@/lib/textParsing'
+import { fileGlyph } from '@/lib/fileGlyph'
 import type { ScreenerItem as ScreenerItemData } from '@/api'
 
 interface ScreenerItemProps {
@@ -36,8 +36,8 @@ export function ScreenerItem({ item, onOpen, onLater, onDismiss, preview }: Scre
       {/* Item header */}
       <div className="flex items-center gap-2">
         {item.kind === 'file' ? (
-          // The tree's glyph rule: a bare-file topic draws as a topic, anything else as a file.
-          <TopicState type={item.fileKind === KIND_BARE_FILE ? 'topic' : 'file'} />
+          // The tree's glyph rule (`fileGlyph`): a topic, a Ship project or issue, or a file.
+          <TopicState type={fileGlyph(item.fileKind)} />
         ) : (
           <Avatar size={16} src={item.authorAvatarSrc} alt={item.authorName} />
         )}
