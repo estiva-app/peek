@@ -92,9 +92,17 @@ export function Reference({
   uri,
   object,
   link = true,
+  urgent,
   className,
 }: {
   uri: string
+  /**
+   * The keys the message names urgently — its `["urgent", <pubkey>]` tags
+   * (SPEC §13.1). A person chip for one of them wears the urgent tone, for
+   * every reader, as it did in the composer (CON-24). The text cannot say it:
+   * an urgent mention is the same `nostr:npub…` as an ordinary one.
+   */
+  urgent?: readonly string[]
   /**
    * Whether the chip leads to what it names. `false` in the composer (UIG-40):
    * the same chip as in the sent message, but while it is being written a click
@@ -150,7 +158,7 @@ export function Reference({
         data-resolved={person ? 'true' : 'false'}
         // An unresolved key is still a mention, just an anonymous one. Muted
         // rather than absent, so nobody reads a stranger's key as an error.
-        tone={person ? 'person' : 'quiet'}
+        tone={person ? (pubkey && urgent?.includes(pubkey) ? 'urgent' : 'person') : 'quiet'}
         className={className}
       >
         {person ? `@${person.name}` : short}

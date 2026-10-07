@@ -106,7 +106,7 @@ function dedupeReferences(refs: string[]): string[] {
  * The text of a message or reply, formatted, with its mentions and links, and a
  * card below for each item from another app it mentions.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject> }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[] }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
@@ -210,7 +210,7 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
       <RichText
         blocks={blocks.filter((block) => !standaloneReference(block))}
         renderText={renderTokens}
-        renderReference={(reference) => <Reference uri={reference} object={resolved[reference]} />}
+        renderReference={(reference) => <Reference uri={reference} object={resolved[reference]} urgent={urgentMentions} />}
       />
       {attachments.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={supplied(naddr)} />

@@ -24,6 +24,13 @@ export const PeekMention = PersonMention.configure({ people: mentionDirectory })
 export const UrgentMention = UrgentPersonMention.configure({ people: mentionDirectory })
 
 /**
+ * The urgent chip in a box that edits a sent message: it loads and draws, and
+ * `!@` does not offer it. An edit carries no tags, so a new urgent pick there
+ * could never be sent (Miky, CON-24 kickoff, 2026-10-07).
+ */
+export const EditUrgentMention = UrgentMention.configure({ suggestion: { allow: () => false } })
+
+/**
  * The pubkeys the document's urgent mentions name (CON-17) — what the write
  * turns into `["urgent", <pubkey>]`. A chip with no key is still `!@Name` in
  * the text.

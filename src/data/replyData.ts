@@ -25,6 +25,8 @@ export interface ReplyData {
   canEditAndDelete?: boolean
   /** NIP-27 `a` tag addresses from imported events (references to other apps' objects). */
   nostrReferences?: string[]
+  /** Whom the body names urgently — see `ConversationData.urgentMentions`. */
+  urgentMentions?: string[]
   /** The published event's id — what a message link names (PEE-17). Absent
    *  until the reply reaches the relay. */
   nostrEventId?: string
