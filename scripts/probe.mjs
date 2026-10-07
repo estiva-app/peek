@@ -76,7 +76,7 @@ import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
-  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file]`
+  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--net file]`
 
 const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
@@ -96,6 +96,9 @@ if (!existsSync(executablePath)) fail(`no chromium at ${executablePath} — see 
 
 const session = await sessionFor(options.as)
 const report = { as: options.as, pubkey: session.pubkey, base: options.base, steps: [], errors: [] }
+// --net <file>: every request and socket frame, stamped with wall-clock ms, for
+// a driver to split by its own windows (probe-switch.mjs).
+const net = options.net ? [] : null
 
 const browser = await chromium.launch({ executablePath })
 try {
@@ -123,7 +126,27 @@ try {
     ws.on('close', () => {
       socket.closed = true
     })
+    if (net) {
+      ws.on('framesent', (f) => net.push({ at: Date.now(), kind: 'ws-out', body: String(f.payload).slice(0, 300) }))
+      ws.on('framereceived', (f) => {
+        const text = String(f.payload)
+        // Only what bears on cost and refusal: a CLOSED or NOTICE, or an OK that says no.
+        if (/^\["(CLOSED|NOTICE)"/.test(text) || /^\["OK",[^,]+,false/.test(text)) net.push({ at: Date.now(), kind: 'ws-in', body: text.slice(0, 300) })
+      })
+    }
   })
+  if (net) {
+    page.on('request', (r) => {
+      if (['image', 'font', 'stylesheet', 'script', 'document'].includes(r.resourceType())) return
+      // Bodies only where they say what was read or written. Anything else may carry a secret: a /token
+      // renewal's refresh token, a nip44 plaintext. The endpoint alone is enough for those.
+      const body = /\/(query|events|sign)$/.test(new URL(r.url()).pathname) ? (r.postData() ?? '').slice(0, 300) : ''
+      net.push({ at: Date.now(), kind: 'http', method: r.method(), url: r.url().slice(0, 160), body })
+    })
+    page.on('response', (r) => {
+      if (r.status() === 429) net.push({ at: Date.now(), kind: 'http-429', url: r.url().slice(0, 160) })
+    })
+  }
   page.on('pageerror', (e) => {
     const frame = e.stack?.split('\n').find((line) => line.trim().startsWith('at '))?.trim()
     report.errors.push(`${String(e).slice(0, 300)} (on ${page.url().slice(0, 200)}${frame ? `, ${frame.slice(0, 200)}` : ''})`)
@@ -162,6 +185,10 @@ try {
   report.failure = String(error.message ?? error).split('\n')[0]
 } finally {
   await browser.close()
+}
+if (net) {
+  const { writeFileSync } = await import('node:fs')
+  writeFileSync(options.net, JSON.stringify(net))
 }
 // A page that logs the same error on every render would otherwise drown the result.
 report.errorCount = report.errors.length
