@@ -69,6 +69,12 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
    * yours — so Topics keeps that row though the file is not in the listing.
    */
   holdsJoined: ReadonlySet<string>
+  /**
+   * The same files, by the parent that holds them: a project's address, and
+   * the issues of yours under it. Topics draws them as rows of their own,
+   * flat (Katerina, 7 October), where only the parent was before.
+   */
+  joinedUnder: Readonly<Record<string, readonly string[]>>
   /** Whether `member` and `unread` have been judged yet: a filter waits for its own. */
   ready: { member: boolean; unread: boolean }
   /**
@@ -321,10 +327,13 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   const mine = useMemo(() => {
     const member = { ...judged.member }
     const holdsJoined = new Set<string>()
-    if (membershipState === 'unknown') return { member, holdsJoined }
+    const joinedUnder: Record<string, string[]> = {}
+    if (membershipState === 'unknown') return { member, holdsJoined, joinedUnder }
     for (const address of joinedUnlisted) {
       const parent = parents[address]
-      if (parent) holdsJoined.add(parent)
+      if (!parent) continue
+      holdsJoined.add(parent)
+      ;(joinedUnder[parent] ??= []).push(address)
     }
     for (const folder of folders ?? []) {
       if (folder.hasState && folder.addresses?.some((address) => holdsJoined.has(address) || isMember(address))) {
@@ -335,7 +344,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
       if (!member[folder.id] || !folder.listedIn) continue
       for (const container of folder.listedIn) member[container] = true
     }
-    return { member, holdsJoined }
+    return { member, holdsJoined, joinedUnder }
   }, [judged.member, membershipState, isMember, joinedUnlisted, parents, folders])
 
   /*
@@ -349,7 +358,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   )
 
   return useMemo(
-    () => ({ unread: judged.unread, member: mine.member, holdsJoined: mine.holdsJoined, ready, activity }),
+    () => ({ unread: judged.unread, member: mine.member, holdsJoined: mine.holdsJoined, joinedUnder: mine.joinedUnder, ready, activity }),
     [judged.unread, mine, ready, activity],
   )
 }
