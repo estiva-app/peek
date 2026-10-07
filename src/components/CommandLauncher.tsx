@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { IconDownload, IconEraser, IconFileText, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
+import { IconBox, IconDownload, IconEraser, IconFileText, IconListDetails, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
 import {
   CommandPalette,
   CommandPaletteAnswer,
@@ -25,7 +25,7 @@ import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
-import { fileGlyphOfAddress } from '@/lib/fileGlyph'
+import { fileGlyphOfAddress, type FileGlyph } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
@@ -141,6 +141,9 @@ interface CommandLauncherProps {
 }
 
 const icon = (Glyph: typeof IconPencil) => <Glyph size={16} stroke={1.5} />
+
+/** A recent Ship file's glyph inside the boxed icon: the ones `TopicState` draws for it elsewhere. */
+const SHIP_FILE_ICONS: Partial<Record<FileGlyph, typeof IconPencil>> = { project: IconBox, issue: IconListDetails }
 
 const appMark = (app: { id: string }, size = 14) =>
   app.id === 'peek' ? <PeekLogoMark height={size} /> : <ShipLogoMark height={size} />
@@ -673,15 +676,16 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   /*
     A file the person opened — a bare-file topic, a Ship issue — by its address
     and the title it had then (FOL-36, `lib/recents`). A bare file is Peek's
-    own topic and gets the topic's icon; a Ship project or issue gets Ship's
-    (`fileGlyph`, 7 October); anything else is drawn as a file.
+    own topic and gets the topic's icon; anything else is another app's object
+    and keeps the boxed icon, Ship's own glyph for a Ship project or issue
+    (`fileGlyph`, Katerina, 7 October: the square stays) and a file for the rest.
   */
   const fileRow = (f: { id: string; title: string }, forget?: () => void): CommandPaletteRow => ({
     id: `file-${f.id}`,
     label: f.title,
-    ...(fileGlyphOfAddress(f.id) === 'file'
-      ? { icon: icon(IconFileText) }
-      : { leading: <TopicState type={fileGlyphOfAddress(f.id)} status="unresolved" /> }),
+    ...(fileGlyphOfAddress(f.id) === 'topic'
+      ? { leading: <TopicState type="topic" status="unresolved" /> }
+      : { icon: icon(SHIP_FILE_ICONS[fileGlyphOfAddress(f.id)] ?? IconFileText) }),
     onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
   })
