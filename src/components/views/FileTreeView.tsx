@@ -12,6 +12,7 @@ import { listedChildrenOf, peersOf } from '@/components/views/folderListing'
 import type { FileControl } from '@/components/views/useFileControls'
 import { fileMatches, type TreeFilter } from '@/components/views/treeFilter'
 import { canMove, canStartInside, fileControlsOf } from '@/lib/fileControls'
+import { fileGlyph } from '@/lib/fileGlyph'
 import { filePath } from '@/lib/objectUrl'
 
 /**
@@ -390,7 +391,7 @@ function TreeRow({
     if (selected) document.querySelector(`[data-file="${CSS.escape(file.ref)}"]`)?.scrollIntoView?.({ block: 'nearest' })
   }, [selected, file.ref])
   const isUnread = unread?.[file.ref] === true
-  const type = file.kind === KIND_BARE_FILE ? 'topic' : 'file'
+  const type = fileGlyph(file.kind)
   /*
     Archive… on a listed row, Unarchive on an archived one (the Archive view,
     5 October). A file hidden only *with* an archived parent is brought back

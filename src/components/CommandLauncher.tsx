@@ -21,10 +21,11 @@ import { TopicState } from './ui/TopicState'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
 import { formatDateLabel, useForeignObjects, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
-import { KIND_BARE_FILE, type ResolvedAction } from '@estiva-app/interop'
+import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
 import { filePath, fileRouteFromPath, refNamesFile } from '@/lib/objectUrl'
+import { fileGlyphOfAddress } from '@/lib/fileGlyph'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { canPrefill, downloadModel, prefillAvailability, promptForObject, promptForText, type PrefillAvailability } from '@/lib/promptApi'
 import { PROPOSAL_SCHEMA, isProposable, probeable, proposalInstruction, readProposal, type CatalogueEntry, type Proposal } from '@/lib/actionCatalogue'
@@ -672,15 +673,15 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   /*
     A file the person opened — a bare-file topic, a Ship issue — by its address
     and the title it had then (FOL-36, `lib/recents`). A bare file is Peek's
-    own topic and gets the topic's icon; anything else is another app's object
-    and is drawn as a file, since nothing here knows what it is.
+    own topic and gets the topic's icon; a Ship project or issue gets Ship's
+    (`fileGlyph`, 7 October); anything else is drawn as a file.
   */
   const fileRow = (f: { id: string; title: string }, forget?: () => void): CommandPaletteRow => ({
     id: `file-${f.id}`,
     label: f.title,
-    ...(f.id.startsWith(`${KIND_BARE_FILE}:`)
-      ? { leading: <TopicState type="topic" status="unresolved" /> }
-      : { icon: icon(IconFileText) }),
+    ...(fileGlyphOfAddress(f.id) === 'file'
+      ? { icon: icon(IconFileText) }
+      : { leading: <TopicState type={fileGlyphOfAddress(f.id)} status="unresolved" /> }),
     onSelect: close(() => navigate(filePath(f.id, f.title))),
     onForget: forget,
   })

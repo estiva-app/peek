@@ -3,11 +3,11 @@ import {
   IconCircleCheck,
   IconUsers,
   IconBrackets,
-  IconLock, IconFolder, IconFile,} from '@tabler/icons-react'
+  IconLock, IconFolder, IconFile, IconBox, IconListDetails,} from '@tabler/icons-react'
 import { Avatar } from './Avatar'
 import { cn } from '@/lib/utils'
 
-export type TopicStateType = 'topic' | 'DM' | 'team' | 'group' | 'view' | 'huddle' | 'folder' | 'file'
+export type TopicStateType = 'topic' | 'DM' | 'team' | 'group' | 'view' | 'huddle' | 'folder' | 'project' | 'issue' | 'file'
 export type TopicStateStatus = 'unresolved' | 'resolved' | 'default'
 
 interface TopicStateProps {
@@ -22,7 +22,7 @@ interface TopicStateProps {
 
 /**
  * The small icon before a name that says what it is: a topic, open or resolved,
- * a person's photo, a huddle, a folder or a file.
+ * a person's photo, a huddle, a folder, a Ship project or issue, or a file.
  */
 export function TopicState({
   type,
@@ -60,10 +60,20 @@ export function TopicState({
         type === 'folder' ? (
         <IconFolder size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
       ) : /*
+           A Ship project and a Ship issue wear Ship's own glyphs, the box and
+           the list its sidebar and its "Mentioned in" lines give them, in
+           every place Peek draws one (Katerina, 7 October). `fileGlyph` says
+           which a file is.
+         */
+        type === 'project' ? (
+        <IconBox size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
+      ) : type === 'issue' ? (
+        <IconListDetails size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />
+      ) : /*
            A file another app owns — a Ship project or issue in the file tree
            (FOL-19). Not the dashed circle: that glyph means "an unresolved
            topic", and a Ship issue is neither. Peek's own bare file is a topic
-           and keeps the topic glyph; this is for everything else.
+           and keeps the topic glyph; this is for any other app's file.
          */
         type === 'file' ? (
         <IconFile size={16} stroke={1.5} className={cn('text-text-secondary', iconClassName)} />

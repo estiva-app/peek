@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ForeignObject } from '@estiva-app/interop'
 import { NavTree, NavTreeSection } from '@estiva-app/ui'
+import { TopicState } from '@/components/ui/TopicState'
 import { JoinedFileRowsView } from './FileTreeView'
 
 /**
@@ -67,7 +68,7 @@ const meta = {
       // The list column's width and insets, and the Folder's heading over the rows, as Topics draws them.
       <div className="flex w-[290px] flex-col bg-bg-surface px-3 py-4">
         <NavTree>
-          <NavTreeSection id="mobile" title="Mobile app" defaultOpen>
+          <NavTreeSection id="mobile" title="Mobile app" icon={<TopicState type="folder" />} defaultOpen>
             <Story />
           </NavTreeSection>
         </NavTree>
