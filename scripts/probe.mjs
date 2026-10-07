@@ -138,7 +138,10 @@ try {
   if (net) {
     page.on('request', (r) => {
       if (['image', 'font', 'stylesheet', 'script', 'document'].includes(r.resourceType())) return
-      net.push({ at: Date.now(), kind: 'http', method: r.method(), url: r.url().slice(0, 160), body: (r.postData() ?? '').slice(0, 300) })
+      // Bodies only where they say what was read or written. Anything else may carry a secret: a /token
+      // renewal's refresh token, a nip44 plaintext. The endpoint alone is enough for those.
+      const body = /\/(query|events|sign)$/.test(new URL(r.url()).pathname) ? (r.postData() ?? '').slice(0, 300) : ''
+      net.push({ at: Date.now(), kind: 'http', method: r.method(), url: r.url().slice(0, 160), body })
     })
     page.on('response', (r) => {
       if (r.status() === 429) net.push({ at: Date.now(), kind: 'http-429', url: r.url().slice(0, 160) })

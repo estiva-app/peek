@@ -52,6 +52,8 @@ const jsonOut = option('json')
 async function runSwitches({ steps, gapMs }) {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   const main = () => document.querySelector('main') ?? document.body
+  // The Folder tree sits inside <main> with no selector of its own, so its placeholders count too; it draws
+  // one only on a cold load, which makes "open A" the only step it can inflate.
   const skeletons = () => main().querySelectorAll('.animate-pulse,[aria-busy=true]').length
   /*
     The conversation's scroller is the tallest scrollable element in the pane. Finding it walks the whole
@@ -103,7 +105,8 @@ async function runSwitches({ steps, gapMs }) {
       break
     }
     const ready = readies[step.ready[0]](...step.ready.slice(1))
-    const before = main().innerText
+    // textContent, not innerText: innerText forces a layout of the whole pane on every sample and slows the page being timed.
+    const before = main().textContent
     const start = Date.now()
     const t0 = performance.now()
     target.click()
@@ -121,7 +124,7 @@ async function runSwitches({ steps, gapMs }) {
     found = null
     while (performance.now() - t0 < 20000) {
       const now = performance.now()
-      const text = main().innerText
+      const text = main().textContent
       const busy = skeletons()
       // Before the messages, a pulse is the conversation's skeleton; after them, a widget still loading.
       // Durations are measured between samples, which are often much more than 30 ms apart on a long topic.
@@ -131,7 +134,7 @@ async function runSwitches({ steps, gapMs }) {
         maxSkeletons = Math.max(maxSkeletons, busy)
       } else if (busy) note('loading widgets')
       previousSample = now
-      for (const word of text.match(/Loading[^\n]{0,30}|Connecting[^\n]{0,20}|Nothing[^\n]{0,40}|No messages[^\n]{0,20}/gi) ?? []) note(word.trim())
+      for (const word of text.match(/Loading|Connecting|Nothing here|Nothing yet|No messages/g) ?? []) note(word)
       const box = scroller()
       if (visible !== null && box) {
         if (lastTop !== null && Math.abs(box.scrollTop - lastTop) > 40) jumps++
@@ -229,7 +232,7 @@ const source = `(${runSwitches.toString()})(${JSON.stringify({ steps, gapMs: Num
 let report
 try {
   const out = execFileSync(
-    'node',
+    process.execPath,
     [
       join(here, 'probe.mjs'),
       '--as',
@@ -282,9 +285,10 @@ const summarize = (from, to) => {
   return { http, sign: counts['id/sign'] ?? 0, counts }
 }
 
-const rows = results.map((r) => ({
+// A step owns everything from its click to the next click, so late widget resolves and catch-up reads count too.
+const rows = results.map((r, i) => ({
   ...r,
-  requests: r.start ? summarize(r.start, r.end) : null,
+  requests: r.start ? summarize(r.start, results[i + 1]?.start ?? Infinity) : null,
 }))
 const boot = net.length ? summarize(net[0].at, results[0]?.start ?? Infinity) : null
 const summary = {
