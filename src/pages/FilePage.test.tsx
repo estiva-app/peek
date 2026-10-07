@@ -828,6 +828,28 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
   })
 
+  it('…and the sidebar button shows its Overview anyway, with Activity’s empty line', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
+    const column = screen.getByTestId('thread')
+    expect(within(column).getByText('Overview')).toBeInTheDocument()
+    expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
+  })
+
+  it('hiding it is remembered: the next file opens hidden, mentions and all', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    const first = mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Hide side panel' }))
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    first.unmount()
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' })).toBeInTheDocument()
+  })
+
   it('an open thread wins the column', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
@@ -859,8 +881,9 @@ describe("FilePage puts another app's widget in the third column", () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const column = screen.getByTestId('thread')
     expect(widget()).not.toBeNull()
-    // The column's bar says what it is; the card on its own page does not say it again (PEE-45).
-    expect(within(column).getAllByText('Estiva Ship')).toHaveLength(1)
+    // One title whatever is in the column (Katerina, 7 October); the card on its own page does not name its app (PEE-45).
+    expect(within(column).getByText('Overview')).toBeInTheDocument()
+    expect(within(column).queryByText('Estiva Ship')).toBeNull()
     expect(within(column).getByRole('link', { name: 'The file route' })).toHaveAttribute('href', shipIssue.openUrl)
     expect(within(column).getByText('In Progress')).toBeInTheDocument()
     // The same card `data-foreign-object` marks anywhere else; the tree beside it still draws rows.

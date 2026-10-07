@@ -15,7 +15,7 @@ import { Avatar } from './Avatar'
 import { Person } from './Person'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
-import { Card, Divider, FieldLine, Form, Link, SectionLabel } from '@estiva-app/ui'
+import { Card, Divider, FieldLine, Form, Link, SectionLabel, ShowMore } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -314,9 +314,16 @@ export function ForeignObjectCard({
   onAct,
   directory,
   page = false,
+  clampDescription = false,
   className,
 }: {
   object: ForeignObject
+  /**
+   * Cut a long description behind a fade, with "Show more" (Katerina,
+   * 7 October): on a side panel the title above and the controls below stay
+   * in view. The description only, never the controls.
+   */
+  clampDescription?: boolean
   busy?: boolean
   error?: string
   /**
@@ -513,28 +520,36 @@ export function ForeignObjectCard({
             PRO-24. On its own page the panel's title already says it. */}
         {!page && objectLabel(object) && <SectionLabel className="shrink-0">{objectLabel(object)}</SectionLabel>}
       </div>
-      {/* A card shows the subtitle; a row is a single line by definition —
-          except on the object's own page, where it is the subject (MAN-9). */}
-      {whole && slots.subtitle && (
-        <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
-      )}
-      {/* The description, in whichever content model its own app writes —
-          PRO-2. Where the subtitle is, for its reason: a row in a message is a
-          single line by definition and a body is not one. */}
-      {prose && onAct ? (
-        <div className="mt-1">
-          <BlockDocumentField
-            value={slots.body?.value ?? ''}
-            format={slots.body?.format ?? 'marker'}
-            label={prose.label}
-            onCommit={async (value, contentFormat) => (await onAct(prose.id, value, contentFormat)) !== false}
-          />
-          {/* The refusal, where the write was made, when no action row is drawn to carry it. */}
-          {error && !actions.length && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
-        </div>
-      ) : (
-        whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" />
-      )}
+      {(() => {
+        const description = (
+          <>
+          {/* A card shows the subtitle; a row is a single line by definition —
+              except on the object's own page, where it is the subject (MAN-9). */}
+          {whole && slots.subtitle && (
+            <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
+          )}
+          {/* The description, in whichever content model its own app writes —
+              PRO-2. Where the subtitle is, for its reason: a row in a message is a
+              single line by definition and a body is not one. */}
+          {prose && onAct ? (
+            <div className="mt-1">
+              <BlockDocumentField
+                value={slots.body?.value ?? ''}
+                format={slots.body?.format ?? 'marker'}
+                label={prose.label}
+                onCommit={async (value, contentFormat) => (await onAct(prose.id, value, contentFormat)) !== false}
+              />
+              {/* The refusal, where the write was made, when no action row is drawn to carry it. */}
+              {error && !actions.length && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
+            </div>
+          ) : (
+            whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" />
+          )}
+          </>
+        )
+        // The card's own fill is `inset`, so the fade ends in it.
+        return clampDescription ? <ShowMore surface="inset">{description}</ShowMore> : description
+      })()}
       {visibleMeta.length > 0 && (
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
           {visibleMeta.map((slot, i) => (
@@ -600,11 +615,14 @@ export function ForeignObjectWidget({
   resolved,
   quiet = false,
   page = false,
+  clampDescription = false,
 }: {
   /** An `naddr`, an `nevent`, an address, or a pasted app URL (PRO-15). */
   naddr: string
   /** On the object's own page — `ForeignObjectCard`'s `page` (MAN-9). */
   page?: boolean
+  /** `ForeignObjectCard`'s: a long description cut behind "Show more". */
+  clampDescription?: boolean
   /**
    * Draw nothing while resolving, for a reference that might not be one.
    * See the branch below.
@@ -724,6 +742,7 @@ export function ForeignObjectWidget({
       onAct={onAct}
       directory={directory}
       page={page}
+      clampDescription={clampDescription}
       className="mt-1"
     />
   )

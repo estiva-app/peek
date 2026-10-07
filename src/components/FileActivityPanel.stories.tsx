@@ -5,7 +5,8 @@ import { FileActivityPanelView } from './FileActivityPanel'
 import type { TopicActivityItem } from './TopicActivity'
 
 /**
- * A file page's Activity — the comments elsewhere that name this file (CON-11).
+ * A file's Activity — the comments elsewhere that name this file (CON-11), a
+ * section of its Overview (`OverviewPanel`), its count beside the title.
  *
  * Every row is a mention: said on another file, drawn `subdued`, opening the
  * thread it was said in. The file it was said on is named beside the chip
@@ -69,3 +70,6 @@ export const Mentions: Story = {}
 
 /** The titles have not resolved yet: the chip alone says how the row is related. */
 export const TitlesResolving: Story = { args: { labelFor: new Map() } }
+
+/** Nobody has named the file: the empty line, 4px under the heading. */
+export const NothingYet: Story = { args: { items: [] } }
