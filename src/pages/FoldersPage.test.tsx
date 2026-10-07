@@ -95,7 +95,11 @@ const teamUnread = vi.hoisted(() => ({
   member: {} as Record<string, boolean>,
   /* Parents of joined files no listing holds — a project, for an issue of yours (5 October). */
   holdsJoined: new Set<string>(),
+  /* The same files by their parent's address: Topics draws them flat (7 October). */
+  joinedUnder: {} as Record<string, string[]>,
 }))
+/* What a read by address answers — the joined files no listing holds (7 October). */
+const resolved = vi.hoisted(() => ({ objects: {} as Record<string, unknown> }))
 /* The per-row dots, keyed by `ref` — what the tree's own filter reads (FOL-41). */
 const badges = vi.hoisted(() => ({ unread: {} as Record<string, boolean> }))
 /* The files the person is a member of, by address — the membership seam a row's Topics verdict reads (§11.8). */
@@ -197,13 +201,13 @@ vi.mock('@/api', async () => ({
   }),
   useForeignChildren: () => ({ state: [], reload: async () => {} }),
   useConversationBadges: () => ({ counts: {}, unread: badges.unread }),
-  useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member, holdsJoined: teamUnread.holdsJoined }),
+  useTeamUnread: () => ({ unread: teamUnread.unread, member: teamUnread.member, holdsJoined: teamUnread.holdsJoined, joinedUnder: teamUnread.joinedUnder }),
   useWorkspaceDirectory: () => undefined,
   useMembership: () => ({ isMember: (address: string) => members.addresses.includes(address), setMember: async () => {} }),
   useCurrentUser: () => ({ id: viewer.me, name: 'Me' }),
   // The pane's view reads these before it looks at its state — the same two
   // seams `ForeignConversationView.test.tsx` stubs, for the same reason.
-  useResolvedReferences: () => ({}),
+  useResolvedReferences: () => resolved.objects,
 }))
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: () => {} }) }))
 // The frame mounts the rail, the top bar and the launcher, none of which is
@@ -556,37 +560,61 @@ describe('FoldersPage filters the column', () => {
   })
 
   /*
-    In Topics a row kept for a child's sake starts closed (Katerina, 5
-    October): a Ship project opened for the one topic of yours under it showed
-    every one of its issues. Only Unread opens it, so what is new is in view.
+    Topics is flat (Katerina and Miky, 7 October): every file of yours is a
+    row of its own, on one level. A parent you are not a member of is not
+    drawn for its child's sake, and no row opens onto others.
   */
-  it('in Topics, keeps a row whose child is yours, closed', () => {
+  it('in Topics, draws a child of yours as a row of its own, without its parent', () => {
     relay.files = [parent, child]
     members.addresses = [child.address!]
     teamUnread.member = { [FOLDER]: true }
     window.localStorage.setItem('peek.tree.view', 'mine')
     try {
       const { container } = mount('/app/folders')
-      const row = container.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)!
-      expect(row).toBeTruthy()
-      expect(row.closest('[data-nav-group]')!.querySelector(`[aria-label="Show what is under A parent project"]`)).toBeTruthy()
+      const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
+      expect(tree.querySelector(`[data-file="${CSS.escape(child.ref)}"]`)).toBeTruthy()
+      expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeNull()
+      expect(tree.querySelector('[aria-label^="Show what is under"]')).toBeNull()
     } finally {
       members.addresses = []
     }
   })
 
-  it('in Topics, keeps a project for an issue of yours the listing does not hold (5 October)', () => {
-    relay.files = [parent, topic]
+  it('in Topics, draws a parent and its child of yours on the same level', () => {
+    relay.files = [parent, child]
+    members.addresses = [parent.address!, child.address!]
     teamUnread.member = { [FOLDER]: true }
-    teamUnread.holdsJoined = new Set([parent.address!])
+    window.localStorage.setItem('peek.tree.view', 'mine')
+    try {
+      const { container } = mount('/app/folders')
+      const rows = container.querySelector(`[data-nav-group="${FOLDER}"] [data-flat]`)!
+      const drawn = [...rows.querySelectorAll('[data-file]')].map((row) => row.getAttribute('data-file'))
+      expect(drawn).toEqual([parent.ref, child.ref])
+      expect(rows.querySelector('[aria-label^="Show what is under"]')).toBeNull()
+    } finally {
+      members.addresses = []
+    }
+  })
+
+  it('in Topics, draws an issue of yours the listing does not hold as a row of its own, after its project (7 October)', () => {
+    const ISSUE_ADDRESS = `30851:${ADDRESS.split(':')[0]}:3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f`
+    const issue = { ...topic, ref: ISSUE_ADDRESS, address: ISSUE_ADDRESS, kind: 30851, parentRef: PARENT_ADDRESS, slots: { title: { value: 'An issue of yours' } } }
+    relay.files = [parent, topic]
+    members.addresses = [ISSUE_ADDRESS, FILE_ADDRESS]
+    teamUnread.member = { [FOLDER]: true }
+    teamUnread.joinedUnder = { [PARENT_ADDRESS]: [ISSUE_ADDRESS] }
+    resolved.objects = { [ISSUE_ADDRESS]: issue }
     window.localStorage.setItem('peek.tree.view', 'mine')
     try {
       const { container } = mount('/app/folders')
       const tree = container.querySelector(`[data-nav-group="${FOLDER}"]`)!
-      expect(tree.querySelector(`[data-file="${CSS.escape(parent.ref)}"]`)).toBeTruthy()
-      expect(tree.querySelector(`[data-file="${CSS.escape(topic.ref)}"]`)).toBeNull()
+      const drawn = [...tree.querySelectorAll('[data-file]')].map((row) => row.getAttribute('data-file'))
+      // The project is not yours, so it is not drawn: the issue takes its place, then the topic.
+      expect(drawn).toEqual([ISSUE_ADDRESS, FILE_ADDRESS])
     } finally {
-      teamUnread.holdsJoined = new Set()
+      members.addresses = []
+      teamUnread.joinedUnder = {}
+      resolved.objects = {}
     }
   })
 

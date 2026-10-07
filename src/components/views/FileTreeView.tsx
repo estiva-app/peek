@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavItem } from '@estiva-app/ui'
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import type { FolderContents, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
-import { useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles } from '@/api'
+import { useConversationBadges, useForeignChildren, useMembership, useOpenWorkFiles, useResolvedReferences } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TopicMenuItems } from '@/components/ui/TopicMoreMenu'
 import { TopicState } from '@/components/ui/TopicState'
@@ -168,6 +168,144 @@ export function FileTreeView({
           onSelect={onSelect}
           onControl={onControl}
         />
+      ))}
+    </div>
+  )
+}
+
+/**
+ * One Folder's files in Topics: every file the person is a member of, one row
+ * each, none under another (Katerina and Miky, 7 October: "get rid of the
+ * tree structure" — a topic, a Ship project and a Ship issue are on the same
+ * level, however deep the issue is). The Folders view keeps the tree.
+ *
+ * **What is drawn.** The files this listing holds — at any depth, since a
+ * sub-topic is in its parent's listing — that the person joined or made; and
+ * the joined files no listing holds, a Ship issue under its project, read by
+ * address in one request (`useResolvedReferences`) and drawn right after the
+ * row of their parent, whether that row is drawn or not. The open file stays
+ * whatever the filter, as everywhere in the column (5 October).
+ *
+ * **What it costs.** One more read per open Folder that holds an issue of
+ * yours, for all of them at once — where Topics used to read the project's
+ * every issue when its row was opened.
+ */
+export function JoinedFileRows({
+  state,
+  filter,
+  joinedUnder = {},
+  selectedRef,
+  selectedParent,
+  activity = 0,
+  onSelect,
+  onControl,
+}: {
+  state: FolderContentsState
+  /** `mine`, or `mine-unread`: Topics, or Topics filtered to Unread. */
+  filter: TreeFilter
+  /** Joined files no listing holds, by the address of the parent that does — `useTeamUnread`. */
+  joinedUnder?: Readonly<Record<string, readonly string[]>>
+  selectedRef?: string
+  /** The open file's parent: the open file is read with the rest when this listing holds its parent. */
+  selectedParent?: string | null
+  activity?: number
+  onSelect: (file: ForeignObject) => void
+  onControl?: (control: FileControl, file: ForeignObject) => void
+}) {
+  const listed = useMemo(() => (typeof state === 'object' && 'files' in state ? state.files : []), [state])
+  /* The joined files under this listing's rows, and the open file if it is one of those: read together. */
+  const asked = useMemo(() => {
+    const out = listed.flatMap((file) => (file.address ? (joinedUnder[file.address] ?? []) : []))
+    const opensHere = !!selectedParent && listed.some((file) => file.address === selectedParent)
+    if (selectedRef && opensHere && !listed.some((file) => file.ref === selectedRef)) out.push(selectedRef)
+    return [...new Set(out)]
+  }, [listed, joinedUnder, selectedParent, selectedRef])
+  const resolved = useResolvedReferences(asked)
+  /* In the listing's order, each read file after its parent's place. */
+  const candidates = useMemo(() => {
+    const out: ForeignObject[] = []
+    const seen = new Set<string>()
+    const add = (file: ForeignObject | null | undefined) => {
+      if (!file || seen.has(file.ref)) return
+      seen.add(file.ref)
+      out.push(file)
+    }
+    for (const file of listed) {
+      add(file)
+      if (!file.address) continue
+      for (const address of joinedUnder[file.address] ?? []) add(resolved[address])
+      if (selectedParent === file.address && selectedRef) add(resolved[selectedRef])
+    }
+    return out
+  }, [listed, joinedUnder, resolved, selectedParent, selectedRef])
+  const { unread } = useConversationBadges(candidates.length ? candidates : undefined, activity)
+  const membership = useMembership()
+  return (
+    <JoinedFileRowsView
+      state={state}
+      files={candidates}
+      waiting={asked.some((address) => !(address in resolved))}
+      filter={filter}
+      isMember={membership.isMember}
+      unread={unread}
+      selectedRef={selectedRef}
+      activity={activity}
+      onSelect={onSelect}
+      onControl={onControl}
+    />
+  )
+}
+
+/** `JoinedFileRows` handed what it draws — the half a story can show. */
+export function JoinedFileRowsView({
+  state,
+  files,
+  waiting = false,
+  filter,
+  isMember,
+  unread,
+  selectedRef,
+  activity = 0,
+  onSelect,
+  onControl,
+}: {
+  state: FolderContentsState
+  /** Every file that could be drawn, in order: the listing's, each read file after its parent's place. */
+  files: ForeignObject[]
+  /** A joined file no listing holds is still being read. */
+  waiting?: boolean
+  filter: TreeFilter
+  isMember: (address: string) => boolean
+  unread: Record<string, boolean>
+  selectedRef?: string
+  activity?: number
+  onSelect: (file: ForeignObject) => void
+  onControl?: (control: FileControl, file: ForeignObject) => void
+}) {
+  if (state === 'loading') {
+    return (
+      <div className="py-1" data-loading="file-tree">
+        <SkeletonSidebarList />
+      </div>
+    )
+  }
+  if ('failed' in state) return <TreeLine message="This folder could not be read." />
+
+  const rows = files.filter(
+    (file) =>
+      file.ref === selectedRef ||
+      (!!file.address && isMember(file.address) && (filter !== 'mine-unread' || unread[file.ref] === true)),
+  )
+  if (rows.length === 0) {
+    // A joined issue still on its way is a row coming, not an empty Folder.
+    if (waiting) return <SkeletonRow />
+    return <TreeLine message={filter === 'mine-unread' ? 'Nothing unread here.' : 'Nothing of yours here.'} />
+  }
+  return (
+    <div className="flex flex-col gap-0.5" data-folder={(state as FolderContents).id} data-flat>
+      {rows.map((file) => (
+        // `nested`: a row of its own, never one that opens onto others.
+        <TreeRow key={file.ref} file={file} unread={unread} selectedRef={selectedRef} activity={activity} onSelect={onSelect} onControl={onControl} nested />
       ))}
     </div>
   )

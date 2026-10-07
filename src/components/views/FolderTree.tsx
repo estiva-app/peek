@@ -16,7 +16,7 @@ import {
 } from '@/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
-import { FileTreeView } from '@/components/views/FileTreeView'
+import { FileTreeView, JoinedFileRows } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'
 import { TopicState } from '@/components/ui/TopicState'
 import { CreateFolderDialog } from '@/components/CreateFolderDialog'
@@ -154,7 +154,7 @@ export function FolderTree({
     record channel is in `listFolders` too and is nobody's section:
     `topLevelFolders` says which are.
   */
-  const { unread, activity, member, holdsJoined, ready } = useTeamUnread(folders)
+  const { unread, activity, member, holdsJoined, joinedUnder, ready } = useTeamUnread(folders)
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
   /*
     The Archive view's Folders (5 October): every top-level one, the archived
@@ -280,6 +280,7 @@ export function FolderTree({
           activity={activity}
           member={member}
           holdsJoined={holdsJoined}
+          joinedUnder={joinedUnder}
           ready={ready}
           view={view}
           linkedFolder={showFolder ? currentFolder : undefined}
@@ -584,6 +585,7 @@ export function FolderTreeView({
   activity = {},
   member = {},
   holdsJoined,
+  joinedUnder,
   ready = { member: true, unread: true },
   view = 'all',
   linkedFolder,
@@ -615,6 +617,8 @@ export function FolderTreeView({
   member?: Record<string, boolean>
   /** Parents of joined files no listing holds — a project, for an issue of yours: Topics keeps its row. */
   holdsJoined?: ReadonlySet<string>
+  /** Joined files no listing holds, by their parent's address — Topics draws them flat. */
+  joinedUnder?: Readonly<Record<string, readonly string[]>>
   /** Whether `member` and `unread` are judged yet. A filter over an unjudged verdict is a skeleton. */
   ready?: { member: boolean; unread: boolean }
   /** Which view: in Folders, every heading wears the folder icon (Katerina, 5 October). */
@@ -691,6 +695,7 @@ export function FolderTreeView({
           menu={view === 'archive' && !folder.archived ? undefined : menuFor?.(folder)}
           onControl={onControl}
           holdsJoined={holdsJoined}
+          joinedUnder={joinedUnder}
           preloaded={folder.id === currentFolder ? currentContents : undefined}
         />
       ))}
@@ -713,6 +718,7 @@ function FolderSection({
   menu,
   onControl,
   holdsJoined,
+  joinedUnder,
   preloaded,
 }: {
   folder: FolderSummary
@@ -731,6 +737,7 @@ function FolderSection({
   menu?: ReactNode
   onControl?: (control: FileControl, file: ForeignObject) => void
   holdsJoined?: ReadonlySet<string>
+  joinedUnder?: Readonly<Record<string, readonly string[]>>
   /** This Folder's listing, already read by the page (FOL-4) — then this section reads nothing. */
   preloaded?: FolderContentsState
 }) {
@@ -888,7 +895,20 @@ function FolderSection({
         nothing read, so there would be nothing to find — only a skeleton
         per Folder, 147 of them, hidden.
       */}
-      {open && (
+      {open && (filter === 'mine' || filter === 'mine-unread') && (
+        /* Topics: what is yours, flat — no row opens onto others (7 October). */
+        <JoinedFileRows
+          state={state}
+          filter={filter}
+          joinedUnder={joinedUnder}
+          selectedRef={selectedRef}
+          selectedParent={selectedParent}
+          activity={activity}
+          onSelect={onSelect}
+          onControl={onControl}
+        />
+      )}
+      {open && filter !== 'mine' && filter !== 'mine-unread' && (
         <FileTreeView
           state={state}
           filter={filter}
