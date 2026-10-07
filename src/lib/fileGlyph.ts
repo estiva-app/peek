@@ -1,4 +1,6 @@
 import { KIND_BARE_FILE } from '@estiva-app/interop'
+import { referenceToPointer } from '@estiva-app/protocol'
+import { MESSAGE_KIND, TOPIC_KIND } from '@/nostr/manifest'
 
 /**
  * Ship's project and issue kinds (Ship's manifest). Peek names them only to
@@ -22,6 +24,37 @@ export function fileGlyph(kind: number | undefined): FileGlyph {
   if (kind === KIND_SHIP_PROJECT) return 'project'
   if (kind === KIND_SHIP_ISSUE) return 'issue'
   return 'file'
+}
+
+/** What a reference can name: a file, or a message. */
+export type ReferenceGlyph = FileGlyph | 'message'
+
+/**
+ * The glyph for a referenced object (SPEC §13.1): a message is a message; a
+ * channel is a topic, as `referenceLink` opens it; anything else is a file,
+ * by `fileGlyph`.
+ */
+export function referenceGlyph(kind: number | undefined): ReferenceGlyph {
+  if (kind === MESSAGE_KIND) return 'message'
+  if (kind === TOPIC_KIND) return 'topic'
+  return fileGlyph(kind)
+}
+
+/**
+ * The same, from a `nostr:` URI as a body carries it — for a chip that holds
+ * only that. A message's `nevent`/`note` is a message; an `naddr` is judged by
+ * its kind; anything else (a person, a URI that does not parse) is not one of
+ * these, and `undefined` leaves the caller its own icon.
+ */
+export function referenceGlyphOfUri(uri: string | null | undefined): ReferenceGlyph | undefined {
+  if (!uri) return undefined
+  if (/^nostr:(?:nevent1|note1)/i.test(uri)) return 'message'
+  if (!/^nostr:naddr1/i.test(uri)) return undefined
+  try {
+    return referenceGlyph(referenceToPointer(uri).kind)
+  } catch {
+    return undefined
+  }
 }
 
 /** The same, from an address (`kind:pubkey:d`) — for a file known only by where it is. */

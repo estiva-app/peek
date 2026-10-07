@@ -77,7 +77,7 @@ describe('referenceSections', () => {
     expect(files).toMatchObject({ label: 'Files', items: [] })
   })
 
-  it('offers the Folder on screen first, then what was read recently, labelled by type', async () => {
+  it('offers the Folder on screen first, then what was read recently, by title alone — the row’s icon says what it is (7 October)', async () => {
     relay.merged = { [address(30851, 'old')]: 100, 'h:not-an-address': 300, [address(30840, 'new')]: 200 }
     relay.files.mockImplementation(async (_files, tier) =>
       tier === FILE_TIER.folder
@@ -89,7 +89,7 @@ describe('referenceSections', () => {
     const folder = renderHook(() => useReferenceFolder({ files: [] } as never, address(30840, 'open')))
 
     await waitFor(() => expect(referenceSections('')[1].items).toHaveLength(2))
-    expect(labels('')[1]).toEqual(['Files', ['Issue|Ranking for [', 'Topic|Launch notes']])
+    expect(labels('')[1]).toEqual(['Files', ['Ranking for [|', 'Launch notes|']])
     expect(referenceSections('')[1].items[0].description).toBe('Peek: Feedback & Bugs')
     // Only read markers that are file addresses, newest first.
     const recent = relay.files.mock.calls.find(([, tier]) => tier === FILE_TIER.recent)?.[0] as { addresses: string[] }
@@ -97,7 +97,7 @@ describe('referenceSections', () => {
 
     folder.unmount()
     // Off the page, that file is just one you read recently.
-    expect(labels('')[1]).toEqual(['Files', ['Topic|Launch notes', 'Topic|The file you are in']])
+    expect(labels('')[1]).toEqual(['Files', ['Launch notes|', 'The file you are in|']])
     sync.unmount()
   })
 
@@ -111,7 +111,7 @@ describe('referenceSections', () => {
     expect(referenceSections('ranking')[1].items).toEqual([])
     await waitFor(() => expect(listener).toHaveBeenCalled())
     expect(relay.search).toHaveBeenCalledWith('ranking')
-    expect(labels('ranking')[1]).toEqual(['Files', ['Project|Ranking elsewhere']])
+    expect(labels('ranking')[1]).toEqual(['Files', ['Ranking elsewhere|']])
 
     unsubscribe()
     sync.unmount()
@@ -123,7 +123,7 @@ describe('referenceSections', () => {
     const listener = vi.fn()
     const unsubscribe = subscribeReferences(listener)
     referenceSections('payroll')
-    await waitFor(() => expect(labels('payroll')[1]).toEqual(['Files', ['Project|Payroll']]))
+    await waitFor(() => expect(labels('payroll')[1]).toEqual(['Files', ['Payroll|']]))
 
     // Nothing re-renders the sync: the next read notices on its own.
     relay.pubkey = 'w'.repeat(64)

@@ -405,3 +405,20 @@ describe('Reference, as a link (RIC-16)', () => {
     expect(r.getByTestId('where').textContent).toBe('/topics')
   })
 })
+
+describe('Reference, its glyph (7 October)', () => {
+  it.each([
+    [30851, 'tabler-icon-list-details'],
+    [30850, 'tabler-icon-box'],
+    [30840, 'tabler-icon-circle-dashed'],
+    [31337, 'tabler-icon-file'],
+  ])('draws what a kind-%i object is before its name', (kind, icon) => {
+    const c = render(<Reference uri="nostr:naddr1x" object={object({ kind })} />).container
+    expect(c.querySelector('[data-reference="object"]')!.querySelector(`.${icon}`)).not.toBeNull()
+  })
+
+  it('draws no glyph on a person', () => {
+    const c = render(<Reference uri={`nostr:${encodeNpub(KNOWN)}`} />).container
+    expect(c.querySelector('svg')).toBeNull()
+  })
+})

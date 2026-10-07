@@ -20,7 +20,6 @@ import {
   rankReferences,
   referenceSearch,
   type ReferenceCandidate,
-  type ReferenceType,
 } from '@estiva-app/conversation'
 import { KIND_BARE_FILE, type FolderContents } from '@estiva-app/interop'
 import { referenceConversations, type ConversationMessage } from '@/lib/conversationRegistry'
@@ -35,9 +34,6 @@ type ReferenceSection = ReturnType<NonNullable<ReferenceTriggerOptions['sections
 
 /** The section headings, Messages above Files; the list's name is FILES_MENU_COPY's. */
 const REFERENCE_COPY = { messages: 'Messages', files: 'Files' }
-
-/** The type word a file row and its chip wear (label objects by type). */
-const TYPE_WORDS: Record<ReferenceType, string> = { message: 'Message', issue: 'Issue', project: 'Project', topic: 'Topic' }
 
 /** How many recently read files are looked up — a few more than the section shows. */
 const RECENT_LIMIT = 12
@@ -106,7 +102,8 @@ function itemOf(candidate: ReferenceCandidate): CaptionedItem {
   if (candidate.type === 'message') {
     return { id: candidate.id, label: candidate.title, snippet: candidate.caption, uri: candidate.uri, search: candidate.search }
   }
-  return { id: candidate.id, label: TYPE_WORDS[candidate.type], snippet: candidate.title, uri: candidate.uri, description: candidate.caption || undefined }
+  // The title alone: the row's icon says what it is (Katerina, 7 October), so "Topic:" before it said it twice.
+  return { id: candidate.id, label: candidate.title, snippet: '', uri: candidate.uri, description: candidate.caption || undefined }
 }
 
 /** The two sections `[` draws for what was typed. */
