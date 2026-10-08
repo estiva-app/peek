@@ -1,6 +1,7 @@
 import { serializeBlockDocument, toRenderTree } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { AttachmentCard, Button, Card, Link, RichText, ShowMore, type RichTextBlock } from '@estiva-app/ui'
+import { IconExternalLink } from '@tabler/icons-react'
 import { usePart, type PartView } from '@/api'
 import { objectLabel } from '@/lib/appName'
 import { postedAttachment } from '@/lib/fileAttachments'
@@ -28,7 +29,7 @@ export function PartCard({ address, block }: { address: string; block: string })
  * Drawn the way an attachment is (Miky, kickoff 2026-10-07): the object's type
  * and title, then the block — whole when it is short; cut behind ShowMore's fade
  * when it is long, and opened in place (Katerina, 2026-10-08). The way into the
- * app it came from is a Button at the bottom right.
+ * app it came from is a Button with an open-out icon, level with Show more.
  *
  * **Five states, and two of them must never look alike.** A block somebody
  * deleted says so; a block the reader may not see says only that it is not
@@ -82,7 +83,7 @@ export function PartCardView({
 
   if (view.state !== 'resolved') {
     return (
-      <Card fill="inset" data-part={view.state} data-part-address={address} className="mt-1 flex flex-col gap-2 px-3 py-2">
+      <Card fill="inset" data-part={view.state} data-part-address={address} className="mt-1 flex flex-col gap-3 px-3 py-2">
         {source}
         <span className="text-caption italic text-text-muted">{view.state === 'detached' ? 'This part was deleted' : "This part can't be shown"}</span>
       </Card>
@@ -92,25 +93,22 @@ export function PartCardView({
   const blocks = toRenderTree(serializeBlockDocument({ type: 'doc', content: [view.block] }), 'blocks')
   const content = <RichText blocks={blocks} size="small" renderBlock={(b) => renderAttachment(b, fetchImage)} />
   const link = view.link
+  // A Button, not a Link, by Katerina's call (2026-10-08): the way out of Peek
+  // reads as an action, level with Show more at the right of its row.
+  const openIn = link ? (
+    <Button size="small" trailingIcon={<IconExternalLink stroke={1.5} className="size-3.5" />} onClick={() => window.open(link, '_blank', 'noopener,noreferrer')}>
+      Open in {view.object.appName ?? 'app'}
+    </Button>
+  ) : undefined
   return (
-    <Card fill="inset" data-part="resolved" data-part-address={address} data-part-block={block} className="mt-1 flex flex-col gap-2 p-3">
+    <Card fill="inset" data-part="resolved" data-part-address={address} data-part-block={block} className="mt-1 flex flex-col gap-3 p-3">
       {source}
-      {/* An attachment is never cut: its card is already the thumbnail, and a
-          click on it opens the full picture as it does on a message's own. */}
-      {view.block.type === 'attachment' ? (
-        content
-      ) : (
-        <ShowMore surface="inset" maxHeight={CUT_AT}>
-          {content}
-        </ShowMore>
-      )}
-      {link && (
-        // A Button, not a Link, by Katerina's call (2026-10-08): the way out of
-        // Peek reads as an action at the card's foot, as Show more does.
-        <Button variant="muted" size="small" className="-mr-1.5 self-end" onClick={() => window.open(link, '_blank', 'noopener,noreferrer')}>
-          Open in {view.object.appName ?? 'app'}
-        </Button>
-      )}
+      {/* An attachment is never cut (no height reaches Infinity): its card is
+          already the thumbnail, and a click on it opens the full picture as it
+          does on a message's own. ShowMore still draws the row for Open in. */}
+      <ShowMore surface="inset" maxHeight={view.block.type === 'attachment' ? Infinity : CUT_AT} action={openIn}>
+        {content}
+      </ShowMore>
     </Card>
   )
 }
