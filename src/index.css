@@ -42,12 +42,13 @@
   color: var(--text-muted);
 }
 /* Links — PEE-19. Values mirror the package Link's `text` look, which
-   RichText draws a sent link with (text-info-default underline
-   underline-offset-2), so a link reads the same while you type and once sent.
+   RichText draws a sent link with (text-text-interactive underline
+   underline-offset-2; the info colour until estiva-ui 0.64.0, the same value
+   in Signal), so a link reads the same while you type and once sent.
    The composer's only: a sent message's widgets carry links of their own,
    and an unlayered rule over them would win over their classes. */
 .tiptap a {
-  color: var(--info-default);
+  color: var(--text-interactive);
   text-decoration: underline;
   text-underline-offset: 2px;
   word-break: break-all;
