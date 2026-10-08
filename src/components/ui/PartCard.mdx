@@ -1,0 +1,57 @@
+import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
+import * as PartCardStories from './PartCard.stories'
+
+<Meta of={PartCardStories} />
+
+# PartCard
+
+One block of another app's object — a paragraph, a table or a picture from a
+Ship description — shown live inside a message.
+
+<Canvas of={PartCardStories.Paragraph} />
+
+`PartCard` reads the block; `PartCardView` draws what the read gave. The stories
+draw the view, because the read needs a relay.
+
+## When
+
+- Under a message whose text holds a pasted block link, and that carries its
+  `part` tag (SPEC §13.6.1). `MessageBody` places it; nothing else needs to.
+- Above a comment anchored to one block of the object it is on (§13.6).
+
+## When not
+
+- A link to a whole object → `ForeignObjectWidget`, which draws
+  `ForeignObjectCard`.
+- A file attached to the message itself → the package's `AttachmentCard`.
+
+## How
+
+```tsx
+import { PartCard } from '@/components/ui/PartCard'
+
+<PartCard address={part.address} block={part.block} />
+```
+
+<Canvas of={PartCardStories.Long} />
+
+## What it owns
+
+- **Five states.** Shown; this part was deleted; this part can't be shown;
+  deleted; not available to you. Deleted and not available never look alike:
+  the second shows no title and no text, in the package Card's dashed
+  `unreadable` frame. What is gone or can't be shown is said in italic.
+- **The cut.** A block taller than 160px goes behind the package's `ShowMore`
+  and opens in place. A picture is never cut.
+- **The way into the app.** A muted `Button`, "Open in Estiva Ship", at the
+  bottom right, opening the block's link in a new tab. Absent when the app gave
+  no link.
+- **Staying live.** It reads again every 30 seconds while the tab is visible,
+  and when the tab comes back.
+
+<Canvas of={PartCardStories.NotAvailable} />
+<Canvas of={PartCardStories.Deleted} />
+
+## Props
+
+<Controls of={PartCardStories.Paragraph} />

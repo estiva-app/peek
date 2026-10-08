@@ -98,18 +98,24 @@ describe('deleted and not available never look alike', () => {
   })
 })
 
-describe('a long block is cut, and opens whole', () => {
-  it('opens a dialog with the whole block and the way into its app', () => {
+describe('a long block opens in place, and the way into its app is a button', () => {
+  it('draws the block once, with no dialog: ShowMore cuts and opens it where it is', () => {
     const long = 'word '.repeat(80).trim()
     show({ state: 'resolved', block: blockOf(long), object, link: LINK })
     expect(screen.getAllByText(long)).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Show all' }))
-    expect(screen.getAllByText(long)).toHaveLength(2)
-    expect(screen.getByRole('link', { name: /Open in Ship/ }).getAttribute('href')).toBe(LINK)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('draws a short block whole, with nothing to open', () => {
+  it('opens the block in its app from the button at the foot of the card', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
     show({ state: 'resolved', block: blockOf('Short'), object, link: LINK })
-    expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Ship' }))
+    expect(open).toHaveBeenCalledWith(LINK, '_blank', 'noopener,noreferrer')
+    open.mockRestore()
+  })
+
+  it('offers no way in when the app gave no link', () => {
+    show({ state: 'resolved', block: blockOf('Short'), object })
+    expect(screen.queryByRole('button', { name: /Open in/ })).toBeNull()
   })
 })
