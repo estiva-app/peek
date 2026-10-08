@@ -147,7 +147,8 @@ async function runSwitches({ steps, gapMs, hook }) {
     // The first frame React paints after the click: what a person sees before anything could have been fetched.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        firstFrame = { ms: Math.round(performance.now() - t0), busy: skeletons(), ready: ready(main().textContent, skeletons(), before) }
+        const text = main().textContent
+        firstFrame = { ms: Math.round(performance.now() - t0), busy: skeletons(), ready: ready(text, skeletons(), before), text: text.slice(0, 400) }
       }),
     )
     while (performance.now() - t0 < 20000) {
@@ -279,7 +280,9 @@ async function hammer({ targets, seconds, everyMs, settleMs }) {
 const A = '/topic/switch-probe-a-'
 const B = '/topic/switch-probe-b-'
 // QA-1's Desk: A and B in Open work, QA-2 starred (added from Peek's own menus, 2026-10-08).
-const DESK_ROWS = ['Switch probe A', 'Switch probe B', QA2_NAME]
+// `--desk-also "Urgent,Screener"` requires more: an unread urgent DM from QA-2 puts a row in both, until the
+// run's DM step reads it.
+const DESK_ROWS = ['Switch probe A', 'Switch probe B', QA2_NAME, ...(option('desk-also', '') ? option('desk-also').split(',') : [])]
 const steps = [
   {
     label: 'open A',
