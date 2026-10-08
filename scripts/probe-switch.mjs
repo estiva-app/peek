@@ -3,7 +3,7 @@
  * what each switch costs (Optimistic updates & caching for Peek, milestone 1).
  *
  *   node scripts/probe-switch.mjs [--as qa1] [--base https://peek.estiva.app] [--gap 20000] [--json out.json]
- *   node scripts/probe-switch.mjs --hammer 60 [--every 400]
+ *   node scripts/probe-switch.mjs --hammer 60 [--every 400] [--settle 8000]
  *
  * `--hammer <s>` is the other measurement (OPT-2): it clicks through A, B,
  * Desk, People and the DM every `--every` ms without waiting for anything to
@@ -192,9 +192,14 @@ async function runSwitches({ steps, gapMs }) {
 /**
  * Runs in the page. Clicks through topics, people and Desk every `everyMs` for `seconds`, never waiting for
  * anything to load — the OPT-2 Done-when. A target that is not on screen yet is skipped, as a person would.
+ *
+ * It starts `settleMs` after the QA Folder shows, from a page done booting, as somebody mid-session would. Started
+ * straight after boot, a topic left 400 ms after its click had not resolved yet, so it never became the nav's
+ * last-topic link and the cycle skipped every topic after that.
  */
-async function hammer({ targets, seconds, everyMs }) {
+async function hammer({ targets, seconds, everyMs, settleMs }) {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  await sleep(settleMs)
   const find = ([how, what]) =>
     how === 'link'
       ? document.querySelector(`a[href^="${what}"]`)
@@ -280,7 +285,7 @@ const hammerTargets = [
 const source =
   hammerSeconds === null
     ? `(${runSwitches.toString()})(${JSON.stringify({ steps, gapMs: Number(option('gap', 20000)) })})`
-    : `(${hammer.toString()})(${JSON.stringify({ targets: hammerTargets, seconds: hammerSeconds, everyMs: Number(option('every', 400)) })})`
+    : `(${hammer.toString()})(${JSON.stringify({ targets: hammerTargets, seconds: hammerSeconds, everyMs: Number(option('every', 400)), settleMs: Number(option('settle', 8000)) })})`
 let report
 try {
   const out = execFileSync(
@@ -294,7 +299,7 @@ try {
       '--url',
       `/app/folders/${QA_FOLDER}`,
       '--timeout',
-      String(Math.max(60000, ((hammerSeconds ?? 0) + 30) * 1000)),
+      String(Math.max(60000, ((hammerSeconds ?? 0) + 30) * 1000 + Number(option('settle', 8000)))),
       '--net',
       netFile,
       '--until',
