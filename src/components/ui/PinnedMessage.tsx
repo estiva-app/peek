@@ -1,5 +1,4 @@
-import { Card } from '@estiva-app/ui'
-import { Avatar } from './Avatar'
+import { Avatar, Card } from '@estiva-app/ui'
 import { HighlightPill } from './HighlightPill'
 import { previewText } from '@/lib/textParsing'
 import type { HighlightType } from '@/api'

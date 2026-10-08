@@ -6,7 +6,7 @@ import type { ReferencePlace } from '@/nostr/foreign'
 import { useLastSelection } from '@/lib/lastSelection'
 import { filePath } from '@/lib/objectUrl'
 import { channelDestination } from '@/lib/legacyTopicLinks'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState } from '@estiva-app/ui'
 
 /**
  * `/o/<bech32>` — the address Peek's NIP-89 manifest advertises (PRO-11).

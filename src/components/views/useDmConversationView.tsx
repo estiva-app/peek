@@ -5,8 +5,8 @@ import { draftKeys } from '@/lib/drafts'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
-import { EmptyState } from '@/components/ui/EmptyState'
-import { CURRENT_USER_NAME, useStarred, useDmChannels, useDmVisibility } from '@/api'
+import { EmptyState } from '@estiva-app/ui'
+import { useStarred, useDmChannels, useDmVisibility } from '@/api'
 import { useFileConversationView } from './useFileConversationView'
 
 interface UseDmConversationViewArgs {
@@ -108,7 +108,6 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     title: dmName ? `DM · ${dmName}` : '',
     draftKey: dmId ? draftKeys.container(dmId) : undefined,
     empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
-    threadMembers: dmName ? [CURRENT_USER_NAME, dmName] : [],
   })
   // Opening the DM reads its top-level messages, and keeps reading what arrives
   // while it is open (PEE-44); an open thread reads its replies, inside the view.
@@ -136,23 +135,22 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   if (dmId == null || !dmName) {
     return {
       // A page EmptyState fills and centres itself in the pane's column (UIG-42).
-      rightPanel: <EmptyState />,
+      rightPanel: <EmptyState message="No conversation selected" />,
       threadPanel: undefined,
       replyOnlyThread: undefined,
       openThread: setThreadConvId,
     }
   }
 
+  // One Panel, its bar the package's: the messages scroll under it, the composer stays put.
   const rightPanel = (
-    <div className="flex flex-col h-full">
-      <Header
-        name={dmName}
-        isStarred={isDmStarred(dmId)}
-        onToggleStarred={onToggleStarred ?? (() => toggleDm({ dmId, name: dmName }))}
-        onHideDm={onHideDm}
-      />
-      {dm.conversation}
-    </div>
+    <Header
+      name={dmName}
+      isStarred={isDmStarred(dmId)}
+      onToggleStarred={onToggleStarred ?? (() => toggleDm({ dmId, name: dmName }))}
+      onHideDm={onHideDm}
+      {...dm.conversationParts}
+    />
   )
 
   return { rightPanel, threadPanel: dm.threadPanel, replyOnlyThread: dm.replyOnlyThread, openThread: setThreadConvId }

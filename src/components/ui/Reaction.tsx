@@ -23,6 +23,7 @@ import { WithTooltip } from './WithTooltip'
  * unnamed control is announced as a bare number. Peek has the names, so Peek
  * supplies it.
  * @registry reusable: stays in Peek (Katerina, 18 September): estiva-ui's Reaction with Peek's reaction words
+ * @registry namesake: Peek's reaction words and who reacted, around estiva-ui's pill (Katerina, 8 October)
  */
 
 /** Canonical meaning of each pickable reaction emoji (picker tooltips +

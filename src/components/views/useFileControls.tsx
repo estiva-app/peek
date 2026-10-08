@@ -104,6 +104,7 @@ export function useFileControls({
   onMoved,
   onStarted,
   onArchived,
+  onMembership,
 }: {
   /** The rename went through: re-read what shows the title. */
   onRenamed?: (file: ForeignObject) => void
@@ -115,9 +116,17 @@ export function useFileControls({
   onStarted?: (created: { address: string; title: string }, parent: ForeignObject) => void
   /** The archive or the unarchive went through: re-read what lists or draws the file. */
   onArchived?: (file: ForeignObject, archived: boolean) => void
+  /** A join, a leave or an add went through: re-read who is in the file. */
+  onMembership?: (file: ForeignObject) => void
 } = {}): {
   /** Open the control the menu asked for, on this file. */
   open: (control: FileControl, file: ForeignObject) => void
+  /**
+   * Add these people to the file (the Members dialog's "Add members", REA-3),
+   * one at a time, stopping at the first refusal, which a toast says.
+   * Resolves `true` once the relay has taken every one.
+   */
+  addMembers: (file: ForeignObject, pubkeys: string[], nameOf: (pubkey: string) => string) => Promise<boolean>
   /** The dialogs, rendered by the page that owns them. */
   dialogs: ReactNode
 } {
@@ -158,7 +167,38 @@ export function useFileControls({
   useEffect(() => {
     archivedCallback.current = onArchived
   })
+  const membershipCallback = useRef(onMembership)
+  useEffect(() => {
+    membershipCallback.current = onMembership
+  })
   const counting = useRef(false)
+
+  /*
+    Worded as Join and Leave are, and as Ship's dialog words it (SHI-31): what
+    did not change, then why. One change per person, in order; the roster is
+    re-read whatever happened, so what did go through shows.
+  */
+  const addMembers = useCallback(
+    async (file: ForeignObject, pubkeys: string[], nameOf: (pubkey: string) => string): Promise<boolean> => {
+      const title = file.slots.title?.value ?? 'this file'
+      if (!file.address || !file.folder) {
+        refuse(`“${title}” is in no Folder Peek can read, so nobody can be added from here.`)
+        return false
+      }
+      let added = true
+      for (const pubkey of pubkeys) {
+        const outcome = await membershipNow.current.setMember(file.address, file.folder, true, pubkey)
+        if (outcome !== true) {
+          showToast({ label: `Nothing changed: ${nameOf(pubkey)} could not be added to “${title}”. ${outcome}`, type: 'error' })
+          added = false
+          break
+        }
+      }
+      membershipCallback.current?.(file)
+      return added
+    },
+    [refuse, showToast],
+  )
 
   const setArchived = useCallback(
     async (file: ForeignObject, archived: boolean, resolution?: string): Promise<boolean> => {
@@ -216,7 +256,8 @@ export function useFileControls({
         const joining = control === 'join'
         const title = file.slots.title?.value ?? 'this file'
         if (!file.address || !file.folder) return refuse(`“${title}” is in no Folder Peek can read, so it cannot be ${joining ? 'joined' : 'left'} from here.`)
-        void membershipNow.current.setMember(file.address, file.folder, joining).then((outcome) =>
+        void membershipNow.current.setMember(file.address, file.folder, joining).then((outcome) => {
+          if (outcome === true) membershipCallback.current?.(file)
           showToast(
             outcome === true
               ? {
@@ -226,8 +267,8 @@ export function useFileControls({
                   type: 'success',
                 }
               : { label: `Nothing changed: “${title}” could not be ${joining ? 'joined' : 'left'}. ${outcome}`, type: 'error' },
-          ),
-        )
+          )
+        })
         return
       }
       if (control === 'delete') return setDialog({ kind: 'confirm', file })
@@ -470,5 +511,5 @@ export function useFileControls({
     )
   ) : null
 
-  return { open, dialogs }
+  return { open, addMembers, dialogs }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react'
+import { useState, useCallback, type ReactNode } from 'react'
 import { AppShell as Frame, ErrorBoundary } from '@estiva-app/ui'
 import { useTopBarSlots } from '@/components/useTopBarSlots'
 import { NavRail } from '@/components/NavRail'
@@ -6,7 +6,7 @@ import { CommandLauncher } from '@/components/CommandLauncher'
 import { captureLauncherContext, type LauncherContext } from '@/lib/launcherContext'
 import { RailClosed } from './railClosed'
 
-interface AppShellProps {
+interface PeekFrameProps {
   /** The page's list column: the package's `ListColumn`, which closes with the rail (`useRailClosed`). */
   leftPanel?: ReactNode
   rightPanel?: ReactNode
@@ -24,38 +24,29 @@ interface AppShellProps {
  *
  * The frame is the package's floating `AppShell` (UIG-14, 9.3): the bar over
  * the top edge, the rail on the ground, the rounded card, and the Signal dot
- * grid on the ground, which the package's preset draws now. What is Peek's:
- * the bar's slots, the rail's entries, the three columns inside the card, the
- * launcher, and the collapsing.
+ * grid on the ground, which the package's preset draws now — and, since
+ * 0.60.0, the search field and Ctrl+K. What is Peek's: the bar's slots, the
+ * rail's entries, the three columns inside the card, the launcher, and the
+ * collapsing. Called AppShell until 8 October, when the package's own name
+ * became the gate's to refuse (Katerina, UIG-49).
  *
  * The list column is the page's own: the package's `ListColumn` (UIG-14, N9),
  * with its own error boundary. The frame only tells it when the rail is closed.
  */
-export function AppShell({ leftPanel, rightPanel, threadPanel, banner }: AppShellProps) {
+export function PeekFrame({ leftPanel, rightPanel, threadPanel, banner }: PeekFrameProps) {
   const [collapsed, setCollapsed] = useState(false)
   // The launcher's context is captured ONCE at the invoking keystroke/click
   // (selection > composer > nothing) and frozen for the launcher's lifetime.
   const [launcher, setLauncher] = useState<{ context: LauncherContext } | null>(null)
 
-  const openLauncher = useCallback(() => {
-    setLauncher({ context: captureLauncherContext() })
+  // The bar's search field and Cmd/Ctrl+K, from anywhere — browsing or typing in
+  // a composer alike — both land here. A second Ctrl+K closes it. A click on the
+  // field leaves focus in the composer, so the context sees it (0.60.1).
+  const toggleLauncher = useCallback(() => {
+    setLauncher((v) => (v ? null : { context: captureLauncherContext() }))
   }, [])
 
-  // Cmd/Ctrl+K opens the launcher from anywhere - browsing or typing in a
-  // composer alike (the global listener runs regardless of focus).
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setLauncher((v) => (v ? null : { context: captureLauncherContext() }))
-      }
-    }
-    // @estiva-escape(no-rebuilt-behaviour): Ctrl+K opens the launcher from anywhere; no part owns a shortcut for the whole app, and opening CommandPalette is Peek's (UIG-8)
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
-
-  const bar = useTopBarSlots({ onMenuToggle: () => setCollapsed((c) => !c), onSearchClick: () => openLauncher() })
+  const bar = useTopBarSlots({ onMenuToggle: () => setCollapsed((c) => !c) })
 
   return (
     // The package's frame fills its parent (`h-full`); the page is the window's height.
@@ -63,7 +54,8 @@ export function AppShell({ leftPanel, rightPanel, threadPanel, banner }: AppShel
       <Frame
         variant="floating"
         menu={bar.menu}
-        search={bar.search}
+        onSearch={toggleLauncher}
+        searchPlaceholder="Search Peek..."
         identity={bar.identity}
         banner={banner}
         nav={

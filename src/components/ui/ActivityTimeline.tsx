@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { WithTooltip } from './WithTooltip'
-import { EmptyState } from './EmptyState'
+import { EmptyState } from '@estiva-app/ui'
 
 /**
  * What has happened to a topic, as a timeline (PEE-2).

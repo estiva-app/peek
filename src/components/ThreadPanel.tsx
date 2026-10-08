@@ -1,7 +1,6 @@
 import { useRef, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconX, IconExternalLink, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Chip, Panel } from '@estiva-app/ui'
-import { MembersPill } from './ui/MembersPill'
+import { Chip, MembersPill, Panel } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
 import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
@@ -138,8 +137,6 @@ interface ThreadPanelProps {
   huddleMemberCount?: number
   /** Member names for the huddle - drives the avatar lookups in the header pill */
   huddleMembers?: string[]
-  /** DM thread participants - shows You + the other person in the header pill */
-  dmMembers?: string[]
   /** Reactions on the initial (pinned) message — needed when the panel renders the initial as a
    *  ReplyCard (huddle case) so reactions added on this side persist & mirror to the DM side. */
   initialReactions?: ReactionData[]
@@ -257,7 +254,6 @@ export function ThreadPanel({
   isResolved = false,
   huddleMemberCount,
   huddleMembers = [],
-  dmMembers = [],
   initialReactions,
   onInitialReactionsChange,
   initialHighlightType,
@@ -388,19 +384,14 @@ export function ThreadPanel({
               and bare green words elsewhere (UIG-14). */}
           {isResolved && <Chip type="success" label="Resolved" />}
           {(() => {
-            // Show member pill for huddle threads OR DM threads. Both display
-            // up to 3 avatars with the total count beside them.
-            const members =
-              huddleMembers.length > 0
-                ? huddleMembers
-                : dmMembers.length > 0
-                  ? dmMembers
-                  : []
+            // Huddle threads only (Katerina, 8 October): a DM's pill only ever
+            // showed the same two people the page already names.
+            const members = huddleMembers
             const total = members.length || huddleMemberCount || 0
             if (total === 0) return null
             // The header's pill, not a third copy of it (F12). It was the
             // same chrome re-typed around a stack that clipped its own faces.
-            return <MembersPill members={members} count={total} />
+            return <MembersPill members={members.map((name) => ({ name }))} count={total} />
           })()}
           {onOpenInDm && (
             <IconButton

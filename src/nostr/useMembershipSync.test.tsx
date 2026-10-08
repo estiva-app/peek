@@ -94,6 +94,24 @@ describe('useMembershipSync', () => {
     )
   })
 
+  it('adding somebody else signs a change naming them, and leaves the viewer’s own memberships alone (REA-3)', async () => {
+    const ANA = 'a'.repeat(64)
+    const { result } = renderHook(() => useMembershipSync(RELAY))
+    await waitFor(() => expect(result.current.state).toBe('known'))
+    let outcome: true | string = ''
+    await act(async () => {
+      outcome = await result.current.setMember(OTHER, FOLDER, true, ANA)
+    })
+    expect(outcome).toBe(true)
+    expect(relay.signViaEstivaId.mock.calls[0][0].tags).toEqual(
+      expect.arrayContaining([['a', OTHER], ['field', `member:${ANA}`], ['value', 'true'], ['p', ANA]]),
+    )
+    expect(result.current.files.has(OTHER)).toBe(false)
+    // A leave counts only when its person signs it (§11.8): never signed for somebody else.
+    expect(await result.current.setMember(OTHER, FOLDER, false, ANA)).not.toBe(true)
+    expect(relay.publishSigned).toHaveBeenCalledTimes(1)
+  })
+
   it('a leave publishes member:false, and a refused one puts the membership back', async () => {
     relay.publishSigned.mockResolvedValue({ ok: false, reason: 'blocked' })
     const { result } = renderHook(() => useMembershipSync(RELAY))

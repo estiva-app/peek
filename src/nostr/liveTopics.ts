@@ -43,6 +43,7 @@ import {
   recordOnline,
   recordRelayState,
 } from './freshness'
+import { meteredSocket } from './socketFrames'
 
 export interface LiveTopics {
   state(): RelayState
@@ -282,6 +283,8 @@ function build(relayUrl: string): Wiring {
       onSignFailure: (error) => recordCredentialFailure(reasonForSignFailure(error)),
     },
     log: relayLog,
+    // The socket reader counts these frames against buzz's budget (OPT-2).
+    socketFactory: typeof WebSocket === 'undefined' ? undefined : meteredSocket,
   })
 
   return {
@@ -381,6 +384,19 @@ export function getLiveTopics(relayUrl: string): LiveTopics {
   // The holder closes the old client.
   wiring = build(relayUrl)
   return wiring.topics
+}
+
+/**
+ * The tab's live client itself, for one-shot reads over the same socket
+ * (`socketRead.ts`, OPT-2). Built on first use, like `getLiveTopics`, so a read
+ * at boot opens the connection the first topic would have opened anyway.
+ * `null` for a relay other than the one the tab is connected to: building one
+ * would tear down the tab's socket and every watch on it.
+ */
+export function getLiveClient(relayUrl: string): LiveClient | null {
+  if (wiring && wiring.relayUrl !== relayUrl) return null
+  getLiveTopics(relayUrl)
+  return wiring!.client
 }
 
 /** Test seam. Drops the instance so the next `getLiveTopics` builds a new one. */

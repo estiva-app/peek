@@ -5,8 +5,7 @@ import {
   // IconBrackets,
   // IconFiles,
 } from '@tabler/icons-react'
-import { Rail } from '@estiva-app/ui'
-import { NavItem } from './NavItem'
+import { Rail, RailItem } from '@estiva-app/ui'
 import { FreshnessIndicator } from './FreshnessIndicator'
 import { useLocation } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
@@ -53,10 +52,13 @@ export function NavRail() {
     },
   ]
 
+  // Lit on its own pages. The click goes through Peek's router by itself (`AppProvider`, PeekSetup).
+  const isAt = (match: string | string[]) => (Array.isArray(match) ? match : [match]).some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+
   return (
     <Rail>
-      {navItems.map((item) => (
-        <NavItem key={item.label} {...item} />
+      {navItems.map(({ to, icon, label, match }) => (
+        <RailItem key={label} href={to} icon={icon} label={label} active={isAt(match)} />
       ))}
       {/* Once, in the persistent chrome — see FreshnessIndicator's header for
           why this is not a badge per panel and not part of AuthGate. */}

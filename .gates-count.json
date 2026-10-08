@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
   "repo": "peek",
-  "generatedAt": "2026-10-01T09:21:17.094Z",
+  "generatedAt": "2026-10-08T09:58:50.335Z",
   "rules": {
     "estiva/no-raw-element": {
       "errors": 0,
       "warnings": 0,
-      "escapes": 2
+      "escapes": 1
     },
     "estiva/no-rebuilt-behaviour": {
       "errors": 0,
       "warnings": 0,
-      "escapes": 2
+      "escapes": 1
     },
     "estiva/no-restyled-part": {
       "errors": 0,
       "warnings": 0,
-      "escapes": 1
+      "escapes": 0
     },
     "estiva/no-handmade-header": {
       "errors": 0,
@@ -36,7 +36,7 @@
     "estiva/no-copied-look": {
       "errors": 0,
       "warnings": 0,
-      "escapes": 11
+      "escapes": 10
     },
     "estiva/no-field-outside-a-form": {
       "errors": 0,

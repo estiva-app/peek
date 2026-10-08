@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { Chip } from '@/components/ui/Chip'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState } from '@estiva-app/ui'
 import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData } from '@/api'
 

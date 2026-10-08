@@ -7,12 +7,21 @@ import { EstivaIdCallback } from './auth/EstivaIdCallback'
 import { CALLBACK_PATH } from './auth/estivaId'
 import { LastSelectionProvider } from './lib/lastSelection'
 import { ToastProvider } from './lib/toast'
+import { PeekSetup } from './lib/PeekSetup'
 /* One TooltipProvider for the whole app (PEEK-ADOPTION.md §2.5): neighbouring
    tooltips share one 300ms wait, so the second and third open at once while
    the group is warm, instead of each button waiting on its own. */
 import { ErrorBoundary, TooltipProvider } from '@estiva-app/ui'
 import './index.css'
 import App from './App.tsx'
+import { setSocketReader } from './nostr/bridge'
+import { relayLog } from './nostr/liveTopics'
+import { createAppSocketReader, installSocketReadsDiagnostic } from './nostr/socketRead'
+
+// Reads go over the open connection, one round trip each (OPT-2). Here rather
+// than in `@/api`, which tests import, so a test keeps the HTTP path.
+setSocketReader(createAppSocketReader(relayLog))
+installSocketReadsDiagnostic()
 
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
@@ -36,7 +45,9 @@ createRoot(document.getElementById('root')!).render(
                   <LastSelectionProvider>
                     <ToastProvider>
                       <TooltipProvider>
-                        <App />
+                        <PeekSetup>
+                          <App />
+                        </PeekSetup>
                       </TooltipProvider>
                     </ToastProvider>
                   </LastSelectionProvider>

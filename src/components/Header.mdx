@@ -5,8 +5,9 @@ import * as HeaderStories from './Header.stories'
 
 # Header
 
-The bar above an open topic, huddle or direct message: its name, its open and
-resolved counts, its members, a star and a more-actions menu.
+The column of an open topic, huddle or direct message: its bar (its name, its
+open and resolved counts, its members, a star and a more-actions menu) and the
+conversation under it, in the package's `Panel`.
 
 <Canvas of={HeaderStories.Topic} />
 
@@ -43,7 +44,14 @@ import { Header } from '@/components/Header'
 
 ## What it owns
 
-- **The members pill**, through `MembersPill` — which is one component because
+- **The column's bar is the package's.** It draws through `Panel`, so its bar
+  is `ContainerHeader`'s: 48px with its hairline, the title 16px in, level
+  with every column beside it. Its own row was 48px with the line under it,
+  49px in all, a pixel below People's and Replies' (Katerina, 8 October). Pass
+  the conversation as `children` and its composer as `footer`, as
+  `useFileConversationView`'s `conversationParts` gives them.
+
+- **The members pill**, through the package's `MembersPill` — which is one component because
   this header drew it and the thread panel re-typed it, down to the padding,
   and the copy had drifted (COMPONENTS-PEEK F12).
 - **Which meta is drawn at all.** `hideTopicMeta` exists because a direct

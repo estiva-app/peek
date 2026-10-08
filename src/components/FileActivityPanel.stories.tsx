@@ -51,7 +51,7 @@ const meta = {
     (Story) => (
       <MemoryRouter>
         <PeekDataProvider>
-          {/* The third column, copied from `AppShell`: `w-[380px]`, where a thread would otherwise open. */}
+          {/* The third column, copied from `PeekFrame`: `w-[380px]`, where a thread would otherwise open. */}
           <div className="w-[380px] h-[560px] flex flex-col bg-bg-base">
             <Story />
           </div>

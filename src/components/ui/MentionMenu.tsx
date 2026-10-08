@@ -1,5 +1,5 @@
 import type { MentionPerson } from '@estiva-app/ui/editor'
-import { Avatar } from './Avatar'
+import { Avatar } from '@estiva-app/ui'
 import { mentionPeople, type Person } from '@/api'
 
 /**

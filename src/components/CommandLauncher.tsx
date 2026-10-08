@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { IconBox, IconCircleDashed, IconDownload, IconEraser, IconFileText, IconListDetails, IconMessageQuestion, IconPencil, IconRefresh, IconSparkles, IconWriting, IconCornerDownLeft } from '@tabler/icons-react'
-import {
-  CommandPalette,
-  CommandPaletteAnswer,
-  CommandPaletteForm,
-  CommandPaletteProposal,
-  CommandPaletteQuote,
-  CommandPaletteSearch,
-  CommandPaletteWorking,
-  FieldLine,
-  type CommandPaletteChip,
-  type CommandPaletteGroup,
-  type CommandPaletteRow,
-} from '@estiva-app/ui'
-import { Avatar } from './ui/Avatar'
+import { Avatar, CommandPalette, CommandPaletteAnswer, type CommandPaletteChip, CommandPaletteForm, type CommandPaletteGroup, CommandPaletteProposal, CommandPaletteQuote, type CommandPaletteRow, CommandPaletteSearch, CommandPaletteWorking, FieldLine, isApplePlatform } from '@estiva-app/ui'
 import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
@@ -48,7 +35,6 @@ import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from 
 import { bodies } from '@/lib/conversationRegistry'
 import { useLastSelection } from '@/lib/lastSelection'
 import { clearRecents, forgetRecent, useRecents } from '@/lib/recents'
-import { isApplePlatform } from '@estiva-app/ui'
 import { previewText } from '@/lib/textParsing'
 import { useToast } from '@/lib/toast'
 import { objectLabel } from '@/lib/appName'

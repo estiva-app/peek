@@ -1,14 +1,14 @@
 import { Meta, Canvas, Controls } from '@storybook/addon-docs/blocks'
-import * as AppShellStories from './AppShell.stories'
+import * as PeekFrameStories from './PeekFrame.stories'
 
-<Meta of={AppShellStories} />
+<Meta of={PeekFrameStories} />
 
-# AppShell
+# PeekFrame
 
 The frame of every page: the top bar, the side navigation, and the list, main
 and replies columns, with Cmd/Ctrl+K opening the command launcher.
 
-<Canvas of={AppShellStories.Default} />
+<Canvas of={PeekFrameStories.Default} />
 
 ## When
 
@@ -16,7 +16,7 @@ and replies columns, with Cmd/Ctrl+K opening the command launcher.
 - With `threadPanel` when a thread is open, which is what makes the third
   column appear.
 
-<Canvas of={AppShellStories.WithThreadPanel} />
+<Canvas of={PeekFrameStories.WithThreadPanel} />
 
 ## When not
 
@@ -26,9 +26,9 @@ and replies columns, with Cmd/Ctrl+K opening the command launcher.
 ## How
 
 ```tsx
-import { AppShell } from '@/layouts/AppShell'
+import { PeekFrame } from '@/layouts/PeekFrame'
 
-<AppShell leftPanel={<TopicList />} rightPanel={<Conversation />} threadPanel={thread} />
+<PeekFrame leftPanel={<TopicList />} rightPanel={<Conversation />} threadPanel={thread} />
 ```
 
 ## What is the package's and what is Peek's
@@ -53,4 +53,4 @@ when the rail is closed.
 
 ## Props
 
-<Controls of={AppShellStories.Default} />
+<Controls of={PeekFrameStories.Default} />

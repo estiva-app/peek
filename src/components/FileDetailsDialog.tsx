@@ -5,10 +5,9 @@ import { useWorkspaceDirectory, type RenameOutcome } from '@/api'
 import { Button } from './ui/Button'
 import { DialogShell } from './ui/DialogShell'
 import { IconButton } from './ui/IconButton'
-import { Person } from './ui/Person'
+import { FieldLine, Form, Person } from '@estiva-app/ui'
 import { SectionLabel } from './ui/SectionHeader'
 import { TextInput } from './ui/TextInput'
-import { FieldLine, Form } from '@estiva-app/ui'
 
 /**
  * What a bare-file topic is, and where its name is changed (FOL-33).
@@ -168,7 +167,7 @@ export function FileDetailsDialog({
 
       {author && (
         <Section label="Created by">
-          <Person pubkey={author} people={people} size={24} />
+          <Person name={people?.[author]?.displayName} picture={people?.[author]?.picture} size={24} />
         </Section>
       )}
 

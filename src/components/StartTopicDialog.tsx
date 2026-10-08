@@ -1,7 +1,6 @@
 import { useId, useState } from 'react'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { Form } from '@estiva-app/ui'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, Form } from '@estiva-app/ui'
 import { DialogShell } from './ui/DialogShell'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'

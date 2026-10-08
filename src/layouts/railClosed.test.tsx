@@ -5,7 +5,7 @@ import { RailClosed, useRailClosed } from './railClosed'
 
 /*
   What is Peek's about a page's list column is only where its closed state comes
-  from: `AppShell`'s menu button, through `RailClosed`. The column itself, and
+  from: `PeekFrame`'s menu button, through `RailClosed`. The column itself, and
   what a crash in it does, are the package's `ListColumn`, tested there.
 */
 
@@ -39,7 +39,7 @@ describe('the rail-closed context', () => {
     expect(column().dataset.collapsed).toBeUndefined()
   })
 
-  it('leaves the column open with no AppShell around it', () => {
+  it('leaves the column open with no PeekFrame around it', () => {
     render(<Column />)
     expect(screen.getByText('a row')).toBeTruthy()
     expect(document.querySelector('[data-collapsed]')).toBeNull()

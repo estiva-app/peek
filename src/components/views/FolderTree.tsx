@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconEdit, IconFilter, IconFolderPlus } from '@tabler/icons-react'
-import { Chip, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Chip, EmptyState, ListColumn, Menu, MenuItem, NavTree, NavTreeSection, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { nestingOf } from '@estiva-app/interop'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { FolderContentsState } from '@/api'
@@ -14,7 +14,6 @@ import {
   useForeignObjects,
   useTeamUnread,
 } from '@/api'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { FileTreeView, JoinedFileRows } from '@/components/views/FileTreeView'
 import type { FileControl } from '@/components/views/useFileControls'

@@ -1,6 +1,8 @@
 import type { Decorator, Preview } from '@storybook/react-vite'
+import type { ReactNode } from 'react'
 import { themes } from 'storybook/theming'
-import { PeekDataProvider } from '../src/api'
+import { AppProvider } from '@estiva-app/ui'
+import { PeekDataProvider, useAvatarSrc } from '../src/api'
 import { DebugProvider } from '../src/lib/debug'
 import '../src/index.css'
 import './preview.css'
@@ -34,10 +36,21 @@ document.body.classList.add('bg-bg-base', 'text-text-primary', 'font-sans')
  * (main.ts), so every store in it answers from the mock data. Same nesting as
  * main.tsx.
  */
+/**
+ * Peek's pictures, as `PeekSetup` gives them in the app: every face in a story
+ * asks the lookup, which answers with the seeded portraits here. Not its
+ * router — a story has none of its own — so a link in a story is a plain one.
+ */
+function StoryPictures({ children }: { children: ReactNode }) {
+  return <AppProvider pictureFor={useAvatarSrc()}>{children}</AppProvider>
+}
+
 const withProviders: Decorator = (Story) => (
   <DebugProvider>
     <PeekDataProvider>
-      <Story />
+      <StoryPictures>
+        <Story />
+      </StoryPictures>
     </PeekDataProvider>
   </DebugProvider>
 )

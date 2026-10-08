@@ -20,6 +20,11 @@
  * `--drag`, `--wait`, `--until`, `--eval` and `--screenshot` can be repeated and
  * interleaved. `PROBE_TRACE=1` prints each step on stderr as it starts.
  *
+ * `PROBE_SERVE=<dist dir>` runs an unmerged build at the real origin: the
+ * probe's browser answers `--base`'s files from the local build, so sign-in,
+ * the relay's CORS and NIP-98 behave as on production. Build it as the deploy
+ * does first: `VITE_RELAY_URL=https://estiva.estiva.app npm run build`.
+ *
  * `--hover <css>` puts the pointer over the first match, for a control drawn
  * only under it. `--drag "<from css> => <to css>"` drags the first match of one
  * selector onto the other with the real mouse — pointer down, moves, pointer up
@@ -69,14 +74,14 @@
  * same one `render-story.mjs` uses.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
-  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file]`
+  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--net file]`
 
 const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
@@ -96,11 +101,18 @@ if (!existsSync(executablePath)) fail(`no chromium at ${executablePath} — see 
 
 const session = await sessionFor(options.as)
 const report = { as: options.as, pubkey: session.pubkey, base: options.base, steps: [], errors: [] }
+// --net <file>: every request and socket frame, stamped with wall-clock ms, for
+// a driver to split by its own windows (probe-switch.mjs).
+const net = options.net ? [] : null
 
 const browser = await chromium.launch({ executablePath })
 try {
   const idOrigin = new URL(options.id)
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  // A service worker would answer from production's cache, around the routes below.
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    ...(process.env.PROBE_SERVE ? { serviceWorkers: 'block' } : {}),
+  })
   await context.addCookies([
     {
       name: session.cookie_name,
@@ -113,6 +125,42 @@ try {
     },
   ])
   if (options.slot !== 'fresh') await context.addInitScript(pinReadStateSlot, pinnedSlots(session.pubkey, options.base))
+  if (process.env.PROBE_SERVE) {
+    const dist = process.env.PROBE_SERVE
+    const origin = new URL(options.base).origin
+    // A predicate, not a `${base}/**` glob: the glob misses `/?code=…`, and the
+    // page then silently comes from production.
+    await context.route(
+      (url) => url.origin === origin,
+      (route) => {
+        const path = join(dist, new URL(route.request().url()).pathname)
+        return route.fulfill({ path: existsSync(path) && statSync(path).isFile() ? path : join(dist, 'index.html') })
+      },
+    )
+    // A redirect's later hops are never routed, and a fulfilled 302 is followed
+    // inside the same chain, so Estiva ID's redirect back to the app becomes a
+    // fresh navigation that the route above answers.
+    await context.route(
+      (url) => url.origin === idOrigin.origin,
+      async (route) => {
+        // Only the sign-in navigation needs this; `/sign` and the rest go straight
+        // through, so a reset there is the page's to handle, not the probe's crash.
+        if (!route.request().isNavigationRequest()) return route.continue()
+        let response
+        try {
+          response = await route.fetch({ maxRedirects: 0 })
+        } catch {
+          return route.abort('connectionreset')
+        }
+        const location = response.headers()['location']
+        if (response.status() >= 300 && response.status() < 400 && location && new URL(location, idOrigin).origin === origin) {
+          const to = JSON.stringify(new URL(location, idOrigin).href)
+          return route.fulfill({ status: 200, contentType: 'text/html', body: `<script>location.replace(${to})</script>` })
+        }
+        return route.fulfill({ response })
+      },
+    )
+  }
   const page = await context.newPage()
   // Every WebSocket the tab opens, and whether it closed before the run ended:
   // "one relay connection per tab" is otherwise invisible from the page.
@@ -123,7 +171,27 @@ try {
     ws.on('close', () => {
       socket.closed = true
     })
+    if (net) {
+      ws.on('framesent', (f) => net.push({ at: Date.now(), kind: 'ws-out', body: String(f.payload).slice(0, 300) }))
+      ws.on('framereceived', (f) => {
+        const text = String(f.payload)
+        // Only what bears on cost and refusal: a CLOSED or NOTICE, or an OK that says no.
+        if (/^\["(CLOSED|NOTICE)"/.test(text) || /^\["OK",[^,]+,false/.test(text)) net.push({ at: Date.now(), kind: 'ws-in', body: text.slice(0, 300) })
+      })
+    }
   })
+  if (net) {
+    page.on('request', (r) => {
+      if (['image', 'font', 'stylesheet', 'script', 'document'].includes(r.resourceType())) return
+      // Bodies only where they say what was read or written. Anything else may carry a secret: a /token
+      // renewal's refresh token, a nip44 plaintext. The endpoint alone is enough for those.
+      const body = /\/(query|events|sign)$/.test(new URL(r.url()).pathname) ? (r.postData() ?? '').slice(0, 300) : ''
+      net.push({ at: Date.now(), kind: 'http', method: r.method(), url: r.url().slice(0, 160), body })
+    })
+    page.on('response', (r) => {
+      if (r.status() === 429) net.push({ at: Date.now(), kind: 'http-429', url: r.url().slice(0, 160) })
+    })
+  }
   page.on('pageerror', (e) => {
     const frame = e.stack?.split('\n').find((line) => line.trim().startsWith('at '))?.trim()
     report.errors.push(`${String(e).slice(0, 300)} (on ${page.url().slice(0, 200)}${frame ? `, ${frame.slice(0, 200)}` : ''})`)
@@ -162,6 +230,10 @@ try {
   report.failure = String(error.message ?? error).split('\n')[0]
 } finally {
   await browser.close()
+}
+if (net) {
+  const { writeFileSync } = await import('node:fs')
+  writeFileSync(options.net, JSON.stringify(net))
 }
 // A page that logs the same error on every render would otherwise drown the result.
 report.errorCount = report.errors.length

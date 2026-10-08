@@ -165,6 +165,28 @@ export async function queryRelay(
   token: string,
   pubkey?: string,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
+  const overSocket = socketReader ? await socketReader(relayUrl, filters, pubkey) : null
+  if (overSocket) return overSocket
   const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
   return parseQueryResponse(status, text)
+}
+
+/**
+ * Answers a read over the tab's open connection, or `null` to send it over
+ * HTTP as before (OPT-2, `socketRead.ts`).
+ *
+ * A seam rather than an import: the reader needs the live client, which needs
+ * `signViaEstivaId` from here, and the app installs it at boot (`main.tsx`) so
+ * a test that reads through this file keeps the HTTP path it was written for.
+ */
+export type SocketReader = (
+  relayUrl: string,
+  filters: Record<string, unknown>[],
+  pubkey?: string,
+) => Promise<{ ok: boolean; events: SignedEvent[]; reason?: string } | null>
+
+let socketReader: SocketReader | null = null
+
+export function setSocketReader(reader: SocketReader | null): void {
+  socketReader = reader
 }
