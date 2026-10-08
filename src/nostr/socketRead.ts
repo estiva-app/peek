@@ -27,17 +27,19 @@ import type { SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
+import { otherFramesSince, sendingAsRead, WINDOW_MS } from './socketFrames'
 
 /** Buzz parses a REQ with more and answers a bare NOTICE — no CLOSED, so the read would only time out. */
 export const MAX_FILTERS_PER_REQ = 10
 /**
- * REQs this tab sends per {@link WINDOW_MS}, of buzz's 50 per pubkey. The rest
- * is for the live watches, which subscribe outside this pacer (~7 per 5 s while
- * clicking around), and for another tab. At 40, reads plus watches ran at 46–48
- * and the relay refused 22 at its window edges in a 60 s `--hammer`.
+ * Metered frames this tab sends per {@link WINDOW_MS}, of buzz's 50 per pubkey,
+ * counting the live watches' (`socketFrames.ts`, ~7 per 5 s while clicking
+ * around) as well as the reads. The rest is slack for network jitter against
+ * buzz's fixed windows. Uncounted, a read cap of 40 ran at 46–48 with the
+ * watches and the relay refused 22 at its window edges in a 60 s `--hammer`.
  */
-export const REQS_PER_WINDOW = 30
-export const WINDOW_MS = 5_000
+export const REQS_PER_WINDOW = 45
+export { WINDOW_MS }
 /**
  * A read that has waited this long for a socket slot goes over HTTP instead, a
  * separate meter, while this tab has spilled fewer than
@@ -65,6 +67,8 @@ export interface SocketReaderOptions {
   budget: Pick<RelayBudget, 'noteRateLimited' | 'pausedForMs'>
   /** HTTP's own pause (`relayBudget`): a read does not spill there while it is set. */
   httpBudget: Pick<RelayBudget, 'pausedForMs'>
+  /** Metered frames the socket sent outside this reader since `floor`, oldest first. */
+  otherFrames?: (floor: number) => number[]
   now?: () => number
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
@@ -99,28 +103,34 @@ export function createPacer(
   now: () => number,
   setTimer: (fn: () => void, ms: number) => unknown,
   clearTimer: (handle: unknown) => void,
+  /** Metered frames sent outside the pacer since `floor`, oldest first (the live watches). */
+  others: (floor: number) => number[] = () => [],
 ): Pacer {
   const sent: number[] = []
   const waiting: { n: number; at: number; resolve: (via: 'socket' | 'http') => void; spillTimer: unknown }[] = []
   let pumpTimer: unknown = null
 
   function pump() {
+    if (pumpTimer !== null) clearTimer(pumpTimer)
     pumpTimer = null
     const floor = now() - windowMs
     while (sent.length > 0 && sent[0] <= floor) sent.shift()
+    const outside = others(floor)
     while (waiting.length > 0) {
       const starved = waiting.findIndex((w) => now() - w.at >= STARVED_AFTER_MS)
       const index = starved === -1 ? waiting.length - 1 : starved
       const next = waiting[index]
-      if (sent.length + next.n > perWindow) break
+      if (sent.length + outside.length + next.n > perWindow) break
       waiting.splice(index, 1)
       if (next.spillTimer !== null) clearTimer(next.spillTimer)
       const at = now()
       for (let i = 0; i < next.n; i++) sent.push(at)
       next.resolve('socket')
     }
-    if (waiting.length > 0 && pumpTimer === null && sent.length > 0) {
-      pumpTimer = setTimer(pump, Math.max(0, sent[0] + windowMs - now()))
+    // Wake when the oldest counted frame leaves the window.
+    const oldest = Math.min(sent[0] ?? Infinity, outside[0] ?? Infinity)
+    if (waiting.length > 0 && oldest !== Infinity) {
+      pumpTimer = setTimer(pump, Math.max(0, oldest + windowMs - now()))
     }
   }
 
@@ -152,7 +162,7 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
   const setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
   const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   const log = options.log ?? (() => {})
-  const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, now, setTimer, clearTimer)
+  const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, now, setTimer, clearTimer, options.otherFrames)
   const spilled: number[] = []
   const spill = {
     afterMs: SPILL_AFTER_MS,
@@ -203,10 +213,12 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
       const stopState = client.onState((state) => {
         if (state !== 'live') finish({ kind: 'lost', why: state })
       })
-      sub = client.relay.subscribe(filters, (event) => events.push(event), {
-        onEose: () => finish({ kind: 'events', events }),
-        onClosed: (reason) => finish({ kind: 'closed', reason }),
-      })
+      sub = sendingAsRead(() =>
+        client.relay.subscribe(filters, (event) => events.push(event), {
+          onEose: () => finish({ kind: 'events', events }),
+          onClosed: (reason) => finish({ kind: 'closed', reason }),
+        }),
+      )
       if (done) sub.close()
     })
   }
@@ -229,27 +241,43 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
   }
 
   return async (relayUrl, filters, pubkey) => {
-    if (filters.length === 0 || options.budget.pausedForMs() > 0) return null
+    const asked = now()
+    const note = (via: string, at: Partial<SocketReadRecord> = {}) =>
+      recordSocketRead({ at: asked, reqs: 0, liveWaitMs: 0, pacerWaitMs: 0, answerMs: 0, via, ...at })
+    const overHttp = (why: string, at: Partial<SocketReadRecord> = {}) => {
+      note(`http: ${why}`, at)
+      return null
+    }
+    if (filters.length === 0) return null
+    if (options.budget.pausedForMs() > 0) return overHttp('socket paused')
     const socketPubkey = options.currentPubkey()
-    if (!socketPubkey || (pubkey && pubkey !== socketPubkey)) return null
+    if (!socketPubkey || (pubkey && pubkey !== socketPubkey)) return overHttp('other pubkey')
     const client = options.getClient(relayUrl)
-    if (!(await waitForLive(client))) return null
+    const live = await waitForLive(client)
+    const liveWaitMs = now() - asked
+    if (!live) return overHttp('not live', { liveWaitMs })
 
     const chunks: Record<string, unknown>[][] = []
     for (let i = 0; i < filters.length; i += MAX_FILTERS_PER_REQ) chunks.push(filters.slice(i, i + MAX_FILTERS_PER_REQ))
+    const reqs = chunks.length
     // One POST beats a whole window of REQs for a read this wide.
-    if (chunks.length > REQS_PER_WINDOW) return null
-    if ((await pacer.take(chunks.length, spill)) === 'http') {
-      log('socket read spilled to HTTP', { reqs: chunks.length })
-      return null
+    if (reqs > REQS_PER_WINDOW) return overHttp('too wide', { reqs, liveWaitMs })
+    const via = await pacer.take(reqs, spill)
+    const pacerWaitMs = now() - asked - liveWaitMs
+    if (via === 'http') {
+      log('socket read spilled to HTTP', { reqs })
+      return overHttp('spilled', { reqs, liveWaitMs, pacerWaitMs })
     }
     const outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk)))
+    const timing = { reqs, liveWaitMs, pacerWaitMs, answerMs: now() - asked - liveWaitMs - pacerWaitMs }
 
     const unanswered = outcomes.find((o) => o.kind === 'lost' || (o.kind === 'closed' && /^(rate-limited|auth-required|error):/.test(o.reason)))
     if (unanswered) {
-      log('socket read went over HTTP', { why: 'why' in unanswered ? unanswered.why : 'reason' in unanswered ? unanswered.reason : '' })
-      return null
+      const why = 'why' in unanswered ? unanswered.why : 'reason' in unanswered ? unanswered.reason : ''
+      log('socket read went over HTTP', { why })
+      return overHttp(why.split(';')[0], timing)
     }
+    note('socket', timing)
     // Anything else CLOSED is the relay's answer to these filters (`restricted:`,
     // `blocked:`), the same verdict `/query` gives with a 4xx.
     const closed = outcomes.find((o): o is Extract<Outcome, { kind: 'closed' }> => o.kind === 'closed')
@@ -288,6 +316,59 @@ export function createAppSocketReader(log?: SocketReaderOptions['log']): SocketR
     currentPubkey: () => validToken()?.pubkey ?? null,
     budget: socketBudget,
     httpBudget: relayBudget,
+    otherFrames: otherFramesSince,
     log,
   })
+}
+
+/** One read the reader was asked for: where it waited, and how it was answered. */
+export interface SocketReadRecord {
+  at: number
+  reqs: number
+  liveWaitMs: number
+  pacerWaitMs: number
+  answerMs: number
+  /** `socket`, or `http: <why>`. */
+  via: string
+}
+
+const reads: SocketReadRecord[] = []
+
+export function recordSocketRead(record: SocketReadRecord): void {
+  reads.push(record)
+  if (reads.length > 2_000) reads.splice(0, reads.length - 2_000)
+}
+
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]
+}
+
+/** `window.__socketReads(minutes?)`: the reads of the last minute(s), by route, with where they waited. */
+export function socketReads(minutes = 1, at: number = Date.now()) {
+  const recent = reads.filter((r) => r.at > at - minutes * 60_000)
+  const byVia: Record<string, number> = {}
+  for (const r of recent) byVia[r.via] = (byVia[r.via] ?? 0) + 1
+  const waits = (pick: (r: SocketReadRecord) => number, of = recent) => ({
+    p50: percentile(of.map(pick), 0.5),
+    p90: percentile(of.map(pick), 0.9),
+    max: percentile(of.map(pick), 1),
+  })
+  const overSocket = recent.filter((r) => r.via === 'socket')
+  return {
+    reads: recent.length,
+    reqs: overSocket.reduce((sum, r) => sum + r.reqs, 0),
+    byVia,
+    liveWaitMs: waits((r) => r.liveWaitMs),
+    pacerWaitMs: waits((r) => r.pacerWaitMs),
+    answerMs: waits((r) => r.answerMs, overSocket),
+    recent: recent.slice(-40),
+  }
+}
+
+export function installSocketReadsDiagnostic(): void {
+  if (typeof window === 'undefined') return
+  ;(window as unknown as Record<string, unknown>).__socketReads = (minutes?: number) =>
+    socketReads(typeof minutes === 'number' && minutes > 0 ? minutes : 1)
 }

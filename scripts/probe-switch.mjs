@@ -214,7 +214,9 @@ async function hammer({ targets, seconds, everyMs }) {
   }
   // Reads started by the last clicks still land, and a refusal for them counts too.
   await sleep(8000)
-  return { start, end: Date.now(), clicks, skipped, reads: window.__relayReads?.(2) ?? null }
+  const socket = window.__socketReads?.(2) ?? null
+  if (socket) delete socket.recent
+  return { start, end: Date.now(), clicks, skipped, reads: window.__relayReads?.(2) ?? null, socket }
 }
 
 const A = '/topic/switch-probe-a-'
@@ -363,6 +365,11 @@ if (hammerSeconds !== null) {
       .join(', ')}`,
   )
   if (run.reads) console.log(`page's own count (__relayReads, 2 min): ${run.reads.total} reads, ${run.reads.rateLimited} rate-limited`)
+  if (run.socket) {
+    const ms = (w) => `p50 ${w.p50} / p90 ${w.p90} / max ${w.max} ms`
+    console.log(`socket reader (__socketReads, 2 min): ${run.socket.reads} reads, ${run.socket.reqs} REQs; ${JSON.stringify(run.socket.byVia)}`)
+    console.log(`  waited for a slot ${ms(run.socket.pacerWaitMs)}; for the socket ${ms(run.socket.liveWaitMs)}; answer ${ms(run.socket.answerMs)}`)
+  }
   if (report.errors?.length) console.log(`\npage errors: ${report.errors.join(' | ')}`)
   process.exit(report.failure || total.refused > 0 || run.reads?.rateLimited > 0 ? 1 : 0)
 }

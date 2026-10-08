@@ -43,6 +43,7 @@ import {
   recordOnline,
   recordRelayState,
 } from './freshness'
+import { meteredSocket } from './socketFrames'
 
 export interface LiveTopics {
   state(): RelayState
@@ -282,6 +283,8 @@ function build(relayUrl: string): Wiring {
       onSignFailure: (error) => recordCredentialFailure(reasonForSignFailure(error)),
     },
     log: relayLog,
+    // The socket reader counts these frames against buzz's budget (OPT-2).
+    socketFactory: typeof WebSocket === 'undefined' ? undefined : meteredSocket,
   })
 
   return {

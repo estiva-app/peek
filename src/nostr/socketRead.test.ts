@@ -6,6 +6,7 @@ vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
 vi.mock('./liveTopics', () => ({ getLiveClient: () => null }))
 
 import { createPacer, createSocketReader, EOSE_TIMEOUT_MS, LIVE_WAIT_MS, REQS_PER_WINDOW, WINDOW_MS } from './socketRead'
+import { noteFrame, otherFramesSince, sendingAsRead } from './socketFrames'
 import { queryRelay, setSocketReader } from './bridge'
 import { relayReads, resetRelayMeter } from './relayMeter'
 
@@ -216,6 +217,33 @@ describe('createPacer', () => {
     room = true
     await vi.advanceTimersByTimeAsync(1_000)
     expect(await later).toBe('http')
+  })
+
+  it('counts the frames the live watches sent against the same window', async () => {
+    vi.useFakeTimers()
+    const watches: number[] = []
+    const others = (floor: number) => watches.filter((at) => at > floor)
+    const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, Date.now, (fn, ms) => setTimeout(fn, ms), (h) => clearTimeout(h as ReturnType<typeof setTimeout>), others)
+    for (let i = 0; i < 5; i++) watches.push(Date.now())
+    let granted = false
+    void pacer.take(REQS_PER_WINDOW - 4).then(() => (granted = true))
+    await vi.advanceTimersByTimeAsync(WINDOW_MS - 1)
+    expect(granted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(granted).toBe(true)
+  })
+})
+
+describe('socket frames', () => {
+  it('records the metered frames the socket sends, except the reader’s own', () => {
+    const at = 1_000_000
+    noteFrame('["REQ","peek-1",{"kinds":[9]}]', at)
+    noteFrame('["EVENT",{"id":"x"}]', at)
+    noteFrame('["CLOSE","peek-1"]', at)
+    noteFrame('["AUTH",{"id":"y"}]', at)
+    sendingAsRead(() => noteFrame('["REQ","peek-2",{"kinds":[9]}]', at))
+    expect(otherFramesSince(at - 1)).toHaveLength(2)
+    expect(otherFramesSince(at)).toHaveLength(0)
   })
 })
 

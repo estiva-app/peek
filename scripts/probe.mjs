@@ -143,7 +143,15 @@ try {
     await context.route(
       (url) => url.origin === idOrigin.origin,
       async (route) => {
-        const response = await route.fetch({ maxRedirects: 0 })
+        // Only the sign-in navigation needs this; `/sign` and the rest go straight
+        // through, so a reset there is the page's to handle, not the probe's crash.
+        if (!route.request().isNavigationRequest()) return route.continue()
+        let response
+        try {
+          response = await route.fetch({ maxRedirects: 0 })
+        } catch {
+          return route.abort('connectionreset')
+        }
         const location = response.headers()['location']
         if (response.status() >= 300 && response.status() < 400 && location && new URL(location, idOrigin).origin === origin) {
           const to = JSON.stringify(new URL(location, idOrigin).href)
