@@ -53,10 +53,17 @@ async function run({ A, B, marker, quietMs, settleMs }) {
     await sleep(100)
   }
   await sleep(settleMs)
-  const post = (where, text, was) =>
+  const post = (where, text, was, react) =>
     window
-      .__probeHook(`?path=${encodeURIComponent(paths[where])}&text=${encodeURIComponent(text)}${was ? `&was=${encodeURIComponent(was)}` : ''}`)
+      .__probeHook(
+        `?path=${encodeURIComponent(paths[where])}&text=${encodeURIComponent(text)}${was ? `&was=${encodeURIComponent(was)}` : ''}${react ? `&react=${encodeURIComponent(react)}` : ''}`,
+      )
       .catch((e) => `hook failed: ${e.message}`)
+  /** Whether the message showing `text` carries a reaction chip ("Makes sense, 1"). */
+  const reactedOn = (text) =>
+    [...document.querySelectorAll('div.relative.rounded-lg')]
+      .filter((c) => c.innerText.includes(text))
+      .some((c) => [...c.querySelectorAll('button[aria-label]')].some((b) => /, \d+$/.test(b.getAttribute('aria-label'))))
   /** Watches the open topic for `text` from now; resolves with when it showed, or null after 60 s. */
   const seen = (text) => {
     const from = Date.now()
@@ -87,7 +94,18 @@ async function run({ A, B, marker, quietMs, settleMs }) {
   await sleep(quietMs)
   edited.seenAt = await shownEdit
   edited.to = Date.now()
-  return { paths, other, here, edited }
+
+  /*
+    A reaction carries no `h`, so no live filter delivers it: the open topic's minute catch-up brings it (OPT-5,
+    decided by Miky). Waits up to 70 s — a minute plus the catch-up's own time.
+  */
+  const reacted = { from: Date.now(), text: edited.text }
+  reacted.answer = await post('A', edited.text, null, edited.text)
+  const reactUntil = Date.now() + 70000
+  while (!reactedOn(edited.text) && Date.now() < reactUntil) await sleep(200)
+  reacted.seenAt = reactedOn(edited.text) ? Date.now() : null
+  reacted.to = Date.now()
+  return { paths, other, here, edited, reacted }
 }
 
 const runNode = promisify(execFile)
@@ -96,7 +114,25 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
   const text = url.searchParams.get('text')
   const was = url.searchParams.get('was')
-  const steps = was
+  const react = url.searchParams.get('react')
+  const steps = react
+    ? // React to QA-2's message `react` with the picker's first option, from its own toolbar.
+      ['--until', `document.querySelector('main')?.innerText.includes(${JSON.stringify(react)})`, '--wait', '1500',
+        '--hover', `div.relative.rounded-lg:has-text(${JSON.stringify(react)})`,
+        '--eval', `(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+          const card = [...document.querySelectorAll('div.relative.rounded-lg')].filter((c) => c.innerText.includes(${JSON.stringify(react)})).at(-1)
+          const button = card?.querySelector('button[aria-label="React"]')
+          if (!button) return 'no React on the message'
+          button.click()
+          await sleep(500)
+          const option = document.querySelector('[aria-label="Reactions"] button')
+          if (!option) return 'no picker'
+          option.click()
+          return ${JSON.stringify(text)}
+        })()`,
+        '--wait', '4000']
+    : was
     ? /*
         Edit QA-2's message `was` to `text`: hover its card, then its own More actions — `--click` would take the
         topic header's, which has the same name — Edit message, replace, Save.
@@ -134,7 +170,7 @@ const server = createServer(async (request, response) => {
       { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
     )
     const typed = JSON.parse(stdout).steps?.find((s) => 'eval' in s)?.result
-    answer = typeof typed === 'string' && typed.includes(text) ? (was ? 'edited' : 'posted') : `not done: ${stdout.slice(0, 400)}`
+    answer = typeof typed === 'string' && typed.includes(text) ? (react ? 'reacted' : was ? 'edited' : 'posted') : `not done: ${String(typed).slice(0, 200)}`
   } catch (error) {
     let failedStep
     try {
@@ -156,7 +192,7 @@ let report
 try {
   const { stdout } = await runNode(
     process.execPath,
-    [join(here, 'probe.mjs'), '--as', 'qa1', '--base', base, '--url', `/app/folders/${QA_FOLDER}`, '--timeout', '180000',
+    [join(here, 'probe.mjs'), '--as', 'qa1', '--base', base, '--url', `/app/folders/${QA_FOLDER}`, '--timeout', '300000',
       '--net', netFile, '--until', `document.querySelector('a[href^="${A}"]')`, '--eval', source],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PROBE_HOOK: hook, PROBE_WS_MATCH: marker } },
   )
@@ -211,6 +247,12 @@ for (const [name, leg] of [
     console.log(`  drawn: ${leg.seenAt ? `${drawn ?? '?'} ms after node saw the frame, ${sinceWritten ?? '?'} ms after created_at` : 'NEVER'}`)
     if (!leg.seenAt || sinceWritten === null || sinceWritten > 2000) failed = true
   }
+}
+{
+  const leg = result.reacted
+  const shown = leg.seenAt ? `${((leg.seenAt - leg.from) / 1000).toFixed(1)} s after QA-2 began` : 'NOT within 70 s'
+  console.log(`\nQA-2 reacts to it (no \`h\`: the minute catch-up brings it): ${leg.answer}\n  shown for QA-1: ${shown}`)
+  if (!leg.seenAt) failed = true
 }
 if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ result, net }, null, 2))
 process.exit(failed ? 1 : 0)
