@@ -198,6 +198,7 @@ async function runSwitches({ steps, gapMs, hook }) {
       if (left[step.key] !== undefined) {
         result.restored = Math.abs(box.scrollTop - left[step.key]) <= 40
         result.sameMessage = inView() === leftView[step.key]
+        if (!result.sameMessage) result.inView = { left: leftView[step.key], back: inView() }
       }
       if (step.leaveAtMiddle) {
         box.scrollTop = Math.round((box.scrollHeight - box.clientHeight) / 2)

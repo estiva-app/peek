@@ -94,9 +94,25 @@ interface ViewSlots {
 
 /**
  * Where each conversation was left in this tab (OPT-3): at the bottom or at an
- * offset, and when, in Unix seconds. Not per viewer: it holds no content.
+ * offset, the message at the top of the view and how far down it sat, and
+ * when, in Unix seconds. Not per viewer: it holds no content.
  */
-const positions = new Map<string, { atBottom: boolean; offset: number; leftAt: number }>()
+const positions = new Map<
+  string,
+  { atBottom: boolean; offset: number; anchor?: { id: string; top: number }; leftAt: number }
+>()
+
+/** The message at the top of a scroller, by its `data-root` marker, and its card's distance from the top. */
+function anchorIn(el: HTMLElement): { id: string; top: number } | undefined {
+  const box = el.getBoundingClientRect()
+  // A gap between cards, or a date line, is passed over a few pixels at a time.
+  for (let y = box.top + 1; y < box.top + 96; y += 8) {
+    const marker = document.elementFromPoint(box.left + box.width / 2, y)?.closest<HTMLElement>('[data-root]')
+    const card = marker?.firstElementChild
+    if (marker?.dataset.root && card) return { id: marker.dataset.root, top: card.getBoundingClientRect().top - box.top }
+  }
+  return undefined
+}
 
 const nowSeconds = () => Math.floor(Date.now() / 1000)
 
@@ -321,7 +337,7 @@ export function useFileConversationView({
     if (!el) return
     nearBottom.current = isNearBottom(el)
     if (address && pinnedFor.current === address) {
-      positions.set(address, { atBottom: nearBottom.current, offset: el.scrollTop, leftAt: nowSeconds() })
+      positions.set(address, { atBottom: nearBottom.current, offset: el.scrollTop, anchor: anchorIn(el), leftAt: nowSeconds() })
     }
   }
 
@@ -349,7 +365,14 @@ export function useFileConversationView({
     if (!el) return
     const left = positions.get(address)
     if (left && !left.atBottom) {
+      /*
+        The message that was at the top, back at the same height — not the same
+        offset: what is above it can change height while you are away (a "new
+        reply" mark cleared once read, a reaction row past the horizon).
+      */
       el.scrollTop = left.offset
+      const card = left.anchor && el.querySelector(`[data-root="${left.anchor.id}"]`)?.firstElementChild
+      if (card) el.scrollTop += card.getBoundingClientRect().top - el.getBoundingClientRect().top - left.anchor!.top
       nearBottom.current = false
     } else {
       el.scrollTop = el.scrollHeight
@@ -459,6 +482,8 @@ export function useFileConversationView({
                 <Fragment key={c.id}>
                 {/* Ship's unread line, in Peek's short copy (Miky, OPT-3 /land, 8 Oct). */}
                 {c.id === firstNew && <Divider label="New" tone="warning" />}
+                {/* No box of its own: it names the card, so a return can find the message it left at the top. */}
+                <div data-root={c.id} className="contents">
                 <ConversationCard
                   authorName={c.authorName}
                   authorAvatarSrc={c.authorAvatarSrc}
@@ -488,6 +513,7 @@ export function useFileConversationView({
                   onReply={() => onOpenThread(c.id)}
                   onDelete={() => remove(c.id, 'Comment')}
                 />
+                </div>
                 </Fragment>
               ))}
             </div>
