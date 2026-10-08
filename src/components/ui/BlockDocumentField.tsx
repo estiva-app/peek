@@ -11,7 +11,7 @@ import {
   type EditorDocument,
 } from '@estiva-app/protocol'
 import { richTextClassName } from '@estiva-app/ui'
-import { AttachmentNode, BlockId, ReferenceNode, SelectionToolbar, UnknownBlock } from '@estiva-app/ui/editor'
+import { AttachmentNode, BlockId, CodeBlockColours, ReferenceNode, SelectionToolbar, UnknownBlock } from '@estiva-app/ui/editor'
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -91,7 +91,9 @@ export function BlockDocumentField({
       extensions: [
         // Ship's schema exactly: a mark or level it has no design for would
         // be one this editor could write and Ship could not show.
-        StarterKit.configure({ link: false, strike: false, heading: { levels: [1, 2, 3] } }),
+        // The code block is the package's, coloured by language as it is when read (estiva-ui 0.64.0).
+        StarterKit.configure({ link: false, strike: false, heading: { levels: [1, 2, 3] }, codeBlock: false }),
+        CodeBlockColours,
         TableKit.configure({ table: { resizable: false } }),
         BlockId,
         ReferenceNode,

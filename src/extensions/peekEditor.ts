@@ -46,9 +46,10 @@ import { EditSlashCommands, SlashCommands } from './slashCommands'
  * what you type is exactly what the card shows (UIG-30, Katerina, 28 September).
  * One thing is Peek's: a line typed with Enter is a paragraph here but a line
  * break once sent (`serializeTiptapToText` joins them with one newline), so two
- * paragraphs in a row sit flush, as the lines of one paragraph do.
+ * paragraphs in a row sit flush, as the lines of one paragraph do: the pull is
+ * the size of RichText's gap between blocks, 8px since estiva-ui 0.64.0.
  */
-export const PEEK_EDITOR_CLASSES = richTextClassName('default', 'outline-none w-full bg-transparent min-h-[20px] [&>p+p]:-mt-1')
+export const PEEK_EDITOR_CLASSES = richTextClassName('default', 'outline-none w-full bg-transparent min-h-[20px] [&>p+p]:-mt-2')
 
 export const peekEditorExtensions = [
   peekStarterKit,
