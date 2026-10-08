@@ -142,16 +142,15 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     }
   }
 
+  // One Panel, its bar the package's: the messages scroll under it, the composer stays put.
   const rightPanel = (
-    <div className="flex flex-col h-full">
-      <Header
-        name={dmName}
-        isStarred={isDmStarred(dmId)}
-        onToggleStarred={onToggleStarred ?? (() => toggleDm({ dmId, name: dmName }))}
-        onHideDm={onHideDm}
-      />
-      {dm.conversation}
-    </div>
+    <Header
+      name={dmName}
+      isStarred={isDmStarred(dmId)}
+      onToggleStarred={onToggleStarred ?? (() => toggleDm({ dmId, name: dmName }))}
+      onHideDm={onHideDm}
+      {...dm.conversationParts}
+    />
   )
 
   return { rightPanel, threadPanel: dm.threadPanel, replyOnlyThread: dm.replyOnlyThread, openThread: setThreadConvId }

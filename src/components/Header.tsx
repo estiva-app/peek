@@ -3,12 +3,14 @@ import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
 import { IconButton } from './ui/IconButton'
-import { cn } from '@/lib/utils'
-import { MembersPill, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import type { ReactNode } from 'react'
+import { MembersPill, Panel, Toolbar, ToolbarButton, type PanelProps } from '@estiva-app/ui'
 import { useAvatarSrc } from '@/api'
 import { MetaText } from '@/components/ui/MetaText'
 
-interface HeaderProps {
+interface HeaderProps extends Partial<Pick<PanelProps, 'footer' | 'bodyRef' | 'onBodyScroll' | 'bodyClassName'>> {
+  /** The conversation under the bar: the body of the column's `Panel`, which scrolls. */
+  children?: ReactNode
   avatarSrc?: string
   name?: string
   /**
@@ -80,8 +82,9 @@ interface HeaderProps {
 }
 
 /**
- * The bar above an open topic, huddle or direct message: its name, open and
- * resolved counts, members, a star and a more-actions menu.
+ * The column of an open topic, huddle or direct message: its bar — name, open
+ * and resolved counts, members, a star and a more-actions menu — and the
+ * conversation under it, in the package's `Panel`.
  */
 export function Header({
   avatarSrc,
@@ -103,6 +106,11 @@ export function Header({
   onDeleteTopic,
   onHideDm,
   className,
+  children,
+  footer,
+  bodyRef,
+  onBodyScroll,
+  bodyClassName,
   folderId,
   onToggleFolderPanel,
   folderPanelOpen = false,
@@ -138,11 +146,17 @@ export function Header({
     </ToolbarButton>
   )
 
+  // The package's Panel, so its bar is every other column's (Katerina, 8
+  // October): its own row was 48px with the hairline under it, so 49px, its
+  // line a pixel below People's and Replies', its title 20px in where theirs is 16px.
   return (
-    <div className={cn('shrink-0 border-b border-border-subtle', className)}>
-      {/* Row 1: title + actions */}
-      <div className="h-12 flex items-center justify-between pl-5 pr-4 py-2">
-        {/* Left */}
+    <Panel
+      className={className}
+      footer={footer}
+      bodyRef={bodyRef}
+      onBodyScroll={onBodyScroll}
+      bodyClassName={bodyClassName}
+      title={
         <div className="flex items-center gap-2 overflow-hidden">
           {variant === 'huddle' ? (
             <IconLock size={16} stroke={1.5} className="text-text-secondary shrink-0" />
@@ -159,29 +173,36 @@ export function Header({
             <span className="text-body-2-strong text-text-primary truncate">{name}</span>
           )}
         </div>
+      }
+      actions={
+        <>
+          {/*
+            The counts and the members pill are one group, 12px clear of the
+            buttons (Katerina, 8 October): the bar sets its actions 4px apart,
+            so the group adds the other 8px. The buttons stay 4px apart.
+          */}
+          {!hideTopicMeta && (variant === 'topic' || (variant !== 'dm' && members.length > 0)) && (
+            <div className="flex items-center gap-3 pr-2">
+              {variant === 'topic' && (
+                // Open / resolved counts
+                <div className="flex items-center gap-2">
+                  <MetaText tone="secondary">
+                    {openCount} open
+                  </MetaText>
+                  <div className="w-[3px] h-[3px] rounded-full bg-text-muted shrink-0" />
+                  <MetaText tone="success">
+                    {resolvedCount} resolved
+                  </MetaText>
+                </div>
+              )}
 
-        {/* Right */}
-        <div className="flex gap-3 items-center shrink-0">
-          {variant === 'topic' && !hideTopicMeta && (
-            <>
-              {/* Open / resolved counts */}
-              <div className="flex items-center gap-2">
-                <MetaText tone="secondary">
-                  {openCount} open
-                </MetaText>
-                <div className="w-[3px] h-[3px] rounded-full bg-text-muted shrink-0" />
-                <MetaText tone="success">
-                  {resolvedCount} resolved
-                </MetaText>
-              </div>
-            </>
-          )}
-
-          {/* Members pill — shown for both topic mode and huddle mode. In topic
-              mode it opens the members dialog (huddle membership is set at
-              creation, so the huddle pill stays inert). */}
-          {variant !== 'dm' && !hideTopicMeta && members.length > 0 && (
-            <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} onClick={onShowMembers} />
+              {/* Members pill — shown for both topic mode and huddle mode. In topic
+                  mode it opens the members dialog (huddle membership is set at
+                  creation, so the huddle pill stays inert). */}
+              {members.length > 0 && (
+                <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} onClick={onShowMembers} />
+              )}
+            </div>
           )}
 
           {/* Start huddle (V2 / V3 only — driven by onStartHuddle prop). Hidden inside a huddle. */}
@@ -245,8 +266,10 @@ export function Header({
               moreButton
             )}
           </Toolbar>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {children}
+    </Panel>
   )
 }
