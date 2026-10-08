@@ -1,6 +1,6 @@
 import { KIND_BARE_FILE } from '@estiva-app/interop'
 import { referenceToPointer } from '@estiva-app/protocol'
-import { MESSAGE_KIND, TOPIC_KIND } from '@/nostr/manifest'
+import { thingKindOf, type ThingKind } from '@estiva-app/ui'
 
 /**
  * Ship's project and issue kinds (Ship's manifest). Peek names them only to
@@ -26,18 +26,17 @@ export function fileGlyph(kind: number | undefined): FileGlyph {
   return 'file'
 }
 
-/** What a reference can name: a file, or a message. */
-export type ReferenceGlyph = FileGlyph | 'message'
+/** What a reference can name: a file, or a message — the package's kinds of thing (`KindIcon`). */
+export type ReferenceGlyph = ThingKind
 
 /**
  * The glyph for a referenced object (SPEC §13.1): a message is a message; a
  * channel is a topic, as `referenceLink` opens it; anything else is a file,
- * by `fileGlyph`.
+ * by `fileGlyph`. The package's `thingKindOf` since estiva-ui 0.63.0, which
+ * every app reads alike (Katerina, 8 October).
  */
 export function referenceGlyph(kind: number | undefined): ReferenceGlyph {
-  if (kind === MESSAGE_KIND) return 'message'
-  if (kind === TOPIC_KIND) return 'topic'
-  return fileGlyph(kind)
+  return thingKindOf(kind)
 }
 
 /**

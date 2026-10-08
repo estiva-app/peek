@@ -8,10 +8,9 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { referenceLink, type ReferenceLink } from '@/lib/referenceLink'
 import { openConversation } from '@/lib/threadOpener'
 import { previewText } from '@/lib/textParsing'
-import { InlineChip, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
+import { InlineChip, KindIcon, WithTooltip, type InlineChipTone } from '@estiva-app/ui'
 import { referenceGlyph } from '@/lib/fileGlyph'
 import { StatusPill } from './ForeignObjectWidget'
-import { GlyphIcon } from './GlyphIcon'
 
 /**
  * What a resolved object is called, in a chip's worth of words.
@@ -182,7 +181,7 @@ export function Reference({
           data-resolved="true"
           tone="neutral"
           // What it is, before its name: a topic, a Ship project or issue, a file or a message (Katerina, 7 October).
-          icon={<GlyphIcon glyph={referenceGlyph(object.kind)} />}
+          icon={<KindIcon kind={referenceGlyph(object.kind)} size={14} tone="inherit" />}
           className={className}
           /*
             The same box a `[Topic]` chip gets: one line high, aligned to the text
