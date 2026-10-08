@@ -819,7 +819,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(mentions.asked.every((a) => !a)).toBe(true)
   })
 
-  it('a mention is the third column: labelled, naming the file it was said on, and leading to its thread', () => {
+  it('a mention is the third column: labelled, naming the file it was said on, and leading to the message itself (PEE-48)', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}`)
@@ -831,7 +831,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(within(row as HTMLElement).getByText('The file route')).toBeInTheDocument()
     expect(within(row as HTMLElement).getByText(mention.body)).toBeInTheDocument()
     fireEvent.click(within(row as HTMLElement).getByText(mention.body))
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${mention.threadId}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/message/${mention.id}`)
   })
 
   it('a file nobody has named keeps its two columns', () => {

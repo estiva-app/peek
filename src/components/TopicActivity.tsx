@@ -111,6 +111,13 @@ export function TopicActivity({
       {items.map(({ conv, about, relation = 'sub-file', href }) => {
         const words = RELATION[relation]
         const open = href ? () => navigate(href) : () => onOpenThread(conv.id)
+        /*
+          A mention is a message said somewhere else (PEE-48, Katerina, 8
+          October): shown as it is now, nothing on it to act on — no menu, no
+          reply, no reaction to toggle, no resolve — and a click opens it where
+          it was said.
+        */
+        const mention = relation === 'mention'
         return (
         <div key={conv.id} className="flex flex-col gap-1" data-relation={relation}>
           <div className="flex items-center gap-2">
@@ -136,6 +143,8 @@ export function TopicActivity({
             authorAvatarSrc={conv.authorAvatarSrc}
             timestamp={conv.timestamp}
             body={conv.body}
+            editedAt={conv.editedAt}
+            deleted={conv.isDeleted}
             files={conv.files}
             reactions={conv.reactions}
             highlightType={conv.highlightType}
@@ -150,8 +159,9 @@ export function TopicActivity({
             nostrBlockId={conv.nostrBlockId}
             subdued={words.muted}
             isSelected={selectedId === conv.id}
+            readOnly={mention}
             onClick={open}
-            onReply={open}
+            onReply={mention ? undefined : open}
           />
         </div>
         )

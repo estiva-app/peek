@@ -1,9 +1,7 @@
 import { useMemo } from 'react'
 import { SectionHeader } from '@estiva-app/ui'
-import { KIND } from '@estiva-app/protocol'
 import { formatTimestamp, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
 import type { FileMention } from '@/nostr/fileMentions'
-import { filePath } from '@/lib/objectUrl'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 
 /**
@@ -21,8 +19,8 @@ import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivit
  * file it was said on is named beside it, and the card is `subdued` — the
  * hairline alone, as Ship draws a mention — because a mention is anyone
  * typing your address, retroactive and unwithdrawable (SPEC §5.2), while the
- * conversation beside it is your own. Opening the row opens the thread it was
- * said in, on that file's page: this page holds none of that file's threads.
+ * conversation beside it is your own. Nothing on the row acts on the message
+ * (PEE-48): opening it opens the message where it was said, with its thread.
  *
  * ## The column it lives in
  *
@@ -80,12 +78,11 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     canEditAndDelete: false,
   }
   /*
-    A comment opens the thread it was said in, on that file's page. A topic
-    message (`kind:9`, CON-14) opens its topic, whose page has no thread
-    parameter — `FilePage` sends a `39000:` address on to the topic's page.
+    The message itself, where it was said (PEE-48): `/message/<id>` finds its
+    place — a DM, a topic, a file's thread — and opens the thread on it. A
+    link to the place alone landed beside the message, or on nothing.
   */
-  const href = m.kind === KIND.STREAM_MESSAGE ? filePath(m.saidIn) : `${filePath(m.saidIn)}?thread=${m.threadId}`
-  return { conv, about: m.saidIn, relation: 'mention', href }
+  return { conv, about: m.saidIn, relation: 'mention', href: `/message/${m.id}` }
 }
 
 /**
