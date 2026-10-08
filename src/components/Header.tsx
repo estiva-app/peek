@@ -199,7 +199,7 @@ export function Header({
               {/* Members pill — shown for both topic mode and huddle mode. In topic
                   mode it opens the members dialog (huddle membership is set at
                   creation, so the huddle pill stays inert). */}
-              {variant !== 'dm' && members.length > 0 && (
+              {members.length > 0 && (
                 <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} onClick={onShowMembers} />
               )}
             </div>
