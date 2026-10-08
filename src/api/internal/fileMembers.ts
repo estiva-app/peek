@@ -4,6 +4,7 @@ import { validToken } from '@/auth/estivaId'
 import { RELAY_URL } from '@/api/relayUrl'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { fetchFileMembers } from '@/nostr/fileMembers'
+import { isConversationHeld, onFileNews } from '@/api/conversations'
 
 /** One read of a file's members, or `undefined` with no relay, no token, or no answer. */
 async function readMembers(address: string): Promise<Map<string, Membership> | undefined> {
@@ -49,9 +50,20 @@ export function useFileMembers(address: string | undefined): {
       setRead((prev) => (members ? { address, members } : prev?.address === address && prev.members ? prev : { address }))
     })
   }, [address])
+  /*
+    A return to a file whose conversation is held asks nothing (OPT-3): the
+    members fold from the same changes and comments its catch-up asks after,
+    and it says when one could have changed them — a change to the file, or a
+    comment by somebody not yet listed.
+  */
   useEffect(() => {
-    void reload()
-  }, [reload])
+    if (!address) return
+    if (!lastRead.has(address) || !isConversationHeld(address)) void reload()
+    return onFileNews(address, (news) => {
+      const held = lastRead.get(address)
+      if (news.object || !held || news.authors.some((author) => !held.has(author))) void reload()
+    })
+  }, [address, reload])
   // Somebody else joins, leaves or adds: re-read when the person comes back to the tab. Not on the 30 s
   // interval: every relay read costs an Estiva ID /sign, and the membership sync already polls.
   useRefreshTriggers(() => void reload(), { enabled: !!address && !!RELAY_URL, interval: false })

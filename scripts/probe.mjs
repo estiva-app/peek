@@ -206,6 +206,9 @@ try {
       report.errors.push(`script served as HTML: ${r.url().slice(0, 200)}`)
   })
 
+  // PROBE_HOOK=<url>: `window.__probeHook(query)` GETs `<url><query>` from node and returns the text, for a run
+  // that needs another process mid-way (probe-switch's QA-2 post). A page fetch of 127.0.0.1 is blocked by Chromium.
+  if (process.env.PROBE_HOOK) await page.exposeFunction('__probeHook', (query) => fetch(`${process.env.PROBE_HOOK}${query}`).then((r) => r.text()))
   await page.goto(new URL(options.url, options.base).href)
   report.signedIn = await signedIn(page)
   report.url = page.url()

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRelayViewer } from './foreign'
+import { viewerQuery } from '@/nostr/foreign'
+import { catchUpConversation, readConversation } from '@/nostr/conversationCatchUp'
+import { announceFileNews, conversationKey, conversationsFor } from './conversations'
 import { KIND } from '@estiva-app/protocol'
 import {
   commentAsViewer,
-  conversationAsViewer,
   deleteEventAsViewer,
   editCommentAsViewer,
   reactAsViewer,
@@ -58,12 +60,34 @@ export interface FileConversationActions {
 
 const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this conversation.' }
 
-/** The last answer for a container, and which roots it was read with. */
-interface Answer {
-  key: string
-  ids: string
-  conversation?: FileConversation
-  failed?: RelayFailureKind
+/**
+ * One sync per conversation at a time. A sync asked for while one runs is
+ * folded into a second pass after it, with the latest caller's inputs, rather
+ * than run beside it: two catch-ups at once would ask the relay the same thing
+ * twice.
+ */
+const syncs = new Map<string, { promise: Promise<void>; run: () => Promise<void>; again: boolean }>()
+
+function coalesced(key: string, run: () => Promise<void>): Promise<void> {
+  const flight = syncs.get(key)
+  if (flight) {
+    flight.run = run
+    flight.again = true
+    return flight.promise
+  }
+  const entry = { promise: Promise.resolve(), run, again: false }
+  entry.promise = (async () => {
+    try {
+      do {
+        entry.again = false
+        await entry.run()
+      } while (entry.again)
+    } finally {
+      syncs.delete(key)
+    }
+  })()
+  syncs.set(key, entry)
+  return entry.promise
 }
 
 const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION]
@@ -108,16 +132,20 @@ const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTI
  * to the skeleton and remounted every card, losing the scroll and the open
  * replies.
  *
+ * ## Held, and caught up (OPT-3)
+ *
+ * The first open reads the conversation and the tab's `conversations` store
+ * holds it with the events it was made of. Going back draws what is held on
+ * the first frame, and one catch-up asks the relay only what changed since
+ * (`catchUpConversation`): one request when nothing did, two when something
+ * did. A new root is found by that catch-up too, so the object need not be
+ * read again for it; `onActivity` is called only when the file itself changed.
+ *
  * ## Live, the way a topic is (FOL-32)
  *
  * `useLiveFile` watches the container's Folder for `kind:1111` on the tab's
  * one socket, and the interval idles while that socket is live. The signal
- * carries no event, so it cannot say whether a new root or a reply landed and
- * both reads run: the caller's `onActivity` — the object's own read, which is
- * where the roots come from; a new one is not in `rootIds` until then, and
- * the changed ids re-read here — and this hook's `reload`, for a reply, an
- * edit or a reaction on a root already listed. When the root set did change
- * the second read is one too many, at the frequency of a new comment.
+ * carries no event, so it cannot say what landed: it runs the catch-up.
  */
 export function useFileConversation(
   container: ConversationContainer | null | undefined,
@@ -136,86 +164,105 @@ export function useFileConversation(
   viewerPubkey: string | null
 } {
   const viewer = useRelayViewer()
-  const [answer, setAnswer] = useState<Answer>()
-  // The answer is the container's; the root ids are only what to read in it.
-  const key = !container
-    ? ''
-    : container.kind === 'file'
-      ? `file ${container.h} ${container.address}`
-      : `channel ${container.h}`
+  const v = viewer()
+  const store = v ? conversationsFor(v.relayUrl, v.token.pubkey) : null
+  // The conversation is the container's; the root ids are only what to read in it.
+  const key = container ? conversationKey(container) : ''
   // The identity of the array changes every render; the comment ids do not.
   const ids = container?.kind === 'file' ? rootIds.join(',') : ''
 
-  // What is being read now, for a read that lands after the roots moved on.
-  const asking = useRef({ key, ids })
-  useEffect(() => {
-    asking.current = { key, ids }
-  }, [key, ids])
+  const subscribe = useCallback(
+    (listener: () => void) => (store && key ? store.subscribe(key, listener) : () => {}),
+    [store, key],
+  )
+  const held = useSyncExternalStore(subscribe, () => (store && key ? store.value(key) : undefined))
+  /*
+    Why nothing is held, for this container. A failed catch-up keeps the
+    conversation it has (FOL-40): one hiccup on the 30 s tick must not swap the
+    list for an error and back. A first read still reports its failure; there
+    is nothing to keep. Losing access is the exception — what was held is
+    dropped and the view says so.
+  */
+  const [failure, setFailure] = useState<{ key: string; failed: RelayFailureKind }>()
 
-  const load = useCallback(async (): Promise<Answer | undefined> => {
-    if (!key) return
-    const [kind, h, address] = key.split(' ')
-    const v = viewer()
-    if (!v) return
-    const where: ConversationContainer = kind === 'file' ? { kind: 'file', address, h } : { kind: 'channel', h }
-    return conversationAsViewer(where, ids ? ids.split(',') : [], v.relayUrl, v.token)
-      .then((conversation) => ({ key, ids, conversation }))
-      .catch((error: unknown) => {
-        const kind =
-          error instanceof RelayReadError
-            ? error.kind
-            : classifyRelayFailure((error as Error)?.message ?? '')
-        if (isOutage(kind)) recordReadFailure(kind)
-        console.warn('[nostr] file conversation read failed:', error)
-        return { key, ids, failed: kind as RelayFailureKind }
-      })
-  }, [key, ids, viewer])
+  // Written in an effect rather than during render; read from a socket frame or a timer.
+  const latestActivity = useRef(onActivity)
+  useEffect(() => {
+    latestActivity.current = onActivity
+  })
 
   /*
-    A failed *re*-read keeps the conversation it has (FOL-40), the rule the
-    object's own resolve follows: one hiccup on the 30 s tick must not swap the
-    list for an error and back. A first read still reports its failure; there
-    is nothing to keep.
+    The one read: the first open reads the conversation and holds what it was
+    answered with; every later one — a return, a live signal, a write, the
+    refresh tick — asks only what changed since (`catchUpConversation`).
   */
-  const keep = useCallback(
-    (next: Answer) =>
-      setAnswer((held) => (next.failed && held?.key === next.key && held.failed === undefined ? held : next)),
-    [],
-  )
-
-  const reload = useCallback(async () => {
-    const next = await load()
-    // A slow read for the file that *was* open, or for the roots it had before
-    // one was added, must not paint over what is being read now.
-    if (next && next.key === asking.current.key && next.ids === asking.current.ids) keep(next)
-  }, [load, keep])
+  const sync = useCallback(async () => {
+    const at = viewer()
+    if (!key || !container || !at) return
+    const conversations = conversationsFor(at.relayUrl, at.token.pubkey)
+    const roots = ids ? ids.split(',') : []
+    const query = viewerQuery(at.relayUrl, at.token)
+    await coalesced(key, async () => {
+      try {
+        const before = conversations.value(key)
+        if (before === undefined) {
+          const startedAt = Date.now()
+          const { value, events } = await readConversation(container, roots, query)
+          // A catch-up that settled meanwhile is newer than this.
+          if (conversations.value(key) === before) conversations.replace(key, value, events, startedAt)
+          return
+        }
+        const found = await catchUpConversation(conversations, key, container, roots, query)
+        if (found.lost) {
+          // The Folder is no longer the viewer's: nothing held is drawn again, and the page reads what it may now see.
+          conversations.drop(key)
+          const startedAt = Date.now()
+          const { value, events } = await readConversation(container, roots, query)
+          conversations.replace(key, value, events, startedAt)
+          latestActivity.current?.()
+          if (container.kind === 'file') announceFileNews(container.address, { object: true, mentions: true, authors: [] })
+          return
+        }
+        if (found.object) latestActivity.current?.()
+        if (container.kind === 'file' && (found.object || found.mentions || found.authors.length)) {
+          announceFileNews(container.address, { object: found.object, mentions: found.mentions, authors: found.authors })
+        }
+      } catch (error) {
+        const kind =
+          error instanceof RelayReadError ? error.kind : classifyRelayFailure((error as Error)?.message ?? '')
+        if (isOutage(kind)) recordReadFailure(kind)
+        console.warn('[nostr] file conversation read failed:', error)
+        if (kind === 'not_a_member') conversations.drop(key)
+        if (kind === 'not_a_member' || conversations.value(key) === undefined) setFailure({ key, failed: kind })
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the container is `key`, by value
+  }, [key, ids, viewer])
 
   useEffect(() => {
     if (!key) return
-    let cancelled = false
-    void load().then((next) => !cancelled && next && keep(next))
-    return () => {
-      cancelled = true
-    }
-  }, [key, load, keep])
+    store?.touch(key)
+    void sync()
+  }, [key, store, sync])
 
   const live = useLiveFile(
     container?.h,
     () => {
-      onActivity?.()
-      if (key) void reload()
+      if (key) void sync()
     },
     // A channel's messages, and what is done to them that carries its `h`. A
-    // reaction carries none, and arrives with the next re-read.
+    // reaction carries none, and arrives with the next catch-up.
     container?.kind === 'channel' ? CHANNEL_LIVE_KINDS : undefined,
   )
 
   useRefreshTriggers(
     () => {
-      if (key) void reload()
+      if (key) void sync()
     },
     { enabled: !!key, interval: live.relayState !== 'live' },
   )
+
+  const reload = sync
 
   /*
     Each write but a root comment re-reads on success. The re-read is awaited so a caller that
@@ -262,12 +309,13 @@ export function useFileConversation(
         : Promise.resolve(SIGNED_OUT),
   }
 
-  const state: FileConversationState =
-    answer?.key !== key || !key
-      ? 'loading'
-      : answer.failed
-        ? { failed: answer.failed }
-        : (answer.conversation ?? 'loading')
+  const state: FileConversationState = !key
+    ? 'loading'
+    : held
+      ? held
+      : failure?.key === key
+        ? { failed: failure.failed }
+        : 'loading'
 
-  return { state, reload, actions, viewerPubkey: viewer()?.token.pubkey ?? null }
+  return { state, reload, actions, viewerPubkey: v?.token.pubkey ?? null }
 }

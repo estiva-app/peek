@@ -62,12 +62,12 @@ import {
   type UnsignedEvent,
 } from '@estiva-app/protocol'
 import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, quoteTagsFor, referenceTagsFor, URGENT_TAG, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
-import type { Threads } from '@estiva-app/interop'
+import type { QueryFn, Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
-import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
-import { RATE_LIMIT_MAX_WAIT_MS, RelayReadError, retryAfterMs } from './relayRead'
-import { applyActionAsViewer, fileCommentOf, threadEventsAsViewer, urlReferenceTagsAsViewer, type ActResult, type FileComment, type FileThreads } from './foreign'
+import { publishSigned, signViaEstivaId } from './bridge'
+import { RATE_LIMIT_MAX_WAIT_MS, retryAfterMs } from './relayRead'
+import { applyActionAsViewer, fileCommentOf, threadEventsWith, urlReferenceTagsAsViewer, viewerQuery, type ActResult, type FileComment, type FileThreads } from './foreign'
 import { findUrls } from '@/lib/textParsing'
 
 /** Where a conversation lives; see the module header. */
@@ -223,13 +223,18 @@ export function imetaTagsFor(files: readonly OutgoingAttachment[]): NostrTag[] {
  * Throws `RelayReadError` on a refused read, like every read here: an
  * unreadable conversation is not an empty one.
  */
-export async function fileConversationAsViewer(
+export function fileConversationAsViewer(
   container: FileContainer,
   rootIds: readonly string[],
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileConversation> {
-  const { threads, orphaned } = await threadsWithDeletedRootsAsViewer(container.address, rootIds, relayUrl, token)
+  return fileConversationWith(container, rootIds, viewerQuery(relayUrl, token))
+}
+
+/** {@link fileConversationAsViewer} over any query: the relay's, or the conversation store's (OPT-3). */
+async function fileConversationWith(container: FileContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
+  const { threads, orphaned } = await threadsWithDeletedRoots(container.address, rootIds, query)
   const conversationEvent = (event: SignedEvent) => withTags(fileCommentOf(event), event, container.address)
 
   const roots = rootIds
@@ -251,7 +256,7 @@ export async function fileConversationAsViewer(
   // Oldest first. A stand-in is dated by its first reply — the nearest time the relay still holds.
   const allRoots = orphaned.roots.length ? [...roots, ...orphaned.roots].sort((a, b) => a.createdAt - b.createdAt) : roots
 
-  return decorate(allRoots, replies, relayUrl, token)
+  return decorate(allRoots, replies, query)
 }
 
 /**
@@ -265,7 +270,7 @@ export async function fileThreadsAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileThreads> {
-  const { threads, orphaned } = await threadsWithDeletedRootsAsViewer(address, rootIds, relayUrl, token)
+  const { threads, orphaned } = await threadsWithDeletedRoots(address, rootIds, viewerQuery(relayUrl, token))
   const replies: Record<string, FileComment[]> = {}
   for (const [rootId, list] of [...Object.entries(threads.replies), ...Object.entries(orphaned.replies)]) replies[rootId] = list.map(fileCommentOf)
   return {
@@ -276,23 +281,22 @@ export async function fileThreadsAsViewer(
 }
 
 /** interop's thread read, and beside it the replies whose comment was deleted — both file panes' read. */
-async function threadsWithDeletedRootsAsViewer(
+async function threadsWithDeletedRoots(
   address: string,
   rootIds: readonly string[],
-  relayUrl: string,
-  token: StoredToken,
+  query: QueryFn,
 ): Promise<{ threads: Threads; orphaned: Awaited<ReturnType<typeof deletedRootsOf>> }> {
   const [threads, onFile] = await Promise.all([
-    threadEventsAsViewer(address, rootIds, relayUrl, token),
+    threadEventsWith(address, rootIds, query),
     // Only for replies whose comment was deleted: a refusal here costs those, not the conversation.
-    commentsOnFileAsViewer(address, relayUrl, token).catch(() => []),
+    commentsOnFile(address, query).catch(() => []),
   ])
   // What the relay still holds and this read reached. Not `rootIds`: a re-read
   // right after a delete still asks about the deleted root, and its replies,
   // which `#e` still returns, would hang from a root that is not drawn.
   const known = new Set(Object.keys(threads.roots))
   for (const [rootId, list] of Object.entries(threads.replies)) if (known.has(rootId)) for (const e of list) known.add(e.id)
-  const orphaned = await deletedRootsOf(onFile, known, address, relayUrl, token).catch(() => ({ roots: [], replies: {} }))
+  const orphaned = await deletedRootsOf(onFile, known, address, query).catch(() => ({ roots: [], replies: {} }))
   return { threads, orphaned }
 }
 
@@ -300,11 +304,8 @@ async function threadsWithDeletedRootsAsViewer(
 const FILE_COMMENTS_LIMIT = 1_000
 
 /** Every `kind:1111` whose NIP-22 root is the file — roots and replies alike. */
-async function commentsOnFileAsViewer(address: string, relayUrl: string, token: StoredToken): Promise<SignedEvent[]> {
-  const filter = { kinds: [KIND.COMMENT], '#A': [address], limit: FILE_COMMENTS_LIMIT }
-  const result = await queryRelay(relayUrl, [filter], token.accessToken, token.pubkey)
-  if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-  return result.events
+function commentsOnFile(address: string, query: QueryFn): Promise<SignedEvent[]> {
+  return query([{ kinds: [KIND.COMMENT], '#A': [address], limit: FILE_COMMENTS_LIMIT }])
 }
 
 /**
@@ -326,8 +327,7 @@ async function deletedRootsOf(
   onFile: readonly SignedEvent[],
   known: ReadonlySet<string>,
   address: string,
-  relayUrl: string,
-  token: StoredToken,
+  query: QueryFn,
 ): Promise<{ roots: ConversationEvent[]; replies: Record<string, SignedEvent[]> }> {
   const byParent = new Map<string, SignedEvent[]>()
   for (const event of onFile) {
@@ -340,9 +340,7 @@ async function deletedRootsOf(
   if (byParent.size === 0) return { roots: [], replies: {} }
 
   const ids = [...byParent.keys()]
-  const result = await queryRelay(relayUrl, [{ ids, limit: ids.length }], token.accessToken, token.pubkey)
-  if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-  const held = new Set(result.events.map((e) => e.id))
+  const held = new Set((await query([{ ids, limit: ids.length }])).map((e) => e.id))
 
   const roots: ConversationEvent[] = []
   const replies: Record<string, SignedEvent[]> = {}
@@ -367,9 +365,16 @@ export function conversationAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<FileConversation> {
-  return container.kind === 'file'
-    ? fileConversationAsViewer(container, rootIds, relayUrl, token)
-    : channelConversationAsViewer(container.h, relayUrl, token)
+  return conversationWith(container, rootIds, viewerQuery(relayUrl, token))
+}
+
+/**
+ * {@link conversationAsViewer} over any query (OPT-3). The relay's, recorded,
+ * fills the conversation store; the store's own answers the same read again
+ * from what it holds, so a catch-up folds with no further request.
+ */
+export function conversationWith(container: ConversationContainer, rootIds: readonly string[], query: QueryFn): Promise<FileConversation> {
+  return container.kind === 'file' ? fileConversationWith(container, rootIds, query) : channelConversationWith(container.h, query)
 }
 
 /** Buzz clamps `limit` at 1,000 per filter; a page that comes back full is followed by the next. */
@@ -388,17 +393,20 @@ export const CHANNEL_PAGES = 20
  * second that straddles two pages is read twice and deduplicated by id rather
  * than skipped.
  */
-export async function channelConversationAsViewer(h: string, relayUrl: string, token: StoredToken): Promise<FileConversation> {
+export function channelConversationAsViewer(h: string, relayUrl: string, token: StoredToken): Promise<FileConversation> {
+  return channelConversationWith(h, viewerQuery(relayUrl, token))
+}
+
+async function channelConversationWith(h: string, query: QueryFn): Promise<FileConversation> {
   const messages = new Map<string, SignedEvent>()
   let until: number | undefined
   for (let page = 0; page < CHANNEL_PAGES; page += 1) {
     const filter = { kinds: [KIND.STREAM_MESSAGE], '#h': [h], limit: CHANNEL_PAGE, ...(until !== undefined ? { until } : {}) }
-    const result = await queryRelay(relayUrl, [filter], token.accessToken, token.pubkey)
-    if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+    const events = await query([filter])
     const before = messages.size
-    for (const event of result.events) if (event.kind === KIND.STREAM_MESSAGE) messages.set(event.id, event)
-    if (result.events.length < CHANNEL_PAGE || messages.size === before) break
-    until = Math.min(...result.events.map((e) => e.created_at))
+    for (const event of events) if (event.kind === KIND.STREAM_MESSAGE) messages.set(event.id, event)
+    if (events.length < CHANNEL_PAGE || messages.size === before) break
+    until = Math.min(...events.map((e) => e.created_at))
   }
 
   const asEvent = (event: SignedEvent): ConversationEvent => ({
@@ -421,24 +429,15 @@ export async function channelConversationAsViewer(h: string, relayUrl: string, t
     const list = threaded.replies[root.id]
     if (list) replies[root.id] = list.map(asEvent)
   }
-  return decorate(roots, replies, relayUrl, token)
+  return decorate(roots, replies, query)
 }
 
 /** What has been done to every root and reply: the third read, whichever container they came from. */
-async function decorate(
-  roots: ConversationEvent[],
-  replies: Record<string, ConversationEvent[]>,
-  relayUrl: string,
-  token: StoredToken,
-): Promise<FileConversation> {
+async function decorate(roots: ConversationEvent[], replies: Record<string, ConversationEvent[]>, query: QueryFn): Promise<FileConversation> {
   // A deleted root's stand-in has nothing done to it that anyone can see.
   // Each target's body goes with it, so "edited" means the body changed (SPEC §6.8).
   const targets = [...roots.filter((r) => !r.deleted), ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt, body: e.body }))
-  const decorations = await decorationsOf(targets, async (filters) => {
-    const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
-    if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
-    return result.events
-  })
+  const decorations = await decorationsOf(targets, query)
   return { roots, replies, decorations }
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
 import type {
   ForeignObject,
@@ -6,7 +6,7 @@ import type {
   ResolvedAction,
   ResolvedSlot,
 } from '@estiva-app/interop'
-import { hasRelay, useForeignObjects, useWorkspaceDirectory } from '@/api'
+import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
 import { objectLabel } from '@/lib/appName'
 import { BlockDocumentField } from './BlockDocumentField'
@@ -630,17 +630,23 @@ export function ForeignObjectWidget({
    *  tests). Skips resolution entirely; actions still render but cannot land. */
   resolved?: ForeignObject
 }) {
-  const { resolveObject: resolve, applyAction } = useForeignObjects()
+  const { applyAction } = useForeignObjects()
   const directory = useWorkspaceDirectory()
-  const [object, setObject] = useState<ForeignObject | null | 'loading'>(resolved ?? 'loading')
+  /*
+    Already in hand — nothing to resolve (`resolved`), and a newer one from the
+    page is taken, so an edit made elsewhere reaches the editor (MAN-9). Peek
+    runs without a relay in tests, Storybook and checkouts with no
+    `VITE_RELAY_URL` (`hasRelay`): nothing to ask, so it resolves to nothing.
+    Otherwise the tab's held answer (OPT-3): a topic you come back to draws its
+    widgets at once. The token matters here: without it this reads as the
+    backend, a member of no channel, and every widget renders as broken.
+  */
+  const held = useHeldObject(resolved || !hasRelay ? null : naddr)
+  const object: ForeignObject | null | 'loading' = resolved ?? (hasRelay ? held.object : null)
+  // Returned, so an action's `await reload()` waits for the re-read it names.
+  const reload = held.reload
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>()
-
-  const reload = useCallback(
-    // Returned, so an action's `await reload()` waits for the re-read it names.
-    () => resolve(naddr).then(setObject).catch(() => setObject(null)),
-    [naddr, resolve],
-  )
 
   const onAct = useCallback(
     async (actionId: string, value: string, contentFormat?: string) => {
@@ -663,35 +669,6 @@ export function ForeignObjectWidget({
     },
     [applyAction, naddr, reload],
   )
-
-  useEffect(() => {
-    // Already in hand — nothing to resolve (see `resolved` above). A newer one
-    // from the page is taken, so an edit made elsewhere reaches the editor (MAN-9).
-    if (resolved) {
-      setObject(resolved)
-      return
-    }
-    // Peek runs without a relay in tests, Storybook and checkouts with no
-    // `VITE_RELAY_URL` (`hasRelay`). There is nothing to ask in that mode, so
-    // resolve to nothing.
-    if (!hasRelay) {
-      setObject(null)
-      return
-    }
-    let cancelled = false
-    // One read over HTTP, so there is no live update — the widget reflects the
-    // moment it was resolved. Good enough for a message attachment, and the
-    // honest limitation to note rather than hide.
-    // The token matters as much here as in `reload`: without it this reads as
-    // the backend, which is a member of no channel, so the relay returns
-    // nothing and the widget silently renders as if the reference were broken.
-    resolve(naddr)
-      .then((result) => !cancelled && setObject(result))
-      .catch(() => !cancelled && setObject(null))
-    return () => {
-      cancelled = true
-    }
-  }, [naddr, resolve, resolved])
 
   /**
    * Waiting is not the same as nothing, and they used to render the same.

@@ -115,7 +115,7 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
  *  means refused" in this app started here, one layer below where it was
  *  visible. Callers that must degrade quietly catch it explicitly, which is
  *  better than the information never existing. */
-function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
+export function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
   return async (filters) => {
     const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
@@ -994,7 +994,12 @@ export function threadEventsAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<Threads> {
-  return threadsOf(reference, rootIds, viewerQuery(relayUrl, token), manifests)
+  return threadEventsWith(reference, rootIds, viewerQuery(relayUrl, token))
+}
+
+/** {@link threadEventsAsViewer} over any query — the conversation store's, to fold again from what it holds (OPT-3). */
+export function threadEventsWith(reference: string, rootIds: readonly string[], query: QueryFn): Promise<Threads> {
+  return threadsOf(reference, rootIds, query, manifests)
 }
 
 /** One event of a thread, as much of it as the pane draws and a reply needs. */
