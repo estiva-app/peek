@@ -95,6 +95,9 @@ let startedAt = Date.now()
  * different shapes in one request are listed with `+`, in the order sent.
  */
 export function shapeOf(path: string, payload: unknown): string {
+  // A read over the socket (OPT-2) spends the socket's meter, not this one's
+  // 300 a minute, so it is labelled apart.
+  if (path === 'REQ') return `socket ${shapeOf('/query', payload)}`
   if (path !== '/query') {
     const kind = (payload as { kind?: unknown } | null)?.kind
     return `${path.replace(/^\//, '')}${typeof kind === 'number' ? ` ${kind}` : ''}`
@@ -116,7 +119,7 @@ export function shapeOf(path: string, payload: unknown): string {
   return runs.map((run) => (run.count > 1 ? `${run.shape}×${run.count}` : run.shape)).join(' + ')
 }
 
-/** Called by `bridgePost` for every request it sends, whatever the answer. */
+/** Called by `bridgePost` for every request it sends, and by `socketRead` for every REQ, whatever the answer. */
 export function recordRelayRequest(path: string, payload: unknown, refusal: Refusal | null, at: number = Date.now()): void {
   log.push({ at, path, label: shapeOf(path, payload), refusal })
   const floor = at - KEEP_MS

@@ -20,6 +20,11 @@
  * `--drag`, `--wait`, `--until`, `--eval` and `--screenshot` can be repeated and
  * interleaved. `PROBE_TRACE=1` prints each step on stderr as it starts.
  *
+ * `PROBE_SERVE=<dist dir>` runs an unmerged build at the real origin: the
+ * probe's browser answers `--base`'s files from the local build, so sign-in,
+ * the relay's CORS and NIP-98 behave as on production. Build it as the deploy
+ * does first: `VITE_RELAY_URL=https://estiva.estiva.app npm run build`.
+ *
  * `--hover <css>` puts the pointer over the first match, for a control drawn
  * only under it. `--drag "<from css> => <to css>"` drags the first match of one
  * selector onto the other with the real mouse — pointer down, moves, pointer up
@@ -69,7 +74,7 @@
  * same one `render-story.mjs` uses.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { chromium } from 'playwright-core'
@@ -103,7 +108,11 @@ const net = options.net ? [] : null
 const browser = await chromium.launch({ executablePath })
 try {
   const idOrigin = new URL(options.id)
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  // A service worker would answer from production's cache, around the routes below.
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    ...(process.env.PROBE_SERVE ? { serviceWorkers: 'block' } : {}),
+  })
   await context.addCookies([
     {
       name: session.cookie_name,
@@ -116,6 +125,42 @@ try {
     },
   ])
   if (options.slot !== 'fresh') await context.addInitScript(pinReadStateSlot, pinnedSlots(session.pubkey, options.base))
+  if (process.env.PROBE_SERVE) {
+    const dist = process.env.PROBE_SERVE
+    const origin = new URL(options.base).origin
+    // A predicate, not a `${base}/**` glob: the glob misses `/?code=…`, and the
+    // page then silently comes from production.
+    await context.route(
+      (url) => url.origin === origin,
+      (route) => {
+        const path = join(dist, new URL(route.request().url()).pathname)
+        return route.fulfill({ path: existsSync(path) && statSync(path).isFile() ? path : join(dist, 'index.html') })
+      },
+    )
+    // A redirect's later hops are never routed, and a fulfilled 302 is followed
+    // inside the same chain, so Estiva ID's redirect back to the app becomes a
+    // fresh navigation that the route above answers.
+    await context.route(
+      (url) => url.origin === idOrigin.origin,
+      async (route) => {
+        // Only the sign-in navigation needs this; `/sign` and the rest go straight
+        // through, so a reset there is the page's to handle, not the probe's crash.
+        if (!route.request().isNavigationRequest()) return route.continue()
+        let response
+        try {
+          response = await route.fetch({ maxRedirects: 0 })
+        } catch {
+          return route.abort('connectionreset')
+        }
+        const location = response.headers()['location']
+        if (response.status() >= 300 && response.status() < 400 && location && new URL(location, idOrigin).origin === origin) {
+          const to = JSON.stringify(new URL(location, idOrigin).href)
+          return route.fulfill({ status: 200, contentType: 'text/html', body: `<script>location.replace(${to})</script>` })
+        }
+        return route.fulfill({ response })
+      },
+    )
+  }
   const page = await context.newPage()
   // Every WebSocket the tab opens, and whether it closed before the run ended:
   // "one relay connection per tab" is otherwise invisible from the page.
