@@ -34,8 +34,8 @@ export function PartCard({ address, block }: { address: string; block: string })
  * deleted says so; a block the reader may not see says only that it is not
  * available — no title and no text, because either would tell them something
  * about a Folder they are not in, and a different frame so that "gone" and
- * "not yours" cannot be mistaken for each other. What is gone or cannot be
- * shown is said in italic.
+ * "not yours" cannot be mistaken for each other. Every state that shows no
+ * block is said in italic.
  */
 export function PartCardView({
   view,
@@ -55,7 +55,7 @@ export function PartCardView({
     // The package's look for something that could not be read: a dashed hairline.
     return (
       <Card fill="inset" unreadable data-part="unreadable" data-part-address={address} className="mt-1 px-3 py-2">
-        <span className="text-caption text-text-muted">Not available to you</span>
+        <span className="text-caption italic text-text-muted">Not available to you</span>
       </Card>
     )
   }
