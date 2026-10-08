@@ -8,10 +8,11 @@
  *
  * 1. **One request** for everything new in the container `since` the cursor:
  *    a file's comments (`#A`), what names it (`#a` — its new roots and its
- *    mentions), its field changes and its own replaceable event; a channel's
- *    messages (`#h`); and what was done to anything held, by `#e` — replies,
- *    edits, reactions, resolutions and deletions (`kind:5` carries no `h`).
- *    Nothing new: the cursor moves and that is the whole return.
+ *    mentions), its field changes and its own replaceable event; the Folder's
+ *    messages, edits and resolutions (`#h`); deletions by whoever wrote what is
+ *    held (`kind:5` carries no `h`); reactions on the newest messages. A fixed
+ *    number of filters, so one REQ however long the conversation. Nothing new:
+ *    the cursor moves and that is the whole return.
  * 2. **A second**, only when something arrived: what was done to the new
  *    events, by `#e`, and whether the events somebody other than their author
  *    deleted are still on the relay.
@@ -120,32 +121,46 @@ export async function catchUpConversation(
   const address = container.kind === 'file' ? container.address : null
   const missing = rootIds.filter((id) => !held.has(id))
 
-  const containerFilters: Record<string, unknown>[] = []
+  /*
+    A fixed number of filters whatever the conversation's length, so the first
+    request is one REQ for a DM of twenty thousand messages too. What names a
+    held event is found by what else it carries: a reply, an edit and a
+    resolution carry the Folder's `h` (a file's replies its `A` as well); a
+    deletion carries neither, so it is asked by who could have signed it — the
+    people who wrote what is held; a reaction is asked for the newest
+    {@link TARGETS_PER_FILTER} messages, the horizon its fold draws.
+  */
+  const messages = await store.query(key)([{ kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE] }])
+  const writers = [...new Set(messages.map((event) => event.pubkey))]
+  const horizon = messages.slice(0, TARGETS_PER_FILTER).map((event) => event.id)
+  const filters: Record<string, unknown>[] = [
+    { kinds: [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION], '#h': [container.h], since },
+    ...chunked(writers).map((authors) => ({ kinds: [KIND.DELETION], authors, since })),
+    ...(horizon.length ? [{ kinds: [KIND.REACTION], '#e': horizon, since }] : []),
+    ...(missing.length ? [{ ids: missing, limit: missing.length }] : []),
+  ]
   if (address) {
-    containerFilters.push(
+    filters.push(
       { kinds: [KIND.COMMENT], '#A': [address], since },
       { kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE], '#a': [address], since },
       { kinds: [KIND_FIELD_CHANGE], '#a': [address], since },
     )
     try {
       const pointer = referenceToPointer(address)
-      containerFilters.push({ kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], since })
+      filters.push({ kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], since })
     } catch {
       /* not an address: nothing of its own to watch */
     }
-  } else {
-    containerFilters.push({ kinds: [KIND.STREAM_MESSAGE], '#h': [container.h], since })
   }
-  const answer = await query([
-    ...containerFilters,
-    ...chunked(heldIds).map((ids) => ({ kinds: BY_E_KINDS, '#e': ids, since })),
-    ...(missing.length ? [{ ids: missing, limit: missing.length }] : []),
-  ])
+  const answer = await query(filters)
 
   const object = answer.some((event) => !HELD_KINDS.has(event.kind))
+  const answered = new Set(answer.map((event) => event.id))
   const first = store.merge(
     key,
-    answer.filter((event) => HELD_KINDS.has(event.kind)),
+    answer.filter(
+      (event) => HELD_KINDS.has(event.kind) && (!address || belongsToFile(event, address, held, answered)),
+    ),
   )
   const mentions =
     !!address &&
@@ -186,10 +201,25 @@ export async function catchUpConversation(
   }
 
   const local = store.query(key)
-  const roots = address ? await rootsHeld(local, address, rootIds) : []
+  const roots = address ? await rootsHeld(local, address, container.h, rootIds) : []
   const value = await conversationWith(container, roots, heldOrRelay(local, query))
   store.settle(key, startedAt, value)
   return { changed: true, object, mentions, authors }
+}
+
+/**
+ * Whether an event a file's catch-up found is the file's, rather than the rest
+ * of its Folder: the Folder's `h` brings every topic's talk in it. It names the
+ * file, or names by `e` something held or found alongside it. A deletion is
+ * kept either way — it applies only to what it names.
+ */
+function belongsToFile(event: SignedEvent, address: string, held: ReadonlySet<string>, answered: ReadonlySet<string>): boolean {
+  if (event.kind === KIND.DELETION) return true
+  return event.tags.some(
+    (tag) =>
+      ((tag[0] === 'a' || tag[0] === 'A') && tag[1] === address) ||
+      (tag[0] === 'e' && !!tag[1] && (held.has(tag[1]) || answered.has(tag[1]))),
+  )
 }
 
 /**
@@ -198,12 +228,13 @@ export async function catchUpConversation(
  * catch-up does not read it for that. A `kind:9` counts only when the object
  * already names one, as its owner's manifest does.
  */
-async function rootsHeld(local: QueryFn, address: string, rootIds: readonly string[]): Promise<string[]> {
+async function rootsHeld(local: QueryFn, address: string, folder: string, rootIds: readonly string[]): Promise<string[]> {
   const known = rootIds.length ? await local([{ ids: [...rootIds], limit: rootIds.length }]) : []
   const kinds = [...new Set([KIND.COMMENT, ...known.map((event) => event.kind)])]
   const onFile = await local([{ kinds, '#a': [address] }])
   const added = onFile
-    .filter((event) => isCommentOn(event, address, kinds))
+    // A `kind:9` is an owner's comment only in the file's own Folder; one elsewhere naming it is a mention.
+    .filter((event) => isCommentOn(event, address, kinds) && (event.kind === KIND.COMMENT || event.tags.some((t) => t[0] === 'h' && t[1] === folder)))
     .sort((a, b) => a.created_at - b.created_at)
     .map((event) => event.id)
   return [...new Set([...rootIds, ...added])]

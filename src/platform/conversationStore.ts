@@ -147,14 +147,19 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
     }
   }
 
-  /** Most recently used last, so the first key is the one to evict. */
+  /**
+   * Most recently used last, so the first key is the one to evict — unless
+   * somebody is subscribed to it: a conversation on screen is never taken from
+   * under its view, which would have nothing to read it again.
+   */
   const touch = (key: string, entry: Entry<T>) => {
     entries.delete(key)
     entries.set(key, entry)
-    while (entries.size > capacity) {
-      const oldest = entries.keys().next().value as string
-      entries.delete(oldest)
-      notify(oldest)
+    for (const candidate of [...entries.keys()]) {
+      if (entries.size <= capacity) break
+      if (listeners.has(candidate)) continue
+      entries.delete(candidate)
+      notify(candidate)
     }
   }
 

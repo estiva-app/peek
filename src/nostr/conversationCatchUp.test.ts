@@ -91,7 +91,16 @@ describe('catchUpConversation — a channel', () => {
     const store = await held(channel, [], relay)
     const since = store.since('k')
     await catchUpConversation(store, 'k', channel, [], relay.query)
-    expect(relay.asked[0][0]).toEqual({ kinds: [9], '#h': [FOLDER], since })
+    expect(relay.asked[0][0]).toEqual({ kinds: [9, 40003, 9101], '#h': [FOLDER], since })
+    expect(relay.asked[0].every((filter) => filter.since === since)).toBe(true)
+  })
+
+  it('asks in one REQ however long the conversation is', async () => {
+    const relay = fakeRelay(Array.from({ length: 1_500 }, (_, i) => message({ pubkey: i % 2 ? ALICE : BOB })))
+    const store = await held(channel, [], relay)
+    await catchUpConversation(store, 'k', channel, [], relay.query)
+    expect(relay.asked).toHaveLength(1)
+    expect(relay.asked[0].length).toBeLessThanOrEqual(10)
   })
 })
 
@@ -130,5 +139,15 @@ describe('catchUpConversation — a file', () => {
     const found = await catchUpConversation(store, 'k', file, [first.id], relay.query)
     expect(found.mentions).toBe(true)
     expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id])
+  })
+
+  it('talk elsewhere in the Folder is not taken into the file’s conversation', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    relay.events.push(event({ kind: 9, tags: [['h', FOLDER]] }))
+    const found = await catchUpConversation(store, 'k', file, [first.id], relay.query)
+    expect(found.changed).toBe(false)
+    expect(store.ids('k')).toEqual([first.id])
   })
 })

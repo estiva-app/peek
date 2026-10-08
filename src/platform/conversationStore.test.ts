@@ -99,20 +99,27 @@ describe('createConversationStore', () => {
     expect(await s.query('k')([{ kinds: [9] }])).toEqual([])
   })
 
-  it('evicts the least recently opened conversation first, and says so', () => {
+  it('evicts the least recently opened conversation first', () => {
     const s = createConversationStore<string>({ lookbackSeconds: 0, capacity: 2 })
-    const evicted = vi.fn()
-    s.subscribe('a', evicted)
     s.replace('a', 'A', [], 0)
     s.replace('b', 'B', [], 0)
     s.touch('a')
     s.replace('c', 'C', [], 0)
     expect(s.keys()).toEqual(['a', 'c'])
-    expect(evicted).toHaveBeenCalledTimes(1)
     s.replace('d', 'D', [], 0)
     expect(s.keys()).toEqual(['c', 'd'])
     expect(s.value('a')).toBeUndefined()
-    expect(evicted).toHaveBeenCalledTimes(2)
+  })
+
+  it('never evicts a conversation somebody is drawing', () => {
+    const s = createConversationStore<string>({ lookbackSeconds: 0, capacity: 2 })
+    const onScreen = vi.fn()
+    s.subscribe('a', onScreen)
+    s.replace('a', 'A', [], 0)
+    s.replace('b', 'B', [], 0)
+    s.replace('c', 'C', [], 0)
+    expect(s.keys()).toEqual(['a', 'c'])
+    expect(s.value('a')).toBe('A')
   })
 
   it('merging into, or settling, a conversation it does not hold changes nothing', () => {

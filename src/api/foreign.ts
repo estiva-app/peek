@@ -11,7 +11,7 @@
  * throwing. A reference that cannot be resolved must degrade to plain text; a
  * message is never broken because an attachment failed.
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { validToken } from '@/auth/estivaId'
 import { avatarFor, PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { RELAY_URL, hasRelay } from './relayUrl'
@@ -597,10 +597,15 @@ export function useResolvedReferences(
     }
   }, [key, resolveObjects, pubkey])
 
-  const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
-    const value = ref in objects ? undefined : heldObjects.peek(`${pubkey} ${ref}`)?.value
-    return value === undefined ? [] : [[ref, value] as const]
-  })
+  // A held object fills what this hook has not answered, or answered with nothing; one object per change.
+  const merged = useMemo(() => {
+    const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
+      if (objects[ref]) return []
+      const value = heldObjects.peek(`${pubkey} ${ref}`)?.value
+      return value ? [[ref, value] as const] : []
+    })
+    return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
+  }, [key, objects, pubkey])
 
   /*
     Demo mode is derived, not set. There is no relay to ask without a
@@ -612,7 +617,7 @@ export function useResolvedReferences(
   if (!hasRelay) {
     return Object.fromEntries((key ? key.split('\u0000') : []).map((ref) => [ref, null]))
   }
-  return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
+  return merged
 }
 
 /**
