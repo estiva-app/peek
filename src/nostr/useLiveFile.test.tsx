@@ -15,8 +15,16 @@ const live = vi.hoisted(() => ({
   stops: 0,
   fire: undefined as ((channelUuid: string, event?: SignedEvent) => void) | undefined,
 }))
+const client = vi.hoisted(() => ({ current: undefined as object | undefined, fresh: false }))
 vi.mock('./liveTopics', () => ({
-  getLiveTopics: () => ({
+  // One per tab, as the real holder is — unless a test has it built anew.
+  getLiveTopics: () => {
+    if (client.current && !client.fresh) return client.current
+    client.fresh = false
+    return (client.current = makeClient())
+  },
+}))
+const makeClient = () => ({
     state: () => live.state,
     onState: (listener: (s: RelayState) => void) => {
       live.stateListeners.add(listener)
@@ -36,8 +44,7 @@ vi.mock('./liveTopics', () => ({
         },
       }
     },
-  }),
-}))
+})
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
 import { LIVE_FILE_LINGER_MS, stopLiveFileWatches, useLiveFile } from './useLiveFile'
@@ -126,6 +133,14 @@ describe('useLiveFile', () => {
     // Negative control: another Folder is its own watch.
     renderHook(() => useLiveFile(OTHER, () => {}))
     expect(live.watched.map((w) => w.ids)).toEqual([[FOLDER], [OTHER]])
+  })
+
+  it('a client built anew since — another viewer — gets a watch of its own, not the lingering one', () => {
+    renderHook(() => useLiveFile(FOLDER, () => {})).unmount()
+    client.fresh = true
+    renderHook(() => useLiveFile(FOLDER, () => {}))
+    expect(live.watched).toHaveLength(2)
+    expect(live.stops).toBe(1)
   })
 
   it('watches nothing without a Folder', () => {

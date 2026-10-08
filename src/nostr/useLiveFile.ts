@@ -73,12 +73,22 @@ const FILE_KINDS: readonly number[] = [
 ]
 
 type Listener = (event?: SignedEvent) => void
-const watches = new Map<string, { listeners: Set<Listener>; watch: { stop(): void }; linger?: ReturnType<typeof setTimeout> }>()
+const watches = new Map<
+  string,
+  { live: LiveTopics; listeners: Set<Listener>; watch: { stop(): void }; linger?: ReturnType<typeof setTimeout> }
+>()
 
 /** Join the Folder's shared watch; the returned function leaves it. */
 function share(live: LiveTopics, folder: string, kinds: readonly number[], listener: Listener): () => void {
   const key = `${folder}|${kinds.join(',')}`
   let entry = watches.get(key)
+  // A watch on a client the holder has since replaced delivers nothing: start one on this client.
+  if (entry && entry.live !== live) {
+    if (entry.linger) clearTimeout(entry.linger)
+    entry.watch.stop()
+    watches.delete(key)
+    entry = undefined
+  }
   if (!entry) {
     const listeners = new Set<Listener>()
     const watch = live.watchChannels(
@@ -88,7 +98,7 @@ function share(live: LiveTopics, folder: string, kinds: readonly number[], liste
       },
       { kinds, since: Math.floor(Date.now() / 1000) },
     )
-    entry = { listeners, watch }
+    entry = { live, listeners, watch }
     watches.set(key, entry)
   }
   if (entry.linger) clearTimeout(entry.linger)

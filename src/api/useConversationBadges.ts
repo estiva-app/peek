@@ -20,8 +20,14 @@ const heldBadges = createListingCache<{ conversations: Record<string, Conversati
 const rootOf = (event: SignedEvent) =>
   event.tags.find((t) => t[0] === 'E' && t[1])?.[1] ?? event.tags.find((t) => t[0] === 'e' && t[1])?.[1] ?? event.id
 
-/** A comment's kinds: `kind:1111`, and a `kind:9` written before Ship flipped — by its `a`, never a mention in the body. */
-const COMMENT_KINDS: readonly number[] = [KIND.COMMENT, KIND.STREAM_MESSAGE]
+/**
+ * A comment's kind. Only `kind:1111`: a `kind:9` counts on a read only where
+ * its app's manifest declares it (`commentKindsOf`), which the store's events
+ * cannot say — and a `kind:9` carrying a file's `a` is most often a pasted
+ * link, a mention (§6.4), which must never light the file's row. A legacy
+ * `kind:9` comment still arrives with the next read of the set.
+ */
+const COMMENT_KINDS: readonly number[] = [KIND.COMMENT]
 
 /**
  * What the tab's channel store holds that the last answer does not, folded
@@ -53,19 +59,23 @@ export function foldHeldEvents(
     ;(added[ref] ??= []).push({ id: event.id, at: event.created_at, by: event.pubkey, root })
     seen.add(event.id)
   }
-  // Oldest first, so a root is in before a reply to it.
-  for (const event of [...events].sort((a, b) => a.created_at - b.created_at)) {
-    if (seen.has(event.id) || !COMMENT_KINDS.includes(event.kind)) continue
-    if (isReply(event)) {
-      const ref = fileOfRoot.get(rootOf(event))
-      if (ref && event.tags.some((t) => t[0] === 'A' && refOf.get(t[1]) === ref)) add(ref, event, rootOf(event))
-      continue
-    }
+  // Only what names a listed file, which is a handful of the store's thousands; ordered as written.
+  const naming = events
+    .filter((event) => COMMENT_KINDS.includes(event.kind) && !seen.has(event.id) && event.tags.some((t) => (t[0] === 'a' || t[0] === 'A') && refOf.has(t[1])))
+    .sort((a, b) => a.created_at - b.created_at)
+  // Roots first, then replies — a reply and its root can share a second, and either order.
+  for (const event of naming) {
+    if (isReply(event)) continue
     const address = event.tags.find((t) => t[0] === 'a' && refOf.has(t[1]) && isCommentOn(event, t[1], COMMENT_KINDS))?.[1]
     if (!address) continue
     const ref = refOf.get(address)!
     add(ref, event, event.id)
     fileOfRoot.set(event.id, ref)
+  }
+  for (const event of naming) {
+    if (seen.has(event.id) || !isReply(event)) continue
+    const ref = fileOfRoot.get(rootOf(event))
+    if (ref && event.tags.some((t) => t[0] === 'A' && refOf.get(t[1]) === ref)) add(ref, event, rootOf(event))
   }
   if (Object.keys(added).length === 0) return answer
   const out = { ...answer }

@@ -138,6 +138,20 @@ describe('foldHeldEvents — conversationsOf’s rule over what the store holds'
     expect(out).toBe(held)
   })
 
+  it('a reply that shares its root’s second, and sorts before it, is still in the thread', async () => {
+    const { foldHeldEvents } = await import('./useConversationBadges')
+    const root = commentOn(OTHER)
+    const reply = { ...replyTo(root, OTHER), created_at: root.created_at, id: '0'.repeat(64) }
+    const out = foldHeldEvents(answer, both, [reply, root])
+    expect(out[OTHER].map((m) => m.id).sort()).toEqual([reply.id, root.id].sort())
+  })
+
+  it('a kind:9 carrying a file’s `a` — a pasted link — never counts as its comment (§6.4)', async () => {
+    const { foldHeldEvents } = await import('./useConversationBadges')
+    const pasted = event([['a', OTHER], ['h', 'folder-2']], { kind: 9, content: 'https://ship.estiva.app/issue/two' })
+    expect(foldHeldEvents(answer, both, [pasted])).toBe(answer)
+  })
+
   it('a file the answer never had stays unknown', async () => {
     const { foldHeldEvents } = await import('./useConversationBadges')
     const out = foldHeldEvents({ [ADDRESS]: [] }, both, [commentOn(OTHER)])
