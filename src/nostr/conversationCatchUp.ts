@@ -34,11 +34,15 @@ import { conversationWith, type ConversationContainer, type FileConversation } f
 /** A file's field changes — title, status, archive (SPEC §6.7). */
 const KIND_FIELD_CHANGE = 1851
 
+/** NIP-29's moderation delete: a Folder admin removes a message. It carries the Folder's `h`. */
+const KIND_ADMIN_DELETION = 9005
+
 /** What a conversation is made of: the kinds the store holds and answers. */
 const HELD_KINDS: ReadonlySet<number> = new Set([
   KIND.COMMENT,
   KIND.STREAM_MESSAGE,
   KIND.DELETION,
+  KIND_ADMIN_DELETION,
   KIND.REACTION,
   KIND.MESSAGE_EDIT,
   KIND.ASSERTION,
@@ -46,6 +50,9 @@ const HELD_KINDS: ReadonlySet<number> = new Set([
 
 /** What names a held event by `e`: a reply, and everything done to it. */
 const BY_E_KINDS = [KIND.COMMENT, KIND.STREAM_MESSAGE, KIND.DELETION, KIND.REACTION, KIND.MESSAGE_EDIT, KIND.ASSERTION]
+
+/** Messages whose deletions are also asked by `#e`, newest first: a deletion signed by somebody who wrote nothing held — an agent's owner. */
+const DELETION_TARGETS = 200
 
 /** Ids per `#e` filter — `decorationsOf`'s, which production already answers. */
 const TARGETS_PER_FILTER = 100
@@ -96,14 +103,22 @@ export interface CaughtUp {
   mentions: boolean
   /** Who wrote the new comments and messages, for a members list that counts them. */
   authors: string[]
+  /**
+   * The relay no longer shows the newest held message and nothing deleted it:
+   * the viewer lost the Folder. Buzz answers a read of a channel one may not
+   * read with nothing, not a refusal, so this is how it shows. Nothing was
+   * merged; the caller drops what is held.
+   */
+  lost?: boolean
 }
 
 const NOTHING: CaughtUp = { changed: false, object: false, mentions: false, authors: [] }
 
 /**
  * Bring the conversation `key` holds up to date. Throws what the relay query
- * throws; the store is left as it was, cursor included, so the next try asks
- * again from the same point.
+ * throws. A failure of the first request leaves the store as it was; of the
+ * second, what the first found is folded and drawn and the cursor stays, so
+ * the next try asks again from the same point.
  */
 export async function catchUpConversation(
   store: ConversationStore<FileConversation>,
@@ -125,19 +140,27 @@ export async function catchUpConversation(
     A fixed number of filters whatever the conversation's length, so the first
     request is one REQ for a DM of twenty thousand messages too. What names a
     held event is found by what else it carries: a reply, an edit and a
-    resolution carry the Folder's `h` (a file's replies its `A` as well); a
-    deletion carries neither, so it is asked by who could have signed it — the
-    people who wrote what is held; a reaction is asked for the newest
+    resolution and an admin's delete carry the Folder's `h` (a file's replies
+    its `A` as well); a deletion carries neither, so it is asked by who could
+    have signed it — whoever wrote anything held, a reaction included — and, for
+    the newest {@link DELETION_TARGETS} messages, by `#e` too, for an agent's
+    owner who wrote nothing here; a reaction is asked for the newest
     {@link TARGETS_PER_FILTER} messages, the horizon its fold draws.
+
+    And the newest held message by id: still answered, the viewer can still
+    read the Folder.
   */
-  const messages = await store.query(key)([{ kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE] }])
-  const writers = [...new Set(messages.map((event) => event.pubkey))]
-  const horizon = messages.slice(0, TARGETS_PER_FILTER).map((event) => event.id)
+  const local = store.query(key)
+  const messages = await local([{ kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE] }])
+  const writers = [...new Set((await local([{ kinds: [...HELD_KINDS] }])).map((event) => event.pubkey))]
+  const newest = messages.slice(0, DELETION_TARGETS).map((event) => event.id)
+  const probe = messages[0]?.id
+  const asked = [...new Set([...missing, ...(probe ? [probe] : [])])]
   const filters: Record<string, unknown>[] = [
-    { kinds: [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION], '#h': [container.h], since },
+    { kinds: [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION, KIND_ADMIN_DELETION], '#h': [container.h], since },
     ...chunked(writers).map((authors) => ({ kinds: [KIND.DELETION], authors, since })),
-    ...(horizon.length ? [{ kinds: [KIND.REACTION], '#e': horizon, since }] : []),
-    ...(missing.length ? [{ ids: missing, limit: missing.length }] : []),
+    ...chunked(newest).map((ids, i) => ({ kinds: i === 0 ? [KIND.DELETION, KIND.REACTION] : [KIND.DELETION], '#e': ids, since })),
+    ...(asked.length ? [{ ids: asked, limit: asked.length }] : []),
   ]
   if (address) {
     filters.push(
@@ -153,9 +176,13 @@ export async function catchUpConversation(
     }
   }
   const answer = await query(filters)
+  const answered = new Set(answer.map((event) => event.id))
+
+  if (probe && !answered.has(probe) && !answer.some((event) => isDeletion(event) && namesTarget(event, probe))) {
+    return { ...NOTHING, lost: true }
+  }
 
   const object = answer.some((event) => !HELD_KINDS.has(event.kind))
-  const answered = new Set(answer.map((event) => event.id))
   const first = store.merge(
     key,
     answer.filter(
@@ -181,31 +208,51 @@ export async function catchUpConversation(
     return { changed: false, object, mentions, authors }
   }
 
-  const newIds = first.added.filter((event) => event.kind !== KIND.DELETION).map((event) => event.id)
-  const second = [
-    ...chunked(newIds).map((ids) => ({ kinds: BY_E_KINDS, '#e': ids })),
-    ...(first.disputed.length ? [{ ids: first.disputed, limit: first.disputed.length }] : []),
-  ]
-  if (second.length) {
-    const more = await query(second)
-    const disputed = new Set(first.disputed)
-    const remaining = new Set(more.filter((event) => disputed.has(event.id)).map((event) => event.id))
-    store.forget(
-      key,
-      first.disputed.filter((id) => !remaining.has(id)),
-    )
-    store.merge(
-      key,
-      more.filter((event) => HELD_KINDS.has(event.kind)),
-    )
+  /*
+    From here what the first request found is merged, so it is drawn whatever
+    happens next: a deletion is never held back behind a second request that
+    failed. The cursor moves only when both succeeded.
+  */
+  const fold = () => foldHeld(store, key, container, rootIds, query)
+  try {
+    const newIds = first.added.filter((event) => !isDeletion(event)).map((event) => event.id)
+    let disputed = first.disputed
+    if (newIds.length) {
+      const more = await query(chunked(newIds).map((ids) => ({ kinds: BY_E_KINDS, '#e': ids })))
+      disputed = [...disputed, ...store.merge(key, more.filter((event) => HELD_KINDS.has(event.kind))).disputed]
+    }
+    // A deletion signed by somebody other than the author: the relay says whether it took it.
+    if (disputed.length) {
+      const remaining = new Set((await query([{ ids: disputed, limit: disputed.length }])).map((event) => event.id))
+      store.forget(
+        key,
+        disputed.filter((id) => !remaining.has(id)),
+      )
+    }
+  } catch (error) {
+    store.settle(key, null, await fold())
+    throw error
   }
-
-  const local = store.query(key)
-  const roots = address ? await rootsHeld(local, address, container.h, rootIds) : []
-  const value = await conversationWith(container, roots, heldOrRelay(local, query))
-  store.settle(key, startedAt, value)
+  store.settle(key, startedAt, await fold())
   return { changed: true, object, mentions, authors }
 }
+
+/** The read's own fold, over what is held — a file's roots including those found since the object was read. */
+async function foldHeld(
+  store: ConversationStore<FileConversation>,
+  key: string,
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  query: QueryFn,
+): Promise<FileConversation> {
+  const local = store.query(key)
+  const roots = container.kind === 'file' ? await rootsHeld(local, container.address, container.h, rootIds) : []
+  return conversationWith(container, roots, heldOrRelay(local, query))
+}
+
+const isDeletion = (event: SignedEvent) => event.kind === KIND.DELETION || event.kind === KIND_ADMIN_DELETION
+
+const namesTarget = (event: SignedEvent, id: string) => event.tags.some((tag) => tag[0] === 'e' && tag[1] === id)
 
 /**
  * Whether an event a file's catch-up found is the file's, rather than the rest
@@ -214,7 +261,7 @@ export async function catchUpConversation(
  * kept either way — it applies only to what it names.
  */
 function belongsToFile(event: SignedEvent, address: string, held: ReadonlySet<string>, answered: ReadonlySet<string>): boolean {
-  if (event.kind === KIND.DELETION) return true
+  if (isDeletion(event)) return true
   return event.tags.some(
     (tag) =>
       ((tag[0] === 'a' || tag[0] === 'A') && tag[1] === address) ||

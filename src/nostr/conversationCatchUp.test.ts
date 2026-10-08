@@ -91,8 +91,55 @@ describe('catchUpConversation — a channel', () => {
     const store = await held(channel, [], relay)
     const since = store.since('k')
     await catchUpConversation(store, 'k', channel, [], relay.query)
-    expect(relay.asked[0][0]).toEqual({ kinds: [9, 40003, 9101], '#h': [FOLDER], since })
-    expect(relay.asked[0].every((filter) => filter.since === since)).toBe(true)
+    expect(relay.asked[0][0]).toEqual({ kinds: [9, 40003, 9101, 9005], '#h': [FOLDER], since })
+    // Everything but the lookup by id, which asks whether the newest message is still readable.
+    expect(relay.asked[0].filter((filter) => !filter.ids).every((filter) => filter.since === since)).toBe(true)
+  })
+
+  it('a Folder the viewer lost is reported, and nothing is merged', async () => {
+    const relay = fakeRelay([message()])
+    const store = await held(channel, [], relay)
+    const before = store.value('k')
+    // Buzz answers a channel one may not read with nothing at all.
+    relay.events.length = 0
+    const found = await catchUpConversation(store, 'k', channel, [], relay.query)
+    expect(found.lost).toBe(true)
+    expect(store.value('k')).toBe(before)
+  })
+
+  it('a second request that fails still draws what the first found, and keeps the cursor', async () => {
+    const old = message()
+    const relay = fakeRelay([old])
+    const store = await held(channel, [], relay)
+    const since = store.since('k')
+    const fresh = message({ pubkey: BOB })
+    relay.events.push(fresh, event({ kind: 5, tags: [['e', old.id]] }))
+    let calls = 0
+    const flaky = async (filters: Record<string, unknown>[]) => {
+      calls += 1
+      if (calls === 2) throw new Error('rate-limited: slow down')
+      return relay.query(filters)
+    }
+    await expect(catchUpConversation(store, 'k', channel, [], flaky)).rejects.toThrow('rate-limited')
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([fresh.id])
+    expect(store.since('k')).toBe(since)
+  })
+
+  it('an admin’s delete, and one by somebody who wrote nothing here, are asked about and applied', async () => {
+    const CAROL = 'c'.repeat(64)
+    const first = message()
+    const second = message({ pubkey: BOB })
+    const relay = fakeRelay([first, second])
+    const store = await held(channel, [], relay)
+    relay.events.push(
+      event({ kind: 9005, pubkey: CAROL, tags: [['h', FOLDER], ['e', first.id]] }),
+      event({ kind: 5, pubkey: CAROL, tags: [['e', second.id]] }),
+    )
+    // The relay took both: the targets are gone from it.
+    relay.events.splice(relay.events.indexOf(first), 1)
+    relay.events.splice(relay.events.indexOf(second), 1)
+    await catchUpConversation(store, 'k', channel, [], relay.query)
+    expect(store.value('k')!.roots).toEqual([])
   })
 
   it('asks in one REQ however long the conversation is', async () => {

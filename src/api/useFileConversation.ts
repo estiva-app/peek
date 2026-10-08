@@ -213,6 +213,16 @@ export function useFileConversation(
           return
         }
         const found = await catchUpConversation(conversations, key, container, roots, query)
+        if (found.lost) {
+          // The Folder is no longer the viewer's: nothing held is drawn again, and the page reads what it may now see.
+          conversations.drop(key)
+          const startedAt = Date.now()
+          const { value, events } = await readConversation(container, roots, query)
+          conversations.replace(key, value, events, startedAt)
+          latestActivity.current?.()
+          if (container.kind === 'file') announceFileNews(container.address, { object: true, mentions: true, authors: [] })
+          return
+        }
         if (found.object) latestActivity.current?.()
         if (container.kind === 'file' && (found.object || found.mentions || found.authors.length)) {
           announceFileNews(container.address, { object: found.object, mentions: found.mentions, authors: found.authors })

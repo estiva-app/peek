@@ -28,7 +28,7 @@
  *
  * A deletion is applied when it is merged. `kind:5` names its targets by `e`;
  * one signed by a target's own author removes it here, as it does on the relay
- * (NIP-09). One signed by anybody else is reported back to the caller, which
+ * (NIP-09). One signed by anybody else, and a NIP-29 admin's `kind:9005`, is reported back to the caller, which
  * asks the relay whether the target is still there — the relay is the judge of
  * who may delete what, not this file.
  *
@@ -84,8 +84,12 @@ export interface ConversationStore<T> {
   merge(key: string, events: Iterable<SignedEvent>): Merged
   /** Drop held events by id — the disputed ones the relay no longer has. */
   forget(key: string, ids: Iterable<string>): void
-  /** A catch-up finished: the value it folded, if any, and the cursor moves to when it began (ms). */
-  settle(key: string, startedAt: number, value?: T): void
+  /**
+   * A catch-up finished: the value it folded, if any, and the cursor moves to
+   * when it began (ms). `null` draws the value and leaves the cursor, for a
+   * catch-up that found something and then failed.
+   */
+  settle(key: string, startedAt: number | null, value?: T): void
   /** The ids of every event held for `key` — what a catch-up asks `#e` about. */
   ids(key: string): string[]
   /** Answers filters from what is held for `key`, as the relay would have from the same events. */
@@ -101,6 +105,10 @@ interface Entry<T> {
 }
 
 const KIND_DELETION = 5
+/** NIP-29's moderation delete, by a group admin: always the relay's to confirm. */
+const KIND_ADMIN_DELETION = 9005
+
+const isDeletion = (event: SignedEvent) => event.kind === KIND_DELETION || event.kind === KIND_ADMIN_DELETION
 
 const byNewest = (a: SignedEvent, b: SignedEvent) => b.created_at - a.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
@@ -202,20 +210,22 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
       const entry = entries.get(key)
       if (!entry) return { added: [], disputed: [] }
       const added: SignedEvent[] = []
-      const deletions: SignedEvent[] = []
       for (const event of events) {
         if (entry.events.has(event.id)) continue
         entry.events.set(event.id, event)
         added.push(event)
-        if (event.kind === KIND_DELETION) deletions.push(event)
       }
+      if (added.length === 0) return { added, disputed: [] }
+      // A new deletion against what is held, and a held deletion against a new target: one that arrived before its target applies when the target does.
+      const fresh = new Set(added.map((event) => event.id))
       const disputed = new Set<string>()
-      for (const deletion of deletions) {
+      for (const deletion of [...entry.events.values()].filter(isDeletion)) {
         for (const tag of deletion.tags) {
           if (tag[0] !== 'e' || !tag[1]) continue
           const target = entry.events.get(tag[1])
-          if (!target || target.kind === KIND_DELETION) continue
-          if (target.pubkey === deletion.pubkey) entry.events.delete(target.id)
+          if (!target || isDeletion(target)) continue
+          if (!fresh.has(deletion.id) && !fresh.has(target.id)) continue
+          if (target.pubkey === deletion.pubkey && deletion.kind === KIND_DELETION) entry.events.delete(target.id)
           else disputed.add(target.id)
         }
       }
@@ -231,7 +241,7 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
     settle(key, startedAt, value) {
       const entry = entries.get(key)
       if (!entry) return
-      entry.since = cursorAt(startedAt)
+      if (startedAt !== null) entry.since = cursorAt(startedAt)
       if (value === undefined) return
       entry.value = value
       notify(key)
