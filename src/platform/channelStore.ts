@@ -83,6 +83,14 @@ export interface ChannelStoreOptions {
    */
   defer?: (run: () => void) => void
   /**
+   * Milliseconds a channel nobody tracks any more is still held — watched,
+   * caught up, read by the next tracker at once — before it is forgotten. A
+   * page that leaves a channel and one that comes back to it a while later
+   * (Desk → a topic → Desk, OPT-4) then cost no subscription and no read.
+   * Defaults to 0: forgotten at the next {@link defer}.
+   */
+  lingerMs?: number
+  /**
    * A read nobody awaited failed — the one tracking schedules, a queued
    * follow-up, a signal with no event. What was held stays held, and a channel
    * never read stays unread until the next {@link ChannelStore.sync}.
@@ -166,6 +174,9 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
   const defer = options.defer ?? ((run: () => void) => queueMicrotask(run))
   const kinds = new Set(options.kinds)
   const refs = new Map<string, number>()
+  // Released by every tracker but not yet forgotten (`lingerMs`): still watched and caught up.
+  const lingering = new Map<string, ReturnType<typeof setTimeout>>()
+  const tracked = () => [...new Set([...refs.keys(), ...lingering.keys()])]
   const held = new Map<string, Held>()
   const listeners = new Set<() => void>()
   let snapshot: ChannelStoreSnapshot = { version: 0, at: Math.floor(now() / 1000) }
@@ -210,7 +221,7 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
 
   /** One wide filter over every tracked channel, re-made only when the set moves. */
   function rewatch() {
-    const channels = [...refs.keys()].sort()
+    const channels = tracked().sort()
     const key = channels.join(',')
     if (key === watchedKey) return
     watch?.stop()
@@ -267,8 +278,10 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
   }
 
   /** Returns how many requests it sent. */
-  async function run(mode: 'sync' | 'resync'): Promise<number> {
-    const channels = [...refs.keys()]
+  async function run(mode: 'sync' | 'resync', onlyUnread = false): Promise<number> {
+    // A `track` reads what it added and has never been read; the rest is held and kept current by the socket,
+    // so a topic opened in a new Folder does not catch up every Folder held (OPT-4).
+    const channels = tracked().filter((channel) => !onlyUnread || !held.has(channel))
     if (channels.length === 0) return 0
     const began = seconds()
     const horizon = began - options.horizonSeconds
@@ -284,7 +297,7 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
     if (closed) return requests
     let moved = false
     for (const [channel, events] of byChannel) {
-      if (!refs.has(channel)) continue
+      if (!refs.has(channel) && !lingering.has(channel)) continue
       const before = held.get(channel)
       const cursor = cursors.get(channel)
       // Caught up, but evicted and tracked again mid-read: a partial answer is
@@ -336,7 +349,14 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
       for (const channel of channels) {
         const count = refs.get(channel) ?? 0
         refs.set(channel, count + 1)
-        if (count === 0) added = true
+        // Back before it was forgotten: still watched and held, so nothing to schedule for it — unless its
+        // first read had failed or not landed, which the next tracker still needs.
+        const linger = lingering.get(channel)
+        if (linger !== undefined) {
+          clearTimeout(linger)
+          lingering.delete(channel)
+          if (!held.has(channel)) added = true
+        } else if (count === 0) added = true
       }
       if (added) schedule()
       let released = false
@@ -353,6 +373,20 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
           }
         }
         if (idle.length === 0 || closed) return
+        if (options.lingerMs) {
+          for (const channel of idle) {
+            lingering.set(
+              channel,
+              setTimeout(() => {
+                lingering.delete(channel)
+                if (refs.has(channel) || closed) return
+                held.delete(channel)
+                rewatch()
+              }, options.lingerMs),
+            )
+          }
+          return
+        }
         /*
           Forgotten a moment later, not now. React runs an effect's cleanup
           before its replacement, so a hook whose set changed releases every
@@ -402,6 +436,8 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
       watch?.stop()
       watch = null
       refs.clear()
+      for (const linger of lingering.values()) clearTimeout(linger)
+      lingering.clear()
       held.clear()
       listeners.clear()
     },
@@ -442,7 +478,7 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
   /** {@link run}, reported to `onRead` whatever its outcome. */
   async function observed(mode: 'sync' | 'resync', reason: string) {
     const started = now()
-    const channels = refs.size
+    const channels = tracked().length
     const report = (read: Omit<ChannelStoreRead, 'reason' | 'mode' | 'channels' | 'ms'>) => {
       try {
         options.onRead?.({ reason, mode, channels, ms: now() - started, ...read })
@@ -451,7 +487,7 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
       }
     }
     try {
-      const requests = await run(mode)
+      const requests = await run(mode, reason === 'track')
       if (requests > 0) report({ requests, outcome: 'ok' })
     } catch (error) {
       report({ requests: null, outcome: 'failed', error })

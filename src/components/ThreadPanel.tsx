@@ -426,6 +426,7 @@ export function ThreadPanel({
               highlightType={initialHighlightType}
               nostrReferences={conversation.nostrReferences}
               urgentMentions={conversation.urgentMentions}
+              parts={conversation.parts}
               onBodyChange={onInitialBodyChange}
               onFilesChange={onInitialFilesChange}
               onReactionsChange={onInitialReactionsChange}
@@ -474,6 +475,7 @@ export function ThreadPanel({
                     resolutionMsg={resolvedByReplyId === reply.id ? resolutionMsg : undefined}
                     nostrReferences={reply.nostrReferences}
                     urgentMentions={reply.urgentMentions}
+                    parts={reply.parts}
                     nostrEventId={reply.nostrEventId}
                     onResolutionChange={resolvedByReplyId === reply.id ? onResolutionChange : undefined}
                     onDelete={onDeleteReply ? () => onDeleteReply(reply.id) : undefined}

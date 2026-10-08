@@ -7,6 +7,13 @@ import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { streamHasUnread } from './streamUnread'
 import { useChannelStreams } from './useChannelStreams'
+import { createListingCache } from '@/platform/listingCache'
+
+/** How long a held answer is trusted without asking — the five minutes `HELD_OBJECT_FRESH_MS` holds an object. */
+const HELD_BADGES_FRESH_MS = 5 * 60_000
+
+/** `hold`'s answers, by viewer and set, with the revision each was read at. */
+const heldBadges = createListingCache<{ revision: number; conversations: Record<string, ConversationMessage[]> }, true>()
 
 /**
  * The badges on a list of files: how many messages each conversation holds,
@@ -65,12 +72,12 @@ import { useChannelStreams } from './useChannelStreams'
 export function useConversationBadges(
   files: ForeignObject[] | undefined,
   revision = 0,
+  { hold = false }: { hold?: boolean } = {},
 ): {
   counts: Record<string, number>
   unread: Record<string, boolean>
 } {
   const { conversations } = useForeignObjects()
-  const [held, setHeld] = useState<Record<string, ConversationMessage[]>>({})
   const frontier = useReadFrontier()
   const membership = useMembership()
 
@@ -90,6 +97,11 @@ export function useConversationBadges(
         .join(','),
     [files],
   )
+  const holdKey = hold && key ? `${validToken()?.pubkey ?? ''} ${key}` : ''
+  // A list come back to draws its last answer in its first render (OPT-4).
+  const [held, setHeld] = useState<Record<string, ConversationMessage[]>>(
+    () => (holdKey && heldBadges.peek(holdKey)?.value?.conversations) || {},
+  )
 
   useEffect(() => {
     if (!key) {
@@ -98,6 +110,40 @@ export function useConversationBadges(
     }
     let cancelled = false
     const asked = (files ?? []).filter((file) => file.address)
+    if (holdKey) {
+      /*
+        Held across mounts, keyed by the viewer and the set: answered at a
+        revision at least as new as this one, it is still the answer, so coming
+        back to the list asks nothing. Concurrent mounts share one read.
+      */
+      const entry = heldBadges.peek(holdKey)
+      if (entry?.value) {
+        setHeld(entry.value.conversations)
+        // Older than a resolved object is held, it is drawn but asked again: a file in no Folder never moves the revision.
+        if (entry.value.revision >= revision && Date.now() - entry.at < HELD_BADGES_FRESH_MS) return
+      }
+      const settle = (retry: boolean): Promise<void> =>
+        heldBadges
+          .read(holdKey, () =>
+            conversations(asked).then(
+              (next) => ({ ok: true as const, value: { revision, conversations: next } }),
+              // A failed read costs a badge, never the list; the last answer stays held.
+              () => ({ ok: false as const, failure: true as const }),
+            ),
+          )
+          .then(() => {
+            const value = heldBadges.peek(holdKey)?.value
+            if (cancelled || !value) return
+            // Shared a read begun before this revision: it may predate what moved it, so ask once more —
+            // once, so a refused read (the old answer kept) is not asked again and again.
+            if (value.revision < revision && retry) return settle(false)
+            setHeld(value.conversations)
+          })
+      void settle(true)
+      return () => {
+        cancelled = true
+      }
+    }
     void conversations(asked)
       .then((next) => !cancelled && setHeld(next))
       // A failed read costs a badge, never the list. There is no error state
@@ -110,7 +156,7 @@ export function useConversationBadges(
     // `files` is deliberately not a dependency — `key` is its identity. Adding
     // it would restore the re-ask on every refresh that `key` exists to avoid.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, conversations, revision])
+  }, [key, conversations, revision, holdKey])
 
   /*
     Judged on every frontier change, not only when the messages arrive: the
@@ -164,6 +210,9 @@ export function useConversationBadges(
  * tab's channel store holds for the files' Folders — the store the Folder dots
  * already keep current from the socket and the catch-up — so a row re-reads
  * exactly when something was said where it lives, and not on every store tick.
+ *
+ * Its answers are held past the Desk (OPT-4): coming back draws the rows' dots
+ * from the last answer and asks again only if the revision moved meanwhile.
  */
 export function useLiveConversationBadges(files: ForeignObject[] | undefined): {
   counts: Record<string, number>
@@ -181,5 +230,5 @@ export function useLiveConversationBadges(files: ForeignObject[] | undefined): {
     }
     return newest
   }, [streams])
-  return useConversationBadges(files, revision)
+  return useConversationBadges(files, revision, { hold: true })
 }

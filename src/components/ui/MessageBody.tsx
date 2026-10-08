@@ -13,6 +13,7 @@ import { INLINE_TOKEN_RE, findUrls } from '@/lib/textParsing'
 import { InlineChip, RichText } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
+import { PartCard } from './PartCard'
 import { useResolvedReferences } from '@/api'
 import {
   findNaddrs,
@@ -82,6 +83,22 @@ function renderTokens(text: string): ReactNode {
  * than dropped: the widget renders nothing for it, which is the same outcome,
  * and silently discarding references here would hide the reason.
  */
+/** At most this many blocks are drawn live in one message (SPEC §13.6.1); the rest stay links. */
+const MAX_PARTS_PER_MESSAGE = 6
+
+/**
+ * Whether a pasted app link names this address: its path ends in the address's
+ * `d` (§7.2 puts the identity last, `…/<slug>-<d>`), and that `d` is long enough
+ * to be one. A `d` comes from somebody's tag, so a short one would otherwise
+ * match half the links in the body.
+ */
+function urlNames(url: string, address: string): boolean {
+  const d = address.split(':')[2] ?? ''
+  if (d.length < 8) return false
+  const path = url.split(/[?#]/)[0].replace(/\/+$/, '')
+  return path.endsWith(`-${d}`) || path.endsWith(`/${d}`)
+}
+
 function addressOf(ref: string): string {
   try {
     return pointerToAddress(referenceToPointer(ref))
@@ -106,7 +123,7 @@ function dedupeReferences(refs: string[]): string[] {
  * The text of a message or reply, formatted, with its mentions and links, and a
  * card below for each item from another app it mentions.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[] }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`. */ parts?: readonly { address: string; block: string; anchor?: true }[] }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
@@ -196,7 +213,31 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const attachedEvents = standalone
     .filter((ref) => /^nostr:(?:nevent|note)1/i.test(ref))
     .map((ref) => ref.replace(/^nostr:/i, ''))
-  const attachments = [...references.filter((ref) => !drawnInline.has(addressOf(ref))), ...attachedEvents]
+  /*
+    A block of another object, shown live (SPEC §13.6.1, COM-2) — only while the
+    body still names that object, because an edit carries no `part` and a person
+    who took the link out meant the card to go with it. The body names it by a
+    `nostr:naddr…` or by a pasted app link, whose path ends in the object's `d`.
+    The part's card stands for the object, so its plain widget is not drawn too.
+  */
+  const urls = findUrls(body)
+  const named = new Set(findNaddrs(body).map(addressOf))
+  // A comment's anchor (§13.6) is what it is about, not something it names, so
+  // it is drawn above the text whatever the body says — with the same card.
+  const anchored = (parts ?? []).filter((part) => part.anchor)
+  const shown = (parts ?? [])
+    .filter(({ address, anchor }) => {
+      if (anchor) return false
+      return named.has(address) || urls.some((url) => urlNames(url, address))
+    })
+    // Each card reads the relay on its own schedule; a message is a remark, not
+    // a dashboard, and one with dozens of links would spend every viewer's quota.
+    .slice(0, MAX_PARTS_PER_MESSAGE)
+  const shownAddresses = new Set(shown.map((part) => part.address))
+  const attachments = [
+    ...references.filter((ref) => !drawnInline.has(addressOf(ref)) && !shownAddresses.has(addressOf(ref))),
+    ...attachedEvents,
+  ]
   // A message that was *only* a reference has no blocks left to lay out, and
   // `RichText` draws nothing rather than an empty paragraph that still takes a
   // gap.
@@ -205,7 +246,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
       {/* Which part of the referenced object this is about (SPEC §13.6).
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}
-      <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />
+      {anchored.length > 0
+        ? anchored.map((part) => <PartCard key={part.address} address={part.address} block={part.block} />)
+        : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />}
       {/* A block that is nothing but a reference is drawn below as a card, so it leaves the text. */}
       <RichText
         blocks={blocks.filter((block) => !standaloneReference(block))}
@@ -225,8 +268,13 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
         resolves to null and draws nothing, and drawing a skeleton under every
         ordinary link meanwhile would be worse than the gap it fills.
       */}
-      {findUrls(body).map((url) => (
-        <ForeignObjectWidget key={url} naddr={url} resolved={resolvedObjects?.[url]} quiet />
+      {urls
+        .filter((url) => !shown.some((part) => urlNames(url, part.address)))
+        .map((url) => (
+          <ForeignObjectWidget key={url} naddr={url} resolved={resolvedObjects?.[url]} quiet />
+        ))}
+      {shown.map((part) => (
+        <PartCard key={part.address} address={part.address} block={part.block} />
       ))}
     </div>
   )

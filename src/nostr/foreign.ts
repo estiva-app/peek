@@ -41,12 +41,15 @@ import {
   referenceToPointer,
   type AddressPointer,
   type UnsignedEvent,
+  absenceOf,
+  partTag,
 } from '@estiva-app/protocol'
 import {
   KIND_BARE_FILE,
   KIND_CHANNEL_METADATA,
   matchObjectUrl,
   urlPatternsOf,
+  blockUrlOf,
   buildActionEvents,
   KIND_FOLDER_STATE,
   folderOf,
@@ -290,7 +293,14 @@ export async function fileFolderAsViewer(address: string, relayUrl: string, toke
  * or an event, by its id. The two are resolved differently and tagged
  * differently, so the caller is told which it has rather than left to sniff.
  */
-export type UrlReference = { address: string; eventId?: undefined } | { eventId: string; address?: undefined }
+export type UrlReference =
+  | {
+      address: string
+      eventId?: undefined
+      /** One block of it, from a link like Ship's Copy link (`#block-<id>`, SPEC §13.6.1, COM-2). */
+      block?: string
+    }
+  | { eventId: string; address?: undefined; block?: undefined }
 
 /**
  * The reference a pasted app URL names, or null — RFC 0.5 §7.5, PRO-15.
@@ -324,7 +334,8 @@ export async function referenceFromUrlAsViewer(
     if (hit.kind !== undefined) filter.kinds = [hit.kind]
     const [found] = await query([filter])
     if (!found) return null
-    return { address: `${found.kind}:${found.pubkey}:${hit.identifier}` }
+    const address = `${found.kind}:${found.pubkey}:${hit.identifier}`
+    return hit.block === undefined ? { address } : { address, block: hit.block }
   } catch (error) {
     if (error instanceof RelayReadError) return null
     throw error
@@ -359,12 +370,64 @@ export async function urlReferenceTagsAsViewer(
   const found = await Promise.all([...new Set(urls)].map((url) => referenceFromUrlAsViewer(url, relayUrl, token)))
   const addresses = new Set<string>()
   const events = new Set<string>()
+  // One block per address, the first link's (SPEC §13.6.1): `partsOf` reads
+  // only the first tag for an address, so writing a second would be noise.
+  const parts = new Map<string, string>()
   for (const ref of found) {
     if (!ref) continue
-    if (ref.address !== undefined && ref.address !== own) addresses.add(ref.address)
+    if (ref.address !== undefined) {
+      if (ref.address !== own) addresses.add(ref.address)
+      // A block of the file this is said on is still shown: its `a` is the
+      // comment's own (NIP-22), but the part says which block to draw.
+      if (ref.block !== undefined && !parts.has(ref.address)) parts.set(ref.address, ref.block)
+    }
     if (ref.eventId !== undefined) events.add(ref.eventId)
   }
-  return [...[...addresses].map((a) => ['a', a]), ...[...events].map((id) => ['q', id])]
+  return [
+    ...[...addresses].map((a) => ['a', a]),
+    ...[...events].map((id) => ['q', id]),
+    ...[...parts].map(([address, block]) => partTag(address, block)),
+  ]
+}
+
+/**
+ * Why an object a part points at did not come back (SPEC §13.6.1, COM-2):
+ * `deleted` when the relay holds a deletion of it that somebody was entitled
+ * to make, otherwise `unreadable` — which also covers an address that never
+ * existed, and says nothing about whether it does.
+ *
+ * Only called after a read by address came back empty: a Folder the viewer is
+ * not in is skipped silently, so the empty answer cannot say why and a
+ * deletion is the one thing that can.
+ */
+export async function absenceAsViewer(
+  address: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<'deleted' | 'unreadable'> {
+  const deletions = await viewerQuery(relayUrl, token)([{ kinds: [5], '#a': [address], limit: 20 }])
+  return absenceOf(address, deletions)
+}
+
+/**
+ * The link that opens one block of an object in the app that owns it, from
+ * that app's own `urls` shape — undefined until the app declares a `<block>`
+ * fragment, when the caller links to the whole object instead.
+ */
+export async function blockLinkAsViewer(
+  target: { address: string; title?: string; block: string },
+  relayUrl: string,
+  token: StoredToken,
+): Promise<string | undefined> {
+  const [kind, , d] = target.address.split(':')
+  if (!d) return undefined
+  try {
+    const shapes = await urlShapes(viewerQuery(relayUrl, token))
+    return blockUrlOf(shapes, { kind: Number(kind), d, title: target.title, block: target.block })
+  } catch (error) {
+    if (error instanceof RelayReadError) return undefined
+    throw error
+  }
 }
 
 export async function resolveObjectAsViewer(

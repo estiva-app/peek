@@ -38,6 +38,7 @@
 import { fetchBlob } from '@estiva-app/protocol'
 import { signViaEstivaId } from './bridge'
 import { validToken } from '@/auth/estivaId'
+import { RELAY_URL } from '@/api/relayUrl'
 
 /** Distinct blobs held as object URLs before new ones stop being cached. */
 export const CACHE_LIMIT = 64
@@ -66,6 +67,16 @@ export function blobObjectUrl(mediaUrl: string): Promise<string> {
       to the wrong host. Say so instead.
     */
     if (!/^https?:\/\//.test(mediaUrl)) throw new Error(`not an absolute media url: ${mediaUrl}`)
+    /*
+      Only this workspace's relay is sent a signed authorization (COM-2 security
+      review). A media URL comes from somebody else's event — an `imeta`, or an
+      attachment block in a description another member wrote — and nothing on
+      the relay checks its host, so any other origin would receive the viewer's
+      replayable get-token for the asking.
+    */
+    if (!RELAY_URL || new URL(mediaUrl).origin !== new URL(RELAY_URL).origin) {
+      throw new Error(`not this relay's media: ${new URL(mediaUrl).origin}`)
+    }
     const token = validToken()
     if (!token) throw new Error('not signed in')
 
@@ -75,7 +86,10 @@ export function blobObjectUrl(mediaUrl: string): Promise<string> {
       sign: (unsigned) => signViaEstivaId(unsigned, token.accessToken, token.pubkey),
       pubkey: token.pubkey,
     })
-    return URL.createObjectURL(new Blob([bytes], { type: contentType }))
+    // The type is the server's say-so, and a blob: URL opens in Peek's origin:
+    // `text/html` from anywhere would run as Peek. Pictures and PDFs keep their
+    // type so they preview; anything else downloads as bytes.
+    return URL.createObjectURL(new Blob([bytes], { type: safeBlobType(contentType) }))
   })()
 
   // A failure is not cached: the usual cause is an expired token, and the next
@@ -83,6 +97,13 @@ export function blobObjectUrl(mediaUrl: string): Promise<string> {
   pending.catch(() => cache.delete(mediaUrl))
   if (cache.size < CACHE_LIMIT) cache.set(mediaUrl, pending)
   return pending
+}
+
+/** A served type a blob: URL may carry: a raster or video picture, or a PDF; otherwise opaque bytes. */
+export function safeBlobType(contentType: string | undefined): string {
+  const type = (contentType ?? '').split(';')[0].trim().toLowerCase()
+  if (/^(image\/(png|jpe?g|gif|webp|avif)|video\/(mp4|webm)|application\/pdf)$/.test(type)) return type
+  return 'application/octet-stream'
 }
 
 /** Test seam — the cache is module state and a suite must not inherit it. */

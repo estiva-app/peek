@@ -64,6 +64,8 @@ interface ConversationCardProps {
   nostrReferences?: string[]
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
+  /** The blocks of other objects the message shows (SPEC §13.6.1, COM-2). */
+  parts?: { address: string; block: string; anchor?: true }[]
   /** Which block of the referenced object this is about — SPEC §13.6. */
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
@@ -114,6 +116,7 @@ export function ConversationCard({
   resolutionMessage: initialResolutionMessage = '',
   nostrReferences,
   urgentMentions,
+  parts,
   nostrBlockId,
   highlightType,
   onHighlightChange,
@@ -590,7 +593,7 @@ export function ConversationCard({
           </div>
 
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
-            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} />
+            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} parts={parts} />
           </div>
           </>
           )}

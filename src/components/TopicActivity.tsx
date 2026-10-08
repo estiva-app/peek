@@ -155,6 +155,7 @@ export function TopicActivity({
             resolutionMessage={conv.resolutionMessage}
             nostrReferences={conv.nostrReferences}
             urgentMentions={conv.urgentMentions}
+            parts={conv.parts}
             nostrBlockId={conv.nostrBlockId}
             subdued={words.muted}
             isSelected={selectedId === conv.id}

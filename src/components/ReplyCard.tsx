@@ -134,6 +134,8 @@ interface ReplyCardProps {
   nostrReferences?: string[]
   /** Whom the body names urgently, by pubkey — the event's `urgent` tags (SPEC §13.1, CON-24). */
   urgentMentions?: string[]
+  /** The blocks of other objects the reply shows (SPEC §13.6.1, COM-2). */
+  parts?: { address: string; block: string; anchor?: true }[]
   /** The published event's id. When present the timestamp becomes the
    *  message's permalink — see the render below (PEE-17). */
   nostrEventId?: string
@@ -173,6 +175,7 @@ export function ReplyCard({
   onResolutionChange,
   nostrReferences,
   urgentMentions,
+  parts,
   nostrEventId,
   nostrBlockId,
   resolvedObjects,
@@ -539,7 +542,7 @@ export function ReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} />
+              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} />
             </div>
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a
