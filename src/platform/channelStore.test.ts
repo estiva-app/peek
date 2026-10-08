@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { createChannelStore, type ChannelStoreOptions } from './channelStore'
 
@@ -221,6 +221,49 @@ describe('createChannelStore', () => {
     await settle()
     expect(h.store.events(A)).toBeUndefined()
     expect(h.live()).toHaveLength(0)
+  })
+
+  it('with lingerMs, keeps a released channel watched and held, so tracking it again later costs nothing (OPT-4)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const h = harness({ lingerMs: 60_000 })
+      const releaseA = h.store.track([A])
+      h.store.track([B])
+      await vi.advanceTimersByTimeAsync(0)
+      const posts = h.posts.length
+      const watches = h.watches.length
+      // Desk → a topic: A's only tracker leaves, and a later page comes back to it.
+      releaseA()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(h.store.events(A)).toEqual([])
+      expect(h.live()[0].channels).toEqual([A, B])
+      // Still caught up while it lingers: an event for it is applied.
+      h.store.apply(message(A, NOW))
+      expect(h.store.events(A)).toHaveLength(1)
+      h.store.track([A])
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(h.posts).toHaveLength(posts)
+      expect(h.watches).toHaveLength(watches)
+      expect(h.store.events(A)).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('with lingerMs, forgets a released channel once it has lingered that long', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const h = harness({ lingerMs: 60_000 })
+      const release = h.store.track([A])
+      h.store.track([B])
+      await vi.advanceTimersByTimeAsync(0)
+      release()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(h.store.events(A)).toBeUndefined()
+      expect(h.live().map((w) => w.channels)).toEqual([[B]])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('turns a burst of triggers into two reads at most', async () => {

@@ -45,6 +45,12 @@ import { useRelayViewer } from './foreign'
 export const CATCH_UP_MS = 60_000
 /** The full read that lets deletions leave, while the tab is visible. */
 export const RESYNC_MS = 5 * 60_000
+/**
+ * How long a Folder no page tracks any more stays held and watched (OPT-4): a
+ * page that left it and one coming back — Desk → a topic → Desk — ask nothing.
+ * The same five minutes a resolved object is held.
+ */
+export const CHANNEL_LINGER_MS = 5 * 60_000
 import { LOOKBACK_SECONDS } from './lookback'
 export { LOOKBACK_SECONDS }
 
@@ -132,6 +138,7 @@ function storeFor(relayUrl: string, pubkey: string, live: LiveTopics): ChannelSt
     horizonSeconds: HORIZON_SECONDS,
     limitPerChannel: CHANNEL_STREAM_LIMIT,
     lookbackSeconds: LOOKBACK_SECONDS,
+    lingerMs: CHANNEL_LINGER_MS,
     onError: (error) => relayLog('channel store read failed', error),
     onRead: (read) => {
       for (const listener of readListeners) listener(read)
