@@ -61,8 +61,6 @@ interface UseFileConversationViewArgs {
   draftKey?: string
   /** What an empty conversation shows. "Nobody has commented yet." by default. */
   empty?: ReactNode
-  /** Who is in the conversation, for the thread's members pill — a DM's two people. */
-  threadMembers?: string[]
   /**
    * Nothing can be written (Katerina, 7 October): an archived file. No
    * composer in either pane, nothing on a message — no menu, no reactions to
@@ -152,7 +150,6 @@ export function useFileConversationView({
   onCommented,
   draftKey,
   empty,
-  threadMembers,
   readOnly = false,
 }: UseFileConversationViewArgs): ViewSlots {
   const { state, actions, viewerPubkey } = useFileConversation(container, rootIds, {
@@ -484,7 +481,6 @@ export function useFileConversationView({
         sentReplies={[]}
         resolutionEvents={openView.resolutionEvents}
         isResolved={openView.data.isResolved ?? false}
-        dmMembers={threadMembers}
         resolvedByReplyId={openView.resolvedByReplyId}
         resolutionMsg={openView.data.resolutionMessage}
         initialReactions={openView.data.reactions}
