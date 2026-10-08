@@ -75,7 +75,8 @@ type Outcome =
   | { kind: 'lost'; why: string }
 
 export interface SocketReaderOptions {
-  getClient(relayUrl: string): LiveClient
+  /** The tab's live client for `relayUrl`, or null when the tab's socket is another relay's. */
+  getClient(relayUrl: string): LiveClient | null
   /** The pubkey the socket authenticates as, or null when the tab has no credential. */
   currentPubkey(): string | null
   budget: Pick<RelayBudget, 'noteRateLimited' | 'pausedForMs'>
@@ -283,6 +284,7 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
     const socketPubkey = options.currentPubkey()
     if (!socketPubkey || (pubkey && pubkey !== socketPubkey)) return overHttp('other pubkey')
     const client = options.getClient(relayUrl)
+    if (!client) return overHttp('other relay')
     const live = await waitForLive(client)
     const liveWaitMs = now() - asked
     if (!live) return overHttp('not live', { liveWaitMs })

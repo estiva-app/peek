@@ -93,6 +93,11 @@ describe('socket reads', () => {
     expect(await answer).toEqual({ ok: true, events: [] })
   })
 
+  it('sends a read for a relay the tab is not connected to over HTTP', async () => {
+    const read = createSocketReader({ getClient: () => null, currentPubkey: () => ME, budget: { noteRateLimited: vi.fn(() => 0), pausedForMs: () => 0 }, httpBudget: { pausedForMs: () => 0 } })
+    expect(await read('https://elsewhere', [{ kinds: [9] }], ME)).toBeNull()
+  })
+
   it('answers a Folder the reader is not in with nothing, as /query does, not with an error', async () => {
     const { client, subs } = fakeClient()
     const answer = reader(client).read('https://relay', [{ '#h': ['other'] }], ME)
@@ -286,6 +291,14 @@ describe('socket frames', () => {
       `["REQ","peek-${FRAMES_PER_WINDOW + 1}",{}]`,
       `["CLOSE","peek-${FRAMES_PER_WINDOW}"]`,
     ])
+  })
+
+  it('sends AUTH at once, ahead of the frames waiting for room', () => {
+    const { out, shaper: s } = shaper()
+    for (let i = 0; i < FRAMES_PER_SECOND + 1; i++) s.send(`["REQ","peek-${i}",{}]`)
+    s.send('["AUTH",{"id":"y"}]')
+    expect(out.at(-1)).toBe('["AUTH",{"id":"y"}]')
+    expect(s.waiting()).toBe(1)
   })
 })
 

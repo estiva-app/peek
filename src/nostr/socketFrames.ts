@@ -122,8 +122,9 @@ export function createFrameShaper(
     send(data) {
       const frame = classify(data)
       if (!frame) return transmit(data as string)
-      // In order: a CLOSE must never overtake the REQ it closes.
-      if (queue.length === 0 && hasRoom(frame)) return put(frame)
+      // In order: a CLOSE must never overtake the REQ it closes. AUTH may: the
+      // REQs queued on a reconnect would otherwise reach the relay before it.
+      if (frame.data.startsWith('["AUTH"') || (queue.length === 0 && hasRoom(frame))) return put(frame)
       queue.push(frame)
       if (timer === null) flush()
     },

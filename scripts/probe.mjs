@@ -74,7 +74,7 @@
  * same one `render-story.mjs` uses.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { chromium } from 'playwright-core'
@@ -134,7 +134,7 @@ try {
       (url) => url.origin === origin,
       (route) => {
         const path = join(dist, new URL(route.request().url()).pathname)
-        return route.fulfill({ path: existsSync(path) && !path.endsWith('/') ? path : join(dist, 'index.html') })
+        return route.fulfill({ path: existsSync(path) && statSync(path).isFile() ? path : join(dist, 'index.html') })
       },
     )
     // A redirect's later hops are never routed, and a fulfilled 302 is followed

@@ -390,8 +390,11 @@ export function getLiveTopics(relayUrl: string): LiveTopics {
  * The tab's live client itself, for one-shot reads over the same socket
  * (`socketRead.ts`, OPT-2). Built on first use, like `getLiveTopics`, so a read
  * at boot opens the connection the first topic would have opened anyway.
+ * `null` for a relay other than the one the tab is connected to: building one
+ * would tear down the tab's socket and every watch on it.
  */
-export function getLiveClient(relayUrl: string): LiveClient {
+export function getLiveClient(relayUrl: string): LiveClient | null {
+  if (wiring && wiring.relayUrl !== relayUrl) return null
   getLiveTopics(relayUrl)
   return wiring!.client
 }
