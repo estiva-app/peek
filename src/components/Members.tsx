@@ -69,7 +69,7 @@ export function Members({ members, me, directory, people, roles, note, readOnly,
         <MembersDialog
           members={rows}
           count={members.size}
-          self={readOnly ? undefined : { action: isMember ? 'leave' : 'join', onToggle: () => onSetMine(!isMember) }}
+          self={readOnly ? undefined : { action: isMember ? 'leave' : 'join', onToggle: () => onSetMine(!isMember), id: me }}
           candidates={candidates}
           onAdd={!readOnly && isMember ? async (chosen) => onAdd(chosen.map((c) => c.id)) : undefined}
           note={note}
