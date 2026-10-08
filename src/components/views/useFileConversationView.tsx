@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type UIEventHandler } from 'react'
-import { EmptyState, ScrollArea } from '@estiva-app/ui'
+import { Divider, EmptyState, ScrollArea } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
 import { ConversationCard } from '@/components/ConversationCard'
 import { ReactionHorizon } from '@/components/ReactionHorizon'
@@ -457,7 +457,8 @@ export function useFileConversationView({
               <DateDivider label={group.dateLabel} className="sticky top-0 z-10 bg-bg-surface" />
               {group.convs.map((c) => (
                 <Fragment key={c.id}>
-                {c.id === firstNew && <DateDivider label="New" />}
+                {/* Ship's unread line, in Peek's short copy (Miky, OPT-3 /land, 8 Oct). */}
+                {c.id === firstNew && <Divider label="New" tone="warning" />}
                 <ConversationCard
                   authorName={c.authorName}
                   authorAvatarSrc={c.authorAvatarSrc}
