@@ -3,12 +3,14 @@ import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
 import { IconButton } from './ui/IconButton'
-import { cn } from '@/lib/utils'
-import { MembersPill, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import type { ReactNode } from 'react'
+import { MembersPill, Panel, Toolbar, ToolbarButton, type PanelProps } from '@estiva-app/ui'
 import { useAvatarSrc } from '@/api'
 import { MetaText } from '@/components/ui/MetaText'
 
-interface HeaderProps {
+interface HeaderProps extends Partial<Pick<PanelProps, 'footer' | 'bodyRef' | 'onBodyScroll' | 'bodyClassName'>> {
+  /** The conversation under the bar: the body of the column's `Panel`, which scrolls. */
+  children?: ReactNode
   avatarSrc?: string
   name?: string
   /**
@@ -80,8 +82,9 @@ interface HeaderProps {
 }
 
 /**
- * The bar above an open topic, huddle or direct message: its name, open and
- * resolved counts, members, a star and a more-actions menu.
+ * The column of an open topic, huddle or direct message: its bar — name, open
+ * and resolved counts, members, a star and a more-actions menu — and the
+ * conversation under it, in the package's `Panel`.
  */
 export function Header({
   avatarSrc,
@@ -103,6 +106,11 @@ export function Header({
   onDeleteTopic,
   onHideDm,
   className,
+  children,
+  footer,
+  bodyRef,
+  onBodyScroll,
+  bodyClassName,
   folderId,
   onToggleFolderPanel,
   folderPanelOpen = false,
@@ -138,11 +146,17 @@ export function Header({
     </ToolbarButton>
   )
 
+  // The package's Panel, so its bar is every other column's (Katerina, 8
+  // October): its own row was 48px with the hairline under it, so 49px, its
+  // line a pixel below People's and Replies', its title 20px in where theirs is 16px.
   return (
-    <div className={cn('shrink-0 border-b border-border-subtle', className)}>
-      {/* Row 1: title + actions */}
-      <div className="h-12 flex items-center justify-between pl-5 pr-4 py-2">
-        {/* Left */}
+    <Panel
+      className={className}
+      footer={footer}
+      bodyRef={bodyRef}
+      onBodyScroll={onBodyScroll}
+      bodyClassName={bodyClassName}
+      title={
         <div className="flex items-center gap-2 overflow-hidden">
           {variant === 'huddle' ? (
             <IconLock size={16} stroke={1.5} className="text-text-secondary shrink-0" />
@@ -159,9 +173,9 @@ export function Header({
             <span className="text-body-2-strong text-text-primary truncate">{name}</span>
           )}
         </div>
-
-        {/* Right */}
-        <div className="flex gap-3 items-center shrink-0">
+      }
+      actions={
+        <>
           {variant === 'topic' && !hideTopicMeta && (
             <>
               {/* Open / resolved counts */}
@@ -245,8 +259,10 @@ export function Header({
               moreButton
             )}
           </Toolbar>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {children}
+    </Panel>
   )
 }
