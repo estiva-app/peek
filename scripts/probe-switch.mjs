@@ -13,7 +13,12 @@
  * are the same as every other probe) opens the QA Folder and clicks, the way a
  * person would:
  *
- *   Switch probe A → Switch probe B → A → Desk → A → People → the DM with QA-2 → A → the DM
+ *   Switch probe A → Switch probe B → A → Desk → A → Desk → A → People → the DM with QA-2 → A → the DM
+ *
+ * The second Desk is the return OPT-4 is about: a Desk step is drawn when QA-1's Open work (A, B) and Starred
+ * (QA-2) rows are on screen with nothing pulsing, and each step also prints its **first frame** (two animation
+ * frames after the click: drawn or not, how much pulses) and its **own** requests — those up to a second after
+ * it settled, with ms from the click, so Desk's 30 s refresh tick and the minute catch-up can be told apart.
  *
  * `--qa2-post` (OPT-3): while QA-1 is in B, QA-2 signs in in a second headless run and posts in A, and the
  * B → A step says whether A shows that message on return. Each run adds one message to A.
@@ -100,6 +105,8 @@ async function runSwitches({ steps, gapMs, hook }) {
     topic: (title, path) => (text) => location.pathname.startsWith(path) && text.includes(`in ${title}`),
     // A page with no message text of its own is drawn once it has changed and nothing pulses.
     path: (path) => (text, busy, before) => location.pathname === path && busy === 0 && text !== before,
+    // Desk is drawn when its lists' rows are (OPT-4): QA-1 keeps A and B in Open work and QA-2 in Starred.
+    desk: (rows) => (text, busy) => location.pathname === '/app/desk' && busy === 0 && rows.every((row) => text.includes(row)),
     dm: () => (text, busy, before) =>
       /^\/app\/people\/.+/.test(location.pathname) && busy === 0 && text !== before && Boolean(main().querySelector('[contenteditable=true]')),
   }
@@ -135,7 +142,15 @@ async function runSwitches({ steps, gapMs, hook }) {
     let jumps = 0
     let lastTop = null
     let previousSample = t0
+    let firstFrame = null
     found = null
+    // The first frame React paints after the click: what a person sees before anything could have been fetched.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const text = main().textContent
+        firstFrame = { ms: Math.round(performance.now() - t0), busy: skeletons(), ready: ready(text, skeletons(), before), text: text.slice(0, 400) }
+      }),
+    )
     while (performance.now() - t0 < 20000) {
       const now = performance.now()
       const text = main().textContent
@@ -176,6 +191,7 @@ async function runSwitches({ steps, gapMs, hook }) {
       end: Date.now(),
       path: location.pathname,
       visible,
+      firstFrame,
       settled: Math.round(lastChange - t0),
       placeholders: seen,
       skeletonMs: Math.round(skeletonMs),
@@ -263,6 +279,10 @@ async function hammer({ targets, seconds, everyMs, settleMs }) {
 
 const A = '/topic/switch-probe-a-'
 const B = '/topic/switch-probe-b-'
+// QA-1's Desk: A and B in Open work, QA-2 starred (added from Peek's own menus, 2026-10-08).
+// `--desk-also "Urgent,Screener"` requires more: an unread urgent DM from QA-2 puts a row in both, until the
+// run's DM step reads it.
+const DESK_ROWS = ['Switch probe A', 'Switch probe B', QA2_NAME, ...(option('desk-also', '') ? option('desk-also').split(',') : [])]
 const steps = [
   {
     label: 'open A',
@@ -289,7 +309,7 @@ const steps = [
   {
     label: 'A → Desk',
     target: ['link', '/app/desk'],
-    ready: ['path', '/app/desk'],
+    ready: ['desk', DESK_ROWS],
   },
   {
     // On Desk the Topics nav link is the last topic open, so this is one click.
@@ -298,6 +318,13 @@ const steps = [
     ready: ['topic', 'Switch probe A', A],
     key: 'A',
   },
+  {
+    // OPT-4: the return to Desk, which should draw its lists on the first frame with no placeholder.
+    label: 'A → Desk again',
+    target: ['link', '/app/desk'],
+    ready: ['desk', DESK_ROWS],
+  },
+  { label: 'Desk → A again', target: ['link', A], ready: ['topic', 'Switch probe A', A], key: 'A' },
   {
     label: 'A → People',
     target: ['link', '/app/people'],
@@ -496,13 +523,16 @@ for (const r of rows) {
     `${pad(r.label, 18)}${pad(r.visible === null ? 'never' : `${r.visible} ms`, 9)}${pad(`${r.settled} ms`, 9)}${pad(r.requests.http, 6)}${pad(r.requests.sign, 7)}${pad(r.requests.req, 5)}${pad(scroll, 40)}${placeholders}${r.skeletonMs ? ` (skeleton ${r.skeletonMs} ms)` : ''}`,
   )
 }
-console.log('\nrequests per step:')
+console.log('\nrequests per step (whole step, then the ones up to a second after it settled, with ms from the click):')
 for (const r of rows.filter((r) => r.requests)) {
   console.log(
     `  ${pad(r.label, 18)}${Object.entries(r.requests.counts)
       .map(([k, v]) => `${k} ${v}`)
       .join(', ')}`,
   )
+  // Desk's refresh tick and the channel store's catch-up land inside a step's gap; these are the return's own.
+  const own = net.filter((e) => e.at >= r.start && e.at <= r.start + r.settled + 1000 && e.kind !== 'ws-in')
+  console.log(`  ${pad('', 18)}first frame ${r.firstFrame ? `${r.firstFrame.ms} ms, ${r.firstFrame.ready ? 'drawn' : 'not drawn'}, ${r.firstFrame.busy} pulsing` : '–'}; own ${own.length}: ${own.map((e) => `+${e.at - r.start} ${classify(e)}`).join(', ')}`)
 }
 if (report.errors?.length) console.log(`\npage errors: ${report.errors.join(' | ')}`)
 server?.close()
