@@ -1,9 +1,8 @@
 import { useCallback, useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
-import { Chip, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { AppShell } from '@/layouts/AppShell'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { Chip, EmptyState, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { PeekFrame } from '@/layouts/PeekFrame'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { FolderTree } from '@/components/views/FolderTree'
 import { useFileControls } from '@/components/views/useFileControls'
@@ -529,5 +528,5 @@ export function FilePageView({ nav, rightPanel, threadPanel }: {
   threadPanel?: ReactNode
 }) {
   // An archived file's notice is in the messages column, in the composer's place (7 October), not the frame's banner.
-  return <AppShell leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} />
+  return <PeekFrame leftPanel={nav} rightPanel={rightPanel} threadPanel={threadPanel} />
 }

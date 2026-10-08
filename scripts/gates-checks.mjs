@@ -91,6 +91,16 @@ export default function define(h) {
       { what: "the launcher draws Make with the palette's CommandPaletteProposal", run: () => h.contains("src/components/CommandLauncher.tsx", /<CommandPaletteProposal\b/, "CommandLauncher draws Make with CommandPaletteProposal") },
       { what: "another app's address is a chip in the composer, not text", run: () => h.contains("src/extensions/peekEditor.ts", /\bObjectMention\b/, "the editor list holds ObjectMention") },
     ] },
+    // Katerina, 8 October: one copy of each part. What only looked a picture up, stopped a reload or drew
+    // the bar's search is the package's (0.60.0); the frame is PeekFrame, so the package's AppShell keeps its name.
+    { ref: "UIG-49", title: "An app part with an estiva-ui part's name fails the gate unless its reason is written", checks: [
+      { what: "Peek's own Avatar, Person, EmptyState, SearchInput and NavItem are gone", run: () => {
+        const back = ["src/components/ui/Avatar.tsx", "src/components/ui/Person.tsx", "src/components/ui/EmptyState.tsx", "src/components/ui/SearchInput.tsx", "src/components/NavItem.tsx"].filter((file) => h.exists(file))
+        return back.length ? h.FAIL(`${back.join(", ")} is back: use the package's`) : h.PASS("all five are gone")
+      } },
+      { what: "the package knows Peek's pictures and router: PeekSetup gives AppProvider both", run: () => h.contains("src/lib/PeekSetup.tsx", /<AppProvider pictureFor=\{pictureFor\} navigate=\{navigate\}>/, "PeekSetup gives AppProvider both") },
+      { what: "the top bar draws the search, and the frame hands it the launcher", run: () => h.contains("src/layouts/PeekFrame.tsx", /onSearch=\{toggleLauncher\}/, "PeekFrame passes onSearch") },
+    ] },
   ];
 
   // Peek's own checks join the package's row for the same ticket, or make a row of their own.

@@ -2,7 +2,7 @@ import { IconEdit, IconSortDescending } from '@tabler/icons-react'
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { AppShell } from '@/layouts/AppShell'
+import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { Divider } from '@/components/ui/Divider'
@@ -197,7 +197,7 @@ export function PeoplePageView({
   threadPanel?: ReactNode
 }) {
   return (
-    <AppShell
+    <PeekFrame
       leftPanel={
         <ListColumn
           title="People"

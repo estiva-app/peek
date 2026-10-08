@@ -1,6 +1,5 @@
-import { CollapsibleSection } from '@estiva-app/ui'
+import { CollapsibleSection, EmptyState } from '@estiva-app/ui'
 import { PersonRow } from './PersonRow'
-import { EmptyState } from './EmptyState'
 import type { TopicStateType, TopicStateStatus } from './TopicState'
 
 export interface StarredItem {

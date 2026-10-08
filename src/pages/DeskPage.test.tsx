@@ -70,8 +70,8 @@ vi.mock('@/api', async () => ({
   useOpenWorkFiles: () => ({ remove: openWork.remove, add: vi.fn(), has: () => true }),
   usePeekActions: () => ({ removeDmFromOpenWork: vi.fn() }),
 }))
-vi.mock('@/layouts/AppShell', () => ({
-  AppShell: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
+vi.mock('@/layouts/PeekFrame', () => ({
+  PeekFrame: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
     <div>
       <section data-testid="left">{leftPanel}</section>
       <section data-testid="middle">{rightPanel}</section>

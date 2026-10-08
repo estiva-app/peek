@@ -3,7 +3,6 @@ import { MemoryRouter } from 'react-router-dom'
 import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { SCREENER_ITEMS, SCREENER_PREVIEW_ROWS } from '@/api/fixtures'
 import { ScreenerPreviewCardView } from '@/components/ScreenerPreviewCard'
 import type { StarredItem } from '@/components/ui/StarredSection'
@@ -16,7 +15,7 @@ import type { FolderSummary } from '@estiva-app/interop'
 import type { TreeShow, TreeView } from '@/components/views/treeFilter'
 import { treeFilterOf } from '@/components/views/treeFilter'
 import { ObjectPageView } from './ObjectPage'
-import { Panel } from '@estiva-app/ui'
+import { EmptyState, Panel } from '@estiva-app/ui'
 import { ArchivedNotice } from '@/components/ArchivedNotice'
 import { DateDivider } from '@/components/ui/DateDivider'
 
@@ -122,7 +121,7 @@ export const People: Story = {
       selectedId="alice"
       onSelect={noop}
       onHideDm={noop}
-      rightPanel={<EmptyState />}
+      rightPanel={<EmptyState message="No conversation selected" />}
     />
   ),
 }
@@ -144,7 +143,7 @@ export const PeopleEmpty: Story = {
       selectedId={null}
       onSelect={noop}
       onHideDm={noop}
-      rightPanel={<EmptyState />}
+      rightPanel={<EmptyState message="No conversation selected" />}
     />
   ),
 }
@@ -185,7 +184,7 @@ export const Desk: Story = {
       urgent={URGENT}
       openWork={OPEN_WORK}
       starred={STARRED_ROWS}
-      rightPanel={<EmptyState />}
+      rightPanel={<EmptyState message="No conversation selected" />}
     />
   ),
 }
@@ -210,7 +209,7 @@ export const DeskEmpty: Story = {
       urgent={[]}
       openWork={[]}
       starred={[]}
-      rightPanel={<EmptyState />}
+      rightPanel={<EmptyState message="No conversation selected" />}
     />
   ),
 }

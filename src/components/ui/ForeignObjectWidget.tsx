@@ -11,11 +11,9 @@ import { cn } from '@/lib/utils'
 import { objectLabel } from '@/lib/appName'
 import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
-import { Avatar } from './Avatar'
-import { Person } from './Person'
+import { Avatar, Card, Divider, FieldLine, Form, Link, Person, SectionLabel, ShowMore } from '@estiva-app/ui'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
-import { Card, Divider, FieldLine, Form, Link, SectionLabel, ShowMore } from '@estiva-app/ui'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -97,7 +95,7 @@ function Meta({ slot, people }: { slot: ResolvedSlot; people?: People }) {
     return (
       // A name takes the size and tone of where it sits (UIG-9).
       <span className="contents text-caption text-text-secondary">
-        <Person pubkey={slot.value} people={people} />
+        <Person name={people?.[slot.value]?.displayName} picture={people?.[slot.value]?.picture} size={16} />
       </span>
     )
   }
@@ -366,7 +364,7 @@ export function ForeignObjectCard({
   */
   const title = slots.title?.isPubkey ? (
     // Weight and colour come from the title's box, below, whichever way it is drawn (UIG-9).
-    <Person pubkey={slots.title.value} people={object.people} />
+    <Person name={object.people?.[slots.title.value]?.displayName} picture={object.people?.[slots.title.value]?.picture} size={16} />
   ) : (
     slots.title?.value
   )
