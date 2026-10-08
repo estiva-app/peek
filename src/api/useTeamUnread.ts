@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { FolderSummary } from '@estiva-app/interop'
 import { useMembership } from '@/api'
 import { validToken } from '@/auth/estivaId'
@@ -10,9 +10,6 @@ import { type TeamUnreadProbe, type TeamUnreadTrigger, teamUnreadProbe } from '.
 import { placeStreams, teamHasMemberStream, teamHasUnread, unlistedFiles } from './teamUnread'
 import { onChannelStoreDelivery, onChannelStoreRead, useChannelStreams } from './useChannelStreams'
 import { useFileParents } from './useFileParents'
-
-/** How long the socket's activity is gathered before an open section is told once (FOL-44). */
-export const TEAM_UNREAD_SETTLE_MS = 1_000
 
 /** What asked the store to read, in the words the probe has always used. */
 function triggerOf(reason: string): TeamUnreadTrigger {
@@ -29,9 +26,8 @@ const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
  * Whether anything in each Folder is new to the viewer — SPEC §11.3, FOL-18.
  *
  * It draws no dot: a Folder row carries none, only its files do (Miky,
- * 2026-10-03). It is what the tree's Unread filter keeps (FOL-41), and its
- * `activity` re-reads an open Folder's row dots (FOL-44). It is the union of
- * the Folder's streams, judged by
+ * 2026-10-03). It is what the tree's Unread filter keeps (FOL-41). It is the
+ * union of the Folder's streams, judged by
  * `teamHasUnread`, from one batched read of every listed Folder's channel —
  * two `POST /query` for the whole of production's 147, where the listing's
  * per-Folder shape would have been three hundred (`channelStreams.ts`).
@@ -52,8 +48,7 @@ const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
  * (`useChannelStreams`), which reads a Folder once, applies what the socket
  * delivers, and catches up from a cursor; that file has the cadence. What is
  * left here is the judging, which runs on every frontier change without a
- * read — what turns the dot off when this tab records a file as read — and
- * the socket's signal handed on to the rows (`activity`, FOL-44).
+ * read — what turns the dot off when this tab records a file as read.
  */
 export function useTeamUnread(folders: readonly FolderSummary[] | null | undefined): {
   unread: Record<string, boolean>
@@ -77,12 +72,6 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   joinedUnder: Readonly<Record<string, readonly string[]>>
   /** Whether `member` and `unread` have been judged yet: a filter waits for its own. */
   ready: { member: boolean; unread: boolean }
-  /**
-   * How many times the socket has reported something said in each Folder, or
-   * in a Folder it lists — a number that changes, for an open section's rows
-   * to re-read their dots on (FOL-44). See `activity` below.
-   */
-  activity: Record<string, number>
 } {
   const frontier = useReadFrontier()
   const membership = useMembership()
@@ -129,65 +118,30 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   }, [])
 
   /*
-    Which Folders the socket said something about, counted per settle window
-    (FOL-44). The dot follows the store, and the rows inside an open section
-    do not: their badges are one read keyed on the listing's addresses, so a
-    comment changed nothing they depend on and the dot waited for the section
-    to be closed and opened again. This is the signal handed on — no second
-    subscription, and gathered in a window, so a subscribe's replay of stored
-    events is one re-read per open section rather than one per event.
-  */
-  const [signalled, setSignalled] = useState<Record<string, number>>({})
-  const bump = useCallback((touched: Iterable<string>) => {
-    setSignalled((before) => {
-      const next = { ...before }
-      for (const folder of touched) next[folder] = (next[folder] ?? 0) + 1
-      return next
-    })
-  }, [])
-
-  /*
-    The store's reads and deliveries, told to the probe in its own words and
-    handed on as `activity`. A read is reported once it is over, so
-    `loadStarted` and `loadSettled` arrive together; what the probe keeps is
-    the trigger and the outcome, and both are still true. A delivery for a
-    Folder this sidebar does not list is another reader's.
+    The store's reads and deliveries, told to the probe in its own words. A
+    read is reported once it is over, so `loadStarted` and `loadSettled` arrive
+    together; what the probe keeps is the trigger and the outcome, and both are
+    still true. A delivery for a Folder this sidebar does not list is another
+    reader's. The rows inside an open section no longer need a signal from
+    here: their badges fold what the store holds (OPT-5).
   */
   useEffect(() => {
     const listed = new Set(ids)
-    const touched = new Set<string>()
-    let timer: ReturnType<typeof setTimeout> | undefined
     const unread = onChannelStoreRead((read) => {
       probe.current?.loadStarted(triggerOf(read.reason))
       probe.current?.loadSettled(
         read.outcome,
         read.outcome === 'ok' ? { answered: read.channels } : { failure: relayFailureKind(read.error) },
       )
-      // A socket back from being down may have missed anything, anywhere.
-      if (read.reason === 'relay-live' && read.outcome === 'ok') bump(ids)
     })
     const undelivered = onChannelStoreDelivery((folder) => {
-      if (!listed.has(folder)) return
-      probe.current?.delivered(folder)
-      touched.add(folder)
-      /*
-        A ceiling, not a debounce (FOL-40): the window opens on the first
-        signal and a later one never pushes it back, because a subscribe or a
-        reconnect replays stored events in a continuous run.
-      */
-      if (timer) return
-      timer = setTimeout(() => {
-        timer = undefined
-        bump([...touched])
-        touched.clear()
-      }, TEAM_UNREAD_SETTLE_MS)
+      if (listed.has(folder)) probe.current?.delivered(folder)
     })
     return () => {
-      if (timer) clearTimeout(timer)
       unread()
       undelivered()
     }
-  }, [ids, bump])
+  }, [ids])
 
   /*
     A moved file's talk is judged in the Folder that lists it now (FOL-49), and
@@ -293,29 +247,6 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   }, [ids, folders, live, relayState, frontier, membership.state, membership.termsOf, membership.isMentioned, placed, judged])
 
   /*
-    A topic or a project's conversation channel is a Folder of its own placed
-    in its team (FOL-22, FOL-42), and the section drawn is the team's — so a
-    signal travels to every container that lists it, exactly as the dot does
-    above. Summed, so the container's number changes whichever of its streams
-    spoke.
-  */
-  const activity = useMemo(() => {
-    const out: Record<string, number> = { ...signalled }
-    for (const folder of folders ?? []) {
-      const own = signalled[folder.id]
-      if (!own || !folder.listedIn) continue
-      for (const container of folder.listedIn) out[container] = (out[container] ?? 0) + own
-    }
-    // And to wherever a moved file's talk in it is judged (FOL-49).
-    for (const [from, into] of Object.entries(placed.handed)) {
-      const own = signalled[from]
-      if (!own) continue
-      for (const container of into) out[container] = (out[container] ?? 0) + own
-    }
-    return out
-  }, [signalled, folders, placed.handed])
-
-  /*
     Topics from what the person joined, not only from what was said (Katerina,
     5 October): the streams above see a joined file only once somebody talks
     in it inside the horizon, so a quiet file, or a topic just started, was
@@ -358,7 +289,7 @@ export function useTeamUnread(folders: readonly FolderSummary[] | null | undefin
   )
 
   return useMemo(
-    () => ({ unread: judged.unread, member: mine.member, holdsJoined: mine.holdsJoined, joinedUnder: mine.joinedUnder, ready, activity }),
-    [judged.unread, mine, ready, activity],
+    () => ({ unread: judged.unread, member: mine.member, holdsJoined: mine.holdsJoined, joinedUnder: mine.joinedUnder, ready }),
+    [judged.unread, mine, ready],
   )
 }

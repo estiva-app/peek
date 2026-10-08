@@ -51,7 +51,6 @@ export function FileTreeView({
   filter = 'all',
   selectedRef,
   expand,
-  activity = 0,
   onSelect,
   onControl,
   holdsJoined,
@@ -70,12 +69,6 @@ export function FileTreeView({
    * a person who collapses a row keeps it collapsed.
    */
   expand?: readonly string[]
-  /**
-   * A number that changes when the socket reports something said in this
-   * Folder (FOL-44, `useTeamUnread`'s `activity`). Every level's dots re-read
-   * on it; without it they are read once per listing.
-   */
-  activity?: number
   onSelect: (file: ForeignObject) => void
   /**
    * A row's more-menu asked for its details, a rename or a deletion (FOL-33).
@@ -91,7 +84,7 @@ export function FileTreeView({
   holdsJoined?: ReadonlySet<string>
 }) {
   const files = typeof state === 'object' && 'files' in state ? state.files : undefined
-  const { unread } = useConversationBadges(files ? peersOf(files) : undefined, activity)
+  const { unread } = useConversationBadges(files ? peersOf(files) : undefined)
   /*
     The same seam the rows' own join controls read, so a row kept by the
     `Mine` filter and the bell drawn on it cannot disagree in one render.
@@ -164,7 +157,6 @@ export function FileTreeView({
           unread={unread}
           selectedRef={selectedRef}
           expand={[...(expand ?? []), ...openForChild]}
-          activity={activity}
           onSelect={onSelect}
           onControl={onControl}
         />
@@ -196,7 +188,6 @@ export function JoinedFileRows({
   joinedUnder = {},
   selectedRef,
   selectedParent,
-  activity = 0,
   onSelect,
   onControl,
 }: {
@@ -208,7 +199,6 @@ export function JoinedFileRows({
   selectedRef?: string
   /** The open file's parent: the open file is read with the rest when this listing holds its parent. */
   selectedParent?: string | null
-  activity?: number
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
@@ -238,7 +228,7 @@ export function JoinedFileRows({
     }
     return out
   }, [listed, joinedUnder, resolved, selectedParent, selectedRef])
-  const { unread } = useConversationBadges(candidates.length ? candidates : undefined, activity)
+  const { unread } = useConversationBadges(candidates.length ? candidates : undefined)
   const membership = useMembership()
   return (
     <JoinedFileRowsView
@@ -249,7 +239,6 @@ export function JoinedFileRows({
       isMember={membership.isMember}
       unread={unread}
       selectedRef={selectedRef}
-      activity={activity}
       onSelect={onSelect}
       onControl={onControl}
     />
@@ -265,7 +254,6 @@ export function JoinedFileRowsView({
   isMember,
   unread,
   selectedRef,
-  activity = 0,
   onSelect,
   onControl,
 }: {
@@ -278,7 +266,6 @@ export function JoinedFileRowsView({
   isMember: (address: string) => boolean
   unread: Record<string, boolean>
   selectedRef?: string
-  activity?: number
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
@@ -305,7 +292,7 @@ export function JoinedFileRowsView({
     <div className="flex flex-col gap-0.5" data-folder={(state as FolderContents).id} data-flat>
       {rows.map((file) => (
         // `nested`: a row of its own, never one that opens onto others.
-        <TreeRow key={file.ref} file={file} unread={unread} selectedRef={selectedRef} activity={activity} onSelect={onSelect} onControl={onControl} nested />
+        <TreeRow key={file.ref} file={file} unread={unread} selectedRef={selectedRef} onSelect={onSelect} onControl={onControl} nested />
       ))}
     </div>
   )
@@ -323,7 +310,6 @@ function TreeRow({
   unread,
   selectedRef,
   expand,
-  activity,
   onSelect,
   onControl,
   nested = false,
@@ -333,7 +319,6 @@ function TreeRow({
   unread?: Record<string, boolean>
   selectedRef?: string
   expand?: readonly string[]
-  activity?: number
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
   nested?: boolean
@@ -463,7 +448,6 @@ function TreeRow({
                     exclude={listedChildren}
                     selectedRef={selectedRef}
                     expand={expand}
-                    activity={activity}
                     onSelect={onSelect}
                     onControl={onControl}
                   />
@@ -476,7 +460,6 @@ function TreeRow({
                     unread={unread}
                     selectedRef={selectedRef}
                     expand={expand}
-                    activity={activity}
                     onSelect={onSelect}
                     onControl={onControl}
                     nested
@@ -497,7 +480,6 @@ function FetchedRows({
   exclude = [],
   selectedRef,
   expand,
-  activity,
   onSelect,
   onControl,
 }: {
@@ -505,14 +487,13 @@ function FetchedRows({
   exclude?: ForeignObject[]
   selectedRef?: string
   expand?: readonly string[]
-  activity?: number
   onSelect: (file: ForeignObject) => void
   onControl?: (control: FileControl, file: ForeignObject) => void
 }) {
   const { state } = useForeignChildren(naddr)
   const drawn = new Set(exclude.map((file) => file.ref))
   const children = Array.isArray(state) ? state.filter((child) => !drawn.has(child.ref)) : []
-  const { unread } = useConversationBadges(Array.isArray(state) ? state : undefined, activity)
+  const { unread } = useConversationBadges(Array.isArray(state) ? state : undefined)
 
   if (state === 'loading') return <SkeletonRow />
   if (state === 'unresolved' || (!Array.isArray(state) && 'failed' in state)) {
@@ -530,7 +511,6 @@ function FetchedRows({
           unread={unread}
           selectedRef={selectedRef}
           expand={expand}
-          activity={activity}
           onSelect={onSelect}
           onControl={onControl}
           nested

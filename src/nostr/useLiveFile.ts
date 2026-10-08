@@ -18,18 +18,27 @@
  * its own chat and a re-read of the file for every line said in the Folder
  * would be the cost with none of the point.
  *
- * The listener is told *which Folder* changed and nothing else — the platform's
- * `watchFolders` carries no event — so this cannot tell a new root (`#a` on the
- * file, which the object's own read owns) from a reply (`#e` on a root, which
- * the conversation read owns). It reports "something was said here" and the
- * caller re-reads both. Bursts are gathered for a moment so a comment posted
- * with a resolution is one re-read rather than two.
+ * ## The event, applied — not a signal to re-read (OPT-5)
  *
- * ## The socket is the tab's one
+ * The listener is handed each event the socket delivers, and the caller
+ * applies it to what it holds: most are another topic's in the same Folder and
+ * cost nothing. It used to be told only "something was said here" and re-read
+ * the conversation every time — one or two requests for each line said
+ * anywhere in the Folder. Called with no event, the caller catches up instead:
+ * on the transition into live, and if a socket ever delivers a signal without
+ * its event.
  *
- * `getLiveTopics` builds it if nothing has yet: a file page opened from a
- * pasted link may be the first thing in the tab to want the socket, and the
- * holder guarantees there is still only one.
+ * ## One watch per Folder, shared
+ *
+ * Every view of the same Folder and kinds shares one REQ, kept for
+ * {@link LIVE_FILE_LINGER_MS} after the last view leaves it, so going from one
+ * topic to another in the Folder, or out and straight back, neither closes nor
+ * reopens it. `since` is when the watch opened: a reconnect replays from there,
+ * and what is already held is merged as nothing.
+ *
+ * `getLiveTopics` builds the socket if nothing has yet: a file page opened from a
+ * pasted link may be the first thing in the tab to want it, and the holder
+ * guarantees there is still only one.
  *
  * ## Additive, like the rest
  *
@@ -41,24 +50,82 @@
  * out — the first connect's read is the caller's own mount.
  */
 import { useEffect, useRef, useState } from 'react'
-import { KIND, type RelayState } from '@estiva-app/protocol'
-import { getLiveTopics } from './liveTopics'
+import { KIND, type RelayState, type SignedEvent } from '@estiva-app/protocol'
+import { getLiveTopics, type LiveTopics } from './liveTopics'
 import { RELAY_URL } from '@/api/relayUrl'
 
-/** How long the socket's activity is gathered before one re-read pays for all of it. */
-export const LIVE_FILE_SETTLE_MS = 300
+/** How long a Folder's watch outlives the last view of it. */
+export const LIVE_FILE_LINGER_MS = 60_000
 
-const FILE_KINDS: readonly number[] = [KIND.COMMENT]
+/**
+ * What a file's conversation is made of that carries the Folder's `h`: its
+ * comments, a `kind:9` written before Ship flipped, edits, resolutions, an
+ * admin's delete, and the file's field changes. Applied, not re-read, so the
+ * Folder's own chat costs a frame each and nothing more.
+ */
+const FILE_KINDS: readonly number[] = [
+  KIND.COMMENT,
+  KIND.STREAM_MESSAGE,
+  KIND.MESSAGE_EDIT,
+  KIND.ASSERTION,
+  /* NIP-29's admin delete */ 9005,
+  /* a file's field change (SPEC §6.7) */ 1851,
+]
+
+type Listener = (event?: SignedEvent) => void
+const watches = new Map<string, { listeners: Set<Listener>; watch: { stop(): void }; linger?: ReturnType<typeof setTimeout> }>()
+
+/** Join the Folder's shared watch; the returned function leaves it. */
+function share(live: LiveTopics, folder: string, kinds: readonly number[], listener: Listener): () => void {
+  const key = `${folder}|${kinds.join(',')}`
+  let entry = watches.get(key)
+  if (!entry) {
+    const listeners = new Set<Listener>()
+    const watch = live.watchChannels(
+      [folder],
+      (_folder, event) => {
+        for (const each of [...listeners]) each(event)
+      },
+      { kinds, since: Math.floor(Date.now() / 1000) },
+    )
+    entry = { listeners, watch }
+    watches.set(key, entry)
+  }
+  if (entry.linger) clearTimeout(entry.linger)
+  entry.linger = undefined
+  entry.listeners.add(listener)
+  const held = entry
+  return () => {
+    held.listeners.delete(listener)
+    if (held.listeners.size) return
+    held.linger = setTimeout(() => {
+      held.watch.stop()
+      watches.delete(key)
+    }, LIVE_FILE_LINGER_MS)
+  }
+}
+
+/** Every shared watch, stopped — for a test. */
+export function stopLiveFileWatches(): void {
+  for (const entry of watches.values()) {
+    if (entry.linger) clearTimeout(entry.linger)
+    entry.watch.stop()
+  }
+  watches.clear()
+}
 
 export function useLiveFile(
   /** The Folder the file is in — its `h`. Nothing is watched while null. */
   folder: string | null | undefined,
-  /** Something was said about the file: re-read. Held in a ref, so an inline function is fine. */
-  onActivity: () => void,
   /**
-   * What to watch for. A file's comments by default; a channel's conversation
-   * (REM-1) passes its messages and what else carries its `h`. Read by value,
-   * so a fresh array each render does not re-subscribe.
+   * The socket delivered `event` in the Folder: apply it. Called with none on
+   * the transition into live: catch up. Held in a ref, so an inline function is fine.
+   */
+  onActivity: (event?: SignedEvent) => void,
+  /**
+   * What to watch for. A file's conversation by default; a channel's
+   * conversation (REM-1) passes its messages and what else carries its `h`.
+   * Read by value, so a fresh array each render does not re-subscribe.
    */
   kinds: readonly number[] = FILE_KINDS,
 ): { relayState: RelayState } {
@@ -78,15 +145,7 @@ export function useLiveFile(
     if (!folder || !relayUrl) return
 
     let unsubscribe: (() => void) | undefined
-    let watch: { stop(): void } | undefined
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const settle = () => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        timer = undefined
-        latest.current()
-      }, LIVE_FILE_SETTLE_MS)
-    }
+    let leave: (() => void) | undefined
     try {
       const live = getLiveTopics(relayUrl)
       // The initial snapshot: `onState` fires on change, and the tab-wide
@@ -100,24 +159,18 @@ export function useLiveFile(
         wasLive = next === 'live'
       })
       /*
-        From now (OPT-3). Without `since` the REQ replays the Folder's stored
-        history on subscribe, every replayed event is "something was said", and
-        the caller re-read the conversation it had read a moment before on its
-        own mount — every open and every return paid its reads twice. On a
-        reconnect it replays from here, which covers what was missed while out.
+        From when the watch opened (OPT-3). Without `since` the REQ replays the
+        Folder's stored history on subscribe, and every open and every return
+        paid its reads twice.
       */
-      watch = live.watchChannels([folder], settle, {
-        kinds: kindList.split(',').map(Number),
-        since: Math.floor(Date.now() / 1000),
-      })
+      leave = share(live, folder, kindList.split(',').map(Number), (event) => latest.current(event))
     } catch (error) {
       // A failure costs the live path and nothing else.
       console.warn('[nostr] live file subscription unavailable:', error)
     }
     return () => {
-      if (timer) clearTimeout(timer)
       unsubscribe?.()
-      watch?.stop()
+      leave?.()
     }
   }, [folder, relayUrl, kindList])
 

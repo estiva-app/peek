@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { FileConversation } from '@/nostr/fileConversation'
 import type { ConversationStore } from '@/platform/conversationStore'
 import { RelayReadError } from '@/nostr/relayRead'
+import type { SignedEvent } from '@estiva-app/protocol'
 
 /*
   The hook's contract with the held store (OPT-3) and the socket (FOL-32). The
@@ -18,15 +19,19 @@ type CatchUp = (
   container: unknown,
   rootIds: readonly string[],
 ) => Promise<{ changed: boolean; object: boolean; mentions: boolean }>
+type Apply = (...args: [...Parameters<CatchUp>, events: readonly SignedEvent[]]) => ReturnType<CatchUp>
 const relay = vi.hoisted(() => ({
   read: vi.fn<(container: unknown, rootIds: readonly string[]) => Promise<{ value: FileConversation; events: [] }>>(),
   catchUp: vi.fn<CatchUp>(),
+  apply: vi.fn<Apply>(),
   comment: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
 }))
 vi.mock('@/nostr/conversationCatchUp', () => ({
   readConversation: (container: unknown, rootIds: readonly string[]) => relay.read(container, rootIds),
   catchUpConversation: (store: ConversationStore<FileConversation>, key: string, container: unknown, rootIds: readonly string[]) =>
     relay.catchUp(store, key, container, rootIds),
+  applyLiveEvents: (store: ConversationStore<FileConversation>, key: string, container: unknown, rootIds: readonly string[], events: readonly SignedEvent[]) =>
+    relay.apply(store, key, container, rootIds, events),
 }))
 vi.mock('@/nostr/fileConversation', () => ({ commentAsViewer: () => relay.comment() }))
 vi.mock('@/nostr/foreign', () => ({ viewerQuery: () => async () => [] }))
@@ -38,19 +43,20 @@ const live = vi.hoisted(() => ({
   state: 'connecting' as 'connecting' | 'live',
   watched: [] as (string | null | undefined)[],
   kinds: undefined as readonly number[] | undefined,
-  fire: undefined as (() => void) | undefined,
+  fire: undefined as ((event?: SignedEvent) => void) | undefined,
 }))
 vi.mock('@/nostr/useLiveFile', () => ({
-  useLiveFile: (folder: string | null | undefined, onActivity: () => void, kinds?: readonly number[]) => {
+  useLiveFile: (folder: string | null | undefined, onActivity: (event?: SignedEvent) => void, kinds?: readonly number[]) => {
     live.watched.push(folder)
     live.kinds = kinds
     live.fire = onActivity
     return { relayState: live.state }
   },
 }))
-const refresh = vi.hoisted(() => ({ options: undefined as { enabled?: boolean; interval?: boolean } | undefined }))
+const refresh = vi.hoisted(() => ({ options: undefined as { enabled?: boolean; intervalMs?: number } | undefined }))
 vi.mock('@/lib/useRefreshTriggers', () => ({
-  useRefreshTriggers: (_fn: () => void, opts?: { enabled?: boolean; interval?: boolean }) => {
+  REFRESH_INTERVAL_MS: 30_000,
+  useRefreshTriggers: (_fn: () => void, opts?: { enabled?: boolean; intervalMs?: number }) => {
     refresh.options = opts
   },
 }))
@@ -83,8 +89,11 @@ beforeEach(() => {
 afterEach(() => {
   relay.read.mockReset()
   relay.catchUp.mockReset()
+  relay.apply.mockReset()
   relay.comment.mockReset()
 })
+
+const event = (id: string) => ({ id, kind: 1111, tags: [['h', FOLDER]] }) as unknown as SignedEvent
 
 /** Every state the hook rendered, so a single 'loading' frame cannot hide. */
 function mount(initial: { container: typeof container | { kind: 'channel'; h: string }; rootIds: string[] }, onActivity?: () => void) {
@@ -107,7 +116,41 @@ describe('useFileConversation — live (FOL-32)', () => {
     expect(live.watched[0]).toBe(FOLDER)
   })
 
-  it('a fake 1111 on the Folder catches up, and re-resolves the object only when the file changed', async () => {
+  it('an event from the socket is applied, with no read and no catch-up (OPT-5)', async () => {
+    const onActivity = vi.fn()
+    const { result } = mount({ container, rootIds: ['r1'] }, onActivity)
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    relay.apply.mockImplementationOnce(finds(one))
+    await act(async () => live.fire?.(event('e1')))
+    expect(relay.apply).toHaveBeenCalledTimes(1)
+    expect(relay.apply.mock.calls[0][4]).toEqual([event('e1')])
+    expect(result.current.state).toBe(one)
+    expect(relay.catchUp).not.toHaveBeenCalled()
+    expect(relay.read).toHaveBeenCalledTimes(1)
+    expect(onActivity).not.toHaveBeenCalled()
+
+    // The file itself changed (a field): the object is re-resolved.
+    relay.apply.mockImplementationOnce(finds(one, true))
+    await act(async () => live.fire?.(event('e2')))
+    expect(onActivity).toHaveBeenCalledTimes(1)
+  })
+
+  it('events that arrive while one is applied are applied together after it', async () => {
+    const { result } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    let release = () => {}
+    relay.apply.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve({ changed: false, object: false, mentions: false }))))
+    await act(async () => {
+      live.fire?.(event('e1'))
+      live.fire?.(event('e2'))
+      live.fire?.(event('e3'))
+      release()
+    })
+    await waitFor(() => expect(relay.apply).toHaveBeenCalledTimes(2))
+    expect(relay.apply.mock.calls.map((call) => call[4].map((e) => e.id))).toEqual([['e1'], ['e2', 'e3']])
+  })
+
+  it('no event — the socket came back — catches up, and re-resolves the object only when the file changed', async () => {
     const onActivity = vi.fn()
     const { result } = mount({ container, rootIds: ['r1'] }, onActivity)
     await waitFor(() => expect(result.current.state).toBe(empty))
@@ -122,13 +165,13 @@ describe('useFileConversation — live (FOL-32)', () => {
     expect(onActivity).toHaveBeenCalledTimes(1)
   })
 
-  it('the interval idles under a live socket and is back when it is not', () => {
+  it('catches up once a minute under a live socket — for reactions and deletions — and every 30 s when not', () => {
     live.state = 'live'
     const { rerender } = renderHook(() => useFileConversation(container, ['r1']))
-    expect(refresh.options).toEqual({ enabled: true, interval: false })
+    expect(refresh.options).toEqual({ enabled: true, intervalMs: 60_000 })
     live.state = 'connecting'
     rerender()
-    expect(refresh.options).toEqual({ enabled: true, interval: true })
+    expect(refresh.options).toEqual({ enabled: true, intervalMs: 30_000 })
   })
 })
 
@@ -254,7 +297,7 @@ describe('useFileConversation — a channel (REM-1)', () => {
     await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
     expect(relay.read).toHaveBeenCalledWith({ kind: 'channel', h: CHANNEL }, [])
     expect(live.watched[0]).toBe(CHANNEL)
-    expect(live.kinds).toEqual([9, 40003, 9101])
+    expect(live.kinds).toEqual([9, 40003, 9101, 9005])
   })
 
   it('a sent message is caught up once the relay has accepted it', async () => {

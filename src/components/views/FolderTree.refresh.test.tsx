@@ -136,6 +136,8 @@ const dots = vi.hoisted(() => ({
   version: 0,
   at: 0,
   streams: {} as Record<string, unknown[]>,
+  /** Every event the store holds, raw — what the rows' badges fold (OPT-5). */
+  events: [] as unknown[],
   listeners: new Set<() => void>(),
   /** The store's deliveries — what the socket's signal is now (FOL-44 rides it). */
   deliveries: new Set<(channel: string) => void>(),
@@ -162,6 +164,17 @@ vi.mock('@/api/useChannelStreams', async () => {
       )
       // eslint-disable-next-line react-hooks/exhaustive-deps
       return useMemo(() => ({ at: dots.at, streams: { [TEAM]: [], [OTHER]: [], ...dots.streams } }), [version])
+    },
+    useHeldChannelEvents: () => {
+      const version = useSyncExternalStore(
+        (listener) => {
+          dots.listeners.add(listener)
+          return () => dots.listeners.delete(listener)
+        },
+        () => dots.version,
+      )
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      return useMemo(() => [...dots.events], [version])
     },
     onChannelStoreRead: () => () => {},
     onChannelStoreDelivery: (listener: (channel: string) => void) => {
@@ -316,14 +329,33 @@ describe('a refresh keeps the rows it already has (FOL-40)', () => {
   })
 })
 
-describe("an open section's rows follow the socket (FOL-44)", () => {
+describe("an open section's rows follow the store, with no read (FOL-44, OPT-5)", () => {
   /** The badge reads that asked about the team's first level. */
   const rowReads = () =>
     seam.conversations.mock.calls.filter(([asked]) =>
       asked.some((object) => object.address === FILE_ADDRESS),
     ).length
+  /** The store now holds `events` — what the socket delivered, applied. */
+  const hold = (channel: string, ...events: unknown[]) =>
+    act(() => {
+      dots.events = events
+      dots.version++
+      for (const listener of dots.listeners) listener()
+      deliver(channel)
+    })
+  const commentOn = (address: string, channel: string) => ({
+    id: 'c'.repeat(64),
+    pubkey: 'd'.repeat(64),
+    created_at: 1_800_000_000,
+    kind: 1111,
+    content: '',
+    sig: '',
+    tags: [['A', address], ['a', address], ['K', address.split(':')[0]], ['k', address.split(':')[0]], ['h', channel]],
+  })
+  /** Long enough that a read the delivery caused — FOL-44's settle window was 1 s — would have gone out. */
+  const quiet = () => new Promise((resolve) => setTimeout(resolve, 1_500))
 
-  it("a comment in a project's channel under the team re-reads the open rows' dots, without a remount", async () => {
+  it("a comment in a project's channel under the team reaches the open rows with no read, and no remount", async () => {
     render(
       <MemoryRouter initialEntries={['/folders']}>
         <FolderTree currentFolder={TEAM} />
@@ -334,13 +366,14 @@ describe("an open section's rows follow the socket (FOL-44)", () => {
     const row = document.querySelector(`[data-file="${FILE_ADDRESS}"]`)
 
     // The channel the comment lands in is not the team's: it is placed in it.
-    deliver(CONVERSATION)
-    await waitFor(() => expect(rowReads()).toBe(2), { timeout: 3_000 })
+    hold(CONVERSATION, commentOn(FILE_ADDRESS, CONVERSATION))
+    await quiet()
+    expect(rowReads()).toBe(1)
     expect(document.contains(row!)).toBe(true)
     expect(skeletons()).toHaveLength(0)
   })
 
-  it("an expanded row's children re-read on the same signal", async () => {
+  it("an expanded row's children take the same with no read", async () => {
     render(
       <MemoryRouter initialEntries={['/folders']}>
         <FolderTree currentFolder={TEAM} />
@@ -356,23 +389,9 @@ describe("an open section's rows follow the socket (FOL-44)", () => {
       ).length
     await waitFor(() => expect(childReads()).toBe(1))
 
-    deliver(TEAM)
-    await waitFor(() => expect(childReads()).toBe(2), { timeout: 3_000 })
-  })
-
-  it("a signal from another team re-reads nothing in this one's rows", async () => {
-    render(
-      <MemoryRouter initialEntries={['/folders']}>
-        <FolderTree currentFolder={TEAM} />
-      </MemoryRouter>,
-    )
-    await screen.findByText('FOL-15 test topic 2')
-    await waitFor(() => expect(rowReads()).toBe(1))
-
-    deliver(OTHER)
-    // Past the settle window, so a read it caused would have gone out.
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
-    expect(rowReads()).toBe(1)
+    hold(TEAM, commentOn(issue.address!, TEAM))
+    await quiet()
+    expect(childReads()).toBe(1)
   })
 })
 
