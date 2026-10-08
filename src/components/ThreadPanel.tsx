@@ -1,13 +1,12 @@
 import { useRef, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconX, IconExternalLink, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
-import { Chip, Panel } from '@estiva-app/ui'
-import { MembersPill } from './ui/MembersPill'
+import { Chip, MembersPill, Panel } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
 import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
 import { ComposeBox, type SendPayload } from './ui/ComposeBox'
 import { DateDivider } from './ui/DateDivider'
-import { formatReplyTimestamp } from '@/api'
+import { formatReplyTimestamp, useAvatarSrc } from '@/api'
 import type { ConversationData, FileAttachment, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
 import { PinnedMessage } from './ui/PinnedMessage'
 import { SkeletonConversationList } from './ui/Skeleton'
@@ -332,6 +331,7 @@ export function ThreadPanel({
   // replies query reloads and a full skeleton flash reads as the panel
   // closing and reopening. Only show the skeleton when loading genuinely
   // takes a beat — fast switches swap content in place with no flash.
+  const avatarSrcFor = useAvatarSrc()
   const [showSkeleton, setShowSkeleton] = useState(false)
   useEffect(() => {
     if (!isLoadingReplies) {
@@ -400,7 +400,7 @@ export function ThreadPanel({
             if (total === 0) return null
             // The header's pill, not a third copy of it (F12). It was the
             // same chrome re-typed around a stack that clipped its own faces.
-            return <MembersPill members={members} count={total} />
+            return <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} count={total} />
           })()}
           {onOpenInDm && (
             <IconButton
