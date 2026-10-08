@@ -5,7 +5,7 @@ import type { FileConversation } from './fileConversation'
 
 vi.mock('./bridge', () => ({ queryRelay: vi.fn(), publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
 
-const { catchUpConversation, readConversation } = await import('./conversationCatchUp')
+const { applyLiveEvents, catchUpConversation, readConversation } = await import('./conversationCatchUp')
 
 /*
   OPT-3 — a held conversation brought up to date in one request when nothing
@@ -196,5 +196,101 @@ describe('catchUpConversation — a file', () => {
     const found = await catchUpConversation(store, 'k', file, [first.id], relay.query)
     expect(found.changed).toBe(false)
     expect(store.ids('k')).toEqual([first.id])
+  })
+})
+
+/*
+  OPT-5 — what the socket delivers in the Folder, applied with no read: the
+  relay is never asked, the conversation is folded from what is held, and the
+  cursor stays where the last read left it.
+*/
+describe('applyLiveEvents', () => {
+  const file = { kind: 'file' as const, address: ADDRESS, h: FOLDER }
+  const comment = (over: Partial<SignedEvent> = {}) =>
+    event({ kind: 1111, tags: [['A', ADDRESS], ['K', '30840'], ['a', ADDRESS], ['k', '30840'], ['h', FOLDER]], ...over })
+  const reply = (root: SignedEvent, over: Partial<SignedEvent> = {}) =>
+    event({ kind: 1111, tags: [['A', ADDRESS], ['K', '30840'], ['e', root.id], ['k', '1111'], ['h', FOLDER]], ...over })
+
+  it('a new root and a reply on a file are drawn, and nothing is asked', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    const since = store.since('k')
+    const fresh = comment({ pubkey: BOB })
+    const answer = reply(first, { pubkey: BOB })
+    const found = await applyLiveEvents(store, 'k', file, [first.id], [fresh, answer], relay.query)
+    expect(found).toEqual({ changed: true, object: false, mentions: false, authors: [BOB] })
+    expect(relay.asked).toEqual([])
+    const value = store.value('k')!
+    expect(value.roots.map((r) => r.id)).toEqual([first.id, fresh.id])
+    expect(value.replies[first.id].map((r) => r.id)).toEqual([answer.id])
+    expect(store.since('k')).toBe(since)
+  })
+
+  it('an edit of a held comment is drawn, and nothing is asked', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    const edit = event({ kind: 40003, content: 'edited', tags: [['e', first.id], ['h', FOLDER]] })
+    const found = await applyLiveEvents(store, 'k', file, [first.id], [edit], relay.query)
+    expect(found.changed).toBe(true)
+    expect(relay.asked).toEqual([])
+    expect(store.value('k')!.decorations.byId[first.id].edit?.body).toBe('edited')
+  })
+
+  it('another topic’s talk in the same Folder is dropped: nothing changes, nothing is asked', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    const before = store.value('k')
+    const elsewhere = `30840:${ALICE}:other`
+    const theirs = event({ kind: 1111, tags: [['A', elsewhere], ['a', elsewhere], ['h', FOLDER]] })
+    const found = await applyLiveEvents(
+      store,
+      'k',
+      file,
+      [first.id],
+      [
+        theirs,
+        event({ kind: 1111, tags: [['A', elsewhere], ['e', theirs.id], ['h', FOLDER]] }),
+        event({ kind: 9, tags: [['h', FOLDER]] }),
+        event({ kind: 9005, tags: [['e', theirs.id], ['h', FOLDER]] }),
+      ],
+      relay.query,
+    )
+    expect(found).toEqual({ changed: false, object: false, mentions: false, authors: [] })
+    expect(relay.asked).toEqual([])
+    expect(store.value('k')).toBe(before)
+    expect(store.ids('k')).toEqual([first.id])
+  })
+
+  it('a field change on the file is reported, for the object to be read again', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    const field = event({ kind: 1851, tags: [['a', ADDRESS], ['h', FOLDER], ['field', 'title'], ['value', 'Renamed']] })
+    const found = await applyLiveEvents(store, 'k', file, [first.id], [field], relay.query)
+    expect(found).toEqual({ changed: false, object: true, mentions: false, authors: [] })
+    expect(relay.asked).toEqual([])
+  })
+
+  it('a channel takes its own Folder’s messages, and an event already held is nothing', async () => {
+    const channel = { kind: 'channel' as const, h: FOLDER }
+    const first = event({ kind: 9, tags: [['h', FOLDER]] })
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const fresh = event({ kind: 9, pubkey: BOB, tags: [['h', FOLDER]] })
+    const elsewhere = event({ kind: 9, tags: [['h', '33333333-3333-4333-8333-333333333333']] })
+    expect((await applyLiveEvents(store, 'k', channel, [], [fresh, elsewhere], relay.query)).changed).toBe(true)
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id, fresh.id])
+    expect((await applyLiveEvents(store, 'k', channel, [], [fresh], relay.query)).changed).toBe(false)
+    expect(relay.asked).toEqual([])
+  })
+
+  it('nothing held: nothing applied — the first read is still to come', async () => {
+    const store = createConversationStore<FileConversation>({ lookbackSeconds: 60 })
+    const relay = fakeRelay([])
+    expect((await applyLiveEvents(store, 'k', file, [], [comment()], relay.query)).changed).toBe(false)
+    expect(store.value('k')).toBeUndefined()
   })
 })

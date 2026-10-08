@@ -1,19 +1,87 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
+import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { useForeignObjects, useMembership } from '@/api'
 import { validToken } from '@/auth/estivaId'
-import { fileContext, THREAD_RULE_FROM } from '@estiva-app/conversation'
+import { fileContext, isCommentOn, isReply, THREAD_RULE_FROM } from '@estiva-app/conversation'
 import { PEEK_HORIZON_DAYS } from '@/nostr/readState'
 import { useReadFrontier } from '@/nostr/useReadStateSync'
 import { streamHasUnread } from './streamUnread'
-import { useChannelStreams } from './useChannelStreams'
+import { useChannelStreams, useHeldChannelEvents } from './useChannelStreams'
 import { createListingCache } from '@/platform/listingCache'
 
 /** How long a held answer is trusted without asking — the five minutes `HELD_OBJECT_FRESH_MS` holds an object. */
 const HELD_BADGES_FRESH_MS = 5 * 60_000
 
-/** `hold`'s answers, by viewer and set, with the revision each was read at. */
-const heldBadges = createListingCache<{ revision: number; conversations: Record<string, ConversationMessage[]> }, true>()
+/** `hold`'s answers, by viewer and set. */
+const heldBadges = createListingCache<{ conversations: Record<string, ConversationMessage[]> }, true>()
+
+/** A held event's thread root: its `E`, else its first `e`, else itself — interop's `rootOf`. */
+const rootOf = (event: SignedEvent) =>
+  event.tags.find((t) => t[0] === 'E' && t[1])?.[1] ?? event.tags.find((t) => t[0] === 'e' && t[1])?.[1] ?? event.id
+
+/**
+ * A comment's kind. Only `kind:1111`: a `kind:9` counts on a read only where
+ * its app's manifest declares it (`commentKindsOf`), which the store's events
+ * cannot say — and a `kind:9` carrying a file's `a` is most often a pasted
+ * link, a mention (§6.4), which must never light the file's row. A legacy
+ * `kind:9` comment still arrives with the next read of the set.
+ */
+const COMMENT_KINDS: readonly number[] = [KIND.COMMENT]
+
+/**
+ * What the tab's channel store holds that the last answer does not, folded
+ * into it (OPT-5) by `conversationsOf`'s own rule: a comment is the file's by
+ * its `a` (§6.4), and a reply is in a file's thread when it names the file in
+ * its `A` and its root is one of that file's comments (CON-34). Only files the
+ * answer has an entry for: a file never asked about stays unknown.
+ *
+ * The store is what the sidebar dots keep live from the socket, so a message
+ * said anywhere in the listing's Folders reaches its row with no read.
+ */
+export function foldHeldEvents(
+  answer: Record<string, ConversationMessage[]>,
+  files: readonly ForeignObject[],
+  events: readonly SignedEvent[],
+): Record<string, ConversationMessage[]> {
+  const refOf = new Map(files.flatMap((file) => (file.address && answer[file.ref] ? [[file.address, file.ref] as const] : [])))
+  if (refOf.size === 0 || events.length === 0) return answer
+  const seen = new Set<string>()
+  const fileOfRoot = new Map<string, string>()
+  for (const [ref, messages] of Object.entries(answer)) {
+    for (const m of messages) {
+      seen.add(m.id)
+      if (m.root === m.id) fileOfRoot.set(m.id, ref)
+    }
+  }
+  const added: Record<string, ConversationMessage[]> = {}
+  const add = (ref: string, event: SignedEvent, root: string) => {
+    ;(added[ref] ??= []).push({ id: event.id, at: event.created_at, by: event.pubkey, root })
+    seen.add(event.id)
+  }
+  // Only what names a listed file, which is a handful of the store's thousands; ordered as written.
+  const naming = events
+    .filter((event) => COMMENT_KINDS.includes(event.kind) && !seen.has(event.id) && event.tags.some((t) => (t[0] === 'a' || t[0] === 'A') && refOf.has(t[1])))
+    .sort((a, b) => a.created_at - b.created_at)
+  // Roots first, then replies — a reply and its root can share a second, and either order.
+  for (const event of naming) {
+    if (isReply(event)) continue
+    const address = event.tags.find((t) => t[0] === 'a' && refOf.has(t[1]) && isCommentOn(event, t[1], COMMENT_KINDS))?.[1]
+    if (!address) continue
+    const ref = refOf.get(address)!
+    add(ref, event, event.id)
+    fileOfRoot.set(event.id, ref)
+  }
+  for (const event of naming) {
+    if (seen.has(event.id) || !isReply(event)) continue
+    const ref = fileOfRoot.get(rootOf(event))
+    if (ref && event.tags.some((t) => t[0] === 'A' && refOf.get(t[1]) === ref)) add(ref, event, rootOf(event))
+  }
+  if (Object.keys(added).length === 0) return answer
+  const out = { ...answer }
+  for (const [ref, messages] of Object.entries(added)) out[ref] = [...answer[ref], ...messages]
+  return out
+}
 
 /**
  * The badges on a list of files: how many messages each conversation holds,
@@ -60,18 +128,17 @@ const heldBadges = createListingCache<{ revision: number; conversations: Record<
  * does. `counts` is not gated: how much a file holds is the file's fact, not
  * the reader's membership.
  *
- * ## When it re-reads
+ * ## When it reads (OPT-5)
  *
- * On the set of addresses changing, and on `revision` changing — nothing else.
- * The hook holds no socket of its own: a caller that has a live signal for
- * the files' Folder passes its count (the tree passes `useTeamUnread`'s
- * `activity`, FOL-44), and a caller that passes none reads once per set, as
- * before. Without it, an open section's rows kept their first answer until the
- * section was closed and opened again.
+ * Once per set of addresses — and with `hold`, again only once its answer is
+ * five minutes old. What is said afterwards reaches the rows without a read:
+ * the answer is folded with what the tab's channel store holds
+ * (`foldHeldEvents`), which the socket keeps live. It used to read the whole
+ * set again whenever anybody wrote anywhere in its Folder (FOL-44's signal) —
+ * 200 messages per file, for one line said.
  */
 export function useConversationBadges(
   files: ForeignObject[] | undefined,
-  revision = 0,
   { hold = false }: { hold?: boolean } = {},
 ): {
   counts: Record<string, number>
@@ -80,6 +147,7 @@ export function useConversationBadges(
   const { conversations } = useForeignObjects()
   const frontier = useReadFrontier()
   const membership = useMembership()
+  const live = useHeldChannelEvents()
 
   /*
     Keyed on the addresses, not the array.
@@ -112,34 +180,29 @@ export function useConversationBadges(
     const asked = (files ?? []).filter((file) => file.address)
     if (holdKey) {
       /*
-        Held across mounts, keyed by the viewer and the set: answered at a
-        revision at least as new as this one, it is still the answer, so coming
-        back to the list asks nothing. Concurrent mounts share one read.
+        Held across mounts, keyed by the viewer and the set: coming back to the
+        list draws the last answer and asks nothing. Concurrent mounts share one
+        read. Older than a resolved object is held, it is drawn but asked again:
+        what the store does not hold — a file in no Folder of this tab's — is
+        caught up that way.
       */
       const entry = heldBadges.peek(holdKey)
       if (entry?.value) {
         setHeld(entry.value.conversations)
-        // Older than a resolved object is held, it is drawn but asked again: a file in no Folder never moves the revision.
-        if (entry.value.revision >= revision && Date.now() - entry.at < HELD_BADGES_FRESH_MS) return
+        if (Date.now() - entry.at < HELD_BADGES_FRESH_MS) return
       }
-      const settle = (retry: boolean): Promise<void> =>
-        heldBadges
-          .read(holdKey, () =>
-            conversations(asked).then(
-              (next) => ({ ok: true as const, value: { revision, conversations: next } }),
-              // A failed read costs a badge, never the list; the last answer stays held.
-              () => ({ ok: false as const, failure: true as const }),
-            ),
-          )
-          .then(() => {
-            const value = heldBadges.peek(holdKey)?.value
-            if (cancelled || !value) return
-            // Shared a read begun before this revision: it may predate what moved it, so ask once more —
-            // once, so a refused read (the old answer kept) is not asked again and again.
-            if (value.revision < revision && retry) return settle(false)
-            setHeld(value.conversations)
-          })
-      void settle(true)
+      void heldBadges
+        .read(holdKey, () =>
+          conversations(asked).then(
+            (next) => ({ ok: true as const, value: { conversations: next } }),
+            // A failed read costs a badge, never the list; the last answer stays held.
+            () => ({ ok: false as const, failure: true as const }),
+          ),
+        )
+        .then(() => {
+          const value = heldBadges.peek(holdKey)?.value
+          if (!cancelled && value) setHeld(value.conversations)
+        })
       return () => {
         cancelled = true
       }
@@ -156,7 +219,15 @@ export function useConversationBadges(
     // `files` is deliberately not a dependency — `key` is its identity. Adding
     // it would restore the re-ask on every refresh that `key` exists to avoid.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, conversations, revision, holdKey])
+  }, [key, conversations, holdKey])
+
+  // The answer, with what the socket has said since (OPT-5).
+  const current = useMemo(
+    () => foldHeldEvents(held, files ?? [], live),
+    // `files` only supplies each ref's address; `key` is its identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [held, live, key],
+  )
 
   /*
     Judged on every frontier change, not only when the messages arrive: the
@@ -170,7 +241,7 @@ export function useConversationBadges(
     const byRef = new Map((files ?? []).map((file) => [file.ref, file] as const))
     const me = validToken()?.pubkey
     const nowSeconds = Math.floor(Date.now() / 1000)
-    for (const [ref, messages] of Object.entries(held)) {
+    for (const [ref, messages] of Object.entries(current)) {
       // Comments, not their replies, which are here for the dot (CON-34): the count `conversationCountsOf` gives.
       counts[ref] = messages.filter((m) => m.root === m.id).length
       // Not judged until the first merge has landed: before that every marker
@@ -196,23 +267,22 @@ export function useConversationBadges(
     return { counts, unread }
     // `files` only supplies each ref's address; `key` is its identity, as above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [held, frontier, membership.state, membership.termsOf, membership.isMentioned, key])
+  }, [current, frontier, membership.state, membership.termsOf, membership.isMentioned, key])
 }
 
 /**
  * {@link useConversationBadges} for a list with no Folder of its own to take a
  * signal from — the Desk's Open work, whose files come from anywhere.
  *
- * Without a `revision` the badges read once per set, so a comment that arrived
- * after the Desk loaded never lit its row: the row looked read, and removing it
- * from open work handed it to the Screener, which re-reads every minute and
- * said, correctly, that it was not. The revision here is the newest message the
- * tab's channel store holds for the files' Folders — the store the Folder dots
- * already keep current from the socket and the catch-up — so a row re-reads
- * exactly when something was said where it lives, and not on every store tick.
+ * A comment that arrived after the Desk loaded must light its row, or the row
+ * looks read, and removing it from open work hands it to the Screener, which
+ * says, correctly, that it was not. So the files' Folders are tracked in the
+ * tab's channel store — the store the Folder dots already keep current from the
+ * socket and the catch-up — and what is said there is folded into the rows
+ * with no read (OPT-5).
  *
  * Its answers are held past the Desk (OPT-4): coming back draws the rows' dots
- * from the last answer and asks again only if the revision moved meanwhile.
+ * from the last answer.
  */
 export function useLiveConversationBadges(files: ForeignObject[] | undefined): {
   counts: Record<string, number>
@@ -222,13 +292,6 @@ export function useLiveConversationBadges(files: ForeignObject[] | undefined): {
     () => [...new Set((files ?? []).flatMap((f) => (f.folder ? [f.folder] : [])))],
     [files],
   )
-  const { streams } = useChannelStreams(folders)
-  const revision = useMemo(() => {
-    let newest = 0
-    for (const messages of Object.values(streams)) {
-      for (const message of messages) if (message.at > newest) newest = message.at
-    }
-    return newest
-  }, [streams])
-  return useConversationBadges(files, revision, { hold: true })
+  useChannelStreams(folders)
+  return useConversationBadges(files, { hold: true })
 }

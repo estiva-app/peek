@@ -189,20 +189,7 @@ export async function catchUpConversation(
       (event) => HELD_KINDS.has(event.kind) && (!address || belongsToFile(event, address, held, answered)),
     ),
   )
-  const mentions =
-    !!address &&
-    first.added.some(
-      (event) =>
-        // A `kind:9` naming the file is told as a mention: one read too many when it was an owner's comment, never one missed.
-        event.tags.some((tag) => tag[0] === 'a' && tag[1] === address) && !isCommentOn(event, address),
-    )
-  const authors = [
-    ...new Set(
-      first.added
-        .filter((event) => event.kind === KIND.COMMENT || event.kind === KIND.STREAM_MESSAGE)
-        .map((event) => event.pubkey),
-    ),
-  ]
+  const { mentions, authors } = newsOf(first.added, address)
   if (first.added.length === 0) {
     store.settle(key, startedAt)
     return { changed: false, object, mentions, authors }
@@ -235,6 +222,87 @@ export async function catchUpConversation(
   }
   store.settle(key, startedAt, await fold())
   return { changed: true, object, mentions, authors }
+}
+
+/**
+ * What the live connection delivered, applied to the conversation `key` holds
+ * with no read (OPT-5). The socket watches the container's whole Folder, so
+ * most of what arrives is another topic's and is dropped here, in memory.
+ * What is this conversation's is merged and the conversation folded again
+ * from what is held — the catch-up's own fold.
+ *
+ * The cursor stays where it is: a pushed event says nothing about what else
+ * was missed, so the next catch-up still asks from the last read and finds
+ * these again, already held. What a live event cannot bring — what was done
+ * to it before it arrived, a reaction or a deletion, which carry no `h` — the
+ * next catch-up brings.
+ *
+ * One request only for a deletion signed by somebody other than the author,
+ * whether the relay kept it: the catch-up's rule.
+ */
+export async function applyLiveEvents(
+  store: ConversationStore<FileConversation>,
+  key: string,
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  events: readonly SignedEvent[],
+  query: QueryFn,
+): Promise<CaughtUp> {
+  if (store.since(key) === undefined || events.length === 0) return NOTHING
+  const held = new Set(store.ids(key))
+  /*
+    What names by `e` an event this batch already took is taken too — a reply
+    that came with its root. Only those: everything in the Folder arrives here,
+    and a reply to another topic's new root is that topic's. In the order
+    delivered, which is the order written; a reply that beat its root is found
+    by the next catch-up, since the cursor stays.
+  */
+  const taken = new Set<string>()
+  const address = container.kind === 'file' ? container.address : null
+  const ours = events.filter((event) => {
+    if (!event.tags.some((tag) => tag[0] === 'h' && tag[1] === container.h)) return false
+    const mine = isDeletion(event)
+      ? // A deletion applies only to what it names, and one naming nothing here is another topic's.
+        event.tags.some((tag) => tag[0] === 'e' && (held.has(tag[1]) || taken.has(tag[1])))
+      : !address || belongsToFile(event, address, held, taken)
+    if (mine) taken.add(event.id)
+    return mine
+  })
+  const object = ours.some((event) => !HELD_KINDS.has(event.kind))
+  const merged = store.merge(
+    key,
+    ours.filter((event) => HELD_KINDS.has(event.kind)),
+  )
+  const { mentions, authors } = newsOf(merged.added, address)
+  if (merged.added.length === 0) return { changed: false, object, mentions, authors }
+  if (merged.disputed.length) {
+    const remaining = new Set((await query([{ ids: merged.disputed, limit: merged.disputed.length }])).map((event) => event.id))
+    store.forget(
+      key,
+      merged.disputed.filter((id) => !remaining.has(id)),
+    )
+  }
+  store.settle(key, null, await foldHeld(store, key, container, rootIds, query))
+  return { changed: true, object, mentions, authors }
+}
+
+/** What newly held events mean beyond the conversation: whether the file was mentioned, and who wrote. */
+function newsOf(added: readonly SignedEvent[], address: string | null): Pick<CaughtUp, 'mentions' | 'authors'> {
+  const mentions =
+    !!address &&
+    added.some(
+      (event) =>
+        // A `kind:9` naming the file is told as a mention: one read too many when it was an owner's comment, never one missed.
+        event.tags.some((tag) => tag[0] === 'a' && tag[1] === address) && !isCommentOn(event, address),
+    )
+  const authors = [
+    ...new Set(
+      added
+        .filter((event) => event.kind === KIND.COMMENT || event.kind === KIND.STREAM_MESSAGE)
+        .map((event) => event.pubkey),
+    ),
+  ]
+  return { mentions, authors }
 }
 
 /** The read's own fold, over what is held — a file's roots including those found since the object was read. */

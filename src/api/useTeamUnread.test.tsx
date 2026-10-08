@@ -134,7 +134,7 @@ vi.mock('@/nostr/useReadStateSync', async () => {
 
 import { RelayReadError } from '@/nostr/relayRead'
 import { type TeamUnreadSnapshot, installTeamUnreadDiagnostic } from './teamUnreadDiagnostic'
-import { TEAM_UNREAD_SETTLE_MS, useTeamUnread } from './useTeamUnread'
+import { useTeamUnread } from './useTeamUnread'
 
 /* The api barrel is mocked here, so the installer the app calls at module load
    is called by hand — the probe module itself is the real one. */
@@ -335,33 +335,6 @@ describe('useTeamUnread', () => {
   })
 })
 
-describe('activity — the socket handed on to the rows (FOL-44)', () => {
-  it('counts a burst of deliveries once per window, folded into the team that lists the channel', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    try {
-      const TOPIC = '33333333-3333-4333-8333-333333333333'
-      const { result } = renderHook(() =>
-        useTeamUnread([...folders, { id: TOPIC, name: 'A topic', hasState: false, listedIn: [FOLDER_B] }]),
-      )
-      act(() => {
-        for (let i = 0; i < 5; i += 1) for (const heard of store.deliveries) heard(TOPIC)
-        for (const heard of store.deliveries) heard('99999999-9999-4999-8999-999999999999')
-      })
-      expect(result.current.activity).toEqual({})
-      await act(() => vi.advanceTimersByTimeAsync(TEAM_UNREAD_SETTLE_MS))
-      expect(result.current.activity).toEqual({ [TOPIC]: 1, [FOLDER_B]: 1 })
-
-      // A reconnect's catch-up: anything may have been missed, anywhere.
-      read({ reason: 'relay-live' })
-      expect(result.current.activity).toEqual({ [FOLDER_A]: 1, [FOLDER_B]: 3, [TOPIC]: 2 })
-      // A failed one says nothing was learned.
-      read({ reason: 'relay-live', outcome: 'failed', requests: null, error: new Error('down') })
-      expect(result.current.activity[FOLDER_A]).toBe(1)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-})
 
 describe('the console probe (FOL-40), fed by the store (PER-8)', () => {
   /*

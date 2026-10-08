@@ -172,11 +172,14 @@ try {
       socket.closed = true
     })
     if (net) {
-      ws.on('framesent', (f) => net.push({ at: Date.now(), kind: 'ws-out', body: String(f.payload).slice(0, 300) }))
+      // Long enough for a catch-up REQ's filters to name the conversation they read (OPT-5).
+      ws.on('framesent', (f) => net.push({ at: Date.now(), kind: 'ws-out', body: String(f.payload).slice(0, 3000) }))
       ws.on('framereceived', (f) => {
         const text = String(f.payload)
         // Only what bears on cost and refusal: a CLOSED or NOTICE, or an OK that says no.
         if (/^\["(CLOSED|NOTICE)"/.test(text) || /^\["OK",[^,]+,false/.test(text)) net.push({ at: Date.now(), kind: 'ws-in', body: text.slice(0, 300) })
+        // PROBE_WS_MATCH=<text>: also an incoming frame that contains it — when a live event reached the tab (OPT-5).
+        else if (process.env.PROBE_WS_MATCH && text.includes(process.env.PROBE_WS_MATCH)) net.push({ at: Date.now(), kind: 'ws-event', body: text.slice(0, 3000) })
       })
     }
   })

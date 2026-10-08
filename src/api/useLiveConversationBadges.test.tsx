@@ -1,18 +1,21 @@
 /**
- * The Desk's Open work dots re-read when something is said in a file's Folder.
+ * The Desk's Open work dots follow what is said in a file's Folder — from the
+ * tab's channel store, with no read after the first (OPT-5).
  *
- * Without a signal the badges read once per set, so a comment that arrived
- * after the Desk loaded never lit the row — and removing the "read" row handed
- * it to the Screener, which re-reads every minute and showed it as unread.
+ * Without that, a comment that arrived after the Desk loaded never lit the row
+ * — and removing the "read" row handed it to the Screener, which showed it as
+ * unread. It used to be done by reading every file's conversation again
+ * whenever anything was said in any of their Folders.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ForeignObject } from '@estiva-app/interop'
+import type { ConversationMessage, ForeignObject } from '@estiva-app/interop'
+import type { SignedEvent } from '@estiva-app/protocol'
 
 const api = vi.hoisted(() => ({
-  conversations: vi.fn(async () => ({})),
+  conversations: vi.fn(async (): Promise<Record<string, unknown[]>> => ({})),
   tracked: [] as string[][],
-  streams: {} as Record<string, { id: string; at: number }[]>,
+  events: [] as unknown[],
 }))
 
 vi.mock('@/api', () => ({
@@ -30,12 +33,22 @@ vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
 vi.mock('./useChannelStreams', () => ({
   useChannelStreams: (channels: readonly string[]) => {
     api.tracked.push([...channels])
-    return { at: 0, streams: api.streams }
+    return { at: 0, streams: {} }
   },
+  useHeldChannelEvents: () => api.events,
 }))
 
-const FILE = { ref: '30851:aa:one', address: '30851:aa:one', folder: 'folder-1' } as unknown as ForeignObject
+const ADDRESS = '30851:aa:one'
+const OTHER = '30851:aa:two'
+const FILE = { ref: ADDRESS, address: ADDRESS, folder: 'folder-1' } as unknown as ForeignObject
 const files = [FILE]
+
+let serial = 0
+const event = (tags: string[][], over: Partial<SignedEvent> = {}) =>
+  ({ id: (++serial).toString(16).padStart(64, '0'), pubkey: 'b'.repeat(64), created_at: 1_000 + serial, kind: 1111, content: '', sig: '', tags, ...over }) as SignedEvent
+const commentOn = (address: string) => event([['A', address], ['a', address], ['K', '30851'], ['k', '30851'], ['h', 'folder-1']])
+const replyTo = (root: SignedEvent, address: string) =>
+  event([['A', address], ['K', '30851'], ['e', root.id], ['k', '1111'], ['h', 'folder-1']])
 
 async function mount() {
   const { useLiveConversationBadges } = await import('./useConversationBadges')
@@ -43,9 +56,12 @@ async function mount() {
 }
 
 beforeEach(() => {
-  api.conversations.mockClear()
+  // Each test gets its own held answers: they live at module level, across mounts.
+  vi.resetModules()
+  api.conversations.mockReset()
+  api.conversations.mockImplementation(async () => ({ [ADDRESS]: [{ id: 'c1', root: 'c1', at: 90, by: 'a' }] }))
   api.tracked = []
-  api.streams = { 'folder-1': [{ id: 'm1', at: 100 }] }
+  api.events = []
 })
 
 describe('useLiveConversationBadges', () => {
@@ -54,54 +70,91 @@ describe('useLiveConversationBadges', () => {
     expect(api.tracked.at(-1)).toEqual(['folder-1'])
   })
 
-  it('re-reads the conversations when a newer message lands in a file’s Folder', async () => {
-    const { rerender } = await mount()
-    expect(api.conversations).toHaveBeenCalledTimes(1)
-    api.streams = { 'folder-1': [{ id: 'm1', at: 100 }, { id: 'm2', at: 200 }] }
+  it('a comment the store holds reaches the row with no read', async () => {
+    const { result, rerender } = await mount()
+    await waitFor(() => expect(result.current.counts[ADDRESS]).toBe(1))
+    api.events = [commentOn(ADDRESS)]
     rerender()
-    // After the read in flight: it began before m2, so it is asked again rather than trusted.
-    await waitFor(() => expect(api.conversations).toHaveBeenCalledTimes(2))
+    expect(result.current.counts[ADDRESS]).toBe(2)
+    expect(api.conversations).toHaveBeenCalledTimes(1)
   })
 
   it('draws the last answer when the list is mounted again, and asks nothing (OPT-4)', async () => {
-    api.conversations.mockResolvedValueOnce({ '30851:aa:one': [{ id: 'c1', root: 'c1', at: 90 }] })
     const first = await mount()
-    await waitFor(() => expect(first.result.current.counts['30851:aa:one']).toBe(1))
+    await waitFor(() => expect(first.result.current.counts[ADDRESS]).toBe(1))
     first.unmount()
     const again = await mount()
-    expect(again.result.current.counts['30851:aa:one']).toBe(1)
+    expect(again.result.current.counts[ADDRESS]).toBe(1)
     expect(api.conversations).toHaveBeenCalledTimes(1)
   })
 
-  it('asks once more, not again and again, when that read is refused', async () => {
+  it('a return draws what was said while away, and asks nothing', async () => {
     const first = await mount()
-    await waitFor(() => expect(api.conversations).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(first.result.current.counts[ADDRESS]).toBe(1))
     first.unmount()
-    api.streams = { 'folder-1': [{ id: 'm1', at: 100 }, { id: 'm2', at: 200 }] }
+    api.events = [commentOn(ADDRESS)]
+    const again = await mount()
+    expect(again.result.current.counts[ADDRESS]).toBe(2)
+    expect(api.conversations).toHaveBeenCalledTimes(1)
+  })
+
+  it('a refused read costs the badge, and is not asked again on a rerender', async () => {
     api.conversations.mockRejectedValue(new Error('rate-limited'))
-    try {
-      await mount()
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      expect(api.conversations.mock.calls.length).toBeLessThanOrEqual(3)
-    } finally {
-      api.conversations.mockReset()
-      api.conversations.mockImplementation(async () => ({}))
-    }
-  })
-
-  it('asks again on a return when something newer was said while away', async () => {
-    const first = await mount()
-    await waitFor(() => expect(api.conversations).toHaveBeenCalledTimes(1))
-    first.unmount()
-    api.streams = { 'folder-1': [{ id: 'm1', at: 100 }, { id: 'm2', at: 200 }] }
-    await mount()
-    await waitFor(() => expect(api.conversations).toHaveBeenCalledTimes(2))
-  })
-
-  it('does not re-read when the store changes and nothing newer was said', async () => {
     const { rerender } = await mount()
-    api.streams = { 'folder-1': [{ id: 'm1', at: 100 }] }
+    await waitFor(() => expect(api.conversations).toHaveBeenCalledTimes(1))
+    api.events = [commentOn(ADDRESS)]
     rerender()
+    await new Promise((resolve) => setTimeout(resolve, 50))
     expect(api.conversations).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('foldHeldEvents — conversationsOf’s rule over what the store holds', () => {
+  const answer: Record<string, ConversationMessage[]> = { [ADDRESS]: [{ id: 'c1', root: 'c1', at: 90, by: 'a' }], [OTHER]: [] }
+  const both = [FILE, { ref: OTHER, address: OTHER, folder: 'folder-1' } as unknown as ForeignObject]
+
+  it('a comment is its file’s, and a reply is in the thread of a root that file holds', async () => {
+    const { foldHeldEvents } = await import('./useConversationBadges')
+    const root = commentOn(OTHER)
+    const reply = replyTo(root, OTHER)
+    const out = foldHeldEvents(answer, both, [reply, root])
+    expect(out[OTHER].map((m) => [m.id, m.root])).toEqual([
+      [root.id, root.id],
+      [reply.id, root.id],
+    ])
+    expect(out[ADDRESS]).toBe(answer[ADDRESS])
+  })
+
+  it('what is already in the answer, the Folder’s own chat, and a reply naming a different file are not counted', async () => {
+    const { foldHeldEvents } = await import('./useConversationBadges')
+    const root = commentOn(OTHER)
+    const held = { ...answer, [OTHER]: [{ id: root.id, root: root.id, at: root.created_at, by: root.pubkey }] }
+    const out = foldHeldEvents(held, both, [
+      root,
+      event([['h', 'folder-1']], { kind: 9 }),
+      // Its root is OTHER's, but it names ADDRESS in its `A`: neither file's (CON-34).
+      replyTo(root, ADDRESS),
+    ])
+    expect(out).toBe(held)
+  })
+
+  it('a reply that shares its root’s second, and sorts before it, is still in the thread', async () => {
+    const { foldHeldEvents } = await import('./useConversationBadges')
+    const root = commentOn(OTHER)
+    const reply = { ...replyTo(root, OTHER), created_at: root.created_at, id: '0'.repeat(64) }
+    const out = foldHeldEvents(answer, both, [reply, root])
+    expect(out[OTHER].map((m) => m.id).sort()).toEqual([reply.id, root.id].sort())
+  })
+
+  it('a kind:9 carrying a file’s `a` — a pasted link — never counts as its comment (§6.4)', async () => {
+    const { foldHeldEvents } = await import('./useConversationBadges')
+    const pasted = event([['a', OTHER], ['h', 'folder-2']], { kind: 9, content: 'https://ship.estiva.app/issue/two' })
+    expect(foldHeldEvents(answer, both, [pasted])).toBe(answer)
+  })
+
+  it('a file the answer never had stays unknown', async () => {
+    const { foldHeldEvents } = await import('./useConversationBadges')
+    const out = foldHeldEvents({ [ADDRESS]: [] }, both, [commentOn(OTHER)])
+    expect(out[OTHER]).toBeUndefined()
   })
 })
