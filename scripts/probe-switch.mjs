@@ -196,8 +196,9 @@ async function runSwitches({ steps, gapMs, hook }) {
         return (el?.textContent ?? '').slice(0, 80)
       }
       if (left[step.key] !== undefined) {
-        result.restored = Math.abs(box.scrollTop - left[step.key]) <= 40
         result.sameMessage = inView() === leftView[step.key]
+        // The same message at the same height is the restore; the offset moves when something above changed height.
+        result.restored = result.sameMessage || Math.abs(box.scrollTop - left[step.key]) <= 40
         if (!result.sameMessage) result.inView = { left: leftView[step.key], back: inView() }
       }
       if (step.leaveAtMiddle) {

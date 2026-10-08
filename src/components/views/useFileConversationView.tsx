@@ -104,6 +104,8 @@ const positions = new Map<
 
 /** The message at the top of a scroller, by its `data-root` marker, and its card's distance from the top. */
 function anchorIn(el: HTMLElement): { id: string; top: number } | undefined {
+  // jsdom has no layout: no anchor, and the restore keeps the plain offset.
+  if (typeof document.elementFromPoint !== 'function') return undefined
   const box = el.getBoundingClientRect()
   // A gap between cards, or a date line, is passed over a few pixels at a time.
   for (let y = box.top + 1; y < box.top + 96; y += 8) {
@@ -371,7 +373,7 @@ export function useFileConversationView({
         reply" mark cleared once read, a reaction row past the horizon).
       */
       el.scrollTop = left.offset
-      const card = left.anchor && el.querySelector(`[data-root="${left.anchor.id}"]`)?.firstElementChild
+      const card = left.anchor && el.querySelector(`[data-root="${CSS.escape(left.anchor.id)}"]`)?.firstElementChild
       if (card) el.scrollTop += card.getBoundingClientRect().top - el.getBoundingClientRect().top - left.anchor!.top
       nearBottom.current = false
     } else {
