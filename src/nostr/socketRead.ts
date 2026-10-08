@@ -45,12 +45,11 @@ export { WINDOW_MS }
  * separate meter, while this tab has spilled fewer than
  * {@link HTTP_SPILL_PER_MINUTE} there — well under HTTP's 300, which Ship and
  * every write share. Clicking around fast asks ~50 reads per 5 s, more than
- * either meter allows alone. A read does not spill while everything queued
- * fits in one window: a cold topic open asks ~50 REQs, a few more than the
- * window, and its last reads are sent when the window turns (≤6 s) — at 1 s
- * and at 2 s one of them spilled to HTTP on the switch probe's first open.
+ * either meter allows alone. Boot (~60 REQs) and the first topic open (~50)
+ * also ask more than a window: kept on the socket, that open took 7.5 s, not
+ * 3.0 s; spilling costs it ~1 /sign (Miky, OPT-2, 2026-10-08).
  */
-export const SPILL_AFTER_MS = 2_000
+export const SPILL_AFTER_MS = 1_000
 export const HTTP_SPILL_PER_MINUTE = 120
 /** How long a read waits for a socket that is still connecting before it goes over HTTP. */
 export const LIVE_WAIT_MS = 3_000
@@ -93,8 +92,8 @@ export interface SocketReaderOptions {
 export interface Pacer {
   /**
    * `n` slots at once (one read's REQs), or `'http'` when the read waited
-   * `spill.afterMs`, more is queued than one window sends, and
-   * `spill.allowed()` said HTTP may take it. `n` must not exceed the window.
+   * `spill.afterMs` and `spill.allowed()` said HTTP may take it. `n` must not
+   * exceed the window.
    */
   take(n: number, spill?: { afterMs: number; allowed(): boolean }): Promise<'socket' | 'http'>
 }
@@ -124,7 +123,6 @@ export function createPacer(
   const sent: number[] = []
   const waiting: { n: number; at: number; resolve: (via: 'socket' | 'http') => void; spillTimer: unknown }[] = []
   let pumpTimer: unknown = null
-  const queued = () => waiting.reduce((sum, w) => sum + w.n, 0)
 
   function pump() {
     if (pumpTimer !== null) clearTimer(pumpTimer)
@@ -154,11 +152,11 @@ export function createPacer(
     take(n, spill) {
       return new Promise((resolve) => {
         const waiter = { n, at: now(), resolve, spillTimer: null as unknown }
-        // Asked again every `afterMs` while it waits: the queue may have grown, HTTP may have room later.
+        // Asked again every `afterMs` while it waits: HTTP may have room later.
         const trySpill = () => {
           const i = waiting.indexOf(waiter)
           if (i === -1 || !spill) return
-          if (queued() <= perWindow || !spill.allowed()) {
+          if (!spill.allowed()) {
             waiter.spillTimer = setTimer(trySpill, spill.afterMs)
             return
           }

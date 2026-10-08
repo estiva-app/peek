@@ -223,8 +223,6 @@ describe('createPacer', () => {
   it('sends a read that waited past the spill time over HTTP when HTTP may take it, and keeps one waiting when not', async () => {
     const pacer = fakeClock()
     await pacer.take(REQS_PER_WINDOW)
-    // More queued than the next window sends.
-    void pacer.take(REQS_PER_WINDOW)
     const spilled = pacer.take(1, { afterMs: 1_000, allowed: () => true })
     let room = false
     const later = pacer.take(1, { afterMs: 1_000, allowed: () => room })
@@ -233,16 +231,6 @@ describe('createPacer', () => {
     room = true
     await vi.advanceTimersByTimeAsync(1_000)
     expect(await later).toBe('http')
-  })
-
-  it('keeps a read on the socket past the spill time while everything queued fits in the next window', async () => {
-    const pacer = fakeClock()
-    await pacer.take(REQS_PER_WINDOW)
-    let asked = 0
-    const read = pacer.take(1, { afterMs: 1_000, allowed: () => (asked += 1) > 0 })
-    await vi.advanceTimersByTimeAsync(WINDOW_MS)
-    expect(await read).toBe('socket')
-    expect(asked).toBe(0)
   })
 
   it('counts the frames the live watches sent against the same window', async () => {
