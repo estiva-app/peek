@@ -12,6 +12,7 @@ import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
+import { isConversationHeld } from './conversations'
 
 /**
  * One file's conversation, whichever app owns the file — RFC 0.5 §10.
@@ -145,8 +146,15 @@ function useResolvedForeign(naddr: string | null | undefined): {
     if (naddr) await resolvedCache.read(naddr, () => load(naddr))
   }, [naddr, load])
 
+  /*
+    Not on a return to a file whose conversation is held (OPT-3): its catch-up
+    asks after the file's own changes in the same request, and re-reads it
+    through `onActivity` only when one came.
+  */
   useEffect(() => {
-    if (naddr) void resolvedCache.revalidate(naddr, () => load(naddr))
+    if (!naddr) return
+    if (resolvedCache.peek(naddr)?.value && isConversationHeld(naddr)) return
+    void resolvedCache.revalidate(naddr, () => load(naddr))
   }, [naddr, load])
 
   useRefreshTriggers(

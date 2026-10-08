@@ -99,7 +99,17 @@ export function useLiveFile(
         if (next === 'live' && !wasLive) latest.current()
         wasLive = next === 'live'
       })
-      watch = live.watchChannels([folder], settle, { kinds: kindList.split(',').map(Number) })
+      /*
+        From now (OPT-3). Without `since` the REQ replays the Folder's stored
+        history on subscribe, every replayed event is "something was said", and
+        the caller re-read the conversation it had read a moment before on its
+        own mount — every open and every return paid its reads twice. On a
+        reconnect it replays from here, which covers what was missed while out.
+      */
+      watch = live.watchChannels([folder], settle, {
+        kinds: kindList.split(',').map(Number),
+        since: Math.floor(Date.now() / 1000),
+      })
     } catch (error) {
       // A failure costs the live path and nothing else.
       console.warn('[nostr] live file subscription unavailable:', error)

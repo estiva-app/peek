@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject, type UIEventHandler } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type UIEventHandler } from 'react'
 import { EmptyState, ScrollArea } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
 import { ConversationCard } from '@/components/ConversationCard'
@@ -91,6 +91,14 @@ interface ViewSlots {
   /** The thread to open when only a reply is new (`useReplyOnlyThread`): what a Desk click opens (CON-34). */
   replyOnlyThread: string | null | undefined
 }
+
+/**
+ * Where each conversation was left in this tab (OPT-3): at the bottom or at an
+ * offset, and when, in Unix seconds. Not per viewer: it holds no content.
+ */
+const positions = new Map<string, { atBottom: boolean; offset: number; leftAt: number }>()
+
+const nowSeconds = () => Math.floor(Date.now() / 1000)
 
 /**
  * A file's conversation drawn as Peek's own — FOL-31.
@@ -307,25 +315,63 @@ export function useFileConversationView({
    * only if you were already at the bottom.
    */
   const nearBottom = useRef(true)
+  const address = container ? conversationKeyOf(container) : null
   const handleScroll = () => {
     const el = scrollRef.current
-    if (el) nearBottom.current = isNearBottom(el)
+    if (!el) return
+    nearBottom.current = isNearBottom(el)
+    if (address && pinnedFor.current === address) {
+      positions.set(address, { atBottom: nearBottom.current, offset: el.scrollTop, leftAt: nowSeconds() })
+    }
   }
 
-  // Opening a file lands at the bottom, before the paint — once per file, and
-  // once the comments are there rather than when the address changes. A
-  // channel's "address" is the channel.
+  /*
+    Opening a file lands at the bottom, before the paint — once per file, and
+    once the comments are there rather than when the address changes. A
+    channel's "address" is the channel.
+
+    Going back to one lands where it was left (OPT-3, Miky 8 Oct): at the
+    bottom if it was left there, so what arrived meanwhile is in view; at the
+    same spot otherwise, with a "New" line above the first message that
+    arrived since.
+  */
   const pinnedFor = useRef<string | null>(null)
-  const address = container ? conversationKeyOf(container) : null
+  // Taken once per visit, as the conversation is opened: later scrolling moves the record, not the line.
+  const [newSince, setNewSince] = useState<{ address: string; at: number | null }>()
+  if (address && newSince?.address !== address) {
+    const left = positions.get(address)
+    setNewSince({ address, at: left && !left.atBottom ? left.leftAt : null })
+  }
   useLayoutEffect(() => {
     if (!address || isLoading) return
     if (pinnedFor.current === address) return
     const el = scrollRef.current
     if (!el) return
-    el.scrollTop = el.scrollHeight
+    const left = positions.get(address)
+    if (left && !left.atBottom) {
+      el.scrollTop = left.offset
+      nearBottom.current = false
+    } else {
+      el.scrollTop = el.scrollHeight
+      nearBottom.current = true
+      positions.set(address, { atBottom: true, offset: el.scrollTop, leftAt: nowSeconds() })
+    }
     pinnedFor.current = address
-    nearBottom.current = true
   }, [address, isLoading])
+
+  // Leaving: the moment it was left is when "New" starts on the way back.
+  useEffect(() => {
+    if (!address) return
+    return () => {
+      const left = positions.get(address)
+      if (left) positions.set(address, { ...left, leftAt: nowSeconds() })
+    }
+  }, [address])
+
+  const firstNew =
+    newSince?.address === address && newSince.at !== null && conversation
+      ? conversation.roots.find((r) => !r.deleted && r.createdAt > newSince.at! && r.author !== viewerPubkey)?.id
+      : undefined
 
   // A comment arrives: follow only if you were watching the live edge.
   const rootCount = view?.roots.length ?? 0
@@ -410,8 +456,9 @@ export function useFileConversationView({
             <div key={group.dateLabel} className="flex flex-col gap-2">
               <DateDivider label={group.dateLabel} className="sticky top-0 z-10 bg-bg-surface" />
               {group.convs.map((c) => (
+                <Fragment key={c.id}>
+                {c.id === firstNew && <DateDivider label="New" />}
                 <ConversationCard
-                  key={c.id}
                   authorName={c.authorName}
                   authorAvatarSrc={c.authorAvatarSrc}
                   timestamp={c.timestamp}
@@ -440,6 +487,7 @@ export function useFileConversationView({
                   onReply={() => onOpenThread(c.id)}
                   onDelete={() => remove(c.id, 'Comment')}
                 />
+                </Fragment>
               ))}
             </div>
           ))}

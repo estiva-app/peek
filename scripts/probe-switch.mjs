@@ -13,7 +13,10 @@
  * are the same as every other probe) opens the QA Folder and clicks, the way a
  * person would:
  *
- *   Switch probe A → Switch probe B → A → Desk → A → People → the DM with QA-2
+ *   Switch probe A → Switch probe B → A → Desk → A → People → the DM with QA-2 → A → the DM
+ *
+ * `--qa2-post` (OPT-3): while QA-1 is in B, QA-2 signs in in a second headless run and posts in A, and the
+ * B → A step says whether A shows that message on return. Each run adds one message to A.
  *
  * For each click it prints:
  * - **visible**: ms from the click to the conversation's messages on screen,
@@ -35,7 +38,9 @@
  * otherwise the probe's own 429s would be what it measures. Any 429 is still
  * printed. Leave a few minutes between a run and other QA-1 probes.
  */
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { createServer } from 'node:http'
+import { promisify } from 'node:util'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -54,7 +59,7 @@ const base = option('base', 'https://peek.estiva.app')
 const jsonOut = option('json')
 
 /** Runs in the page. Clicks each step's target, then samples every 30 ms until it has been quiet for a second. */
-async function runSwitches({ steps, gapMs }) {
+async function runSwitches({ steps, gapMs, hook }) {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   const main = () => document.querySelector('main') ?? document.body
   // The Folder tree sits inside <main> with no selector of its own, so its placeholders count too; it draws
@@ -88,6 +93,7 @@ async function runSwitches({ steps, gapMs }) {
   }
   const targets = {
     link: (prefix) => () => document.querySelector(`a[href^="${prefix}"]`),
+    rail: (name) => () => [...document.querySelectorAll('a')].find((a) => a.getAttribute('aria-label') === name || a.textContent.trim() === name),
     exact: (text) => () => [...document.querySelectorAll('main *, nav *, aside *')].find((e) => e.children.length === 0 && e.textContent.trim() === text),
   }
   const readies = {
@@ -99,7 +105,10 @@ async function runSwitches({ steps, gapMs }) {
   }
 
   const left = {}
+  const leftView = {}
+  const paths = {}
   const results = []
+  let posted = null
   for (const step of steps) {
     const target = await waitFor(targets[step.target[0]](step.target[1]), 20000)
     if (!target) {
@@ -174,16 +183,40 @@ async function runSwitches({ steps, gapMs }) {
       fromBottom: box ? Math.round(box.scrollHeight - box.scrollTop - box.clientHeight) : null,
       jumps,
     }
+    if (step.key) paths[step.key] = location.pathname
+    // QA-2's message, posted while QA-1 was elsewhere: is it in the conversation QA-1 came back to?
+    if (posted && step.key === posted.key && step.seesPost) result.sawPost = main().textContent.includes(posted.text)
     if (step.key && box) {
-      if (left[step.key] !== undefined) result.restored = Math.abs(box.scrollTop - left[step.key]) <= 40
+      // The message 120px below the scroller's top, by its text: "the same spot" as a person sees it, whatever
+      // moved the offset (a reaction row that left the horizon, a card that grew above).
+      const inView = () => {
+        const r = box.getBoundingClientRect()
+        let el = document.elementFromPoint(r.left + r.width / 2, r.top + 120)
+        while (el && el !== box && (el.textContent?.length ?? 0) < 30) el = el.parentElement
+        return (el?.textContent ?? '').slice(0, 80)
+      }
+      if (left[step.key] !== undefined) {
+        result.restored = Math.abs(box.scrollTop - left[step.key]) <= 40
+        result.sameMessage = inView() === leftView[step.key]
+      }
       if (step.leaveAtMiddle) {
         box.scrollTop = Math.round((box.scrollHeight - box.clientHeight) / 2)
         await sleep(300)
         left[step.key] = box.scrollTop
+        leftView[step.key] = inView()
         result.leftAt = Math.round(box.scrollTop)
       }
     }
     results.push(result)
+    if (step.postIn && hook) {
+      // The node side signs in as QA-2 and posts in that conversation; it answers once the relay took it.
+      const text = `Switch probe live ${new Date().toISOString()}`
+      const answer = await window
+        .__probeHook(`?path=${encodeURIComponent(paths[step.postIn])}&text=${encodeURIComponent(text)}`)
+        .catch((error) => `hook failed: ${error.message}`)
+      result.post = answer
+      posted = { key: step.postIn, text }
+    }
     await sleep(gapMs)
   }
   return results
@@ -240,12 +273,15 @@ const steps = [
     label: 'A → B',
     target: ['link', B],
     ready: ['topic', 'Switch probe B', B],
+    // With --qa2-post, QA-2 posts in A now, while QA-1 is in B.
+    postIn: 'A',
   },
   {
     label: 'B → A',
     target: ['link', A],
     ready: ['topic', 'Switch probe A', A],
     key: 'A',
+    seesPost: true,
     leaveAtMiddle: true,
   },
   {
@@ -265,7 +301,10 @@ const steps = [
     target: ['link', '/app/people'],
     ready: ['path', '/app/people'],
   },
-  { label: 'People → DM QA-2', target: ['exact', QA2_NAME], ready: ['dm'] },
+  { label: 'People → DM QA-2', target: ['exact', QA2_NAME], ready: ['dm'], key: 'DM', leaveAtMiddle: true },
+  // The DM leg of OPT-3: the rail's Topics is the last topic, and People reopens the last DM.
+  { label: 'DM → A', target: ['link', A], ready: ['topic', 'Switch probe A', A], key: 'A' },
+  { label: 'A → DM', target: ['rail', 'People'], ready: ['dm'], key: 'DM' },
 ]
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -287,13 +326,45 @@ const hammerTargets = [
   ['rail', 'Topics'],
   ['link', `/app/folders/${QA_FOLDER}`],
 ]
+/*
+  `--qa2-post`: a step with `postIn` asks this process, through probe.mjs's PROBE_HOOK (`window.__probeHook`),
+  to sign in as QA-2 and post in that conversation, and the run waits for the answer. execFile is async so the
+  hook can answer while the QA-1 probe runs.
+*/
+const runNode = promisify(execFile)
+let hook = null
+let server = null
+if (args.includes('--qa2-post')) {
+  server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    const text = url.searchParams.get('text')
+    const insert = `(() => { const el = [...document.querySelectorAll('.ProseMirror')].find((e) => e.editor); if (!el) return 'no composer'; el.editor.chain().focus().insertContent(${JSON.stringify(text)}).run(); return el.editor.getText() })()`
+    let answer
+    try {
+      const { stdout } = await runNode(
+        process.execPath,
+        [join(here, 'probe.mjs'), '--as', 'qa2', '--base', base, '--url', url.searchParams.get('path'), '--timeout', '60000',
+          '--until', "[...document.querySelectorAll('.ProseMirror')].some((e) => e.editor)", '--wait', '2000',
+          '--eval', insert, '--press', 'Enter', '--wait', '4000'],
+        { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+      )
+      const typed = JSON.parse(stdout).steps?.find((s) => 'eval' in s)?.result
+      answer = typeof typed === 'string' && typed.includes(text) ? 'posted' : `not posted: ${stdout.slice(0, 300)}`
+    } catch (error) {
+      answer = `QA-2 probe failed: ${(error.stdout || error.message).slice(0, 300)}`
+    }
+    response.writeHead(200).end(answer)
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  hook = `http://127.0.0.1:${server.address().port}/post`
+}
 const source =
   hammerSeconds === null
-    ? `(${runSwitches.toString()})(${JSON.stringify({ steps, gapMs: Number(option('gap', 20000)) })})`
+    ? `(${runSwitches.toString()})(${JSON.stringify({ steps, gapMs: Number(option('gap', 20000)), hook })})`
     : `(${hammer.toString()})(${JSON.stringify({ targets: hammerTargets, seconds: hammerSeconds, everyMs: Number(option('every', 400)), settleMs: Number(option('settle', 8000)) })})`
 let report
 try {
-  const out = execFileSync(
+  const { stdout: out, stderr } = await runNode(
     process.execPath,
     [
       join(here, 'probe.mjs'),
@@ -312,14 +383,12 @@ try {
       '--eval',
       source,
     ],
-    {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'inherit'],
-    },
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: hook ? { ...process.env, PROBE_HOOK: hook } : process.env },
   )
+  if (stderr) process.stderr.write(stderr)
   report = JSON.parse(out)
 } catch (error) {
+  if (error.stderr) process.stderr.write(error.stderr)
   report = JSON.parse(error.stdout || '{}')
   console.error(`probe failed: ${report.failure ?? report.steps?.find((s) => s.error)?.error ?? error.message}`)
   if (!report.steps) process.exit(1)
@@ -414,6 +483,9 @@ for (const r of rows) {
     r.fromBottom === null ? 'no scroller' : `${r.fromBottom}px from bottom`,
     r.jumps ? `${r.jumps} jump${r.jumps === 1 ? '' : 's'}` : '',
     r.restored === undefined ? '' : r.restored ? 'restored' : 'NOT restored',
+    r.sameMessage === undefined ? '' : r.sameMessage ? 'same message' : 'OTHER message',
+    r.post ? `QA-2 ${r.post}` : '',
+    r.sawPost === undefined ? '' : r.sawPost ? "QA-2's post shown" : "QA-2's post MISSING",
   ]
     .filter(Boolean)
     .join(', ')
@@ -431,4 +503,5 @@ for (const r of rows.filter((r) => r.requests)) {
   )
 }
 if (report.errors?.length) console.log(`\npage errors: ${report.errors.join(' | ')}`)
-process.exit(report.failure || rows.some((r) => r.error || r.visible === null) ? 1 : 0)
+server?.close()
+process.exit(report.failure || rows.some((r) => r.error || r.visible === null || r.sawPost === false) ? 1 : 0)

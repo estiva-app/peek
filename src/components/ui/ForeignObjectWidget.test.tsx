@@ -20,9 +20,21 @@ const applyAction = vi.fn()
 // Both come from the seam now rather than from Convex actions (PEEK-106): the
 // relay read and the publish happen in the browser, so there is no action to
 // mock and `@/api` is the only seam to stub.
-vi.mock('@/api', () => ({
+vi.mock('@/api', async () => {
+  const { useCallback, useEffect, useState } = await import('react')
+  return {
   hasRelay: true,
   useForeignObjects: () => ({ resolveObject, applyAction, resolveFolderProject: vi.fn() }),
+  // The tab's held answer (OPT-3), reduced to a resolve on mount and on `reload`.
+  useHeldObject: (reference: string | null) => {
+    const [object, setObject] = useState<unknown>(reference ? 'loading' : null)
+    const reload = useCallback(
+      () => (reference ? resolveObject(reference).then(setObject, () => setObject(null)) : Promise.resolve()),
+      [reference],
+    )
+    useEffect(() => void reload(), [reload])
+    return { object, reload }
+  },
   // The assignee picker's option list (PEE-1) — two known people.
   useWorkspaceDirectory: () => ({
     ['a'.repeat(64)]: { displayName: 'Alice Chen' },
@@ -30,7 +42,8 @@ vi.mock('@/api', () => ({
   }),
   // `Avatar` resolves portraits through the seam, and a person now has a face.
   useAvatarSrc: () => () => undefined,
-}))
+  }
+})
 
 const { ForeignObjectWidget } = await import('./ForeignObjectWidget')
 

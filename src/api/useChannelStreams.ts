@@ -45,11 +45,8 @@ import { useRelayViewer } from './foreign'
 export const CATCH_UP_MS = 60_000
 /** The full read that lets deletions leave, while the tab is visible. */
 export const RESYNC_MS = 5 * 60_000
-/**
- * Buzz desktop's reconnect lookback (`relayReconnectReplay.ts`): the relay's
- * 960 s `created_at` floor, plus room for two clocks that disagree.
- */
-export const LOOKBACK_SECONDS = 1_870
+import { LOOKBACK_SECONDS } from './lookback'
+export { LOOKBACK_SECONDS }
 
 const HORIZON_SECONDS = PEEK_HORIZON_DAYS * 24 * 60 * 60
 

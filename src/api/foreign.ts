@@ -58,6 +58,8 @@ import type { MessageSearchState } from '@/lib/launcherSearch'
 import { currentRouteWords, subscribeRouteWords, type RouteWords } from '@/lib/objectUrl'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
+import { createListingCache, type ListingLoad } from '@/platform/listingCache'
+import { useListing } from '@/platform/useListing'
 import type {
   ArchiveImpact,
   ArchiveReadOptions,
@@ -107,6 +109,54 @@ export function useRouteWords(): RouteWords {
     routeWordsAsViewer(v.relayUrl, v.token).catch(() => {})
   }, [viewer])
   return useSyncExternalStore(subscribeRouteWords, currentRouteWords, currentRouteWords)
+}
+
+/**
+ * How long a message's widget is drawn from what this tab resolved before it
+ * is asked again on mount (OPT-3). A widget never updated while it stayed on
+ * screen; held, it does not update while you are away either, and a topic you
+ * come back to draws its widgets at once rather than one request each.
+ */
+export const HELD_OBJECT_FRESH_MS = 5 * 60_000
+
+/** Every widget's object this tab resolved, by viewer and reference. */
+const heldObjects = createListingCache<ForeignObject | null, true>({ freshMs: HELD_OBJECT_FRESH_MS })
+
+/**
+ * One reference's object for a message's widget, held for the tab: drawn at
+ * once when it was resolved before, asked again only once it is older than
+ * {@link HELD_OBJECT_FRESH_MS}, and `reload` after an action. `null` asks for
+ * nothing and answers null.
+ */
+export function useHeldObject(reference: string | null): {
+  object: ForeignObject | null | 'loading'
+  reload: () => Promise<void>
+} {
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey
+  const key = reference && pubkey ? `${pubkey} ${reference}` : null
+  const entry = useListing(heldObjects, key)
+
+  const load = useCallback(async (): Promise<ListingLoad<ForeignObject | null, true>> => {
+    const v = viewer()
+    if (!v || !reference) return { ok: true, value: null }
+    try {
+      return { ok: true, value: await resolveObjectAsViewer(reference, v.relayUrl, v.token) }
+    } catch {
+      return { ok: false, failure: true }
+    }
+  }, [reference, viewer])
+
+  useEffect(() => {
+    if (key) void heldObjects.revalidate(key, load)
+  }, [key, load])
+
+  const reload = useCallback(async () => {
+    if (key) await heldObjects.read(key, load)
+  }, [key, load])
+
+  const object = !key ? null : entry?.value !== undefined ? entry.value : entry?.failure ? null : 'loading'
+  return { object, reload }
 }
 
 export function useForeignObjects() {
@@ -509,26 +559,48 @@ export function useResolvedReferences(
   references: readonly string[],
 ): Record<string, ForeignObject | null> {
   const { resolveObjects } = useForeignObjects()
+  const viewer = useRelayViewer()
+  const pubkey = viewer()?.token.pubkey ?? ''
   const [objects, setObjects] = useState<Record<string, ForeignObject | null>>({})
   // The identity of the array changes on every render; the list of references
   // in a message does not. Keying the effect on the contents rather than the
   // array is what stops it re-resolving for ever.
   const key = references.join('\u0000')
 
+  /*
+    Shared with the widgets' held objects (OPT-3): a reference this tab
+    resolved in the last few minutes is drawn at once and not asked again, so
+    a topic you come back to draws its Activity's titles with no request.
+  */
   useEffect(() => {
     if (!hasRelay) return
     const refs = key ? key.split('\u0000') : []
-    if (!refs.length) return
+    const ask = refs.filter((ref) => {
+      const held = heldObjects.peek(`${pubkey} ${ref}`)
+      return held?.value === undefined || Date.now() - held.at >= HELD_OBJECT_FRESH_MS
+    })
+    if (!ask.length) return
     let cancelled = false
-    resolveObjects(refs)
-      .catch(() => Object.fromEntries(refs.map((ref) => [ref, null])))
+    resolveObjects(ask)
+      .catch(() => Object.fromEntries(ask.map((ref) => [ref, null])))
       // One setState for the whole body rather than one per reference: a
       // message with four mentions should not lay out four times.
-      .then((objects) => !cancelled && setObjects(objects))
+      .then((objects) => {
+        if (cancelled) return
+        for (const [ref, value] of Object.entries(objects)) {
+          if (value && pubkey) void heldObjects.read(`${pubkey} ${ref}`, async () => ({ ok: true, value }))
+        }
+        setObjects(objects)
+      })
     return () => {
       cancelled = true
     }
-  }, [key, resolveObjects])
+  }, [key, resolveObjects, pubkey])
+
+  const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
+    const value = ref in objects ? undefined : heldObjects.peek(`${pubkey} ${ref}`)?.value
+    return value === undefined ? [] : [[ref, value] as const]
+  })
 
   /*
     Demo mode is derived, not set. There is no relay to ask without a
@@ -540,7 +612,7 @@ export function useResolvedReferences(
   if (!hasRelay) {
     return Object.fromEntries((key ? key.split('\u0000') : []).map((ref) => [ref, null]))
   }
-  return objects
+  return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
 }
 
 /**

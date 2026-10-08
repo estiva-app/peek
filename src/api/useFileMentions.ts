@@ -5,6 +5,7 @@ import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useRelayViewer } from './foreign'
 import { hasRelay } from './relayUrl'
+import { heldBeside, isConversationHeld, onFileNews } from './conversations'
 
 /**
  * The comments elsewhere that name this file — a file page's Activity
@@ -55,9 +56,21 @@ export function useFileMentions(address: string | null | undefined): { mentions:
   useEffect(() => {
     if (!hasRelay || !file) return
     let cancelled = false
-    void load().then((next) => next && !cancelled && setResolved(next))
+    const take = (next: { file: string; mentions: FileMention[] } | null) => {
+      if (!next || cancelled) return
+      heldMentions.set(next.file, next.mentions)
+      setResolved(next)
+    }
+    /*
+      A return to a file whose conversation is held draws the mentions it had
+      and asks nothing (OPT-3): the conversation's catch-up asks after the
+      file's `#a` in its own request, and says when something new names it.
+    */
+    if (!heldMentions.has(file) || !isConversationHeld(file)) void load().then(take)
+    const stop = onFileNews(file, (news) => news.mentions && void load().then(take))
     return () => {
       cancelled = true
+      stop()
     }
   }, [file, load])
 
@@ -69,7 +82,15 @@ export function useFileMentions(address: string | null | undefined): { mentions:
     { enabled: hasRelay && !!file },
   )
 
-  return { mentions: resolved?.file === file ? resolved.mentions : EMPTY }
+  /*
+    What is held is drawn on the first frame, not after the effect: the
+    mentions decide whether the side column is open, and opening it a frame
+    late narrowed the conversation under a restored scroll position (OPT-3).
+  */
+  return { mentions: resolved?.file === file ? resolved.mentions : ((file && heldMentions.get(file)) || EMPTY) }
 }
 
 const EMPTY: FileMention[] = []
+
+/** The last mentions read for each file in this tab, drawn on a return (OPT-3). Emptied with the conversations. */
+const heldMentions = heldBeside<FileMention[]>('mentions')
