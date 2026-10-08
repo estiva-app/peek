@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRelayViewer } from './foreign'
 import { viewerQuery } from '@/nostr/foreign'
-import { catchUpConversation, readConversation } from '@/nostr/conversationCatchUp'
+import { applyLiveEvents, catchUpConversation, readConversation } from '@/nostr/conversationCatchUp'
 import { announceFileNews, conversationKey, conversationsFor } from './conversations'
-import { KIND } from '@estiva-app/protocol'
+import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import {
   commentAsViewer,
   deleteEventAsViewer,
@@ -23,7 +23,7 @@ import {
   type RelayFailureKind,
 } from '@/nostr/relayRead'
 import { recordReadFailure } from '@/nostr/freshness'
-import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
+import { REFRESH_INTERVAL_MS, useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useLiveFile } from '@/nostr/useLiveFile'
 
 export type { ConversationContainer, ConversationEvent, FileConversation, OutgoingAttachment, WriteResult }
@@ -90,7 +90,29 @@ function coalesced(key: string, run: () => Promise<void>): Promise<void> {
   return entry.promise
 }
 
-const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION]
+/**
+ * What a sync is asked to do, gathered while one runs: the events the socket
+ * delivered, to apply, and whether anybody asked for a catch-up, which finds
+ * those events too.
+ */
+const wanted = new Map<string, { events: SignedEvent[]; catchUp: boolean }>()
+
+function want(key: string, event?: SignedEvent): void {
+  let entry = wanted.get(key)
+  if (!entry) wanted.set(key, (entry = { events: [], catchUp: false }))
+  if (event) entry.events.push(event)
+  else entry.catchUp = true
+}
+
+/** A channel's messages, and what is done to them that carries its `h` — an admin's delete too. A reaction carries none. */
+const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION, 9005]
+
+/**
+ * How often an open conversation catches up while the socket is live: what no
+ * `#h` filter delivers — another person's reaction, a deletion by its author —
+ * arrives within this (Miky, OPT-5 kickoff). One request when nothing changed.
+ */
+export const LIVE_CATCH_UP_MS = 60_000
 
 /**
  * A file's conversation as Peek's own view reads it — FOL-31.
@@ -141,11 +163,13 @@ const CHANNEL_LIVE_KINDS = [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTI
  * did. A new root is found by that catch-up too, so the object need not be
  * read again for it; `onActivity` is called only when the file itself changed.
  *
- * ## Live, the way a topic is (FOL-32)
+ * ## Live, applied (FOL-32, OPT-5)
  *
- * `useLiveFile` watches the container's Folder for `kind:1111` on the tab's
- * one socket, and the interval idles while that socket is live. The signal
- * carries no event, so it cannot say what landed: it runs the catch-up.
+ * `useLiveFile` watches the container's Folder on the tab's one socket and
+ * hands over each event; `applyLiveEvents` keeps what is this conversation's
+ * and folds again from memory, with no read. Another topic's talk in the same
+ * Folder costs nothing. While the socket is live the catch-up runs once a
+ * minute, for what the socket cannot deliver; when it is not, every 30 s.
  */
 export function useFileConversation(
   container: ConversationContainer | null | undefined,
@@ -193,26 +217,34 @@ export function useFileConversation(
 
   /*
     The one read: the first open reads the conversation and holds what it was
-    answered with; every later one — a return, a live signal, a write, the
-    refresh tick — asks only what changed since (`catchUpConversation`).
+    answered with; every later one — a return, a write, the refresh tick — asks
+    only what changed since (`catchUpConversation`). An event from the socket
+    is applied with no read at all (`applyLiveEvents`).
   */
-  const sync = useCallback(async () => {
+  const sync = useCallback(async (event?: SignedEvent) => {
     const at = viewer()
     if (!key || !container || !at) return
     const conversations = conversationsFor(at.relayUrl, at.token.pubkey)
     const roots = ids ? ids.split(',') : []
     const query = viewerQuery(at.relayUrl, at.token)
+    want(key, event)
     await coalesced(key, async () => {
+      const asked = wanted.get(key)
+      wanted.delete(key)
+      if (!asked) return
       try {
         const before = conversations.value(key)
         if (before === undefined) {
+          // What the socket delivered before this read began, the read finds.
           const startedAt = Date.now()
           const { value, events } = await readConversation(container, roots, query)
           // A catch-up that settled meanwhile is newer than this.
           if (conversations.value(key) === before) conversations.replace(key, value, events, startedAt)
           return
         }
-        const found = await catchUpConversation(conversations, key, container, roots, query)
+        const found = asked.catchUp
+          ? await catchUpConversation(conversations, key, container, roots, query)
+          : await applyLiveEvents(conversations, key, container, roots, asked.events, query)
         if (found.lost) {
           // The Folder is no longer the viewer's: nothing held is drawn again, and the page reads what it may now see.
           conversations.drop(key)
@@ -247,11 +279,9 @@ export function useFileConversation(
 
   const live = useLiveFile(
     container?.h,
-    () => {
-      if (key) void sync()
+    (event) => {
+      if (key) void sync(event)
     },
-    // A channel's messages, and what is done to them that carries its `h`. A
-    // reaction carries none, and arrives with the next catch-up.
     container?.kind === 'channel' ? CHANNEL_LIVE_KINDS : undefined,
   )
 
@@ -259,10 +289,11 @@ export function useFileConversation(
     () => {
       if (key) void sync()
     },
-    { enabled: !!key, interval: live.relayState !== 'live' },
+    { enabled: !!key, intervalMs: live.relayState === 'live' ? LIVE_CATCH_UP_MS : REFRESH_INTERVAL_MS },
   )
 
-  const reload = sync
+  // Never handed an argument: a caller's click event is not a relay event.
+  const reload = useCallback(() => sync(), [sync])
 
   /*
     Each write but a root comment re-reads on success. The re-read is awaited so a caller that

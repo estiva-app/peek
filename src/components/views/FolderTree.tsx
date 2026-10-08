@@ -67,8 +67,8 @@ import { useToast } from '@/lib/toast'
  * half — that nothing is *asked* before the fold or the row opens — is
  * `FolderTree.test.tsx`. The union draws no dot — a Folder row carries none
  * (Miky, 2026-10-03), only its files do. It decides what the Unread filter
- * keeps, and its socket signal (`activity`) is what re-reads an open
- * Folder's row dots.
+ * keeps. An open Folder's row dots fold what the tab's channel store holds,
+ * with no read of their own after the first (OPT-5).
  *
  * ## Which folds are open
  *
@@ -153,7 +153,7 @@ export function FolderTree({
     record channel is in `listFolders` too and is nobody's section:
     `topLevelFolders` says which are.
   */
-  const { unread, activity, member, holdsJoined, joinedUnder, ready } = useTeamUnread(folders)
+  const { unread, member, holdsJoined, joinedUnder, ready } = useTeamUnread(folders)
   const topLevel = useMemo(() => (folders ? topLevelFolders(folders) : null), [folders])
   /*
     The Archive view's Folders (5 October): every top-level one, the archived
@@ -276,7 +276,6 @@ export function FolderTree({
           folders={view === 'archive' ? archiveLevel : topLevel}
           signedOut={signedOut}
           unread={unread}
-          activity={activity}
           member={member}
           holdsJoined={holdsJoined}
           joinedUnder={joinedUnder}
@@ -581,7 +580,6 @@ export function FolderTreeView({
   folders,
   signedOut,
   unread,
-  activity = {},
   member = {},
   holdsJoined,
   joinedUnder,
@@ -607,11 +605,6 @@ export function FolderTreeView({
    * means unjudged.
    */
   unread: Record<string, boolean>
-  /**
-   * The socket's signal count per Folder id (FOL-44): an open section's rows
-   * re-read their dots when theirs changes. Missing means nothing said yet.
-   */
-  activity?: Record<string, number>
   /** Whether each Folder holds a file the person is a member of (FOL-41, §11.8) — `useTeamUnread`. */
   member?: Record<string, boolean>
   /** Parents of joined files no listing holds — a project, for an issue of yours: Topics keeps its row. */
@@ -681,7 +674,6 @@ export function FolderTreeView({
         <FolderSection
           key={folder.id}
           folder={folder}
-          activity={activity[folder.id] ?? 0}
           filter={filter}
           current={folder.id === currentFolder}
           selectedRef={selectedRef}
@@ -704,7 +696,6 @@ export function FolderTreeView({
 /** One Folder: a fold, and its first level once it is open. */
 function FolderSection({
   folder,
-  activity,
   filter,
   current,
   selectedRef,
@@ -719,7 +710,6 @@ function FolderSection({
   preloaded,
 }: {
   folder: FolderSummary
-  activity: number
   filter: TreeFilter
   current: boolean
   selectedRef?: string
@@ -899,7 +889,6 @@ function FolderSection({
           joinedUnder={joinedUnder}
           selectedRef={selectedRef}
           selectedParent={selectedParent}
-          activity={activity}
           onSelect={onSelect}
           onControl={onControl}
         />
@@ -916,7 +905,6 @@ function FolderSection({
             mounted while open, and their badge read was keyed only on the
             listing, so a comment reached them on collapse and expand.
           */
-          activity={activity}
           onSelect={onSelect}
           onControl={onControl}
           holdsJoined={holdsJoined}

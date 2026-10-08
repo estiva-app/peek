@@ -30,7 +30,7 @@
  * listening throughout.
  */
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { KIND } from '@estiva-app/protocol'
+import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import { validToken } from '@/auth/estivaId'
 import { queryRelay } from '@/nostr/bridge'
 import { CHANNEL_STREAM_LIMIT, streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStreams'
@@ -178,18 +178,8 @@ export function useChannelStreams(channels: readonly string[]): {
   at: number
   streams: Record<string, StreamMessage[]>
 } {
-  const { live } = useLiveClient()
-  const viewer = useRelayViewer()
-  // The store and the viewer it is for: urgency is per reader (CON-17).
-  const [held, setHeld] = useState<{ store: ChannelStore; me: string } | null>(null)
+  const held = useTabChannelStore()
   const store = held?.store ?? null
-
-  useEffect(() => {
-    const v = viewer()
-    if (!live || !v) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the store is outside React; this hands its identity in
-    setHeld({ store: storeFor(v.relayUrl, v.token.pubkey, live), me: v.token.pubkey })
-  }, [live, viewer])
 
   // Keyed on the ids, not the array: callers hand a fresh one per render.
   const key = useMemo(() => [...new Set(channels)].sort().join(','), [channels])
@@ -215,4 +205,40 @@ export function useChannelStreams(channels: readonly string[]): {
     }
     return { at: snapshot.at, streams }
   }, [held, ids, snapshot])
+}
+
+/** The tab's store and the viewer it is for (urgency is per reader, CON-17); null until signed in and connected. */
+function useTabChannelStore(): { store: ChannelStore; me: string } | null {
+  const { live } = useLiveClient()
+  const viewer = useRelayViewer()
+  const [held, setHeld] = useState<{ store: ChannelStore; me: string } | null>(null)
+  useEffect(() => {
+    const v = viewer()
+    if (!live || !v) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the store is outside React; this hands its identity in
+    setHeld({ store: storeFor(v.relayUrl, v.token.pubkey, live), me: v.token.pubkey })
+  }, [live, viewer])
+  return held
+}
+
+/**
+ * Every event the tab's store holds, whichever channel it was said in — a
+ * snapshot that is a new array when the store changed and the same one
+ * otherwise (OPT-5). Tracks nothing: it is what the sidebar and Desk already
+ * keep live. For a reader that holds an answer of its own and folds in what
+ * the socket has said since, rather than reading again.
+ */
+export function useHeldChannelEvents(): readonly SignedEvent[] {
+  const held = useTabChannelStore()
+  const store = held?.store ?? null
+  const snapshot = useSyncExternalStore(
+    store ? store.subscribe : subscribeNowhere,
+    store ? store.snapshot : () => NO_SNAPSHOT,
+  )
+  return useMemo(
+    () => (store ? store.channels().flatMap((channel) => store.events(channel) ?? []) : []),
+    // `snapshot` is the store's version: a new one is a change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store, snapshot],
+  )
 }

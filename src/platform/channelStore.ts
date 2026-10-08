@@ -127,6 +127,8 @@ export interface ChannelStore {
   track(channels: readonly string[]): () => void
   /** What is held for a channel, oldest first; `undefined` if it was never read. */
   events(channel: string): readonly SignedEvent[] | undefined
+  /** Every channel something is held for — read or lingering, tracked or not. */
+  channels(): string[]
   /**
    * A new object on every change and the same one otherwise —
    * `useSyncExternalStore`'s snapshot. `at` is when it changed, in unix
@@ -406,6 +408,7 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
     },
 
     events: (channel) => held.get(channel)?.events,
+    channels: () => [...held.keys()],
     snapshot: () => snapshot,
     subscribe(listener) {
       listeners.add(listener)
