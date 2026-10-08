@@ -96,7 +96,7 @@ export function PartCardView({
   // A Button, not a Link, by Katerina's call (2026-10-08): the way out of Peek
   // reads as an action, level with Show more at the right of its row.
   const openIn = link ? (
-    <Button size="small" trailingIcon={<IconExternalLink stroke={1.5} className="size-3.5" />} onClick={() => window.open(link, '_blank', 'noopener,noreferrer')}>
+    <Button size="small" leadingIcon={<IconExternalLink stroke={1.5} className="size-3.5" />} onClick={() => window.open(link, '_blank', 'noopener,noreferrer')}>
       Open in {view.object.appName ?? 'app'}
     </Button>
   ) : undefined
