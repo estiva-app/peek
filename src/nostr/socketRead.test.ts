@@ -5,8 +5,8 @@ import type { RelayState, SignedEvent } from '@estiva-app/protocol'
 vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
 vi.mock('./liveTopics', () => ({ getLiveClient: () => null }))
 
-import { createPacer, createSocketReader, EOSE_TIMEOUT_MS, LIVE_WAIT_MS, REQS_PER_WINDOW, WINDOW_MS } from './socketRead'
-import { noteFrame, otherFramesSince, sendingAsRead } from './socketFrames'
+import { createPacer, createSocketReader, EOSE_TIMEOUT_MS, LIVE_WAIT_MS, MAX_REQS_IN_FLIGHT, REQS_PER_WINDOW, WINDOW_MS } from './socketRead'
+import { createFrameShaper, FRAMES_PER_SECOND, FRAMES_PER_WINDOW, otherFramesSince, SHAPED_WINDOW_MS, resetSocketFrames, sendingAsRead } from './socketFrames'
 import { queryRelay, setSocketReader } from './bridge'
 import { relayReads, resetRelayMeter } from './relayMeter'
 
@@ -77,6 +77,20 @@ describe('socket reads', () => {
     for (const sub of subs) sub.onEose?.()
     expect(await answer).toEqual({ ok: true, events: [event('x'), event('y')] })
     expect(subs.every((s) => s.closed)).toBe(true)
+  })
+
+  it(`keeps at most ${MAX_REQS_IN_FLIGHT} REQs waiting on the relay at once`, async () => {
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    const filters = Array.from({ length: (MAX_REQS_IN_FLIGHT + 2) * 10 }, (_, i) => ({ kinds: [9], '#h': [`f${i}`] }))
+    const answer = read('https://relay', filters, ME)
+    await vi.waitFor(() => expect(subs).toHaveLength(MAX_REQS_IN_FLIGHT))
+    subs[0].onEose?.()
+    subs[1].onEose?.()
+    await vi.waitFor(() => expect(subs).toHaveLength(MAX_REQS_IN_FLIGHT + 2))
+    expect(subs.filter((s) => !s.closed)).toHaveLength(MAX_REQS_IN_FLIGHT)
+    for (const sub of subs) sub.onEose?.()
+    expect(await answer).toEqual({ ok: true, events: [] })
   })
 
   it('answers a Folder the reader is not in with nothing, as /query does, not with an error', async () => {
@@ -235,15 +249,43 @@ describe('createPacer', () => {
 })
 
 describe('socket frames', () => {
+  const shaper = () => {
+    vi.useFakeTimers()
+    resetSocketFrames()
+    const out: string[] = []
+    return { out, shaper: createFrameShaper((data) => out.push(data)) }
+  }
+
   it('records the metered frames the socket sends, except the reader’s own', () => {
-    const at = 1_000_000
-    noteFrame('["REQ","peek-1",{"kinds":[9]}]', at)
-    noteFrame('["EVENT",{"id":"x"}]', at)
-    noteFrame('["CLOSE","peek-1"]', at)
-    noteFrame('["AUTH",{"id":"y"}]', at)
-    sendingAsRead(() => noteFrame('["REQ","peek-2",{"kinds":[9]}]', at))
+    const { out, shaper: s } = shaper()
+    const at = Date.now()
+    s.send('["REQ","peek-1",{"kinds":[9]}]')
+    s.send('["EVENT",{"id":"x"}]')
+    s.send('["CLOSE","peek-1"]')
+    s.send('["AUTH",{"id":"y"}]')
+    sendingAsRead(() => s.send('["REQ","peek-2",{"kinds":[9]}]'))
+    expect(out).toHaveLength(5)
     expect(otherFramesSince(at - 1)).toHaveLength(2)
     expect(otherFramesSince(at)).toHaveLength(0)
+  })
+
+  it(`sends at most ${FRAMES_PER_SECOND} metered frames a second and ${FRAMES_PER_WINDOW} a window, the rest in order`, async () => {
+    const { out, shaper: s } = shaper()
+    const n = FRAMES_PER_WINDOW + 2
+    for (let i = 0; i < n; i++) s.send(`["REQ","peek-${i}",{}]`)
+    s.send(`["CLOSE","peek-${FRAMES_PER_WINDOW}"]`)
+    expect(out).toHaveLength(FRAMES_PER_SECOND)
+    await vi.advanceTimersByTimeAsync(1_001)
+    expect(out).toHaveLength(2 * FRAMES_PER_SECOND)
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(out).toHaveLength(FRAMES_PER_WINDOW)
+    expect(s.waiting()).toBe(3)
+    await vi.advanceTimersByTimeAsync(SHAPED_WINDOW_MS)
+    expect(out.slice(FRAMES_PER_WINDOW)).toEqual([
+      `["REQ","peek-${FRAMES_PER_WINDOW}",{}]`,
+      `["REQ","peek-${FRAMES_PER_WINDOW + 1}",{}]`,
+      `["CLOSE","peek-${FRAMES_PER_WINDOW}"]`,
+    ])
   })
 })
 

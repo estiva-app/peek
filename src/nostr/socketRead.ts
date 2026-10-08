@@ -27,7 +27,7 @@ import type { SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
-import { otherFramesSince, sendingAsRead, WINDOW_MS } from './socketFrames'
+import { otherFramesSince, sendingAsRead, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
 
 /** Buzz parses a REQ with more and answers a bare NOTICE — no CLOSED, so the read would only time out. */
 export const MAX_FILTERS_PER_REQ = 10
@@ -51,8 +51,20 @@ export const SPILL_AFTER_MS = 1_000
 export const HTTP_SPILL_PER_MINUTE = 120
 /** How long a read waits for a socket that is still connecting before it goes over HTTP. */
 export const LIVE_WAIT_MS = 3_000
-/** A REQ with no EOSE by then is closed and asked again over HTTP. */
-export const EOSE_TIMEOUT_MS = 20_000
+/**
+ * A REQ with no EOSE by then is closed and asked again over HTTP. Buzz ends a
+ * REQ with no EOSE at all when its send buffer to this tab is full (`req.rs`,
+ * `if !conn.send(msg) { return }`); the slowest answered read under the
+ * `--hammer` took 6.5 s.
+ */
+export const EOSE_TIMEOUT_MS = 10_000
+/**
+ * REQs answering at once. Buzz queues at most 1,000 frames to a connection —
+ * one per event — and drops the connection after 15 sends in a row find the
+ * queue full, which a busy tab (not reading its socket while it renders) and a
+ * few wide reads arriving together reached in the v5 switch probe.
+ */
+export const MAX_REQS_IN_FLIGHT = 4
 
 type Answer = { ok: boolean; events: SignedEvent[]; reason?: string }
 type Outcome =
@@ -162,7 +174,17 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
   const setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
   const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   const log = options.log ?? (() => {})
-  const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, now, setTimer, clearTimer, options.otherFrames)
+  const pacer = createPacer(REQS_PER_WINDOW, SHAPED_WINDOW_MS, now, setTimer, clearTimer, options.otherFrames)
+  let inFlight = 0
+  const slotFreed: (() => void)[] = []
+  async function inFlightSlot(): Promise<() => void> {
+    while (inFlight >= MAX_REQS_IN_FLIGHT) await new Promise<void>((resolve) => slotFreed.push(resolve))
+    inFlight += 1
+    return () => {
+      inFlight -= 1
+      slotFreed.shift()?.()
+    }
+  }
   const spilled: number[] = []
   const spill = {
     afterMs: SPILL_AFTER_MS,
@@ -224,8 +246,14 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
   }
 
   async function readChunk(client: LiveClient, filters: Record<string, unknown>[]): Promise<Outcome> {
-    if (client.state() !== 'live') return { kind: 'lost', why: client.state() }
-    let outcome = await reqOnce(client, filters)
+    const release = await inFlightSlot()
+    let outcome: Outcome
+    try {
+      if (client.state() !== 'live') return { kind: 'lost', why: client.state() }
+      outcome = await reqOnce(client, filters)
+    } finally {
+      release()
+    }
     // A REQ naming only Folders the reader is not in is CLOSED; `/query` answers
     // the same filters `200 []` (`repair_requested_channel_access` just leaves
     // them out). The callers were written against the second.
