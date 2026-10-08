@@ -11,8 +11,7 @@ import {
   IconDotsVertical,
 } from '@tabler/icons-react'
 import { Button } from './ui/Button'
-import { Avatar } from './ui/Avatar'
-import { AttachmentCard, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { AttachmentCard, Avatar, Card, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { RepliesRow } from './ui/RepliesRow'
 import { Reaction as ReactionPill } from './ui/Reaction'
 import { ConversationQuickMenu } from './ConversationQuickMenu'

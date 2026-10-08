@@ -1,35 +1,30 @@
 import { useState, type ReactNode } from 'react'
-import { shortcutLabel } from '@estiva-app/ui'
+import { IdentityMenu, MenuItem } from '@estiva-app/ui'
 import { IconMenu2 } from '@tabler/icons-react'
 import { useSignOut } from '@/auth/useSignOut'
-import { IdentityMenu, MenuItem } from '@estiva-app/ui'
 import { ReadStatePanel } from './ReadStatePanel'
 import { IconButton } from './ui/IconButton'
-import { SearchInput } from './ui/SearchInput'
 import { hasRelay, useAvatarSrc, useCurrentUser, useRelayUrl, CURRENT_USER_NAME, PROFILE_EDIT_URL } from '@/api'
 
 export interface TopBarSlotsProps {
   onMenuToggle?: () => void
-  /** Clicking the search field opens the command launcher instead of focusing the input. */
-  onSearchClick?: () => void
 }
 
 /** What rides in the top bar's slots, and the Read state panel that hangs off it. */
 export interface TopBarSlots {
   menu: ReactNode
-  search: ReactNode
   identity: ReactNode
   /** Rendered beside the frame, not in it: a Popover that portals itself. */
   panel: ReactNode
 }
 
 /**
- * What rides in Peek's top bar — the menu button, the launcher affordance, the
- * identity — as slots, so the package's floating `AppShell` can draw the bar
- * (UIG-14, 9.3) and `TopBar` can still draw it on its own for its story and
- * test. Peek's, unchanged; only where it is drawn moved.
+ * What rides in Peek's top bar — the menu button and the identity — as slots,
+ * so the package's floating `AppShell` can draw the bar (UIG-14, 9.3). The
+ * search field is the bar's own since 0.60.0: `PeekFrame` hands it the
+ * launcher (Katerina, 8 October).
  */
-export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps): TopBarSlots {
+export function useTopBarSlots({ onMenuToggle }: TopBarSlotsProps): TopBarSlots {
   const signOut = useSignOut()
   const [cluster, setCluster] = useState<HTMLDivElement | null>(null)
   const [readStateOpen, setReadStateOpen] = useState(false)
@@ -49,21 +44,6 @@ export function useTopBarSlots({ onMenuToggle, onSearchClick }: TopBarSlotsProps
       <IconButton tooltip="Toggle menu" tooltipPlacement="bottom" onClick={onMenuToggle} aria-label="Toggle menu">
         <IconMenu2 size={16} stroke={1.5} />
       </IconButton>
-    ),
-    search: (
-      /* @estiva-escape(no-raw-element): a launcher that looks like a search field, and
-         the package has no such part (Katerina, 25 September: it stays hand-made).
-         Clicking opens the command launcher; preventDefault keeps the input from focusing. */
-      <div
-        className="cursor-pointer"
-        onMouseDown={(e) => {
-          e.preventDefault()
-          onSearchClick?.()
-        }}
-      >
-        {/* @estiva-escape(no-restyled-part): a picture of the search field that opens the launcher; no part is a button that looks like a search field yet (UIG-9, Katerina 17 September) */}
-        <SearchInput shortcut={shortcutLabel('Mod-K')} className="w-[290px] pointer-events-none" />
-      </div>
     ),
     identity: (
       /*

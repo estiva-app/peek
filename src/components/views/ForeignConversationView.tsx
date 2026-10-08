@@ -3,7 +3,7 @@ import type { ForeignObject, People } from '@estiva-app/interop'
 import type { ForeignConversationState } from '@/api'
 import { Button } from '@/components/ui/Button'
 import { Chip } from '@/components/ui/Chip'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState } from '@estiva-app/ui'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 

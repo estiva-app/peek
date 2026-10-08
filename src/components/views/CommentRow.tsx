@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import type { People } from '@estiva-app/interop'
-import { Avatar } from '@/components/ui/Avatar'
-import { WithTooltip } from '@estiva-app/ui'
+import { Avatar, WithTooltip } from '@estiva-app/ui'
 import { MessageBody } from '@/components/ui/MessageBody'
 import { MetaText } from '@/components/ui/MetaText'
 import { whenLabel } from '@/components/ui/ActivityTimeline'

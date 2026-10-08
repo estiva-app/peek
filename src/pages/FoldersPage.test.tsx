@@ -212,8 +212,8 @@ vi.mock('@/api', async () => ({
 vi.mock('@/lib/toast', () => ({ useToast: () => ({ showToast: () => {} }) }))
 // The frame mounts the rail, the top bar and the launcher, none of which is
 // under test and all of which want providers. The three panels are what matter.
-vi.mock('@/layouts/AppShell', () => ({
-  AppShell: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
+vi.mock('@/layouts/PeekFrame', () => ({
+  PeekFrame: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
     <div>
       {leftPanel}
       {rightPanel}

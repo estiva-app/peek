@@ -2,9 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { IconTrash } from '@tabler/icons-react'
-import { Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
-import { AppShell } from '@/layouts/AppShell'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { PeekFrame } from '@/layouts/PeekFrame'
 import { FolderTree } from '@/components/views/FolderTree'
 import type { ForeignObject } from '@estiva-app/interop'
 import { FileTreeView } from '@/components/views/FileTreeView'
@@ -283,5 +282,5 @@ export function FoldersPageView({
   nav: ReactNode
   rightPanel?: ReactNode
 }) {
-  return <AppShell banner={banner} leftPanel={nav} rightPanel={rightPanel} />
+  return <PeekFrame banner={banner} leftPanel={nav} rightPanel={rightPanel} />
 }

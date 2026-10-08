@@ -1,5 +1,5 @@
 import { Navigate, useParams } from 'react-router-dom'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState } from '@estiva-app/ui'
 import { legacyTopicDestination } from '@/lib/legacyTopicLinks'
 
 /**

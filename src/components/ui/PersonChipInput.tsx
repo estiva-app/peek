@@ -1,5 +1,4 @@
-import { ChipInput, type ChipInputOption } from '@estiva-app/ui'
-import { Avatar } from './Avatar'
+import { Avatar, ChipInput, type ChipInputOption } from '@estiva-app/ui'
 import { usePeople, type Person } from '@/api'
 
 /**

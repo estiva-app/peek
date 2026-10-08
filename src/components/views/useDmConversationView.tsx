@@ -5,7 +5,7 @@ import { draftKeys } from '@/lib/drafts'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
-import { EmptyState } from '@/components/ui/EmptyState'
+import { EmptyState } from '@estiva-app/ui'
 import { useStarred, useDmChannels, useDmVisibility } from '@/api'
 import { useFileConversationView } from './useFileConversationView'
 
@@ -135,7 +135,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
   if (dmId == null || !dmName) {
     return {
       // A page EmptyState fills and centres itself in the pane's column (UIG-42).
-      rightPanel: <EmptyState />,
+      rightPanel: <EmptyState message="No conversation selected" />,
       threadPanel: undefined,
       replyOnlyThread: undefined,
       openThread: setThreadConvId,

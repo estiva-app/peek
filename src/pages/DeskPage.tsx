@@ -2,14 +2,13 @@ import { useCallback, useEffect, useRef, useState, type ComponentProps, type Rea
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { IconArrowUpRight, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection, ListColumn, Panel, Toolbar, ToolbarLink } from '@estiva-app/ui'
-import { AppShell } from '@/layouts/AppShell'
+import { CollapsibleSection, EmptyState, ListColumn, Panel, Toolbar, ToolbarLink } from '@estiva-app/ui'
+import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { Divider } from '@/components/ui/Divider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { SidePanelButton } from '@/components/SidePanelButton'
 import { useFileView } from '@/components/views/useFileView'
@@ -464,7 +463,7 @@ export function DeskPageView({
   threadPanel?: ReactNode
 }) {
   return (
-    <AppShell
+    <PeekFrame
       leftPanel={
         <ListColumn title="Desk" collapsed={railClosed}>
           {loading ? (

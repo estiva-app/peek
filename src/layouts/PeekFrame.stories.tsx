@@ -4,7 +4,7 @@ import { DebugProvider } from '@/lib/debug'
 import { PeekDataProvider } from '@/api'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { ListColumn } from '@estiva-app/ui'
-import { AppShell } from './AppShell'
+import { PeekFrame } from './PeekFrame'
 import { useRailClosed } from './railClosed'
 
 function Placeholder({ label }: { label: string }) {
@@ -26,8 +26,8 @@ function ListPanel() {
 }
 
 const meta = {
-  title: 'Frame/AppShell',
-  component: AppShell,
+  title: 'Frame/PeekFrame',
+  component: PeekFrame,
   parameters: { layout: 'fullscreen' },
   decorators: [
     Story => (
@@ -47,7 +47,7 @@ const meta = {
     leftPanel: <ListPanel />,
     rightPanel: <Placeholder label="Conversation area" />,
   },
-} satisfies Meta<typeof AppShell>
+} satisfies Meta<typeof PeekFrame>
 
 export default meta
 type Story = StoryObj<typeof meta>

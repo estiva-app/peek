@@ -4,7 +4,7 @@ import {
   IconUsers,
   IconBrackets,
   IconLock, IconFolder, IconFile, IconBox, IconListDetails,} from '@tabler/icons-react'
-import { Avatar } from './Avatar'
+import { Avatar } from '@estiva-app/ui'
 import { cn } from '@/lib/utils'
 
 export type TopicStateType = 'topic' | 'DM' | 'team' | 'group' | 'view' | 'huddle' | 'folder' | 'project' | 'issue' | 'file'

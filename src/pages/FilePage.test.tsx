@@ -250,8 +250,8 @@ vi.mock('@/lib/messageAnchor', () => ({ scrollToMessageWhenReady: anchor.scrollT
 vi.mock('@/lib/toast', () => ({
   useToast: () => ({ showToast: (toast: { label: string; type?: string }) => toasts.shown.push(toast) }),
 }))
-vi.mock('@/layouts/AppShell', () => ({
-  AppShell: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
+vi.mock('@/layouts/PeekFrame', () => ({
+  PeekFrame: ({ leftPanel, rightPanel, threadPanel }: Record<string, React.ReactNode>) => (
     <div>
       <section data-testid="left">{leftPanel}</section>
       <section data-testid="middle">{rightPanel}</section>

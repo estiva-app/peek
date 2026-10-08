@@ -1,8 +1,7 @@
-import { Divider } from '@estiva-app/ui'
+import { Divider, EmptyState } from '@estiva-app/ui'
 import type { People } from '@estiva-app/interop'
 import type { FileThreadsState } from '@/api'
 import type { FileComment } from '@/nostr/foreign'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { CommentRow, type DrawableComment } from '@/components/views/CommentRow'
 

@@ -1,11 +1,9 @@
 import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, IconFolderShare, IconLayoutSidebarRight, IconLayoutSidebarRightFilled } from '@tabler/icons-react'
 import { TopicState } from './ui/TopicState'
-import { Avatar } from './ui/Avatar'
+import { Avatar, MembersPill, Panel, type PanelProps, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
 import { IconButton } from './ui/IconButton'
 import type { ReactNode } from 'react'
-import { MembersPill, Panel, Toolbar, ToolbarButton, type PanelProps } from '@estiva-app/ui'
-import { useAvatarSrc } from '@/api'
 import { MetaText } from '@/components/ui/MetaText'
 
 interface HeaderProps extends Partial<Pick<PanelProps, 'footer' | 'bodyRef' | 'onBodyScroll' | 'bodyClassName'>> {
@@ -115,8 +113,6 @@ export function Header({
   onToggleFolderPanel,
   folderPanelOpen = false,
 }: HeaderProps) {
-  const avatarSrcFor = useAvatarSrc()
-
   const copyFolderLink = () => {
     // `folder:<uuid>`, not a URL. A Folder belongs to no single app, so a link
     // pointing at Peek would misdescribe a container Peek merely shares.
@@ -200,7 +196,7 @@ export function Header({
                   mode it opens the members dialog (huddle membership is set at
                   creation, so the huddle pill stays inert). */}
               {members.length > 0 && (
-                <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} onClick={onShowMembers} />
+                <MembersPill members={members.map((name) => ({ name }))} onClick={onShowMembers} />
               )}
             </div>
           )}

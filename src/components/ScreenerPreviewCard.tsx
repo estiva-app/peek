@@ -1,5 +1,5 @@
 import { useScreenerPreview, type ScreenerPreviewRow } from '@/api'
-import { Avatar } from './ui/Avatar'
+import { Avatar } from '@estiva-app/ui'
 import { MessageBody } from './ui/MessageBody'
 import { SkeletonBar } from './ui/Skeleton'
 import { MetaText } from '@/components/ui/MetaText'
