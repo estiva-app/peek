@@ -144,7 +144,6 @@ export function TopicActivity({
             timestamp={conv.timestamp}
             body={conv.body}
             editedAt={conv.editedAt}
-            deleted={conv.isDeleted}
             files={conv.files}
             reactions={conv.reactions}
             highlightType={conv.highlightType}

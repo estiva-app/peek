@@ -143,11 +143,6 @@ function ChangingRow(args: Parameters<typeof FileActivityPanelView>[0]) {
   return <FileActivityPanelView {...args} items={[row(conv, DM)]} />
 }
 
-/** Deleted where it was said: the row says so, and still opens its thread if it has replies. */
-export const Deleted: Story = {
-  args: { items: [row({ ...IN_TOPIC, isDeleted: true, reactions: undefined }, UPDATES)] },
-}
-
 /** The titles have not resolved yet: the chip alone says how the row is related. */
 export const TitlesResolving: Story = { args: { labelFor: new Map() } }
 

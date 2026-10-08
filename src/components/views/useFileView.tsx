@@ -138,7 +138,7 @@ export function useFileView({
   const canShow = !!cardFile || ownView
   const aside =
     sidePanel.open && canShow ? (
-      <OverviewPanel file={cardFile} activity={ownView ? <FileActivityPanel mentions={mentions} /> : undefined} />
+      <OverviewPanel file={cardFile} activity={ownView ? <FileActivityPanel address={file?.address} mentions={mentions} /> : undefined} />
     ) : undefined
   const replyCounts =
     threads === 'loading' || 'failed' in threads

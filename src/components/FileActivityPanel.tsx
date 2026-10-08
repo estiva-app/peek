@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { SectionHeader } from '@estiva-app/ui'
-import { formatTimestamp, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
+import { formatTimestamp, useMentionConversation, useResolvedReferences, useWorkspaceDirectory, type ConversationData } from '@/api'
 import type { FileMention } from '@/nostr/fileMentions'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
+import { project } from '@/components/views/useFileConversationView'
 
 /**
  * **Activity on a file's page: the comments elsewhere that name it** — CON-11.
@@ -30,7 +31,7 @@ import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivit
  * something in it and hidden when there is not, and the header's sidebar
  * button shows it anyway, with this section's empty line (`useSidePanel`).
  */
-export function FileActivityPanel({ mentions }: { mentions: FileMention[] }) {
+export function FileActivityPanel({ address, mentions }: { address?: string; mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()
   /*
     The file each mention was said on, by address, for its title — one
@@ -48,28 +49,63 @@ export function FileActivityPanel({ mentions }: { mentions: FileMention[] }) {
     }
     return labels
   }, [saidIn, objects])
-  const items = useMemo(() => mentions.map((m) => mentionItem(m, people)), [mentions, people])
+  /*
+    Each message as it is now (PEE-48), folded by the stream's own `project`
+    so a row and the conversation it came from cannot disagree. Until the
+    first read lands a row is the mention as it was written.
+  */
+  const { current, viewerPubkey } = useMentionConversation(address, mentions)
+  const now = useMemo(
+    () => (current ? project(current.conversation, viewerPubkey, people).byId : null),
+    [current, viewerPubkey, people],
+  )
+  const items = useMemo(
+    () =>
+      mentions.flatMap((m) => {
+        // Asked about and gone: an edit took the file out of it (Katerina, 8 October).
+        if (current?.asked.has(m.id) && !now?.[m.id]) return []
+        return [mentionItem(m, people, now?.[m.id]?.data)]
+      }),
+    [mentions, people, current, now],
+  )
   return <FileActivityPanelView items={items} labelFor={labelFor} />
 }
 
-/** One mention as the row `TopicActivity` draws: the same card the stream draws, opening the thread it was said in. */
-function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirectory>): TopicActivityItem {
+/**
+ * One mention as the row `TopicActivity` draws: the same card the stream
+ * draws, read-only, opening the message where it was said.
+ *
+ * `now` is the message as it stands (`project`'s), when it has been read: its
+ * text, files, reactions, replies and resolution are drawn from it. Who said
+ * it and when stay the mention's, named from the directory as before.
+ */
+function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirectory>, now?: ConversationData): TopicActivityItem {
   const author = people?.[m.author]
   const conv: ConversationData = {
     id: m.id,
     authorName: author?.displayName ?? `${m.author.slice(0, 8)}…`,
     authorAvatarSrc: author?.picture,
     timestamp: formatTimestamp(m.createdAt * 1000),
-    body: m.body,
+    body: now?.body ?? m.body,
+    editedAt: now?.editedAt,
     createdAtMs: m.createdAt * 1000,
-    files: m.files.map((f) => ({
-      name: f.name,
-      contentType: f.contentType,
-      size: f.size,
-      sha256: f.sha256,
-      mediaUrl: f.mediaUrl,
-      thumbUrl: f.thumbUrl,
-    })),
+    files:
+      now?.files ??
+      m.files.map((f) => ({
+        name: f.name,
+        contentType: f.contentType,
+        size: f.size,
+        sha256: f.sha256,
+        mediaUrl: f.mediaUrl,
+        thumbUrl: f.thumbUrl,
+      })),
+    reactions: now?.reactions,
+    replyCount: now?.replyCount,
+    replyAuthors: now?.replyAuthors,
+    lastReplyTime: now?.lastReplyTime,
+    isResolved: now?.isResolved,
+    resolvedBy: now?.resolvedBy,
+    resolutionMessage: now?.resolutionMessage,
     nostrReferences: m.references,
     urgentMentions: m.urgent,
     nostrEventId: m.id,
