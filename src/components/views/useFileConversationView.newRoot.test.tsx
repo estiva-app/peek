@@ -17,9 +17,18 @@ import type { FileConversation } from '@/api'
 const relay = vi.hoisted(() => ({
   read: vi.fn<(container: unknown, rootIds: readonly string[]) => Promise<FileConversation>>(),
 }))
-vi.mock('@/nostr/fileConversation', async () => ({
-  ...(await vi.importActual<Record<string, unknown>>('@/nostr/fileConversation')),
-  conversationAsViewer: (container: unknown, rootIds: readonly string[]) => relay.read(container, rootIds),
+// The first read and every catch-up are the same fake read here; the store holds what it answered (OPT-3).
+vi.mock('@/nostr/conversationCatchUp', () => ({
+  readConversation: async (container: unknown, rootIds: readonly string[]) => ({ value: await relay.read(container, rootIds), events: [] }),
+  catchUpConversation: async (
+    store: { settle: (key: string, at: number, value: FileConversation) => void },
+    key: string,
+    container: unknown,
+    rootIds: readonly string[],
+  ) => {
+    store.settle(key, Date.now(), await relay.read(container, rootIds))
+    return { changed: true, object: false, mentions: false }
+  },
 }))
 // Stable across renders, as the real one is.
 const viewer = vi.hoisted(() => () => ({ relayUrl: 'https://relay.test', token: { pubkey: 'a'.repeat(64) } }))
