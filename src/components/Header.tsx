@@ -176,26 +176,33 @@ export function Header({
       }
       actions={
         <>
-          {variant === 'topic' && !hideTopicMeta && (
-            <>
-              {/* Open / resolved counts */}
-              <div className="flex items-center gap-2">
-                <MetaText tone="secondary">
-                  {openCount} open
-                </MetaText>
-                <div className="w-[3px] h-[3px] rounded-full bg-text-muted shrink-0" />
-                <MetaText tone="success">
-                  {resolvedCount} resolved
-                </MetaText>
-              </div>
-            </>
-          )}
+          {/*
+            The counts and the members pill are one group, 12px clear of the
+            buttons (Katerina, 8 October): the bar sets its actions 4px apart,
+            so the group adds the other 8px. The buttons stay 4px apart.
+          */}
+          {!hideTopicMeta && (variant === 'topic' || (variant !== 'dm' && members.length > 0)) && (
+            <div className="flex items-center gap-3 pr-2">
+              {variant === 'topic' && (
+                // Open / resolved counts
+                <div className="flex items-center gap-2">
+                  <MetaText tone="secondary">
+                    {openCount} open
+                  </MetaText>
+                  <div className="w-[3px] h-[3px] rounded-full bg-text-muted shrink-0" />
+                  <MetaText tone="success">
+                    {resolvedCount} resolved
+                  </MetaText>
+                </div>
+              )}
 
-          {/* Members pill — shown for both topic mode and huddle mode. In topic
-              mode it opens the members dialog (huddle membership is set at
-              creation, so the huddle pill stays inert). */}
-          {variant !== 'dm' && !hideTopicMeta && members.length > 0 && (
-            <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} onClick={onShowMembers} />
+              {/* Members pill — shown for both topic mode and huddle mode. In topic
+                  mode it opens the members dialog (huddle membership is set at
+                  creation, so the huddle pill stays inert). */}
+              {variant !== 'dm' && members.length > 0 && (
+                <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} onClick={onShowMembers} />
+              )}
+            </div>
           )}
 
           {/* Start huddle (V2 / V3 only — driven by onStartHuddle prop). Hidden inside a huddle. */}
