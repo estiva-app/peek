@@ -51,8 +51,11 @@ import {
   imetaOf,
   imetaTag,
   KIND,
+  blockAnchorOf,
+  partsOf,
   type Imeta,
   type NostrTag,
+  type PartPointer,
   type PublishResult,
   type ResolutionAction,
   type SignedEvent,
@@ -104,6 +107,8 @@ export interface ConversationEvent extends FileComment {
   references: string[]
   /** Whom the text names urgently — its `["urgent", <pubkey>]` tags (SPEC §13.1, CON-24). Absent: nobody. */
   urgent?: string[]
+  /** The blocks of other objects it shows — its `part` tags (SPEC §13.6.1, COM-2). Absent: none. */
+  parts?: ConversationPart[]
   /**
    * A root that was deleted while replies to it stay (PER-24): a stand-in with
    * the deleted event's id, no author and no body, dated by its first reply.
@@ -140,7 +145,24 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
   files: event ? attachmentsOf(event) : [],
   references: event ? referencesOf(event, address) : [],
   urgent: event ? urgentOf(event) : [],
+  parts: event ? partsAndAnchorOf(event) : [],
 })
+
+/**
+ * The blocks a message shows (`part`, SPEC §13.6.1) and, for a comment anchored
+ * to one block of the file it is on (§13.6), that block flagged `anchor` — drawn
+ * with the same card (Miky, COM-2 kickoff). Only a `kind:1111` anchors, against
+ * its `A`; `blockAnchorOf` refuses any other kind.
+ */
+export function partsAndAnchorOf(event: Pick<SignedEvent, 'kind' | 'tags'>): ConversationPart[] {
+  const block = blockAnchorOf(event)
+  const about = event.tags.find((t) => t[0] === 'A')?.[1]
+  const anchor: ConversationPart[] = block && about ? [{ address: about, block, anchor: true }] : []
+  return [...anchor, ...partsOf(event)]
+}
+
+/** A block a message shows, or the one a comment is anchored to. */
+export type ConversationPart = PartPointer & { anchor?: true }
 
 /** The `imeta` attachments of an event, as {@link RelayAttachment}. Mirrors `convex/nostr/sync.ts`'s `attachmentsOf`. */
 export function attachmentsOf(event: { tags: NostrTag[] }): RelayAttachment[] {
@@ -396,6 +418,7 @@ async function channelConversationWith(h: string, query: QueryFn): Promise<FileC
     files: attachmentsOf(event),
     references: referencesOf(event, ''),
     urgent: urgentOf(event),
+    parts: partsAndAnchorOf(event),
   })
   const threaded = groupThreads([...messages.values()])
   const roots = threaded.roots.map(asEvent)

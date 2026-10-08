@@ -27,6 +27,8 @@ export interface ReplyData {
   nostrReferences?: string[]
   /** Whom the body names urgently — see `ConversationData.urgentMentions`. */
   urgentMentions?: string[]
+  /** The blocks of other objects it shows — see `ConversationData.parts`. */
+  parts?: { address: string; block: string; anchor?: true }[]
   /** The published event's id — what a message link names (PEE-17). Absent
    *  until the reply reaches the relay. */
   nostrEventId?: string
