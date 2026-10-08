@@ -203,7 +203,9 @@ async function hammer({ targets, seconds, everyMs, settleMs }) {
   const find = ([how, what]) =>
     how === 'link'
       ? document.querySelector(`a[href^="${what}"]`)
-      : [...document.querySelectorAll('main *, nav *, aside *')].find((e) => e.children.length === 0 && e.textContent.trim() === what)
+      : how === 'rail'
+        ? [...document.querySelectorAll('a')].find((a) => a.getAttribute('aria-label') === what || a.textContent.trim() === what)
+        : [...document.querySelectorAll('main *, nav *, aside *')].find((e) => e.children.length === 0 && e.textContent.trim() === what)
   const start = Date.now()
   const clicks = []
   const skipped = []
@@ -269,18 +271,21 @@ const steps = [
 const here = dirname(fileURLToPath(import.meta.url))
 const netFile = join(mkdtempSync(join(tmpdir(), 'probe-switch-')), 'net.json')
 const hammerSeconds = option('hammer') === undefined ? null : Number(option('hammer'))
-// Each target is on the page the one before leads to, whatever has loaded: a topic page lists A and B in its
-// tree, and Desk, People and a DM have only the nav's last-topic link (`/topic/`), so the cycle never stalls on
-// a missing link — a run that skips clicks asks less of the relay and measures nothing.
+// Each target is on the page the one before leads to, whatever has loaded, so the cycle never stalls on a
+// missing link — a run that skips clicks asks less of the relay and measures nothing. A topic page lists A and B
+// in its tree. From Desk, People or a DM the rail's Topics goes back to the last topic, or, when none resolved
+// before it was left, to the Folder list, where the QA Folder (then A) is.
 const hammerTargets = [
   ['link', A],
   ['link', B],
   ['link', '/app/desk'],
-  ['link', '/topic/'],
+  ['rail', 'Topics'],
+  ['link', `/app/folders/${QA_FOLDER}`],
   ['link', A],
   ['link', '/app/people'],
   ['exact', QA2_NAME],
-  ['link', '/topic/'],
+  ['rail', 'Topics'],
+  ['link', `/app/folders/${QA_FOLDER}`],
 ]
 const source =
   hammerSeconds === null

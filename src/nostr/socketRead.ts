@@ -34,11 +34,13 @@ export const MAX_FILTERS_PER_REQ = 10
 /**
  * Metered frames this tab sends per {@link WINDOW_MS}, of buzz's 50 per pubkey,
  * counting the live watches' (`socketFrames.ts`, ~7 per 5 s while clicking
- * around) as well as the reads. The rest is slack for network jitter against
- * buzz's fixed windows. Uncounted, a read cap of 40 ran at 46–48 with the
- * watches and the relay refused 22 at its window edges in a 60 s `--hammer`.
+ * around) as well as the reads. Uncounted, a read cap of 40 ran at 46–48 with
+ * the watches and the relay refused 22 at its window edges in a 60 s `--hammer`.
+ * The 50 are the person's, across every socket: the rest is left for Ship and
+ * other tabs, whose watches are refused silently when it runs out (Miky, OPT-2,
+ * 2026-10-08).
  */
-export const REQS_PER_WINDOW = 45
+export const REQS_PER_WINDOW = 40
 export { WINDOW_MS }
 /**
  * A read that has waited this long for a socket slot goes over HTTP instead, a

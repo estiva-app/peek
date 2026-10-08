@@ -29,8 +29,10 @@ export const WINDOW_MS = 5_000
  * one at a time in the connection's read loop, a rate-limiter round trip each,
  * so a burst is admitted over the next second or so and its tail lands in the
  * next fixed window: 46 sent in 5 s were refused that way (v5 `--hammer`).
+ * Two above the reader's cap, for watches arriving unasked; the other 8 are
+ * for Ship and other tabs on the same pubkey (`REQS_PER_WINDOW`).
  */
-export const FRAMES_PER_WINDOW = 47
+export const FRAMES_PER_WINDOW = 42
 export const SHAPED_WINDOW_MS = WINDOW_MS + 1_000
 /** And at most this many in any second, so no burst builds that lag in the first place. */
 export const FRAMES_PER_SECOND = 12
