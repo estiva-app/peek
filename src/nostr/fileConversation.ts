@@ -432,8 +432,8 @@ async function channelConversationWith(h: string, query: QueryFn): Promise<FileC
   return decorate(roots, replies, query)
 }
 
-/** What has been done to every root and reply: the third read, whichever container they came from. */
-async function decorate(roots: ConversationEvent[], replies: Record<string, ConversationEvent[]>, query: QueryFn): Promise<FileConversation> {
+/** What has been done to every root and reply: the third read, whichever container they came from — or none, for a file's mentions. */
+export async function decorate(roots: ConversationEvent[], replies: Record<string, ConversationEvent[]>, query: QueryFn): Promise<FileConversation> {
   // A deleted root's stand-in has nothing done to it that anyone can see.
   // Each target's body goes with it, so "edited" means the body changed (SPEC §6.8).
   const targets = [...roots.filter((r) => !r.deleted), ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt, body: e.body }))

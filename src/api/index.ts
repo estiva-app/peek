@@ -94,3 +94,4 @@ export {
 export { useConversationBadges, useLiveConversationBadges } from './useConversationBadges'
 export { useNewReplyThreads, useReplyOnlyThread, type ReplyStream } from './useNewReplyThreads'
 export { useTeamUnread } from './useTeamUnread'
+export { useMentionConversation, type MentionConversation } from './useMentionConversation'

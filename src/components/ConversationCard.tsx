@@ -158,6 +158,11 @@ export function ConversationCard({
 
   // Body - mutable after edit
   const [bodyState, setBodyState] = useState(body)
+  // An edit made elsewhere reaches the card as a new `body`: a copy shown
+  // somewhere else (Activity's mention row, PEE-48) kept the first text.
+  useEffect(() => {
+    setBodyState(body)
+  }, [body])
 
   // Edit mode
   const [isEditing, setIsEditing] = useState(false)

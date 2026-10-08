@@ -42,12 +42,13 @@
  * can keep the last answer rather than draw an empty list.
  */
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import type { QueryFn } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay } from './bridge'
 import { RelayReadError } from './relayRead'
-import { anchorsOf } from '@estiva-app/conversation'
-import { attachmentsOf, urgentOf, type RelayAttachment } from './fileConversation'
-import { relaySigningKeyAsViewer } from './foreign'
+import { anchorsOf, namedInBody, parentOf } from '@estiva-app/conversation'
+import { attachmentsOf, decorate, urgentOf, type ConversationEvent, type FileConversation, type RelayAttachment } from './fileConversation'
+import { relaySigningKeyAsViewer, viewerQuery } from './foreign'
 import { TOPIC_KIND } from './manifest'
 
 /** One comment in some other file's conversation, or one topic message, that names this file. */
@@ -152,4 +153,113 @@ export async function fileMentionsAsViewer(address: string, relayUrl: string, to
     ? await relaySigningKeyAsViewer(relayUrl, token)
     : null
   return fileMentionsOf(result.events, address, relayKey)
+}
+
+/*
+  ## Each mention as it is now (PEE-48)
+
+  A row in Activity is the message as it stands where it was said: its edits,
+  its reactions, its replies, whether it was resolved. None of that is on the
+  mention itself — each names the message by `e` — so it is read after the
+  mentions, for their ids, and folded exactly as a conversation folds its own
+  (`decorate`, then `project` in the view). A deleted message needs nothing
+  here: the relay drops it, and the `#a` read above no longer returns it.
+*/
+
+/** How many replies one read asks for — Buzz's clamp per filter. */
+const MENTION_REPLIES_LIMIT = 1_000
+
+/**
+ * The replies in each mention's thread, by the mention's id, oldest first.
+ *
+ * Only a mention that opens a thread has any: one that is itself a reply is
+ * drawn as a message, with no thread of its own to count — as a reply is in
+ * the thread it was said in. A reply is filed by `parentOf`, which names the
+ * thread for both kinds (SPEC §6.4): a `kind:1111` reply's `e` is its thread's
+ * top comment, and a `kind:9` reply's `root`-marked `e` is its thread.
+ */
+export function mentionRepliesOf(events: readonly SignedEvent[], threadIds: ReadonlySet<string>): Record<string, SignedEvent[]> {
+  const seen = new Set<string>()
+  const out: Record<string, SignedEvent[]> = {}
+  for (const event of events) {
+    if (seen.has(event.id) || threadIds.has(event.id)) continue
+    if (event.kind !== KIND.COMMENT && event.kind !== KIND.STREAM_MESSAGE) continue
+    const parent = parentOf(event)
+    if (!parent || !threadIds.has(parent)) continue
+    seen.add(event.id)
+    ;(out[parent] ??= []).push(event)
+  }
+  for (const list of Object.values(out)) list.sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1))
+  return out
+}
+
+/**
+ * Whether a mention still names the file once edited (PEE-48, Katerina, 8
+ * October): an edit that took the file out of the text takes the row out of
+ * Activity.
+ *
+ * Read only where it can be: when the text first named the file by
+ * `nostr:naddr…`. A mention made by pasting the file's web address names it in
+ * no way the text shows (FOL-38), so an edit to it cannot be read for the file
+ * and the row stays — never dropped on a guess.
+ */
+export function stillNames(originalBody: string, editedBody: string | undefined, address: string): boolean {
+  if (editedBody === undefined) return true
+  const file = address.toLowerCase()
+  const names = (body: string) => [...namedInBody(body)].some((named) => named.toLowerCase() === file)
+  return !names(originalBody) || names(editedBody)
+}
+
+/**
+ * The mentions as one conversation, `project`'s input: each mention a root,
+ * its thread's replies under it, and what has been done to every one of them
+ * — less the mentions an edit took the file out of.
+ *
+ * Two reads after the mentions: the replies by `#e`, then `decorate`'s. Throws
+ * {@link RelayReadError} on a refused read, so a failure keeps the rows as they
+ * were rather than drawing every message as never touched.
+ */
+export async function mentionConversationWith(mentions: readonly FileMention[], address: string, query: QueryFn): Promise<FileConversation> {
+  const asEvent = (event: SignedEvent): ConversationEvent => ({
+    id: event.id,
+    author: event.pubkey,
+    body: event.content,
+    createdAt: event.created_at,
+    kind: event.kind,
+    files: attachmentsOf(event),
+    references: [],
+    urgent: urgentOf(event),
+  })
+  const roots: ConversationEvent[] = mentions.map((m) => ({
+    id: m.id,
+    author: m.author,
+    body: m.body,
+    createdAt: m.createdAt,
+    kind: m.kind,
+    files: m.files,
+    references: m.references,
+    urgent: m.urgent,
+  }))
+  const threadIds = new Set(mentions.filter((m) => m.threadId === m.id).map((m) => m.id))
+  const events = threadIds.size
+    ? await query([{ kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE], '#e': [...threadIds], limit: MENTION_REPLIES_LIMIT }])
+    : []
+  const replies: Record<string, ConversationEvent[]> = {}
+  for (const [id, list] of Object.entries(mentionRepliesOf(events, threadIds))) replies[id] = list.map(asEvent)
+
+  const conversation = await decorate(roots, replies, query)
+  const kept = conversation.roots.filter((root) =>
+    stillNames(root.body, conversation.decorations.byId[root.id.toLowerCase()]?.edit?.body, address),
+  )
+  return { ...conversation, roots: kept }
+}
+
+/** {@link mentionConversationWith} as the viewer. */
+export function mentionConversationAsViewer(
+  mentions: readonly FileMention[],
+  address: string,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<FileConversation> {
+  return mentionConversationWith(mentions, address, viewerQuery(relayUrl, token))
 }

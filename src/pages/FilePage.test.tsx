@@ -134,7 +134,9 @@ const toasts = vi.hoisted(() => ({ shown: [] as { label: string; type?: string }
 const shortForm = vi.hoisted(() => ({ known: new Map<string, string>() }))
 /** What the page handed Peek's own view, per mount. */
 const peekView = vi.hoisted(() => ({ args: [] as Record<string, unknown>[] }))
-vi.mock('@/components/views/useFileConversationView', () => ({
+vi.mock('@/components/views/useFileConversationView', async () => ({
+  // The real fold: Activity's mention rows draw each message as it is now with it (PEE-48).
+  project: (await vi.importActual<typeof import('@/components/views/useFileConversationView')>('@/components/views/useFileConversationView')).project,
   useFileConversationView: (args: Record<string, unknown>) => {
     peekView.args.push(args)
     const container = args.container as { address: string; h: string } | null
@@ -232,10 +234,13 @@ vi.mock('@/api', async () => ({
   }),
   useFileMembers: () => ({ members: roster.members, failed: roster.members === undefined, reload: roster.reload }),
   useWorkspaceDirectory: () => roster.directory,
+  useMentionConversation: () => ({ current: mentionNow.current, viewerPubkey: ME }),
   // The Activity column names the file a mention was said on by resolving it.
   useResolvedReferences: (refs: readonly string[]) =>
     Object.fromEntries(refs.map((ref) => [ref, objects.byAddress[ref] ?? null])),
 }))
+/** What has been done to those mentions where they were said (PEE-48): nothing read, unless a test says otherwise. */
+const mentionNow = vi.hoisted(() => ({ current: null as unknown }))
 /** The comments elsewhere that name the open file (CON-11), per address asked. */
 const mentions = vi.hoisted(() => ({ byAddress: {} as Record<string, unknown[]>, asked: [] as (string | null | undefined)[] }))
 vi.mock('@/api/useFileMentions', () => ({
@@ -362,6 +367,7 @@ beforeEach(() => {
   peekView.args = []
   mentions.byAddress = {}
   mentions.asked = []
+  mentionNow.current = null
   anchor.scrollTo.mockClear()
   window.localStorage.clear()
   // The column in Folders, every Folder: these are the file page's tests. Topics is FolderTree's `describe('The two views')`.
@@ -819,7 +825,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(mentions.asked.every((a) => !a)).toBe(true)
   })
 
-  it('a mention is the third column: labelled, naming the file it was said on, and leading to its thread', () => {
+  it('a mention is the third column: labelled, naming the file it was said on, and leading to the message itself (PEE-48)', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}`)
@@ -831,7 +837,78 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(within(row as HTMLElement).getByText('The file route')).toBeInTheDocument()
     expect(within(row as HTMLElement).getByText(mention.body)).toBeInTheDocument()
     fireEvent.click(within(row as HTMLElement).getByText(mention.body))
-    expect(screen.getByTestId('url').textContent).toBe(`/topic/${ISSUE_ADDRESS}?thread=${mention.threadId}`)
+    expect(screen.getByTestId('url').textContent).toBe(`/message/${mention.id}`)
+  })
+
+  /** The mention as a read finds it now: `edit`, reactions and replies as `mentionConversationWith` folds them. */
+  const now = (over: { edit?: string; reactions?: string[]; replies?: number; kept?: boolean }) => ({
+    asked: new Set([mention.id]),
+    conversation: {
+      roots: over.kept === false ? [] : [{ ...mention, urgent: [] }],
+      replies: {
+        [mention.id]: Array.from({ length: over.replies ?? 0 }, (_, i) => ({
+          id: `${i}`.repeat(64).slice(0, 64),
+          author: CATH,
+          body: 'a reply',
+          createdAt: mention.createdAt + 60 + i,
+          kind: 1111,
+          files: [],
+          references: [],
+        })),
+      },
+      decorations: {
+        byId: {
+          [mention.id]: {
+            ...(over.edit ? { edit: { body: over.edit, edited: true, editedAt: 1_700_000_100_000 } } : {}),
+            reactions: (over.reactions ?? []).map((emoji, i) => ({ id: `r${i}`, target: mention.id, emoji, by: CATH, at: mention.createdAt + 1 })),
+            resolutions: [],
+          },
+        },
+        reactionTargetsOmitted: 0,
+        reactionEventsCut: false,
+        editEventsCut: false,
+      },
+    },
+  })
+
+  it('draws the message as it is now where it was said: its latest text, reactions and replies (PEE-48)', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    mentionNow.current = now({ edit: 'Same shape, one level down — edited.', reactions: ['👍'], replies: 2 })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
+    expect(within(row).getByText('Same shape, one level down — edited.')).toBeInTheDocument()
+    expect(within(row).queryByText(mention.body)).toBeNull()
+    expect(within(row).getByText('(edited)')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: /, 1$/ })).toBeInTheDocument()
+    expect(within(row).getByText(/2 replies/)).toBeInTheDocument()
+  })
+
+  it('leaves out a mention an edit took the file out of, and counts without it (Katerina, 8 October)', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    mentionNow.current = now({ kept: false })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const column = screen.getByTestId('thread')
+    expect(column.querySelector('[data-relation="mention"]')).toBeNull()
+    expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
+  })
+
+  it('offers nothing to act on: no menu when pointed at, no reply, and a reaction does not toggle (PEE-48)', async () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    mentionNow.current = now({ reactions: ['👍'] })
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
+    await userEvent.hover(within(row).getByText(mention.body))
+    // The reaction pill is the only button, and pressing it changes nothing.
+    const buttons = within(row).getAllByRole('button')
+    expect(buttons).toHaveLength(1)
+    const at = screen.getByTestId('url').textContent
+    await userEvent.click(buttons[0])
+    expect(within(row).getByRole('button', { name: /, 1$/ })).toBeInTheDocument()
+    // Nor does pressing it open the message: a pill is not the row.
+    expect(screen.getByTestId('url').textContent).toBe(at)
   })
 
   it('a file nobody has named keeps its two columns', () => {

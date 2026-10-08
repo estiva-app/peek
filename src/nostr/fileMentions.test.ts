@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { encodeNaddr, type SignedEvent } from '@estiva-app/protocol'
-import { fileMentionFilter, fileMentionsOf } from './fileMentions'
+import { fileMentionFilter, fileMentionsOf, mentionConversationWith, mentionRepliesOf, stillNames, type FileMention } from './fileMentions'
 
 const AUTHOR = 'cd'.repeat(32)
 const RELAY = 'ab'.repeat(32)
@@ -117,5 +117,122 @@ describe('fileMentionsOf', () => {
   it('reports one row per event', () => {
     const e = event('dup', { h: OTHER_H, A: OTHER, a: [THIS] })
     expect(fileMentionsOf([e, e], THIS)).toHaveLength(1)
+  })
+})
+
+/*
+  Each mention as it is now — PEE-48. The row draws what was done to the
+  message where it was said: its replies, edits, reactions and resolution,
+  and leaves the Activity when an edit takes the file out of the text.
+*/
+const hex = (c: string) => c.repeat(64)
+const M_ROOT = hex('1')
+const M_REPLY = hex('2')
+const M_TOPIC = hex('3')
+
+/** A relay over a fixed set of events: `kinds`, `ids` and `#e`, which is all these reads ask. */
+const relayOf = (events: SignedEvent[]) => {
+  const asked: Record<string, unknown>[] = []
+  const query = async (filters: Record<string, unknown>[]) => {
+    asked.push(...filters)
+    return events.filter((e) =>
+      filters.some((f) => {
+        if (Array.isArray(f.kinds) && !(f.kinds as number[]).includes(e.kind)) return false
+        if (Array.isArray(f.ids) && !(f.ids as string[]).includes(e.id)) return false
+        const es = f['#e'] as string[] | undefined
+        if (es && !e.tags.some((t) => t[0] === 'e' && es.includes(t[1]))) return false
+        return true
+      }),
+    )
+  }
+  return { query, asked }
+}
+
+const mentionOf = (over: Partial<FileMention> & { id: string }): FileMention => ({
+  author: AUTHOR,
+  body: `See ${THIS_NADDR}`,
+  createdAt: 1_000,
+  kind: 1111,
+  folder: OTHER_H,
+  saidIn: OTHER,
+  threadId: over.id,
+  references: [THIS],
+  urgent: [],
+  files: [],
+  ...over,
+})
+
+describe('mentionRepliesOf (PEE-48)', () => {
+  const threads = new Set([M_ROOT, M_TOPIC])
+
+  it('files a comment reply under the comment it answers, and a topic reply under its thread', () => {
+    const commentReply = event(hex('a'), { kind: 1111, A: OTHER, tags: [['e', M_ROOT]], created_at: 20 })
+    const direct = event(hex('b'), { kind: 9, tags: [['e', M_TOPIC, '', 'reply']], created_at: 30 })
+    const nested = event(hex('c'), { kind: 9, tags: [['e', M_TOPIC, '', 'root'], ['e', hex('b'), '', 'reply']], created_at: 31 })
+    const out = mentionRepliesOf([nested, commentReply, direct], threads)
+    expect(out[M_ROOT].map((e) => e.id)).toEqual([hex('a')])
+    expect(out[M_TOPIC].map((e) => e.id)).toEqual([hex('b'), hex('c')])
+  })
+
+  it('counts nothing that is not a reply: a reaction, an edit, the mention itself, a reply elsewhere', () => {
+    const reaction = event(hex('d'), { kind: 7, tags: [['e', M_ROOT]] })
+    const edit = event(hex('e'), { kind: 40003, tags: [['e', M_ROOT]] })
+    const elsewhere = event(hex('f'), { kind: 1111, tags: [['e', hex('9')]] })
+    const itself = event(M_ROOT, { kind: 1111, A: OTHER })
+    expect(mentionRepliesOf([reaction, edit, elsewhere, itself], threads)).toEqual({})
+  })
+})
+
+describe('stillNames (PEE-48, Katerina 8 October)', () => {
+  it('keeps a mention nobody edited', () => {
+    expect(stillNames(`See ${THIS_NADDR}`, undefined, THIS)).toBe(true)
+  })
+
+  it('keeps one whose edit still names the file, and drops one whose edit took it out', () => {
+    expect(stillNames(`See ${THIS_NADDR}`, `Look at ${THIS_NADDR} again`, THIS)).toBe(true)
+    expect(stillNames(`See ${THIS_NADDR}`, 'Never mind', THIS)).toBe(false)
+  })
+
+  it('never drops a mention made by a pasted link, whose text cannot be read for the file (FOL-38)', () => {
+    expect(stillNames('See https://peek.estiva.app/topic/this-file', 'Never mind', THIS)).toBe(true)
+  })
+})
+
+describe('mentionConversationWith (PEE-48)', () => {
+  const root = mentionOf({ id: M_ROOT, createdAt: 10 })
+  const asReply = mentionOf({ id: M_REPLY, threadId: hex('8'), createdAt: 11 })
+  const reply = event(hex('a'), { kind: 1111, A: OTHER, tags: [['e', M_ROOT]], created_at: 20 })
+  const reaction = event(hex('b'), { kind: 7, content: '👍', pubkey: RELAY, tags: [['e', M_ROOT]], created_at: 21 })
+  const resolved = event(hex('c'), {
+    kind: 9101,
+    content: 'Done',
+    pubkey: RELAY,
+    tags: [['e', M_ROOT], ['t', 'resolution'], ['action', 'resolved']],
+    created_at: 22,
+  })
+
+  it('reads each mention’s replies, reactions and resolution', async () => {
+    const { query } = relayOf([reply, reaction, resolved])
+    const conversation = await mentionConversationWith([root], THIS, query)
+    expect(conversation.roots.map((r) => r.id)).toEqual([M_ROOT])
+    expect(conversation.replies[M_ROOT].map((r) => r.id)).toEqual([hex('a')])
+    const d = conversation.decorations.byId[M_ROOT]
+    expect(d.reactions.map((r) => r.emoji)).toEqual(['👍'])
+    expect(d.resolutions.map((r) => [r.action, r.message])).toEqual([['resolved', 'Done']])
+  })
+
+  it('reads the latest text, and leaves out a mention an edit took the file out of', async () => {
+    const stillThere = event(hex('d'), { kind: 40003, content: `Now: ${THIS_NADDR}`, tags: [['e', M_ROOT]], created_at: 30 })
+    const takenOut = event(hex('e'), { kind: 40003, content: 'Never mind', tags: [['e', M_REPLY]], created_at: 31 })
+    const { query } = relayOf([stillThere, takenOut])
+    const conversation = await mentionConversationWith([root, asReply], THIS, query)
+    expect(conversation.roots.map((r) => r.id)).toEqual([M_ROOT])
+    expect(conversation.decorations.byId[M_ROOT].edit?.body).toBe(`Now: ${THIS_NADDR}`)
+  })
+
+  it('asks for no replies when no mention opens a thread', async () => {
+    const { query, asked } = relayOf([])
+    await mentionConversationWith([asReply], THIS, query)
+    expect(asked.some((f) => Array.isArray(f.kinds) && (f.kinds as number[]).includes(1111))).toBe(false)
   })
 })
