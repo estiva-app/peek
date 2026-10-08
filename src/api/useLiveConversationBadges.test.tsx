@@ -73,6 +73,22 @@ describe('useLiveConversationBadges', () => {
     expect(api.conversations).toHaveBeenCalledTimes(1)
   })
 
+  it('asks once more, not again and again, when that read is refused', async () => {
+    const first = await mount()
+    await waitFor(() => expect(api.conversations).toHaveBeenCalledTimes(1))
+    first.unmount()
+    api.streams = { 'folder-1': [{ id: 'm1', at: 100 }, { id: 'm2', at: 200 }] }
+    api.conversations.mockRejectedValue(new Error('rate-limited'))
+    try {
+      await mount()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(api.conversations.mock.calls.length).toBeLessThanOrEqual(3)
+    } finally {
+      api.conversations.mockReset()
+      api.conversations.mockImplementation(async () => ({}))
+    }
+  })
+
   it('asks again on a return when something newer was said while away', async () => {
     const first = await mount()
     await waitFor(() => expect(api.conversations).toHaveBeenCalledTimes(1))

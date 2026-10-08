@@ -9,6 +9,9 @@ import { streamHasUnread } from './streamUnread'
 import { useChannelStreams } from './useChannelStreams'
 import { createListingCache } from '@/platform/listingCache'
 
+/** How long a held answer is trusted without asking — the five minutes `HELD_OBJECT_FRESH_MS` holds an object. */
+const HELD_BADGES_FRESH_MS = 5 * 60_000
+
 /** `hold`'s answers, by viewer and set, with the revision each was read at. */
 const heldBadges = createListingCache<{ revision: number; conversations: Record<string, ConversationMessage[]> }, true>()
 
@@ -114,11 +117,12 @@ export function useConversationBadges(
         back to the list asks nothing. Concurrent mounts share one read.
       */
       const entry = heldBadges.peek(holdKey)
-      if (entry?.value && entry.value.revision >= revision) {
+      if (entry?.value) {
         setHeld(entry.value.conversations)
-        return
+        // Older than a resolved object is held, it is drawn but asked again: a file in no Folder never moves the revision.
+        if (entry.value.revision >= revision && Date.now() - entry.at < HELD_BADGES_FRESH_MS) return
       }
-      const settle = (): Promise<void> =>
+      const settle = (retry: boolean): Promise<void> =>
         heldBadges
           .read(holdKey, () =>
             conversations(asked).then(
@@ -130,11 +134,12 @@ export function useConversationBadges(
           .then(() => {
             const value = heldBadges.peek(holdKey)?.value
             if (cancelled || !value) return
-            // Shared a read begun before this revision: it may predate what moved it, so ask once more.
-            if (value.revision < revision) return settle()
+            // Shared a read begun before this revision: it may predate what moved it, so ask once more —
+            // once, so a refused read (the old answer kept) is not asked again and again.
+            if (value.revision < revision && retry) return settle(false)
             setHeld(value.conversations)
           })
-      void settle()
+      void settle(true)
       return () => {
         cancelled = true
       }

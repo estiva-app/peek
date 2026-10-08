@@ -278,8 +278,10 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
   }
 
   /** Returns how many requests it sent. */
-  async function run(mode: 'sync' | 'resync'): Promise<number> {
-    const channels = tracked()
+  async function run(mode: 'sync' | 'resync', onlyUnread = false): Promise<number> {
+    // A `track` reads what it added and has never been read; the rest is held and kept current by the socket,
+    // so a topic opened in a new Folder does not catch up every Folder held (OPT-4).
+    const channels = tracked().filter((channel) => !onlyUnread || !held.has(channel))
     if (channels.length === 0) return 0
     const began = seconds()
     const horizon = began - options.horizonSeconds
@@ -347,11 +349,13 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
       for (const channel of channels) {
         const count = refs.get(channel) ?? 0
         refs.set(channel, count + 1)
-        // Back before it was forgotten: still watched and held, so nothing to schedule for it.
+        // Back before it was forgotten: still watched and held, so nothing to schedule for it — unless its
+        // first read had failed or not landed, which the next tracker still needs.
         const linger = lingering.get(channel)
         if (linger !== undefined) {
           clearTimeout(linger)
           lingering.delete(channel)
+          if (!held.has(channel)) added = true
         } else if (count === 0) added = true
       }
       if (added) schedule()
@@ -483,7 +487,7 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
       }
     }
     try {
-      const requests = await run(mode)
+      const requests = await run(mode, reason === 'track')
       if (requests > 0) report({ requests, outcome: 'ok' })
     } catch (error) {
       report({ requests: null, outcome: 'failed', error })

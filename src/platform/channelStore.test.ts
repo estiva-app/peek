@@ -250,6 +250,33 @@ describe('createChannelStore', () => {
     }
   })
 
+  it('with lingerMs, still reads a lingering channel tracked again whose first read had failed', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const h = harness({ lingerMs: 60_000 })
+      h.failWith(new Error('rate-limited'))
+      const release = h.store.track([A])
+      await vi.advanceTimersByTimeAsync(0)
+      release()
+      h.failWith(null)
+      h.store.track([A])
+      await vi.advanceTimersByTimeAsync(0)
+      expect(h.store.events(A)).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reads only the channel a track added, not every channel already held', async () => {
+    const h = harness()
+    h.store.track([A, B])
+    await settle()
+    h.store.track([C])
+    await settle()
+    expect(h.posts.at(-1)!.map((filter) => filter['#h'])).toEqual([[C]])
+    expect(h.store.events(C)).toEqual([])
+  })
+
   it('with lingerMs, forgets a released channel once it has lingered that long', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
