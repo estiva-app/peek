@@ -6,7 +6,7 @@ import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Header } from '@/components/Header'
 import { NewTopicBanner } from '@/components/NewTopicBanner'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { CURRENT_USER_NAME, useStarred, useDmChannels, useDmVisibility } from '@/api'
+import { useStarred, useDmChannels, useDmVisibility } from '@/api'
 import { useFileConversationView } from './useFileConversationView'
 
 interface UseDmConversationViewArgs {
@@ -108,7 +108,6 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     title: dmName ? `DM · ${dmName}` : '',
     draftKey: dmId ? draftKeys.container(dmId) : undefined,
     empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
-    threadMembers: dmName ? [CURRENT_USER_NAME, dmName] : [],
   })
   // Opening the DM reads its top-level messages, and keeps reading what arrives
   // while it is open (PEE-44); an open thread reads its replies, inside the view.
