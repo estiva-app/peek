@@ -2,10 +2,10 @@ import { IconStar, IconStarFilled, IconDotsVertical, IconLockPlus, IconLock, Ico
 import { TopicState } from './ui/TopicState'
 import { Avatar } from './ui/Avatar'
 import { TopicMoreMenu } from './ui/TopicMoreMenu'
-import { MembersPill } from './ui/MembersPill'
 import { IconButton } from './ui/IconButton'
 import { cn } from '@/lib/utils'
-import { Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { MembersPill, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { useAvatarSrc } from '@/api'
 import { MetaText } from '@/components/ui/MetaText'
 
 interface HeaderProps {
@@ -107,6 +107,8 @@ export function Header({
   onToggleFolderPanel,
   folderPanelOpen = false,
 }: HeaderProps) {
+  const avatarSrcFor = useAvatarSrc()
+
   const copyFolderLink = () => {
     // `folder:<uuid>`, not a URL. A Folder belongs to no single app, so a link
     // pointing at Peek would misdescribe a container Peek merely shares.
@@ -179,7 +181,7 @@ export function Header({
               mode it opens the members dialog (huddle membership is set at
               creation, so the huddle pill stays inert). */}
           {variant !== 'dm' && !hideTopicMeta && members.length > 0 && (
-            <MembersPill members={members} onClick={onShowMembers} />
+            <MembersPill members={members.map((name) => ({ name, picture: avatarSrcFor(name) ?? undefined }))} onClick={onShowMembers} />
           )}
 
           {/* Start huddle (V2 / V3 only — driven by onStartHuddle prop). Hidden inside a huddle. */}
