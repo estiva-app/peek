@@ -305,7 +305,11 @@ export function useFileConversationView({
     // Your own comment always brings you down to it, as it is drawn — before the relay has answered (OPT-6).
     nearBottom.current = true
     const result = await actions.comment(text, attachments, urgent)
-    if (!refuse(result)) return false
+    if (!refuse(result)) {
+      // Nothing was drawn, or it was taken out again: where the reader actually is decides what follows next.
+      if (scrollRef.current) nearBottom.current = isNearBottom(scrollRef.current)
+      return false
+    }
     membershipAfterWrite()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
     return true

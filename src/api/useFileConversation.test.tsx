@@ -389,7 +389,7 @@ describe('useFileConversation — a channel (REM-1)', () => {
     expect(relay.composed).toBe(1)
     expect(relay.react).not.toHaveBeenCalled()
     await answer({ ok: false, reason: 'blocked' })
-    const refused = { ok: false, reason: 'The message this was about was not sent.' }
+    const refused = { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
     expect(await reply).toEqual(refused)
     expect(await reaction).toEqual(refused)
     expect(relay.composed).toBe(1)

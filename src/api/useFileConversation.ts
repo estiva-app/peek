@@ -80,7 +80,7 @@ const sending = new Map<string, Promise<WriteResult>>()
 async function afterSend(id: string): Promise<WriteResult | null> {
   const flight = sending.get(id)
   if (!flight) return null
-  return (await flight).ok ? null : { ok: false, reason: 'The message this was about was not sent.' }
+  return (await flight).ok ? null : { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
 }
 
 /**
@@ -354,9 +354,17 @@ export function useFileConversation(
       }
       const v = viewer()
       if (!v || !container || !key) return SIGNED_OUT
-      const built = await composeCommentAsViewer({ container, ...args }, v.relayUrl, v.token)
-      if (!built.ok) return built
-      const id = await eventIdOf(built.event)
+      let built: Awaited<ReturnType<typeof composeCommentAsViewer>>
+      let id: string
+      try {
+        built = await composeCommentAsViewer({ container, ...args }, v.relayUrl, v.token)
+        if (!built.ok) return built
+        id = await eventIdOf(built.event)
+      } catch (error) {
+        // Reported, never thrown: the composer puts the text back only on an answer.
+        console.warn('[nostr] building a message failed:', error)
+        return { ok: false, reason: 'The message could not be prepared. Try again.' }
+      }
       const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
       const roots = ids ? ids.split(',') : []
       const query = viewerQuery(v.relayUrl, v.token)
@@ -376,9 +384,14 @@ export function useFileConversation(
         if (!drawn) void sync()
         return result
       }
-      // Refused, or signed as something other than what was drawn: what the relay holds is found by a catch-up.
-      if (drawn) await withdrawOwnEvent(conversations, key, container, roots, id, query)
-      else confirmOwnEvent(id)
+      /*
+        Refused, or signed as something other than what was drawn: what the
+        relay holds is found by a catch-up. Withdrawn even when the draw
+        failed, which may have merged it before its fold threw.
+      */
+      await withdrawOwnEvent(conversations, key, container, roots, id, query).catch((error: unknown) =>
+        console.warn('[nostr] withdrawing a refused message failed:', error),
+      )
       if (result.ok) void sync()
       return result
     },
