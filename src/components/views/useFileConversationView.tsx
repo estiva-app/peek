@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type UIEventHandler } from 'react'
 import { Divider, EmptyState, ScrollArea } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
-import { ConversationCard } from '@/components/ConversationCard'
+import { ConversationRow, type RowHandlers } from './ConversationRow'
 import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { DateDivider } from '@/components/ui/DateDivider'
@@ -154,10 +154,10 @@ const nowSeconds = () => Math.floor(Date.now() / 1000)
  *
  * ## Live, the way a topic is (FOL-32)
  *
- * The read watches the file's Folder on the tab's one socket. A new root is
- * not in `rootIds` until the object is re-resolved, which is `onCommented`'s
- * job already — so it is handed down as what to do when the socket says
- * something was said about the file.
+ * The read watches the file's Folder on the tab's one socket, and a new root —
+ * yours as you send it (OPT-6), or one the socket delivers — is drawn from
+ * what is held, before the object lists it. `onCommented` re-resolves the
+ * object, and is handed down as what to do when the file itself changed.
  *
  * ## A channel, too (REM-1)
  *
@@ -302,13 +302,12 @@ export function useFileConversationView({
   const handleSend = async ({ text, resolution, files, urgent }: SendPayload) => {
     const attachments = outgoing(files)
     if (!attachments) return false
+    // Your own comment always brings you down to it, as it is drawn — before the relay has answered (OPT-6).
+    nearBottom.current = true
     const result = await actions.comment(text, attachments, urgent)
     if (!refuse(result)) return false
     membershipAfterWrite()
-    await onCommented?.()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
-    // Your own comment always brings you down to it.
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     return true
   }
 
@@ -326,6 +325,25 @@ export function useFileConversationView({
     if (resolution) setResolution(openRoot.id, true, resolution.message, result.id)
     return true
   }
+
+  /*
+    What a card does, as one object that never changes, so a card whose message
+    did not change is not drawn again when another one arrives (OPT-6: one new
+    message re-drew every card of a long topic, ~50–200 ms). Each call reaches
+    the handlers of the latest render.
+  */
+  const latestRow = useRef<RowHandlers | null>(null)
+  useLayoutEffect(() => {
+    latestRow.current = { setResolution, toggleReaction, editBody, editFiles, onOpenThread, remove }
+  })
+  const [rowActions] = useState<RowHandlers>(() => ({
+    setResolution: (id, resolved, message) => latestRow.current?.setResolution(id, resolved, message),
+    toggleReaction: (id, emoji) => latestRow.current?.toggleReaction(id, emoji),
+    editBody: (id, body) => latestRow.current?.editBody(id, body),
+    editFiles: (id, files) => latestRow.current?.editFiles(id, files),
+    onOpenThread: (id) => latestRow.current?.onOpenThread(id),
+    remove: (id, what) => latestRow.current?.remove(id, what),
+  }))
 
   /**
    * Were you at the live edge when new content arrived? The topic view's
@@ -486,35 +504,12 @@ export function useFileConversationView({
                 {c.id === firstNew && <Divider label="New" tone="warning" />}
                 {/* No box of its own: it names the card, so a return can find the message it left at the top. */}
                 <div data-root={c.id} className="contents">
-                <ConversationCard
-                  authorName={c.authorName}
-                  authorAvatarSrc={c.authorAvatarSrc}
-                  timestamp={c.timestamp}
-                  body={c.body}
-                  editedAt={c.editedAt}
-                  canEditAndDelete={c.canEditAndDelete}
-                  files={c.files}
-                  reactions={c.reactions}
-                  replyCount={c.replyCount}
-                  replyAuthors={c.replyAuthors}
-                  lastReplyTime={c.lastReplyTime}
+                <ConversationRow
+                  c={c}
                   hasNewReply={newReplies.has(c.id)}
-                  isResolved={c.isResolved}
-                  resolvedBy={c.resolvedBy}
-                  resolutionMessage={c.resolutionMessage}
-                  nostrReferences={c.nostrReferences}
-                  urgentMentions={c.urgentMentions}
-                  parts={c.parts}
-                  deleted={c.isDeleted}
                   isSelected={openThreadId === c.id}
-                  onResolvedChange={(resolved, _by, message) => setResolution(c.id, resolved, message)}
-                  onReactionsChange={(_next, emoji) => toggleReaction(c.id, emoji)}
-                  onBodyChange={(b) => editBody(c.id, b)}
-                  onFilesChange={(f) => editFiles(c.id, f)}
                   readOnly={readOnly}
-                  onClick={readOnly && !c.replyCount ? undefined : () => onOpenThread(c.id)}
-                  onReply={() => onOpenThread(c.id)}
-                  onDelete={() => remove(c.id, 'Comment')}
+                  actions={rowActions}
                 />
                 </div>
                 </Fragment>

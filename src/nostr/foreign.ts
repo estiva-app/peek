@@ -1288,6 +1288,55 @@ export async function creatableUnderAsViewer(
 }
 
 /**
+ * A comment or a reply on a file, built by the owner's `comment` action and
+ * not sent — so the conversation can draw it the moment it is written, and
+ * send it after (OPT-6).
+ *
+ * What {@link applyActionAsViewer} reads first, this is handed or holds: the
+ * manifest comes through the same cache the open file was resolved with, and
+ * the Folder is the one the open view already writes into, so a send asks the
+ * relay nothing before it is drawn. The read that applyActionAsViewer makes
+ * for the Folder doubles there as an access check; here the relay is that
+ * check, when it accepts or refuses the event.
+ */
+export async function buildCommentAsViewer(
+  args: {
+    naddr: string
+    /** The file's Folder — the `h` its conversation is read and written under. */
+    folder: string
+    value: string
+    replyTo?: { id: string; kind: number; author: string }
+  },
+  relayUrl: string,
+  token: StoredToken,
+  /** The composer's own tags — attachments, mentions, references — as `applyActionAsViewer`'s seam. */
+  transform: (event: UnsignedActionEvent) => UnsignedActionEvent = (event) => event,
+): Promise<{ ok: true; event: UnsignedActionEvent } | { ok: false; reason: string }> {
+  let pointer
+  try {
+    pointer = referenceToPointer(args.naddr)
+  } catch {
+    return { ok: false, reason: 'That reference could not be decoded.' }
+  }
+  const resolved = await resolveActingManifest(pointer, undefined, viewerQuery(relayUrl, token), manifests)
+  if (!resolved) return { ok: false, reason: 'No app claims this kind, so there is nothing to act on.' }
+  const built = buildActionEvents({
+    manifest: resolved.manifest,
+    kind: pointer.kind,
+    address: pointerToAddress(pointer),
+    objectAuthor: pointer.pubkey,
+    folder: args.folder,
+    actionId: 'comment',
+    value: args.value,
+    replyTo: args.replyTo,
+    pubkey: token.pubkey,
+    createdAtMs: Date.now(),
+  })
+  if (typeof built === 'string') return { ok: false, reason: built }
+  return { ok: true, event: transform(built[0]) }
+}
+
+/**
  * Perform a manifest-declared action on a foreign object.
  *
  * Returns `{ ok: false, reason }` rather than throwing: every failure here is

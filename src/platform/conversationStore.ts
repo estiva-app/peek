@@ -90,6 +90,14 @@ export interface ConversationStore<T> {
    * catch-up that found something and then failed.
    */
   settle(key: string, startedAt: number | null, value?: T): void
+  /**
+   * Counts every change to what is held for `key` — a replace, a merge that
+   * added something, a forget. A fold that began at one revision and ended at
+   * another missed what changed meanwhile, and must not be settled (OPT-6:
+   * your own message, merged while a catch-up folded, would vanish until the
+   * next one).
+   */
+  revision(key: string): number
   /** The ids of every event held for `key` — what a catch-up asks `#e` about. */
   ids(key: string): string[]
   /** Answers filters from what is held for `key`, as the relay would have from the same events. */
@@ -102,6 +110,7 @@ interface Entry<T> {
   value: T
   since: number
   events: Map<string, SignedEvent>
+  revision: number
 }
 
 const KIND_DELETION = 5
@@ -202,7 +211,7 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
     replace(key, value, events, startedAt) {
       const held = new Map<string, SignedEvent>()
       for (const event of events) held.set(event.id, event)
-      touch(key, { value, since: cursorAt(startedAt), events: held })
+      touch(key, { value, since: cursorAt(startedAt), events: held, revision: (entries.get(key)?.revision ?? 0) + 1 })
       notify(key)
     },
 
@@ -216,6 +225,7 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
         added.push(event)
       }
       if (added.length === 0) return { added, disputed: [] }
+      entry.revision += 1
       // A new deletion against what is held, and a held deletion against a new target: one that arrived before its target applies when the target does.
       const fresh = new Set(added.map((event) => event.id))
       const disputed = new Set<string>()
@@ -235,7 +245,7 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
     forget(key, ids) {
       const entry = entries.get(key)
       if (!entry) return
-      for (const id of ids) entry.events.delete(id)
+      for (const id of ids) if (entry.events.delete(id)) entry.revision += 1
     },
 
     settle(key, startedAt, value) {
@@ -245,6 +255,10 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
       if (value === undefined) return
       entry.value = value
       notify(key)
+    },
+
+    revision(key) {
+      return entries.get(key)?.revision ?? 0
     },
 
     ids(key) {

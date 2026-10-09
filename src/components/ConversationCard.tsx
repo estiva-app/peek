@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import { PEEK_EDITOR_CLASSES, peekEditExtensions } from '@/extensions/peekEditor'
 import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
@@ -185,11 +185,19 @@ export function ConversationCard({
   const editSaveFnRef = useRef<() => void>(() => {})
   const editCancelFnRef = useRef<() => void>(() => {})
   const editEmptyRef = useRef(true)
-  const editEditorRef = useRef<ReturnType<typeof useEditor>>(null)
+  const editEditorRef = useRef<Editor | null>(null)
   /** The edit box itself — what the highlight picker hangs from. */
   const editBoxRef = useRef<HTMLDivElement>(null)
 
-  const editEditor = useEditor({
+  /*
+    The edit box's editor, while the message is being edited, and null
+    otherwise (OPT-6). Made by `EditorHost` when editing starts rather than with
+    every card: a long topic built one per message, and after the page sat
+    idle the first new card paid ~140 ms rebuilding one nobody would use —
+    most of a sent message's 100 ms.
+  */
+  const [editEditor, setEditEditor] = useState<Editor | null>(null)
+  const editOptions: EditorHostOptions = {
     extensions: peekEditExtensions,
     editorProps: {
       attributes: {
@@ -284,11 +292,11 @@ export function ConversationCard({
       setEditHasUrgent(urgent)
       setEditHasHighlight(highlight)
     },
-  })
+  }
 
   editEditorRef.current = editEditor
 
-  // When entering edit mode, populate with current body text
+  // When entering edit mode, populate with current body text. Leaving it unmounts the editor.
   useEffect(() => {
     if (!editEditor) return
     if (isEditing) {
@@ -322,8 +330,6 @@ export function ConversationCard({
       setTimeout(() => {
         editEditor.commands.focus('end')
       }, 0)
-    } else {
-      editEditor.commands.clearContent()
     }
   }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -523,6 +529,7 @@ export function ConversationCard({
                   'relative min-h-[20px] transition-all',
                   (editHasUrgent || editHasHighlight) && 'border-l-4 border-border-strong pl-2'
                 )}>
+                  <EditorHost options={editOptions} onEditor={setEditEditor} />
                   <EditorContent editor={editEditor} />
                   {/* Bold / italic / underline / link over a selection. */}
                   <SelectionToolbar editor={editEditor} link />
@@ -699,4 +706,20 @@ export function ConversationCard({
 
     </>
   )
+}
+
+type EditorHostOptions = Parameters<typeof useEditor>[0]
+
+/**
+ * Holds the edit box's editor while it is on screen, and hands it to the card
+ * — before the paint, so the box never draws without it. Unmounting it
+ * destroys the editor.
+ */
+function EditorHost({ options, onEditor }: { options: EditorHostOptions; onEditor: (editor: Editor | null) => void }) {
+  const editor = useEditor(options)
+  useLayoutEffect(() => {
+    onEditor(editor)
+    return () => onEditor(null)
+  }, [editor, onEditor])
+  return null
 }
