@@ -9,7 +9,7 @@ export interface RowHandlers {
   editBody: (id: string, body: string) => void
   editFiles: (id: string, files: FileAttachment[]) => void
   onOpenThread: (id: string) => void
-  remove: (id: string, what: 'Comment' | 'Reply') => void
+  remove: (id: string) => void
 }
 
 interface ConversationRowProps {
@@ -58,7 +58,8 @@ export const ConversationRow = memo(
         readOnly={readOnly}
         onClick={readOnly && !c.replyCount ? undefined : () => actions.onOpenThread(c.id)}
         onReply={() => actions.onOpenThread(c.id)}
-        onDelete={() => actions.remove(c.id, 'Comment')}
+        onDelete={() => actions.remove(c.id)}
+        messageId={c.id}
       />
     )
   },

@@ -82,7 +82,7 @@ import { chromium } from 'playwright-core'
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]
-  [--refuse text[|text…]] [--refuse-hold ms]`
+  [--refuse text[|text…]] [--refuse-e id[|id…]] [--refuse-kind kind[|kind…]] [--refuse-hold ms]`
 
 const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
@@ -220,8 +220,19 @@ try {
     carrying the text is stored. `--refuse-hold <ms>` holds each such write that long first, for a run that
     acts while the send is still in flight. What the relay answered is in `report.refused`.
   */
-  if (options.refuse) {
-    const needles = options.refuse.split('|')
+  /*
+    A reaction or a delete has no content of the person's to mark (OPT-8), so two more matchers pick it out:
+    `--refuse-e <id>[|<id>…]`, any write with an `e` tag naming one of them — a reaction to, an edit of or a
+    delete of that message — and `--refuse-kind <kind>[|<kind>…]`. A write matching any one matcher is refused.
+  */
+  if (options.refuse || options['refuse-e'] || options['refuse-kind']) {
+    const needles = options.refuse ? options.refuse.split('|') : []
+    const targets = new Set(options['refuse-e'] ? options['refuse-e'].split('|') : [])
+    const kinds = new Set(options['refuse-kind'] ? options['refuse-kind'].split('|').map(Number) : [])
+    const matches = (event) =>
+      (typeof event.content === 'string' && needles.some((needle) => event.content.includes(needle))) ||
+      kinds.has(event.kind) ||
+      (Array.isArray(event.tags) && event.tags.some((tag) => tag[0] === 'e' && targets.has(tag[1])))
     const hold = Number(options['refuse-hold'] ?? 0)
     report.refused = []
     await context.route(
@@ -232,7 +243,7 @@ try {
         try {
           event = request.method() === 'POST' ? JSON.parse(request.postData() ?? '') : null
         } catch {}
-        if (!event?.content || !needles.some((needle) => event.content.includes(needle))) return route.continue()
+        if (!event || !matches(event)) return route.continue()
         const at = Date.now()
         if (hold) await new Promise((done) => setTimeout(done, hold))
         const response = await route.fetch({ postData: JSON.stringify({ ...event, content: `${event.content}.` }) })

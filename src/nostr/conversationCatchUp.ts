@@ -295,10 +295,11 @@ export async function applyLiveEvents(
 const unconfirmed = new Set<string>()
 
 /**
- * Your own message or reply, shown the moment it is written: merged into the
- * conversation `key` holds and folded from memory, with no read. `false` when
- * nothing is held for `key` yet — there is no list to draw it in, and the
- * caller catches up once the relay has it.
+ * Your own message, reply, reaction, edit or deletion, shown the moment it is
+ * made: merged into the conversation `key` holds and folded from memory, with
+ * no read. `false` when nothing is held for `key` yet — there is no list to
+ * draw it in — or when it is a deletion of somebody else's: the caller
+ * catches up once the relay has it.
  */
 export async function showOwnEvent(
   store: ConversationStore<FileConversation>,
@@ -310,17 +311,31 @@ export async function showOwnEvent(
 ): Promise<boolean> {
   if (store.since(key) === undefined) return false
   unconfirmed.add(event.id)
-  store.merge(key, [event])
+  /*
+    Your own deletion takes what it names out of what is held as it is merged
+    (OPT-8), so what it took is kept aside until the relay answers: a refused
+    one puts it back. One that names somebody else's — an agent's owner
+    deleting its message (CON-3) — takes nothing: the relay decides that, and
+    a catch-up after its answer finds out.
+  */
+  const named = isDeletion(event) ? event.tags.filter((tag) => tag[0] === 'e' && tag[1]).map((tag) => tag[1]) : []
+  const before = named.length ? await store.query(key)([{ ids: named, limit: named.length }]) : []
+  const { disputed } = store.merge(key, [event])
+  if (before.length) deletedByOwn.set(event.id, before)
   await settleFolded(store, key, null, container, rootIds, query)
-  return true
+  return disputed.length === 0
 }
+
+/** What your own deletions not yet answered took out of what is held, by the deletion's id. */
+const deletedByOwn = new Map<string, SignedEvent[]>()
 
 /** The relay took it: from here it is an event like any other. */
 export function confirmOwnEvent(id: string): void {
   unconfirmed.delete(id)
+  deletedByOwn.delete(id)
 }
 
-/** The relay refused it: it is taken out of what is held and the conversation folded without it. */
+/** The relay refused it: it is taken out of what is held, what it deleted is put back, and the conversation folded without it. */
 export async function withdrawOwnEvent(
   store: ConversationStore<FileConversation>,
   key: string,
@@ -330,7 +345,10 @@ export async function withdrawOwnEvent(
   query: QueryFn,
 ): Promise<void> {
   unconfirmed.delete(id)
+  const restored = deletedByOwn.get(id) ?? []
+  deletedByOwn.delete(id)
   store.forget(key, [id])
+  if (restored.length) store.merge(key, restored)
   await settleFolded(store, key, null, container, rootIds, query)
 }
 

@@ -379,3 +379,80 @@ describe('your own message, before the relay answers', () => {
     confirmOwnEvent(mine.id)
   })
 })
+
+describe('your own reaction, edit or delete, before the relay answers (OPT-8)', () => {
+  const file = { kind: 'file' as const, address: ADDRESS, h: FOLDER }
+  const channel = { kind: 'channel' as const, h: FOLDER }
+  const comment = (over: Partial<SignedEvent> = {}) =>
+    event({ kind: 1111, tags: [['A', ADDRESS], ['K', '30840'], ['a', ADDRESS], ['k', '30840'], ['h', FOLDER]], ...over })
+  const message = (over: Partial<SignedEvent> = {}) => event({ kind: 9, tags: [['h', FOLDER]], ...over })
+
+  it('a reaction is drawn with nothing asked, and refused, taken off again', async () => {
+    const first = message({ pubkey: BOB })
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const mine = event({ kind: 7, content: '👍', tags: [['e', first.id], ['p', BOB]] })
+    expect(await showOwnEvent(store, 'k', channel, [], mine, relay.query)).toBe(true)
+    expect(relay.asked).toEqual([])
+    expect(store.value('k')!.decorations.byId[first.id].reactions).toHaveLength(1)
+    await withdrawOwnEvent(store, 'k', channel, [], mine.id, relay.query)
+    expect(store.value('k')!.decorations.byId[first.id]?.reactions ?? []).toHaveLength(0)
+  })
+
+  it('an edit is drawn, and refused, the old text is back', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    const mine = event({ kind: 40003, content: 'edited', tags: [['e', first.id], ['h', FOLDER]] })
+    await showOwnEvent(store, 'k', file, [first.id], mine, relay.query)
+    expect(store.value('k')!.decorations.byId[first.id].edit?.body).toBe('edited')
+    await withdrawOwnEvent(store, 'k', file, [first.id], mine.id, relay.query)
+    expect(store.value('k')!.decorations.byId[first.id]?.edit).toBeUndefined()
+  })
+
+  it('a delete takes the message away at once, and refused, puts it back', async () => {
+    const first = message()
+    const second = message()
+    const relay = fakeRelay([first, second])
+    const store = await held(channel, [], relay)
+    const mine = event({ kind: 5, content: '', tags: [['e', first.id]] })
+    expect(await showOwnEvent(store, 'k', channel, [], mine, relay.query)).toBe(true)
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([second.id])
+    await withdrawOwnEvent(store, 'k', channel, [], mine.id, relay.query)
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id, second.id])
+    expect(store.ids('k').sort()).toEqual([first.id, second.id].sort())
+  })
+
+  it('a delete of a comment with replies draws its deleted stand-in at once, and refused, the comment', async () => {
+    const first = comment()
+    const reply = event({ kind: 1111, pubkey: BOB, tags: [['A', ADDRESS], ['K', '30840'], ['e', first.id], ['k', '1111'], ['p', ALICE], ['h', FOLDER]] })
+    const relay = fakeRelay([first, reply])
+    const store = await held(file, [first.id], relay)
+    const mine = event({ kind: 5, content: '', tags: [['e', first.id]] })
+    await showOwnEvent(store, 'k', file, [first.id], mine, relay.query)
+    const deleted = store.value('k')!.roots.find((r) => r.id === first.id)
+    expect(deleted?.deleted).toBe(true)
+    await withdrawOwnEvent(store, 'k', file, [first.id], mine.id, relay.query)
+    expect(store.value('k')!.roots.find((r) => r.id === first.id)?.deleted).toBeFalsy()
+  })
+
+  it('accepted, a delete stays: confirming forgets what it took', async () => {
+    const first = message()
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const mine = event({ kind: 5, content: '', tags: [['e', first.id]] })
+    await showOwnEvent(store, 'k', channel, [], mine, relay.query)
+    confirmOwnEvent(mine.id)
+    expect(store.value('k')!.roots).toEqual([])
+  })
+
+  it('negative control: a delete of somebody else’s message is not drawn — the relay decides it', async () => {
+    const theirs = message({ pubkey: BOB })
+    const relay = fakeRelay([theirs])
+    const store = await held(channel, [], relay)
+    const mine = event({ kind: 5, content: '', tags: [['e', theirs.id]] })
+    expect(await showOwnEvent(store, 'k', channel, [], mine, relay.query)).toBe(false)
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([theirs.id])
+    await withdrawOwnEvent(store, 'k', channel, [], mine.id, relay.query)
+  })
+})

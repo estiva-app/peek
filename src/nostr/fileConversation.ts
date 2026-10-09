@@ -636,18 +636,44 @@ export async function eventIdOf(event: UnsignedEvent): Promise<string> {
  * it before it gets here.
  */
 export async function editCommentAsViewer(
-  args: { container: ConversationContainer; targetEventId: string; body: string; files?: readonly OutgoingAttachment[] },
+  args: EditArgs,
   relayUrl: string,
   token: StoredToken,
 ): Promise<WriteResult> {
-  const unsigned = buildEdit(token.pubkey, Date.now(), {
+  return publish(composeEdit(args, token.pubkey), relayUrl, token, 'The relay refused the edit.')
+}
+
+export interface EditArgs {
+  container: ConversationContainer
+  targetEventId: string
+  body: string
+  files?: readonly OutgoingAttachment[]
+}
+
+/*
+  An edit, a deletion and a reaction, built and not sent (OPT-8), so each can
+  be drawn under the id it will have before the relay answers — as a message
+  is ({@link composeCommentAsViewer}). None of them asks the relay anything.
+*/
+
+/** The `kind:40003` {@link editCommentAsViewer} sends. */
+export function composeEdit(args: EditArgs, pubkey: string): UnsignedEvent {
+  const unsigned = buildEdit(pubkey, Date.now(), {
     channelUuid: args.container.h,
     targetEventId: args.targetEventId,
     body: args.body,
   })
   if (args.files) unsigned.tags.push(...imetaTagsFor(args.files))
-  return publish(unsigned, relayUrl, token, 'The relay refused the edit.')
+  return unsigned
 }
+
+/** The `kind:5` {@link deleteEventAsViewer} sends. */
+export const composeDeletion = (targetEventId: string, pubkey: string): UnsignedEvent =>
+  buildDeletion(pubkey, Date.now(), { targetEventId })
+
+/** The `kind:7` {@link reactAsViewer} sends. */
+export const composeReaction = (args: { targetEventId: string; emoji: string }, pubkey: string): UnsignedEvent =>
+  buildReaction(pubkey, Date.now(), args)
 
 /**
  * Ask the relay to delete an event — a comment, a reply, or a reaction.
@@ -658,7 +684,7 @@ export async function editCommentAsViewer(
  * relay would have let through.
  */
 export async function deleteEventAsViewer(targetEventId: string, relayUrl: string, token: StoredToken): Promise<WriteResult> {
-  return publish(buildDeletion(token.pubkey, Date.now(), { targetEventId }), relayUrl, token, 'The relay refused the deletion.')
+  return publish(composeDeletion(targetEventId, token.pubkey), relayUrl, token, 'The relay refused the deletion.')
 }
 
 /** React to a comment — `kind:7`. Taking it back is {@link deleteEventAsViewer} on the reaction. */
@@ -667,7 +693,7 @@ export async function reactAsViewer(
   relayUrl: string,
   token: StoredToken,
 ): Promise<WriteResult> {
-  return publish(buildReaction(token.pubkey, Date.now(), args), relayUrl, token, 'The relay refused the reaction.')
+  return publish(composeReaction(args, token.pubkey), relayUrl, token, 'The relay refused the reaction.')
 }
 
 /** Resolve or reopen a comment — `kind:9101` at the message (PEEK-128, DMS-11). */

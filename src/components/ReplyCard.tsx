@@ -22,6 +22,7 @@ import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { HighlightButton } from './ui/HighlightButton'
 import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
+import { takeRefusedEdit, useRefusedEdit } from '@/lib/refusedEdits'
 import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 import { HighlightPill, HighlightSwatch } from './ui/HighlightPill'
@@ -117,6 +118,8 @@ interface ReplyCardProps {
   onHighlightChange?: (type: HighlightType | undefined) => void
   onDelete?: () => void
   onBodyChange?: (newBody: string) => void
+  /** The message's id: an edit of it the relay refused reopens this card's edit box with the saved text (OPT-8). */
+  messageId?: string
   /** The reply's files after an edit added or removed some — PEE-16. The whole
    *  list, and only when this edit changed it. */
   onFilesChange?: (files: FileAttachment[]) => void
@@ -168,6 +171,7 @@ export function ReplyCard({
   onHighlightChange,
   onDelete,
   onBodyChange,
+  messageId,
   onFilesChange,
   onReactionsChange,
   ownsResolution = false,
@@ -198,6 +202,8 @@ export function ReplyCard({
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const [bodyState, setBodyState] = useState(body)
+  /** The text a refused edit saved, for the edit box to open with instead of the body (OPT-8). */
+  const restoredEdit = useRef<string | undefined>(undefined)
   // Sync body from prop when it changes externally
   useEffect(() => { setBodyState(body) }, [body])
   useEffect(() => { setHighlightState(highlightType) }, [highlightType])
@@ -309,7 +315,8 @@ export function ReplyCard({
     if (!editEditor) return
     if (isEditing) {
       // The text says only `nostr:npub…`; the urgent chips come back from the tags (CON-24).
-      const content = withUrgentMentions(textToTiptapContent(bodyState), urgentMentions)
+      const content = withUrgentMentions(textToTiptapContent(restoredEdit.current ?? bodyState), urgentMentions)
+      restoredEdit.current = undefined
       // If message has a highlight, prepend the tag to the first paragraph
       if (highlightState && content.content && content.content.length > 0) {
         const first = content.content[0]
@@ -340,6 +347,16 @@ export function ReplyCard({
   }, [isEditing, editEditor]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditStart = () => { editAttachments.begin(); setIsEditing(true) }
+
+  // A refused edit: the old text is back, and the edit box reopens with what was saved (OPT-8, as ConversationCard).
+  const refusedEdit = useRefusedEdit(messageId)
+  useEffect(() => {
+    if (refusedEdit === undefined || !messageId) return
+    takeRefusedEdit(messageId)
+    restoredEdit.current = refusedEdit
+    setBodyState(body)
+    if (!isEditing) handleEditStart()
+  }, [refusedEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditSave = () => {
     if (!editEditor) return
