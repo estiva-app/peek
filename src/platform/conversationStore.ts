@@ -123,28 +123,41 @@ const byNewest = (a: SignedEvent, b: SignedEvent) => b.created_at - a.created_at
 
 /** Whether `event` matches one NIP-01 filter. Tag filters match any value of that tag name. */
 export function matchesFilter(event: SignedEvent, filter: ConversationFilter): boolean {
+  return compileFilter(filter)(event)
+}
+
+/**
+ * One NIP-01 filter as a test, its value lists turned into sets once — a fold
+ * asks a hundred ids by `#e` of every held event, and a set built per event
+ * made each fold cost as much as the conversation was long (OPT-6).
+ */
+function compileFilter(filter: ConversationFilter): (event: SignedEvent) => boolean {
+  const tests: ((event: SignedEvent) => boolean)[] = []
   for (const [field, wanted] of Object.entries(filter)) {
     if (field === 'limit') continue
     if (field === 'since') {
-      if (event.created_at < (wanted as number)) return false
+      tests.push((event) => event.created_at >= (wanted as number))
     } else if (field === 'until') {
-      if (event.created_at > (wanted as number)) return false
+      tests.push((event) => event.created_at <= (wanted as number))
     } else if (field === 'ids') {
-      if (!(wanted as string[]).includes(event.id)) return false
+      const ids = new Set(wanted as string[])
+      tests.push((event) => ids.has(event.id))
     } else if (field === 'kinds') {
-      if (!(wanted as number[]).includes(event.kind)) return false
+      const kinds = new Set(wanted as number[])
+      tests.push((event) => kinds.has(event.kind))
     } else if (field === 'authors') {
-      if (!(wanted as string[]).includes(event.pubkey)) return false
+      const authors = new Set(wanted as string[])
+      tests.push((event) => authors.has(event.pubkey))
     } else if (field.startsWith('#') && field.length === 2) {
       const name = field.slice(1)
       const values = new Set(wanted as string[])
-      if (!event.tags.some((tag) => tag[0] === name && values.has(tag[1]))) return false
+      tests.push((event) => event.tags.some((tag) => tag[0] === name && values.has(tag[1])))
     } else {
       // A field this store cannot judge (`search`, …) matches nothing, rather than everything.
-      return false
+      return () => false
     }
   }
-  return true
+  return (event) => tests.every((test) => test(event))
 }
 
 export function createConversationStore<T>(options: ConversationStoreOptions): ConversationStore<T> {
@@ -273,7 +286,8 @@ export function createConversationStore<T>(options: ConversationStoreOptions): C
         const held = [...entry.events.values()]
         const answer = new Map<string, SignedEvent>()
         for (const filter of filters) {
-          const matched = held.filter((event) => matchesFilter(event, filter)).sort(byNewest)
+          const matches = compileFilter(filter)
+          const matched = held.filter(matches).sort(byNewest)
           const limit = typeof filter.limit === 'number' ? filter.limit : matched.length
           for (const event of matched.slice(0, limit)) answer.set(event.id, event)
         }
