@@ -73,22 +73,44 @@ const FILE_KINDS: readonly number[] = [
 ]
 
 type Listener = (event?: SignedEvent) => void
-const watches = new Map<
-  string,
-  { live: LiveTopics; listeners: Set<Listener>; watch: { stop(): void }; linger?: ReturnType<typeof setTimeout> }
->()
+interface Watch {
+  live: LiveTopics
+  folder: string
+  kinds: ReadonlySet<number>
+  listeners: Set<Listener>
+  watch: { stop(): void }
+  linger?: ReturnType<typeof setTimeout>
+}
+const watches = new Set<Watch>()
+/** Which watch each joined listener is on now: a wider watch of its Folder can take it over. */
+const placed = new Map<Listener, Watch>()
 
-/** Join the Folder's shared watch; the returned function leaves it. */
+const covers = (watch: Watch, kinds: readonly number[]) => kinds.every((kind) => watch.kinds.has(kind))
+
+function stop(watch: Watch): void {
+  if (watch.linger) clearTimeout(watch.linger)
+  watch.watch.stop()
+  watches.delete(watch)
+}
+
+/**
+ * Join a shared watch of the Folder that delivers at least `kinds`; the
+ * returned function leaves it. The listener hears only `kinds` (and the
+ * catch-up signal), whatever else the watch it sits on carries.
+ *
+ * A Folder has one watch where it can: a narrower one joins a wider one already
+ * open — a widget's field changes ride the open topic's own watch of its Folder —
+ * and a wider one opened later takes the narrower one's listeners
+ * over and closes it.
+ */
 function share(live: LiveTopics, folder: string, kinds: readonly number[], listener: Listener): () => void {
-  const key = `${folder}|${kinds.join(',')}`
-  let entry = watches.get(key)
-  // A watch on a client the holder has since replaced delivers nothing: start one on this client.
-  if (entry && entry.live !== live) {
-    if (entry.linger) clearTimeout(entry.linger)
-    entry.watch.stop()
-    watches.delete(key)
-    entry = undefined
+  const wanted = new Set(kinds)
+  const filtered: Listener = (event) => {
+    if (!event || wanted.has(event.kind)) listener(event)
   }
+  // A watch on a client the holder has since replaced delivers nothing: start one on this client.
+  for (const watch of [...watches]) if (watch.folder === folder && watch.live !== live) stop(watch)
+  let entry = [...watches].find((watch) => watch.folder === folder && covers(watch, kinds))
   if (!entry) {
     const listeners = new Set<Listener>()
     const watch = live.watchChannels(
@@ -98,30 +120,53 @@ function share(live: LiveTopics, folder: string, kinds: readonly number[], liste
       },
       { kinds, since: Math.floor(Date.now() / 1000) },
     )
-    entry = { live, listeners, watch }
-    watches.set(key, entry)
+    const wider: Watch = { live, folder, kinds: wanted, listeners, watch }
+    for (const narrower of [...watches]) {
+      if (narrower.folder !== folder || ![...narrower.kinds].every((kind) => wanted.has(kind))) continue
+      for (const each of narrower.listeners) {
+        listeners.add(each)
+        placed.set(each, wider)
+      }
+      stop(narrower)
+    }
+    watches.add(wider)
+    entry = wider
   }
   if (entry.linger) clearTimeout(entry.linger)
   entry.linger = undefined
-  entry.listeners.add(listener)
-  const held = entry
+  entry.listeners.add(filtered)
+  placed.set(filtered, entry)
   return () => {
-    held.listeners.delete(listener)
-    if (held.listeners.size) return
-    held.linger = setTimeout(() => {
-      held.watch.stop()
-      watches.delete(key)
-    }, LIVE_FILE_LINGER_MS)
+    const held = placed.get(filtered)
+    placed.delete(filtered)
+    if (!held) return
+    held.listeners.delete(filtered)
+    if (held.listeners.size || !watches.has(held)) return
+    held.linger = setTimeout(() => stop(held), LIVE_FILE_LINGER_MS)
+  }
+}
+
+/**
+ * Hear `kinds` in a Folder from the tab's socket, on the shared watch, outside
+ * a component: what a held object (a widget's file) needs to follow its file's
+ * field changes. A no-op without a relay, or if the socket cannot be built.
+ */
+export function joinFolderWatch(folder: string, kinds: readonly number[], listener: (event: SignedEvent) => void): () => void {
+  if (!RELAY_URL) return () => {}
+  try {
+    return share(getLiveTopics(RELAY_URL), folder, kinds, (event) => {
+      if (event) listener(event)
+    })
+  } catch (error) {
+    console.warn('[nostr] live Folder watch unavailable:', error)
+    return () => {}
   }
 }
 
 /** Every shared watch, stopped — for a test. */
 export function stopLiveFileWatches(): void {
-  for (const entry of watches.values()) {
-    if (entry.linger) clearTimeout(entry.linger)
-    entry.watch.stop()
-  }
-  watches.clear()
+  for (const watch of [...watches]) stop(watch)
+  placed.clear()
 }
 
 export function useLiveFile(

@@ -44,7 +44,7 @@ const SHIP_ISSUE = {
 const dryRun = process.argv.includes('--dry-run')
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function qaToken(n: 1 | 2): Promise<StoredToken> {
+export async function qaToken(n: 1 | 2): Promise<StoredToken> {
   const envFile = join(homedir(), '.estiva-qa.env')
   if (!process.env[`QA${n}_EMAIL`] && existsSync(envFile)) process.loadEnvFile(envFile)
   const login = await fetch(`${ID_ORIGIN}/auth/test-login`, {

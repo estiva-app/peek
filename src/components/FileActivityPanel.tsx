@@ -5,6 +5,8 @@ import type { FileMention } from '@/nostr/fileMentions'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { project } from '@/components/views/useFileConversationView'
 
+const LIVE = { live: true }
+
 /**
  * **Activity on a file's page: the comments elsewhere that name it** — CON-11.
  *
@@ -38,9 +40,10 @@ export function FileActivityPanel({ address, mentions }: { address?: string; men
     resolve per distinct file, not per mention. `undefined` while the relay is
     still answering, `null` for a file the viewer cannot read; the row is drawn
     either way, with the chip and no name, rather than held back for a label.
+    Followed while shown, so a rename in Ship reaches the row.
   */
   const saidIn = useMemo(() => [...new Set(mentions.map((m) => m.saidIn))], [mentions])
-  const objects = useResolvedReferences(saidIn)
+  const objects = useResolvedReferences(saidIn, LIVE)
   const labelFor = useMemo(() => {
     const labels = new Map<string, string>()
     for (const address of saidIn) {

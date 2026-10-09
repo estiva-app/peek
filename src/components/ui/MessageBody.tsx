@@ -86,6 +86,8 @@ function renderTokens(text: string): ReactNode {
 /** At most this many blocks are drawn live in one message (SPEC §13.6.1); the rest stay links. */
 const MAX_PARTS_PER_MESSAGE = 6
 
+const FOLLOW = { live: true }
+
 /**
  * Whether a pasted app link names this address: its path ends in the address's
  * `d` (§7.2 puts the identity last, `…/<slug>-<d>`), and that `d` is long enough
@@ -123,7 +125,7 @@ function dedupeReferences(refs: string[]): string[] {
  * The text of a message or reply, formatted, with its mentions and links, and a
  * card below for each item from another app it mentions.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`. */ parts?: readonly { address: string; block: string; anchor?: true }[] }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, follow = true }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`. */ parts?: readonly { address: string; block: string; anchor?: true }[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
@@ -187,6 +189,8 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   */
   const fetched = useResolvedReferences(
     inline.filter((ref) => !/^nostr:npub1/i.test(ref) && !supplied(ref)),
+    // A chip draws its file's title and status, so it follows them while shown, as a widget does.
+    follow ? FOLLOW : undefined,
   )
   const resolved: Record<string, ForeignObject | null> = { ...fetched }
   for (const ref of inline) {

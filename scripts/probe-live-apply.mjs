@@ -16,6 +16,13 @@
  * was not drawn within a second of its delivery.
  *
  * Each run adds one message to A and one to B. QA-2's sign-in takes ~10 s per leg.
+ *
+ *   node scripts/probe-live-apply.mjs --widgets
+ *
+ * Instead, whether a widget follows its file: QA-2 posts two fixture Ship issues in A as widgets — one in another
+ * Folder, one in A's own — then in Ship renames each, moves it to Done, names it back and moves it to Todo. Each
+ * change must show in QA-1's widget within 5 s of its `created_at`, with no read of A's conversation after it.
+ * Adds one message to A and eight changes to the fixtures, which it leaves as it found them. ~6 min.
  */
 import { execFile } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -24,10 +31,12 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { encodeNaddr } from '@estiva-app/protocol'
 
 const QA_FOLDER = 'a78e60b1-a41f-48c9-bcb0-6ceacdee8c69'
 /** Switch probe A's `d`: what a read of A's conversation names (`#A`, `#a`, the file itself). */
 const A_D = '109c1d82-c8a2-4ebd-93d9-b37b7d7df6ff'
+const A_ADDRESS = `30840:c562b90f36802f52e11bc6a3f2e7d9e59e86c76de212fe457dbc89bc273a9a25:${A_D}`
 const A = '/topic/switch-probe-a-'
 const B = '/topic/switch-probe-b-'
 
@@ -38,10 +47,27 @@ const option = (name, fallback) => {
 }
 const base = option('base', 'https://peek.estiva.app')
 const jsonOut = option('json')
-const marker = `opt5-${Date.now().toString(36)}`
+const widgets = args.includes('--widgets')
+const marker = `${widgets ? 'live' : 'opt5'}-${Date.now().toString(36)}`
+
+/*
+  `--widgets`: the fixture issues QA-2 edits in Ship. One in another Folder (Steer) — the case the topic's own watch
+  never hears — and one in A's own Folder, whose change that watch delivers for another file. Kept; do not delete.
+*/
+const FIXTURE_OWNER = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
+const fixtures = widgets
+  ? [
+      { name: 'another Folder', d: '3d10db4d-e1e0-4d25-8ac5-1e3f46489e00', title: 'Live widget probe (other Folder)' },
+      { name: 'A’s own Folder', d: 'b389d20f-b741-4ba8-a28f-97cac351c4c9', title: 'Live widget probe' },
+    ].map((f) => ({
+      ...f,
+      address: `30851:${FIXTURE_OWNER}:${f.d}`,
+      naddr: encodeNaddr({ kind: 30851, pubkey: FIXTURE_OWNER, identifier: f.d, relays: [] }),
+    }))
+  : null
 
 /** Runs in QA-1's page. */
-async function run({ A, B, marker, quietMs, settleMs }) {
+async function run({ A, B, marker, quietMs, settleMs, fixtures }) {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   const href = (prefix) => document.querySelector(`a[href^="${prefix}"]`)?.getAttribute('href')
   const paths = { A: href(A), B: href(B) }
@@ -53,10 +79,11 @@ async function run({ A, B, marker, quietMs, settleMs }) {
     await sleep(100)
   }
   await sleep(settleMs)
-  const post = (where, text, was, react) =>
+  // `check`: what the composer should read back, when `text` is HTML (paragraphs) rather than the words themselves.
+  const post = (where, text, was, react, check) =>
     window
       .__probeHook(
-        `?path=${encodeURIComponent(paths[where])}&text=${encodeURIComponent(text)}${was ? `&was=${encodeURIComponent(was)}` : ''}${react ? `&react=${encodeURIComponent(react)}` : ''}`,
+        `?path=${encodeURIComponent(paths[where])}&text=${encodeURIComponent(text)}${was ? `&was=${encodeURIComponent(was)}` : ''}${react ? `&react=${encodeURIComponent(react)}` : ''}${check ? `&check=${encodeURIComponent(check)}` : ''}`,
       )
       .catch((e) => `hook failed: ${e.message}`)
   /** Whether the message showing `text` carries a reaction chip ("Makes sense, 1"). */
@@ -74,6 +101,68 @@ async function run({ A, B, marker, quietMs, settleMs }) {
       }
       return null
     })()
+  }
+
+  if (fixtures) return { paths, ...(await followWidgets()) }
+
+  /*
+    A widget follows its file (the live-widget issue): QA-2 posts both fixture issues in A as widgets, then edits
+    each in Ship's UI — rename, Done, name back, Todo — while QA-1's widget is watched for the change.
+  */
+  async function followWidgets() {
+    const card = (text) => [...document.querySelectorAll('div.relative.rounded-lg')].filter((c) => c.innerText.includes(text)).at(-1)
+    // The widget: the reference alone on its line, drawn below the text. The chip: the reference inside a sentence.
+    const views = (fixture) => [
+      card(`${marker} widgets`)?.querySelector(`[data-foreign-object="${fixture.address}"]`),
+      card(`${marker} chips`)?.querySelector(`[data-object="${fixture.address}"]`),
+    ]
+    const lines = (view) => (view?.innerText ?? '').split('\n').map((line) => line.trim())
+    const showing = (fixture, line) => views(fixture).every((view) => lines(view).includes(line))
+    const until = async (predicate, ms) => {
+      const from = Date.now()
+      while (Date.now() - from < ms) {
+        if (predicate()) return Date.now()
+        await sleep(20)
+      }
+      return null
+    }
+    const references = fixtures.map((f) => `nostr:${f.naddr}`)
+    const posted = { from: Date.now() }
+    posted.answer = [
+      // Raw, past the composer, which makes a reference a chip even on a line of its own.
+      await window
+        .__probeHook(`?raw=1&text=${encodeURIComponent([`${marker} widgets`, ...references].join('\n\n'))}`)
+        .catch((e) => `hook failed: ${e.message}`),
+      await post('A', `${marker} chips ${references.join(' and ')} in a sentence`),
+    ].join(', ')
+    posted.seenAt = await until(() => fixtures.every((f) => showing(f, f.title)), 60000)
+    await sleep(quietMs)
+    posted.to = Date.now()
+    if (!posted.seenAt) {
+      return { posted, error: `${posted.answer}; never drew: ${fixtures.map((f) => views(f).map((v) => (v ? lines(v).slice(0, 3).join(' / ') : 'none')).join(' ; ')).join(' | ')}` }
+    }
+
+    const changes = []
+    for (const fixture of fixtures) {
+      const renamed = `${fixture.title} ${marker}`
+      for (const [what, value, shows] of [
+        ['title', renamed, () => showing(fixture, renamed)],
+        ['status', 'Done', () => showing(fixture, 'Done')],
+        ['title', fixture.title, () => showing(fixture, fixture.title)],
+        ['status', 'Todo', () => showing(fixture, 'Todo')],
+      ]) {
+        const leg = { fixture: fixture.name, d: fixture.d, what, value, from: Date.now(), before: views(fixture).map((v) => lines(v).slice(0, 3).join(' / ')) }
+        const shown = until(shows, 60000)
+        leg.answer = await window
+          .__probeHook(`?ship=${fixture.d}&what=${what}&value=${encodeURIComponent(value)}`)
+          .catch((e) => `hook failed: ${e.message}`)
+        leg.seenAt = await shown
+        await sleep(quietMs)
+        leg.to = Date.now()
+        changes.push(leg)
+      }
+    }
+    return { posted, changes }
   }
 
   const other = { from: Date.now(), text: `${marker} in B` }
@@ -112,6 +201,25 @@ const runNode = promisify(execFile)
 const here = dirname(fileURLToPath(import.meta.url))
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
+  if (url.searchParams.get('raw')) {
+    let answer
+    try {
+      const { stdout } = await runNode(
+        process.execPath,
+        [join(here, 'run-in-vite.mjs'), 'scripts/post-as-qa.ts', '--as', '2', '--topic', A_ADDRESS, '--body', url.searchParams.get('text')],
+        { encoding: 'utf8', cwd: join(here, '..') },
+      )
+      answer = /^[0-9a-f]{64}$/m.test(stdout) ? 'posted' : `not posted: ${stdout.slice(0, 300)}`
+    } catch (error) {
+      answer = `post-as-qa failed: ${String(error.stderr || error.message).slice(0, 600)}`
+    }
+    response.writeHead(200).end(answer)
+    return
+  }
+  if (url.searchParams.get('ship')) {
+    response.writeHead(200).end(await editInShip(url.searchParams.get('ship'), url.searchParams.get('what'), url.searchParams.get('value')))
+    return
+  }
   const text = url.searchParams.get('text')
   const was = url.searchParams.get('was')
   const react = url.searchParams.get('react')
@@ -170,7 +278,7 @@ const server = createServer(async (request, response) => {
       { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
     )
     const typed = JSON.parse(stdout).steps?.find((s) => 'eval' in s)?.result
-    answer = typeof typed === 'string' && typed.includes(text) ? (react ? 'reacted' : was ? 'edited' : 'posted') : `not done: ${String(typed).slice(0, 200)}`
+    answer = typeof typed === 'string' && typed.includes(url.searchParams.get('check') ?? text) ?(react ? 'reacted' : was ? 'edited' : 'posted') : `not done: ${String(typed).slice(0, 200)}`
   } catch (error) {
     let failedStep
     try {
@@ -183,18 +291,74 @@ const server = createServer(async (request, response) => {
   }
   response.writeHead(200).end(answer)
 })
+/** QA-2 renames a fixture issue, or moves it, on its page in Ship — the title box, or the Status picker. */
+async function editInShip(d, what, value) {
+  const v = JSON.stringify(value)
+  const edit =
+    what === 'title'
+      ? `(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+          const el = document.querySelectorAll('main [contenteditable=true]')[0]
+          if (!el) return 'no title box'
+          el.focus()
+          document.execCommand('selectAll')
+          document.execCommand('insertText', false, ${v})
+          await sleep(300)
+          el.blur()
+          await sleep(3000)
+          return el.innerText
+        })()`
+      : `(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+          const button = document.querySelector('main button[aria-label=Status]')
+          if (!button) return 'no Status'
+          button.click()
+          await sleep(700)
+          const option = [...document.querySelectorAll('[role=option]')].find((o) => o.textContent.replace('✔️', '').trim() === ${v})
+          if (!option) return 'no option ' + ${v}
+          option.click()
+          await sleep(3000)
+          return button.textContent.replace('▼', '').trim()
+        })()`
+  try {
+    const { stdout } = await runNode(
+      process.execPath,
+      [join(here, 'probe.mjs'), '--as', 'qa2', '--base', 'https://ship.estiva.app', '--url', `/issue/${d}`, '--timeout', '60000',
+        '--until', "document.querySelectorAll('main [contenteditable=true]').length > 0", '--wait', '1500', '--eval', edit,
+        /*
+          Read back from a fresh load: the title box shows what was typed whether or not Ship wrote it, and once (9 Oct)
+          it did not — a change that never reached the relay is QA-2's failure, not the widget's.
+        */
+        '--eval', 'setTimeout(() => location.reload(), 50)', '--wait', '1000',
+        '--until', "document.querySelectorAll('main [contenteditable=true]').length > 0", '--wait', '4000',
+        '--eval', what === 'title'
+          ? "document.querySelectorAll('main [contenteditable=true]')[0].innerText"
+          : "document.querySelector('main button[aria-label=Status]').textContent.replace('▼', '').trim()"],
+      // Production Ship, whatever build of Peek QA-1 is running (`PROBE_SERVE` would serve Peek at Ship's origin).
+      { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PROBE_SERVE: '' } },
+    )
+    const results = JSON.parse(stdout).steps?.filter((s) => 'eval' in s).map((s) => s.result) ?? []
+    const [typed, , stored] = results
+    if (typed !== value) return `not done: ${String(typed).slice(0, 200)}`
+    return stored === value ? 'edited' : `typed, but Ship has "${String(stored).slice(0, 120)}" after a reload`
+  } catch (error) {
+    return `QA-2's Ship probe failed: ${String(error.stdout || error.message).slice(0, 600)}`
+  }
+}
+
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const hook = `http://127.0.0.1:${server.address().port}/post`
 
 const netFile = join(mkdtempSync(join(tmpdir(), 'probe-live-apply-')), 'net.json')
-const source = `(${run.toString()})(${JSON.stringify({ A, B, marker, quietMs: Number(option('quiet', 6000)), settleMs: Number(option('settle', 10000)) })})`
+const source = `(${run.toString()})(${JSON.stringify({ A, B, marker, quietMs: Number(option('quiet', 6000)), settleMs: Number(option('settle', 10000)), fixtures })})`
+const wsMatch = [marker, ...(fixtures ?? []).map((f) => f.d)].join('|')
 let report
 try {
   const { stdout } = await runNode(
     process.execPath,
-    [join(here, 'probe.mjs'), '--as', 'qa1', '--base', base, '--url', `/app/folders/${QA_FOLDER}`, '--timeout', '300000',
+    [join(here, 'probe.mjs'), '--as', 'qa1', '--base', base, '--url', `/app/folders/${QA_FOLDER}`, '--timeout', widgets ? '600000' : '300000',
       '--net', netFile, '--until', `document.querySelector('a[href^="${A}"]')`, '--eval', source],
-    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PROBE_HOOK: hook, PROBE_WS_MATCH: marker } },
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PROBE_HOOK: hook, PROBE_WS_MATCH: wsMatch } },
   )
   report = JSON.parse(stdout)
 } catch (error) {
@@ -214,6 +378,62 @@ const what = (entry) => {
   return `${entry.kind} ${entry.body.slice(2, entry.body.indexOf('"', 2))}`
 }
 let failed = false
+/*
+  A read of A's conversation, or of a list's badges with A in it: asked by `#A`, or opening with the catch-up's
+  first filter (Folder `#h`, edit kinds). Those that run on a clock whatever is written — the page's 30 s object and
+  mentions tick, the open conversation's minute catch-up (OPT-5's decision) — land anywhere in a leg, so what fails
+  the run is one in the 3 s after the delivery: a read the write caused.
+*/
+const conversationOfA =new RegExp(`"#A":\\["[^"]*${A_D}|^\\["REQ","[^"]+",\\{"kinds":\\[9,40003`)
+const isRead = (e) => (e.kind === 'ws-out' && /^\["REQ"/.test(e.body)) || /\/query$/.test(e.url ?? '')
+
+if (widgets) {
+  /*
+    Each change passes when QA-1's widget shows it within 5 s of the change's `created_at` (the done-when), and
+    nothing in the 3 s after QA-1's socket delivered it read A's conversation. The control is the delivery itself.
+  */
+  const { posted, changes = [] } = result
+  // A Folder watched for field changes alone: a widget's file in a Folder the topic does not watch (the cost of this).
+  // Once per subscription: a reconnect sends each REQ again.
+  const fieldWatches = [
+    ...new Map(
+      net
+        .filter((e) => e.kind === 'ws-out' && /^\["REQ","[^"]+",\{"kinds":\[1851\],"#h"/.test(e.body))
+        .map((e) => [e.body.split('"')[3], e]),
+    ).values(),
+  ]
+  /*
+    The page's 30 s object tick and the minute catch-up read A whatever is written, and can land in the 3 s after a
+    delivery (9 Oct, run 1). A read the same shape as one 30 or 60 s before it (±1.5 s) is one of those, not caused.
+  */
+  const allReadsA = net.filter(isRead).filter((e) => conversationOfA.test(e.body ?? ''))
+  const shape = (e) => e.body.replace(/^\["REQ","[^"]+",/, '').replace(/"since":\d+/g, '').slice(0, 80)
+  const onClock = (e) =>
+    allReadsA.some((p) => p.at < e.at && shape(p) === shape(e) && [30000, 60000].some((gap) => Math.abs(e.at - p.at - gap) < 1500))
+  console.log(`\nQA-2 posts both fixtures in A, as widgets and as chips: ${posted.answer}; drawn ${posted.seenAt ? `${posted.seenAt - posted.from} ms after the posts began` : 'NEVER'}`)
+  console.log(`  Folders QA-1 watched for field changes alone, in the whole run: ${fieldWatches.length}${fieldWatches.map((e) => `\n    ${e.body.slice(0, 160)}`).join('')}`)
+  if (result.error) {
+    console.error(result.error)
+    failed = true
+  }
+  for (const leg of changes) {
+    const entries = net.filter((e) => e.at >= leg.from && e.at <= leg.to)
+    const delivered = entries.find((e) => e.kind === 'ws-event' && e.body.includes(leg.d) && e.body.includes('"kind":1851'))
+    const readsA = entries.filter(isRead).filter((e) => conversationOfA.test(e.body ?? '') && !onClock(e))
+    const caused = delivered ? readsA.filter((e) => e.at >= delivered.at - 200 && e.at <= delivered.at + 3000) : readsA
+    const createdAt = Number(delivered?.body.match(/"created_at":(\d+)/)?.[1])
+    const sinceWritten = leg.seenAt && createdAt ? leg.seenAt - createdAt * 1000 : null
+    const reads = entries.filter((e) => e.kind === 'http' && /\/query$/.test(e.url)).length
+    console.log(`\n${leg.fixture}: QA-2 sets ${leg.what} to "${leg.value}" in Ship: ${leg.answer}`)
+    console.log(`  delivered on QA-1's socket: ${delivered ? `${delivered.at - leg.from} ms after QA-2 began` : 'NO'}`)
+    console.log(`  shown in QA-1's widget: ${leg.seenAt ? `${sinceWritten ?? '?'} ms after created_at` : `NEVER (widget: ${leg.before.join(' / ')})`}`)
+    console.log(`  QA-1 /query in the leg: ${reads}; reads of A's conversation in the 3 s after delivery: ${caused.length}`)
+    if (leg.answer !== 'edited' || !delivered || !leg.seenAt || sinceWritten === null || sinceWritten > 5000 || caused.length) failed = true
+  }
+  if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ result, net }, null, 2))
+  process.exit(failed ? 1 : 0)
+}
+
 for (const [name, leg] of [
   ['QA-2 posts in B (another topic, same Folder)', result.other],
   ['QA-2 posts in A (the open topic)', result.here],
@@ -222,14 +442,7 @@ for (const [name, leg] of [
   const entries = net.filter((e) => e.at >= leg.from && e.at <= leg.to)
   const counts = {}
   for (const e of entries) counts[what(e)] = (counts[what(e)] ?? 0) + 1
-  /*
-    A read of A's conversation, or of a list's badges with A in it: asked by `#A`, or opening with the catch-up's
-    first filter (Folder `#h`, edit kinds). Those that run on a clock whatever is written — the page's 30 s object and
-    mentions tick, the open conversation's minute catch-up (OPT-5's decision) — land anywhere in a leg, so what fails
-    the run is one in the 3 s after the delivery: a read the write caused.
-  */
-  const conversationOfA = new RegExp(`"#A":\\["[^"]*${A_D}|^\\["REQ","[^"]+",\\{"kinds":\\[9,40003`)
-  const readsA = entries.filter((e) => (e.kind === 'ws-out' && /^\["REQ"/.test(e.body)) || /\/query$/.test(e.url ?? '')).filter((e) => conversationOfA.test(e.body ?? ''))
+  const readsA = entries.filter(isRead).filter((e) => conversationOfA.test(e.body ?? ''))
   const delivered = entries.find((e) => e.kind === 'ws-event' && e.body.includes(leg.text))
   const caused = delivered ? readsA.filter((e) => e.at >= delivered.at - 200 && e.at <= delivered.at + 3000) : readsA
   console.log(`\n${name}: ${leg.answer}`)

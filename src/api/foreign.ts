@@ -60,6 +60,7 @@ import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
+import { joinFolderWatch } from '@/nostr/useLiveFile'
 import type {
   ArchiveImpact,
   ArchiveReadOptions,
@@ -122,11 +123,102 @@ export const HELD_OBJECT_FRESH_MS = 5 * 60_000
 /** Every widget's object this tab resolved, by viewer and reference. */
 const heldObjects = createListingCache<ForeignObject | null, true>({ freshMs: HELD_OBJECT_FRESH_MS })
 
+type HeldLoad = () => Promise<ListingLoad<ForeignObject | null, true>>
+
+/** A `kind:1851`: a change to one of a file's fields, its title and status among them (SPEC §6.7). */
+const KIND_FIELD_CHANGE = 1851
+
+/** Changes that land together — a rename, then a move — are asked about once. */
+const FOLLOW_SETTLE_MS = 250
+
+/**
+ * At most one read of a file per this, however many changes name it: anyone who
+ * may write in an open Folder can publish field changes, and each one would
+ * otherwise cost every viewer of the file a read.
+ */
+const FOLLOW_MIN_GAP_MS = 2_000
+
+/** The held objects something on screen draws, each following its file's field changes, by key and Folder. */
+const following = new Map<string, { count: number; leave: () => void }>()
+
+/**
+ * A held object's key: the viewer and the reference, spelt one way — a widget
+ * has `naddr1…` and a chip `nostr:naddr1…`, and the same file drawn both ways
+ * is one object, asked for once.
+ */
+const heldKey = (pubkey: string, reference: string) => `${pubkey} ${reference.replace(/^nostr:/i, '')}`
+
+/**
+ * Keep a held object in step with its file while something draws it.
+ *
+ * The hold (OPT-3) made a widget draw at once on a return, and made it keep
+ * what it first read: a title or status changed in Ship stayed old in the
+ * open topic for up to {@link HELD_OBJECT_FRESH_MS}. The file's own Folder
+ * says when it changes — a `kind:1851` naming it by `a` — and that Folder is
+ * often not the topic's, so the topic's own watch never hears it. So each
+ * object drawn joins the shared watch of its file's Folder for field changes
+ * (on the topic's own watch, when it is the same Folder) and asks for that one
+ * object again when its file changes. The conversation it sits in is not read.
+ *
+ * A file this viewer cannot read, or a thing with no address, follows nothing.
+ * Without a socket nothing is heard, and the hold's age refreshes it as before.
+ */
+function followHeld(key: string, folder: string | undefined, address: string | undefined, load: HeldLoad): () => void {
+  if (!folder || !address) return () => {}
+  // By Folder and address too: a file moved to another Folder is followed there, whoever else still follows the old one.
+  const id = `${key}\u0001${folder}\u0001${address}`
+  const held = following.get(id)
+  if (held) {
+    held.count += 1
+  } else {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let lastAsked = -Infinity
+    const leave = joinFolderWatch(folder, [KIND_FIELD_CHANGE], (event) => {
+      if (timer || !event.tags.some((tag) => tag[0] === 'a' && tag[1] === address)) return
+      timer = setTimeout(
+        () => {
+          timer = undefined
+          lastAsked = Date.now()
+          // A read already in flight may have asked before the change: ask after it.
+          void Promise.resolve(heldObjects.peek(key)?.inflight).then(() => heldObjects.read(key, load))
+        },
+        Math.max(FOLLOW_SETTLE_MS, lastAsked + FOLLOW_MIN_GAP_MS - Date.now()),
+      )
+    })
+    following.set(id, {
+      count: 1,
+      leave: () => {
+        clearTimeout(timer)
+        leave()
+      },
+    })
+  }
+  return () => {
+    const entry = following.get(id)
+    if (!entry || --entry.count > 0) return
+    following.delete(id)
+    entry.leave()
+  }
+}
+
+/** One reference's object, resolved as the viewer — the held objects' load. */
+function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>): HeldLoad {
+  return async () => {
+    const v = viewer()
+    if (!v) return { ok: true, value: null }
+    try {
+      return { ok: true, value: await resolveObjectAsViewer(reference, v.relayUrl, v.token) }
+    } catch {
+      return { ok: false, failure: true }
+    }
+  }
+}
+
 /**
  * One reference's object for a message's widget, held for the tab: drawn at
  * once when it was resolved before, asked again only once it is older than
- * {@link HELD_OBJECT_FRESH_MS}, and `reload` after an action. `null` asks for
- * nothing and answers null.
+ * {@link HELD_OBJECT_FRESH_MS} or when its file changes while it is drawn, and
+ * `reload` after an action. `null` asks for nothing and answers null.
  */
 export function useHeldObject(reference: string | null): {
   object: ForeignObject | null | 'loading'
@@ -134,22 +226,21 @@ export function useHeldObject(reference: string | null): {
 } {
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey
-  const key = reference && pubkey ? `${pubkey} ${reference}` : null
+  const key = reference && pubkey ? heldKey(pubkey, reference) : null
   const entry = useListing(heldObjects, key)
 
-  const load = useCallback(async (): Promise<ListingLoad<ForeignObject | null, true>> => {
-    const v = viewer()
-    if (!v || !reference) return { ok: true, value: null }
-    try {
-      return { ok: true, value: await resolveObjectAsViewer(reference, v.relayUrl, v.token) }
-    } catch {
-      return { ok: false, failure: true }
-    }
-  }, [reference, viewer])
+  const load = useCallback<HeldLoad>(
+    () => (reference ? heldLoad(reference, viewer)() : Promise.resolve({ ok: true, value: null })),
+    [reference, viewer],
+  )
 
   useEffect(() => {
     if (key) void heldObjects.revalidate(key, load)
   }, [key, load])
+
+  const folder = entry?.value && !entry.value.unreachable ? entry.value.folder : undefined
+  const address = entry?.value?.address
+  useEffect(() => (key ? followHeld(key, folder, address, load) : undefined), [key, folder, address, load])
 
   const reload = useCallback(async () => {
     if (key) await heldObjects.read(key, load)
@@ -557,7 +648,14 @@ export function useForeignObjects() {
  */
 export function useResolvedReferences(
   references: readonly string[],
+  /**
+   * Follow each file's field changes while drawn, as a widget does: for what
+   * an open conversation draws (a message's chips, the Activity's titles), not
+   * for a listing, where it would be a watch for every Folder listed.
+   */
+  options?: { live?: boolean },
 ): Record<string, ForeignObject | null> {
+  const live = options?.live ?? false
   const { resolveObjects } = useForeignObjects()
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey ?? ''
@@ -576,7 +674,7 @@ export function useResolvedReferences(
     if (!hasRelay) return
     const refs = key ? key.split('\u0000') : []
     const ask = refs.filter((ref) => {
-      const held = heldObjects.peek(`${pubkey} ${ref}`)
+      const held = heldObjects.peek(heldKey(pubkey, ref))
       return held?.value === undefined || Date.now() - held.at >= HELD_OBJECT_FRESH_MS
     })
     if (!ask.length) return
@@ -588,7 +686,7 @@ export function useResolvedReferences(
       .then((objects) => {
         if (cancelled) return
         for (const [ref, value] of Object.entries(objects)) {
-          if (value && pubkey) void heldObjects.read(`${pubkey} ${ref}`, async () => ({ ok: true, value }))
+          if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref), async () => ({ ok: true, value }))
         }
         setObjects(objects)
       })
@@ -597,15 +695,46 @@ export function useResolvedReferences(
     }
   }, [key, resolveObjects, pubkey])
 
-  // A held object fills what this hook has not answered, or answered with nothing; one object per change.
+  /*
+    A held object is asked again when its file changes (`followHeld`), so it is
+    the newer answer: drawn over this hook's own, and a change to it draws again.
+  */
+  const [heldChanges, setHeldChanges] = useState(0)
+  useEffect(() => {
+    // Only what follows: a listing draws what it read, and a held change elsewhere is not a reason to draw it again.
+    if (!live || !hasRelay || !pubkey || !key) return
+    const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref), () => setHeldChanges((n) => n + 1)))
+    return () => leave.forEach((each) => each())
+  }, [live, key, pubkey])
+
   const merged = useMemo(() => {
+    void heldChanges
     const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
-      if (objects[ref]) return []
-      const value = heldObjects.peek(`${pubkey} ${ref}`)?.value
-      return value ? [[ref, value] as const] : []
+      // A listing keeps its own answer first, as before; it fills only what it has not answered.
+      if (!live && objects[ref]) return []
+      const value = heldObjects.peek(heldKey(pubkey, ref))?.value
+      return value && value !== objects[ref] ? [[ref, value] as const] : []
     })
     return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
-  }, [key, objects, pubkey])
+  }, [live, key, objects, pubkey, heldChanges])
+
+  // What is drawn, followed while it is: by Folder and address, so a re-read that changes nothing re-joins nothing.
+  const follow = live
+    ? Object.entries(merged)
+        .flatMap(([ref, object]) =>
+          object && !object.unreachable && object.folder && object.address ? [`${ref}\u0001${object.folder}\u0001${object.address}`] : [],
+        )
+        .sort()
+        .join('\u0000')
+    : ''
+  useEffect(() => {
+    if (!follow || !pubkey) return
+    const leave = follow.split('\u0000').map((each) => {
+      const [ref, folder, address] = each.split('\u0001')
+      return followHeld(heldKey(pubkey, ref), folder, address, heldLoad(ref, viewer))
+    })
+    return () => leave.forEach((each) => each())
+  }, [follow, pubkey, viewer])
 
   /*
     Demo mode is derived, not set. There is no relay to ask without a

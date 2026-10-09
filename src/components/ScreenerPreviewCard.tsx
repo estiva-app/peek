@@ -39,7 +39,7 @@ export function ScreenerPreviewCardView({
               <MetaText size="chip" className="leading-tight">{r.timestamp}</MetaText>
             </div>
             <div className="text-caption leading-normal text-text-secondary line-clamp-4">
-              <MessageBody body={r.body} />
+              <MessageBody body={r.body} follow={false} />
             </div>
           </div>
         ))
