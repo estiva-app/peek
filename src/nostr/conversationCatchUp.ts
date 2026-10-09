@@ -154,7 +154,8 @@ export async function catchUpConversation(
   const messages = await local([{ kinds: [KIND.COMMENT, KIND.STREAM_MESSAGE] }])
   const writers = [...new Set((await local([{ kinds: [...HELD_KINDS] }])).map((event) => event.pubkey))]
   const newest = messages.slice(0, DELETION_TARGETS).map((event) => event.id)
-  const probe = messages[0]?.id
+  // Never your own message the relay has not answered yet: its absence would read as lost access (OPT-6).
+  const probe = messages.find((event) => !unconfirmed.has(event.id))?.id
   const asked = [...new Set([...missing, ...(probe ? [probe] : [])])]
   const filters: Record<string, unknown>[] = [
     { kinds: [KIND.STREAM_MESSAGE, KIND.MESSAGE_EDIT, KIND.ASSERTION, KIND_ADMIN_DELETION], '#h': [container.h], since },
@@ -200,7 +201,7 @@ export async function catchUpConversation(
     happens next: a deletion is never held back behind a second request that
     failed. The cursor moves only when both succeeded.
   */
-  const fold = () => foldHeld(store, key, container, rootIds, query)
+  const fold = (startedAt: number | null) => settleFolded(store, key, startedAt, container, rootIds, query)
   try {
     const newIds = first.added.filter((event) => !isDeletion(event)).map((event) => event.id)
     let disputed = first.disputed
@@ -217,10 +218,10 @@ export async function catchUpConversation(
       )
     }
   } catch (error) {
-    store.settle(key, null, await fold())
+    await fold(null)
     throw error
   }
-  store.settle(key, startedAt, await fold())
+  await fold(startedAt)
   return { changed: true, object, mentions, authors }
 }
 
@@ -282,8 +283,79 @@ export async function applyLiveEvents(
       merged.disputed.filter((id) => !remaining.has(id)),
     )
   }
-  store.settle(key, null, await foldHeld(store, key, container, rootIds, query))
+  await settleFolded(store, key, null, container, rootIds, query)
   return { changed: true, object, mentions, authors }
+}
+
+/**
+ * Your own events, drawn before the relay has answered for them (OPT-6), by
+ * id. Held like any other event, so the fold draws them exactly as sent ones;
+ * a catch-up only never takes one's absence on the relay as lost access.
+ */
+const unconfirmed = new Set<string>()
+
+/**
+ * Your own message or reply, shown the moment it is written: merged into the
+ * conversation `key` holds and folded from memory, with no read. `false` when
+ * nothing is held for `key` yet — there is no list to draw it in, and the
+ * caller catches up once the relay has it.
+ */
+export async function showOwnEvent(
+  store: ConversationStore<FileConversation>,
+  key: string,
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  event: SignedEvent,
+  query: QueryFn,
+): Promise<boolean> {
+  if (store.since(key) === undefined) return false
+  unconfirmed.add(event.id)
+  store.merge(key, [event])
+  await settleFolded(store, key, null, container, rootIds, query)
+  return true
+}
+
+/** The relay took it: from here it is an event like any other. */
+export function confirmOwnEvent(id: string): void {
+  unconfirmed.delete(id)
+}
+
+/** The relay refused it: it is taken out of what is held and the conversation folded without it. */
+export async function withdrawOwnEvent(
+  store: ConversationStore<FileConversation>,
+  key: string,
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  id: string,
+  query: QueryFn,
+): Promise<void> {
+  unconfirmed.delete(id)
+  store.forget(key, [id])
+  await settleFolded(store, key, null, container, rootIds, query)
+}
+
+/** Folds that may restart before one is settled: past this, the last is settled anyway. */
+const FOLD_ATTEMPTS = 3
+
+/**
+ * Fold what is held and settle it — unless what is held changed while the
+ * fold ran (a live event, your own send), in which case the fold is stale and
+ * runs again. Settling a stale fold would draw the conversation without what
+ * arrived meanwhile until the next change.
+ */
+async function settleFolded(
+  store: ConversationStore<FileConversation>,
+  key: string,
+  startedAt: number | null,
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  query: QueryFn,
+): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    const revision = store.revision(key)
+    const value = await foldHeld(store, key, container, rootIds, query)
+    if (store.revision(key) === revision || attempt === FOLD_ATTEMPTS) return store.settle(key, startedAt, value)
+  }
 }
 
 /** What newly held events mean beyond the conversation: whether the file was mentioned, and who wrote. */

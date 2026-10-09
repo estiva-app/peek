@@ -81,10 +81,12 @@ import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
-  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--net file]`
+  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot'])
+const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
+/** The page's DevTools session, opened by the first `--cpu` step. */
+let cdp = null
 const steps = []
 const argv = process.argv.slice(2)
 for (let i = 0; i < argv.length; i += 2) {
@@ -329,6 +331,20 @@ async function run(page, step, value) {
     case 'screenshot':
       await page.screenshot({ path: value })
       return value
+    // `--cpu start` starts the page's CPU profiler; `--cpu <file>` stops it and writes a .cpuprofile there (OPT-6).
+    case 'cpu': {
+      cdp ??= await page.context().newCDPSession(page)
+      if (value === 'start') {
+        await cdp.send('Profiler.enable')
+        await cdp.send('Profiler.setSamplingInterval', { interval: 100 })
+        await cdp.send('Profiler.start')
+        return 'started'
+      }
+      const { profile } = await cdp.send('Profiler.stop')
+      const { writeFileSync } = await import('node:fs')
+      writeFileSync(value, JSON.stringify(profile))
+      return value
+    }
   }
 }
 

@@ -67,7 +67,7 @@ import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
 import { publishSigned, signViaEstivaId } from './bridge'
 import { RATE_LIMIT_MAX_WAIT_MS, retryAfterMs } from './relayRead'
-import { applyActionAsViewer, fileCommentOf, threadEventsWith, urlReferenceTagsAsViewer, viewerQuery, type ActResult, type FileComment, type FileThreads } from './foreign'
+import { buildCommentAsViewer, fileCommentOf, threadEventsWith, urlReferenceTagsAsViewer, viewerQuery, type FileComment, type FileThreads } from './foreign'
 import { findUrls } from '@/lib/textParsing'
 
 /** Where a conversation lives; see the module header. */
@@ -516,26 +516,33 @@ export async function publishConfirmed(
 const publish = (unsigned: UnsignedEvent, relayUrl: string, token: StoredToken, fallback: string): Promise<WriteResult> =>
   publishConfirmed(unsigned, relayUrl, token, fallback)
 
+/** What the composer sends: where, the body, and what it carries. */
+export interface ComposeArgs {
+  container: ConversationContainer
+  body: string
+  parent?: FileComment
+  files?: readonly OutgoingAttachment[]
+  /** The people the composer's urgent mentions name, by pubkey (SPEC §13.1, CON-17). */
+  urgent?: readonly string[]
+}
+
 /**
- * Comment on the file, or reply under one of its comments — the owner's
- * `comment` action with the composer's whole payload.
+ * A comment on the file, or a reply under one of its comments — the owner's
+ * `comment` action with the composer's whole payload — built and not sent
+ * (OPT-6). A channel's is a `kind:9`.
  *
  * A reply is the same event with NIP-22's lowercase trio redirected at the
  * parent — interop's `replyTo` (PRO-20) — and the attachments and mentions are
  * added to it, so a reply with a picture is one event and not two rules.
+ *
+ * Asks the relay nothing unless the body pastes an app URL, which is resolved
+ * to the object it names.
  */
-export async function commentAsViewer(
-  args: {
-    container: ConversationContainer
-    body: string
-    parent?: FileComment
-    files?: readonly OutgoingAttachment[]
-    /** The people the composer's urgent mentions name, by pubkey (SPEC §13.1, CON-17). */
-    urgent?: readonly string[]
-  },
+export async function composeCommentAsViewer(
+  args: ComposeArgs,
   relayUrl: string,
   token: StoredToken,
-): Promise<WriteResult> {
+): Promise<{ ok: true; event: UnsignedEvent } | { ok: false; reason: string }> {
   const { container } = args
   const own = container.kind === 'file' ? container.address : ''
   /*
@@ -572,15 +579,15 @@ export async function commentAsViewer(
       mediaTags: imetaTagsFor(args.files ?? []),
     })
     unsigned.tags.push(...urgent, ...references)
-    return publish(unsigned, relayUrl, token, 'The relay refused the message.')
+    return { ok: true, event: unsigned }
   }
 
   const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body), ...urgent, ...references]
   const parent = args.parent
-  const result: ActResult & { id?: string } = await applyActionAsViewer(
+  return buildCommentAsViewer(
     {
       naddr: container.address,
-      actionId: 'comment',
+      folder: container.h,
       value: args.body,
       ...(parent ? { replyTo: { id: parent.id, kind: parent.kind, author: parent.author } } : {}),
     },
@@ -588,7 +595,35 @@ export async function commentAsViewer(
     token,
     (event: UnsignedActionEvent): UnsignedActionEvent => ({ ...event, tags: [...event.tags, ...extra] }),
   )
-  return result.ok && result.id ? { ok: true, id: result.id } : { ok: false, reason: result.reason ?? 'The relay refused the comment.' }
+}
+
+/**
+ * Comment on the file, or reply under one of its comments, and wait for the
+ * relay: {@link composeCommentAsViewer}, then {@link publishConfirmed} — tried
+ * again on a transient failure, a file's comment as much as a channel's
+ * message.
+ */
+export async function commentAsViewer(
+  args: ComposeArgs,
+  relayUrl: string,
+  token: StoredToken,
+): Promise<WriteResult> {
+  const built = await composeCommentAsViewer(args, relayUrl, token)
+  if (!built.ok) return built
+  const refusal = args.container.kind === 'channel' ? 'The relay refused the message.' : 'The relay refused the comment.'
+  return publish(built.event, relayUrl, token, refusal)
+}
+
+/**
+ * A Nostr event's id, from its bytes (NIP-01): the SHA-256 of
+ * `[0, pubkey, created_at, kind, tags, content]`. Known before the event is
+ * signed, so what is drawn while it is sent carries the id it will have
+ * (OPT-6).
+ */
+export async function eventIdOf(event: UnsignedEvent): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]))
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 /**

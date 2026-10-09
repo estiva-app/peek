@@ -5,7 +5,9 @@ import type { FileConversation } from './fileConversation'
 
 vi.mock('./bridge', () => ({ queryRelay: vi.fn(), publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
 
-const { applyLiveEvents, catchUpConversation, readConversation } = await import('./conversationCatchUp')
+const { applyLiveEvents, catchUpConversation, confirmOwnEvent, readConversation, showOwnEvent, withdrawOwnEvent } = await import(
+  './conversationCatchUp'
+)
 
 /*
   OPT-3 — a held conversation brought up to date in one request when nothing
@@ -292,5 +294,88 @@ describe('applyLiveEvents', () => {
     const relay = fakeRelay([])
     expect((await applyLiveEvents(store, 'k', file, [], [comment()], relay.query)).changed).toBe(false)
     expect(store.value('k')).toBeUndefined()
+  })
+})
+
+/*
+  OPT-6 — your own message, drawn before the relay has it: merged and folded
+  from memory, taken out again if refused, and never taken for lost access by
+  a catch-up that runs while it is out.
+*/
+describe('your own message, before the relay answers', () => {
+  const file = { kind: 'file' as const, address: ADDRESS, h: FOLDER }
+  const channel = { kind: 'channel' as const, h: FOLDER }
+  const comment = (over: Partial<SignedEvent> = {}) =>
+    event({ kind: 1111, tags: [['A', ADDRESS], ['K', '30840'], ['a', ADDRESS], ['k', '30840'], ['h', FOLDER]], ...over })
+  const message = (over: Partial<SignedEvent> = {}) => event({ kind: 9, tags: [['h', FOLDER]], ...over })
+
+  it('a new root on a file is drawn, and nothing is asked', async () => {
+    const first = comment()
+    const relay = fakeRelay([first])
+    const store = await held(file, [first.id], relay)
+    const mine = comment()
+    expect(await showOwnEvent(store, 'k', file, [first.id], mine, relay.query)).toBe(true)
+    expect(relay.asked).toEqual([])
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id, mine.id])
+    confirmOwnEvent(mine.id)
+  })
+
+  it('refused: taken out again, and the conversation drawn without it', async () => {
+    const first = message()
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const mine = message()
+    await showOwnEvent(store, 'k', channel, [], mine, relay.query)
+    await withdrawOwnEvent(store, 'k', channel, [], mine.id, relay.query)
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id])
+    expect(store.ids('k')).toEqual([first.id])
+  })
+
+  it('a catch-up while it is out does not take its absence on the relay for lost access', async () => {
+    const first = message()
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const mine = message()
+    await showOwnEvent(store, 'k', channel, [], mine, relay.query)
+    const found = await catchUpConversation(store, 'k', channel, [], relay.query)
+    expect(found.lost).toBeUndefined()
+    expect(relay.asked[0]).toContainEqual({ ids: [first.id], limit: 1 })
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id, mine.id])
+    confirmOwnEvent(mine.id)
+  })
+
+  it('negative control: once confirmed, it is the message whose absence means lost access', async () => {
+    const first = message()
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const mine = message()
+    await showOwnEvent(store, 'k', channel, [], mine, relay.query)
+    confirmOwnEvent(mine.id)
+    expect((await catchUpConversation(store, 'k', channel, [], relay.query)).lost).toBe(true)
+  })
+
+  it('drawn while a catch-up folds: the catch-up does not settle a fold that misses it', async () => {
+    const first = message()
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const theirs = message({ pubkey: BOB })
+    relay.events.push(theirs)
+    const mine = message()
+    // The catch-up's fold (its second look at what is held) reads; the message is merged while that read is out.
+    const query = store.query('k')
+    let looks = 0
+    const spy = vi.spyOn(store, 'query').mockImplementation((key) => {
+      looks += 1
+      const folding = looks === 2
+      return async (filters) => {
+        const answer = await query(filters)
+        if (folding && !store.ids(key).includes(mine.id)) await showOwnEvent(store, key, channel, [], mine, relay.query)
+        return answer
+      }
+    })
+    await catchUpConversation(store, 'k', channel, [], relay.query)
+    spy.mockRestore()
+    expect(store.value('k')!.roots.map((r) => r.id)).toEqual([first.id, theirs.id, mine.id])
+    confirmOwnEvent(mine.id)
   })
 })

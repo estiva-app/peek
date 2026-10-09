@@ -24,7 +24,11 @@ const relay = vi.hoisted(() => ({
   read: vi.fn<(container: unknown, rootIds: readonly string[]) => Promise<{ value: FileConversation; events: [] }>>(),
   catchUp: vi.fn<CatchUp>(),
   apply: vi.fn<Apply>(),
-  comment: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
+  publish: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
+  react: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
+  /** What happened to your own events, in order (OPT-6). */
+  own: [] as string[],
+  composed: 0,
 }))
 vi.mock('@/nostr/conversationCatchUp', () => ({
   readConversation: (container: unknown, rootIds: readonly string[]) => relay.read(container, rootIds),
@@ -32,8 +36,26 @@ vi.mock('@/nostr/conversationCatchUp', () => ({
     relay.catchUp(store, key, container, rootIds),
   applyLiveEvents: (store: ConversationStore<FileConversation>, key: string, container: unknown, rootIds: readonly string[], events: readonly SignedEvent[]) =>
     relay.apply(store, key, container, rootIds, events),
+  showOwnEvent: async (_store: unknown, _key: string, _container: unknown, _roots: unknown, event: SignedEvent) => {
+    relay.own.push(`shown ${event.id}`)
+    return true
+  },
+  confirmOwnEvent: (id: string) => relay.own.push(`confirmed ${id}`),
+  withdrawOwnEvent: async (_store: unknown, _key: string, _container: unknown, _roots: unknown, id: string) => {
+    relay.own.push(`withdrawn ${id}`)
+  },
 }))
-vi.mock('@/nostr/fileConversation', () => ({ commentAsViewer: () => relay.comment() }))
+/** Each composed event's id is `<n>` repeated: the first message is '1'×64. */
+const idOf = (n: number) => String(n).repeat(64)
+vi.mock('@/nostr/fileConversation', () => ({
+  composeCommentAsViewer: async (args: { body: string }) => {
+    relay.composed += 1
+    return { ok: true, event: { kind: 9, content: args.body, tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) } }
+  },
+  eventIdOf: async (event: { created_at: number }) => idOf(event.created_at),
+  publishConfirmed: () => relay.publish(),
+  reactAsViewer: () => relay.react(),
+}))
 vi.mock('@/nostr/foreign', () => ({ viewerQuery: () => async () => [] }))
 // Stable across renders, as the real one is (`useCallback`).
 const viewer = vi.hoisted(() => () => ({ relayUrl: 'https://relay.test', token: { pubkey: 'c'.repeat(64) } }))
@@ -90,7 +112,10 @@ afterEach(() => {
   relay.read.mockReset()
   relay.catchUp.mockReset()
   relay.apply.mockReset()
-  relay.comment.mockReset()
+  relay.publish.mockReset()
+  relay.react.mockReset()
+  relay.own = []
+  relay.composed = 0
 })
 
 const event = (id: string) => ({ id, kind: 1111, tags: [['h', FOLDER]] }) as unknown as SignedEvent
@@ -300,20 +325,31 @@ describe('useFileConversation — a channel (REM-1)', () => {
     expect(live.kinds).toEqual([9, 40003, 9101, 9005])
   })
 
-  it('a sent message is caught up once the relay has accepted it', async () => {
-    relay.comment.mockResolvedValue({ ok: true, id: 'e'.repeat(64) })
+  /** A publish that answers when told to. */
+  const pending = () => {
+    let answer!: (result: { ok: true; id: string } | { ok: false; reason: string }) => void
+    relay.publish.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    return (result: Parameters<typeof answer>[0]) => act(async () => answer(result))
+  }
+
+  it('a sent message is drawn before the relay answers, under the id it will have, and nothing is read after it (OPT-6)', async () => {
+    const answer = pending()
     const { result } = mount({ container: channel, rootIds: [] })
     await waitFor(() => expect(result.current.state).toBe(empty))
-    let sent: unknown
+    let sent: Promise<unknown> = Promise.resolve()
     await act(async () => {
-      sent = await result.current.actions.comment('hello')
+      sent = result.current.actions.comment('hello')
     })
-    expect(sent).toEqual({ ok: true, id: 'e'.repeat(64) })
-    expect(relay.catchUp).toHaveBeenCalledTimes(1)
+    expect(relay.own).toEqual([`shown ${idOf(1)}`])
+    await answer({ ok: true, id: idOf(1) })
+    expect(await sent).toEqual({ ok: true, id: idOf(1) })
+    expect(relay.own).toEqual([`shown ${idOf(1)}`, `confirmed ${idOf(1)}`])
+    expect(relay.catchUp).not.toHaveBeenCalled()
+    expect(relay.read).toHaveBeenCalledTimes(1)
   })
 
-  it('a message the relay did not take is reported as not sent, and nothing is asked', async () => {
-    relay.comment.mockResolvedValue({ ok: false, reason: 'rate-limited: quota exceeded' })
+  it('a message the relay did not take is taken out again and reported as not sent, and nothing is asked', async () => {
+    relay.publish.mockResolvedValue({ ok: false, reason: 'rate-limited: quota exceeded' })
     const { result } = mount({ container: channel, rootIds: [] })
     await waitFor(() => expect(result.current.state).toBe(empty))
     let sent: unknown
@@ -321,6 +357,59 @@ describe('useFileConversation — a channel (REM-1)', () => {
       sent = await result.current.actions.comment('hello')
     })
     expect(sent).toEqual({ ok: false, reason: 'rate-limited: quota exceeded' })
+    expect(relay.own).toEqual([`shown ${idOf(1)}`, `withdrawn ${idOf(1)}`])
     expect(relay.catchUp).not.toHaveBeenCalled()
+  })
+
+  it('negative control: signed as something other than what was drawn, the drawn one goes and a catch-up finds the real one', async () => {
+    relay.publish.mockResolvedValue({ ok: true, id: 'f'.repeat(64) })
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    await act(async () => {
+      await result.current.actions.comment('hello')
+    })
+    expect(relay.own).toEqual([`shown ${idOf(1)}`, `withdrawn ${idOf(1)}`])
+    await waitFor(() => expect(relay.catchUp).toHaveBeenCalledTimes(1))
+  })
+
+  it('a reply to, or a reaction on, a message still being sent waits for it — and is refused with it (Miky, 7 Oct)', async () => {
+    const answer = pending()
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    let reply: Promise<unknown> = Promise.resolve()
+    let reaction: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      void result.current.actions.comment('hello')
+    })
+    await act(async () => {
+      reply = result.current.actions.reply({ id: idOf(1) } as never, 'and more')
+      reaction = result.current.actions.react(idOf(1), '👍')
+    })
+    // Neither is built nor sent while the message is out.
+    expect(relay.composed).toBe(1)
+    expect(relay.react).not.toHaveBeenCalled()
+    await answer({ ok: false, reason: 'blocked' })
+    const refused = { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
+    expect(await reply).toEqual(refused)
+    expect(await reaction).toEqual(refused)
+    expect(relay.composed).toBe(1)
+    expect(relay.react).not.toHaveBeenCalled()
+  })
+
+  it('once the message is accepted, the reply that waited for it is sent', async () => {
+    const answer = pending()
+    relay.publish.mockResolvedValueOnce({ ok: true, id: idOf(2) })
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    let reply: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      void result.current.actions.comment('hello')
+    })
+    await act(async () => {
+      reply = result.current.actions.reply({ id: idOf(1) } as never, 'and more')
+    })
+    await answer({ ok: true, id: idOf(1) })
+    expect(await reply).toEqual({ ok: true, id: idOf(2) })
+    expect(relay.own).toEqual([`shown ${idOf(1)}`, `confirmed ${idOf(1)}`, `shown ${idOf(2)}`, `confirmed ${idOf(2)}`])
   })
 })

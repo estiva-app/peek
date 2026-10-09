@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRelayViewer } from './foreign'
 import { viewerQuery } from '@/nostr/foreign'
-import { applyLiveEvents, catchUpConversation, readConversation } from '@/nostr/conversationCatchUp'
+import {
+  applyLiveEvents,
+  catchUpConversation,
+  confirmOwnEvent,
+  readConversation,
+  showOwnEvent,
+  withdrawOwnEvent,
+} from '@/nostr/conversationCatchUp'
 import { announceFileNews, conversationKey, conversationsFor } from './conversations'
 import { KIND, type SignedEvent } from '@estiva-app/protocol'
 import {
-  commentAsViewer,
+  composeCommentAsViewer,
   deleteEventAsViewer,
   editCommentAsViewer,
+  eventIdOf,
+  publishConfirmed,
   reactAsViewer,
   resolveAsViewer,
+  type ComposeArgs,
   type ConversationContainer,
   type ConversationEvent,
   type FileConversation,
@@ -33,14 +43,17 @@ export { conversationKeyOf, relayAttachmentOf } from '@/nostr/fileConversation'
 export type FileConversationState = FileConversation | 'loading' | { failed: RelayFailureKind }
 
 /**
- * Everything a person can do to a file's conversation, each answered by the
- * relay and nothing else.
+ * Everything a person can do to a file's conversation.
  *
- * Every write here is followed by a re-read, because the relay is the only
- * store this conversation has: there is no row to patch optimistically and
- * nothing to reconcile against later. A write that the relay refused reports
- * the refusal and re-reads nothing — the view shows exactly what the relay
- * holds, which is unchanged.
+ * A message or a reply is drawn the moment it is written and sent after
+ * (OPT-6): it goes into the held conversation under the id it will have, so
+ * the relay's acceptance changes nothing on screen, and a refusal takes it
+ * out again. Each promise settles with the relay's answer, as before, so the
+ * composer still puts back what a refused send held.
+ *
+ * Every other write is followed by a catch-up, and one that the relay refused
+ * reports the refusal and asks nothing. Any write naming a message still being
+ * sent waits for that send, and is refused with it (Miky, 7 Oct).
  */
 export interface FileConversationActions {
   /** `urgent`: the people the body's urgent mentions name, by pubkey (CON-17). */
@@ -59,6 +72,16 @@ export interface FileConversationActions {
 }
 
 const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this conversation.' }
+
+/** Your own messages drawn and not yet answered by the relay, by id, with the answer to come. */
+const sending = new Map<string, Promise<WriteResult>>()
+
+/** Null once `id` is not being sent or was accepted; the refusal of what depends on it, when it was refused. */
+async function afterSend(id: string): Promise<WriteResult | null> {
+  const flight = sending.get(id)
+  if (!flight) return null
+  return (await flight).ok ? null : { ok: false, reason: 'Your earlier message was not sent, so this was not either.' }
+}
 
 /**
  * One sync per conversation at a time. A sync asked for while one runs is
@@ -296,45 +319,98 @@ export function useFileConversation(
   const reload = useCallback(() => sync(), [sync])
 
   /*
-    Each write but a root comment re-reads on success. The re-read is awaited so a caller that
-    puts the composer's text back on failure, or scrolls to its own message on
-    success, does so against the conversation as the relay now has it.
+    A write about a message — an edit, a reaction, a resolution, a delete —
+    waits for that message's own send, then catches up on success. The
+    catch-up is awaited so a caller that puts the composer's text back on
+    failure does so against the conversation as the relay now has it.
   */
   const write = useCallback(
     async (
+      target: string,
       run: (relayUrl: string, token: NonNullable<ReturnType<typeof viewer>>['token']) => Promise<WriteResult>,
-      reread = true,
     ) => {
+      const blocked = await afterSend(target)
+      if (blocked) return blocked
       const v = viewer()
       if (!v) return SIGNED_OUT
       const result = await run(v.relayUrl, v.token)
-      if (result.ok && reread) await reload()
+      if (result.ok) await reload()
       return result
     },
     [viewer, reload],
   )
 
+  /*
+    A message or a reply (OPT-6): built, drawn under the id it will have, then
+    signed and sent. Nothing is read after it — the socket's echo of it is
+    already held. Drawn only into a conversation that is held; one still on
+    its first read finds it by a catch-up once the relay has it.
+  */
+  const send = useCallback(
+    async (args: Omit<ComposeArgs, 'container'>): Promise<WriteResult> => {
+      if (args.parent) {
+        const blocked = await afterSend(args.parent.id)
+        if (blocked) return blocked
+      }
+      const v = viewer()
+      if (!v || !container || !key) return SIGNED_OUT
+      let built: Awaited<ReturnType<typeof composeCommentAsViewer>>
+      let id: string
+      try {
+        built = await composeCommentAsViewer({ container, ...args }, v.relayUrl, v.token)
+        if (!built.ok) return built
+        id = await eventIdOf(built.event)
+      } catch (error) {
+        // Reported, never thrown: the composer puts the text back only on an answer.
+        console.warn('[nostr] building a message failed:', error)
+        return { ok: false, reason: 'The message could not be prepared. Try again.' }
+      }
+      const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
+      const roots = ids ? ids.split(',') : []
+      const query = viewerQuery(v.relayUrl, v.token)
+      const refusal = container.kind === 'channel' ? 'The relay refused the message.' : 'The relay refused the comment.'
+      const flight = publishConfirmed(built.event, v.relayUrl, v.token, refusal)
+      sending.set(id, flight)
+      const drawn = await showOwnEvent(conversations, key, container, roots, { ...built.event, id, sig: '' }, query).catch(
+        (error: unknown) => {
+          console.warn('[nostr] drawing a sent message failed:', error)
+          return false
+        },
+      )
+      const result = await flight
+      sending.delete(id)
+      if (result.ok && result.id === id) {
+        confirmOwnEvent(id)
+        if (!drawn) void sync()
+        return result
+      }
+      /*
+        Refused, or signed as something other than what was drawn: what the
+        relay holds is found by a catch-up. Withdrawn even when the draw
+        failed, which may have merged it before its fold threw.
+      */
+      await withdrawOwnEvent(conversations, key, container, roots, id, query).catch((error: unknown) =>
+        console.warn('[nostr] withdrawing a refused message failed:', error),
+      )
+      if (result.ok) void sync()
+      return result
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the container is `key`, by value
+    [key, ids, viewer, sync],
+  )
+
   const actions: FileConversationActions = {
-    // A file's new root is not in `rootIds` until the object is re-resolved,
-    // so a re-read here would find nothing new; the caller re-resolves
-    // instead. A channel's is found by the channel read, so that one re-reads.
-    comment: (body, files, urgent) =>
-      container
-        ? write((url, token) => commentAsViewer({ container, body, files, urgent }, url, token), container.kind === 'channel')
-        : Promise.resolve(SIGNED_OUT),
-    reply: (parent, body, files, urgent) =>
-      container
-        ? write((url, token) => commentAsViewer({ container, body, parent, files, urgent }, url, token))
-        : Promise.resolve(SIGNED_OUT),
+    comment: (body, files, urgent) => send({ body, files, urgent }),
+    reply: (parent, body, files, urgent) => send({ body, parent, files, urgent }),
     edit: (targetEventId, body, files) =>
       container
-        ? write((url, token) => editCommentAsViewer({ container, targetEventId, body, files }, url, token))
+        ? write(targetEventId, (url, token) => editCommentAsViewer({ container, targetEventId, body, files }, url, token))
         : Promise.resolve(SIGNED_OUT),
-    remove: (targetEventId) => write((url, token) => deleteEventAsViewer(targetEventId, url, token)),
-    react: (targetEventId, emoji) => write((url, token) => reactAsViewer({ targetEventId, emoji }, url, token)),
+    remove: (targetEventId) => write(targetEventId, (url, token) => deleteEventAsViewer(targetEventId, url, token)),
+    react: (targetEventId, emoji) => write(targetEventId, (url, token) => reactAsViewer({ targetEventId, emoji }, url, token)),
     resolve: (targetEventId, action, message, supportingEventId) =>
       container
-        ? write((url, token) =>
+        ? write(targetEventId, (url, token) =>
             resolveAsViewer({ container, targetEventId, action, message, supportingEventId }, url, token),
           )
         : Promise.resolve(SIGNED_OUT),
