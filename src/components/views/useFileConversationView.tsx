@@ -314,7 +314,7 @@ export function useFileConversationView({
     person has moved to another by the time the relay answers.
   */
   const notSent = (where: string, reason: string): SendRefused => ({
-    say: (filesLost) => showToast({ label: notSentNote(where, noteName, reason, filesLost), type: 'error' }),
+    say: (back) => showToast({ label: notSentNote(where, noteName, reason, back), type: 'error' }),
   })
 
   const handleSend = async ({ text, resolution, files, urgent }: SendPayload) => {
@@ -341,7 +341,7 @@ export function useFileConversationView({
     const attachments = outgoing(files)
     if (!attachments) return false
     const result = await actions.reply(openRoot, text, attachments, urgent)
-    if (!result.ok) return notSent(`your reply to ${openView?.data.authorName ?? 'this thread'}`, result.reason)
+    if (!result.ok) return notSent(openView ? `your reply to ${openView.data.authorName}` : noteName, result.reason)
     membershipAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).
     if (resolution) setResolution(openRoot.id, true, resolution.message, result.id)

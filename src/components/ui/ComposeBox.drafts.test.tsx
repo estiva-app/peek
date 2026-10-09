@@ -229,6 +229,7 @@ describe('ComposeBox — a send the relay refused', () => {
       if (!el?.editor) throw new Error('no editor yet')
       return el.editor
     })
+  const TEXT_BACK = { text: true, files: false, filesLost: false }
   /** An `onSend` the test answers: `refuse()` resolves it as the relay's no. */
   const pending = () => {
     let answer: (outcome: SendRefused) => void = () => {}
@@ -259,7 +260,7 @@ describe('ComposeBox — a send the relay refused', () => {
     await waitFor(() => expect(screen.queryByText('sent by the button')).toBeNull())
     refuse()
     expect(await screen.findByText('sent by the button')).toBeTruthy()
-    await waitFor(() => expect(say).toHaveBeenCalledWith(false))
+    await waitFor(() => expect(say).toHaveBeenCalledWith(TEXT_BACK))
     expect(drafts.read(key)).toBe('sent by the button')
   })
 
@@ -299,10 +300,31 @@ describe('ComposeBox — a send the relay refused', () => {
     await screen.findByText('two has its own')
     refuse()
 
-    await waitFor(() => expect(say).toHaveBeenCalledWith(false))
+    await waitFor(() => expect(say).toHaveBeenCalledWith(TEXT_BACK))
     expect(drafts.read(one)).toBe('meant for one\nand a second thought')
     expect(editor.getText()).toBe('two has its own')
     expect(drafts.read(two)).toBe('two has its own')
+  })
+
+  /* Left and came back before the relay answered: a new composer is showing the conversation, seeded before the text
+     was back, so the text goes into it — a draft-only restore would be written over by its next keystroke. */
+  it('goes into the composer now showing its conversation, after a quick return', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'sent before leaving')
+    const { onSend, say, refuse } = pending()
+    const first = show({ draftKey: key, drafts, onSend })
+    await screen.findByText('sent before leaving')
+    fireEvent.keyDown(first.container.querySelector('.ProseMirror')!, { key: 'Enter' })
+    await waitFor(() => expect(drafts.read(key)).toBeUndefined())
+    first.unmount()
+
+    const back = show({ draftKey: key, drafts, onSend })
+    const editor = await editorIn(back.container)
+    refuse()
+    await waitFor(() => expect(editor.getText()).toBe('sent before leaving'))
+    expect(drafts.read(key)).toBe('sent before leaving')
+    expect(say).toHaveBeenCalledWith(TEXT_BACK)
   })
 
   it('goes into the draft when the composer is gone', async () => {
@@ -317,7 +339,7 @@ describe('ComposeBox — a send the relay refused', () => {
     await waitFor(() => expect(drafts.read(key)).toBeUndefined())
     unmount()
     refuse()
-    await waitFor(() => expect(say).toHaveBeenCalledWith(false))
+    await waitFor(() => expect(say).toHaveBeenCalledWith(TEXT_BACK))
     expect(drafts.read(key)).toBe('sent, then the page closed')
   })
 })

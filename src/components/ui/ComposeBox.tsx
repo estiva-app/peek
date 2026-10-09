@@ -36,15 +36,24 @@ export interface SendPayload {
 
 /**
  * What `onSend` resolves when the relay refused the message (OPT-7). The
- * composer puts it back and then calls `say`, so the note is said once the
- * text is where the note says it is. `filesLost`: it had files, and they could
- * not come back with it (the person had moved on, and a draft keeps only text).
+ * composer puts it back and then calls `say` with what came back, so the note
+ * says only what is true.
  *
  * The caller builds `say` when it sends, so it names the conversation the
  * message was written in, not the one on screen when the relay answered.
  */
 export interface SendRefused {
-  say: (filesLost: boolean) => void
+  say: (back: PutBack) => void
+}
+
+/**
+ * What a refused send got back. `filesLost`: it had files, and they could not
+ * come back (the person had moved on, and a draft keeps only text).
+ */
+export interface PutBack {
+  text: boolean
+  files: boolean
+  filesLost: boolean
 }
 
 const isRefusal = (outcome: unknown): outcome is SendRefused =>
@@ -104,6 +113,17 @@ const serializeToText = serializeTiptapToText
 
 const DEFAULT_DRAFTS = browserDrafts()
 
+type ComposerEditor = NonNullable<ReturnType<typeof useEditor>>
+
+/**
+ * The composer showing each conversation now, by draft key (OPT-7). A refused
+ * send goes back into it when its own editor has moved on: somebody who left
+ * and came back before the relay answered has a new composer there, seeded
+ * from the draft before the text was put back, and its next keystroke would
+ * write over a draft-only restore.
+ */
+const liveComposers = new Map<string, ComposerEditor>()
+
 /**
  * The box for writing a new message or reply, with text formatting, files,
  * highlights and a send button; unsent text is kept for later.
@@ -146,7 +166,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     the rule that a refused send does not lose what was typed. The Send
     button used to ignore the outcome, so a refused send by click lost it.
   */
-  const send = (ed: NonNullable<ReturnType<typeof useEditor>>): boolean => {
+  const send = (ed: ComposerEditor): boolean => {
     const text = serializeToText(ed)
     const resolution = extractResolution(ed)
     const files = uploadsRef.current.ready()
@@ -165,36 +185,43 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     uploadsRef.current.clear()
     void Promise.resolve(sent).then((outcome) => {
       if (outcome !== false && !isRefusal(outcome)) return
-      const filesLost = !putBack(key, ed, text, urgent, files)
-      if (isRefusal(outcome)) outcome.say(filesLost && files.length > 0)
+      const back = putBack(key, ed, text, urgent, files)
+      if (isRefusal(outcome)) outcome.say(back)
     })
     return true
   }
 
   /*
     Put an unsent message back where it was written, above anything written
-    there since: nothing is overwritten (OPT-7, decided 7 Oct). True when its
-    files came back too.
+    there since: nothing is overwritten (OPT-7, decided 7 Oct). Says what came
+    back, for the note.
 
     Into this editor while it is still that conversation's. Once the person
     has moved on, the editor is gone or shows another conversation, so the
     text goes into the conversation's draft instead, and comes back when they
     return. A draft keeps only text, so the files stay behind then.
   */
-  const putBack = (key: string | undefined, ed: NonNullable<ReturnType<typeof useEditor>>, text: string, urgent: string[] | undefined, files: UploadedFile[]): boolean => {
-    const restored = withUrgentMentions(textToTiptapContent(text), urgent)
-    if (!ed.isDestroyed && draftKeyRef.current === key) {
-      if (serializeToText(ed).trim()) ed.chain().insertContentAt(0, restored.content ?? []).run()
-      else ed.commands.setContent(restored, { emitUpdate: true })
-      // The draft first, always: it survives the tab, and it is the half that cannot be undone by what the person does next.
-      if (key) draftsRef.current.write(key, serializeToText(ed), extractUrgent(ed))
-      uploadsRef.current.restore(files)
-      return true
+  const putBack = (key: string | undefined, ed: ComposerEditor, text: string, urgent: string[] | undefined, files: UploadedFile[]): PutBack => {
+    const hasText = !!text.trim()
+    const own = !ed.isDestroyed && draftKeyRef.current === key
+    const live = own ? ed : key ? liveComposers.get(key) : undefined
+    if (live && !live.isDestroyed) {
+      if (hasText) {
+        const restored = withUrgentMentions(textToTiptapContent(text), urgent)
+        if (serializeToText(live).trim()) live.chain().insertContentAt(0, restored.content ?? []).run()
+        else live.commands.setContent(restored, { emitUpdate: true })
+        // The draft too: it survives the tab.
+        if (key) draftsRef.current.write(key, serializeToText(live), extractUrgent(live))
+      }
+      // Files only into this composer's own list; another composer's is not ours to fill.
+      if (own) uploadsRef.current.restore(files)
+      return { text: hasText, files: own && files.length > 0, filesLost: !own && files.length > 0 }
     }
-    if (!key) return false
+    const filesLost = files.length > 0
+    if (!key || !hasText) return { text: false, files: false, filesLost }
     const since = draftsRef.current.readDraft(key)
     draftsRef.current.write(key, since?.text ? `${text}\n${since.text}` : text, [...new Set([...(urgent ?? []), ...(since?.urgent ?? [])])])
-    return false
+    return { text: true, files: false, filesLost }
   }
 
   const editor = useEditor({
@@ -360,6 +387,14 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   // Register with the global composer registry so the command launcher can
   // insert into "the compose box the user last touched" (focus wins; the most
   // recently mounted composer is the fallback).
+  useEffect(() => {
+    if (!editor || !draftKey) return
+    liveComposers.set(draftKey, editor)
+    return () => {
+      if (liveComposers.get(draftKey) === editor) liveComposers.delete(draftKey)
+    }
+  }, [editor, draftKey])
+
   useEffect(() => {
     if (!editor) return
     const handle = { editor, label: contextLabel }
