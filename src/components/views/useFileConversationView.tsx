@@ -6,7 +6,7 @@ import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { ThreadPanel } from '@/components/ThreadPanel'
 import { DateDivider } from '@/components/ui/DateDivider'
 import { MetaText } from '@/components/ui/MetaText'
-import { ComposeBox, type SendPayload } from '@/components/ui/ComposeBox'
+import { ComposeBox, type SendPayload, type SendRefused } from '@/components/ui/ComposeBox'
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
@@ -39,6 +39,7 @@ import {
 import { groupReactions, offersEditAndDelete, type ReactionEvent } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
+import { notSentNote } from '@/lib/notSent'
 
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
@@ -50,6 +51,12 @@ interface UseFileConversationViewArgs {
   onOpenThread: (id: string | null) => void
   /** What the composer says it is writing to. */
   title: string
+  /**
+   * The conversation as a note names it when a message is not sent — "Not
+   * sent — text restored in <this>" (OPT-7). `title` by default, which is a
+   * topic's; a DM says "your conversation with <name>".
+   */
+  noteName?: string
   /**
    * A new root comment landed. A file's roots come off the object's own read,
    * not this one, so the page re-resolves the object; the changed root ids
@@ -172,6 +179,7 @@ export function useFileConversationView({
   openThreadId,
   onOpenThread,
   title,
+  noteName = title,
   onCommented,
   draftKey,
   empty,
@@ -299,16 +307,26 @@ export function useFileConversationView({
     }))
   }
 
+  /*
+    A refused send is the composer's to put back, and this says so once it has
+    (OPT-7) — instead of `refuse`'s toast of the relay's own words. Built as
+    the send goes out, so the note names this conversation even when the
+    person has moved to another by the time the relay answers.
+  */
+  const notSent = (where: string, reason: string): SendRefused => ({
+    say: (filesLost) => showToast({ label: notSentNote(where, noteName, reason, filesLost), type: 'error' }),
+  })
+
   const handleSend = async ({ text, resolution, files, urgent }: SendPayload) => {
     const attachments = outgoing(files)
     if (!attachments) return false
     // Your own comment always brings you down to it, as it is drawn — before the relay has answered (OPT-6).
     nearBottom.current = true
     const result = await actions.comment(text, attachments, urgent)
-    if (!refuse(result)) {
+    if (!result.ok) {
       // Nothing was drawn, or it was taken out again: where the reader actually is decides what follows next.
       if (scrollRef.current) nearBottom.current = isNearBottom(scrollRef.current)
-      return false
+      return notSent(noteName, result.reason)
     }
     membershipAfterWrite()
     if (resolution) void actions.resolve(result.id, 'resolved', resolution.message).then(refuse)
@@ -323,7 +341,7 @@ export function useFileConversationView({
     const attachments = outgoing(files)
     if (!attachments) return false
     const result = await actions.reply(openRoot, text, attachments, urgent)
-    if (!refuse(result)) return false
+    if (!result.ok) return notSent(`your reply to ${openView?.data.authorName ?? 'this thread'}`, result.reason)
     membershipAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).
     if (resolution) setResolution(openRoot.id, true, resolution.message, result.id)

@@ -81,7 +81,8 @@ import { chromium } from 'playwright-core'
 
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
-  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]`
+  [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]
+  [--refuse text[|text…]] [--refuse-hold ms]`
 
 const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
@@ -211,6 +212,36 @@ try {
     else if (r.request().resourceType() === 'script' && /text\/html/.test(r.headers()['content-type'] ?? ''))
       report.errors.push(`script served as HTML: ${r.url().slice(0, 200)}`)
   })
+
+  /*
+    --refuse <text>[|<text>…]: the relay refuses a write whose content holds any of them (OPT-7). The signed
+    event is published with a character added to its content, so its id no longer matches and the real relay
+    answers with its own refusal — a considered no, which Peek does not retry. Nothing is faked, and nothing
+    carrying the text is stored. `--refuse-hold <ms>` holds each such write that long first, for a run that
+    acts while the send is still in flight. What the relay answered is in `report.refused`.
+  */
+  if (options.refuse) {
+    const needles = options.refuse.split('|')
+    const hold = Number(options['refuse-hold'] ?? 0)
+    report.refused = []
+    await context.route(
+      (url) => url.pathname.endsWith('/events'),
+      async (route) => {
+        const request = route.request()
+        let event = null
+        try {
+          event = request.method() === 'POST' ? JSON.parse(request.postData() ?? '') : null
+        } catch {}
+        if (!event?.content || !needles.some((needle) => event.content.includes(needle))) return route.continue()
+        const at = Date.now()
+        if (hold) await new Promise((done) => setTimeout(done, hold))
+        const response = await route.fetch({ postData: JSON.stringify({ ...event, content: `${event.content}.` }) })
+        const body = await response.text()
+        report.refused.push({ at, kind: event.kind, id: event.id, status: response.status(), body: body.slice(0, 300) })
+        return route.fulfill({ response, body })
+      },
+    )
+  }
 
   // PROBE_HOOK=<url>: `window.__probeHook(query)` GETs `<url><query>` from node and returns the text, for a run
   // that needs another process mid-way (probe-switch's QA-2 post). A page fetch of 127.0.0.1 is blocked by Chromium.

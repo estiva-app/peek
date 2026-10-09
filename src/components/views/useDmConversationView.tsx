@@ -106,6 +106,7 @@ export function useDmConversationView({ dmId, dmName, onToggleStarred, onHideDm 
     openThreadId: threadConvId ?? undefined,
     onOpenThread: setThreadConvId,
     title: dmName ? `DM · ${dmName}` : '',
+    noteName: dmName ? `your conversation with ${dmName}` : 'this conversation',
     draftKey: dmId ? draftKeys.container(dmId) : undefined,
     empty: dmName ? <NewTopicBanner kind="dm" title={dmName} /> : undefined,
   })

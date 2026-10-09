@@ -34,19 +34,37 @@ export interface SendPayload {
   files?: UploadedFile[]
 }
 
+/**
+ * What `onSend` resolves when the relay refused the message (OPT-7). The
+ * composer puts it back and then calls `say`, so the note is said once the
+ * text is where the note says it is. `filesLost`: it had files, and they could
+ * not come back with it (the person had moved on, and a draft keeps only text).
+ *
+ * The caller builds `say` when it sends, so it names the conversation the
+ * message was written in, not the one on screen when the relay answered.
+ */
+export interface SendRefused {
+  say: (filesLost: boolean) => void
+}
+
+const isRefusal = (outcome: unknown): outcome is SendRefused =>
+  typeof outcome === 'object' && outcome !== null && typeof (outcome as SendRefused).say === 'function'
+
 interface ComposeBoxProps {
   /**
    * Send it. **Resolve `false` when nothing was written anywhere** — CON-10.
    *
    * `void` and `true` both mean sent, so a caller that does not know keeps the
-   * old behaviour. Only an explicit `false` puts the text back.
+   * old behaviour. An explicit `false` puts the text back silently: the caller
+   * has said why. A {@link SendRefused} puts it back and then lets the caller
+   * say so (OPT-7).
    *
    * The outcome that matters is whether the message was *stored*, not whether
    * it reached the relay: a message Peek holds is on every Peek reader's screen,
    * and returning `false` for a failed relay mirror would re-offer text that has
    * already been posted.
    */
-  onSend?: (payload: SendPayload) => void | boolean | Promise<void | boolean>
+  onSend?: (payload: SendPayload) => void | boolean | SendRefused | Promise<void | boolean | SendRefused>
   /**
    * Where an unsent message belongs — CON-10. Built with `draftKeys`.
    *
@@ -116,6 +134,69 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
 
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
+  /*
+    Send what is written — Enter and the Send button alike (OPT-7). Read
+    through refs only, because Enter calls it from the editor's first-render
+    closure.
+
+    Cleared now, put back if it did not land — CON-10. Ship waits for the
+    write and clears only on success. Peek cannot: the message appears in the
+    list the instant it is sent (OPT-6), so holding the text in the composer
+    would show it twice. Clearing and restoring keeps that and still honours
+    the rule that a refused send does not lose what was typed. The Send
+    button used to ignore the outcome, so a refused send by click lost it.
+  */
+  const send = (ed: NonNullable<ReturnType<typeof useEditor>>): boolean => {
+    const text = serializeToText(ed)
+    const resolution = extractResolution(ed)
+    const files = uploadsRef.current.ready()
+    if (!text && !resolution.hasResolution && files.length === 0) return false
+    const urgent = extractUrgent(ed)
+    const sent = sendFnRef.current?.({
+      text,
+      resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
+      highlightType: extractHighlightType(ed),
+      urgent,
+      files: files.length > 0 ? files : undefined,
+    })
+    ed.commands.clearContent(true)
+    const key = draftKeyRef.current
+    if (key) draftsRef.current.clear(key)
+    uploadsRef.current.clear()
+    void Promise.resolve(sent).then((outcome) => {
+      if (outcome !== false && !isRefusal(outcome)) return
+      const filesLost = !putBack(key, ed, text, urgent, files)
+      if (isRefusal(outcome)) outcome.say(filesLost && files.length > 0)
+    })
+    return true
+  }
+
+  /*
+    Put an unsent message back where it was written, above anything written
+    there since: nothing is overwritten (OPT-7, decided 7 Oct). True when its
+    files came back too.
+
+    Into this editor while it is still that conversation's. Once the person
+    has moved on, the editor is gone or shows another conversation, so the
+    text goes into the conversation's draft instead, and comes back when they
+    return. A draft keeps only text, so the files stay behind then.
+  */
+  const putBack = (key: string | undefined, ed: NonNullable<ReturnType<typeof useEditor>>, text: string, urgent: string[] | undefined, files: UploadedFile[]): boolean => {
+    const restored = withUrgentMentions(textToTiptapContent(text), urgent)
+    if (!ed.isDestroyed && draftKeyRef.current === key) {
+      if (serializeToText(ed).trim()) ed.chain().insertContentAt(0, restored.content ?? []).run()
+      else ed.commands.setContent(restored, { emitUpdate: true })
+      // The draft first, always: it survives the tab, and it is the half that cannot be undone by what the person does next.
+      if (key) draftsRef.current.write(key, serializeToText(ed), extractUrgent(ed))
+      uploadsRef.current.restore(files)
+      return true
+    }
+    if (!key) return false
+    const since = draftsRef.current.readDraft(key)
+    draftsRef.current.write(key, since?.text ? `${text}\n${since.text}` : text, [...new Set([...(urgent ?? []), ...(since?.urgent ?? [])])])
+    return false
+  }
+
   const editor = useEditor({
     extensions: peekEditorExtensions,
     editorProps: {
@@ -144,56 +225,9 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
       handleKeyDown: (view, event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           if (isSuggestionActive()) return false
-          const ed = editorRef.current!
-          const text = serializeToText(ed)
-          const resolution = extractResolution(ed)
-          const hl = extractHighlightType(ed)
-          const files = uploadsRef.current.ready()
           // Hold Enter until in-flight uploads settle, so files aren't dropped.
           if (uploadsRef.current.isUploading) return true
-          if (text || resolution.hasResolution || files.length > 0) {
-            const urgent = extractUrgent(ed)
-            const sent = sendFnRef.current?.({
-              text,
-              resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
-              highlightType: hl,
-              urgent,
-              files: files.length > 0 ? files : undefined,
-            })
-            /*
-              Cleared now, put back if it did not land — CON-10.
-
-              Ship waits for the write and clears only on success. Peek cannot:
-              the message appears in the list optimistically the instant Enter
-              is pressed, so holding the text in the composer would show it
-              twice. Clearing and restoring keeps the optimistic feel and still
-              honours the rule that a refused send does not lose what was typed.
-
-              This used to clear unconditionally, and said so: "a failed send
-              already loses the text here, with or without drafts. Making
-              `onSend` report its outcome is the fix." That is this.
-            */
-            ed.commands.clearContent(true)
-            const key = draftKeyRef.current
-            if (key) draftsRef.current.clear(key)
-            uploadsRef.current.clear()
-            void Promise.resolve(sent).then((ok) => {
-              if (ok !== false) return
-              // The draft store first, always: it survives the tab, and it is
-              // the half that cannot be undone by what the person does next.
-              if (key) draftsRef.current.write(key, text, urgent)
-              /*
-                The editor only if it is still empty. Somebody who started
-                typing again in the round trip would otherwise have their new
-                sentence replaced by the old one — worse than the loss this is
-                fixing, and the draft above already holds it either way.
-              */
-              const current = editorRef.current
-              if (current && !serializeToText(current).trim()) {
-                current.commands.setContent(withUrgentMentions(textToTiptapContent(text), urgent))
-              }
-            })
-          }
+          send(editorRef.current!)
           return true
         }
         // Shift+Enter: in list → split item (or exit if empty), else new paragraph
@@ -343,24 +377,11 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const handleSend = () => {
     if (!editor) return
     if (uploads.isUploading) return // wait for in-flight uploads
-    const text = serializeToText(editor)
-    const resolution = extractResolution(editor)
-    const hl = extractHighlightType(editor)
-    const files = uploads.ready()
-    if (!text && !resolution.hasResolution && files.length === 0) return
-    onSend?.({
-      text,
-      resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
-      highlightType: hl,
-      urgent: extractUrgent(editor),
-      files: files.length > 0 ? files : undefined,
-    })
-    editor.commands.clearContent(true)
+    if (!send(editor)) return
     editor.commands.focus()
     setIsEmpty(true)
     setHasUrgent(false)
     setHasHighlight(false)
-    uploads.clear()
   }
 
 

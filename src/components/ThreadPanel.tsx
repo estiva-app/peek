@@ -4,7 +4,7 @@ import { Chip, MembersPill, Panel } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
 import { ReplyCard } from './ReplyCard'
 import { draftKeys } from '@/lib/drafts'
-import { ComposeBox, type SendPayload } from './ui/ComposeBox'
+import { ComposeBox, type SendPayload, type SendRefused } from './ui/ComposeBox'
 import { DateDivider } from './ui/DateDivider'
 import { formatReplyTimestamp } from '@/api'
 import type { ConversationData, FileAttachment, HighlightType, ReactionData, ResolutionEvent, ThreadReply } from '@/api'
@@ -164,13 +164,14 @@ interface ThreadPanelProps {
   openInDmHref?: string
   onClose: () => void
   /**
-   * Send the reply. Resolve `false` when nothing was written — CON-10.
+   * Send the reply. Resolve `false` when nothing was written — CON-10 — or a
+   * `SendRefused` when the relay refused it, to have it said (OPT-7).
    *
    * Typed rather than left as `void`: a promise still flows at runtime through
    * a `void` signature, so `ComposeBox` would keep working and the type would
    * be quietly lying about the one thing this contract is for.
    */
-  onSendReply: (payload: SendPayload) => void | boolean | Promise<void | boolean>
+  onSendReply: (payload: SendPayload) => void | boolean | SendRefused | Promise<void | boolean | SendRefused>
   /**
    * Makes the thread read-only and is drawn where the composer would be — a
    * Convex topic's thread since CON-8. The replies keep no hover menu either.
