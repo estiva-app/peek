@@ -394,7 +394,22 @@ if (widgets) {
   */
   const { posted, changes = [] } = result
   // A Folder watched for field changes alone: a widget's file in a Folder the topic does not watch (the cost of this).
-  const fieldWatches = net.filter((e) => e.kind === 'ws-out' && /^\["REQ","[^"]+",\{"kinds":\[1851\],"#h"/.test(e.body))
+  // Once per subscription: a reconnect sends each REQ again.
+  const fieldWatches = [
+    ...new Map(
+      net
+        .filter((e) => e.kind === 'ws-out' && /^\["REQ","[^"]+",\{"kinds":\[1851\],"#h"/.test(e.body))
+        .map((e) => [e.body.split('"')[3], e]),
+    ).values(),
+  ]
+  /*
+    The page's 30 s object tick and the minute catch-up read A whatever is written, and can land in the 3 s after a
+    delivery (9 Oct, run 1). A read the same shape as one 30 or 60 s before it (±1.5 s) is one of those, not caused.
+  */
+  const allReadsA = net.filter(isRead).filter((e) => conversationOfA.test(e.body ?? ''))
+  const shape = (e) => e.body.replace(/^\["REQ","[^"]+",/, '').replace(/"since":\d+/g, '').slice(0, 80)
+  const onClock = (e) =>
+    allReadsA.some((p) => p.at < e.at && shape(p) === shape(e) && [30000, 60000].some((gap) => Math.abs(e.at - p.at - gap) < 1500))
   console.log(`\nQA-2 posts both fixtures in A, as widgets and as chips: ${posted.answer}; drawn ${posted.seenAt ? `${posted.seenAt - posted.from} ms after the posts began` : 'NEVER'}`)
   console.log(`  Folders QA-1 watched for field changes alone, in the whole run: ${fieldWatches.length}${fieldWatches.map((e) => `\n    ${e.body.slice(0, 160)}`).join('')}`)
   if (result.error) {
@@ -404,7 +419,7 @@ if (widgets) {
   for (const leg of changes) {
     const entries = net.filter((e) => e.at >= leg.from && e.at <= leg.to)
     const delivered = entries.find((e) => e.kind === 'ws-event' && e.body.includes(leg.d) && e.body.includes('"kind":1851'))
-    const readsA = entries.filter(isRead).filter((e) => conversationOfA.test(e.body ?? ''))
+    const readsA = entries.filter(isRead).filter((e) => conversationOfA.test(e.body ?? '') && !onClock(e))
     const caused = delivered ? readsA.filter((e) => e.at >= delivered.at - 200 && e.at <= delivered.at + 3000) : readsA
     const createdAt = Number(delivered?.body.match(/"created_at":(\d+)/)?.[1])
     const sinceWritten = leg.seenAt && createdAt ? leg.seenAt - createdAt * 1000 : null

@@ -50,7 +50,7 @@ const FOLDER = '22222222-2222-4222-8222-222222222222'
 function objectFor(reference: string): ForeignObject {
   return {
     ref: reference,
-    address: reference,
+    address: reference.replace(/^nostr:/, ''),
     eventId: 'e'.repeat(64),
     kind: 30851,
     widget: 'card',
@@ -114,6 +114,34 @@ describe('a widget follows its file', () => {
     })
     await settle(300)
     expect(relay.resolves).toEqual([ISSUE])
+  })
+
+  it('asks at most once per 2 s, however many changes name the file — anyone in an open Folder can write them', async () => {
+    renderHook(() => useHeldObject(ISSUE))
+    await settle()
+    relay.resolves = []
+    act(() => relay.joins[0].listener(change(ISSUE)))
+    await settle(300)
+    expect(relay.resolves).toEqual([ISSUE])
+    for (let i = 0; i < 6; i++) {
+      act(() => relay.joins[0].listener(change(ISSUE)))
+      await settle(250)
+    }
+    expect(relay.resolves).toEqual([ISSUE])
+    await settle(1000)
+    expect(relay.resolves).toEqual([ISSUE, ISSUE])
+  })
+
+  it('a chip and a widget of one file are one object: one follow, one read per change', async () => {
+    renderHook(() => useHeldObject(ISSUE))
+    renderHook(() => useResolvedReferences([`nostr:${ISSUE}`], { live: true }))
+    await settle()
+    const open = relay.joins.filter((j) => !j.left)
+    expect(open).toHaveLength(1)
+    relay.resolves = []
+    act(() => open[0].listener(change(ISSUE)))
+    await settle(300)
+    expect(relay.resolves).toHaveLength(1)
   })
 
   it('two widgets of one file share one follow, left when the last is gone', async () => {

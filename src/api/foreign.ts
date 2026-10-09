@@ -131,8 +131,22 @@ const KIND_FIELD_CHANGE = 1851
 /** Changes that land together — a rename, then a move — are asked about once. */
 const FOLLOW_SETTLE_MS = 250
 
-/** The held objects something on screen draws, each following its file's field changes, by key. */
+/**
+ * At most one read of a file per this, however many changes name it: anyone who
+ * may write in an open Folder can publish field changes, and each one would
+ * otherwise cost every viewer of the file a read.
+ */
+const FOLLOW_MIN_GAP_MS = 2_000
+
+/** The held objects something on screen draws, each following its file's field changes, by key and Folder. */
 const following = new Map<string, { count: number; leave: () => void }>()
+
+/**
+ * A held object's key: the viewer and the reference, spelt one way — a widget
+ * has `naddr1…` and a chip `nostr:naddr1…`, and the same file drawn both ways
+ * is one object, asked for once.
+ */
+const heldKey = (pubkey: string, reference: string) => `${pubkey} ${reference.replace(/^nostr:/i, '')}`
 
 /**
  * Keep a held object in step with its file while something draws it.
@@ -151,20 +165,27 @@ const following = new Map<string, { count: number; leave: () => void }>()
  */
 function followHeld(key: string, folder: string | undefined, address: string | undefined, load: HeldLoad): () => void {
   if (!folder || !address) return () => {}
-  const held = following.get(key)
+  // By Folder and address too: a file moved to another Folder is followed there, whoever else still follows the old one.
+  const id = `${key}\u0001${folder}\u0001${address}`
+  const held = following.get(id)
   if (held) {
     held.count += 1
   } else {
     let timer: ReturnType<typeof setTimeout> | undefined
+    let lastAsked = -Infinity
     const leave = joinFolderWatch(folder, [KIND_FIELD_CHANGE], (event) => {
-      if (!event.tags.some((tag) => tag[0] === 'a' && tag[1] === address)) return
-      clearTimeout(timer)
-      timer = setTimeout(() => {
-        // A read already in flight may have asked before the change: ask after it.
-        void Promise.resolve(heldObjects.peek(key)?.inflight).then(() => heldObjects.read(key, load))
-      }, FOLLOW_SETTLE_MS)
+      if (timer || !event.tags.some((tag) => tag[0] === 'a' && tag[1] === address)) return
+      timer = setTimeout(
+        () => {
+          timer = undefined
+          lastAsked = Date.now()
+          // A read already in flight may have asked before the change: ask after it.
+          void Promise.resolve(heldObjects.peek(key)?.inflight).then(() => heldObjects.read(key, load))
+        },
+        Math.max(FOLLOW_SETTLE_MS, lastAsked + FOLLOW_MIN_GAP_MS - Date.now()),
+      )
     })
-    following.set(key, {
+    following.set(id, {
       count: 1,
       leave: () => {
         clearTimeout(timer)
@@ -173,9 +194,9 @@ function followHeld(key: string, folder: string | undefined, address: string | u
     })
   }
   return () => {
-    const entry = following.get(key)
+    const entry = following.get(id)
     if (!entry || --entry.count > 0) return
-    following.delete(key)
+    following.delete(id)
     entry.leave()
   }
 }
@@ -205,7 +226,7 @@ export function useHeldObject(reference: string | null): {
 } {
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey
-  const key = reference && pubkey ? `${pubkey} ${reference}` : null
+  const key = reference && pubkey ? heldKey(pubkey, reference) : null
   const entry = useListing(heldObjects, key)
 
   const load = useCallback<HeldLoad>(
@@ -653,7 +674,7 @@ export function useResolvedReferences(
     if (!hasRelay) return
     const refs = key ? key.split('\u0000') : []
     const ask = refs.filter((ref) => {
-      const held = heldObjects.peek(`${pubkey} ${ref}`)
+      const held = heldObjects.peek(heldKey(pubkey, ref))
       return held?.value === undefined || Date.now() - held.at >= HELD_OBJECT_FRESH_MS
     })
     if (!ask.length) return
@@ -665,7 +686,7 @@ export function useResolvedReferences(
       .then((objects) => {
         if (cancelled) return
         for (const [ref, value] of Object.entries(objects)) {
-          if (value && pubkey) void heldObjects.read(`${pubkey} ${ref}`, async () => ({ ok: true, value }))
+          if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref), async () => ({ ok: true, value }))
         }
         setObjects(objects)
       })
@@ -680,19 +701,22 @@ export function useResolvedReferences(
   */
   const [heldChanges, setHeldChanges] = useState(0)
   useEffect(() => {
-    if (!hasRelay || !pubkey || !key) return
-    const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(`${pubkey} ${ref}`, () => setHeldChanges((n) => n + 1)))
+    // Only what follows: a listing draws what it read, and a held change elsewhere is not a reason to draw it again.
+    if (!live || !hasRelay || !pubkey || !key) return
+    const leave = key.split('\u0000').map((ref) => heldObjects.subscribe(heldKey(pubkey, ref), () => setHeldChanges((n) => n + 1)))
     return () => leave.forEach((each) => each())
-  }, [key, pubkey])
+  }, [live, key, pubkey])
 
   const merged = useMemo(() => {
     void heldChanges
     const held = (key ? key.split('\u0000') : []).flatMap((ref) => {
-      const value = heldObjects.peek(`${pubkey} ${ref}`)?.value
+      // A listing keeps its own answer first, as before; it fills only what it has not answered.
+      if (!live && objects[ref]) return []
+      const value = heldObjects.peek(heldKey(pubkey, ref))?.value
       return value && value !== objects[ref] ? [[ref, value] as const] : []
     })
     return held.length ? { ...objects, ...Object.fromEntries(held) } : objects
-  }, [key, objects, pubkey, heldChanges])
+  }, [live, key, objects, pubkey, heldChanges])
 
   // What is drawn, followed while it is: by Folder and address, so a re-read that changes nothing re-joins nothing.
   const follow = live
@@ -707,7 +731,7 @@ export function useResolvedReferences(
     if (!follow || !pubkey) return
     const leave = follow.split('\u0000').map((each) => {
       const [ref, folder, address] = each.split('\u0001')
-      return followHeld(`${pubkey} ${ref}`, folder, address, heldLoad(ref, viewer))
+      return followHeld(heldKey(pubkey, ref), folder, address, heldLoad(ref, viewer))
     })
     return () => leave.forEach((each) => each())
   }, [follow, pubkey, viewer])
