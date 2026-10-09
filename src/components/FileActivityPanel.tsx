@@ -5,6 +5,8 @@ import type { FileMention } from '@/nostr/fileMentions'
 import { TopicActivity, type TopicActivityItem } from '@/components/TopicActivity'
 import { project } from '@/components/views/useFileConversationView'
 
+const LIVE = { live: true }
+
 /**
  * **Activity on a file's page: the comments elsewhere that name it** — CON-11.
  *
@@ -31,8 +33,6 @@ import { project } from '@/components/views/useFileConversationView'
  * something in it and hidden when there is not, and the header's sidebar
  * button shows it anyway, with this section's empty line (`useSidePanel`).
  */
-const LIVE = { live: true }
-
 export function FileActivityPanel({ address, mentions }: { address?: string; mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()
   /*
