@@ -31,6 +31,8 @@ import { project } from '@/components/views/useFileConversationView'
  * something in it and hidden when there is not, and the header's sidebar
  * button shows it anyway, with this section's empty line (`useSidePanel`).
  */
+const LIVE = { live: true }
+
 export function FileActivityPanel({ address, mentions }: { address?: string; mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()
   /*
@@ -38,9 +40,10 @@ export function FileActivityPanel({ address, mentions }: { address?: string; men
     resolve per distinct file, not per mention. `undefined` while the relay is
     still answering, `null` for a file the viewer cannot read; the row is drawn
     either way, with the chip and no name, rather than held back for a label.
+    Followed while shown, so a rename in Ship reaches the row.
   */
   const saidIn = useMemo(() => [...new Set(mentions.map((m) => m.saidIn))], [mentions])
-  const objects = useResolvedReferences(saidIn)
+  const objects = useResolvedReferences(saidIn, LIVE)
   const labelFor = useMemo(() => {
     const labels = new Map<string, string>()
     for (const address of saidIn) {

@@ -40,14 +40,14 @@ const makeClient = () => ({
       return {
         stop: () => {
           live.stops++
-          live.fire = undefined
+          if (live.fire === listener) live.fire = undefined
         },
       }
     },
 })
 vi.mock('@/api/relayUrl', () => ({ RELAY_URL: 'https://relay.test', hasRelay: true }))
 
-import { LIVE_FILE_LINGER_MS, stopLiveFileWatches, useLiveFile } from './useLiveFile'
+import { LIVE_FILE_LINGER_MS, joinFolderWatch, stopLiveFileWatches, useLiveFile } from './useLiveFile'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const OTHER = '22222222-2222-4222-8222-222222222222'
@@ -150,5 +150,46 @@ describe('useLiveFile', () => {
     expect(live.watched).toEqual([])
     rerender({ folder: FOLDER })
     expect(live.watched).toHaveLength(1)
+  })
+})
+
+describe('joinFolderWatch — a widget’s file’s field changes', () => {
+  const fieldChange = { id: 'f', kind: 1851, tags: [['h', FOLDER]] } as unknown as SignedEvent
+
+  it('rides the open topic’s watch of the same Folder, and hears only its own kinds', () => {
+    const topic = vi.fn()
+    const widget = vi.fn()
+    renderHook(() => useLiveFile(FOLDER, topic))
+    joinFolderWatch(FOLDER, [1851], widget)
+    expect(live.watched).toHaveLength(1)
+    act(() => live.fire?.(FOLDER, event('a')))
+    act(() => live.fire?.(FOLDER, fieldChange))
+    expect(widget.mock.calls).toEqual([[fieldChange]])
+    expect(topic).toHaveBeenCalledTimes(2)
+  })
+
+  it('a topic opened after it takes the narrow watch over: one watch left, the widget still hears', () => {
+    const widget = vi.fn()
+    joinFolderWatch(FOLDER, [1851], widget)
+    expect(live.watched).toEqual([{ ids: [FOLDER], kinds: [1851] }])
+    renderHook(() => useLiveFile(FOLDER, () => {}))
+    expect(live.watched).toHaveLength(2)
+    expect(live.stops).toBe(1)
+    act(() => live.fire?.(FOLDER, fieldChange))
+    expect(widget).toHaveBeenCalledWith(fieldChange)
+  })
+
+  it('another Folder is a narrow watch of its own, closed a while after it is left', () => {
+    vi.useFakeTimers()
+    renderHook(() => useLiveFile(FOLDER, () => {}))
+    const leave = joinFolderWatch(OTHER, [1851], () => {})
+    expect(live.watched.map((w) => [w.ids, w.kinds])).toEqual([
+      [[FOLDER], [1111, 9, 40003, 9101, 9005, 1851]],
+      [[OTHER], [1851]],
+    ])
+    leave()
+    expect(live.stops).toBe(0)
+    act(() => vi.advanceTimersByTime(LIVE_FILE_LINGER_MS))
+    expect(live.stops).toBe(1)
   })
 })

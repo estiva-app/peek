@@ -86,6 +86,8 @@ function renderTokens(text: string): ReactNode {
 /** At most this many blocks are drawn live in one message (SPEC §13.6.1); the rest stay links. */
 const MAX_PARTS_PER_MESSAGE = 6
 
+const FOLLOW = { live: true }
+
 /**
  * Whether a pasted app link names this address: its path ends in the address's
  * `d` (§7.2 puts the identity last, `…/<slug>-<d>`), and that `d` is long enough
@@ -187,6 +189,8 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   */
   const fetched = useResolvedReferences(
     inline.filter((ref) => !/^nostr:npub1/i.test(ref) && !supplied(ref)),
+    // A chip draws its file's title and status, so it follows them while shown, as a widget does.
+    FOLLOW,
   )
   const resolved: Record<string, ForeignObject | null> = { ...fetched }
   for (const ref of inline) {
