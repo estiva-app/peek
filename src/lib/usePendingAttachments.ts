@@ -51,6 +51,8 @@ export interface PendingAttachments {
   clear: () => void
   /** Forget the rows; nothing will own the blobs. */
   discard: () => void
+  /** Put back files a refused send took (OPT-7), first, as finished uploads: the relay holds them already. */
+  restore: (uploaded: readonly UploadedFile[]) => void
 }
 
 export function usePendingAttachments(): PendingAttachments {
@@ -92,5 +94,10 @@ export function usePendingAttachments(): PendingAttachments {
     isUploading: files.some((f) => f.status === 'uploading'),
     clear: () => setFiles([]),
     discard: () => setFiles([]),
+    restore: (uploaded) => {
+      if (uploaded.length === 0) return
+      const back = uploaded.map((u): PendingUpload => ({ localId: `u_${++uploadSeq}`, name: u.name, size: u.size, contentType: u.contentType, status: 'done', uploaded: u }))
+      setFiles((prev) => [...back, ...prev])
+    },
   }
 }

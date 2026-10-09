@@ -13,7 +13,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { PeekDataProvider } from '@/api'
 import { DebugProvider } from '@/lib/debug'
-import { ComposeBox, type SendPayload } from './ComposeBox'
+import { ComposeBox, type SendPayload, type SendRefused } from './ComposeBox'
 import { createDraftStore, draftKeys } from '@/lib/drafts'
 
 /*
@@ -215,5 +215,131 @@ describe('ComposeBox — a send that did not land', () => {
 
     await press(container)
     await waitFor(() => expect(drafts.read(key)).toBeUndefined())
+  })
+})
+
+/**
+ * A refused send comes back wherever the person is by then, and nothing is
+ * overwritten — OPT-7 (decided by Miky, 7 October).
+ */
+describe('ComposeBox — a send the relay refused', () => {
+  const editorIn = (container: HTMLElement) =>
+    waitFor(() => {
+      const el = container.querySelector('.ProseMirror') as (HTMLElement & { editor?: Editor }) | null
+      if (!el?.editor) throw new Error('no editor yet')
+      return el.editor
+    })
+  const TEXT_BACK = { text: true, files: false, filesLost: false }
+  /** An `onSend` the test answers: `refuse()` resolves it as the relay's no. */
+  const pending = () => {
+    let answer: (outcome: SendRefused) => void = () => {}
+    const say = vi.fn()
+    const onSend = vi.fn(() => new Promise<SendRefused>((resolve) => (answer = resolve)))
+    return { onSend, say, refuse: () => answer({ say }) }
+  }
+  const tree = (props: Partial<React.ComponentProps<typeof ComposeBox>>) => (
+    <MemoryRouter>
+      <DebugProvider>
+        <PeekDataProvider>
+          <ComposeBox {...props} />
+        </PeekDataProvider>
+      </DebugProvider>
+    </MemoryRouter>
+  )
+
+  it('puts it back when it was sent by the Send button, and then says so', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'sent by the button')
+    const { onSend, say, refuse } = pending()
+    show({ draftKey: key, drafts, onSend })
+    await screen.findByText('sent by the button')
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Send' }))
+    expect(onSend).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByText('sent by the button')).toBeNull())
+    refuse()
+    expect(await screen.findByText('sent by the button')).toBeTruthy()
+    await waitFor(() => expect(say).toHaveBeenCalledWith(TEXT_BACK))
+    expect(drafts.read(key)).toBe('sent by the button')
+  })
+
+  it('puts it back above what was typed since', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'the old message')
+    const { onSend, refuse } = pending()
+    const { container } = show({ draftKey: key, drafts, onSend })
+    const editor = await editorIn(container)
+    await screen.findByText('the old message')
+
+    fireEvent.keyDown(container.querySelector('.ProseMirror')!, { key: 'Enter' })
+    await waitFor(() => expect(editor.getText()).toBe(''))
+    editor.commands.insertContent('something new')
+    refuse()
+    await waitFor(() => expect(editor.getText()).toMatch(/the old message\s+something new/))
+    expect(drafts.read(key)).toBe('the old message\nsomething new')
+  })
+
+  it('goes into the draft of the conversation it was written in, above it, when the person has moved on', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const one = draftKeys.container('topic-1')
+    const two = draftKeys.container('topic-2')
+    drafts.write(one, 'meant for one')
+    drafts.write(two, 'two has its own')
+    const { onSend, say, refuse } = pending()
+    const { container, rerender } = show({ draftKey: one, drafts, onSend })
+    await screen.findByText('meant for one')
+
+    fireEvent.keyDown(container.querySelector('.ProseMirror')!, { key: 'Enter' })
+    // Written in one after the send, before moving: kept, below the message.
+    const editor = await editorIn(container)
+    await waitFor(() => expect(editor.getText()).toBe(''))
+    editor.commands.insertContent('and a second thought')
+    rerender(tree({ draftKey: two, drafts, onSend }))
+    await screen.findByText('two has its own')
+    refuse()
+
+    await waitFor(() => expect(say).toHaveBeenCalledWith(TEXT_BACK))
+    expect(drafts.read(one)).toBe('meant for one\nand a second thought')
+    expect(editor.getText()).toBe('two has its own')
+    expect(drafts.read(two)).toBe('two has its own')
+  })
+
+  /* Left and came back before the relay answered: a new composer is showing the conversation, seeded before the text
+     was back, so the text goes into it — a draft-only restore would be written over by its next keystroke. */
+  it('goes into the composer now showing its conversation, after a quick return', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'sent before leaving')
+    const { onSend, say, refuse } = pending()
+    const first = show({ draftKey: key, drafts, onSend })
+    await screen.findByText('sent before leaving')
+    fireEvent.keyDown(first.container.querySelector('.ProseMirror')!, { key: 'Enter' })
+    await waitFor(() => expect(drafts.read(key)).toBeUndefined())
+    first.unmount()
+
+    const back = show({ draftKey: key, drafts, onSend })
+    const editor = await editorIn(back.container)
+    refuse()
+    await waitFor(() => expect(editor.getText()).toBe('sent before leaving'))
+    expect(drafts.read(key)).toBe('sent before leaving')
+    expect(say).toHaveBeenCalledWith(TEXT_BACK)
+  })
+
+  it('goes into the draft when the composer is gone', async () => {
+    const drafts = createDraftStore(memoryStorage())
+    const key = draftKeys.container('topic-1')
+    drafts.write(key, 'sent, then the page closed')
+    const { onSend, say, refuse } = pending()
+    const { container, unmount } = show({ draftKey: key, drafts, onSend })
+    await screen.findByText('sent, then the page closed')
+
+    fireEvent.keyDown(container.querySelector('.ProseMirror')!, { key: 'Enter' })
+    await waitFor(() => expect(drafts.read(key)).toBeUndefined())
+    unmount()
+    refuse()
+    await waitFor(() => expect(say).toHaveBeenCalledWith(TEXT_BACK))
+    expect(drafts.read(key)).toBe('sent, then the page closed')
   })
 })
