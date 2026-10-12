@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { notSentNote } from './notSent'
+import { notSavedNote, notSentNote } from './notSent'
+
+describe('notSavedNote — what a refused reaction, edit or delete says (OPT-8, Miky 9 Oct)', () => {
+  it('says which change did not go through, and where what came back is', () => {
+    expect(notSavedNote('reaction', 'Design review', 'Design review', 'invalid: event id does not match')).toBe('Reaction not saved')
+    expect(notSavedNote('edit', 'Design review', 'Design review', 'invalid: event id does not match')).toBe(
+      'Edit not saved — text restored in its edit box in Design review',
+    )
+    expect(notSavedNote('delete', 'your conversation with Ana', 'your conversation with Ana', 'blocked')).toBe(
+      'Not deleted — the message is back in your conversation with Ana',
+    )
+  })
+
+  it('says access is gone, in the conversation, when that is why', () => {
+    for (const change of ['reaction', 'edit', 'delete'] as const)
+      expect(notSavedNote(change, 'Design review', 'Design review', 'restricted: not a channel member')).toBe(
+        'Not saved — you can no longer post in Design review',
+      )
+  })
+})
 
 const TEXT = { text: true, files: false, filesLost: false }
 

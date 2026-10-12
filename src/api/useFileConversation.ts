@@ -10,14 +10,14 @@ import {
   withdrawOwnEvent,
 } from '@/nostr/conversationCatchUp'
 import { announceFileNews, conversationKey, conversationsFor } from './conversations'
-import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import { KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import {
   composeCommentAsViewer,
-  deleteEventAsViewer,
-  editCommentAsViewer,
+  composeDeletion,
+  composeEdit,
+  composeReaction,
   eventIdOf,
   publishConfirmed,
-  reactAsViewer,
   resolveAsViewer,
   type ComposeArgs,
   type ConversationContainer,
@@ -45,13 +45,14 @@ export type FileConversationState = FileConversation | 'loading' | { failed: Rel
 /**
  * Everything a person can do to a file's conversation.
  *
- * A message or a reply is drawn the moment it is written and sent after
- * (OPT-6): it goes into the held conversation under the id it will have, so
- * the relay's acceptance changes nothing on screen, and a refusal takes it
- * out again. Each promise settles with the relay's answer, as before, so the
- * composer still puts back what a refused send held.
+ * A message, a reply (OPT-6), a reaction, an edit or a delete (OPT-8) is
+ * drawn the moment it is made and sent after: it goes into the held
+ * conversation under the id it will have, so the relay's acceptance changes
+ * nothing on screen, and a refusal takes it out again — a refused delete puts
+ * back what it took. Each promise settles with the relay's answer, as before,
+ * so the caller still puts back what a refused write held and says so.
  *
- * Every other write is followed by a catch-up, and one that the relay refused
+ * A resolution is followed by a catch-up, and one that the relay refused
  * reports the refusal and asks nothing. Any write naming a message still being
  * sent waits for that send, and is refused with it (Miky, 7 Oct).
  */
@@ -72,6 +73,8 @@ export interface FileConversationActions {
 }
 
 const SIGNED_OUT: WriteResult = { ok: false, reason: 'Sign in to write to this conversation.' }
+
+type Viewer = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
 
 /** Your own messages drawn and not yet answered by the relay, by id, with the answer to come. */
 const sending = new Map<string, Promise<WriteResult>>()
@@ -319,8 +322,8 @@ export function useFileConversation(
   const reload = useCallback(() => sync(), [sync])
 
   /*
-    A write about a message — an edit, a reaction, a resolution, a delete —
-    waits for that message's own send, then catches up on success. The
+    A resolution of a message waits for that message's own send, then
+    catches up on success. The
     catch-up is awaited so a caller that puts the composer's text back on
     failure does so against the conversation as the relay now has it.
   */
@@ -365,49 +368,84 @@ export function useFileConversation(
         console.warn('[nostr] building a message failed:', error)
         return { ok: false, reason: 'The message could not be prepared. Try again.' }
       }
-      const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
-      const roots = ids ? ids.split(',') : []
-      const query = viewerQuery(v.relayUrl, v.token)
       const refusal = container.kind === 'channel' ? 'The relay refused the message.' : 'The relay refused the comment.'
-      const flight = publishConfirmed(built.event, v.relayUrl, v.token, refusal)
-      sending.set(id, flight)
-      const drawn = await showOwnEvent(conversations, key, container, roots, { ...built.event, id, sig: '' }, query).catch(
-        (error: unknown) => {
-          console.warn('[nostr] drawing a sent message failed:', error)
-          return false
-        },
-      )
-      const result = await flight
-      sending.delete(id)
-      if (result.ok && result.id === id) {
-        confirmOwnEvent(id)
-        if (!drawn) void sync()
-        return result
-      }
-      /*
-        Refused, or signed as something other than what was drawn: what the
-        relay holds is found by a catch-up. Withdrawn even when the draw
-        failed, which may have merged it before its fold threw.
-      */
-      await withdrawOwnEvent(conversations, key, container, roots, id, query).catch((error: unknown) =>
-        console.warn('[nostr] withdrawing a refused message failed:', error),
-      )
-      if (result.ok) void sync()
-      return result
+      return publishOwn(v, built.event, id, refusal)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the container is `key`, by value
     [key, ids, viewer, sync],
   )
+
+  /*
+    A reaction, an edit or a delete (OPT-8): built, drawn under the id it will
+    have, then sent, exactly as a message is — waiting first for the message
+    it names, when that is still being sent.
+  */
+  const change = useCallback(
+    async (target: string, build: (pubkey: string) => UnsignedEvent, refusal: string): Promise<WriteResult> => {
+      const blocked = await afterSend(target)
+      if (blocked) return blocked
+      const v = viewer()
+      if (!v || !container || !key) return SIGNED_OUT
+      let event: UnsignedEvent
+      let id: string
+      try {
+        event = build(v.token.pubkey)
+        id = await eventIdOf(event)
+      } catch (error) {
+        console.warn('[nostr] building a change failed:', error)
+        return { ok: false, reason: 'The change could not be prepared. Try again.' }
+      }
+      return publishOwn(v, event, id, refusal)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the container is `key`, by value
+    [key, ids, viewer, sync],
+  )
+
+  /*
+    Signed and sent while it is drawn; the relay's answer confirms it or takes
+    it out again. Nothing is read after an accepted one — the socket's echo of
+    it is already held — unless it could not be drawn.
+  */
+  const publishOwn = async (v: Viewer, event: UnsignedEvent, id: string, refusal: string): Promise<WriteResult> => {
+    if (!container || !key) return SIGNED_OUT
+    const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
+    const roots = ids ? ids.split(',') : []
+    const query = viewerQuery(v.relayUrl, v.token)
+    const flight = publishConfirmed(event, v.relayUrl, v.token, refusal)
+    sending.set(id, flight)
+    const drawn = await showOwnEvent(conversations, key, container, roots, { ...event, id, sig: '' }, query).catch((error: unknown) => {
+      console.warn('[nostr] drawing your own event failed:', error)
+      return false
+    })
+    const result = await flight
+    sending.delete(id)
+    if (result.ok && result.id === id) {
+      confirmOwnEvent(id)
+      if (!drawn) void sync()
+      return result
+    }
+    /*
+      Refused, or signed as something other than what was drawn: what the
+      relay holds is found by a catch-up. Withdrawn even when the draw
+      failed, which may have merged it before its fold threw.
+    */
+    await withdrawOwnEvent(conversations, key, container, roots, id, query).catch((error: unknown) =>
+      console.warn('[nostr] withdrawing your refused event failed:', error),
+    )
+    if (result.ok) void sync()
+    return result
+  }
 
   const actions: FileConversationActions = {
     comment: (body, files, urgent) => send({ body, files, urgent }),
     reply: (parent, body, files, urgent) => send({ body, parent, files, urgent }),
     edit: (targetEventId, body, files) =>
       container
-        ? write(targetEventId, (url, token) => editCommentAsViewer({ container, targetEventId, body, files }, url, token))
+        ? change(targetEventId, (pubkey) => composeEdit({ container, targetEventId, body, files }, pubkey), 'The relay refused the edit.')
         : Promise.resolve(SIGNED_OUT),
-    remove: (targetEventId) => write(targetEventId, (url, token) => deleteEventAsViewer(targetEventId, url, token)),
-    react: (targetEventId, emoji) => write(targetEventId, (url, token) => reactAsViewer({ targetEventId, emoji }, url, token)),
+    remove: (targetEventId) => change(targetEventId, (pubkey) => composeDeletion(targetEventId, pubkey), 'The relay refused the deletion.'),
+    react: (targetEventId, emoji) =>
+      change(targetEventId, (pubkey) => composeReaction({ targetEventId, emoji }, pubkey), 'The relay refused the reaction.'),
     resolve: (targetEventId, action, message, supportingEventId) =>
       container
         ? write(targetEventId, (url, token) =>

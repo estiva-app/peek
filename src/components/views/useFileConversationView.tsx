@@ -39,7 +39,8 @@ import {
 import { groupReactions, offersEditAndDelete, type ReactionEvent } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
 import { formatTimestamp } from '@/api/format'
-import { notSentNote } from '@/lib/notSent'
+import { notSavedNote, notSentNote } from '@/lib/notSent'
+import { putBackEdit } from '@/lib/refusedEdits'
 
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
@@ -142,8 +143,10 @@ const nowSeconds = () => Math.floor(Date.now() / 1000)
  *
  * Every control the card has is offered: edit, delete, react, resolve, reply.
  * Ownership is not gated here — the relay decides who may edit or delete
- * (CON-3: the effective author and an agent's owner are its to know), and a
- * refusal comes back as its reason, in a toast. Two of a topic's controls are
+ * (CON-3: the effective author and an agent's owner are its to know). A
+ * reaction, an edit or a delete shows as it is made, and a refusal undoes it
+ * with a note (OPT-8); a resolution's refusal comes back as its reason, in a
+ * toast. Two of a topic's controls are
  * deliberately absent: urgent and the highlight, which live only in Convex
  * (HIG-1) and would be a lie on a conversation another app reads.
  *
@@ -235,7 +238,18 @@ export function useFileConversationView({
   */
   const toggleReaction = (targetEventId: string, emoji: string) => {
     const mine = view?.reactionsById[targetEventId]?.find((r) => r.emoji === emoji && r.by === viewerPubkey)
-    void (mine ? actions.remove(mine.id) : actions.react(targetEventId, emoji)).then(refuse)
+    void (mine ? actions.remove(mine.id) : actions.react(targetEventId, emoji)).then((result) => notSaved('reaction', result))
+  }
+
+  /*
+    A reaction, an edit or a delete is drawn as it is made and undone if the
+    relay refuses it (OPT-8), and this says so — which change, and where what
+    came back is — instead of `refuse`'s toast of the relay's own words. Built
+    as the change goes out, so the note names this conversation even when the
+    person has moved on by the time the relay answers.
+  */
+  const notSaved = (change: 'reaction' | 'edit' | 'delete', result: WriteResult) => {
+    if (!result.ok) showToast({ label: notSavedNote(change, noteName, noteName, result.reason), type: 'error' })
   }
 
   const setResolution = (targetEventId: string, resolved: boolean, message?: string, supportingEventId?: string) =>
@@ -271,16 +285,18 @@ export function useFileConversationView({
           if (!files) return
         }
       }
-      void actions.edit(targetEventId, body, files).then(refuse)
+      void actions.edit(targetEventId, body, files).then((result) => {
+        // The old text is back on the message; what was saved goes back in its edit box (Miky, 9 Oct).
+        if (!result.ok) putBackEdit(targetEventId, body)
+        notSaved('edit', result)
+      })
     })
   }
   const editBody = (targetEventId: string, body: string) => queueEdit(targetEventId, { body })
   const editFiles = (targetEventId: string, files: FileAttachment[]) => queueEdit(targetEventId, { files })
 
-  const remove = (targetEventId: string, what: 'Comment' | 'Reply') =>
-    void actions.remove(targetEventId).then((result) => {
-      if (refuse(result)) showToast({ label: `${what} deleted`, type: 'neutral' })
-    })
+  // Gone as it is confirmed, so nothing is said unless it comes back (Miky, 9 Oct).
+  const remove = (targetEventId: string) => void actions.remove(targetEventId).then((result) => notSaved('delete', result))
 
   /*
     The composer's files are the relay's copies (CON-12): `UploadedFile` carries
@@ -364,7 +380,7 @@ export function useFileConversationView({
     editBody: (id, body) => latestRow.current?.editBody(id, body),
     editFiles: (id, files) => latestRow.current?.editFiles(id, files),
     onOpenThread: (id) => latestRow.current?.onOpenThread(id),
-    remove: (id, what) => latestRow.current?.remove(id, what),
+    remove: (id) => latestRow.current?.remove(id),
   }))
 
   /**
@@ -587,7 +603,7 @@ export function useFileConversationView({
         readOnly={readOnly}
         // MetaText is a single line; a sentence in a narrow panel has to wrap.
         composerNotice={openView.data.isDeleted ? <MetaText className="whitespace-normal">The comment was deleted, so this thread takes no new replies.</MetaText> : undefined}
-        onDeleteReply={(id) => remove(id, 'Reply')}
+        onDeleteReply={(id) => remove(id)}
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyFilesChange={(id, f) => editFiles(id, f)}
         onReplyReactionsChange={(id, _next, _prev, emoji) => toggleReaction(id, emoji)}

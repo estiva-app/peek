@@ -29,6 +29,7 @@ import { MessageBody } from './ui/MessageBody'
 import { UnreadDot } from './ui/UnreadDot'
 import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
+import { takeRefusedEdit, useRefusedEdit } from '@/lib/refusedEdits'
 import { pastedImages, postedAttachment } from '@/lib/fileAttachments'
 import { blobObjectUrl } from '@/nostr/media'
 
@@ -70,6 +71,8 @@ interface ConversationCardProps {
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
   onBodyChange?: (body: string) => void
+  /** The message's id: an edit of it the relay refused reopens this card's edit box with the saved text (OPT-8). */
+  messageId?: string
   /** The message's files after an edit added or removed some — PEE-16. The
    *  whole list, and only when this edit changed it. */
   onFilesChange?: (files: FileAttachment[]) => void
@@ -121,6 +124,7 @@ export function ConversationCard({
   highlightType,
   onHighlightChange,
   onBodyChange,
+  messageId,
   onFilesChange,
   onResolvedChange,
   onReactionsChange,
@@ -186,6 +190,8 @@ export function ConversationCard({
   const editCancelFnRef = useRef<() => void>(() => {})
   const editEmptyRef = useRef(true)
   const editEditorRef = useRef<Editor | null>(null)
+  /** The text a refused edit saved, for the edit box to open with instead of the body (OPT-8). */
+  const restoredEdit = useRef<string | undefined>(undefined)
   /** The edit box itself — what the highlight picker hangs from. */
   const editBoxRef = useRef<HTMLDivElement>(null)
 
@@ -301,7 +307,8 @@ export function ConversationCard({
     if (!editEditor) return
     if (isEditing) {
       // The text says only `nostr:npub…`; the urgent chips come back from the tags (CON-24).
-      const content = withUrgentMentions(textToTiptapContent(bodyState), urgentMentions)
+      const content = withUrgentMentions(textToTiptapContent(restoredEdit.current ?? bodyState), urgentMentions)
+      restoredEdit.current = undefined
       // If message has a highlight, prepend the tag to the first paragraph
       if (highlightState && content.content && content.content.length > 0) {
         const first = content.content[0]
@@ -388,6 +395,21 @@ export function ConversationCard({
     editAttachments.begin()
     setIsEditing(true)
   }
+
+  /*
+    An edit the relay refused (OPT-8): the message shows its old text again,
+    and its edit box reopens holding what was saved (Miky, 9 Oct) — now, or
+    when this card is next drawn if the person had moved on. A box already
+    open again is left as the person has it.
+  */
+  const refusedEdit = useRefusedEdit(messageId)
+  useEffect(() => {
+    if (refusedEdit === undefined || !messageId || !takeRefusedEdit(messageId)) return
+    setBodyState(body)
+    if (isEditing) return
+    restoredEdit.current = refusedEdit
+    handleEditStart()
+  }, [refusedEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditSave = () => {
     if (!editEditor) return

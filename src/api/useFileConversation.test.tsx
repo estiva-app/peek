@@ -54,7 +54,20 @@ vi.mock('@/nostr/fileConversation', () => ({
   },
   eventIdOf: async (event: { created_at: number }) => idOf(event.created_at),
   publishConfirmed: () => relay.publish(),
-  reactAsViewer: () => relay.react(),
+  // A reaction, an edit and a delete are built the same way (OPT-8): counted with the messages, so ids stay in order.
+  composeReaction: (args: { emoji: string }) => {
+    relay.react()
+    relay.composed += 1
+    return { kind: 7, content: args.emoji, tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) }
+  },
+  composeEdit: (args: { body: string }) => {
+    relay.composed += 1
+    return { kind: 40003, content: args.body, tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) }
+  },
+  composeDeletion: () => {
+    relay.composed += 1
+    return { kind: 5, content: '', tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) }
+  },
 }))
 vi.mock('@/nostr/foreign', () => ({ viewerQuery: () => async () => [] }))
 // Stable across renders, as the real one is (`useCallback`).
@@ -394,6 +407,58 @@ describe('useFileConversation — a channel (REM-1)', () => {
     expect(await reaction).toEqual(refused)
     expect(relay.composed).toBe(1)
     expect(relay.react).not.toHaveBeenCalled()
+  })
+
+  it('a reaction, an edit and a delete are each drawn before the relay answers, and nothing is read after (OPT-8)', async () => {
+    relay.publish.mockResolvedValue({ ok: true, id: '' })
+    relay.publish
+      .mockResolvedValueOnce({ ok: true, id: idOf(1) })
+      .mockResolvedValueOnce({ ok: true, id: idOf(2) })
+      .mockResolvedValueOnce({ ok: true, id: idOf(3) })
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    const target = 'e'.repeat(64)
+    await act(async () => {
+      expect(await result.current.actions.react(target, '👍')).toEqual({ ok: true, id: idOf(1) })
+      expect(await result.current.actions.edit(target, 'new text')).toEqual({ ok: true, id: idOf(2) })
+      expect(await result.current.actions.remove(target)).toEqual({ ok: true, id: idOf(3) })
+    })
+    expect(relay.own).toEqual([1, 2, 3].flatMap((n) => [`shown ${idOf(n)}`, `confirmed ${idOf(n)}`]))
+    expect(relay.catchUp).not.toHaveBeenCalled()
+    expect(relay.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('a reaction, an edit or a delete the relay refused is taken out again, and the refusal reported (OPT-8)', async () => {
+    relay.publish.mockResolvedValue({ ok: false, reason: 'invalid: event id does not match' })
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    const target = 'e'.repeat(64)
+    const refused = { ok: false, reason: 'invalid: event id does not match' }
+    await act(async () => {
+      expect(await result.current.actions.react(target, '👍')).toEqual(refused)
+      expect(await result.current.actions.edit(target, 'new text')).toEqual(refused)
+      expect(await result.current.actions.remove(target)).toEqual(refused)
+    })
+    expect(relay.own).toEqual([1, 2, 3].flatMap((n) => [`shown ${idOf(n)}`, `withdrawn ${idOf(n)}`]))
+    expect(relay.catchUp).not.toHaveBeenCalled()
+  })
+
+  it('taking back a reaction still being sent waits for it (OPT-8)', async () => {
+    const answer = pending()
+    relay.publish.mockResolvedValueOnce({ ok: true, id: idOf(2) })
+    const { result } = mount({ container: channel, rootIds: [] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    let taken: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      void result.current.actions.react('e'.repeat(64), '👍')
+    })
+    await act(async () => {
+      taken = result.current.actions.remove(idOf(1))
+    })
+    expect(relay.composed).toBe(1)
+    await answer({ ok: true, id: idOf(1) })
+    expect(await taken).toEqual({ ok: true, id: idOf(2) })
+    expect(relay.own).toEqual([`shown ${idOf(1)}`, `confirmed ${idOf(1)}`, `shown ${idOf(2)}`, `confirmed ${idOf(2)}`])
   })
 
   it('once the message is accepted, the reply that waited for it is sent', async () => {
