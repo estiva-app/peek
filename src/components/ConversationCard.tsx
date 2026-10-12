@@ -399,15 +399,16 @@ export function ConversationCard({
   /*
     An edit the relay refused (OPT-8): the message shows its old text again,
     and its edit box reopens holding what was saved (Miky, 9 Oct) — now, or
-    when this card is next drawn if the person had moved on.
+    when this card is next drawn if the person had moved on. A box already
+    open again is left as the person has it.
   */
   const refusedEdit = useRefusedEdit(messageId)
   useEffect(() => {
-    if (refusedEdit === undefined || !messageId) return
-    takeRefusedEdit(messageId)
-    restoredEdit.current = refusedEdit
+    if (refusedEdit === undefined || !messageId || !takeRefusedEdit(messageId)) return
     setBodyState(body)
-    if (!isEditing) handleEditStart()
+    if (isEditing) return
+    restoredEdit.current = refusedEdit
+    handleEditStart()
   }, [refusedEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditSave = () => {

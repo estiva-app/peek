@@ -16,9 +16,15 @@ export function putBackEdit(id: string, text: string): void {
   for (const listener of listeners) listener()
 }
 
-/** The card has reopened its edit box with it. */
-export function takeRefusedEdit(id: string): void {
-  if (refused.delete(id)) for (const listener of listeners) listener()
+/**
+ * A card takes it to reopen its edit box with it. `false` when another card
+ * drawing the same message took it first — a comment is drawn in its list and
+ * at the top of its thread — so only one box reopens.
+ */
+export function takeRefusedEdit(id: string): boolean {
+  if (!refused.delete(id)) return false
+  for (const listener of listeners) listener()
+  return true
 }
 
 const subscribe = (listener: () => void) => {

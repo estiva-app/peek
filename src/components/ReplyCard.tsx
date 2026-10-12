@@ -351,11 +351,11 @@ export function ReplyCard({
   // A refused edit: the old text is back, and the edit box reopens with what was saved (OPT-8, as ConversationCard).
   const refusedEdit = useRefusedEdit(messageId)
   useEffect(() => {
-    if (refusedEdit === undefined || !messageId) return
-    takeRefusedEdit(messageId)
-    restoredEdit.current = refusedEdit
+    if (refusedEdit === undefined || !messageId || !takeRefusedEdit(messageId)) return
     setBodyState(body)
-    if (!isEditing) handleEditStart()
+    if (isEditing) return
+    restoredEdit.current = refusedEdit
+    handleEditStart()
   }, [refusedEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditSave = () => {

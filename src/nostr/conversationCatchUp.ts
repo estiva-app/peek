@@ -310,20 +310,22 @@ export async function showOwnEvent(
   query: QueryFn,
 ): Promise<boolean> {
   if (store.since(key) === undefined) return false
-  unconfirmed.add(event.id)
   /*
     Your own deletion takes what it names out of what is held as it is merged
     (OPT-8), so what it took is kept aside until the relay answers: a refused
     one puts it back. One that names somebody else's — an agent's owner
-    deleting its message (CON-3) — takes nothing: the relay decides that, and
-    a catch-up after its answer finds out.
+    deleting its message (CON-3) — is not merged at all: the relay decides
+    that, and the catch-up after its answer must find the deletion new to ask
+    it whether the message remains.
   */
   const named = isDeletion(event) ? event.tags.filter((tag) => tag[0] === 'e' && tag[1]).map((tag) => tag[1]) : []
   const before = named.length ? await store.query(key)([{ ids: named, limit: named.length }]) : []
-  const { disputed } = store.merge(key, [event])
+  if (before.some((target) => target.pubkey !== event.pubkey)) return false
+  unconfirmed.add(event.id)
+  store.merge(key, [event])
   if (before.length) deletedByOwn.set(event.id, before)
   await settleFolded(store, key, null, container, rootIds, query)
-  return disputed.length === 0
+  return true
 }
 
 /** What your own deletions not yet answered took out of what is held, by the deletion's id. */
@@ -348,7 +350,23 @@ export async function withdrawOwnEvent(
   const restored = deletedByOwn.get(id) ?? []
   deletedByOwn.delete(id)
   store.forget(key, [id])
-  if (restored.length) store.merge(key, restored)
+  /*
+    Only what the relay still has comes back: an admin may have deleted it
+    while yours was in flight, and that deletion named nothing held then.
+    Unanswered, it all comes back — the relay is likelier down than the
+    message gone.
+  */
+  if (restored.length) {
+    const ids = restored.map((event) => event.id)
+    const remaining = await query([{ ids, limit: ids.length }]).then(
+      (answer) => new Set(answer.map((event) => event.id)),
+      () => new Set(ids),
+    )
+    store.merge(
+      key,
+      restored.filter((event) => remaining.has(event.id)),
+    )
+  }
   await settleFolded(store, key, null, container, rootIds, query)
 }
 

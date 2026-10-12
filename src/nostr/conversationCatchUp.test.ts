@@ -423,6 +423,17 @@ describe('your own reaction, edit or delete, before the relay answers (OPT-8)', 
     expect(store.ids('k').sort()).toEqual([first.id, second.id].sort())
   })
 
+  it('a refused delete does not bring back what an admin deleted meanwhile', async () => {
+    const first = message()
+    const relay = fakeRelay([first])
+    const store = await held(channel, [], relay)
+    const mine = event({ kind: 5, content: '', tags: [['e', first.id]] })
+    await showOwnEvent(store, 'k', channel, [], mine, relay.query)
+    relay.events.splice(0, relay.events.length)
+    await withdrawOwnEvent(store, 'k', channel, [], mine.id, relay.query)
+    expect(store.value('k')!.roots).toEqual([])
+  })
+
   it('a delete of a comment with replies draws its deleted stand-in at once, and refused, the comment', async () => {
     const first = comment()
     const reply = event({ kind: 1111, pubkey: BOB, tags: [['A', ADDRESS], ['K', '30840'], ['e', first.id], ['k', '1111'], ['p', ALICE], ['h', FOLDER]] })
@@ -454,5 +465,17 @@ describe('your own reaction, edit or delete, before the relay answers (OPT-8)', 
     expect(await showOwnEvent(store, 'k', channel, [], mine, relay.query)).toBe(false)
     expect(store.value('k')!.roots.map((r) => r.id)).toEqual([theirs.id])
     await withdrawOwnEvent(store, 'k', channel, [], mine.id, relay.query)
+  })
+
+  it('a delete of somebody else’s message the relay took is gone after the catch-up', async () => {
+    const theirs = message({ pubkey: BOB })
+    const relay = fakeRelay([theirs])
+    const store = await held(channel, [], relay)
+    const mine = event({ kind: 5, content: '', tags: [['e', theirs.id]] })
+    await showOwnEvent(store, 'k', channel, [], mine, relay.query)
+    relay.events.splice(0, relay.events.length, mine)
+    confirmOwnEvent(mine.id)
+    await catchUpConversation(store, 'k', channel, [], relay.query)
+    expect(store.value('k')!.roots).toEqual([])
   })
 })

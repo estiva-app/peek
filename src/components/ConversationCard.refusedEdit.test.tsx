@@ -58,6 +58,21 @@ describe('a refused edit', () => {
     expect((await editorIn(container)).getText()).toBe('the new text')
   })
 
+  it('reopens one box when the message is drawn twice — in its list and atop its thread', async () => {
+    const { container } = render(
+      wrap(
+        <>
+          <ConversationCard authorName="You" timestamp="10:24" body="the old text" messageId={ID} onBodyChange={() => {}} />
+          <ConversationCard authorName="You" timestamp="10:24" body="the old text" messageId={ID} onBodyChange={() => {}} />
+        </>,
+      ),
+    )
+    act(() => putBackEdit(ID, 'the new text'))
+    await editorIn(container)
+    await new Promise((done) => setTimeout(done, 50))
+    expect(container.querySelectorAll('.ProseMirror')).toHaveLength(1)
+  })
+
   it('negative control: another message’s refused edit opens nothing here', async () => {
     const { container } = render(wrap(<ConversationCard authorName="You" timestamp="10:24" body="the old text" messageId={'f'.repeat(64)} onBodyChange={() => {}} />))
     act(() => putBackEdit(ID, 'the new text'))
