@@ -6,7 +6,7 @@ import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
-import { formatDateLabel, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
+import { formatDateLabel, reloadFoldersOnScreen, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
@@ -693,6 +693,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         return
       }
     }
+    // A new file is in a Folder's list now: the open sections, the tree's among them, read it again (INT-12).
+    if (result.created) void reloadFoldersOnScreen()
     const title = properties.title?.trim()
     // C5: say it worked, where the person is looking.
     showToast({ label: title ? `“${title}” created in ${appLabel}` : `Created in ${appLabel}`, type: 'success' })
@@ -820,12 +822,13 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       const recentRows = [...recentTopics, ...recentPeople.map((p) => personRow(p, () => forgetRecent({ kind: 'person', id: p.id })))]
       /*
         The host's own actions, before anything is typed (INT-13, Miky
-        2026-10-12): below this conversation, above Recent, labelled with the
-        app's name until Katerina says otherwise. Empty while its manifest is
-        read, so the group is simply not drawn yet.
+        2026-10-12): below this conversation, above Recent, under "Actions" —
+        "You're in Peek, no need to call it 'Peek'" (Miky, the issue's
+        conversation). Empty while its manifest is read, so the group is simply
+        not drawn yet.
       */
       const hostGroups = HOST_APPS.map((app) => ({
-        label: app.label,
+        label: 'Actions',
         rows: liveActions(app).map((action) => ({
           id: `host-${app.id}-${action.id}`,
           label: action.label,

@@ -70,6 +70,7 @@ const applyAction = vi.fn<(args: Record<string, unknown>) => Promise<{ ok: true;
   ok: true as const,
   created: CREATED,
 }))
+const reloadFoldersOnScreen = vi.fn(async () => {})
 const setMember = vi.fn<(file: string, folder: string, member: boolean, person?: string) => Promise<true>>(async () => true)
 
 vi.mock('@/api', async () => {
@@ -78,6 +79,8 @@ vi.mock('@/api', async () => {
     ...actual,
     useForeignObjects: () => ({ resolveObject: vi.fn(), resolveFolderProject: vi.fn(), applyAction, creatableUnder }),
     useMembership: () => ({ setMember }),
+    // Read when called, not when the hoisted mock is built.
+    reloadFoldersOnScreen: () => reloadFoldersOnScreen(),
     usePeople: () => PEOPLE,
     useWorkspacePeople: () => PEOPLE,
   }
@@ -114,7 +117,8 @@ afterEach(() => unregisterTopicConversation())
 describe('Peek’s actions are on the first level (INT-13)', () => {
   it('shows Start a conversation and Create topic before anything is typed, and Peek is not an app to go into', async () => {
     open()
-    const peek = await screen.findByRole('group', { name: 'Peek' })
+    // "Actions", not "Peek": you are in Peek (Miky, INT-13's conversation).
+    const peek = await screen.findByRole('group', { name: 'Actions' })
     expect(await within(peek).findByRole('option', { name: /Start a conversation/ })).toBeInTheDocument()
     expect(within(peek).getByRole('option', { name: /Create topic/ })).toBeInTheDocument()
     expect(within(screen.getByRole('group', { name: 'Apps' })).queryByText('Peek')).not.toBeInTheDocument()
@@ -145,6 +149,27 @@ describe('Create topic (INT-12)', () => {
     // The members are Peek's to write, never a tag on the file.
     expect(args.value).toEqual({ title: 'Pricing' })
     await waitFor(() => expect(setMember).toHaveBeenCalledWith(CREATED, QA_FOLDER, true, 'b'.repeat(64)))
+  })
+
+  it('reads the open Folders again once the topic exists, so the tree shows it', async () => {
+    registerTopicConversation({ references: [], messages: [], folder: QA_FOLDER })
+    open()
+    await userEvent.click(await screen.findByRole('option', { name: /Create topic/ }))
+    await userEvent.type(await screen.findByLabelText(/title/i), 'Pricing')
+    await userEvent.click(screen.getByRole('button', { name: 'Create topic' }))
+    await waitFor(() => expect(reloadFoldersOnScreen).toHaveBeenCalled())
+  })
+
+  it('says so when there is no Folder to add to', async () => {
+    creatableUnder.mockImplementationOnce(async () => ({
+      actions: [startConversation, createFile],
+      parents: [],
+      manifest: `31990:${ME}:estiva-peek`,
+      parentsFor: { 'create-file': [] },
+    }))
+    open()
+    await userEvent.click(await screen.findByRole('option', { name: /Create topic/ }))
+    expect(await screen.findByText('No Folder you can add to yet')).toBeInTheDocument()
   })
 
   it('starts with no Folder outside one, and says the Folder is needed', async () => {
