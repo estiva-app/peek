@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
-import { isArchived, type FolderContents, type FolderSummary } from '@estiva-app/interop'
+import { isArchived, type FolderContents, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { RETRY_FIRST_MS, RETRY_MAX_MS, createRetryingRead } from '@estiva-app/platform'
 import { useForeignObjects } from '@/api'
 import {
@@ -12,6 +12,7 @@ import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
+import { rememberFileAddress } from './useForeignConversation'
 
 /**
  * Navigation by Folder — RFC 0.4 §4 and §5.
@@ -86,7 +87,12 @@ function loadFolderContents(
     is the wrong sentence twice over.
   */
   return withRateLimitRetry(() => resolveFolderContents(folder))
-    .then((contents) => ({ ok: true as const, value: contents }))
+    .then((contents) => {
+      listedIn.set(folder, contents.files)
+      // A `d` names one file of any kind, so a short link to one listed here opens with no lookup.
+      for (const file of contents.files) if (file.address) rememberFileAddress(file.address)
+      return { ok: true as const, value: contents }
+    })
     .catch((error: unknown) => {
       // Swallowed, like the project read: nothing throws and the app keeps
       // working. What the failure buys is that the view can say *which*
@@ -97,6 +103,23 @@ function loadFolderContents(
       console.warn('[nostr] folder contents read failed:', error)
       return { ok: false as const, failure: kind as RelayFailureKind }
     })
+}
+
+/** Each Folder's files as its last listing read them (OPT-9). */
+const listedIn = new Map<string, readonly ForeignObject[]>()
+
+/**
+ * A file as the Folder listing it was clicked in already holds it (OPT-9):
+ * its title, its Folder and what it allows, known before the file page's own
+ * resolve answers. Only the latest listing of each Folder counts, so a file
+ * removed from its Folder is not still offered from an older read.
+ */
+export function listedFile(address: string): ForeignObject | undefined {
+  for (const files of listedIn.values()) {
+    const file = files.find((f) => f.address === address)
+    if (file) return file
+  }
+  return undefined
 }
 
 /**
@@ -228,6 +251,7 @@ const folderListing = createRetryingRead<FolderSummary[] | null>({
 /** Empty the held listing — what `clearListingCaches` does for the others. Tests call it between cases. */
 export function clearFolderListing(): void {
   folderListing.clear()
+  listedIn.clear()
 }
 
 /**

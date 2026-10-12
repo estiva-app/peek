@@ -137,6 +137,10 @@ const peekView = vi.hoisted(() => ({ args: [] as Record<string, unknown>[] }))
 vi.mock('@/components/views/useFileConversationView', async () => ({
   // The real fold: Activity's mention rows draw each message as it is now with it (PEE-48).
   project: (await vi.importActual<typeof import('@/components/views/useFileConversationView')>('@/components/views/useFileConversationView')).project,
+  // A getter: JSX here would run while the mock is hoisted, before the runtime is imported.
+  get conversationPlaceholder() {
+    return { children: <div data-testid="conversation-placeholder" /> }
+  },
   useFileConversationView: (args: Record<string, unknown>) => {
     peekView.args.push(args)
     const container = args.container as { address: string; h: string } | null
@@ -172,8 +176,11 @@ const marks = vi.hoisted(() => ({
   container: vi.fn<(kind: string, key: string) => void>(),
   thread: vi.fn<(key: string, newestAt?: number) => void>(),
 }))
+/* What the Folder listing already holds of a file (OPT-9): nothing, unless a test lists it. */
+const listing = vi.hoisted(() => ({ files: [] as { address?: string }[] }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  listedFile: (address: string) => listing.files.find((file) => file.address === address),
   useReadActions: () => ({
     markFileRead: marks.file,
     markContainerRead: marks.container,
@@ -346,6 +353,7 @@ beforeEach(() => {
   objects.byAddress = { [ISSUE_ADDRESS]: issue, [TOPIC_ADDRESS]: topic, [PROJECT_ADDRESS]: project }
   objects.pending.clear()
   relay.files = [project, topic]
+  listing.files = []
   threads.state = { roots: {}, replies: {} }
   follows.state = 'known'
   follows.keys = new Set()
@@ -652,6 +660,59 @@ describe('FilePage keeps the tree while the next file resolves (SID-2)', () => {
     fireEvent.click(within(row(TOPIC_ADDRESS)!).getByText('FOL-15 test topic 2'))
     expect(screen.getByTestId('left').querySelector(`[data-folder="${FOLDER}"]`)).not.toBeNull()
     expect(selected(TOPIC_ADDRESS)).toBe(true)
+  })
+
+  /*
+    OPT-9: a topic the listing already holds opens as itself — its title, Peek's
+    own view and its composer — while its file resolves, and the read waits for
+    the file's comments. Anything the listing cannot vouch for gets the one
+    conversation placeholder and no composer, so none is drawn and then taken away.
+  */
+  const commentableOther = { ...other, actions: [{ id: 'comment', label: 'Comment' }] } as unknown as ForeignObject
+
+  it('a listed topic opens with its title and composer before its file has resolved', () => {
+    listing.files = [commentableOther]
+    objects.byAddress[OTHER_ADDRESS] = commentableOther
+    objects.pending.add(OTHER_ADDRESS)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    peekView.args.length = 0
+    fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
+
+    const middle = screen.getByTestId('middle')
+    expect(within(middle).getByTestId('peek-view').getAttribute('data-address')).toBe(OTHER_ADDRESS)
+    expect(within(middle).getByLabelText('Peek composer')).toBeInTheDocument()
+    expect(within(middle).getAllByText('Another topic').length).toBeGreaterThan(0)
+    // The listing's copy lists no comments: nothing is read until the file's own do.
+    expect(peekView.args.at(-1)?.rootIds).toBeNull()
+
+    act(() => {
+      objects.pending.delete(OTHER_ADDRESS)
+      objects.wake?.()
+    })
+    expect(peekView.args.at(-1)?.rootIds).toEqual([])
+    expect(within(screen.getByTestId('middle')).getByLabelText('Peek composer')).toBeInTheDocument()
+  })
+
+  it('an archived listed topic shows the placeholder alone until its file resolves', () => {
+    listing.files = [{ ...commentableOther, archived: { by: CATH, at: 1_790_000_000 } } as unknown as ForeignObject]
+    objects.pending.add(OTHER_ADDRESS)
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(row(OTHER_ADDRESS)!).getByText('Another topic'))
+
+    const middle = screen.getByTestId('middle')
+    expect(within(middle).getByTestId('conversation-placeholder')).toBeInTheDocument()
+    expect(within(middle).queryByLabelText('Peek composer')).toBeNull()
+  })
+
+  it("another app's listed file shows the placeholder alone until its file resolves", () => {
+    objects.pending.add(PROJECT_ADDRESS)
+    listing.files = [{ ...project, actions: [{ id: 'comment', label: 'Comment' }] } as unknown as ForeignObject]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(row(PROJECT_ADDRESS)!).getByText('Folders: navigation for the whole suite'))
+
+    const middle = screen.getByTestId('middle')
+    expect(within(middle).getByTestId('conversation-placeholder')).toBeInTheDocument()
+    expect(within(middle).queryByLabelText('Peek composer')).toBeNull()
   })
 
   it('a click that resolves to nothing lets the last file go, as a dead link always has', () => {

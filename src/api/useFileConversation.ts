@@ -199,7 +199,12 @@ export const LIVE_CATCH_UP_MS = 60_000
  */
 export function useFileConversation(
   container: ConversationContainer | null | undefined,
-  rootIds: readonly string[],
+  /**
+   * A file's comment ids, or null while the file is still resolving (OPT-9):
+   * the view and its composer are drawn, and the read waits for them, since a
+   * read without them would answer with an empty conversation.
+   */
+  rootIds: readonly string[] | null,
   {
     onActivity,
   }: {
@@ -219,7 +224,7 @@ export function useFileConversation(
   // The conversation is the container's; the root ids are only what to read in it.
   const key = container ? conversationKey(container) : ''
   // The identity of the array changes every render; the comment ids do not.
-  const ids = container?.kind === 'file' ? rootIds.join(',') : ''
+  const ids = container?.kind === 'file' ? (rootIds?.join(',') ?? null) : ''
 
   const subscribe = useCallback(
     (listener: () => void) => (store && key ? store.subscribe(key, listener) : () => {}),
@@ -249,7 +254,8 @@ export function useFileConversation(
   */
   const sync = useCallback(async (event?: SignedEvent) => {
     const at = viewer()
-    if (!key || !container || !at) return
+    // Before the roots are known there is nothing to read; what the socket delivers meanwhile, the first read finds.
+    if (!key || !container || !at || ids === null) return
     const conversations = conversationsFor(at.relayUrl, at.token.pubkey)
     const roots = ids ? ids.split(',') : []
     const query = viewerQuery(at.relayUrl, at.token)

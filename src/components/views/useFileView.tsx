@@ -4,10 +4,12 @@ import { Panel } from '@estiva-app/ui'
 import { IconButton } from '@/components/ui/IconButton'
 import { ForeignConversationView } from '@/components/views/ForeignConversationView'
 import { FileThreadView } from '@/components/views/FileThreadView'
-import { useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
+import { conversationPlaceholder, useFileConversationView, type ConversationParts } from '@/components/views/useFileConversationView'
 import { FileActivityPanel } from '@/components/FileActivityPanel'
 import { OverviewPanel } from '@/components/OverviewPanel'
+import { isArchived } from '@estiva-app/interop'
 import {
+  listedFile,
   useFileThreads,
   useForeignConversation,
   useNewReplyThreads,
@@ -74,14 +76,28 @@ export function useFileView({
     Such a file keeps the read-only panes, which draw its comments off the
     same resolve: a conversation one can read and not write in, never a spinner.
   */
-  const canComment = !!file?.naddr && (file.actions ?? []).some((a) => a.id === 'comment')
+  /*
+    While the file resolves, the Folder listing it was clicked in already
+    holds it (OPT-9): its title, its Folder and what it allows. An open Peek
+    topic there gets its own view at once — the conversation's one
+    placeholder with the composer under it — instead of a "File" pane that
+    becomes a topic half a second later. Only a Peek topic that is not
+    archived, so a composer drawn now is never taken away when the resolve
+    answers (Miky, OPT-9's kickoff); another app's file waits for it.
+  */
+  const listed = conversation === 'loading' && address ? listedFile(address) : undefined
+  const listedTopic =
+    listed?.address && !isArchived(listed) && referenceLink(listed.address, listed)?.place === 'file' ? listed : null
+  const writable = file ?? listedTopic
+  const canComment = !!writable?.naddr && (writable.actions ?? []).some((a) => a.id === 'comment')
   const container: ConversationContainer | null =
-    canComment && file?.address && file.folder ? { kind: 'file', address: file.address, h: file.folder } : null
+    canComment && writable?.address && writable.folder ? { kind: 'file', address: writable.address, h: writable.folder } : null
   const ownView = container !== null
-  const title = file?.slots.title?.value ?? 'File'
+  const title = (file ?? listed)?.slots.title?.value ?? 'File'
   const peek = useFileConversationView({
     container,
-    rootIds,
+    // The listing's copy of a file lists no comments: the read waits for the file's own.
+    rootIds: file ? rootIds : null,
     openThreadId,
     onOpenThread,
     title,
@@ -157,19 +173,21 @@ export function useFileView({
   // Panel scrolls the body with the package's bar, and keeps the composer under it.
   const panel: Partial<ConversationParts> & { children: ReactNode } = ownView
     ? peek.conversationParts
-    : {
-        children: (
-          <ForeignConversationView
-            state={conversation}
-            people={people}
-            onOpenThread={onOpenThread}
-            openThreadId={openThreadId}
-            replyCounts={replyCounts}
-            newReplies={newReplies}
-            deletedRoots={deletedRoots}
-          />
-        ),
-      }
+    : conversation === 'loading'
+      ? conversationPlaceholder
+      : {
+          children: (
+            <ForeignConversationView
+              state={conversation}
+              people={people}
+              onOpenThread={onOpenThread}
+              openThreadId={openThreadId}
+              replyCounts={replyCounts}
+              newReplies={newReplies}
+              deletedRoots={deletedRoots}
+            />
+          ),
+        }
 
   const threadPanel: ReactNode | undefined = ownView ? (
     // The thread is what somebody just asked for; the widget and Activity are what the page shows otherwise.

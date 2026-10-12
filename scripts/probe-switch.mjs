@@ -70,6 +70,14 @@ async function runSwitches({ steps, gapMs, hook }) {
   // The Folder tree sits inside <main> with no selector of its own, so its placeholders count too; it draws
   // one only on a cold load, which makes "open A" the only step it can inflate.
   const skeletons = () => main().querySelectorAll('.animate-pulse,[aria-busy=true]').length
+  // Which placeholder (OPT-9): the file's resolve draws a list skeleton, the conversation's read a card one.
+  const skeletonKind = () =>
+    main().querySelector('[data-loading="foreign-conversation"]')
+      ? 'file skeleton'
+      : main().querySelector('.animate-skeleton-in')
+        ? 'conversation skeleton'
+        : 'skeleton'
+  const composer = () => Boolean(main().querySelector('[contenteditable=true]'))
   /*
     The conversation's scroller is the tallest scrollable element in the pane. Finding it walks the whole
     pane with getComputedStyle, which on a 200-message topic takes longer than a sample, so it is looked
@@ -143,12 +151,23 @@ async function runSwitches({ steps, gapMs, hook }) {
     let lastTop = null
     let previousSample = t0
     let firstFrame = null
+    // Any sample before the messages with no composer on screen (OPT-9: it is there from the first frame).
+    let composerMissing = false
+    let watched = null
+    let moves = 0
+    let maxMove = 0
     found = null
     // The first frame React paints after the click: what a person sees before anything could have been fetched.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         const text = main().textContent
-        firstFrame = { ms: Math.round(performance.now() - t0), busy: skeletons(), ready: ready(text, skeletons(), before), text: text.slice(0, 400) }
+        firstFrame = {
+          ms: Math.round(performance.now() - t0),
+          busy: skeletons(),
+          ready: ready(text, skeletons(), before),
+          composer: composer(),
+          text: text.slice(0, 400),
+        }
       }),
     )
     while (performance.now() - t0 < 20000) {
@@ -157,8 +176,9 @@ async function runSwitches({ steps, gapMs, hook }) {
       const busy = skeletons()
       // Before the messages, a pulse is the conversation's skeleton; after them, a widget still loading.
       // Durations are measured between samples, which are often much more than 30 ms apart on a long topic.
+      if (visible === null && !composer()) composerMissing = true
       if (busy && visible === null) {
-        note('skeleton')
+        note(skeletonKind())
         skeletonMs += now - previousSample
         maxSkeletons = Math.max(maxSkeletons, busy)
       } else if (busy) note('loading widgets')
@@ -168,6 +188,25 @@ async function runSwitches({ steps, gapMs, hook }) {
       if (visible !== null && box) {
         if (lastTop !== null && Math.abs(box.scrollTop - lastTop) > 40) jumps++
         lastTop = box.scrollTop
+        /*
+          What a person sees move (OPT-9): a message on screen shifting while nobody scrolls — a widget filling in
+          above it with the offset unchanged, or the offset changing under it. One message near the bottom of the
+          view is watched; it is picked again when it leaves the page.
+        */
+        if (!watched?.el.isConnected) {
+          const r = box.getBoundingClientRect()
+          let el = document.elementFromPoint(r.left + r.width / 2, r.bottom - 80)
+          while (el && el !== box && !el.matches('[data-root] > *') && (el.textContent?.length ?? 0) < 30) el = el.parentElement
+          watched = el && el !== box ? { el, top: el.getBoundingClientRect().top } : null
+        } else {
+          const top = watched.el.getBoundingClientRect().top
+          const moved = Math.abs(top - watched.top)
+          if (moved > 4) {
+            moves++
+            maxMove = Math.max(maxMove, Math.round(moved))
+          }
+          watched.top = top
+        }
       }
       const sig = `${location.pathname}|${busy}|${Math.round(text.length / 20)}|${box ? Math.round(box.scrollTop) : '-'}/${box?.scrollHeight ?? '-'}`
       if (sig !== signature) {
@@ -198,6 +237,9 @@ async function runSwitches({ steps, gapMs, hook }) {
       maxSkeletons,
       fromBottom: box ? Math.round(box.scrollHeight - box.scrollTop - box.clientHeight) : null,
       jumps,
+      moves,
+      maxMove,
+      composerMissing,
     }
     if (step.key) paths[step.key] = location.pathname
     // QA-2's message, posted while QA-1 was elsewhere: is it in the conversation QA-1 came back to?
@@ -511,6 +553,7 @@ for (const r of rows) {
   const scroll = [
     r.fromBottom === null ? 'no scroller' : `${r.fromBottom}px from bottom`,
     r.jumps ? `${r.jumps} jump${r.jumps === 1 ? '' : 's'}` : '',
+    r.moves ? `moved ${r.moves}× (max ${r.maxMove}px)` : '',
     r.restored === undefined ? '' : r.restored ? 'restored' : 'NOT restored',
     r.sameMessage === undefined ? '' : r.sameMessage ? 'same message' : 'OTHER message',
     r.post ? `QA-2 ${r.post}` : '',
@@ -532,7 +575,7 @@ for (const r of rows.filter((r) => r.requests)) {
   )
   // Desk's refresh tick and the channel store's catch-up land inside a step's gap; these are the return's own.
   const own = net.filter((e) => e.at >= r.start && e.at <= r.start + r.settled + 1000 && e.kind !== 'ws-in')
-  console.log(`  ${pad('', 18)}first frame ${r.firstFrame ? `${r.firstFrame.ms} ms, ${r.firstFrame.ready ? 'drawn' : 'not drawn'}, ${r.firstFrame.busy} pulsing` : '–'}; own ${own.length}: ${own.map((e) => `+${e.at - r.start} ${classify(e)}`).join(', ')}`)
+  console.log(`  ${pad('', 18)}first frame ${r.firstFrame ? `${r.firstFrame.ms} ms, ${r.firstFrame.ready ? 'drawn' : 'not drawn'}, ${r.firstFrame.busy} pulsing, ${r.firstFrame.composer ? 'composer' : 'no composer'}` : '–'}${r.composerMissing ? ' (composer missing before the messages)' : ''}; own ${own.length}: ${own.map((e) => `+${e.at - r.start} ${classify(e)}`).join(', ')}`)
 }
 if (report.errors?.length) console.log(`\npage errors: ${report.errors.join(' | ')}`)
 server?.close()

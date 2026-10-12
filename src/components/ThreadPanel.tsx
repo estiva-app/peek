@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useRef, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconX, IconExternalLink, IconLock, IconArrowNarrowRight } from '@tabler/icons-react'
 import { Chip, MembersPill, Panel } from '@estiva-app/ui'
 import { IconButton } from './ui/IconButton'
@@ -352,8 +352,9 @@ export function ThreadPanel({
   // Replies + resolution events interleaved by time into one render sequence.
   const threadRows = buildThreadRows(replies, sentReplies, resolutionEvents)
 
-  // Scroll to bottom when new replies are added
-  useEffect(() => {
+  // Scroll to bottom when new replies are added — before the paint, so a thread
+  // never shows its top for a frame and then jumps (OPT-9).
+  useLayoutEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
