@@ -136,8 +136,7 @@ for (const name of chosen) {
       const leg = legs[name](w, title)
       const init = join(scratch, `${as}-${name}.js`)
       writeFileSync(init, `window.__flDefault = ${JSON.stringify(leg.first)};\n${readFileSync(RECORDER, 'utf8')}`)
-      const { stdout } = await run(process.execPath, [PROBE, '--as', as, '--url', leg.url, '--init', init, '--timeout', '45000', ...leg.steps], { maxBuffer: 64 << 20 }).catch((e) => ({ stdout: e.stdout }))
-      const probe = JSON.parse(stdout)
+      const probe = await probeRun([PROBE, '--as', as, '--url', leg.url, '--init', init, '--timeout', '45000', ...leg.steps])
       const docs = probe.steps.filter((s) => s.eval === '__fl.report()' && s.result).map((s) => JSON.parse(s.result))
       const http429 = [...new Set(docs.flatMap((d) => d.res.filter(([, , , status]) => status === 429).map(([, , what]) => what)))]
       const result = { as, leg: name, run: i + 1, docs, http429, errors: probe.errors }
@@ -147,7 +146,8 @@ for (const name of chosen) {
         console.log(`${as} ${name}: failed — ${probe.failure ?? ''} ${JSON.stringify(probe.steps.filter((s) => s.error).map((s) => s.error))}`)
       }
       print(result, leg.phases)
-      if (title && docs.length) await deleteTopic(as, title)
+      // Whatever the leg's outcome: a run that failed after Start may still have published the topic.
+      if (title && probe.steps.some((s) => s.result === 'started')) await deleteTopic(as, title)
     }
   }
 }
@@ -189,6 +189,16 @@ function print({ as, leg, run, docs, http429 }, phases) {
   }
 }
 
+/** One probe.mjs run's report; a run that printed nothing (the browser never started) is a failure, not a crash. */
+async function probeRun(argv) {
+  const { stdout } = await run(process.execPath, argv, { maxBuffer: 64 << 20 }).catch((e) => ({ stdout: e.stdout }))
+  try {
+    return JSON.parse(stdout)
+  } catch {
+    return { failure: `probe.mjs printed no report: ${String(stdout ?? '').slice(0, 200)}`, steps: [], errors: [] }
+  }
+}
+
 function mostIn5s(times) {
   let most = 0
   for (let i = 0, j = 0; i < times.length; i++) {
@@ -208,8 +218,7 @@ async function deleteTopic(as, title) {
     '--wait', '3000',
     '--eval', `${leaf(title)} ? 'still listed' : 'gone'`,
   ]
-  const { stdout } = await run(process.execPath, [PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', ...steps], { maxBuffer: 16 << 20 }).catch((e) => ({ stdout: e.stdout }))
-  const probe = JSON.parse(stdout)
+  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', ...steps])
   const outcome = probe.steps.at(-1)?.result ?? probe.failure ?? probe.steps.find((s) => s.error)?.error
   console.log(`  deleted "${title}": ${outcome}`)
   if (outcome !== 'gone') failed = true

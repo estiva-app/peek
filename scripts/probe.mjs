@@ -279,7 +279,8 @@ try {
     if (process.env.PROBE_TRACE) console.error(`${new Date().toISOString()} ${step} ${String(value).slice(0, 80)}`)
     try {
       // --tab <path>: close this tab and open Peek at <path> in a new one, in the same browser — what is kept on
-      // the device survives, and a per-tab session does not. Later steps act in the new tab.
+      // the device survives, and a per-tab session does not. Later steps act in the new tab. Only its errors are
+      // watched: `report.sockets`, `--net` and a `--cpu` session stay with the first tab.
       if (step === 'tab') {
         const next = await context.newPage()
         watchErrors(next)
