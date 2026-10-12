@@ -5,7 +5,7 @@
 #
 # On Desk, opens the row, starts a throwaway topic inside it from the ⋮ menu
 # (it must open in Desk's pane), adds it to Open work, archives it, reads the
-# header and the archived notice (`probe-opt12-one-view.sh`'s HEADER), goes to
+# header and the archived notice (`probe-opt12-header.js`), goes to
 # its page in-app and reads the same, comes back to Desk, deletes it from the ⋮
 # menu (the pane must close and the URL stay /app/desk). Prints probe.mjs's JSON.
 set -euo pipefail
@@ -39,7 +39,7 @@ if [ "$ROW" = "--delete" ]; then
     --eval "({ afterDelete: location.pathname + location.search, paneOpen: !!document.querySelector('[aria-label=\"File actions\"]'), toasts: [...document.querySelectorAll('[role=status],[role=alert],[role=dialog]')].map((t) => t.textContent.trim().slice(0, 200)).filter(Boolean) })")
   exec node scripts/probe.mjs "$@" "${args[@]}"
 fi
-HEADER=$(sed -n "/^HEADER='/,/^})()'/p" scripts/probe-opt12-one-view.sh | sed "1s/^HEADER='//; \$s/'\$//")
+HEADER=$(cat scripts/probe-opt12-header.js)
 STRIP="!!document.querySelector('[aria-label=\"File actions\"]')"
 PANE_IS_NEW="decodeURIComponent(location.search).includes(':') && document.querySelector('p.text-body-2-strong')?.textContent === $(js "$THROWAWAY")"
 
@@ -68,6 +68,6 @@ while IFS= read -r -d '' a; do args+=("$a"); done < <(menu "Delete")
 while IFS= read -r -d '' a; do args+=("$a"); done < <(dialog_button "Delete")
 # Deleting reads the Folder and then writes: allow it the time.
 args+=(--wait 8000
-  --eval "({ afterDelete: location.pathname + location.search, paneTitle: document.querySelector('[aria-label=\"File actions\"]') ? document.querySelector('p.text-body-2-strong')?.textContent : null })")
+  --eval "({ afterDelete: location.pathname + location.search, paneTitle: document.querySelector('[aria-label=\"File actions\"]') ? document.querySelector('p.text-body-2-strong')?.textContent : null, deskRows: [...document.querySelectorAll('main .cursor-pointer')].map((r) => r.textContent.trim()).filter(Boolean) })")
 
 node scripts/probe.mjs "$@" "${args[@]}"

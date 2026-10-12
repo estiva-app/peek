@@ -71,6 +71,8 @@ export function useFilePane(
     */
     onArchived: () => void Promise.all([reloadConversation(), onListingChanged?.()]),
     onDeleted: (deleted) => {
+      // A deleted file has nothing left to work on: out of Open work, or Desk keeps a "File" row that opens nothing.
+      if (deleted.address && openWorkFiles.has(deleted.address)) openWorkFiles.remove(deleted.address)
       if (deleted.address === file?.address) onDeleted(deleted)
     },
     onMoved: () => void Promise.all([reloadConversation(), onListingChanged?.()]),
