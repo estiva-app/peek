@@ -39,11 +39,14 @@ export function useFileView({
   override,
   openThreadId,
   onOpenThread,
+  titleHint,
 }: {
   /** The file's `kind:pubkey:d`, or null while there is none to read. */
   address: string | null
   /** Drawn instead of the resolve — a short link that named no file. */
   override?: ForeignConversationState
+  /** The title the row that opened it showed, drawn while the file resolves and no Folder listing holds it. */
+  titleHint?: string
   openThreadId: string | undefined
   onOpenThread: (id: string | null) => void
 }) {
@@ -93,7 +96,7 @@ export function useFileView({
   const container: ConversationContainer | null =
     canComment && writable?.address && writable.folder ? { kind: 'file', address: writable.address, h: writable.folder } : null
   const ownView = container !== null
-  const title = (file ?? listed)?.slots.title?.value ?? 'File'
+  const title = (file ?? listed)?.slots.title?.value ?? titleHint ?? 'File'
   const peek = useFileConversationView({
     container,
     // The listing's copy of a file lists no comments: the read waits for the file's own.

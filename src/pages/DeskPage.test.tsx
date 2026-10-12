@@ -10,12 +10,11 @@
  * is which file the Desk hands it, that the URL says so, and that nothing
  * leaves `/app/desk`.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { LastSelectionProvider } from '@/lib/lastSelection'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DebugProvider } from '@/lib/debug'
-import { filePath } from '@/lib/objectUrl'
 import { DeskPage } from './DeskPage'
 
 /** "Widgets", a bare-file topic. */
@@ -38,6 +37,35 @@ vi.mock('@/components/views/useFileView', () => ({
         ) : null,
       },
       threadPanel: undefined,
+    }
+  },
+}))
+/*
+  The page's own pane and header (OPT-12), stood in for: its header is
+  `FilePage.test.tsx`'s. What this pins is that the Desk draws the same one,
+  and where its writes leave the person.
+*/
+const filePane = vi.hoisted(() => ({
+  callbacks: undefined as
+    | { onDeleted: (deleted: unknown) => void; onStarted: (created: { address: string; title: string }) => void }
+    | undefined,
+}))
+vi.mock('@/components/views/useFilePane', () => ({
+  useFilePane: (
+    view: { panel: { children: React.ReactNode } },
+    callbacks: NonNullable<typeof filePane.callbacks>,
+  ) => {
+    filePane.callbacks = callbacks
+    return {
+      pane: (
+        <div>
+          <div data-testid="file-header" />
+          {view.panel.children}
+        </div>
+      ),
+      dialogs: null,
+      openControl: vi.fn(),
+      member: undefined,
     }
   },
 }))
@@ -153,10 +181,24 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
     expect(url()).toBe(deskWith(WIDGETS_FILE))
   })
 
-  it('offers the full page as a link, which is the only way off the Desk', () => {
+  it('draws the page’s header, with no link to a full page: there is only one page (OPT-12)', () => {
     mount(deskWith(WIDGETS_FILE))
-    const link = screen.getByRole('link', { name: 'Open full page' })
-    expect(link.getAttribute('href')).toBe(filePath(WIDGETS_FILE, 'Widgets'))
+    expect(within(screen.getByTestId('middle')).getByTestId('file-header')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Open full page' })).toBeNull()
+  })
+
+  it('deleting the open file closes its pane and stays on the Desk (OPT-12)', () => {
+    mount(deskWith(WIDGETS_FILE))
+    act(() => filePane.callbacks!.onDeleted({ address: WIDGETS_FILE }))
+    expect(url()).toBe('/app/desk')
+    expect(screen.queryByTestId('file-pane')).toBeNull()
+  })
+
+  it('a topic started inside the open one opens in the Desk’s pane (OPT-12)', () => {
+    mount(deskWith(WIDGETS_FILE))
+    act(() => filePane.callbacks!.onStarted({ address: ISSUE, title: 'Issue one' }))
+    expect(url()).toBe(deskWith(ISSUE))
+    expect(screen.getByTestId('file-pane').dataset.address).toBe(ISSUE)
   })
 
   it('a DM closes the open file, and the file param goes with it', () => {

@@ -1,33 +1,16 @@
 import { useCallback, useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
-import { Chip, EmptyState, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { EmptyState } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
-import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { FolderTree } from '@/components/views/FolderTree'
-import { useFileControls } from '@/components/views/useFileControls'
+import { useFilePane } from '@/components/views/useFilePane'
 import { useFileView } from '@/components/views/useFileView'
-import { SidePanelButton } from '@/components/SidePanelButton'
-import { Members } from '@/components/Members'
-import {
-  useFileAddress,
-  rememberFileAddress,
-  useFileMembers,
-  useFolderContents,
-  useMembership,
-  useOpenWorkFiles,
-  useReferenceFolder,
-  useWorkspaceDirectory,
-} from '@/api'
-import { ArchivedNotice } from '@/components/ArchivedNotice'
-import { kindNoun } from '@/lib/archiveWords'
-import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
-import { addressFromRef, filePath, identifierFromRef, shareableFileUrl, shortFilePath } from '@/lib/objectUrl'
+import { useFileAddress, rememberFileAddress, useFolderContents, useReferenceFolder } from '@/api'
+import { addressFromRef, filePath, identifierFromRef, shortFilePath } from '@/lib/objectUrl'
 import { channelDestination, legacyTopicByChannel } from '@/lib/legacyTopicLinks'
 import { useLastSelection } from '@/lib/lastSelection'
 import { scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { rememberRecent } from '@/lib/recents'
-import { elsewhereAppName } from '@/lib/appName'
 import { KIND_TOPIC } from '@/nostr/foreign'
 
 /**
@@ -139,7 +122,7 @@ export function FilePage() {
     openThreadId,
     onOpenThread: setOpenThread,
   })
-  const { conversation, file, previous, reload: reloadConversation, title, rootIds } = view
+  const { conversation, file, previous, rootIds } = view
   /*
     What the sidebar draws while the next file resolves (SID-2): the one it
     drew last. A click in the tree changes the address and nothing else is
@@ -219,24 +202,6 @@ export function FilePage() {
   }, [pendingTopicMessage, rootIds, openThreadId, threadDrawn, setOpenThread, setPendingTopicMessage])
 
   /*
-    Rename and Delete, from the manifest and not from the kind (FOL-33) — the
-    same gate as `canComment` a few lines up. A bare file's built-in manifest
-    declares both; Ship's declares neither for an issue, so an issue's header
-    keeps only "Open folder", which is the ticket's test. The dialogs are the
-    page's, shared with the tree's row menu so both ends open the same ones
-    (PEE-2). A rename re-reads the file, whose title the header draws (the
-    tree re-reads on the change event's own signal); deleting the open file
-    lands on the team it was in, since this page no longer resolves. A row's
-    delete of some other file stays here — the person was not looking at it.
-  */
-  const controls = fileControlsOf(file)
-  // "Details" and Copy link stay where they were: on a file with a
-  // rename, a delete or a move. Archive alone (a Ship issue) adds only itself.
-  const hasTopicControls = !!controls.rename || !!controls.delete || !!controls.move
-  const startsInside = canStartInside(file)
-  const people = useWorkspaceDirectory()
-
-  /*
     The team's listing (FOL-4): the one read that holds a moved file's parent,
     handed to the tree's section for this team rather than read twice.
   */
@@ -254,137 +219,21 @@ export function FilePage() {
     !file && navFile && fileAddress ? teamFiles?.find((candidate) => candidate.address === fileAddress) : undefined
   const selected = file ?? clicked ?? navFile
 
-  // Who is in the file, for the members pill (REA-3): re-read after a join, a leave or an add.
-  const fileMembers = useFileMembers(file?.address)
-  const fileControls = useFileControls({
-    onRenamed: () => void reloadConversation(),
-    onMembership: () => void fileMembers.reload(),
-    /*
-      The page draws the notice off the file, and the tree lists it or not —
-      both re-read. An archived row's file leaves the tree; the page stays on
-      it, since a link still opens an archived file.
-    */
-    onArchived: () => void Promise.all([reloadConversation(), reloadTeam()]),
-    onDeleted: (deleted) => {
-      if (deleted.address !== file?.address) return
-      // Gone: its Folder's page takes the rail's memory, so Topics does not lead back to it.
-      if (deleted.folder) navigate(`/app/folders/${deleted.folder}`, { replace: true })
-      else navigate('/app/folders', { replace: true })
-    },
-    // The tree draws the file's place, and reads the team.
-    onMoved: () => void Promise.all([reloadConversation(), reloadTeam()]),
+  /*
+    The middle column, its header and the file's controls — the Desk's too
+    (OPT-12), so a topic is one view wherever it opens. The dialogs are the
+    page's, shared with the tree's row menu so both ends open the same ones
+    (PEE-2). The tree draws the file's place and lists it or not, so an
+    archive or a move re-reads the team as well.
+  */
+  const pane = useFilePane(view, {
+    // Gone: its Folder's page takes the rail's memory, so Topics does not lead back to it.
+    onDeleted: (deleted) =>
+      navigate(deleted.folder ? `/app/folders/${deleted.folder}` : '/app/folders', { replace: true }),
     // Into the new topic, as the header's New topic does: it is what was asked for.
     onStarted: (created) => navigate(filePath(created.address, created.title)),
+    onListingChanged: reloadTeam,
   })
-
-  /*
-    Copy link (FOL-37) — the topic header's affordance (PEE-17), for a file: the
-    URL `filePath` writes, which for a topic in a Folder is the short form the
-    page has just canonicalised to. The same fallback as the topic header's,
-    for a browser that refuses the clipboard off a menu.
-  */
-  const copyLink = file?.address
-    ? () => {
-        const link = shareableFileUrl(file.address!, file.slots.title?.value, window.location.origin)
-        void navigator.clipboard?.writeText(link).catch(() => window.prompt('Copy this link:', link))
-      }
-    : undefined
-
-  /*
-    Join / leave (SPEC §11.8, CON-19): the unread dot exists only for the files
-    the person is a member of, and this is where they say so for the file in
-    front of them. Writing in it, being mentioned or assigned already makes
-    them one; Join is for the rest, Leave is theirs alone to give. The state
-    shows in the button itself (pressed = a member), not on hover. Absent while
-    the relay has not said what the person is a member of — a toggle then would
-    write a guess, and the seam refuses it anyway.
-  */
-  const membership = useMembership()
-  const member = file?.address ? membership.isMember(file.address) : false
-  /*
-    An archived file is read-only until it is unarchived (Katerina, 7
-    October): its menu keeps what reads it, the way back and Delete —
-    Details, Copy link, Unarchive, Delete — and nothing that changes it or
-    puts it back in a list: no Rename, Move, New topic inside, Open work, or
-    Join and Leave.
-  */
-  const readOnly = !!file?.archived
-  const toggleMember =
-    file?.address && file.folder && !readOnly && membership.state !== 'unknown'
-      ? () => fileControls.open(member ? 'leave' : 'join', file)
-      : undefined
-
-  /*
-    Who is in it (REA-3, as Ship's SHI-31): the members pill opens the Members
-    dialog — Join or Leave, and "Add members". The roles are the file's author
-    and whatever person fields its owner's manifest draws ("Assignee", "Lead"),
-    so the page still knows nothing of Ship. A file that lists children (a
-    project) says that leaving it does not leave them.
-
-    The toolbar toggle stays only while nobody is in the file: the pill draws
-    nothing at zero until REA-8 gives it an empty state (Miky, 7 October).
-  */
-  const me = membership.me
-  const roles = file?.address
-    ? [
-        { pubkey: file.address.split(':')[1] ?? '', role: 'Author' },
-        ...file.meta.filter((slot) => slot.isPubkey && slot.label && slot.value).map((slot) => ({ pubkey: slot.value, role: slot.label! })),
-      ]
-    : []
-  const childKind = file?.listsChildren ? file.children?.[0]?.kind : undefined
-  const membersNote = childKind !== undefined ? `Your ${kindNoun(childKind)}s here still notify you.` : undefined
-  const nameOf = (pubkey: string) => people?.[pubkey]?.displayName ?? file?.people?.[pubkey]?.displayName ?? '—'
-  const members =
-    file && me ? (
-      <Members
-        // A new file is a new dialog: an open one must not carry over to the next page.
-        key={file.address}
-        members={fileMembers.members}
-        me={me}
-        directory={people}
-        people={file.people}
-        roles={roles}
-        note={membersNote}
-        readOnly={!toggleMember}
-        onSetMine={(join) => fileControls.open(join ? 'join' : 'leave', file)}
-        onAdd={(pubkeys) => fileControls.addMembers(file, pubkeys, nameOf)}
-      />
-    ) : undefined
-  // Also when the roster could not be read: no pill then, and Join must not go with it.
-  const showToggle = toggleMember && (fileMembers.members?.size === 0 || fileMembers.failed)
-
-  /*
-    Open work (FOL-34): the topic menu's Add/Remove, for a file, by its address.
-    Offered for any addressable file, a Ship issue included — which is why the
-    menu below now opens for one, holding this and nothing else.
-  */
-  const openWorkFiles = useOpenWorkFiles()
-  const inOpenWork = file?.address ? openWorkFiles.has(file.address) : false
-  const toggleOpenWork = file?.address && !readOnly
-    ? () => (inOpenWork ? openWorkFiles.remove(file.address!) : openWorkFiles.add(file.address!))
-    : undefined
-
-  /*
-    Archived (FOL-46): the file is out of every list, and a link still opens
-    it — so the page says so first, with the resolution, and offers the way
-    back. Its own archive is restored here; one hidden with its parent (an
-    issue of an archived project) is restored on the parent, which the notice
-    opens instead. The menu's item states the direction that works.
-  */
-  const archive = file?.archived
-  const archivedWith = archive?.with
-  const archiveAction = controls.archive && !archivedWith ? (archive ? 'unarchive' : 'archive') : undefined
-  const notice =
-    file && archive ? (
-      <ArchivedNotice
-        archive={archive}
-        by={people?.[archive.by]?.displayName ?? `${archive.by.slice(0, 8)}…`}
-        withWhat={archivedWith ? kindNoun(Number(archivedWith.split(':')[0])) : undefined}
-        onUnarchive={archiveAction === 'unarchive' ? () => fileControls.open('unarchive', file) : undefined}
-        onOpenParent={archivedWith ? () => navigate(filePath(archivedWith)) : undefined}
-        look="card"
-      />
-    ) : undefined
 
   if (topicIdentifier) return <Navigate to={channelDestination(topicIdentifier)} replace />
   // A Convex topic's old short link: the file its conversation moved to.
@@ -400,7 +249,7 @@ export function FilePage() {
 
   return (
     <>
-    {fileControls.dialogs}
+    {pane.dialogs}
       <FilePageView
         nav={
           <FolderTree
@@ -409,98 +258,19 @@ export function FilePage() {
             selectedParent={selected?.parentRef}
             // Unknown until the file resolves, and until the relay has said what the person joined: the column judges nothing on a guess.
             selectedArchived={file ? !!file.archived : undefined}
-            selectedMine={file && membership.state !== 'unknown' ? member : undefined}
+            selectedMine={pane.member}
             // Reached from a Ship project's channel link (FoldersPage): the project opens, its issues under it.
             expandSelected={(location.state as { expandSelected?: boolean } | null)?.expandSelected === true}
-            onControl={fileControls.open}
+            onControl={pane.openControl}
             currentContents={navFile?.folder ? team : undefined}
           />
         }
-        rightPanel={
-          // The file's conversation in the package's Panel: it scrolls, and the composer stays under it.
-          <Panel
-            {...view.panel}
-            /*
-              An archived file is read-only (Katerina, 7 October): no composer,
-              and its notice in the composer's place, in the composer's own
-              padding — under the messages, where the newest one is.
-            */
-            footer={notice ? <div className="p-3">{notice}</div> : view.panel.footer}
-            title={
-              /*
-                One row: the file's name, and whose file it is (Katerina, 5
-                October). No trail over it: the column beside shows where the
-                file sits, its Folder and every row above it open — and a trail
-                in one row cut every name short.
-              */
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-body-2-strong text-text-primary">{title}</p>
-                {/*
-                  Whose file this is, said plainly: the page draws another app's
-                  conversation in Peek's own language, which is the point and is
-                  also exactly what could mislead — without it the discussion
-                  reads as something in Peek. A chip, never cut short.
-                */}
-                {elsewhereAppName(file) && <Chip type="neutral" label={elsewhereAppName(file)!} className="shrink-0" />}
-              </div>
-            }
-            actions={
-              file?.folder || view.sidePanel ? (
-                <div className="flex shrink-0 items-center gap-2">
-                {/* The pill before the strip, as Ship's header has it: it opens a dialog, not an action. */}
-                {members}
-                {/* One strip: one Tab stop, arrows along it (UIG-14). */}
-                <Toolbar aria-label="File actions" surface={false}>
-                  {/* No Open folder: the Folder is the column beside, its row open (Katerina, 5 October). */}
-                  {showToggle && (
-                    <ToolbarButton
-                      tooltip={member ? 'Leave' : 'Join'}
-                      aria-label={member ? 'Leave' : 'Join'}
-                      pressed={member}
-                      onClick={toggleMember}
-                    >
-                      {member ? <IconUserCheck size={16} stroke={1.5} /> : <IconUserPlus size={16} stroke={1.5} />}
-                    </ToolbarButton>
-                  )}
-                  {/* The Overview, shown and hidden (Katerina, 7 October): before the ⋮, as Jan had it. */}
-                  {view.sidePanel && <SidePanelButton open={view.sidePanel.open} onToggle={view.sidePanel.toggle} />}
-                  {/*
-                    The topic's menu, when the manifest offers anything for it
-                    to hold (FOL-33) — and absent, not inert, when it does not:
-                    a Ship issue's header has nothing to put here, and a button
-                    that opens nothing would say otherwise.
-                  */}
-                  {file?.folder && (hasFileControls(controls) || canMove(file) || startsInside || toggleOpenWork) && (
-                    <TopicMoreMenu
-                      trigger={
-                        <ToolbarButton tooltip="More actions" aria-label="More actions">
-                          <IconDotsVertical size={16} stroke={1.5} />
-                        </ToolbarButton>
-                      }
-                      onOpenDetails={hasTopicControls ? () => fileControls.open('details', file) : undefined}
-                      onCopyLink={hasTopicControls ? copyLink : undefined}
-                      archiveAction={archiveAction}
-                      onToggleArchive={archiveAction ? () => fileControls.open(archiveAction, file) : undefined}
-                      openWorkAction={toggleOpenWork ? (inOpenWork ? 'remove' : 'add') : undefined}
-                      onToggleOpenWork={toggleOpenWork}
-                      onRename={controls.rename && !readOnly ? () => fileControls.open('rename', file) : undefined}
-                      onNewSubTopic={startsInside && file && !readOnly ? () => fileControls.open('inside', file) : undefined}
-                      onMove={canMove(file) && file && !readOnly ? () => fileControls.open('move', file) : undefined}
-                      onDeleteTopic={controls.delete ? () => fileControls.open('delete', file) : undefined}
-                    />
-                  )}
-                </Toolbar>
-                </div>
-              ) : undefined
-            }
-          />
-        }
+        rightPanel={pane.pane}
         threadPanel={view.threadPanel}
       />
     </>
   )
 }
-
 
 /**
  * The file page's body, handed everything it draws — the half a story can show
