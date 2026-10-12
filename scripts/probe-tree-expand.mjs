@@ -19,8 +19,8 @@
  * - **rowCounts**: the row counts seen, in order. One step is `[0, n]`: a
  *   partial list is any count between;
  * - **moves**: separate runs of `bottom` changing — the panel's 150 ms height
- *   animation is one run. The Done-when is `moves <= 1`;
- * - **queries**: the `/query` POSTs the page started after the click.
+ *   animation is one run. The Done-when is `moves <= 1`. The listing's read
+ *   goes over the socket, so the page's resource timings do not show it.
  *
  * `--list` prints the column's Folders with their row count once each is
  * opened, for choosing one with at least 10 files.
@@ -95,11 +95,7 @@ const sample = (label) => `(async () => {
       still = 0
     } else still++
   }
-  const queries = performance
-    .getEntriesByType('resource')
-    .filter((entry) => entry.startTime >= started && /\\/query$/.test(new URL(entry.name).pathname))
-    .map((entry) => Math.round(entry.startTime - started) + '→' + Math.round(entry.responseEnd - started))
-  return { label: '${label}', rowCounts, moves, queries, steps: steps.length > 40 ? [...steps.slice(0, 20), '…', ...steps.slice(-10)] : steps }
+  return { label: '${label}', rowCounts, moves, steps: steps.length > 40 ? [...steps.slice(0, 20), '…', ...steps.slice(-10)] : steps }
 })()`
 
 const close = `(() => { document.querySelector('${group(folder)}').querySelector('button').click(); return true })()`

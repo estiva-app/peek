@@ -885,7 +885,7 @@ function FolderSection({
         are gone, and a click on the heading only folds it.
       */
       // The folder icon in every view, Topics too (Katerina, 7 October): a heading is a Folder wherever it is drawn.
-      icon={<TopicState type="folder" className={pending ? 'animate-pulse' : undefined} />}
+      icon={<TopicState type="folder" className={pending ? 'motion-safe:animate-pulse' : undefined} />}
       // In Archive, an archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
       trailing={archive && folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       menu={menu}
