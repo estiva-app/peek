@@ -168,7 +168,9 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
         console.warn('[membership] not changed: no relay origin or no live Estiva ID token in this tab')
         return 'You are not signed in to the relay in this tab.'
       }
-      if (state === 'unknown') {
+      // Adding somebody else needs nothing of the viewer's own memberships (INT-12: Create topic's members).
+      const addsSomebodyElse = person !== undefined && person !== seam.pubkey && member
+      if (state === 'unknown' && !addsSomebodyElse) {
         console.warn('[membership] not changed: the relay has not said what the viewer is a member of')
         return 'Peek has not read what you are a member of yet.'
       }

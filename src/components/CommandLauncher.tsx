@@ -689,7 +689,10 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         if (added !== true) refused.push((people ?? []).find((p) => p.id === person)?.name ?? `${person.slice(0, 8)}…`)
       }
       if (refused.length > 0) {
-        setSubmitError(`Created, but ${refused.join(', ')} could not be added as members.`)
+        // The topic exists, so the form closes: sending it again would make a second one.
+        showToast({ label: `Created, but ${refused.join(', ')} could not be added as members.`, type: 'error' })
+        void reloadFoldersOnScreen()
+        onClose()
         return
       }
     }
