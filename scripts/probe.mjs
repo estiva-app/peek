@@ -17,8 +17,10 @@
  * `relayState: "connecting"` and no Folders.
  *
  * Steps run in argument order, so `--click`, `--fill`, `--press`, `--hover`,
- * `--drag`, `--wait`, `--until`, `--eval` and `--screenshot` can be repeated and
- * interleaved. `PROBE_TRACE=1` prints each step on stderr as it starts.
+ * `--drag`, `--wait`, `--until`, `--eval`, `--screenshot` and `--tab` can be
+ * repeated and interleaved. `PROBE_TRACE=1` prints each step on stderr as it starts.
+ * `--init <file>` runs a script in every page before the app's own, and `--tab
+ * <path>` reopens Peek in a new tab of the same browser (probe-first-load.mjs).
  *
  * `PROBE_SERVE=<dist dir>` runs an unmerged build at the real origin: the
  * probe's browser answers `--base`'s files from the local build, so sign-in,
@@ -82,9 +84,10 @@ import { chromium } from 'playwright-core'
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]
+  [--init file] [--tab path]
   [--refuse text[|text…]] [--refuse-e id[|id…]] [--refuse-kind kind[|kind…]] [--refuse-hold ms]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu'])
+const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
 /** The page's DevTools session, opened by the first `--cpu` step. */
 let cdp = null
@@ -164,7 +167,10 @@ try {
       },
     )
   }
-  const page = await context.newPage()
+  // --init <file>: a script run in every page before the app's own, on each load — a recorder that must see a
+  // reload from its first frame (first-load measurements).
+  if (options.init) await context.addInitScript({ path: options.init })
+  let page = await context.newPage()
   // Every WebSocket the tab opens, and whether it closed before the run ended:
   // "one relay connection per tab" is otherwise invisible from the page.
   report.sockets = []
@@ -199,19 +205,23 @@ try {
       if (r.status() === 429) net.push({ at: Date.now(), kind: 'http-429', url: r.url().slice(0, 160) })
     })
   }
-  page.on('pageerror', (e) => {
-    const frame = e.stack?.split('\n').find((line) => line.trim().startsWith('at '))?.trim()
-    report.errors.push(`${String(e).slice(0, 300)} (on ${page.url().slice(0, 200)}${frame ? `, ${frame.slice(0, 200)}` : ''})`)
-  })
-  page.on('console', (m) => {
-    if (m.type() === 'error') report.errors.push(`${m.text().slice(0, 300)} (${m.location().url.slice(0, 200) || 'no url'})`)
-  })
-  page.on('response', (r) => {
-    if (r.status() >= 400) report.errors.push(`HTTP ${r.status()} ${r.request().method()} ${r.url().slice(0, 200)}`)
-    // The SPA fallback answers a missing script with index.html and a 200.
-    else if (r.request().resourceType() === 'script' && /text\/html/.test(r.headers()['content-type'] ?? ''))
-      report.errors.push(`script served as HTML: ${r.url().slice(0, 200)}`)
-  })
+  // A tab's errors: this one's, and each one `--tab` opens.
+  const watchErrors = (page) => {
+    page.on('pageerror', (e) => {
+      const frame = e.stack?.split('\n').find((line) => line.trim().startsWith('at '))?.trim()
+      report.errors.push(`${String(e).slice(0, 300)} (on ${page.url().slice(0, 200)}${frame ? `, ${frame.slice(0, 200)}` : ''})`)
+    })
+    page.on('console', (m) => {
+      if (m.type() === 'error') report.errors.push(`${m.text().slice(0, 300)} (${m.location().url.slice(0, 200) || 'no url'})`)
+    })
+    page.on('response', (r) => {
+      if (r.status() >= 400) report.errors.push(`HTTP ${r.status()} ${r.request().method()} ${r.url().slice(0, 200)}`)
+      // The SPA fallback answers a missing script with index.html and a 200.
+      else if (r.request().resourceType() === 'script' && /text\/html/.test(r.headers()['content-type'] ?? ''))
+        report.errors.push(`script served as HTML: ${r.url().slice(0, 200)}`)
+    })
+  }
+  watchErrors(page)
 
   /*
     --refuse <text>[|<text>…]: the relay refuses a write whose content holds any of them (OPT-7). The signed
@@ -268,7 +278,17 @@ try {
     // PROBE_TRACE=1: each step on stderr as it starts, so a run that hangs says where.
     if (process.env.PROBE_TRACE) console.error(`${new Date().toISOString()} ${step} ${String(value).slice(0, 80)}`)
     try {
-      entry.result = await run(page, step, value)
+      // --tab <path>: close this tab and open Peek at <path> in a new one, in the same browser — what is kept on
+      // the device survives, and a per-tab session does not. Later steps act in the new tab.
+      if (step === 'tab') {
+        const next = await context.newPage()
+        watchErrors(next)
+        await page.close()
+        page = next
+        await page.goto(new URL(value, options.base).href)
+        entry.result = await signedIn(page)
+        if (!entry.result) throw new Error(`not signed in; ended on ${page.url()}`)
+      } else entry.result = await run(page, step, value)
     } catch (error) {
       entry.error = String(error.message ?? error).split('\n')[0]
       // What could have been clicked or filled instead — cheaper than a screenshot.
