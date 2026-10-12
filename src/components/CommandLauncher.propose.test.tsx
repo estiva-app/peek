@@ -171,16 +171,18 @@ describe('the row', () => {
     expect(screen.queryByText(/Suggest what to make from this conversation/i)).not.toBeInTheDocument()
   })
 
-  it('reads no manifest until something is typed or it is taken', async () => {
+  it('reads only the host’s own kind on opening, and every other app’s once it is taken', async () => {
     // A relay read per app on every Cmd+K would be a second and a half nobody
-    // asked for. Discovery is lazy: opening reads nothing. Typing does, since
+    // asked for. Discovery is lazy: opening reads only Peek's own kind, whose
+    // actions are on the first level (INT-13). Typing reads the rest, since
     // an action can be found by its name there (C4, UIG-29).
     open()
     await makeRow()
-    expect(creatableUnder).not.toHaveBeenCalled()
+    await waitFor(() => expect(creatableUnder).toHaveBeenCalled())
+    expect(creatableUnder.mock.calls.map(([kind]) => kind)).toEqual([39000])
 
     await userEvent.click(await makeRow())
-    await waitFor(() => expect(creatableUnder).toHaveBeenCalled())
+    await waitFor(() => expect(creatableUnder.mock.calls.length).toBeGreaterThan(1))
   })
 })
 

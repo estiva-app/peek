@@ -34,7 +34,7 @@
  * nothing happens. They become real when PRO-18 lets an action create a
  * Folder — a Ship project is a Folder plus a record, and a Peek conversation
  * is scoped by one — at which point Ship and Peek declare them and these
- * literals go.
+ * literals go. `create-topic` went with INT-12: a Folder offers it itself.
  */
 
 export interface VocabOption {
@@ -103,6 +103,12 @@ export interface LauncherAction {
   target?: string
   /** What the target is called, for the row and the form's chip. */
   targetLabel?: string
+  /**
+   * A `people` field whose choices become members of the new file (SPEC §11.8)
+   * once it exists — Create topic's (INT-12). Peek writes them itself, so the
+   * field is never sent to the runtime as a property.
+   */
+  membersField?: string
 }
 
 export interface LauncherApp {
@@ -153,6 +159,17 @@ export interface LauncherApp {
    * badly; an app that declares a `parentKind` should name its noun.
    */
   parentNoun?: string
+  /**
+   * Whether this app offers a Folder's built-in actions (SPEC §3.2, INT-12) —
+   * which no manifest declares, so the registry says who may: an app that can
+   * sign what they write (`30840` and `1852`, §3.3).
+   */
+  offersFolderBuiltIns?: boolean
+  /**
+   * Whether this app is the one the launcher runs in (INT-13). Its actions are
+   * on the first level and it is not listed among Apps — Miky, 2026-10-12.
+   */
+  isHost?: boolean
 }
 
 /** Verbatim `ship/src/kinds.ts` `ISSUE_STATUSES` (values and labels). */
@@ -337,31 +354,16 @@ const PEEK: LauncherApp = {
         },
       ],
     },
-    {
-      // Mirrored Peek's old Start topic dialog (CreateTopicDialog, gone with the
-      // Convex topics in FOL-23) — Title and Invite people, no description
-      // field (Katerina 2026-08-31).
-      id: 'create-topic',
-      label: 'Create a topic',
-      emits: { kind: 9007 },
-      submitLabel: 'Create topic',
-      fields: [
-        {
-          key: 'title',
-          label: 'Title',
-          control: 'string',
-          required: true,
-          placeholder: "What's this topic about?",
-        },
-        {
-          key: 'invitees',
-          label: 'Invite people',
-          control: 'people',
-          placeholder: 'Search people...',
-        },
-      ],
-    },
+    /*
+      Create topic is not here (INT-12). It was a `kind:9007` proposal from
+      before FOL-23, when a topic was a channel; a topic is a bare file in a
+      Folder now, and putting one there is a Folder's built-in action (SPEC
+      §3.2), which `offersFolderBuiltIns` below lets Peek offer as
+      `asCreateTopic` draws it.
+    */
   ],
+  offersFolderBuiltIns: true,
+  isHost: true,
 }
 
 /** Order matters: Ship first, matching the ask that started this (Cmd+K forms
