@@ -45,8 +45,11 @@ import { putBackEdit } from '@/lib/refusedEdits'
 interface UseFileConversationViewArgs {
   /** Where the conversation is, and nothing about what kind it is. */
   container: ConversationContainer | null
-  /** The root comments' ids, off the resolved file. A channel finds its own; pass none. */
-  rootIds: readonly string[]
+  /**
+   * The root comments' ids, off the resolved file; null while it resolves, and
+   * the read waits for them (OPT-9). A channel finds its own; pass none.
+   */
+  rootIds: readonly string[] | null
   /** Which thread is open — the page owns it, because it is in the URL. */
   openThreadId: string | undefined
   onOpenThread: (id: string | null) => void
@@ -83,6 +86,32 @@ export interface ConversationParts {
   bodyRef: RefObject<HTMLDivElement | null>
   onBodyScroll: UIEventHandler<HTMLDivElement>
   bodyClassName: string
+}
+
+/** The space above a short conversation, so its messages sit on the composer. */
+const STREAM_SPACER = 'flex-1 min-h-0'
+/** The messages themselves. */
+const STREAM = 'shrink-0 flex flex-col px-4 py-4 gap-2'
+/** The body's own layout: the spacer and the stream, at least as tall as the pane. */
+const BODY = 'flex min-h-full flex-col'
+
+/**
+ * A conversation not known yet, as a `Panel`'s body (OPT-9): the same one
+ * placeholder, in the same place, that the conversation draws while it reads,
+ * so a file whose resolve answers with Peek's own view goes on to its messages
+ * with nothing swapped in between. No composer: what may be written here is
+ * not known until the file is.
+ */
+export const conversationPlaceholder: Pick<ConversationParts, 'children' | 'bodyClassName'> = {
+  children: (
+    <>
+      <div className={STREAM_SPACER} />
+      <div className={STREAM}>
+        <SkeletonConversationList />
+      </div>
+    </>
+  ),
+  bodyClassName: BODY,
 }
 
 interface ViewSlots {
@@ -515,8 +544,8 @@ export function useFileConversationView({
   // its own (a DM) draws the same two in `conversation`, around a ScrollArea of its own.
   const conversationBody = (
     <>
-        <div className="flex-1 min-h-0" />
-        <div className="shrink-0 flex flex-col px-4 py-4 gap-2">
+        <div className={STREAM_SPACER} />
+        <div className={STREAM}>
           {isLoading && <SkeletonConversationList />}
           {failed && (
             <EmptyState
@@ -573,10 +602,10 @@ export function useFileConversationView({
         />
       </div>
   )
-  const conversationParts: ConversationParts = { children: conversationBody, footer: composer, bodyRef: scrollRef, onBodyScroll: handleScroll, bodyClassName: 'flex min-h-full flex-col' }
+  const conversationParts: ConversationParts = { children: conversationBody, footer: composer, bodyRef: scrollRef, onBodyScroll: handleScroll, bodyClassName: BODY }
   const conversationSlot = (
     <>
-      <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName="flex min-h-full flex-col">
+      <ScrollArea className="flex-1" viewportRef={scrollRef} onScroll={handleScroll} contentClassName={BODY}>
         {conversationBody}
       </ScrollArea>
       {composer}

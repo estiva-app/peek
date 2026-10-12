@@ -60,6 +60,7 @@ export type { StreamTerms } from '@/api/streamUnread'
 export { PeekDataProvider } from './store'
 export { RELAY_URL, hasRelay } from './relayUrl'
 export {
+  listedFile,
   prefetchFolderContents,
   reloadFoldersOnScreen,
   topLevelFolders,

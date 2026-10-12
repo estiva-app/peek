@@ -134,7 +134,7 @@ afterEach(() => {
 const event = (id: string) => ({ id, kind: 1111, tags: [['h', FOLDER]] }) as unknown as SignedEvent
 
 /** Every state the hook rendered, so a single 'loading' frame cannot hide. */
-function mount(initial: { container: typeof container | { kind: 'channel'; h: string }; rootIds: string[] }, onActivity?: () => void) {
+function mount(initial: { container: typeof container | { kind: 'channel'; h: string }; rootIds: string[] | null }, onActivity?: () => void) {
   const seen: unknown[] = []
   const hook = renderHook(
     ({ container: c, rootIds }) => {
@@ -210,6 +210,34 @@ describe('useFileConversation — live (FOL-32)', () => {
     live.state = 'connecting'
     rerender()
     expect(refresh.options).toEqual({ enabled: true, intervalMs: 30_000 })
+  })
+})
+
+describe('useFileConversation — before the file resolves (OPT-9)', () => {
+  it('reads nothing while the roots are not known, then reads once with them', async () => {
+    const { result, rerender, seen } = mount({ container, rootIds: null })
+    await act(async () => live.fire?.(event('e1')))
+    expect(relay.read).not.toHaveBeenCalled()
+    expect(relay.apply).not.toHaveBeenCalled()
+    expect(seen.every((state) => state === 'loading')).toBe(true)
+
+    rerender({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    expect(relay.read).toHaveBeenCalledTimes(1)
+    expect(relay.read.mock.calls[0][1]).toEqual(['r1'])
+  })
+
+  it('a comment sent before the roots are known is asked for by the first read', async () => {
+    relay.publish.mockResolvedValue({ ok: true, id: '1'.repeat(64) })
+    const { result, rerender } = mount({ container, rootIds: null })
+    await act(async () => {
+      await result.current.actions.comment('Sent early')
+    })
+    expect(relay.read).not.toHaveBeenCalled()
+
+    rerender({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
+    expect(relay.read.mock.calls[0][1]).toEqual(['r1', '1'.repeat(64)])
   })
 })
 
