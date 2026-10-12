@@ -12,7 +12,6 @@ import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
-import { rememberFileAddress } from './useForeignConversation'
 
 /**
  * Navigation by Folder — RFC 0.4 §4 and §5.
@@ -89,8 +88,6 @@ function loadFolderContents(
   return withRateLimitRetry(() => resolveFolderContents(folder))
     .then((contents) => {
       listedIn.set(folder, contents.files)
-      // A `d` names one file of any kind, so a short link to one listed here opens with no lookup.
-      for (const file of contents.files) if (file.address) rememberFileAddress(file.address)
       return { ok: true as const, value: contents }
     })
     .catch((error: unknown) => {
