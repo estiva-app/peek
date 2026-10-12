@@ -79,6 +79,9 @@ type Viewer = NonNullable<ReturnType<ReturnType<typeof useRelayViewer>>>
 /** Your own messages drawn and not yet answered by the relay, by id, with the answer to come. */
 const sending = new Map<string, Promise<WriteResult>>()
 
+/** Your own comments sent before their conversation's first read, by conversation: that read asks for them (OPT-9). */
+const sentBeforeRead = new Map<string, string[]>()
+
 /** Null once `id` is not being sent or was accepted; the refusal of what depends on it, when it was refused. */
 async function afterSend(id: string): Promise<WriteResult | null> {
   const flight = sending.get(id)
@@ -269,7 +272,9 @@ export function useFileConversation(
         if (before === undefined) {
           // What the socket delivered before this read began, the read finds.
           const startedAt = Date.now()
-          const { value, events } = await readConversation(container, roots, query)
+          const sent = sentBeforeRead.get(key) ?? []
+          const { value, events } = await readConversation(container, [...new Set([...roots, ...sent])], query)
+          sentBeforeRead.delete(key)
           // A catch-up that settled meanwhile is newer than this.
           if (conversations.value(key) === before) conversations.replace(key, value, events, startedAt)
           return
@@ -375,7 +380,16 @@ export function useFileConversation(
         return { ok: false, reason: 'The message could not be prepared. Try again.' }
       }
       const refusal = container.kind === 'channel' ? 'The relay refused the message.' : 'The relay refused the comment.'
-      return publishOwn(v, built.event, id, refusal)
+      const result = await publishOwn(v, built.event, id, refusal)
+      /*
+        Sent before the conversation's first read — the composer is there while
+        the file resolves (OPT-9). The file's comment ids may predate it, and a
+        catch-up asks only after that read began, so the read asks for it too.
+      */
+      if (result.ok && !args.parent && ids === null) {
+        sentBeforeRead.set(key, [...(sentBeforeRead.get(key) ?? []), result.id])
+      }
+      return result
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the container is `key`, by value
     [key, ids, viewer, sync],

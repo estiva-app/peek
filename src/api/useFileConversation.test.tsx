@@ -226,6 +226,19 @@ describe('useFileConversation — before the file resolves (OPT-9)', () => {
     expect(relay.read).toHaveBeenCalledTimes(1)
     expect(relay.read.mock.calls[0][1]).toEqual(['r1'])
   })
+
+  it('a comment sent before the roots are known is asked for by the first read', async () => {
+    relay.publish.mockResolvedValue({ ok: true, id: '1'.repeat(64) })
+    const { result, rerender } = mount({ container, rootIds: null })
+    await act(async () => {
+      await result.current.actions.comment('Sent early')
+    })
+    expect(relay.read).not.toHaveBeenCalled()
+
+    rerender({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
+    expect(relay.read.mock.calls[0][1]).toEqual(['r1', '1'.repeat(64)])
+  })
 })
 
 describe('useFileConversation — held (OPT-3)', () => {
