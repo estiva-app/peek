@@ -582,7 +582,8 @@ export async function composeCommentAsViewer(
     return { ok: true, event: unsigned }
   }
 
-  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...mentionTagsFor(args.body), ...urgent, ...references]
+  // No `mentionTagsFor` here: since interop 0.53 the comment action names the mentioned people in `p` itself.
+  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...urgent, ...references]
   const parent = args.parent
   return buildCommentAsViewer(
     {

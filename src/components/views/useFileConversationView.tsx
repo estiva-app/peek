@@ -502,6 +502,8 @@ export function useFileConversationView({
     thread's own pane still registers itself and wins (the registry's rule),
     as it does over a topic.
   */
+  // A file's Folder is what Create topic opens on (INT-12); a DM is a channel in no Folder.
+  const fileFolder = container?.kind === 'file' ? container.h : undefined
   useEffect(() => {
     if (!conversation) return
     const projected = project(conversation, viewerPubkey, people)
@@ -517,9 +519,9 @@ export function useFileConversationView({
       // A deleted root has no author or words to cite; its replies still do.
       return [...(root.isDeleted ? [] : [asMessage(root)]), ...projected.byId[root.id].replies.map(asMessage)]
     })
-    registerTopicConversation({ references: [], messages })
+    registerTopicConversation({ references: [], messages, ...(fileFolder ? { folder: fileFolder } : {}) })
     return unregisterTopicConversation
-  }, [conversation, viewerPubkey, people])
+  }, [conversation, viewerPubkey, people, fileFolder])
 
   // And how to open one of its threads, for a citation into one that is closed
   // (INT-8) — only while there is a conversation: the Desk runs the DM view's

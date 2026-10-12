@@ -108,7 +108,14 @@ export function ActionFormFields({ app, vocabularies, action, parentOptions, dra
             value={valueOf(field, draft)}
             onChange={(value) => set(field.key, value)}
             options={optionsFor(field)}
-            placeholder={field.control === 'parent' ? `Choose ${article(field.parentNoun ?? 'parent')}…` : 'Select…'}
+            placeholder={
+              field.control !== 'parent'
+                ? 'Select…'
+                : optionsFor(field).length === 0
+                  ? // Say why the list is empty rather than open on nothing (INT-12).
+                    `No ${field.parentNoun ?? 'parent'} you can add to yet`
+                  : `Choose ${article(field.parentNoun ?? 'parent')}…`
+            }
             ariaLabel={field.label}
             className="w-full"
           />

@@ -291,10 +291,12 @@ describe('a form that cannot publish says so', () => {
       must not fire, because a launcher that vanishes is how a person
       concludes the thing was created.
     */
-    open('peek', 'create-topic')
+    // Ship's proposal, which this relay's Ship does not declare. (It was Peek's
+    // `create-topic` until INT-12 made that a Folder's built-in.)
+    open('ship', 'add-project')
 
-    await userEvent.type(await screen.findByLabelText(/title/i), 'Weekly planning')
-    await userEvent.click(screen.getByRole('button', { name: 'Create topic' }))
+    await userEvent.type(await screen.findByLabelText(/name/i), 'Weekly planning')
+    await userEvent.click(screen.getByRole('button', { name: 'Create project' }))
 
     expect(await screen.findByText(/has not published this action/i)).toBeInTheDocument()
     expect(applyAction).not.toHaveBeenCalled()

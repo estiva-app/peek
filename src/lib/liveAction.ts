@@ -1,4 +1,4 @@
-import { BLOCK_DOCUMENT_FORMAT, KIND_CHANNEL_METADATA, type ResolvedAction } from '@estiva-app/interop'
+import { BLOCK_DOCUMENT_FORMAT, FOLDER_ACTIONS_ADDRESS, KIND_CHANNEL_METADATA, type ResolvedAction } from '@estiva-app/interop'
 import { markerTextToBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 import type { FormField, LauncherAction, VocabOption } from './launcherActions'
 
@@ -27,6 +27,38 @@ import type { FormField, LauncherAction, VocabOption } from './launcherActions'
 
 /** The synthetic field key holding the parent address. Never a manifest property. */
 export const PARENT_FIELD = '__parent'
+
+/** The field Create topic adds for its members (INT-12). Peek writes it itself; never a manifest property. */
+export const MEMBERS_FIELD = '__members'
+
+/** One of a Folder's built-in actions — declared by SPEC §3.2, not by any app (INT-12, interop 0.54.0). */
+export function isFolderBuiltIn(action: Pick<ResolvedAction, 'declaredBy'>): boolean {
+  return action.declaredBy?.address === FOLDER_ACTIONS_ADDRESS
+}
+
+/**
+ * The Folder's built-in new file, as Peek offers it: **Create topic** (INT-12).
+ *
+ * The runtime calls it "New file", since it is every app's; Peek says topic
+ * (its manifest's `fileNoun`). And it adds who the topic is for — Miky's call
+ * at kickoff, 2026-10-12: the people added become members of the file (SPEC
+ * §11.8), so they are told when it has something unread. That is a `kind:1851`
+ * per person after the file exists, which no declaration says, so the field is
+ * Peek's own and `submitAction` keeps it out of what the runtime is given.
+ */
+export function asCreateTopic(resolved: Pick<ResolvedAction, 'id' | 'declaredBy'>, action: LauncherAction): LauncherAction {
+  if (!isFolderBuiltIn(resolved) || resolved.id !== 'create-file') return action
+  return {
+    ...action,
+    label: 'Create topic',
+    submitLabel: 'Create topic',
+    fields: [
+      ...action.fields.map((field) => (field.key === 'title' ? { ...field, placeholder: "What's this topic about?" } : field)),
+      { key: MEMBERS_FIELD, label: 'Members', control: 'people', placeholder: 'Add people...', declaredToday: true },
+    ],
+    membersField: MEMBERS_FIELD,
+  }
+}
 
 /** `title` → `Title`, `dueDate` → `Due date`. A default, replaceable by anything better. */
 function labelFor(name: string): string {
@@ -168,7 +200,7 @@ export interface AppCreation {
  * nothing, which is the section's "none".
  */
 export function creationsFor(
-  app: { parentKind?: number; parentNoun?: string },
+  app: { parentKind?: number; parentNoun?: string; offersFolderBuiltIns?: boolean },
   reads: ReadonlyMap<number, CreatableKindRead | null>,
 ): AppCreation[] | null {
   if (typeof app.parentKind !== 'number') return null
@@ -182,8 +214,11 @@ export function creationsFor(
     const read = reads.get(kind)
     if (!read) continue
     for (const action of read.actions) {
-      const mine =
-        kind === app.parentKind
+      // A Folder's built-in (INT-12) is no app's, so it is offered by the app the registry says may sign it.
+      const builtIn = isFolderBuiltIn(action)
+      const mine = builtIn
+        ? !!app.offersFolderBuiltIns
+        : kind === app.parentKind
           ? !action.declaredBy || action.declaredBy.address === own.manifest
           : own.manifest !== undefined && action.declaredBy?.address === own.manifest
       if (!mine || seen.has(action.id)) continue
@@ -193,8 +228,9 @@ export function creationsFor(
         parents: (read.parentsFor?.[action.id] ?? read.parents).map((p) => ({ value: p.address, label: p.title })),
         // The app's own noun for its own kind (INT-9); for another's, what that
         // kind's projection says, and a Folder is a Folder whoever draws it.
-        parentNoun:
-          kind === app.parentKind
+        parentNoun: builtIn
+          ? 'Folder'
+          : kind === app.parentKind
             ? (app.parentNoun ?? 'parent')
             : (read.noun ?? (kind === KIND_CHANNEL_METADATA ? 'Folder' : 'parent')),
       })

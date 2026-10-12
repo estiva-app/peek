@@ -115,9 +115,16 @@ describe('the first level, by what was typed', () => {
 
   it('puts an app whose name starts with the text first (R6)', async () => {
     open()
-    await enter(field(),'pe')
+    await enter(field(),'sh')
     await waitFor(() => expect(groupNames()[0]).toBe('Apps'))
-    expect(within(screen.getByRole('group', { name: 'Apps' })).getByText('Peek')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Apps' })).getByText('Ship')).toBeInTheDocument()
+  })
+
+  it('never lists Peek among the apps, whose actions are its own group (INT-13)', async () => {
+    open()
+    expect(within(await screen.findByRole('group', { name: 'Apps' })).queryByText('Peek')).not.toBeInTheDocument()
+    await enter(field(),'pe')
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Apps' })).not.toBeInTheDocument())
   })
 
   it('names an app without a count of actions it may not have (R12)', async () => {
@@ -221,13 +228,14 @@ describe('recents (C3)', () => {
 
 describe('inside an app', () => {
   it('shows only that app’s actions, whichever app was visited before (F2)', async () => {
-    open({}, { initialAppId: 'ship' })
-    expect(await screen.findByRole('option', { name: /Add issue/ })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Leave Ship' }))
-    await enter(field(),'pe')
-    await userEvent.keyboard('{Tab}')
+    // Peek is reached by its link only since INT-13 (it is not among Apps), so this starts there.
+    open({}, { initialAppId: 'peek' })
     expect(await screen.findByText(/Peek has not published anything/)).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: /Add issue/ })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Leave Peek' }))
+    await enter(field(),'sh')
+    await userEvent.keyboard('{Tab}')
+    expect(await screen.findByRole('option', { name: /Add issue/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Peek has not published anything/)).not.toBeInTheDocument()
   })
 
   it('does not search messages there, where nobody would see them (F9)', async () => {

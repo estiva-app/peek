@@ -6,10 +6,12 @@
  * component test beside them asserts the panel renders it unchanged.
  */
 import { describe, expect, it } from 'vitest'
-import type { ResolvedAction } from '@estiva-app/interop'
+import { FOLDER_ACTIONS_ADDRESS, type ResolvedAction } from '@estiva-app/interop'
 import { parseBlockDocument } from '@estiva-app/protocol'
 import {
+  MEMBERS_FIELD,
   PARENT_FIELD,
+  asCreateTopic,
   creationsFor,
   launcherActionFrom,
   proseSubmission,
@@ -113,6 +115,60 @@ describe('creationsFor — an action goes to the app that declared it (MAN-8)', 
     expect(creationsFor({ parentKind: 30850 }, new Map([[30850, null]]))).toBeNull()
     const own = new Map<number, CreatableKindRead | null>([[30850, reads.get(30850)!], [39000, null]])
     expect(creationsFor({ parentKind: 30850 }, own)!.map((c) => c.action.id)).toEqual(['add-issue'])
+  })
+})
+
+describe('a Folder’s built-in new file is Peek’s Create topic (INT-12)', () => {
+  const PEEK_MANIFEST = '31990:0a59:estiva-peek'
+  const createFile: ResolvedAction = {
+    ...addIssue,
+    id: 'create-file',
+    label: 'New file',
+    createsUnder: undefined,
+    listed: true,
+    declaredBy: { address: FOLDER_ACTIONS_ADDRESS, appName: 'Folder' },
+  }
+  const reads = new Map<number, CreatableKindRead | null>([
+    [
+      39000,
+      {
+        actions: [{ ...addIssue, id: 'start-a-conversation' }, createFile],
+        parents: [{ address: '39000:relay:dm', title: 'A DM' }],
+        manifest: PEEK_MANIFEST,
+        noun: 'topic',
+        parentsFor: { 'create-file': [{ address: '39000:relay:qa', title: 'QA' }] },
+      },
+    ],
+  ])
+
+  it('is offered by the app that may sign it, with Folders to pick from — not by any other', () => {
+    const peek = creationsFor({ parentKind: 39000, parentNoun: 'topic', offersFolderBuiltIns: true }, reads)!
+    expect(peek.map((c) => [c.action.id, c.parentNoun, c.parents.map((p) => p.label)])).toEqual([
+      ['start-a-conversation', 'topic', ['A DM']],
+      ['create-file', 'Folder', ['QA']],
+    ])
+    const other = creationsFor({ parentKind: 39000, parentNoun: 'topic' }, reads)!
+    expect(other.map((c) => c.action.id)).toEqual(['start-a-conversation'])
+  })
+
+  it('is called Create topic and adds a Members field Peek writes itself', () => {
+    const action = asCreateTopic(createFile, launcherActionFrom(createFile, { parentNoun: 'Folder' })!)
+    expect(action.label).toBe('Create topic')
+    expect(action.fields.map((f) => [f.key, f.control])).toEqual([
+      ['title', 'string'],
+      [PARENT_FIELD, 'parent'],
+      [MEMBERS_FIELD, 'people'],
+    ])
+    expect(action.membersField).toBe(MEMBERS_FIELD)
+    expect(action.declaredBy).toBe(FOLDER_ACTIONS_ADDRESS)
+  })
+
+  it('leaves every other action as it was', () => {
+    const issue = launcherActionFrom(addIssue)!
+    expect(asCreateTopic(addIssue, issue)).toBe(issue)
+    // An app's own `create-file` is not the Folder's.
+    const own = { ...createFile, declaredBy: { address: PEEK_MANIFEST } }
+    expect(asCreateTopic(own, launcherActionFrom(own)!).label).toBe('New file')
   })
 })
 

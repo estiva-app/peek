@@ -51,6 +51,11 @@ export interface ConversationSnapshot {
    * and the prompt still carries only the prose.
    */
   messages: ConversationMessage[]
+  /**
+   * The Folder the file being read is in — its `h`, a Folder id (INT-12).
+   * What Create topic opens on. Absent for a DM, which is in no Folder.
+   */
+  folder?: string
 }
 
 /**
@@ -122,6 +127,14 @@ let topic: ConversationSnapshot | null = null
  */
 export function getActiveConversation(): ConversationSnapshot | null {
   return active ?? topic
+}
+
+/**
+ * The Folder of what is being read, from either snapshot (INT-12): an open
+ * thread is inside its topic, and only the topic's view knows the Folder.
+ */
+export function activeFolder(): string | undefined {
+  return active?.folder ?? topic?.folder
 }
 
 /**

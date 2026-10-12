@@ -6,7 +6,7 @@ import { PeekLogoMark } from './ui/PeekLogo'
 import { ShipLogoMark } from './ui/ShipLogo'
 import { ActionFormFields } from './ActionFormPanel'
 import { applyPrefill, draftValues, missingFields, seedDraft, type FormDraft } from '@/lib/formDraft'
-import { formatDateLabel, useForeignObjects, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
+import { formatDateLabel, reloadFoldersOnScreen, useForeignObjects, useMembership, useMessageSearch, useWorkspaceDirectory, useWorkspacePeople, type Person } from '@/api'
 import type { ResolvedAction } from '@estiva-app/interop'
 import { addrToNaddr } from '@estiva-app/protocol'
 import { matchPeople, messageEmptyState, snippetAround } from '@/lib/launcherSearch'
@@ -21,6 +21,7 @@ import { scrollToMessage, scrollToMessageWhenReady } from '@/lib/messageAnchor'
 import { openConversation } from '@/lib/threadOpener'
 import {
   PARENT_FIELD,
+  asCreateTopic,
   changeActionFrom,
   changeVocabulariesFrom,
   creationsFor,
@@ -32,7 +33,7 @@ import {
 } from '@/lib/liveAction'
 import type { LauncherContext } from '@/lib/launcherContext'
 import { insertReferenceIntoActiveComposer, insertTextIntoActiveComposer } from '@/lib/composerRegistry'
-import { bodies } from '@/lib/conversationRegistry'
+import { activeFolder, bodies } from '@/lib/conversationRegistry'
 import { useLastSelection } from '@/lib/lastSelection'
 import { clearRecents, forgetRecent, useRecents } from '@/lib/recents'
 import { previewText } from '@/lib/textParsing'
@@ -142,6 +143,14 @@ const asWords = (body: string) =>
 const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length
 
 /** The footer's "where": the composer the launcher was opened over, in words. */
+/*
+  INT-13 (Miky, 2026-10-12): the app the launcher runs in is not one to go
+  into. Its actions have their own group on the first level, and Apps lists the
+  others — the same rows one level deeper would be the same thing twice.
+*/
+const HOST_APPS = probeable(LAUNCHER_APPS.filter((app) => app.isHost))
+const OTHER_APPS = LAUNCHER_APPS.filter((app) => !app.isHost)
+
 function whereFrom(context: LauncherContext): string {
   const label = context.composer?.label
   if (!label) return context.conversation ? 'In this conversation' : 'Anywhere in Peek'
@@ -195,6 +204,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const { state: messageState, hits: messageHits } = useMessageSearch(level.kind === 'first' ? query : '')
 
   const { creatableUnder, applyAction, resolveObject } = useForeignObjects()
+  const { setMember } = useMembership()
 
   /*
     PEE-3's targets: the objects this conversation already refers to, resolved
@@ -265,8 +275,9 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const readKinds = useCallback(
     // Rejects only when `required` — the app's own kind — could not be read;
     // another kind that failed is read as nothing there.
-    async (required: number): Promise<Map<number, CreatableKindRead | null>> => {
-      const kinds = [...new Set(probeable(LAUNCHER_APPS).map((app) => app.parentKind as number))]
+    // The host reads its own kind alone (INT-13): it is read on every opening, and declares nothing on another.
+    async (required: number, ownKindOnly = false): Promise<Map<number, CreatableKindRead | null>> => {
+      const kinds = ownKindOnly ? [required] : [...new Set(probeable(LAUNCHER_APPS).map((app) => app.parentKind as number))]
       const reads = await Promise.allSettled(
         kinds.map((kind) => {
           let read = kindReads.current.get(kind)
@@ -296,7 +307,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       if (typeof app.parentKind !== 'number' || asked.current.has(app.id)) return
       asked.current.add(app.id)
       setLive((l) => ({ ...l, [app.id]: { state: 'loading' } }))
-      readKinds(app.parentKind)
+      readKinds(app.parentKind, !!app.isHost)
         .then((reads) => {
           const found = creationsFor(app, reads)
           if (!found) {
@@ -308,8 +319,10 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           const parents: Record<string, VocabOption[]> = {}
           for (const creation of found) {
             // The noun of the kind it goes on — the app's own for its own kind (INT-9), "Folder" on a Folder.
-            const action = launcherActionFrom(creation.action, { parentNoun: creation.parentNoun, submitLabel: creation.action.label })
-            if (!action) continue
+            const converted = launcherActionFrom(creation.action, { parentNoun: creation.parentNoun, submitLabel: creation.action.label })
+            if (!converted) continue
+            // A Folder's built-in new file is Peek's Create topic (INT-12).
+            const action = asCreateTopic(creation.action, converted)
             actions.push(action)
             parents[action.id] = creation.parents
           }
@@ -325,6 +338,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   )
   useEffect(() => {
     if (level.kind === 'app') readLive(level.app)
+    // The host's actions are on the first level before anything is typed (INT-13), so it is read on opening.
+    if (level.kind === 'first') HOST_APPS.forEach(readLive)
     if (level.kind === 'first' && q) probeable(LAUNCHER_APPS).forEach(readLive)
   }, [level, q, readLive])
 
@@ -417,8 +432,9 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
               if (!found) return []
               return found.filter(({ action }) => isProposable(action)).flatMap(({ action, parents, parentNoun }) => {
                 // The app's own word for the parent, not "Parent" (R10).
-                const launcher = launcherActionFrom(action, { parentNoun, submitLabel: action.label })
-                if (!launcher) return []
+                const converted = launcherActionFrom(action, { parentNoun, submitLabel: action.label })
+                if (!converted) return []
+                const launcher = asCreateTopic(action, converted)
                 return [
                   {
                     appId: app.id,
@@ -495,7 +511,19 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
   const [submitError, setSubmitError] = useState<string | null>(null)
 
   const formLevel = level.kind === 'form' ? level : null
-  const formDraft = formLevel ? (drafts[formKey(formLevel)] ?? seedDraft(formLevel.action)) : null
+  /*
+    Create topic opens on the Folder of the topic you are in (INT-12), when that
+    Folder is one of its choices — a Folder with state. Anywhere else, and in a
+    Folder that is not offered, the field starts empty and says so.
+  */
+  const seedFor = (form: Extract<Level, { kind: 'form' }>): FormDraft => {
+    const here = form.action.id === 'create-file' ? activeFolder() : undefined
+    const read = form.app ? live[form.app.id] : undefined
+    const match =
+      here && read?.state === 'ready' ? read.parents[form.action.id]?.find((p) => p.value.endsWith(`:${here}`)) : undefined
+    return seedDraft(form.action, match ? { [PARENT_FIELD]: match.value } : undefined)
+  }
+  const formDraft = formLevel ? (drafts[formKey(formLevel)] ?? seedFor(formLevel)) : null
   const setFormDraft = (next: FormDraft) => formLevel && setDrafts((d) => ({ ...d, [formKey(formLevel)]: next }))
 
   // A form's error belongs to that visit to it.
@@ -521,7 +549,7 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       if (cancelled) return
       const usable = usablePrefill(suggested, built.keys)
       if (Object.keys(usable).length === 0) return
-      setDrafts((d) => ({ ...d, [prefillFor]: applyPrefill(d[prefillFor] ?? seedDraft(formLevel.action), usable) }))
+      setDrafts((d) => ({ ...d, [prefillFor]: applyPrefill(d[prefillFor] ?? seedFor(formLevel), usable) }))
     })()
     return () => {
       cancelled = true
@@ -588,7 +616,10 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       setSubmitError(`${appLabel} has not published this action, so there is nothing to send.`)
       return
     }
-    const { parent, properties: typed } = splitSubmission(values)
+    // Create topic's members are Peek's to write once the file exists (INT-12), never a property of it.
+    const { [action.membersField ?? '']: memberList, ...declaredValues } = values
+    const members = action.membersField ? (memberList ?? '').split(',').filter(Boolean) : []
+    const { parent, properties: typed } = splitSubmission(action.membersField ? declaredValues : values)
     const { properties, contentFormat } = proseSubmission(action, typed)
     if (!parent) {
       setSubmitError('Choose where this should go before creating it.')
@@ -645,6 +676,28 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
       setSubmitError(`Created, but its folder does not list it yet: ${result.incomplete}`)
       return
     }
+    /*
+      Each person added becomes a member of the new topic (SPEC §11.8), so they
+      are told when it has something unread — a `kind:1851` each, by the
+      membership seam. The creator already is one, by creating it.
+    */
+    if (members.length > 0 && result.created) {
+      const folder = parent.split(':')[2] ?? ''
+      const refused: string[] = []
+      for (const person of members) {
+        const added = await setMember(result.created, folder, true, person)
+        if (added !== true) refused.push((people ?? []).find((p) => p.id === person)?.name ?? `${person.slice(0, 8)}…`)
+      }
+      if (refused.length > 0) {
+        // The topic exists, so the form closes: sending it again would make a second one.
+        showToast({ label: `Created, but ${refused.join(', ')} could not be added as members.`, type: 'error' })
+        void reloadFoldersOnScreen()
+        onClose()
+        return
+      }
+    }
+    // A new file is in a Folder's list now: the open sections, the tree's among them, read it again (INT-12).
+    if (result.created) void reloadFoldersOnScreen()
     const title = properties.title?.trim()
     // C5: say it worked, where the person is looking.
     showToast({ label: title ? `“${title}” created in ${appLabel}` : `Created in ${appLabel}`, type: 'success' })
@@ -770,23 +823,40 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
         .flatMap((r) => (people ?? []).filter((p) => p.id === r.id))
         .slice(0, 2)
       const recentRows = [...recentTopics, ...recentPeople.map((p) => personRow(p, () => forgetRecent({ kind: 'person', id: p.id })))]
+      /*
+        The host's own actions, before anything is typed (INT-13, Miky
+        2026-10-12): below this conversation, above Recent, under "Actions" —
+        "You're in Peek, no need to call it 'Peek'" (Miky, the issue's
+        conversation). Empty while its manifest is read, so the group is simply
+        not drawn yet.
+      */
+      const hostGroups = HOST_APPS.map((app) => ({
+        label: 'Actions',
+        rows: liveActions(app).map((action) => ({
+          id: `host-${app.id}-${action.id}`,
+          label: action.label,
+          icon: icon(IconPencil),
+          onSelect: () => push({ kind: 'form', action, app }),
+        })),
+      }))
       return {
         groups: [
           { label: 'This conversation', rows: [...intentRows(''), ...changeRowsFor(changeRows)] },
+          ...hostGroups,
           {
             label: 'Recent',
             rows: recentRows.length
               ? [...recentRows, { id: 'clear-recent', label: 'Clear recent', icon: icon(IconEraser), onSelect: clearRecents }]
               : [],
           },
-          { label: 'Apps', rows: LAUNCHER_APPS.map(appRow) },
+          { label: 'Apps', rows: OTHER_APPS.map(appRow) },
         ],
         notes: [],
       }
     }
 
-    // An app whose name starts with what was typed goes first (R6).
-    const apps = LAUNCHER_APPS.filter((a) => a.label.toLowerCase().startsWith(q)).map(appRow)
+    // An app whose name starts with what was typed goes first (R6); not the host, whose actions are its own group (INT-13).
+    const apps = OTHER_APPS.filter((a) => a.label.toLowerCase().startsWith(q)).map(appRow)
     // A word is a search, a sentence is a question (R5 C, C2).
     const sentence = wordCount(typed) >= 2
     const ask: CommandPaletteGroup = { label: 'Ask', rows: intentRows(typed) }
@@ -803,7 +873,8 @@ export function CommandLauncher({ context, onClose, initialAppId, initialActionI
           label: action.label,
           description: app.label,
           icon: icon(IconPencil),
-          onSelect: () => push({ kind: 'app', app }, { kind: 'form', action, app }),
+          // The host is not somewhere to go into (INT-13), so going back from its form is the first level.
+          onSelect: () => (app.isHost ? push({ kind: 'form', action, app }) : push({ kind: 'app', app }, { kind: 'form', action, app })),
         })),
     )
 

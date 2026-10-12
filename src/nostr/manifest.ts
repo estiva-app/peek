@@ -195,13 +195,12 @@ export function manifestContent() {
      * publishing one puts it where Peek cannot find it (RFC 0.4 §7.2). Both
      * belong with the conversation work.
      *
-     * **Create a topic** is not declared either, for a different reason. A
-     * topic is no longer a container: since FOL-23/26 it is a bare
-     * `kind:30840` file (`createTopicAsViewer`), one event `buildCreationEvent`
-     * could build. But the file only appears in the tree once a `kind:1852`
-     * command lists it in its Folder, and `emits` has no way to declare that
-     * second step — a consumer following the declaration would publish a topic
-     * nobody can find. That gap is PRO-18.
+     * **Create a topic** is not declared here, and never will be (INT-12). A
+     * topic is a bare `kind:30840` file in a Folder, and both are owned by no
+     * app (SPEC §3.2, §6.7): putting a file in a Folder is the Folder's own
+     * built-in `create-file` (interop 0.54.0), which every app may offer and
+     * Peek's launcher calls Create topic. Declared on this manifest, it would
+     * reach a consumer only through the `39000` claim §3.2 forbids.
      *
      * Starting a conversation creates no container and names no event id, which
      * is what leaves it declarable.
