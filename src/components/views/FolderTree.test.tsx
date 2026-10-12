@@ -9,12 +9,12 @@
  * `scripts/probe-fol21-tree-cost.ts`, against production; this file proves
  * *when* the read is asked for, which no probe can.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
-import { FolderTree } from './FolderTree'
+import { FolderTree, PENDING_MS } from './FolderTree'
 import { ToastProvider } from '@/lib/toast'
 
 const SHIP = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46'
@@ -254,6 +254,51 @@ describe('the second level', () => {
     mount({ currentFolder: TEAM, selectedParent: PROJECT_ADDRESS })
     expect(section(TEAM).querySelector(`[data-children-of="${PROJECT_ADDRESS}"]`)).not.toBeNull()
     expect(childrenAsked()).toEqual([project.naddr])
+  })
+})
+
+/*
+  Opened before its listing is in, a Folder stays shut with its arrow turned,
+  then opens once with every row (OPT-11, Miky 12 October): a skeleton the
+  rows replaced moved everything below it twice.
+*/
+describe('a Folder opened before its listing is in (OPT-11)', () => {
+  const hidden = (node: Element | null) => !!node?.closest('[hidden]')
+
+  it('says open and busy, draws nothing yet, and opens with every row when the listing lands', () => {
+    reads.pending.add(TEAM)
+    const { rerender } = mount()
+    fireEvent.click(fold('Peek'))
+    const heading = section(TEAM).querySelector('[aria-expanded]')!
+    expect(heading.getAttribute('aria-expanded')).toBe('true')
+    expect(heading.getAttribute('aria-busy')).toBe('true')
+    expect(hidden(section(TEAM).querySelector('[data-loading]'))).toBe(true)
+
+    reads.pending.delete(TEAM)
+    rerender({})
+    expect(heading.getAttribute('aria-busy')).toBeNull()
+    expect(hidden(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`))).toBe(false)
+  })
+
+  it('a read still out after PENDING_MS opens on the skeleton', () => {
+    vi.useFakeTimers()
+    try {
+      reads.pending.add(TEAM)
+      mount()
+      fireEvent.click(fold('Peek'))
+      act(() => vi.advanceTimersByTime(PENDING_MS))
+      expect(section(TEAM).querySelector('[aria-expanded]')!.getAttribute('aria-busy')).toBeNull()
+      expect(hidden(section(TEAM).querySelector('[data-loading]'))).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a Folder whose listing is already in opens at once, never busy', () => {
+    mount()
+    fireEvent.click(fold('Peek'))
+    expect(section(TEAM).querySelector('[aria-expanded]')!.getAttribute('aria-busy')).toBeNull()
+    expect(hidden(section(TEAM).querySelector(`[data-file="${FILE_ADDRESS}"]`))).toBe(false)
   })
 })
 

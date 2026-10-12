@@ -822,6 +822,23 @@ function FolderSection({
   // By the rows, not the wrapper: a listing rebuilt per render would set this for ever.
   if (listing && !sameRows(listing.files, drawn?.files)) setDrawn(listing)
   const state = fresh === 'loading' && drawn ? drawn : fresh
+  /*
+    Opened before its listing is in, the Folder stays shut with its arrow
+    turned and its icon pulsing, and opens once with every row (OPT-11,
+    Miky 12 October). A skeleton the rows then replaced moved everything
+    below it twice — Katerina's "just a few items appear and in a second,
+    the whole list" (7 October). A read still out after `PENDING_MS` opens
+    on the skeleton after all: a rate-limit retry can take seconds.
+  */
+  const waiting = open && state === 'loading'
+  const [slow, setSlow] = useState(false)
+  if (!waiting && slow) setSlow(false)
+  useEffect(() => {
+    if (!waiting) return
+    const timer = setTimeout(() => setSlow(true), PENDING_MS)
+    return () => clearTimeout(timer)
+  }, [waiting])
+  const pending = waiting && !slow
   const listed = typeof state === 'object' && 'files' in state ? state.files : undefined
   /*
     Every row above the open file starts open, not only its parent (FOL-4): a
@@ -855,6 +872,7 @@ function FolderSection({
       */
       title={folder.name ?? folder.id}
       open={open}
+      pending={pending}
       onOpenChange={setOpen}
       /*
         No dot on a Folder, open or collapsed (Miky, 2026-10-03): read state
@@ -867,7 +885,7 @@ function FolderSection({
         are gone, and a click on the heading only folds it.
       */
       // The folder icon in every view, Topics too (Katerina, 7 October): a heading is a Folder wherever it is drawn.
-      icon={<TopicState type="folder" />}
+      icon={<TopicState type="folder" className={pending ? 'animate-pulse' : undefined} />}
       // In Archive, an archived Folder says so beside its name (Katerina, 5 October): the rest are there for what is archived inside them.
       trailing={archive && folder.archived ? <Chip type="neutral" label="Archived" /> : undefined}
       menu={menu}
@@ -916,6 +934,9 @@ function FolderSection({
 
 /** How long the pointer rests on a closed Folder before it is read ahead (SID-2). */
 export const PREFETCH_INTENT_MS = 150
+
+/** How long an opened Folder waits shut for its listing before it opens on the skeleton (OPT-11): a cold read is ~0.9 s. */
+export const PENDING_MS = 2000
 
 /** The same rows, in the same order — what a re-read that changed nothing answers. */
 function sameRows(a: readonly ForeignObject[], b: readonly ForeignObject[] | undefined): boolean {
