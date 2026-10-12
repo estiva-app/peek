@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
-import { IconArrowUpRight, IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection, EmptyState, ListColumn, Panel, Toolbar, ToolbarLink } from '@estiva-app/ui'
+import { IconSortDescending } from '@tabler/icons-react'
+import { CollapsibleSection, EmptyState, ListColumn } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { Divider } from '@/components/ui/Divider'
@@ -10,7 +10,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader'
 import { PersonRow } from '@/components/ui/PersonRow'
 import { ScreenerSection } from '@/components/ScreenerSection'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
-import { SidePanelButton } from '@/components/SidePanelButton'
+import { useFilePane } from '@/components/views/useFilePane'
 import { useFileView } from '@/components/views/useFileView'
 import {
   dmNameById,
@@ -24,12 +24,9 @@ import {
   useLiveConversationBadges,
   useOpenWorkFiles,
 } from '@/api'
-import { filePath } from '@/lib/objectUrl'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
-import { followInApp } from '@/lib/followInApp'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
 import { useDebug } from '@/lib/debug'
-import { elsewhereAppName } from '@/lib/appName'
 
 type SectionKey = 'urgent' | 'openWork' | 'starred'
 
@@ -50,7 +47,6 @@ const OPEN_REPLY_WINDOW_MS = 5000
 export function DeskPage() {
   const railClosed = useRailClosed()
   const { dmHasUnread } = useUnread()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { state: debug } = useDebug()
   const { entries: starredAll, isDmStarred, toggleDm, isLoading: starredLoading } = useStarred()
@@ -238,15 +234,23 @@ export function DeskPage() {
     showUnreads: showPeopleUnreads,
   })
   /*
-    The open file, as its own page draws it: the conversation, a composer, the
-    thread or the owner's widget in the third column, and the read marker. The
-    header is the Desk's — the file's title and a way to its full page, which
-    is where the tree, the trail and the file's menu are.
+    The open file, as its own page draws it (OPT-12, Miky 7 October: "It
+    should be the very same and no link to full page. There is only one
+    page."): the conversation, a composer, the thread or the Overview in the
+    third column, the read marker, and the page's header — its members, Join,
+    and the file's menu. Only the left column is the Desk's: its lists.
   */
   const fileView = useFileView({
     address: selected ? null : openAddress,
     openThreadId,
     onOpenThread: setOpenThread,
+    titleHint: openedFrom?.title,
+  })
+  const openSection = openedFrom?.section ?? 'openWork'
+  const filePaneParts = useFilePane(fileView, {
+    // The Desk stays the Desk (Miky, OPT-12's kickoff): a deleted file's pane closes, and a new topic opens here.
+    onDeleted: () => closeFile(),
+    onStarted: (created) => openFile(created.address, created.title, openSection),
   })
   /*
     A row lit only by a thread reply opens that thread (CON-34, Miky
@@ -275,41 +279,14 @@ export function DeskPage() {
     else if (!openThreadId) setOpenThread(judgedThread)
   }, [rowClicks, openedTarget, judgedThread, openedDm, openDmThread, setOpenThread, openThreadId])
 
-  const fileTitle = fileView.file?.slots.title?.value ?? openedFrom?.title ?? 'File'
-  const fullPage = openAddress ? filePath(openAddress, fileView.file?.slots.title?.value ?? openedFrom?.title) : null
-  const filePane = fullPage ? (
-    // The file's conversation in the package's Panel: it scrolls, and the composer stays under it.
-    <Panel
-      {...fileView.panel}
-        title={
-          <div className="min-w-0">
-            <p className="truncate text-body-2-strong text-text-primary">{fileTitle}</p>
-            {elsewhereAppName(fileView.file) && (
-              <p className="truncate text-caption text-text-muted">In {elsewhereAppName(fileView.file)}</p>
-            )}
-          </div>
-        }
-        actions={
-          <Toolbar aria-label="File actions" surface={false}>
-            {/* The Overview, shown and hidden, as on the file's own page (Katerina, 7 October). */}
-            {fileView.sidePanel && <SidePanelButton open={fileView.sidePanel.open} onToggle={fileView.sidePanel.toggle} />}
-            <ToolbarLink
-              tooltip="Open full page"
-              aria-label="Open full page"
-              href={fullPage}
-              onClick={(event) => followInApp(event, () => navigate(fullPage))}
-            >
-              <IconArrowUpRight size={16} stroke={1.5} />
-            </ToolbarLink>
-          </Toolbar>
-        }
-      />
-  ) : null
+  const filePane = openAddress ? filePaneParts.pane : null
 
   const rightPanel = selected ? dmView.rightPanel : (filePane ?? dmView.rightPanel)
   const threadPanel = selected ? dmView.threadPanel : filePane ? fileView.threadPanel : undefined
 
   return (
+    <>
+    {filePaneParts.dialogs}
     <DeskPageView
       railClosed={railClosed}
       loading={deskLoading || starredLoading}
@@ -375,6 +352,7 @@ export function DeskPage() {
       rightPanel={rightPanel}
       threadPanel={threadPanel}
     />
+    </>
   )
 }
 
