@@ -44,21 +44,36 @@ MENU=(
 GO_TO_PAGE='(async () => {
   const address = new URLSearchParams(location.search).get("open")
   const before = window.__relayReads?.(2)?.total ?? null
-  // The conversation column only: the page's Folder tree draws placeholders of its own on a cold mount.
+  // The conversation column only: the Folder tree on the page draws placeholders of its own on a cold mount.
   const strip = () => document.querySelector("[aria-label=\"File actions\"]")
-  const column = () => { let c = strip(); for (let i = 0; c && i < 8 && !c.querySelector("[aria-label=Composer], .animate-skeleton-in, [role=log]"); i++) c = c.parentElement; return c }
-  const placeholders = () => column()?.querySelectorAll(".animate-pulse, [aria-busy=true], .animate-skeleton-in").length ?? 0
+  // The middle column: the highest ancestor of the header strip that starts where the header does, so not the tree beside it.
+  const column = () => {
+    let c = strip(); if (!c) return null
+    let head = c; for (let i = 0; head && i < 6 && !head.querySelector("p.text-body-2-strong"); i++) head = head.parentElement
+    const left = (head ?? c).getBoundingClientRect().left - 2
+    while (c.parentElement && c.parentElement !== document.body && c.parentElement.getBoundingClientRect().left >= left) c = c.parentElement
+    return c
+  }
+  // OPT-9: the conversation read draws `.animate-skeleton-in` cards; any other pulse in the column is counted apart.
+  const skeleton = () => column()?.querySelectorAll(".animate-skeleton-in").length ?? 0
+  const pulses = () => column()?.querySelectorAll(".animate-pulse, [aria-busy=true]").length ?? 0
   history.pushState({}, "", "/topic/" + address)
   dispatchEvent(new PopStateEvent("popstate"))
-  let seen = 0, frames = 0, firstFrameWithStrip = null
+  let skeletonFrames = 0, pulseMax = 0, frames = 0, firstFrameWithStrip = null
   const until = Date.now() + 1500
   while (Date.now() < until) {
     frames++
     if (firstFrameWithStrip === null && strip()) firstFrameWithStrip = frames
-    seen = Math.max(seen, placeholders())
+    if (skeleton() > 0) skeletonFrames++
+    pulseMax = Math.max(pulseMax, pulses())
     await new Promise((r) => requestAnimationFrame(r))
   }
-  return { address, conversationPlaceholderSeen: seen, firstFrameWithHeader: firstFrameWithStrip, readsBefore: before, readsAfter: window.__relayReads?.(2)?.total ?? null }
+  const c = column()
+  return {
+    address, frames, firstFrameWithHeader: firstFrameWithStrip, conversationSkeletonFrames: skeletonFrames, otherPulseMax: pulseMax,
+    column: c ? c.tagName + "." + String(c.className).slice(0, 50) : null,
+    readsBefore: before, readsAfter: window.__relayReads?.(2)?.total ?? null,
+  }
 })()'
 
 # Desk's rows are clickable divs, which `--click` does not list as controls.
