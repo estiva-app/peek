@@ -29,9 +29,9 @@ const LIVE = { live: true }
  *
  * A section of the file's Overview, the third column (`OverviewPanel`): under
  * another app's card, or alone. A thread is what somebody just asked for and
- * takes the column while it is open. The column is shown when there is
- * something in it and hidden when there is not, and the header's sidebar
- * button shows it anyway, with this section's empty line (`useSidePanel`).
+ * takes the column while it is open. The column is closed whenever a file
+ * is opened, and the header's sidebar button shows it, with this section's
+ * empty line when nothing names the file (`useSidePanel`).
  */
 export function FileActivityPanel({ address, mentions }: { address?: string; mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()

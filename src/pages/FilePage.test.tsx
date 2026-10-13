@@ -890,6 +890,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = screen.getByTestId('thread')
     expect(within(column).getByText('Activity')).toBeInTheDocument()
     const row = column.querySelector('[data-relation="mention"]')!
@@ -937,6 +938,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mentionNow.current = now({ edit: 'Same shape, one level down — edited.', reactions: ['👍'], replies: 2 })
     mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
     expect(within(row).getByText('Same shape, one level down — edited.')).toBeInTheDocument()
     expect(within(row).queryByText(mention.body)).toBeNull()
@@ -950,6 +952,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mentionNow.current = now({ kept: false })
     mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = screen.getByTestId('thread')
     expect(column.querySelector('[data-relation="mention"]')).toBeNull()
     expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
@@ -960,6 +963,7 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     mentionNow.current = now({ reactions: ['👍'] })
     mount(`/topic/${TOPIC_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const row = screen.getByTestId('thread').querySelector('[data-relation="mention"]') as HTMLElement
     await userEvent.hover(within(row).getByText(mention.body))
     // The reaction pill is the only button, and pressing it changes nothing.
@@ -978,41 +982,34 @@ describe('FilePage draws the comments elsewhere that name this file', () => {
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
   })
 
-  it('…and the sidebar button shows its Overview anyway, with Activity’s empty line', () => {
+  it('…and so does a file somebody has named: closed until asked for (Katerina, 13 October)', () => {
+    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
+    mentions.byAddress[TOPIC_ADDRESS] = [mention]
+    mount(`/topic/${TOPIC_ADDRESS}`)
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+    expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' })).toBeInTheDocument()
+  })
+
+  it('the sidebar button shows its Overview, with Activity’s empty line when nobody has named it', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mount(`/topic/${TOPIC_ADDRESS}`)
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = screen.getByTestId('thread')
     expect(within(column).getByText('Overview')).toBeInTheDocument()
     expect(within(column).getByText('No related conversations yet.')).toBeInTheDocument()
-  })
-
-  it('closing it is remembered for that file only: back on it, closed; another file with something to show, open', () => {
-    objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
-    mentions.byAddress[TOPIC_ADDRESS] = [mention]
-    objects.byAddress[ISSUE_ADDRESS] = foreign({ ...issue, openUrl: 'https://ship.estiva.app/issue/the-file-route' })
-    const first = mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Hide side panel' }))
     expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
-    first.unmount()
-    const other = mount(`/topic/${ISSUE_ADDRESS}`)
-    expect(within(screen.getByTestId('thread')).getByText('Overview')).toBeInTheDocument()
-    other.unmount()
-    mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
-    expect(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' })).toBeInTheDocument()
   })
 
-  it('opening it again on that file forgets the close', () => {
+  it('opening it holds for the visit: back on the file, it is closed again', () => {
     objects.byAddress[TOPIC_ADDRESS] = commentable(topic)
     mentions.byAddress[TOPIC_ADDRESS] = [mention]
     const first = mount(`/topic/${TOPIC_ADDRESS}`)
-    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Hide side panel' }))
     fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
+    expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
     first.unmount()
     mount(`/topic/${TOPIC_ADDRESS}`)
-    expect(within(screen.getByTestId('thread')).getByText('Activity')).toBeInTheDocument()
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
   })
 
   it('an open thread wins the column', () => {
@@ -1041,9 +1038,16 @@ describe("FilePage puts another app's widget in the third column", () => {
   })
   const widget = () => screen.getByTestId('thread').querySelector('[data-file-widget]')
 
+  it('a Ship issue: closed until asked for, like every file (Katerina, 13 October)', () => {
+    objects.byAddress[ISSUE_ADDRESS] = shipIssue
+    mount(`/topic/${ISSUE_ADDRESS}`)
+    expect(screen.getByTestId('thread')).toBeEmptyDOMElement()
+  })
+
   it('a Ship issue: the card, its title the link into Ship, under the app’s name', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = screen.getByTestId('thread')
     expect(widget()).not.toBeNull()
     // One title whatever is in the column (Katerina, 7 October); the card on its own page does not name its app (PEE-45).
@@ -1059,6 +1063,7 @@ describe("FilePage puts another app's widget in the third column", () => {
   it('…and for a file the viewer may comment on, whose column is otherwise Peek’s', () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(shipIssue)
     mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     expect(widget()).not.toBeNull()
     expect(screen.getByTestId('middle').querySelector('[data-testid="peek-view"]')).not.toBeNull()
   })
@@ -1073,6 +1078,7 @@ describe("FilePage puts another app's widget in the third column", () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
+    fireEvent.click(within(middle).getByRole('button', { name: 'Show side panel' }))
     fireEvent.click(within(middle).getAllByRole('button', { name: THREAD_CONTROL })[0])
     const column = screen.getByTestId('thread')
     expect(within(column).getByText('Thread')).toBeInTheDocument()
@@ -1088,6 +1094,7 @@ describe("FilePage puts another app's widget in the third column", () => {
       { id: 'm'.repeat(64), author: CATH, body: 'Names the issue.', createdAt: 1_700_000_000, kind: 1111, folder: FOLDER, saidIn: TOPIC_ADDRESS, threadId: 'r'.repeat(64), references: [TOPIC_ADDRESS, ISSUE_ADDRESS], files: [] },
     ]
     mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     const column = screen.getByTestId('thread')
     const card = widget()!
     const activity = within(column).getByText('Activity')
@@ -1097,6 +1104,7 @@ describe("FilePage puts another app's widget in the third column", () => {
   it('the widget is handed the file the page resolved: no second read for it', () => {
     objects.byAddress[ISSUE_ADDRESS] = shipIssue
     mount(`/topic/${ISSUE_ADDRESS}`)
+    fireEvent.click(within(screen.getByTestId('middle')).getByRole('button', { name: 'Show side panel' }))
     expect(widget()).not.toBeNull()
     expect(writes.resolveObject).not.toHaveBeenCalled()
   })
