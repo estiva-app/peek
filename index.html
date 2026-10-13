@@ -8,6 +8,44 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      The saved picture of Desk (src/lib/deskPicture.ts): shown the moment the page arrives, before the app has
+      loaded, and replaced in place by the live Desk once it has drawn (Miky, 13 Oct). Only for the person whose copy
+      this device holds, on a plain /app/desk, and only when the stylesheet is the one the picture was drawn with.
+      Inline, so it costs no request; keep it in step with deskPicture.ts.
+    -->
+    <script>
+      ;(function () {
+        try {
+          var path = location.pathname
+          if ((path !== '/' && path !== '/app' && path !== '/app/desk') || location.search) return
+          var session = JSON.parse(localStorage.getItem('peek.estivaId.token') || 'null')
+          var picture = JSON.parse(localStorage.getItem('peek-desk-picture') || 'null')
+          if (!session || !session.pubkey || !picture || typeof picture.owner !== 'string') return
+          // The copy's owner (`<relay>|<pubkey>`), and the person this session is for.
+          if (picture.owner !== localStorage.getItem('peek-device-copy-owner')) return
+          if (picture.owner.slice(picture.owner.lastIndexOf('|') + 1) !== session.pubkey) return
+          var css = document.querySelector('link[rel="stylesheet"][href*="/assets/"]')
+          if (!css || css.getAttribute('href') !== picture.css) return
+          var cover = document.createElement('div')
+          cover.id = 'peek-picture'
+          cover.setAttribute('aria-hidden', 'true')
+          cover.style.cssText = 'position:fixed;inset:0;z-index:2147483647;overflow:hidden;isolation:isolate;background:var(--bg-base)'
+          var content = document.createElement('div')
+          content.inert = true
+          content.style.minHeight = '100vh'
+          content.innerHTML = picture.html
+          cover.appendChild(content)
+          // A click on the picture is applied to the live Desk once it is there, if the same row is under it.
+          cover.addEventListener('click', function (event) {
+            window.__peekPicture.click = { x: event.clientX, y: event.clientY }
+          })
+          var root = document.getElementById('root')
+          root.parentNode.insertBefore(cover, root)
+          window.__peekPicture = { shownAt: Math.round(performance.now()) }
+        } catch (e) {}
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

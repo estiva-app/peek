@@ -30,6 +30,7 @@ import {
   type SnapshotStorage,
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
+import { clearDeskPicture } from '@/lib/deskPicture'
 
 /**
  * Bump when what Peek folds from the copy changes meaning: a copy written
@@ -101,6 +102,7 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   */
   const base = deviceStorage()
   const previous = ownerOnDevice()
+  if (previous && previous !== scope) clearDeskPicture()
   const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
   rememberOwner(scope)
   const storage: SnapshotStorage = {
@@ -193,6 +195,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   current?.snapshot.discard()
   current = undefined
   toKeep.length = 0
+  clearDeskPicture()
   // If the clear below does not finish before the page leaves, the next copy opened wipes first.
   rememberOwner(SIGNED_OUT)
   await settled(

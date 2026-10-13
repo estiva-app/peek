@@ -112,6 +112,10 @@ const report = { as: options.as, pubkey: session.pubkey, base: options.base, ste
 const net = options.net ? [] : null
 
 const browser = await chromium.launch({ executablePath })
+// PROBE_CHROME_TRACE=<file>: a Chrome performance trace of every tab for the whole run, for a page's first bytes,
+// which a `--cpu` step started from the page cannot see — open it in DevTools' Performance panel.
+if (process.env.PROBE_CHROME_TRACE)
+  await browser.startTracing(undefined, { path: process.env.PROBE_CHROME_TRACE, categories: ['devtools.timeline', 'v8.execute', 'disabled-by-default-devtools.timeline', 'disabled-by-default-v8.cpu_profiler', 'blink.user_timing', 'loading', 'v8', 'disabled-by-default-v8.compile'] })
 try {
   const idOrigin = new URL(options.id)
   // A service worker would answer from production's cache, around the routes below.
@@ -345,6 +349,7 @@ try {
 } catch (error) {
   report.failure = String(error.message ?? error).split('\n')[0]
 } finally {
+  if (process.env.PROBE_CHROME_TRACE) await browser.stopTracing()
   await browser.close()
 }
 if (net) {
