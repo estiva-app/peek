@@ -152,7 +152,8 @@ export function revealWhenDeskDrawn(): void {
     if (!cover()) return changes.disconnect()
     const now = performance.now()
     const drawn = liveDeskDrawn()
-    if (drawn) drawnAt ??= now
+    // A list that goes back to its skeleton starts the wait again.
+    drawnAt = drawn ? (drawnAt ?? now) : undefined
     const same = saved !== '' && textOf(root.querySelector('main')) === saved
     const settled = same || now - changedAt > STILL_MS || (drawnAt !== undefined && now - drawnAt > SETTLE_MS)
     if ((drawn && settled) || now - started > STAND_IN_MS) {
