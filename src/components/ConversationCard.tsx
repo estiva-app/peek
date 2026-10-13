@@ -24,6 +24,8 @@ import { type ReactionData, type HighlightType, type FileAttachment } from '@/ap
 import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { HighlightButton } from './ui/HighlightButton'
+import { CardButton } from './ui/CardButton'
+import { cardsToEdit, loadCards } from '@/extensions/cardChoices'
 import { HighlightPill } from './ui/HighlightPill'
 import { EditedMarker } from './ui/EditedMarker'
 import { MessageBody } from './ui/MessageBody'
@@ -79,6 +81,8 @@ interface ConversationCardProps {
   /** The message's files after an edit added or removed some — PEE-16. The
    *  whole list, and only when this edit changed it. */
   onFilesChange?: (files: FileAttachment[]) => void
+  /** The message's card set after an edit changed it — OPT-17. `none` for each card taken away. */
+  onEmbedsChange?: (embeds: Embed[]) => void
   onResolvedChange?: (resolved: boolean, resolvedBy?: string, message?: string) => void
   onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   onDelete?: () => void
@@ -130,6 +134,7 @@ export function ConversationCard({
   onBodyChange,
   messageId,
   onFilesChange,
+  onEmbedsChange,
   onResolvedChange,
   onReactionsChange,
   onDelete,
@@ -337,6 +342,8 @@ export function ConversationCard({
         })
       }
       editEditor.commands.setContent(content)
+      // The text says only which references there are; their cards come back from the folded tags (OPT-17).
+      loadCards(editEditor, embeds)
       // Focus and move cursor to end
       setTimeout(() => {
         editEditor.commands.focus('end')
@@ -461,6 +468,9 @@ export function ConversationCard({
     const nextFiles = editAttachments.result()
     if (nextFiles) onFilesChange?.(nextFiles)
     editAttachments.commit()
+    // The cards only when this edit changed them, in the same edit (OPT-17).
+    const nextCards = cardsToEdit(editEditor, embeds)
+    if (nextCards) onEmbedsChange?.(nextCards)
     setIsEditing(false)
   }
 
@@ -575,6 +585,7 @@ export function ConversationCard({
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
                     <HighlightButton editor={editEditor} container={editBoxRef} />
+                    <CardButton editor={editEditor} />
                   </Toolbar>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>

@@ -16,6 +16,7 @@ const ISSUE = `30851:${SHIP}:f0b27d90-d5b9-40e7-8078-865ab36a421c`
 const ISSUE_REF = `nostr:${addrToNaddr(ISSUE, [])}`
 const EVENT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9011223344556677889900aabbccddeeff'
 const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
+const ISSUE_URL = 'https://ship.estiva.app/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
 
 const drawn: { naddr: string; layout?: string }[] = []
 
@@ -23,6 +24,8 @@ vi.mock('@/api', () => ({
   TOPICS: [],
   APP_FILES: [],
   DOCUMENT_FILES: [],
+  // §7.7 as the reader asks it: Ship's link names the issue; anything else names nothing.
+  useLinkResolver: () => (url: string) => (url === ISSUE_URL ? ISSUE : undefined),
   useResolvedReferences: (refs: string[]) =>
     Object.fromEntries(
       refs.map((ref) => [
@@ -98,5 +101,31 @@ describe('the card a message asks for', () => {
   it('draws nothing for an embed whose value the body no longer names', () => {
     show('the link was taken out', [{ value: ISSUE, layout: 'detailed' }])
     expect(drawn).toEqual([])
+  })
+})
+
+describe('the card a link on words asks for (OPT-17)', () => {
+  // As Peek sends it: the link's object is indexed by an `a` (FOL-38), which alone would attach a row.
+  const tagged = (body: string, embeds?: Embed[]) => render(<MessageBody body={body} embeds={embeds} nostrReferences={[ISSUE]} />)
+
+  it('draws the chosen layout for the object the link names, instead of the link’s own card', () => {
+    tagged(`the plan is [these words](${ISSUE_URL}) for now`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'card' }])
+  })
+
+  it('draws nothing under it for none', () => {
+    tagged(`the plan is [these words](${ISSUE_URL}) for now`, [{ value: ISSUE, layout: 'none' }])
+    expect(drawn).toEqual([])
+  })
+
+  it('draws the link’s own card as before when no embed names it', () => {
+    show(`the plan is [these words](${ISSUE_URL}) for now`)
+    expect(drawn).toEqual([{ naddr: ISSUE_URL, layout: undefined }])
+  })
+
+  it('a link that names nothing by §7.7 carries no card, whatever its embed says', () => {
+    const lookalike = 'https://evil.example/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
+    show(`see [this](${lookalike})`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(drawn.filter((d) => d.layout === 'card')).toEqual([])
   })
 })

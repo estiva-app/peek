@@ -18,6 +18,9 @@ import { pastedImages, pendingAttachmentNote } from '@/lib/fileAttachments'
 import { usePendingAttachments } from '@/lib/usePendingAttachments'
 import { AttachFileButton } from './AttachFiles'
 import { HighlightButton } from './HighlightButton'
+import { CardButton } from './CardButton'
+import { cardsToSend, clearCards, loadCards } from '@/extensions/cardChoices'
+import type { Embed } from '@estiva-app/protocol'
 import { WRITING_BOX_CLASSES } from '@/components/ui/looks'
 
 export interface SendPayload {
@@ -32,6 +35,8 @@ export interface SendPayload {
   /** Figma frame ids attached via the command launcher's find flow. */
   /** Real uploaded files (already in Convex storage — Phase 5). */
   files?: UploadedFile[]
+  /** The cards the author chose under the message, one per value (SPEC §13.6.2, OPT-17). */
+  embeds?: Embed[]
 }
 
 /**
@@ -172,13 +177,16 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     const files = uploadsRef.current.ready()
     if (!text && !resolution.hasResolution && files.length === 0) return false
     const urgent = extractUrgent(ed)
+    const embeds = cardsToSend(ed)
     const sent = sendFnRef.current?.({
       text,
       resolution: resolution.hasResolution ? { message: resolution.resolutionMessage } : undefined,
       highlightType: extractHighlightType(ed),
       urgent,
       files: files.length > 0 ? files : undefined,
+      embeds: embeds.length > 0 ? embeds : undefined,
     })
+    clearCards(ed)
     ed.commands.clearContent(true)
     const key = draftKeyRef.current
     if (key) draftsRef.current.clear(key)
@@ -186,6 +194,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     void Promise.resolve(sent).then((outcome) => {
       if (outcome !== false && !isRefusal(outcome)) return
       const back = putBack(key, ed, text, urgent, files)
+      // The cards come back with the text in this composer; a draft keeps only text.
+      if (back.text && !ed.isDestroyed && draftKeyRef.current === key) loadCards(ed, embeds)
       if (isRefusal(outcome)) outcome.say(back)
     })
     return true
@@ -479,6 +489,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
           <Toolbar aria-label="Compose tools" surface={false} className="flex items-center gap-1">
             <AttachFileButton onPick={uploads.add} />
             <HighlightButton editor={editor} container={composeRef} />
+            <CardButton editor={editor} />
           </Toolbar>
 
           {(() => {

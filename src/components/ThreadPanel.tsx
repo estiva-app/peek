@@ -11,7 +11,7 @@ import type { ConversationData, FileAttachment, HighlightType, ReactionData, Res
 import { PinnedMessage } from './ui/PinnedMessage'
 import { SkeletonConversationList } from './ui/Skeleton'
 import { registerActiveConversation, unregisterActiveConversation } from '@/lib/conversationRegistry'
-import { findNaddrs } from '@estiva-app/protocol'
+import { findNaddrs, type Embed } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { followInApp } from '@/lib/followInApp'
 import { MetaText } from '@/components/ui/MetaText'
@@ -192,9 +192,13 @@ interface ThreadPanelProps {
   onInitialBodyChange?: (newBody: string) => void
   /** The root message's files after an edit — PEE-16. */
   onInitialFilesChange?: (files: FileAttachment[]) => void
+  /** The root message's card set after an edit, when it changed — OPT-17. */
+  onInitialEmbedsChange?: (embeds: Embed[]) => void
   onReplyBodyChange?: (replyId: string, body: string) => void
   /** A reply's files after an edit — PEE-16. */
   onReplyFilesChange?: (replyId: string, files: FileAttachment[]) => void
+  /** A reply's card set after an edit, when it changed — OPT-17. */
+  onReplyEmbedsChange?: (replyId: string, embeds: Embed[]) => void
   onReplyHighlightChange?: (replyId: string, type: HighlightType | undefined) => void
   /**
    * A reaction on a reply — the emoji and the aggregate it replaces, both.
@@ -273,8 +277,10 @@ export function ThreadPanel({
   onDeleteReply,
   onInitialBodyChange,
   onInitialFilesChange,
+  onInitialEmbedsChange,
   onReplyBodyChange,
   onReplyFilesChange,
+  onReplyEmbedsChange,
   onReplyHighlightChange,
   onReplyReactionsChange,
 }: ThreadPanelProps) {
@@ -433,6 +439,7 @@ export function ThreadPanel({
               onBodyChange={onInitialBodyChange}
               messageId={conversation.id}
               onFilesChange={onInitialFilesChange}
+              onEmbedsChange={onInitialEmbedsChange}
               onReactionsChange={onInitialReactionsChange}
               onHighlightChange={onInitialHighlightChange}
               readOnly={readOnly}
@@ -487,6 +494,7 @@ export function ThreadPanel({
                     onBodyChange={onReplyBodyChange ? (b) => onReplyBodyChange(reply.id, b) : undefined}
                     messageId={reply.id}
                     onFilesChange={onReplyFilesChange ? (f) => onReplyFilesChange(reply.id, f) : undefined}
+                    onEmbedsChange={onReplyEmbedsChange ? (e) => onReplyEmbedsChange(reply.id, e) : undefined}
                     onHighlightChange={onReplyHighlightChange ? (h) => onReplyHighlightChange(reply.id, h) : undefined}
                     onReactionsChange={onReplyReactionsChange ? (r, emoji) => onReplyReactionsChange(reply.id, r, reply.reactions ?? [], emoji) : undefined}
                     readOnly={readOnly}
