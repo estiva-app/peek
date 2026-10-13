@@ -100,7 +100,8 @@ describe('ForeignBody', () => {
     expect(container.querySelectorAll('a')).toHaveLength(0)
     // The two things Peek's layer would add: a mention pill, and a topic
     // chip (which draws a status icon).
-    expect(container.querySelector('[class*="bg-accent-muted"]')).toBeNull()
+    // Inside the text: the box around it names `bg-accent-muted` for an Important callout (RIC-19).
+    expect(container.querySelector('[data-rich-text] [class*="bg-accent-muted"]')).toBeNull()
     expect(container.querySelectorAll('svg')).toHaveLength(0)
     expect(container.textContent).toBe(body)
   })
