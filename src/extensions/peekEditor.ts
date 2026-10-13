@@ -3,6 +3,7 @@ import { peekStarterKit } from './editorKit'
 import { PeekMention, UrgentMention, EditUrgentMention, TopicMention, PeekReferenceTrigger, FileMention, MessageMention, ObjectMention } from './mention'
 import { ResolutionBlock } from './resolution'
 import { HighlightTag } from './highlight'
+import { PastedUrl } from './pastedUrl'
 import { EditSlashCommands, SlashCommands } from './slashCommands'
 
 /**
@@ -60,6 +61,7 @@ export const peekEditorExtensions = [
   FileMention,
   MessageMention,
   ObjectMention,
+  PastedUrl,
   ResolutionBlock,
   HighlightTag,
   SlashCommands,
