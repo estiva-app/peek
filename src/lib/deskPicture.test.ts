@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DESK_PICTURE_KEY, clearDeskPicture, revealLiveDesk, saveDeskPicture } from './deskPicture'
+import { DESK_PICTURE_KEY, clearDeskPicture, revealLiveDesk, revealWhenDeskDrawn, saveDeskPicture } from './deskPicture'
 import { OWNER_KEY, SIGNED_OUT, clearDeviceCopy, resetDeviceCopyForTest } from '@/nostr/deviceCopy'
 import { memorySnapshotStorage } from '@estiva-app/platform'
 
@@ -58,6 +58,26 @@ describe('the saved Desk', () => {
     expect(saved()).not.toBeNull()
     await clearDeviceCopy()
     expect(localStorage.getItem(DESK_PICTURE_KEY)).toBeNull()
+  })
+
+  it('gives way to a live Desk that keeps changing 100 ms after it has drawn, and never while it shows a skeleton', async () => {
+    drawDesk('<div class="animate-pulse"></div>')
+    const cover = document.createElement('div')
+    cover.id = 'peek-picture'
+    cover.innerHTML = '<main>Saved rows</main>'
+    document.body.prepend(cover)
+    window.__peekPicture = { shownAt: 10 }
+    revealWhenDeskDrawn()
+    const main = document.getElementById('desk-main')!
+    const churn = setInterval(() => (main.dataset.tick = String(Date.now())), 20)
+    const live = setInterval(() => main.append(document.createTextNode('.')), 30)
+    await new Promise((r) => setTimeout(r, 250))
+    expect(document.getElementById('peek-picture')).not.toBeNull()
+    main.innerHTML = 'Live rows'
+    await new Promise((r) => setTimeout(r, 400))
+    clearInterval(churn)
+    clearInterval(live)
+    expect(document.getElementById('peek-picture')).toBeNull()
   })
 
   it('is removed from the page when the live Desk takes over', () => {

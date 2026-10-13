@@ -125,6 +125,13 @@ function liveDeskDrawn(): boolean {
 const STILL_MS = 200
 
 /**
+ * How long a drawn live Desk waits for the rest when it keeps changing: on
+ * production relay answers keep arriving, and waiting for stillness alone held
+ * a saved Desk up for 1.4 s once (peek#492, 13 Oct).
+ */
+const SETTLE_MS = 100
+
+/**
  * Desk says it has its lists: it replaces the saved one as soon as it reads
  * the same, or once it has drawn and stopped changing — a Screener that is
  * still deciding can arrive a moment after the lists, with no skeleton.
@@ -139,11 +146,17 @@ export function revealWhenDeskDrawn(): void {
   const changes = new MutationObserver(() => (changedAt = performance.now()))
   // What is drawn, not attributes: a live page restyling itself must not hold the saved one up.
   changes.observe(root, { subtree: true, childList: true, characterData: true })
+  // When the live Desk first drew with nothing loading: from then on it waits at most SETTLE_MS for the rest.
+  let drawnAt: number | undefined
   const check = () => {
     if (!cover()) return changes.disconnect()
     const now = performance.now()
+    const drawn = liveDeskDrawn()
+    // A list that goes back to its skeleton starts the wait again.
+    drawnAt = drawn ? (drawnAt ?? now) : undefined
     const same = saved !== '' && textOf(root.querySelector('main')) === saved
-    if ((liveDeskDrawn() && (same || now - changedAt > STILL_MS)) || now - started > STAND_IN_MS) {
+    const settled = same || now - changedAt > STILL_MS || (drawnAt !== undefined && now - drawnAt > SETTLE_MS)
+    if ((drawn && settled) || now - started > STAND_IN_MS) {
       changes.disconnect()
       return revealLiveDesk()
     }
