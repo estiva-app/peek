@@ -555,7 +555,24 @@ export async function resolveObjectsAsViewer(
     const fromCopy = copyQuery(relayUrl, token)
     // Its own people and manifest caches: what the copy lacks must not be held
     // as a miss or a failure the relay's answer would then wait out.
-    return resolveForeignObjects(addresses, fromCopy, createPeopleCache().viaRelay(fromCopy), createProjectionCache(0))
+    const people = createPeopleCache().viaRelay(fromCopy)
+    const cache = createProjectionCache(0)
+    try {
+      return await resolveForeignObjects(addresses, fromCopy, people, cache)
+    } catch (error) {
+      if (!(error instanceof RelayReadError) || addresses.length === 1) throw error
+      /*
+        One read the copy never saw sinks the whole set: a project's children's
+        changes are asked only once the set's own read has answered — 5.6 s into
+        Miky's Desk — so a reload in those first seconds left the copy without
+        them, and every Screener file waited for the relay (PEE-2, 13 Oct). Each
+        file on its own draws when the copy holds all of it; the rest wait.
+      */
+      const each = await Promise.all(
+        addresses.map((address) => resolveForeignObjects([address], fromCopy, people, cache).catch(() => ({}))),
+      )
+      return Object.assign({}, ...each) as Record<string, ForeignObject | null>
+    }
   }
   const query = viewerQuery(relayUrl, token)
   const [pooled, singles] = await Promise.all([
