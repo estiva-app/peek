@@ -64,10 +64,10 @@ function deviceStorage(): SnapshotStorage {
 const ANSWERS_FOR_MS = 15_000
 
 /** Whose copy this device last held: somebody else signing in wipes it first. */
-const OWNER_KEY = 'peek-device-copy-owner'
+export const OWNER_KEY = 'peek-device-copy-owner'
 
 /** Kept as the owner while a sign-out's clear may not have finished: the next copy opened wipes first. */
-const SIGNED_OUT = 'signed-out'
+export const SIGNED_OUT = 'signed-out'
 
 let current: { scope: string; snapshot: EventSnapshot; openedAt: number } | undefined
 /** Set by sign-out: from then on this page keeps nothing, whatever answers still arrive. */
@@ -202,6 +202,17 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
     ms,
   )
 }
+
+/**
+ * Another tab signed out (PEE-3: one session for every tab). This tab stops
+ * keeping anything and clears again: a save it had in flight could otherwise
+ * land after the signing-out tab's clear and refill the copy.
+ */
+export function followSignOutElsewhere(event: Pick<StorageEvent, 'key' | 'newValue'>): void {
+  if (event.key !== OWNER_KEY || event.newValue !== SIGNED_OUT || leaving) return
+  void clearDeviceCopy()
+}
+if (typeof window !== 'undefined') window.addEventListener('storage', followSignOutElsewhere)
 
 /** Tests: forget the open copy and use this storage. */
 export function resetDeviceCopyForTest(next?: SnapshotStorage): void {
