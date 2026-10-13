@@ -102,10 +102,7 @@ export function keepRelayAnswer(
   events: SignedEvent[],
 ): void {
   if (!pubkey) return
-  const snapshot = copyFor(relayUrl, pubkey)
-  // Before the stored copy is read, an answer would be judged against nothing
-  // and then overwritten by the older copy; it is taken in once it has been.
-  void snapshot.ready.then(() => snapshot.absorb(filters, events))
+  copyFor(relayUrl, pubkey).absorb(filters, events)
 }
 
 /**
@@ -123,7 +120,7 @@ export function keepPlaintext(ciphertext: string, plaintext: string): void {
 
 /** Sign-out: every copy on this device goes. Never throws, and waits at most `ms`. */
 export async function clearDeviceCopy(ms = 1_000): Promise<void> {
-  current?.snapshot.close()
+  current?.snapshot.discard()
   current = undefined
   await settled(
     deviceStorage()
