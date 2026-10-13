@@ -1,0 +1,45 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Writing & text/Composer/CardButton" />
+
+# CardButton
+
+Choose the card a reference gets under the message: none, compact or detailed.
+
+**Seen in**: *Writing & text/Composer/ComposeBox*, and the two message-edit boxes in
+*Messages/ConversationCard* and *Messages/ReplyCard*. It shows only while the caret
+is on a reference, so it draws nothing in a story without an editor holding one.
+
+## When
+
+- In the toolbar of any box that writes or edits a message (the composer and both
+  edit boxes), beside `HighlightButton`.
+
+## When not
+
+- To draw a card. That is `ForeignObjectWidget` under the message, which
+  `MessageBody` draws from the message's `embed` tags (SPEC §13.6.2).
+- For a reference that names nothing (a person, or a link no app claims). The
+  button hides itself, because there would be nothing to choose for.
+
+## How
+
+```tsx
+import { CardButton } from '@/components/ui/CardButton'
+
+<Toolbar>
+  <HighlightButton editor={editor} container={composeRef} />
+  <CardButton editor={editor} />
+</Toolbar>
+```
+
+## What it owns
+
+- **Which reference it is for.** That is the chip the caret sits after or on, or
+  a link on words whose URL is known to name something (`referenceAtSelection`
+  in `@/extensions/cardChoices`).
+- **The choice, kept in the editor until send.** `setCard` stores it, and the
+  box writes it as an `embed` tag when the message is sent or saved. A reference
+  with no choice gets no card: since OPT-18, every reference reads as its chip
+  unless its author chose a card.
+- **Its look is a first build** (Miky to Katerina, 5 Oct): hers to level up.

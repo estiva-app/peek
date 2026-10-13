@@ -77,13 +77,10 @@ export function insertFileMentionIntoActiveComposer(attrs: FileMentionAttrs): bo
  * message's chip, title and status (Katerina, 28 September) — which serialises
  * back to exactly that address.
  *
- * **Where the cursor was decides how it is drawn, since RIC-10.** Inserted into
- * an empty composer it is the whole message, and the object is a card below the
- * text as it always was. Inserted after "Filed it —" it is part of a sentence,
- * and the object is drawn in place: the title, and its status. Both are correct
- * and neither is chosen here — this function only writes the pointer, and
- * `standaloneReference` decides at read time, in the package, so Ship reaches
- * the same answer for the same message.
+ * **It is drawn in place wherever the cursor was, since OPT-18**: the title and
+ * its status, as the whole message or after "Filed it —" alike. A card under the
+ * message is the author's choice (SPEC §13.6.2), made from the chip's Card
+ * control; this function only writes the pointer.
  *
  * Marks are cleared first. The cursor may sit inside a bold or code run, and an
  * inherited mark serialises to marker characters around the reference, which

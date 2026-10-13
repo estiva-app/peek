@@ -4,8 +4,9 @@
  * Which values get a card is the package's rule (`cardsIn`) and is tested
  * there; what this guards is how Peek draws its answer, the same way Ship does
  * (estiva-app/ship#284): compact as a row, detailed as a card, `none` as
- * nothing, and an `embed` on a reference alone on its line taking the place of
- * the card that line would otherwise attach, leaving the chip in the text.
+ * nothing — and no card at all without an `embed`, for a reference alone on its
+ * line, a bare app link or a link on words: each reads as its chip or its link
+ * (OPT-18).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
@@ -74,9 +75,42 @@ describe('the card a message asks for', () => {
     expect(drawn).toEqual([])
   })
 
-  it('draws the lone-line card as before when no embed names it', () => {
-    show(`Look.\n\n${ISSUE_REF}`)
-    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: undefined }])
+  it('draws a reference alone on its line as its chip, with no card, when no embed names it (OPT-18)', () => {
+    const c = show(`Look.\n\n${ISSUE_REF}`)
+    expect(drawn).toEqual([])
+    expect(c.textContent).toContain('Peek draws the card')
+  })
+
+  it('draws a message that is only a reference as that chip, sent before any embed existed (OPT-18)', () => {
+    const c = show(ISSUE_REF)
+    expect(drawn).toEqual([])
+    expect(c.textContent).toBe('Peek draws the card')
+  })
+
+  it('draws a lone message pointer as its chip, not a quote card (OPT-18)', () => {
+    show(`Look.\n\n${NEVENT}`)
+    expect(drawn).toEqual([])
+  })
+
+  it('draws a bare app link as the chip of what it names, alone or mid-sentence, with no card (OPT-18)', () => {
+    const lone = show(ISSUE_URL)
+    expect(drawn).toEqual([])
+    expect(lone.textContent).toBe('Peek draws the card')
+    const mid = show(`see ${ISSUE_URL}, then ship`)
+    expect(drawn).toEqual([])
+    expect(mid.textContent).toContain('see Peek draws the card, then ship')
+  })
+
+  it('keeps a link nothing claims as the link it is, with no card under it (OPT-18)', () => {
+    const c = show('https://example.com/a')
+    expect(drawn).toEqual([])
+    expect(c.querySelector('a[href="https://example.com/a"]')).not.toBeNull()
+  })
+
+  it('draws the chosen card under a bare app link, and keeps its chip', () => {
+    const c = show(ISSUE_URL, [{ value: ISSUE, layout: 'compact' }])
+    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'row' }])
+    expect(c.textContent).toContain('Peek draws the card')
   })
 
   it('replaces a lone-line card with the chosen layout, and the line stays as its chip', () => {
@@ -118,9 +152,10 @@ describe('the card a link on words asks for (OPT-17)', () => {
     expect(drawn).toEqual([])
   })
 
-  it('draws the link’s own card as before when no embed names it', () => {
-    show(`the plan is [these words](${ISSUE_URL}) for now`)
-    expect(drawn).toEqual([{ naddr: ISSUE_URL, layout: undefined }])
+  it('draws no card for a link on words with no embed, and its `a` attaches nothing — the words stay a link (OPT-18)', () => {
+    const c = tagged(`the plan is [these words](${ISSUE_URL}) for now`).container
+    expect(drawn).toEqual([])
+    expect(c.querySelector(`a[href="${ISSUE_URL}"]`)?.textContent).toBe('these words')
   })
 
   it('a URL written in a link’s label names nothing: the link goes elsewhere', () => {

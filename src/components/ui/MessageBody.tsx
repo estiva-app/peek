@@ -19,10 +19,10 @@ import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
 import {
   cardsIn,
   findNaddrs,
+  linksAsReferences,
   pointerToAddress,
   referenceToPointer,
   referencesIn,
-  standaloneReference,
   toRenderTree,
   type Embed,
 } from '@estiva-app/protocol'
@@ -125,57 +125,23 @@ function dedupeReferences(refs: string[]): string[] {
 }
 
 /**
- * The text of a message or reply, formatted, with its mentions and links, and a
- * card below for each item from another app it mentions.
+ * The text of a message or reply, formatted, with its mentions and links, each
+ * item from another app it names drawn as its chip, and below it the cards its
+ * author chose.
  */
 export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, follow = true }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`. */ parts?: readonly { address: string; block: string; anchor?: true }[]; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
-  // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
-  // object. Rendered as a block BELOW the text rather than inline, because a
-  // widget is not a word.
-  // 
-  /**
-   * Both sources, merged — not one *or* the other.
-   *
-   * An imported message carries its references as `a` tags, which sync stores
-   * in `nostrReferences`; a message composed here has them only in its body.
-   * Preferring the stored list meant that the moment a message came back from
-   * the relay, its perfectly good `naddr` in the body stopped being read at all
-   * (FEE-2). One list shadowing the other is fragile in a way that merging is
-   * not: an entry that cannot be resolved now costs one missing widget rather
-   * than every widget on the message.
-   *
-   * Deduplicated by address, because the two sources describe the same objects
-   * in different notations and would otherwise render each one twice.
-   */
+  /*
+    What the message is about, for its anchor's card: its `a` tags (sync stores
+    them in `nostrReferences`) and the addresses its body names, deduplicated by
+    address because the two spell them differently (FEE-2). An `a` is an index,
+    not a card (§6.4): nothing is drawn for one on its own (OPT-18).
+  */
   const references = dedupeReferences([...(nostrReferences ?? []), ...findNaddrs(body)])
-
-  /**
-   * Where the pointer was written decides how it is drawn — RIC-10.
-   *
-   * PEEK-18 cut every `naddr` out of the prose with `stripNaddrs`, on the
-   * grounds that the widget below already says what the reference is and says
-   * it in words. That was the honest thing to build when a message had no
-   * structure to put a widget into, and it is still right for a pointer sitting
-   * alone on its own line.
-   *
-   * It was never right for one written *inside a sentence*, which lost its
-   * place in the sentence — Miky, 2026-09-02: *"Imagine mentioning project in
-   * your message in the middle of sentence that shows the name."* So the two
-   * cases are told apart instead of being flattened into one.
-   *
-   * `standaloneReference` lives in `@estiva-app/protocol` rather than here, so
-   * Ship reaches the same answer for the same body. The two apps disagreeing
-   * about which pointers survive the prose is exactly the class of thing
-   * §13.5's shared render tree exists to rule out — and RIC-10's done-when asks
-   * for the same body to render the same way in both.
-   */
-  const blocks = body ? toRenderTree(body, 'marker') : []
   /*
     A block of another object, shown live (SPEC §13.6.1, COM-2) — only while the
     body still names that object, because an edit carries no `part` and a person
     who took the link out meant the card to go with it. The body names it by a
     `nostr:naddr…` or by a pasted app link, whose path ends in the object's `d`.
-    The part's card stands for the object, so its plain widget is not drawn too.
   */
   const urls = findUrls(body)
   const named = new Set(findNaddrs(body).map(addressOf))
@@ -190,44 +156,44 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     // Each card reads the relay on its own schedule; a message is a remark, not
     // a dashboard, and one with dozens of links would spend every viewer's quota.
     .slice(0, MAX_PARTS_PER_MESSAGE)
-  const shownAddresses = new Set(shown.map((part) => part.address))
   /*
-    The cards its author asked for (SPEC §13.6.2) — the package's rule,
-    `cardsIn`, asked as Ship's `cardsOf` asks it, so the two apps draw the same
-    message the same way. A value with an `embed` is the author's call: alone on
-    its line it stays in the text as its chip instead of becoming the attached
-    card, and the layout they chose draws below — or nothing, for `none`. Each
-    is keyed by the reference the body wrote, which is what resolves.
-
-    An app link names a card too, once §7.7 says what it names (OPT-17):
-    `useLinkResolver` looks up the links `cardsIn` asks about — and only on a
-    message that carries an `embed`, so an ordinary link costs nothing more —
-    and the message draws again as answers come back. A link's card resolves
-    by the reference its value spells, since the body wrote only the URL.
+    What each app link names (§7.7), as answers come back — the message draws
+    again with each. Only a link's target or a bare URL is asked about
+    (`findUrls`); the package's tree has no link mark, so a URL written in a
+    link's *label* would otherwise name an object the link does not open
+    (OPT-17's security review). A link to a block shown live keeps its words:
+    the block's card already stands for it (COM-2).
+  */
+  const lookup = useLinkResolver(urls)
+  const resolveLink = (url: string) =>
+    urls.includes(url) && !shown.some((part) => urlNames(url, part.address)) ? lookup(url) : undefined
+  /*
+    Every reference is drawn where it was written, as its chip — alone on its
+    line too (OPT-18; Katerina, 5 Oct). A bare app link is a reference written
+    as a URL, so it reads as one: the package turns each it can name into a
+    reference run, by the rule Ship uses, so one body reads the same in both
+    (§13.5). A link on words stays a link.
+  */
+  const blocks = body ? linksAsReferences(toRenderTree(body, 'marker'), resolveLink) : []
+  /*
+    The cards its author asked for (SPEC §13.6.2) — the only cards a message
+    draws. The package's rule, `cardsIn`, asked as Ship's `cardsOf` asks it, so
+    the two apps draw the same message the same way: the layout they chose, or
+    nothing for `none`. Each is keyed by the reference the body wrote, which is
+    what resolves; a link's card by the reference its value spells.
   */
   const written = new Map<string, string>()
   for (const reference of embeds?.length ? referencesIn(blocks) : []) {
     const value = valueOfReference(reference)
     if (value && !written.has(value)) written.set(value, reference)
   }
-  /*
-    Only a link's target or a bare URL names a card — `findUrls`'s answer. The
-    package's tree has no link mark, so `cardsIn` also sees a URL written in a
-    link's *label*, and `[https://ship…/issue/x](https://elsewhere)` would put
-    that issue's card under a link that goes elsewhere (OPT-17's security review).
-  */
-  const lookup = useLinkResolver(embeds?.length ? urls : [])
-  const resolveLink = (url: string) => (urls.includes(url) ? lookup(url) : undefined)
   const cards = embeds?.length
     ? cardsIn(embeds, blocks, shown, resolveLink).flatMap((card) => {
         const reference = written.get(card.value) ?? referenceOfValue(card.value)
         return reference ? [{ ...card, reference }] : []
       })
     : []
-  const chosen = new Set(cards.map((card) => card.value))
-  const isChosen = (reference: string) => chosen.has(valueOfReference(reference) ?? '')
-  const standalone = blocks.map(standaloneReference).filter((ref): ref is string => !!ref && !isChosen(ref))
-  const inline = referencesIn(blocks).filter((ref) => !standalone.includes(ref))
+  const inline = referencesIn(blocks)
   /*
     What the caller already has, if anything. `resolvedObjects` is the seam for
     a surface with no relay to ask — a story, a test — and the widget below
@@ -256,34 +222,6 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     const known = supplied(ref)
     if (known) resolved[ref] = known
   }
-  /*
-    Drawn in place, so not drawn again below. A message composed here puts the
-    pointer in the body *and* publishes an `a` tag for it, so without this the
-    same object would appear twice — once mid-sentence and once as a card, the
-    second one arriving on its own schedule. Compared by address, because the
-    two sources spell it differently (see `dedupeReferences`).
-  */
-  const drawnInline = new Set(inline.map(addressOf))
-  /*
-    A message alone on its line is attached, the way an object alone on its
-    line is (RIC-11). `references` only ever held addresses — `a` tags and
-    `findNaddrs` — so a paragraph that was nothing but a `nostr:nevent…` was
-    hidden from the prose above and then drawn by nothing below, and the
-    message it mentioned simply vanished. Same test as for an `naddr`,
-    `standaloneReference`, so the two apps keep agreeing about which is which.
-    Spelled bare, as `findNaddrs` spells its answers, so one list has one form.
-  */
-  const attachedEvents = standalone
-    .filter((ref) => /^nostr:(?:nevent|note)1/i.test(ref))
-    .map((ref) => ref.replace(/^nostr:/i, ''))
-  // An object whose author chose its card has that card, or none, instead (SPEC §13.6.2) — a link on words names it only by its `a`.
-  const attachments = [
-    ...references.filter((ref) => !drawnInline.has(addressOf(ref)) && !shownAddresses.has(addressOf(ref)) && !chosen.has(addressOf(ref))),
-    ...attachedEvents,
-  ]
-  // A message that was *only* a reference has no blocks left to lay out, and
-  // `RichText` draws nothing rather than an empty paragraph that still takes a
-  // gap.
   return (
     <div data-message-body className="flex flex-col gap-1 text-body-2 text-text-secondary break-words">
       {/* Which part of the referenced object this is about (SPEC §13.6).
@@ -292,18 +230,11 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
       {anchored.length > 0
         ? anchored.map((part) => <PartCard key={part.address} address={part.address} block={part.block} />)
         : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />}
-      {/* A block that is nothing but a reference is drawn below as a card, so it leaves the text — unless its author chose the card. */}
       <RichText
-        blocks={blocks.filter((block) => {
-          const reference = standaloneReference(block)
-          return !reference || isChosen(reference)
-        })}
+        blocks={blocks}
         renderText={renderTokens}
         renderReference={(reference) => <Reference uri={reference} object={resolved[reference]} urgent={urgentMentions} />}
       />
-      {attachments.map((naddr) => (
-        <ForeignObjectWidget key={naddr} naddr={naddr} resolved={supplied(naddr)} />
-      ))}
       {cards
         .filter((card) => card.layout !== 'none')
         .map((card) => (
@@ -314,24 +245,6 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
               layout={card.layout === 'detailed' ? 'card' : 'row'}
             />
           </div>
-        ))}
-      {/*
-        A pasted app URL, rendered as the object it names — RFC 0.5 §7.5,
-        PRO-15. The link stays in the prose: unlike an `naddr`, which PEEK-18
-        strips because the widget says it in words, a URL is something a person
-        deliberately wrote and may want to click.
-
-        `quiet` because most links are only links. One that no manifest claims
-        resolves to null and draws nothing, and drawing a skeleton under every
-        ordinary link meanwhile would be worse than the gap it fills.
-
-        A link whose author chose its card — or chose none — has that instead
-        (SPEC §13.6.2: an `embed` is authoritative over the default).
-      */}
-      {urls
-        .filter((url) => !shown.some((part) => urlNames(url, part.address)) && !chosen.has(resolveLink(url) ?? ''))
-        .map((url) => (
-          <ForeignObjectWidget key={url} naddr={url} resolved={resolvedObjects?.[url]} quiet />
         ))}
       {shown.map((part) => (
         <PartCard key={part.address} address={part.address} block={part.block} />
