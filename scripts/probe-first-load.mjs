@@ -66,7 +66,9 @@ const report = ['--eval', '__fl.report()']
 
 /**
  * What a tab holds after signing out (PEE-3): the session in `localStorage`, the copy on the device in IndexedDB
- * (opened only if it exists, so reading it cannot create it), and whether the sign-in screen is up.
+ * (opened only if it exists, so reading it cannot create it), and whether the sign-in screen is up. `records` counts
+ * every row but the store's sign-out counter (`meta` key "\0sign-outs"), which clearing writes on purpose so a copy
+ * opened before it, in any tab, writes nothing again — it holds no events and nothing about the person.
  */
 const signedOutState = `(async () => {
   const keys = Object.keys(localStorage).filter((k) => k.startsWith('peek'))
@@ -77,12 +79,16 @@ const signedOutState = `(async () => {
     open.onsuccess = () => {
       const db = open.result
       const names = [...db.objectStoreNames]
-      if (!names.length) return db.close(), done(0)
+      if (!names.length) return db.close(), done({})
       const tx = db.transaction(names)
-      let total = 0, left = names.length
+      const counts = {}
+      let left = names.length
       for (const name of names) {
-        const count = tx.objectStore(name).count()
-        count.onsuccess = () => { total += count.result; if (--left === 0) db.close(), done(total) }
+        const all = tx.objectStore(name).getAllKeys()
+        all.onsuccess = () => {
+          counts[name] = all.result.filter((key) => key !== '\\u0000sign-outs').length
+          if (--left === 0) db.close(), done(counts)
+        }
       }
     }
   })
@@ -188,7 +194,7 @@ for (const name of chosen) {
       const docs = probe.steps.filter((s) => s.eval === '__fl.report()' && s.result).map((s) => JSON.parse(s.result))
       const http429 = [...new Set(docs.flatMap((d) => d.res.filter(([, , , status]) => status === 429).map(([, , what]) => what)))]
       // Every page a `--tab` or `--also` loaded on its way in, and what the leg's own reads returned (PEE-3).
-      const opened = (probe.pages ?? []).slice(1)
+      const opened = probe.steps.filter((s) => s.documents).map((s) => ({ how: s.window ? 'new window' : 'new tab', documents: s.documents }))
       const reads = probe.steps.filter((s) => s.eval && s.eval !== '__fl.report()' && String(s.result).startsWith('{')).map((s) => s.result)
       const result = { as, leg: name, run: i + 1, docs, http429, opened, reads, errors: probe.errors }
       results.push(result)
@@ -208,10 +214,11 @@ process.exit(failed ? 1 : 0)
 function print({ as, leg, run, docs, http429, opened, reads }, phases) {
   console.log(`\n${as} · ${leg}${runs > 1 ? ` · run ${run}` : ''}`)
   // The first page signs in from nothing; every later tab or window should not have to (PEE-3).
-  opened.forEach((documents, i) => {
+  // On the way in only: a window's first page is not listed (its request comes before its frame).
+  for (const { how, documents } of opened) {
     const authorize = documents.filter((url) => url.endsWith('/authorize')).length
-    console.log(`  tab or window ${i + 2}: /authorize ${authorize}× · loaded ${documents.map((url) => new URL(url).host + new URL(url).pathname).join(' → ')}`)
-  })
+    console.log(`  ${how}: /authorize ${authorize}× on the way in · loaded ${documents.map((url) => new URL(url).host + new URL(url).pathname).join(' → ') || 'only its first page'}`)
+  }
   for (const read of reads) console.log(`  read: ${read}`)
   for (const [label, index, phaseLabel, markName = 'allTextsNoPulse'] of phases) {
     const doc = docs[index]

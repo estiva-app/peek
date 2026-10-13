@@ -325,7 +325,8 @@ try {
         page = next
         if (!opened) await page.goto(new URL(value, options.base).href)
         entry.result = await signedIn(page)
-        entry.documents = documents
+        // Copied when the tab is signed in: what it loaded on the way in, not what a later step makes it load.
+        entry.documents = [...documents]
         if (!entry.result) throw new Error(`not signed in; ended on ${page.url()}`)
       } else if (step === 'switch') {
         if (!other) throw new Error('--switch needs a tab opened with --also')
