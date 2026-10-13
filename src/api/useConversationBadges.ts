@@ -177,7 +177,20 @@ export function useConversationBadges(
       return
     }
     let cancelled = false
+    let answered = false
     const asked = (files ?? []).filter((file) => file.address)
+    /*
+      Nothing held yet: the copy on the device draws the badges until the
+      relay's answer lands (PEE-2) — a dot shows as the copy says, rather than
+      appearing seconds after the row. Nothing from it is held.
+    */
+    if (!(holdKey && heldBadges.peek(holdKey)?.value)) {
+      void conversations(asked, 'copy')
+        .then((cached) => {
+          if (!cancelled && !answered && Object.keys(cached).length) setHeld((now) => (Object.keys(now).length ? now : cached))
+        })
+        .catch(() => {})
+    }
     if (holdKey) {
       /*
         Held across mounts, keyed by the viewer and the set: coming back to the
@@ -201,6 +214,7 @@ export function useConversationBadges(
         )
         .then(() => {
           const value = heldBadges.peek(holdKey)?.value
+          answered = true
           if (!cancelled && value) setHeld(value.conversations)
         })
       return () => {
@@ -208,7 +222,10 @@ export function useConversationBadges(
       }
     }
     void conversations(asked)
-      .then((next) => !cancelled && setHeld(next))
+      .then((next) => {
+        answered = true
+        if (!cancelled) setHeld(next)
+      })
       // A failed read costs a badge, never the list. There is no error state
       // to render here: "we do not know how many" and "we did not ask" are the
       // same absence to a reader, and neither is worth a row of its own.

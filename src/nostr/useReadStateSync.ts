@@ -50,6 +50,12 @@ import { RELAY_URL } from '@/api/relayUrl'
 
 /** The last merge over every slot this person owns (CRO-5). */
 let previousRelayMerge: Record<string, number> | undefined
+/**
+ * The frontier merged from the copy on the device (PEE-2): what dots are judged
+ * from until the relay's merge lands. Never published, and never a reason to:
+ * the queue publishes its own slot read from the relay.
+ */
+let copyMerge: Record<string, number> | undefined
 
 /*
  * The frontier as this tab knows it, which every unread dot is judged from
@@ -77,7 +83,7 @@ function frontierVersionNow(): number {
 /** The merge, advanced by this tab's own records — max of the two, never lower. */
 function frontierContexts(): Record<string, number> {
   if (frontierCache?.version === frontierVersion) return frontierCache.contexts
-  const contexts: Record<string, number> = { ...(previousRelayMerge ?? {}) }
+  const contexts: Record<string, number> = { ...(previousRelayMerge ?? copyMerge ?? {}) }
   for (const [context, at] of Object.entries(queue?.snapshot() ?? {})) {
     if (contexts[context] === undefined || at > contexts[context]) contexts[context] = at
   }
@@ -108,7 +114,8 @@ export function useReadFrontier(): ReadFrontier {
     return {
       marker: (context: string | undefined) => (context ? contexts[context] : undefined),
       merged: contexts,
-      ready: previousRelayMerge !== undefined,
+      // The copy's frontier counts: dots show as the copy says until the relay's land (PEE-2).
+      ready: previousRelayMerge !== undefined || copyMerge !== undefined,
     }
     // `version` is what the store hands out; the contexts are read behind it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,6 +250,7 @@ export function resetReadStateQueueForTests(): void {
   identity = undefined
   relayOrigin = null
   previousRelayMerge = undefined
+  copyMerge = undefined
   readPathRuns = 0
   lastMergeAt = undefined
   frontierCache = undefined
@@ -355,6 +363,17 @@ export function ReadStateSync(): null {
    */
   const { refresh } = useMergedReadState()
   useEffect(() => {
+    // The copy's frontier beside the relay's, drawn only until that lands (PEE-2).
+    const current = seam()
+    if (current) {
+      void loadMergedReadState(current, currentIdentity(), Date.now(), undefined, 'copy')
+        .then((state) => {
+          if (!state || previousRelayMerge !== undefined) return
+          copyMerge = state.merged
+          frontierChanged()
+        })
+        .catch(() => {})
+    }
     void refresh()
   }, [refresh])
   // Focus, visibility and a slow interval — the same triggers every other

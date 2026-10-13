@@ -48,9 +48,31 @@ import { STARRED_ENTRIES, type StarredEntry } from '@/data/deskData'
 import { hasRelay } from '@/api/relayUrl'
 import { isPersonKey, useWorkspacePeople } from '@/api/people'
 import { useStarsSync } from '@/nostr/useStarsSync'
+import type { StarsBlob } from '@/nostr/stars'
 import { RELAY_URL } from '@/api/relayUrl'
 
 const NO_STARS: StarSet = { topics: [], people: [] }
+
+/*
+  A starred person is their pubkey since REM-3 — the DM's id everywhere else.
+  A star written under the old Peek key moves to the pubkey stored beside it;
+  one with none cannot be moved without Convex, so it is dropped from the set
+  and the next publish deletes it, rather than leaving a key nothing can read
+  in the person's blob for ever.
+*/
+function starSetOf(blob: StarsBlob): StarSet {
+  return {
+    topics: blob.topics.map((t) => t.id),
+    people: [
+      ...new Set(
+        blob.people.flatMap((p) => {
+          const key = p.pubkey ?? p.key
+          return isPersonKey(key) ? [key] : []
+        }),
+      ),
+    ],
+  }
+}
 
 const byName = (a: StarredEntry, b: StarredEntry) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
 
@@ -95,44 +117,31 @@ export function StarredProvider({ children }: { children: ReactNode }) {
   // Rendering only. Never the set — see the header.
   const people = useWorkspacePeople()
 
-  /*
-    A starred person is their pubkey since REM-3 — the DM's id everywhere else.
-    A star written under the old Peek key moves to the pubkey stored beside it;
-    one with none cannot be moved without Convex, so it is dropped from the set
-    and the next publish deletes it, rather than leaving a key nothing can read
-    in the person's blob for ever.
-  */
-  const relaySet = useMemo<StarSet | undefined>(() => {
-    if (stars.state !== 'present' || !stars.relayBlob) return undefined
-    return {
-      topics: stars.relayBlob.topics.map((t) => t.id),
-      people: [
-        ...new Set(
-          stars.relayBlob.people.flatMap((p) => {
-            const key = p.pubkey ?? p.key
-            return isPersonKey(key) ? [key] : []
-          }),
-        ),
-      ],
-    }
-  }, [stars.state, stars.relayBlob])
+  const relaySet = useMemo<StarSet | undefined>(
+    () => (stars.state === 'present' && stars.relayBlob ? starSetOf(stars.relayBlob) : undefined),
+    [stars.state, stars.relayBlob],
+  )
 
   /**
    * The set as last settled, before this session's toggles. A relay that holds
    * no set is an empty one; a relay that has not answered is no set at all,
-   * and nothing renders or publishes until it does.
+   * and nothing publishes until it does.
    */
   const settledSet = relaySet ?? (stars.state === 'absent' ? NO_STARS : undefined)
 
+  /** Until the relay answers, the set the copy on the device holds is drawn — never published (PEE-2). */
+  const cachedSet = useMemo(() => (stars.cachedBlob ? starSetOf(stars.cachedBlob) : undefined), [stars.cachedBlob])
+  const baseSet = settledSet ?? cachedSet
+
   const effectiveSet = useMemo<StarSet | undefined>(() => {
-    if (!settledSet) return undefined
-    const kept = settledSet.people.filter((id) => pending.get(`${PERSON}${id}`) !== false)
+    if (!baseSet) return undefined
+    const kept = baseSet.people.filter((id) => pending.get(`${PERSON}${id}`) !== false)
     const have = new Set(kept)
     const added = [...pending.entries()]
       .filter(([key, starred]) => starred && key.startsWith(PERSON) && !have.has(key.slice(PERSON.length)))
       .map(([key]) => key.slice(PERSON.length))
-    return { topics: settledSet.topics, people: [...kept, ...added] }
-  }, [settledSet, pending])
+    return { topics: baseSet.topics, people: [...kept, ...added] }
+  }, [baseSet, pending])
 
   const entries = useMemo<StarredEntry[]>(() => {
     if (!hasRelay) return [...mockEntries].sort(byName)
@@ -175,12 +184,12 @@ export function StarredProvider({ children }: { children: ReactNode }) {
   const untouchedAndAbsent = stars.state === 'absent' && pending.size === 0
   useEffect(() => {
     if (!hasRelay) return
-    if (!effectiveSet || untouchedAndAbsent) return
+    if (!effectiveSet || !settledSet || untouchedAndAbsent) return
     void publishSet({
       topics: effectiveSet.topics.map((id) => ({ id })),
       people: effectiveSet.people.map((key) => ({ key, pubkey: key })),
     })
-  }, [effectiveSet, untouchedAndAbsent, publishSet])
+  }, [effectiveSet, settledSet, untouchedAndAbsent, publishSet])
 
   const isDmStarred = useCallback(
     (dmId: string) => {

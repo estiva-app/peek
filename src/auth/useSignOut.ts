@@ -26,9 +26,12 @@
  */
 import { useCallback } from 'react'
 import { beginSignOut } from './estivaId'
+import { clearDeviceCopy } from '@/nostr/deviceCopy'
 
 export function useSignOut(): () => void {
   // Navigates to the identity origin, so nothing after it runs. The cookie is
   // only reachable by going there — the same reason entry works the way it does.
-  return useCallback(() => beginSignOut(), [])
+  // The copy on the device goes first (PEE-2: kept until sign-out); clearing
+  // waits at most a second, so a stuck IndexedDB never keeps anyone signed in.
+  return useCallback(() => void clearDeviceCopy().then(() => beginSignOut()), [])
 }

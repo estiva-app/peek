@@ -47,8 +47,9 @@
  */
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
-import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
-import { BLOB_TAG, assertNotReadState, blobAddress, decryptBlob, encryptBlob } from './appData'
+import { publishSigned, signViaEstivaId } from './bridge'
+import { decryptBlobFrom, readFrom, type ReadSource } from './readFrom'
+import { BLOB_TAG, assertNotReadState, blobAddress, encryptBlob } from './appData'
 
 /** `estiva-peek:stars:v1` — SPEC §12.2's `<client_id>:<name>:v<n>`. */
 export const STARS_D_TAG = blobAddress('stars')
@@ -201,8 +202,9 @@ export type StarsRead =
   | { state: 'absent' }
   | { state: 'present'; blob: StarsBlob }
 
-export async function fetchStars(seam: RelaySeam): Promise<StarsRead> {
-  const { ok, events } = await queryRelay(
+export async function fetchStars(seam: RelaySeam, source: ReadSource = 'relay'): Promise<StarsRead> {
+  const { ok, events } = await readFrom(
+    source,
     seam.relayUrl,
     [starsFilter(seam.pubkey)],
     seam.accessToken,
@@ -213,7 +215,7 @@ export async function fetchStars(seam: RelaySeam): Promise<StarsRead> {
   // Newest wins if a relay ever hands back more.
   const newest = events.sort((a, b) => b.created_at - a.created_at)[0]
   if (!newest) return { state: 'absent' }
-  const plaintext = await decryptBlob(newest.content, seam.accessToken)
+  const plaintext = await decryptBlobFrom(source, newest.content, seam.accessToken)
   if (!plaintext) return { state: 'unreachable' }
   const blob = parseStarsBlob(plaintext)
   // `parseStarsBlob` never throws and never reports: bad JSON, a `v` it does

@@ -73,6 +73,48 @@ function harness(overrides: Partial<ChannelStoreOptions> = {}) {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+describe('the copy on the device (PEE-2)', () => {
+  it('draws a channel from the copy at once, and its first relay read is full and replaces it', async () => {
+    const kept = message(A, NOW - 100)
+    const deletedSinceLastVisit = message(A, NOW - 50)
+    const h = harness({ seed: async () => [kept, deletedSinceLastVisit] })
+    const release = h.hold()
+    h.relay.push(kept)
+    h.store.track([A])
+    await settle()
+    expect(h.store.events(A)?.map((e) => e.id)).toEqual([kept.id, deletedSinceLastVisit.id])
+    // Read over the horizon, not from a cursor: a seeded channel is unread.
+    expect(h.posts[0][0].since).toBe(NOW - HORIZON)
+    release()
+    await settle()
+    expect(h.store.events(A)?.map((e) => e.id)).toEqual([kept.id])
+  })
+
+  it('never draws the copy over what the relay already answered', async () => {
+    let answer!: (events: SignedEvent[]) => void
+    const h = harness({ seed: () => new Promise((resolve) => (answer = resolve)) })
+    const fresh = message(A, NOW - 10)
+    h.relay.push(fresh)
+    h.store.track([A])
+    await settle()
+    expect(h.store.events(A)?.map((e) => e.id)).toEqual([fresh.id])
+    answer([message(A, NOW - 500)])
+    await settle()
+    expect(h.store.events(A)?.map((e) => e.id)).toEqual([fresh.id])
+  })
+
+  it('a channel the copy has never seen waits for the relay, as before', async () => {
+    const h = harness({ seed: async () => null })
+    const release = h.hold()
+    h.store.track([A])
+    await settle()
+    expect(h.store.events(A)).toBeUndefined()
+    release()
+    await settle()
+    expect(h.store.events(A)).toEqual([])
+  })
+})
+
 describe('createChannelStore', () => {
   it('reads two callers’ sets tracked together in one request, over the horizon', async () => {
     const h = harness()

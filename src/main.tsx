@@ -4,7 +4,9 @@ import { DebugProvider } from './lib/debug'
 import { PeekDataProvider } from './api'
 import { AuthGate } from './auth/AuthGate'
 import { EstivaIdCallback } from './auth/EstivaIdCallback'
-import { CALLBACK_PATH } from './auth/estivaId'
+import { CALLBACK_PATH, storedToken } from './auth/estivaId'
+import { RELAY_URL } from './api/relayUrl'
+import { warmDeviceCopy } from './nostr/deviceCopy'
 import { LastSelectionProvider } from './lib/lastSelection'
 import { ToastProvider } from './lib/toast'
 import { PeekSetup } from './lib/PeekSetup'
@@ -22,6 +24,8 @@ import { createAppSocketReader, installSocketReadsDiagnostic } from './nostr/soc
 // than in `@/api`, which tests import, so a test keeps the HTTP path.
 setSocketReader(createAppSocketReader(relayLog))
 installSocketReadsDiagnostic()
+// The copy on the device Desk draws from (PEE-2), read while React renders.
+warmDeviceCopy(RELAY_URL, storedToken()?.pubkey)
 
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>

@@ -40,7 +40,8 @@ import { fetchMembership } from './membership'
 import { fetchMutes } from './mutes'
 import type { RelaySeam } from './stars'
 
-export type MembershipState = 'unknown' | 'known'
+/** `cached`: drawn from the copy on the device until the relay answers (PEE-2) — read, never written from. */
+export type MembershipState = 'unknown' | 'cached' | 'known'
 
 export interface MembershipSync {
   state: MembershipState
@@ -139,8 +140,23 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
   }, [relayUrl])
 
   useEffect(() => {
+    // What the copy on the device holds, drawn until the relay has answered (PEE-2).
+    const seam = seamFrom(relayUrl)
+    if (seam) {
+      void Promise.all([fetchMembership(seam, undefined, 'copy'), fetchMutes(seam, 'copy')])
+        .then(([membership, mutesRead]) => {
+          if (!membership || mutesRead.state === 'unreachable' || landed.current.membership || landed.current.mutes) return
+          setFiles(membership.files)
+          setMentioned(membership.mentioned)
+          setUrgent(membership.urgent)
+          setFloor(membership.floor)
+          setMutedSet(new Set(mutesRead.keys))
+          setState((now) => (now === 'unknown' ? 'cached' : now))
+        })
+        .catch(() => {})
+    }
     void read()
-  }, [read])
+  }, [read, relayUrl])
 
   // Membership changes under the person — a mention lands, an issue is
   // assigned, they are added — so it is re-read on the same triggers the
@@ -170,7 +186,8 @@ export function useMembershipSync(relayUrl: string | null | undefined): Membersh
       }
       // Adding somebody else needs nothing of the viewer's own memberships (INT-12: Create topic's members).
       const addsSomebodyElse = person !== undefined && person !== seam.pubkey && member
-      if (state === 'unknown' && !addsSomebodyElse) {
+      // The relay's answer, not the copy's: a change is judged against what the relay holds (PEE-2).
+      if (state !== 'known' && !addsSomebodyElse) {
         console.warn('[membership] not changed: the relay has not said what the viewer is a member of')
         return 'Peek has not read what you are a member of yet.'
       }

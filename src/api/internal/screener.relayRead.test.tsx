@@ -106,7 +106,10 @@ const resolveObjects = vi.fn(async (addresses: readonly string[]) => {
 })
 /** How many files were asked about, over every read — the cost PER-10 moved. */
 const filesAsked = () => resolveObjects.mock.calls.reduce((n, [addresses]) => n + addresses.length, 0)
-vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObjects }) }))
+// The copy on the device holds nothing here (PEE-2): only the relay's reads are counted.
+const fromRelayOnly = (addresses: readonly string[], source?: string) =>
+  source === 'copy' ? Promise.resolve({}) : resolveObjects(addresses)
+vi.mock('@/api/foreign', () => ({ useForeignObjects: () => ({ resolveObjects: fromRelayOnly }) }))
 const FRONTIER = {
   ready: true,
   marker: () => 1_786_999_000,

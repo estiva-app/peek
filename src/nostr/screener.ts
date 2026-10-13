@@ -52,8 +52,9 @@
  */
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
-import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
-import { BLOB_TAG, MAX_PLAINTEXT_BYTES, assertNotReadState, blobAddress, decryptBlob, encryptBlob } from './appData'
+import { publishSigned, signViaEstivaId } from './bridge'
+import { decryptBlobFrom, readFrom, type ReadSource } from './readFrom'
+import { BLOB_TAG, MAX_PLAINTEXT_BYTES, assertNotReadState, blobAddress, encryptBlob } from './appData'
 import { capContextsToBytes } from '@estiva-app/conversation'
 import type { RelaySeam } from './openWork'
 
@@ -237,12 +238,12 @@ export type ScreenerRead =
   | { state: 'absent' }
   | { state: 'present'; blob: ScreenerBlob }
 
-export async function fetchScreener(seam: RelaySeam): Promise<ScreenerRead> {
-  const { ok, events } = await queryRelay(seam.relayUrl, [screenerFilter(seam.pubkey)], seam.accessToken, seam.pubkey)
+export async function fetchScreener(seam: RelaySeam, source: ReadSource = 'relay'): Promise<ScreenerRead> {
+  const { ok, events } = await readFrom(source, seam.relayUrl, [screenerFilter(seam.pubkey)], seam.accessToken, seam.pubkey)
   if (!ok) return { state: 'unreachable' }
   const newest = events.sort((a, b) => b.created_at - a.created_at)[0]
   if (!newest) return { state: 'absent' }
-  const plaintext = await decryptBlob(newest.content, seam.accessToken)
+  const plaintext = await decryptBlobFrom(source, newest.content, seam.accessToken)
   // A decrypt failure is `unreachable`, never `absent`: the blob is intact as
   // far as anyone can tell and the thing that failed is this tab's key, so
   // republishing over it is the one move that could destroy it.

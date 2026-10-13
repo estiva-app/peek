@@ -12,8 +12,13 @@ const relay = vi.hoisted(() => ({
   signViaEstivaId: vi.fn(),
   publishSigned: vi.fn(),
 }))
-vi.mock('./membership', () => ({ fetchMembership: relay.fetchMembership }))
-vi.mock('./mutes', () => ({ fetchMutes: relay.fetchMutes }))
+// The copy on the device holds nothing here (PEE-2): only the relay's reads are counted.
+vi.mock('./membership', () => ({
+  fetchMembership: (...args: unknown[]) => (args[2] === 'copy' ? Promise.resolve(undefined) : relay.fetchMembership(...args)),
+}))
+vi.mock('./mutes', () => ({
+  fetchMutes: (...args: unknown[]) => (args[1] === 'copy' ? Promise.resolve({ state: 'unreachable' }) : relay.fetchMutes(...args)),
+}))
 vi.mock('./bridge', () => ({ signViaEstivaId: relay.signViaEstivaId, publishSigned: relay.publishSigned }))
 vi.mock('@/auth/estivaId', () => ({ validToken: () => ({ accessToken: 't', pubkey: 'c'.repeat(64) }) }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))

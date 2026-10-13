@@ -32,6 +32,7 @@
  * a lost star is not.
  */
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
+import { keepPlaintext, plaintextFromCopy } from './deviceCopy'
 
 /**
  * Peek's Estiva ID `client_id`, which SPEC §12.2 makes the `d`-tag prefix so two
@@ -122,7 +123,22 @@ export async function encryptBlob(plaintext: string, token: string): Promise<str
     )
   }
   const { ciphertext } = (await nip44('encrypt', { plaintext }, token)) as { ciphertext: string }
+  // What this tab publishes it never needs to ask to decrypt (PEE-2).
+  keepPlaintext(ciphertext, plaintext)
   return ciphertext
+}
+
+/**
+ * The decrypt round trip, unless the copy on the device holds this
+ * ciphertext's plaintext already — the same ciphertext always decrypts to the
+ * same text, so an unchanged blob costs nothing on a reload (PEE-2).
+ */
+async function decryptViaCopy(ciphertext: string, token: string): Promise<string> {
+  const kept = plaintextFromCopy(ciphertext)
+  if (kept !== undefined) return kept
+  const { plaintext } = (await nip44('decrypt', { ciphertext }, token)) as { plaintext: string }
+  keepPlaintext(ciphertext, plaintext)
+  return plaintext
 }
 
 /**
@@ -134,8 +150,7 @@ export async function encryptBlob(plaintext: string, token: string): Promise<str
  */
 export async function decryptBlob(ciphertext: string, token: string): Promise<string | undefined> {
   try {
-    const { plaintext } = (await nip44('decrypt', { ciphertext }, token)) as { plaintext: string }
-    return plaintext
+    return await decryptViaCopy(ciphertext, token)
   } catch {
     return undefined
   }
@@ -149,8 +164,7 @@ export async function decryptBlob(ciphertext: string, token: string): Promise<st
  */
 export async function decryptBlobUnlessRefused(ciphertext: string, token: string): Promise<string | undefined> {
   try {
-    const { plaintext } = (await nip44('decrypt', { ciphertext }, token)) as { plaintext: string }
-    return plaintext
+    return await decryptViaCopy(ciphertext, token)
   } catch (error) {
     if (refusedForNow(error)) throw error
     return undefined

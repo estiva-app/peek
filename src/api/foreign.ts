@@ -52,6 +52,7 @@ import {
   type FileThreads,
 } from '@/nostr/foreign'
 import { relayFailureKind } from '@/nostr/relayRead'
+import type { ReadSource } from '@/nostr/readFrom'
 import { fileThreadsAsViewer } from '@/nostr/fileConversation'
 import { rootOf } from '@/nostr/channelStreams'
 import type { MessageSearchState } from '@/lib/launcherSearch'
@@ -267,10 +268,10 @@ export function useForeignObjects() {
    * answers. Rejects when the relay refuses the read.
    */
   const resolveObjects = useCallback(
-    async (references: readonly string[]): Promise<Record<string, ForeignObject | null>> => {
+    async (references: readonly string[], source: ReadSource = 'relay'): Promise<Record<string, ForeignObject | null>> => {
       const v = viewer()
       return v
-        ? resolveObjectsAsViewer(references, v.relayUrl, v.token)
+        ? resolveObjectsAsViewer(references, v.relayUrl, v.token, source)
         : Object.fromEntries(references.map((reference) => [reference, null]))
     },
     [viewer],
@@ -326,9 +327,9 @@ export function useForeignObjects() {
    * read a missing entry as an empty conversation — see `useConversationBadges`.
    */
   const conversations = useCallback(
-    async (files: ForeignObject[]): Promise<Record<string, ConversationMessage[]>> => {
+    async (files: ForeignObject[], source: ReadSource = 'relay'): Promise<Record<string, ConversationMessage[]>> => {
       const v = viewer()
-      return v ? conversationsAsViewer(files, v.relayUrl, v.token) : {}
+      return v ? conversationsAsViewer(files, v.relayUrl, v.token, source) : {}
     },
     [viewer],
   )
@@ -679,12 +680,27 @@ export function useResolvedReferences(
     })
     if (!ask.length) return
     let cancelled = false
+    let answered = false
+    /*
+      The copy on the device beside the relay (PEE-2): what it can resolve is
+      drawn until the relay answers, and only what it found — a file the copy
+      cannot place is the relay's to call missing, not the copy's. Nothing from
+      it is held, so the next ask goes to the relay.
+    */
+    resolveObjects(ask, 'copy')
+      .then((objects) => {
+        if (cancelled || answered) return
+        const found = Object.entries(objects).filter(([, value]) => value)
+        if (found.length) setObjects((prev) => ({ ...Object.fromEntries(found), ...prev }))
+      })
+      .catch(() => {})
     resolveObjects(ask)
       .catch(() => Object.fromEntries(ask.map((ref) => [ref, null])))
       // One setState for the whole body rather than one per reference: a
       // message with four mentions should not lay out four times.
       .then((objects) => {
         if (cancelled) return
+        answered = true
         for (const [ref, value] of Object.entries(objects)) {
           if (value && pubkey) void heldObjects.read(heldKey(pubkey, ref), async () => ({ ok: true, value }))
         }

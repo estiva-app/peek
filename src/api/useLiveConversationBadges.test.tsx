@@ -17,6 +17,11 @@ const api = vi.hoisted(() => ({
   tracked: [] as string[][],
   events: [] as unknown[],
 }))
+// The copy on the device holds nothing here (PEE-2): only the relay's reads are counted. One function, so the
+// hook's effect sees the same seam on every render, as the real provider's is.
+const { fromRelayOnly } = vi.hoisted(() => ({
+  fromRelayOnly: (_files: unknown, source?: string) => (source === 'copy' ? Promise.resolve({}) : api.conversations()),
+}))
 
 vi.mock('@/api', () => ({
   useMembership: () => ({
@@ -24,7 +29,7 @@ vi.mock('@/api', () => ({
     termsOf: () => ({ member: true, muted: false }),
     isMentioned: () => false,
   }),
-  useForeignObjects: () => ({ conversations: api.conversations }),
+  useForeignObjects: () => ({ conversations: fromRelayOnly }),
 }))
 vi.mock('@/nostr/useReadStateSync', () => ({
   useReadFrontier: () => ({ ready: true, marker: () => undefined, merged: {} }),

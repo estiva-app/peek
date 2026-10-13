@@ -23,8 +23,7 @@
 import type { SignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
 import { mutedFilter, mutedFromFollowed, parseMutedBlob } from '@estiva-app/conversation'
-import { queryRelay } from './bridge'
-import { decryptBlob } from './appData'
+import { decryptBlobFrom, readFrom, type ReadSource } from './readFrom'
 import type { RelaySeam } from './stars'
 
 /** The retired list, read once more for its mutes. */
@@ -49,27 +48,28 @@ const newest = (events: readonly SignedEvent[]): SignedEvent | undefined => [...
  * after a handful of calls in a row. Only a success is kept.
  */
 const decrypted = new Map<string, string>()
-async function plaintextOf(event: SignedEvent, token: string): Promise<string | undefined> {
+async function plaintextOf(event: SignedEvent, token: string, source: ReadSource = 'relay'): Promise<string | undefined> {
   const kept = decrypted.get(event.id)
   if (kept !== undefined) return kept
-  const plaintext = await decryptBlob(event.content, token)
+  const plaintext = await decryptBlobFrom(source, event.content, token)
   if (plaintext !== undefined) decrypted.set(event.id, plaintext)
   return plaintext
 }
 
-export async function fetchMutes(seam: RelaySeam): Promise<MutesRead> {
-  const mine = await queryRelay(seam.relayUrl, [mutedFilter(seam.pubkey)], seam.accessToken, seam.pubkey)
+export async function fetchMutes(seam: RelaySeam, source: ReadSource = 'relay'): Promise<MutesRead> {
+  const mine = await readFrom(source, seam.relayUrl, [mutedFilter(seam.pubkey)], seam.accessToken, seam.pubkey)
   if (!mine.ok) return { state: 'unreachable' }
   const current = newest(mine.events)
   if (current) {
-    const plaintext = await plaintextOf(current, seam.accessToken)
+    const plaintext = await plaintextOf(current, seam.accessToken, source)
     // The blob is there and what failed is this tab's key: not an empty list.
     if (plaintext === undefined) return { state: 'unreachable' }
     const list = parseMutedBlob(plaintext)
     // A list this build cannot read says nothing it can apply.
     return list ? { state: 'present', keys: list.keys } : { state: 'absent', keys: [] }
   }
-  const legacy = await queryRelay(
+  const legacy = await readFrom(
+    source,
     seam.relayUrl,
     [{ kinds: [KIND.APP_DATA], authors: [seam.pubkey], '#d': [LEGACY_FOLLOWED_D_TAG] }],
     seam.accessToken,
@@ -78,7 +78,7 @@ export async function fetchMutes(seam: RelaySeam): Promise<MutesRead> {
   if (!legacy.ok) return { state: 'unreachable' }
   const old = newest(legacy.events)
   if (!old) return { state: 'absent', keys: [] }
-  const plaintext = await plaintextOf(old, seam.accessToken)
+  const plaintext = await plaintextOf(old, seam.accessToken, source)
   if (plaintext === undefined) return { state: 'unreachable' }
   return { state: 'absent', keys: mutedFromFollowed(plaintext) }
 }

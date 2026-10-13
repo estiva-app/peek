@@ -51,6 +51,11 @@ export type OpenWorkState = 'unknown' | 'absent' | 'present'
 export interface OpenWorkSync {
   /** The list the relay holds. Defined exactly when `state` is `present`. */
   relayBlob: OpenWorkBlob | undefined
+  /**
+   * The list the copy on the device holds (PEE-2): drawn while `state` is
+   * `unknown`, and never a reason to publish — it may be older than the relay's.
+   */
+  cachedBlob: OpenWorkBlob | undefined
   /** See the `state` section above — this is what decides the read and the publish. */
   state: OpenWorkState
   /** Publish a list if it differs from what the relay holds. Never throws. */
@@ -69,6 +74,7 @@ function seamFrom(relayUrl: string | null | undefined): RelaySeam | null {
 
 export function useOpenWorkSync(relayUrl: string | null | undefined): OpenWorkSync {
   const [relayBlob, setRelayBlob] = useState<OpenWorkBlob | undefined>(undefined)
+  const [cachedBlob, setCachedBlob] = useState<OpenWorkBlob | undefined>(undefined)
   const [state, setState] = useState<OpenWorkState>('unknown')
   /** Guards against two publishes racing on one coordinate from one tab. */
   const publishing = useRef(false)
@@ -82,6 +88,11 @@ export function useOpenWorkSync(relayUrl: string | null | undefined): OpenWorkSy
       return
     }
     let cancelled = false
+    // The copy first, beside the relay rather than before it: drawn until the
+    // relay answers, and ignored by the caller once it has.
+    void fetchOpenWork(seam, 'copy').then((read) => {
+      if (!cancelled && read.state === 'present') setCachedBlob(read.blob)
+    })
     void (async () => {
       try {
         const read = await fetchOpenWork(seam)
@@ -151,5 +162,5 @@ export function useOpenWorkSync(relayUrl: string | null | undefined): OpenWorkSy
     [relayUrl, relayBlob, state],
   )
 
-  return { relayBlob, state, publish }
+  return { relayBlob, cachedBlob, state, publish }
 }
