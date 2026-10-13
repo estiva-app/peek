@@ -9,8 +9,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { queryRelay } = vi.hoisted(() => ({ queryRelay: vi.fn() }))
+const { queryRelay, readFrom } = vi.hoisted(() => ({ queryRelay: vi.fn(), readFrom: vi.fn() }))
 vi.mock('./bridge', () => ({ queryRelay, publishSigned: vi.fn(), signViaEstivaId: vi.fn() }))
+vi.mock('./readFrom', async (original) => ({ ...(await original<typeof import('./readFrom')>()), readFrom }))
 
 import { encodeNevent, type SignedEvent } from '@estiva-app/protocol'
 import { forgetUrlShapes, resolveObjectsAsViewer } from './foreign'
@@ -114,5 +115,28 @@ describe('resolveObjectsAsViewer', () => {
     expect(objects[message]).toBeNull()
     expect(objects[addresses[0]]?.slots.title?.value).toBe('File 0')
     expect(queryRelay).toHaveBeenCalledWith('https://relay.test', [{ ids: ['c'.repeat(64)], limit: 1 }], 't', VIEWER)
+  })
+
+  it('from the copy, a file it never fully saw waits for the relay without holding back the rest (PEE-2)', async () => {
+    // The copy refuses any read naming f3, as it refused a project's children's changes asked
+    // seconds into the visit a reload cut short (Miky's Screener, 13 Oct).
+    const unseen = addresses[3]
+    readFrom.mockImplementation(async (_source: string, _url: string, filters: Record<string, unknown>[]) =>
+      JSON.stringify(filters).includes(unseen) ? { ok: false, events: [] } : { ok: true, events: answer(filters) },
+    )
+    const objects = await resolveObjectsAsViewer(addresses, 'https://relay.test', token, 'copy')
+    expect(objects[unseen]).toBeUndefined()
+    expect(addresses.filter((a) => a !== unseen).map((a) => objects[a]?.slots.title?.value)).toEqual(
+      addresses.map((_, i) => `File ${i}`).filter((_, i) => i !== 3),
+    )
+    expect(queryRelay).not.toHaveBeenCalled()
+  })
+
+  it('from the copy, a set it holds none of answers nothing, and a lone file it lacks still rejects', async () => {
+    readFrom.mockResolvedValue({ ok: false, events: [] })
+    await expect(resolveObjectsAsViewer(addresses, 'https://relay.test', token, 'copy')).resolves.toEqual({})
+    await expect(resolveObjectsAsViewer([addresses[0]], 'https://relay.test', token, 'copy')).rejects.toBeInstanceOf(
+      RelayReadError,
+    )
   })
 })

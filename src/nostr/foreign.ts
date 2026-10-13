@@ -540,6 +540,10 @@ export async function fileCandidatesAsViewer(
  * **Throws `RelayReadError` when the pooled read is refused**, where the single
  * form answers null. A set re-read on a timer must be able to keep what it held
  * rather than blank every row at once; a caller that wants null catches it.
+ *
+ * From the copy (`source: 'copy'`), a set answers the files the copy holds
+ * whole and leaves the rest out — no key, not null, since the copy not holding
+ * a file says nothing about whether it exists. Only a lone file it lacks throws.
  */
 export async function resolveObjectsAsViewer(
   references: readonly string[],
@@ -555,7 +559,29 @@ export async function resolveObjectsAsViewer(
     const fromCopy = copyQuery(relayUrl, token)
     // Its own people and manifest caches: what the copy lacks must not be held
     // as a miss or a failure the relay's answer would then wait out.
-    return resolveForeignObjects(addresses, fromCopy, createPeopleCache().viaRelay(fromCopy), createProjectionCache(0))
+    const people = createPeopleCache().viaRelay(fromCopy)
+    const cache = createProjectionCache(0)
+    try {
+      return await resolveForeignObjects(addresses, fromCopy, people, cache)
+    } catch (error) {
+      if (!(error instanceof RelayReadError) || addresses.length === 1) throw error
+      /*
+        One read the copy never saw sinks the whole set: a project's children's
+        changes are asked only once the set's own read has answered — 5.6 s into
+        Miky's Desk — so a reload in those first seconds left the copy without
+        them, and every Screener file waited for the relay (PEE-2, 13 Oct). Each
+        file on its own draws when the copy holds all of it; the rest wait.
+      */
+      const each = await Promise.all(
+        addresses.map((address) =>
+          resolveForeignObjects([address], fromCopy, people, cache).catch((missed: unknown) => {
+            if (missed instanceof RelayReadError) return {}
+            throw missed
+          }),
+        ),
+      )
+      return Object.assign({}, ...each) as Record<string, ForeignObject | null>
+    }
   }
   const query = viewerQuery(relayUrl, token)
   const [pooled, singles] = await Promise.all([
