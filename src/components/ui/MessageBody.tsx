@@ -210,9 +210,14 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     const value = valueOfReference(reference)
     if (value && !written.has(value)) written.set(value, reference)
   }
-  const asked: string[] = []
-  if (embeds?.length) cardsIn(embeds, blocks, shown, (url) => void asked.push(url))
-  const resolveLink = useLinkResolver(embeds?.length ? [...new Set([...asked, ...urls])] : [])
+  /*
+    Only a link's target or a bare URL names a card — `findUrls`'s answer. The
+    package's tree has no link mark, so `cardsIn` also sees a URL written in a
+    link's *label*, and `[https://ship…/issue/x](https://elsewhere)` would put
+    that issue's card under a link that goes elsewhere (OPT-17's security review).
+  */
+  const lookup = useLinkResolver(embeds?.length ? urls : [])
+  const resolveLink = (url: string) => (urls.includes(url) ? lookup(url) : undefined)
   const cards = embeds?.length
     ? cardsIn(embeds, blocks, shown, resolveLink).flatMap((card) => {
         const reference = written.get(card.value) ?? referenceOfValue(card.value)
