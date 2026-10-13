@@ -156,8 +156,26 @@ function useMemberFiles(addresses: readonly string[]): ScreenerFile[] {
 
   // The set changed: ask only about what is not held yet.
   useEffect(() => {
-    read(key ? key.split('\u0000').filter((address) => !(address in heldRef.current)) : [])
-  }, [key, read])
+    const asked = key ? key.split('\u0000').filter((address) => !(address in heldRef.current)) : []
+    // The copy on the device first, for what it holds; the relay's answer replaces it (PEE-2).
+    if (hasRelay && asked.length) {
+      resolveObjects(asked, 'copy').then(
+        (objects) =>
+          setHeld((prev) => {
+            const found = asked.filter((address) => !(address in prev) && objects[address])
+            if (!found.length) return prev
+            const next = { ...prev }
+            for (const address of found) {
+              const object = objects[address]!
+              next[address] = { address, kind: object.kind, title: object.slots.title?.value ?? 'File', comments: object.comments }
+            }
+            return next
+          }),
+        () => {},
+      )
+    }
+    read(asked)
+  }, [key, read, resolveObjects])
   // A refresh re-reads everything in the set — that is how new comments arrive.
   useRefreshTriggers(() => read(key ? key.split('\u0000') : []), {
     enabled: hasRelay && !!key,
@@ -258,8 +276,19 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
     return sync.asked ? undefined : NO_PENDING
   }, [sync.state, sync.relayBlob, sync.asked])
 
+  /**
+   * Until the relay answers, the decisions the copy on the device holds are
+   * drawn (PEE-2) — so a reload shows the rows as they were, not a skeleton.
+   * They are never published: only `settled` is.
+   */
+  const shown = useMemo<Pending | undefined>(() => {
+    if (settled) return settled
+    if (sync.state !== 'unknown' || !sync.cachedBlob) return undefined
+    return { snoozed: sync.cachedBlob.snoozed, dismissed: sync.cachedBlob.dismissed }
+  }, [settled, sync.state, sync.cachedBlob])
+
   const effective = useMemo<Pending | undefined>(() => {
-    if (!settled) return undefined
+    if (!shown) return undefined
     // A decision made this session always wins over the settled one: both maps
     // only ever move forward, and the later instant is the one the person just
     // chose. `Math.max` rather than an overwrite so a stale settled value that
@@ -269,8 +298,8 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
       for (const [key, value] of Object.entries(over)) out[key] = Math.max(out[key] ?? 0, value)
       return out
     }
-    return { snoozed: merge(settled.snoozed, pending.snoozed), dismissed: merge(settled.dismissed, pending.dismissed) }
-  }, [settled, pending])
+    return { snoozed: merge(shown.snoozed, pending.snoozed), dismissed: merge(shown.dismissed, pending.dismissed) }
+  }, [shown, pending])
 
   /*
     The file half (FOL-34). The files the person is a member of (§11.8) are
@@ -363,9 +392,9 @@ export function ScreenerProvider({ children }: { children: ReactNode }) {
   const publish = sync.publish
   useEffect(() => {
     if (!hasRelay) return
-    if (!effective) return
+    if (!effective || !settled) return
     void publish(effective)
-  }, [effective, publish])
+  }, [effective, settled, publish])
 
   const dismiss = useCallback((rowId: string, nowMs: number) => {
     const key = keyOfRow(rowId)

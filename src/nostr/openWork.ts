@@ -53,8 +53,9 @@
  */
 import type { SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
-import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
-import { BLOB_TAG, assertNotReadState, blobAddress, decryptBlob, encryptBlob } from './appData'
+import { publishSigned, signViaEstivaId } from './bridge'
+import { decryptBlobFrom, readFrom, type ReadSource } from './readFrom'
+import { BLOB_TAG, assertNotReadState, blobAddress, encryptBlob } from './appData'
 
 /** `estiva-peek:open-work:v1` — SPEC §12.2's `<client_id>:<name>:v<n>`. */
 export const OPEN_WORK_D_TAG = blobAddress('open-work')
@@ -252,14 +253,14 @@ export type OpenWorkRead =
   | { state: 'absent' }
   | { state: 'present'; blob: OpenWorkBlob }
 
-export async function fetchOpenWork(seam: RelaySeam): Promise<OpenWorkRead> {
-  const { ok, events } = await queryRelay(seam.relayUrl, [openWorkFilter(seam.pubkey)], seam.accessToken, seam.pubkey)
+export async function fetchOpenWork(seam: RelaySeam, source: ReadSource = 'relay'): Promise<OpenWorkRead> {
+  const { ok, events } = await readFrom(source, seam.relayUrl, [openWorkFilter(seam.pubkey)], seam.accessToken, seam.pubkey)
   if (!ok) return { state: 'unreachable' }
   // Parameterized-replaceable, so the relay serves at most one per coordinate.
   // Newest wins if a relay ever hands back more.
   const newest = events.sort((a, b) => b.created_at - a.created_at)[0]
   if (!newest) return { state: 'absent' }
-  const plaintext = await decryptBlob(newest.content, seam.accessToken)
+  const plaintext = await decryptBlobFrom(source, newest.content, seam.accessToken)
   if (!plaintext) return { state: 'unreachable' }
   const blob = parseOpenWorkBlob(plaintext)
   // `parseOpenWorkBlob` never throws and never reports: bad JSON, a `v` it does

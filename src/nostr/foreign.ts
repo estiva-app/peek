@@ -29,6 +29,7 @@ export const KIND_TOPIC = 39000
 /** NIP-29 channel message — what a Peek message is on the wire. */
 const KIND_MESSAGE = 9
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
+import { readFrom, type ReadSource } from './readFrom'
 import { RelayReadError } from './relayRead'
 import { rootOf } from './channelStreams'
 import { dmChannelsOf, KIND_CHANNEL_MEMBERS } from './dms'
@@ -118,6 +119,19 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
 export function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
   return async (filters) => {
     const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
+    if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
+    return result.events
+  }
+}
+
+/**
+ * {@link viewerQuery} against the copy on the device (PEE-2). A read the copy
+ * cannot answer throws, as a refused one does: the copy is a head start, and
+ * what it does not hold the relay answers.
+ */
+function copyQuery(relayUrl: string, token: StoredToken): QueryFn {
+  return async (filters) => {
+    const result = await readFrom('copy', relayUrl, filters, token.accessToken, token.pubkey)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
     return result.events
   }
@@ -531,9 +545,18 @@ export async function resolveObjectsAsViewer(
   references: readonly string[],
   relayUrl: string,
   token: StoredToken,
+  source: ReadSource = 'relay',
 ): Promise<Record<string, ForeignObject | null>> {
   const single = (reference: string) => /^https?:\/\//i.test(reference) || isEventReference(reference)
+  // From the copy, only files: a link or an event is drawn from the relay as before.
   const addresses = references.filter((reference) => !single(reference))
+  if (source === 'copy') {
+    if (!addresses.length) return {}
+    const fromCopy = copyQuery(relayUrl, token)
+    // Its own people and manifest caches: what the copy lacks must not be held
+    // as a miss or a failure the relay's answer would then wait out.
+    return resolveForeignObjects(addresses, fromCopy, createPeopleCache().viaRelay(fromCopy), createProjectionCache(0))
+  }
   const query = viewerQuery(relayUrl, token)
   const [pooled, singles] = await Promise.all([
     addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests) : {},
@@ -933,7 +956,10 @@ export async function conversationsAsViewer(
   files: ForeignObject[],
   relayUrl: string,
   token: StoredToken,
+  source: ReadSource = 'relay',
 ): Promise<Record<string, ConversationMessage[]>> {
+  // From the copy on the device with its own manifest cache, as `resolveObjectsAsViewer` does (PEE-2).
+  if (source === 'copy') return conversationsOf(files, copyQuery(relayUrl, token), createProjectionCache(0), { replies: true })
   return conversationsOf(files, viewerQuery(relayUrl, token), manifests, { replies: true })
 }
 

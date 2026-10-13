@@ -45,7 +45,7 @@ import {
   mentions,
   type Membership,
 } from '@estiva-app/conversation'
-import { queryRelay } from './bridge'
+import { readFrom, type ReadSource } from './readFrom'
 import { isTaggedUrgentFor } from './channelStreams'
 import { PEEK_HORIZON_DAYS } from './readState'
 import type { RelaySeam } from './stars'
@@ -108,7 +108,8 @@ export function foldMemberships(pubkey: string, events: readonly SignedEvent[], 
 export async function fetchMembership(
   seam: RelaySeam,
   nowSeconds = Math.floor(Date.now() / 1000),
+  source: ReadSource = 'relay',
 ): Promise<MembershipRead | undefined> {
-  const { ok, events } = await queryRelay(seam.relayUrl, membershipQueries(seam.pubkey, nowSeconds), seam.accessToken, seam.pubkey)
+  const { ok, events } = await readFrom(source, seam.relayUrl, membershipQueries(seam.pubkey, nowSeconds), seam.accessToken, seam.pubkey)
   return ok ? foldMemberships(seam.pubkey, events, nowSeconds) : undefined
 }

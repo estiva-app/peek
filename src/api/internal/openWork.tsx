@@ -66,6 +66,9 @@ const FILE = 'file:'
 
 const NO_ENTRIES: OpenWorkRef[] = []
 
+/** The longest the Desk waits for Open work's files before drawing without them. */
+const FILES_WAIT_MS = 2_500
+
 export interface OpenWorkValue {
   /** The rendered rows, in the person's order. Never the list — see the header. */
   items: OpenWorkItem[]
@@ -133,17 +136,28 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
    */
   const settledSet = relaySet ?? (sync.state === 'absent' ? NO_ENTRIES : undefined)
 
+  /**
+   * What is drawn until the relay answers: the list the copy on the device
+   * holds (PEE-2). Drawn as it is, with this session's changes over it; only
+   * the settled list is ever published.
+   */
+  const cachedSet = useMemo<OpenWorkRef[] | undefined>(
+    () => (sync.cachedBlob ? normalizePeople(sync.cachedBlob.entries) : undefined),
+    [sync.cachedBlob],
+  )
+  const baseSet = settledSet ?? cachedSet
+
   const effectiveSet = useMemo<OpenWorkRef[] | undefined>(() => {
-    if (!settledSet) return undefined
+    if (!baseSet) return undefined
     // Untouched this session keeps its settled position; anything added this
     // session is appended, *including* one that was already in the list. Adding
     // something back is putting it in front of yourself again, so it belongs at
     // the end — filtering on `!== false` instead would leave a re-added entry in
     // the slot it was removed from, which is the order the person just changed.
-    const kept = settledSet.filter((e) => pending.get(openWorkKey(e)) === undefined)
+    const kept = baseSet.filter((e) => pending.get(openWorkKey(e)) === undefined)
     // Re-added entries keep the relay identity the blob already carried for
     // them, rather than being rebuilt bare and waiting on the index for it.
-    const settledByKey = new Map(settledSet.map((e) => [openWorkKey(e), e]))
+    const settledByKey = new Map(baseSet.map((e) => [openWorkKey(e), e]))
     const added: OpenWorkRef[] = []
     for (const [key, isAdded] of pending) {
       if (!isAdded) continue
@@ -153,7 +167,7 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
       else if (key.startsWith(FILE)) added.push({ kind: 'file', address: key.slice(FILE.length) })
     }
     return [...kept, ...added]
-  }, [settledSet, pending])
+  }, [baseSet, pending])
 
   const personByKey = useMemo(() => new Map((people ?? []).map((p) => [p.id, p])), [people])
 
@@ -232,10 +246,12 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   */
   const publishList = sync.publish
   const publishEntries = useMemo<OpenWorkRef[] | undefined>(() => {
-    if (!effectiveSet) return undefined
+    // Never over the copy's list: a change made before the relay answers waits
+    // in `pending`, and is published over the relay's list once it has (PEE-2).
+    if (!effectiveSet || !settledSet) return undefined
     // A person is their pubkey since REM-3; `normalizePeople` made it so.
     return effectiveSet.map((entry) => (entry.kind === 'dm' ? { kind: 'dm', key: entry.key, pubkey: entry.key } : entry))
-  }, [effectiveSet])
+  }, [effectiveSet, settledSet])
 
   const untouchedAndAbsent = sync.state === 'absent' && pending.size === 0
   useEffect(() => {
@@ -286,7 +302,17 @@ export function OpenWorkProvider({ children }: { children: ReactNode }) {
   // Not gated on `people`: that settles only for a signed-in viewer, and
   // hanging on it would leave the Desk column under a skeleton for anyone it
   // never settles for.
-  const isLoading = hasRelay && effectiveSet === undefined
+  //
+  // Nor drawn before its files have an answer — the copy's or the relay's — so
+  // the rows below it do not draw first and then move down (PEE-2). Capped, so
+  // a read that never answers costs the file rows, never the Desk.
+  const [filesWaitedOut, setFilesWaitedOut] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setFilesWaitedOut(true), FILES_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [])
+  const filesAnswered = [...fileAddresses].every((address) => address in fileObjects)
+  const isLoading = hasRelay && (effectiveSet === undefined || (!filesAnswered && !filesWaitedOut))
 
   const value = useMemo<OpenWorkValue>(
     () => ({ items, fileAddresses, dmIds, isLoading, addDm, addFile, removeDm, removeFile }),

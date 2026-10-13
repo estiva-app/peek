@@ -51,6 +51,8 @@ export type ScreenerState = 'unknown' | 'unreachable' | 'absent' | 'present'
 export interface ScreenerSync {
   /** The decisions the relay holds. Defined exactly when `state` is `present`. */
   relayBlob: ScreenerBlob | undefined
+  /** The decisions the copy on the device holds (PEE-2): drawn while `state` is `unknown`, never published over. */
+  cachedBlob: ScreenerBlob | undefined
   /** See the `state` section above — this decides the read, the render and the publish. */
   state: ScreenerState
   /**
@@ -81,6 +83,7 @@ function seamFrom(relayUrl: string | null | undefined): RelaySeam | null {
 
 export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSync {
   const [relayBlob, setRelayBlob] = useState<ScreenerBlob | undefined>(undefined)
+  const [cachedBlob, setCachedBlob] = useState<ScreenerBlob | undefined>(undefined)
   const [state, setState] = useState<ScreenerState>('unknown')
   const [asked, setAsked] = useState(false)
   /** Guards against two publishes racing on one coordinate from one tab. */
@@ -90,6 +93,10 @@ export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSy
     const seam = seamFrom(relayUrl)
     if (!seam) return
     let cancelled = false
+    // The copy beside the relay: drawn until the relay answers (PEE-2).
+    void fetchScreener(seam, 'copy').then((read) => {
+      if (!cancelled && read.state === 'present') setCachedBlob(read.blob)
+    })
     void (async () => {
       // Set inside the async body, not in the effect's synchronous part: a bare
       // `setState` in an effect body is the pattern the React Compiler lint
@@ -185,5 +192,5 @@ export function useScreenerSync(relayUrl: string | null | undefined): ScreenerSy
     [relayUrl, relayBlob, state],
   )
 
-  return { relayBlob, state, asked, publish }
+  return { relayBlob, cachedBlob, state, asked, publish }
 }

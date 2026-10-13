@@ -44,8 +44,9 @@ type Ref = { kind: 'topic'; id: string; channelUuid?: string } | { kind: 'dm'; k
 const publish = vi.fn<(entries: Ref[]) => Promise<void>>(async () => undefined)
 let syncState: 'unknown' | 'absent' | 'present' = 'present'
 let relayBlob: unknown = undefined
+let cachedBlob: unknown = undefined
 vi.mock('@/nostr/useOpenWorkSync', () => ({
-  useOpenWorkSync: () => ({ state: syncState, relayBlob, publish }),
+  useOpenWorkSync: () => ({ state: syncState, relayBlob, cachedBlob, publish }),
 }))
 
 const aBlob = (entries: Ref[]) => ({ v: 1 as const, updatedAt: 1_787_142_018_561, entries })
@@ -60,7 +61,46 @@ beforeEach(() => {
   vi.clearAllMocks()
   syncState = 'present'
   relayBlob = undefined
+  cachedBlob = undefined
   people = PEOPLE
+})
+
+describe('the copy on the device (PEE-2)', () => {
+  it('draws the copy’s list while the relay has not answered, and publishes nothing over it', async () => {
+    syncState = 'unknown'
+    cachedBlob = aBlob([{ kind: 'dm', key: GREG }])
+    const { result } = await setup()
+    expect(result.current.items.map((i) => i.id)).toEqual([`ow_dm_${GREG}`])
+    expect(result.current.isLoading).toBe(false)
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('a change made over the copy waits, and is published over the relay’s list, not the copy’s', async () => {
+    syncState = 'unknown'
+    cachedBlob = aBlob([{ kind: 'dm', key: GREG }])
+    const { result, rerender } = await setup()
+    act(() => result.current.addDm(JUAN))
+    expect(result.current.items.map((i) => i.id)).toEqual([`ow_dm_${GREG}`, `ow_dm_${JUAN}`])
+    expect(publish).not.toHaveBeenCalled()
+
+    // The relay holds something newer than the copy: Greg was removed elsewhere, Cy added.
+    syncState = 'present'
+    relayBlob = aBlob([{ kind: 'dm', key: CY }])
+    rerender()
+    await waitFor(() => expect(publish).toHaveBeenCalled())
+    expect(publish.mock.calls.at(-1)![0].map((e) => (e.kind === 'dm' ? e.key : e.id))).toEqual([CY, JUAN])
+    expect(result.current.items.map((i) => i.id)).toEqual([`ow_dm_${CY}`, `ow_dm_${JUAN}`])
+  })
+
+  it('the relay’s answer replaces the copy’s list in place', async () => {
+    syncState = 'unknown'
+    cachedBlob = aBlob([{ kind: 'dm', key: GREG }, { kind: 'dm', key: JUAN }])
+    const { result, rerender } = await setup()
+    syncState = 'present'
+    relayBlob = aBlob([{ kind: 'dm', key: GREG }, { kind: 'dm', key: JUAN }, { kind: 'dm', key: CY }])
+    rerender()
+    expect(result.current.items.map((i) => i.id)).toEqual([`ow_dm_${GREG}`, `ow_dm_${JUAN}`, `ow_dm_${CY}`])
+  })
 })
 
 describe('the list comes from the relay', () => {

@@ -14,6 +14,7 @@ import type { SignedEvent } from '@estiva-app/protocol'
 import { PEOPLE as MOCK_PEOPLE } from '@/data/peopleData'
 import { validToken, type StoredToken } from '@/auth/estivaId'
 import { queryRelay } from '@/nostr/bridge'
+import { readFromCopy } from '@/nostr/deviceCopy'
 import {
   mentionablePeopleOf,
   profilesOf,
@@ -61,7 +62,16 @@ function useWorkspaceEvents(): SignedEvent[] | undefined {
       .then(setEvents)
       .catch((error) => console.warn('[people] could not read the workspace from the relay:', error))
   }, [])
-  useEffect(refresh, [refresh])
+  useEffect(() => {
+    // The names the copy on the device holds, until the relay's land (PEE-2).
+    const token = validToken()
+    if (hasRelay && RELAY_URL && token && !workspaceCache) {
+      void readFromCopy(RELAY_URL, workspaceFilters(), token.pubkey).then((cached) => {
+        if (cached?.length) setEvents((current) => current ?? cached)
+      })
+    }
+    refresh()
+  }, [refresh])
   useRefreshTriggers(refresh, { enabled: hasRelay, interval: false })
 
   return events

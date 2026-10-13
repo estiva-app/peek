@@ -37,7 +37,8 @@
 import { buildDmOpen, commandPayload, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import { KIND_CHANNEL_METADATA } from '@estiva-app/interop'
 import type { RelaySeam } from './stars'
-import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
+import { publishSigned, signViaEstivaId } from './bridge'
+import { readFrom, type ReadSource } from './readFrom'
 
 /** NIP-29 group members — a channel's `p` roster, one tag per member. */
 export const KIND_CHANNEL_MEMBERS = 39002
@@ -97,13 +98,14 @@ function untaggedDms(metadata: readonly SignedEvent[]): string[] {
 export type DmChannelsRead = { state: 'present'; byPartner: Map<string, string> } | { state: 'unreachable' }
 
 /** Read the viewer's DM channels. `unreachable` is "did not answer", not "none". */
-export async function fetchDmChannels(seam: RelaySeam): Promise<DmChannelsRead> {
-  const first = await queryRelay(seam.relayUrl, dmChannelFilters(seam.pubkey), seam.accessToken, seam.pubkey)
+export async function fetchDmChannels(seam: RelaySeam, source: ReadSource = 'relay'): Promise<DmChannelsRead> {
+  const first = await readFrom(source, seam.relayUrl, dmChannelFilters(seam.pubkey), seam.accessToken, seam.pubkey)
   if (!first.ok) return { state: 'unreachable' }
   const untagged = untaggedDms(first.events)
   let members: SignedEvent[] = []
   if (untagged.length) {
-    const second = await queryRelay(
+    const second = await readFrom(
+      source,
       seam.relayUrl,
       [{ kinds: [KIND_CHANNEL_MEMBERS], '#d': untagged }],
       seam.accessToken,

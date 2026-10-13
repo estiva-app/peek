@@ -61,6 +61,8 @@ export type StarsState = 'unknown' | 'absent' | 'present'
 export interface StarsSync {
   /** The set the relay holds. Defined exactly when `state` is `present`. */
   relayBlob: StarsBlob | undefined
+  /** The set the copy on the device holds (PEE-2): drawn while `state` is `unknown`, never published over. */
+  cachedBlob: StarsBlob | undefined
   /** See the `state` section above — this is what decides the read and the publish. */
   state: StarsState
   /** Publish a set if it differs from what the relay holds. Never throws. */
@@ -79,6 +81,7 @@ function seamFrom(relayUrl: string | null | undefined): RelaySeam | null {
 
 export function useStarsSync(relayUrl: string | null | undefined): StarsSync {
   const [relayBlob, setRelayBlob] = useState<StarsBlob | undefined>(undefined)
+  const [cachedBlob, setCachedBlob] = useState<StarsBlob | undefined>(undefined)
   const [state, setState] = useState<StarsState>('unknown')
   /** Guards against two publishes racing on one coordinate from one tab. */
   const publishing = useRef(false)
@@ -92,6 +95,10 @@ export function useStarsSync(relayUrl: string | null | undefined): StarsSync {
       return
     }
     let cancelled = false
+    // The copy beside the relay: drawn until the relay answers (PEE-2).
+    void fetchStars(seam, 'copy').then((read) => {
+      if (!cancelled && read.state === 'present') setCachedBlob(read.blob)
+    })
     void (async () => {
       try {
         const read = await fetchStars(seam)
@@ -161,5 +168,5 @@ export function useStarsSync(relayUrl: string | null | undefined): StarsSync {
     [relayUrl, relayBlob, state],
   )
 
-  return { relayBlob, state, publish }
+  return { relayBlob, cachedBlob, state, publish }
 }

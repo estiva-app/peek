@@ -50,6 +50,7 @@ import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/prot
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
 import { relayBudget } from './relayBudget'
+import { keepRelayAnswer } from './deviceCopy'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 
 /**
@@ -165,10 +166,14 @@ export async function queryRelay(
   token: string,
   pubkey?: string,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  const overSocket = socketReader ? await socketReader(relayUrl, filters, pubkey) : null
-  if (overSocket) return overSocket
-  const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
-  return parseQueryResponse(status, text)
+  let answer = socketReader ? await socketReader(relayUrl, filters, pubkey) : null
+  if (!answer) {
+    const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
+    answer = parseQueryResponse(status, text)
+  }
+  // Every answer is also the copy a reload draws from, and its correction (PEE-2).
+  if (answer.ok) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
+  return answer
 }
 
 /**

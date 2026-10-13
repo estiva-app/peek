@@ -71,6 +71,8 @@ export function DmsProvider({ children }: { children: ReactNode }) {
   /** A read that lands after a channel was minted here must not drop it. */
   const minted = useRef<Map<string, string>>(new Map())
   const attempted = useRef<Set<string>>(new Set())
+  /** The copy on the device draws only until the relay has answered once (PEE-2). */
+  const relayAnswered = useRef(false)
 
   const read = useCallback(async () => {
     const current = seam()
@@ -81,6 +83,7 @@ export function DmsProvider({ children }: { children: ReactNode }) {
         console.warn('[dms] the relay did not say which DM channels exist')
         return
       }
+      relayAnswered.current = true
       setByPartner(new Map([...minted.current, ...result.byPartner]))
       setChannelsState('present')
     } catch (error) {
@@ -89,8 +92,16 @@ export function DmsProvider({ children }: { children: ReactNode }) {
   }, [seam])
 
   useEffect(() => {
+    // The channels the copy on the device holds, drawn until the relay's land
+    // (PEE-2) — and never marked `present`, which only the relay may say.
+    const current = seam()
+    if (current) {
+      void fetchDmChannels(current, 'copy').then((result) => {
+        if (result.state === 'present' && !relayAnswered.current) setByPartner(new Map([...minted.current, ...result.byPartner]))
+      })
+    }
     void read()
-  }, [read])
+  }, [read, seam])
   /*
     Focus and visibility, no interval. A DM somebody else opens with you is
     found the next time you come back to the tab; one indexed read at human

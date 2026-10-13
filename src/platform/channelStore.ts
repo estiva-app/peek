@@ -96,6 +96,12 @@ export interface ChannelStoreOptions {
    * never read stays unread until the next {@link ChannelStore.sync}.
    */
   onError?: (error: unknown) => void
+  /**
+   * What the copy on the device holds for these filters, or null (PEE-2). A
+   * channel never read is drawn from it at once and still counts as unread:
+   * its first read from the relay is a full one, and replaces what was drawn.
+   */
+  seed?: (filters: Record<string, unknown>[]) => Promise<SignedEvent[] | null>
   /** Every read that reached the relay, and every one that failed — a diagnostic's feed. */
   onRead?: (read: ChannelStoreRead) => void
 }
@@ -161,6 +167,8 @@ interface Held {
   ids: Set<string>
   /** Unix seconds at which the last successful read of this channel began. */
   cursor: number
+  /** Drawn from the copy on the device and not yet read from the relay (PEE-2). */
+  seeded?: true
 }
 
 function channelOf(event: SignedEvent): string | undefined {
@@ -190,6 +198,8 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
   let again: 'sync' | 'resync' | null = null
 
   const seconds = () => Math.floor(now() / 1000)
+  /** Read from the relay at least once — a channel drawn only from the copy is not. */
+  const isRead = (channel: string) => held.has(channel) && !held.get(channel)!.seeded
 
   function changed() {
     snapshot = { version: snapshot.version + 1, at: seconds() }
@@ -252,7 +262,38 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
       rewatch()
       // Only when something tracked has never been read: a channel released and
       // tracked again in one commit is still held, and costs nothing.
-      if ([...refs.keys()].some((channel) => !held.has(channel))) background(api.sync('track'))
+      const unread = [...refs.keys()].filter((channel) => !isRead(channel))
+      if (unread.length) {
+        seedFromCopy(unread.filter((channel) => !held.has(channel)))
+        background(api.sync('track'))
+      }
+    })
+  }
+
+  /** Draw channels never held from the copy on the device, each as the relay's first read would ask (PEE-2). */
+  function seedFromCopy(channels: string[]) {
+    const seed = options.seed
+    if (!seed || !channels.length) return
+    const horizon = seconds() - options.horizonSeconds
+    void Promise.all(
+      channels.map(async (channel) => {
+        const filter = { kinds: options.kinds, '#h': [channel], since: horizon, limit: options.limitPerChannel }
+        return [channel, await seed([filter]).catch(() => null)] as const
+      }),
+    ).then((answers) => {
+      if (closed) return
+      let moved = false
+      for (const [channel, events] of answers) {
+        // Only into a channel nothing has read or drawn in the meantime.
+        if (!events || held.has(channel) || (!refs.has(channel) && !lingering.has(channel))) continue
+        const entry: Held = { events: [], ids: new Set(), cursor: 0, seeded: true }
+        for (const event of events) if (kinds.has(event.kind) && channelOf(event) === channel) insert(entry, event)
+        entry.events.sort(byTime)
+        trim(entry)
+        held.set(channel, entry)
+        moved = true
+      }
+      if (moved) changed()
     })
   }
 
@@ -283,14 +324,14 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
   async function run(mode: 'sync' | 'resync', onlyUnread = false): Promise<number> {
     // A `track` reads what it added and has never been read; the rest is held and kept current by the socket,
     // so a topic opened in a new Folder does not catch up every Folder held (OPT-4).
-    const channels = tracked().filter((channel) => !onlyUnread || !held.has(channel))
+    const channels = tracked().filter((channel) => !onlyUnread || !isRead(channel))
     if (channels.length === 0) return 0
     const began = seconds()
     const horizon = began - options.horizonSeconds
     // Decided once, before the read: an eviction while it is in flight must not
     // turn a catch-up's partial answer into an authoritative one.
     const cursors = new Map(
-      channels.map((channel) => [channel, mode === 'resync' ? undefined : held.get(channel)?.cursor]),
+      channels.map((channel) => [channel, mode === 'resync' || !isRead(channel) ? undefined : held.get(channel)?.cursor]),
     )
     const { byChannel, requests } = await read(channels, (channel) => {
       const cursor = cursors.get(channel)
@@ -357,7 +398,7 @@ export function createChannelStore(options: ChannelStoreOptions): ChannelStore {
         if (linger !== undefined) {
           clearTimeout(linger)
           lingering.delete(channel)
-          if (!held.has(channel)) added = true
+          if (!isRead(channel)) added = true
         } else if (count === 0) added = true
       }
       if (added) schedule()

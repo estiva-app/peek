@@ -7,6 +7,7 @@
 import type { SignedEvent } from '@estiva-app/protocol'
 import { KIND } from '@estiva-app/protocol'
 import { publishSigned, queryRelay, signViaEstivaId } from './bridge'
+import { decryptBlobFrom, readFrom, type ReadSource } from './readFrom'
 import { decryptBlob, decryptBlobUnlessRefused, encryptBlob } from './appData'
 import type { RelaySeam } from './stars'
 import {
@@ -125,16 +126,25 @@ export async function loadMergedReadState(
   identity: SlotIdentity,
   nowMs: number = Date.now(),
   horizonDays?: number,
+  source: ReadSource = 'relay',
 ): Promise<MergedReadState | undefined> {
   // The package reads, decrypts only the slots that changed, one at a time
   // (`/nip44/decrypt` answers a burst with 429), and merges; Peek supplies the
-  // relay, the decrypt seam and the cache.
+  // relay, the decrypt seam and the cache. From the copy on the device, only
+  // the plaintexts it kept: a slot it cannot read is "not now", never "empty".
   const query: QueryFn = async (filters) => {
-    const { ok, events } = await queryRelay(seam.relayUrl, filters, seam.accessToken, seam.pubkey)
-    if (!ok) throw new Error('relay unreachable')
+    const { ok, events } = await readFrom(source, seam.relayUrl, filters, seam.accessToken, seam.pubkey)
+    if (!ok) throw new Error(source === 'copy' ? 'not in the copy on this device' : 'relay unreachable')
     return events
   }
-  const decrypt = (ciphertext: string) => decryptBlobUnlessRefused(ciphertext, seam.accessToken)
+  const decrypt =
+    source === 'copy'
+      ? async (ciphertext: string) => {
+          const kept = await decryptBlobFrom('copy', ciphertext, seam.accessToken)
+          if (kept === undefined) throw new Error('not in the copy on this device')
+          return kept
+        }
+      : (ciphertext: string) => decryptBlobUnlessRefused(ciphertext, seam.accessToken)
   const state = await fetchReadState(query, seam.pubkey, { decrypt }, identity, nowMs, horizonDays ?? PEEK_HORIZON_DAYS, slotCache)
   if (!state.reachable) return undefined
   return { merged: state.merged, verdict: classifyOwnSlots(state.slots, identity) }
