@@ -42,6 +42,7 @@ import {
   resolveFolderContentsAsViewer,
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
+  referenceFromUrlAsViewer,
   resolveObjectAsViewer,
   resolveObjectsAsViewer,
   searchMessagesAsViewer,
@@ -50,6 +51,7 @@ import {
   type ActResult,
   type FileComment,
   type FileThreads,
+  type UrlReference,
 } from '@/nostr/foreign'
 import { relayFailureKind } from '@/nostr/relayRead'
 import type { ReadSource } from '@/nostr/readFrom'
@@ -89,6 +91,17 @@ export function useRelayViewer() {
     const token = validToken()
     return relayUrl && token ? { relayUrl, token } : null
   }, [])
+}
+
+/**
+ * The reference a pasted app URL names, or null — for the composer's paste
+ * (`extensions/pastedUrl.ts`), which runs outside React. Null too without a
+ * session or a relay: the link then stays a link.
+ */
+export async function referenceFromPastedUrl(url: string): Promise<UrlReference | null> {
+  const token = validToken()
+  if (!RELAY_URL || !token) return null
+  return referenceFromUrlAsViewer(url, RELAY_URL, token)
 }
 
 /**
