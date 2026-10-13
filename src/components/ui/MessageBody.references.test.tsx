@@ -25,6 +25,7 @@ vi.mock('@/api', () => ({
   TOPICS: [{ id: '7', title: 'Updates on the new office layout', isResolved: false }],
   APP_FILES: [],
   DOCUMENT_FILES: [],
+  useLinkResolver: () => () => undefined,
   useResolvedReferences: (refs: string[]) => {
     asked.push(refs)
     return Object.fromEntries(

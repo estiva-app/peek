@@ -48,6 +48,7 @@ import {
   buildMessage,
   buildReaction,
   buildResolution,
+  embedTag,
   embedsOf,
   imetaOf,
   imetaTag,
@@ -546,6 +547,8 @@ export interface ComposeArgs {
   files?: readonly OutgoingAttachment[]
   /** The people the composer's urgent mentions name, by pubkey (SPEC §13.1, CON-17). */
   urgent?: readonly string[]
+  /** The cards the author chose, one per value the body names (SPEC §13.6.2, OPT-17). */
+  embeds?: readonly Embed[]
 }
 
 /**
@@ -585,6 +588,8 @@ export async function composeCommentAsViewer(
     return true
   })
   const urgent = urgentTagsFor(args.body, args.urgent)
+  // Beside the `a`/`q` each one's value has (SPEC §13.6.2): the composer sends only values its body names.
+  const embeds = (args.embeds ?? []).map((embed) => embedTag(embed.value, embed.layout))
 
   /*
     A channel's message is a `kind:9` — `buildMessage`, as `convex/nostr/outbox.ts`
@@ -600,12 +605,12 @@ export async function composeCommentAsViewer(
       mentions: mentionTagsFor(args.body).map((tag) => tag[1]),
       mediaTags: imetaTagsFor(args.files ?? []),
     })
-    unsigned.tags.push(...urgent, ...references)
+    unsigned.tags.push(...urgent, ...references, ...embeds)
     return { ok: true, event: unsigned }
   }
 
   // No `mentionTagsFor` here: since interop 0.53 the comment action names the mentioned people in `p` itself.
-  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...urgent, ...references]
+  const extra: NostrTag[] = [...imetaTagsFor(args.files ?? []), ...urgent, ...references, ...embeds]
   const parent = args.parent
   return buildCommentAsViewer(
     {
@@ -671,6 +676,12 @@ export interface EditArgs {
   targetEventId: string
   body: string
   files?: readonly OutgoingAttachment[]
+  /**
+   * The card set after the edit, when it changed (SPEC §13.6.2): `embed` folds
+   * like `imeta`, so a set replaces the one before it — `none` for each card
+   * taken away — and an edit carrying none leaves the cards as they were.
+   */
+  embeds?: readonly Embed[]
 }
 
 /*
@@ -687,6 +698,7 @@ export function composeEdit(args: EditArgs, pubkey: string): UnsignedEvent {
     body: args.body,
   })
   if (args.files) unsigned.tags.push(...imetaTagsFor(args.files))
+  if (args.embeds?.length) unsigned.tags.push(...args.embeds.map((embed) => embedTag(embed.value, embed.layout)))
   return unsigned
 }
 

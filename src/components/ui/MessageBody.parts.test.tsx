@@ -22,6 +22,7 @@ const widgets: string[] = []
 vi.mock('@/api', () => ({
   DOCUMENT_FILES: [],
   useResolvedReferences: (refs: string[]) => Object.fromEntries(refs.map((ref) => [ref, null])),
+  useLinkResolver: () => () => undefined,
   usePart: ({ address }: { address: string }) => views.get(address) ?? { state: 'loading' },
 }))
 vi.mock('./ForeignObjectWidget', () => ({

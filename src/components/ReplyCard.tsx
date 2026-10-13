@@ -21,6 +21,8 @@ import { type ReactionData, type FileAttachment } from '@/api'
 import { useCanUpload, isCurrentUser } from '@/api'
 import { AttachFileButton, AttachmentChips } from './ui/AttachFiles'
 import { HighlightButton } from './ui/HighlightButton'
+import { CardButton } from './ui/CardButton'
+import { cardsToEdit, loadCards } from '@/extensions/cardChoices'
 import { cn } from '@/lib/utils'
 import { useEditAttachments } from '@/lib/useEditAttachments'
 import { takeRefusedEdit, useRefusedEdit } from '@/lib/refusedEdits'
@@ -124,6 +126,8 @@ interface ReplyCardProps {
   /** The reply's files after an edit added or removed some — PEE-16. The whole
    *  list, and only when this edit changed it. */
   onFilesChange?: (files: FileAttachment[]) => void
+  /** The reply's card set after an edit changed it — OPT-17. */
+  onEmbedsChange?: (embeds: Embed[]) => void
   onReactionsChange?: (reactions: ReactionData[], emoji: string) => void
   /** True when this reply triggered the parent conv's resolution (compose `→ msg` in the
    *  thread panel). When set, edit mode surfaces the resolution as a resolutionBlock so
@@ -176,6 +180,7 @@ export function ReplyCard({
   onBodyChange,
   messageId,
   onFilesChange,
+  onEmbedsChange,
   onReactionsChange,
   ownsResolution = false,
   resolutionMsg,
@@ -344,6 +349,8 @@ export function ReplyCard({
         })
       }
       editEditor.commands.setContent(content)
+      // The cards come back from the folded tags, as in ConversationCard (OPT-17).
+      loadCards(editEditor, embeds)
       setTimeout(() => editEditor.commands.focus('end'), 0)
     } else {
       editEditor.commands.clearContent()
@@ -400,6 +407,8 @@ export function ReplyCard({
     const nextFiles = editAttachments.result()
     if (nextFiles) onFilesChange?.(nextFiles)
     editAttachments.commit()
+    const nextCards = cardsToEdit(editEditor, embeds)
+    if (nextCards) onEmbedsChange?.(nextCards)
     setIsEditing(false)
   }
 
@@ -498,6 +507,7 @@ export function ReplyCard({
                   <Toolbar aria-label="Edit tools" surface={false} className="flex items-center gap-1">
                     <AttachFileButton onPick={editAttachments.add} />
                     <HighlightButton editor={editEditor} container={editBoxRef} />
+                    <CardButton editor={editEditor} />
                   </Toolbar>
                   <div className="flex items-center gap-2">
                     <Button variant="outlined" size="small" className="w-14" onClick={handleEditCancel}>

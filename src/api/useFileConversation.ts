@@ -10,7 +10,7 @@ import {
   withdrawOwnEvent,
 } from '@/nostr/conversationCatchUp'
 import { announceFileNews, conversationKey, conversationsFor } from './conversations'
-import { KIND, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
+import { KIND, type Embed, type SignedEvent, type UnsignedEvent } from '@estiva-app/protocol'
 import {
   composeCommentAsViewer,
   composeDeletion,
@@ -58,10 +58,14 @@ export type FileConversationState = FileConversation | 'loading' | { failed: Rel
  */
 export interface FileConversationActions {
   /** `urgent`: the people the body's urgent mentions name, by pubkey (CON-17). */
-  comment: (body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[]) => Promise<WriteResult>
-  reply: (parent: ConversationEvent, body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[]) => Promise<WriteResult>
-  /** `files`, when given, is the whole attachment set after the edit — never empty. */
-  edit: (targetEventId: string, body: string, files?: readonly OutgoingAttachment[]) => Promise<WriteResult>
+  /** `embeds`: the cards the author chose under it, one per value (SPEC §13.6.2, OPT-17). */
+  comment: (body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[], embeds?: readonly Embed[]) => Promise<WriteResult>
+  reply: (parent: ConversationEvent, body: string, files?: readonly OutgoingAttachment[], urgent?: readonly string[], embeds?: readonly Embed[]) => Promise<WriteResult>
+  /**
+   * `files`, when given, is the whole attachment set after the edit — never empty.
+   * `embeds`, when given, is the whole card set after it, `none` for each card taken away.
+   */
+  edit: (targetEventId: string, body: string, files?: readonly OutgoingAttachment[], embeds?: readonly Embed[]) => Promise<WriteResult>
   remove: (targetEventId: string) => Promise<WriteResult>
   react: (targetEventId: string, emoji: string) => Promise<WriteResult>
   resolve: (
@@ -457,11 +461,11 @@ export function useFileConversation(
   }
 
   const actions: FileConversationActions = {
-    comment: (body, files, urgent) => send({ body, files, urgent }),
-    reply: (parent, body, files, urgent) => send({ body, parent, files, urgent }),
-    edit: (targetEventId, body, files) =>
+    comment: (body, files, urgent, embeds) => send({ body, files, urgent, embeds }),
+    reply: (parent, body, files, urgent, embeds) => send({ body, parent, files, urgent, embeds }),
+    edit: (targetEventId, body, files, embeds) =>
       container
-        ? change(targetEventId, (pubkey) => composeEdit({ container, targetEventId, body, files }, pubkey), 'The relay refused the edit.')
+        ? change(targetEventId, (pubkey) => composeEdit({ container, targetEventId, body, files, embeds }, pubkey), 'The relay refused the edit.')
         : Promise.resolve(SIGNED_OUT),
     remove: (targetEventId) => change(targetEventId, (pubkey) => composeDeletion(targetEventId, pubkey), 'The relay refused the deletion.'),
     react: (targetEventId, emoji) =>

@@ -43,6 +43,7 @@ import {
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
   referenceFromUrlAsViewer,
+  cardValueOfUrlAsViewer,
   resolveObjectAsViewer,
   resolveObjectsAsViewer,
   searchMessagesAsViewer,
@@ -104,6 +105,57 @@ export async function referenceFromPastedUrl(url: string): Promise<UrlReference 
   const token = validToken()
   if (!RELAY_URL || !token) return null
   return referenceFromUrlAsViewer(url, RELAY_URL, token)
+}
+
+/*
+  An app link's card value (SPEC §13.6.2, OPT-17), once per link for the tab:
+  a link names the same object for as long as its owner's manifest does. A
+  read that failed is forgotten, so the next ask tries again.
+*/
+const cardValues = new Map<string, Promise<string | null>>()
+const knownCardValues = new Map<string, string | null>()
+
+/** The `embed` value an app link names, or null — what the composer offers a card for. */
+export function cardValueOfUrl(url: string): Promise<string | null> {
+  const token = validToken()
+  if (!RELAY_URL || !token) return Promise.resolve(null)
+  let value = cardValues.get(url)
+  if (!value) {
+    value = cardValueOfUrlAsViewer(url, RELAY_URL, token).then(
+      (answer) => {
+        knownCardValues.set(url, answer)
+        return answer
+      },
+      () => {
+        cardValues.delete(url)
+        return null
+      },
+    )
+    cardValues.set(url, value)
+  }
+  return value
+}
+
+/**
+ * What each of these app links names, for a reader's `cardsIn` (SPEC §13.6.2):
+ * a `LinkResolver` that answers from what has come back, and is replaced as
+ * more does, so the message draws again. A link not answered yet names nothing.
+ */
+export function useLinkResolver(urls: readonly string[]): (url: string) => string | undefined {
+  const key = urls.join('\n')
+  const [, setAnswered] = useState(0)
+  useEffect(() => {
+    let live = true
+    const waiting = key ? key.split('\n').filter((url) => !knownCardValues.has(url)) : []
+    if (waiting.length === 0) return
+    void Promise.all(waiting.map(cardValueOfUrl)).then(() => {
+      if (live) setAnswered((n) => n + 1)
+    })
+    return () => {
+      live = false
+    }
+  }, [key])
+  return (url: string) => knownCardValues.get(url) ?? undefined
 }
 
 /**

@@ -14,12 +14,10 @@ import { InlineChip, RichText } from '@estiva-app/ui'
 import type { ForeignObject } from '@estiva-app/interop'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { PartCard } from './PartCard'
-import { useResolvedReferences } from '@/api'
+import { useLinkResolver, useResolvedReferences } from '@/api'
+import { referenceOfValue, valueOfReference } from '@/lib/embedValue'
 import {
-  bech32Decode,
   cardsIn,
-  convertBits,
-  decodeNevent,
   findNaddrs,
   pointerToAddress,
   referenceToPointer,
@@ -114,22 +112,6 @@ function addressOf(ref: string): string {
   }
 }
 
-/** The address or event id a `nostr:` reference names — what an `embed` carries for it. Ship's `valueOfReference`. */
-function valueOfReference(reference: string): string | undefined {
-  try {
-    if (/^nostr:nevent1/i.test(reference)) return decodeNevent(reference).id.toLowerCase()
-    if (/^nostr:naddr1/i.test(reference)) return pointerToAddress(referenceToPointer(reference))
-    if (/^nostr:note1/i.test(reference)) {
-      const { hrp, data } = bech32Decode(reference.slice('nostr:'.length).toLowerCase())
-      const id = convertBits(data, 5, 8, false).map((b) => b.toString(16).padStart(2, '0')).join('')
-      return hrp === 'note' && /^[0-9a-f]{64}$/.test(id) ? id : undefined
-    }
-  } catch {
-    return undefined
-  }
-  return undefined
-}
-
 function dedupeReferences(refs: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -215,17 +197,25 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     message the same way. A value with an `embed` is the author's call: alone on
     its line it stays in the text as its chip instead of becoming the attached
     card, and the layout they chose draws below — or nothing, for `none`. Each
-    is keyed by the reference the body wrote, which is what resolves. No app
-    link names a card yet: that needs a §7.7 resolver passed to `cardsIn`.
+    is keyed by the reference the body wrote, which is what resolves.
+
+    An app link names a card too, once §7.7 says what it names (OPT-17):
+    `useLinkResolver` looks up the links `cardsIn` asks about — and only on a
+    message that carries an `embed`, so an ordinary link costs nothing more —
+    and the message draws again as answers come back. A link's card resolves
+    by the reference its value spells, since the body wrote only the URL.
   */
   const written = new Map<string, string>()
   for (const reference of embeds?.length ? referencesIn(blocks) : []) {
     const value = valueOfReference(reference)
     if (value && !written.has(value)) written.set(value, reference)
   }
+  const asked: string[] = []
+  if (embeds?.length) cardsIn(embeds, blocks, shown, (url) => void asked.push(url))
+  const resolveLink = useLinkResolver(embeds?.length ? [...new Set([...asked, ...urls])] : [])
   const cards = embeds?.length
-    ? cardsIn(embeds, blocks, shown).flatMap((card) => {
-        const reference = written.get(card.value)
+    ? cardsIn(embeds, blocks, shown, resolveLink).flatMap((card) => {
+        const reference = written.get(card.value) ?? referenceOfValue(card.value)
         return reference ? [{ ...card, reference }] : []
       })
     : []
@@ -281,8 +271,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const attachedEvents = standalone
     .filter((ref) => /^nostr:(?:nevent|note)1/i.test(ref))
     .map((ref) => ref.replace(/^nostr:/i, ''))
+  // An object whose author chose its card has that card, or none, instead (SPEC §13.6.2) — a link on words names it only by its `a`.
   const attachments = [
-    ...references.filter((ref) => !drawnInline.has(addressOf(ref)) && !shownAddresses.has(addressOf(ref))),
+    ...references.filter((ref) => !drawnInline.has(addressOf(ref)) && !shownAddresses.has(addressOf(ref)) && !chosen.has(addressOf(ref))),
     ...attachedEvents,
   ]
   // A message that was *only* a reference has no blocks left to lay out, and
@@ -328,9 +319,12 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
         `quiet` because most links are only links. One that no manifest claims
         resolves to null and draws nothing, and drawing a skeleton under every
         ordinary link meanwhile would be worse than the gap it fills.
+
+        A link whose author chose its card — or chose none — has that instead
+        (SPEC §13.6.2: an `embed` is authoritative over the default).
       */}
       {urls
-        .filter((url) => !shown.some((part) => urlNames(url, part.address)))
+        .filter((url) => !shown.some((part) => urlNames(url, part.address)) && !chosen.has(resolveLink(url) ?? ''))
         .map((url) => (
           <ForeignObjectWidget key={url} naddr={url} resolved={resolvedObjects?.[url]} quiet />
         ))}

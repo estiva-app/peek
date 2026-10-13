@@ -21,6 +21,7 @@ vi.mock('@/api', () => ({
   // resolves here, which is the state these tests want — the mapping to DOM is
   // the subject, and an unresolved reference still draws a chip.
   useResolvedReferences: () => ({}),
+  useLinkResolver: () => () => undefined,
 }))
 vi.mock('./ForeignObjectWidget', () => ({ ForeignObjectWidget: () => null }))
 vi.mock('@/api/mentions', () => ({
