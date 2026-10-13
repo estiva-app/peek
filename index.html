@@ -19,9 +19,12 @@
         try {
           var path = location.pathname
           if ((path !== '/' && path !== '/app' && path !== '/app/desk') || location.search) return
-          if (localStorage.getItem('peek.estivaId.token') === null) return
+          var session = JSON.parse(localStorage.getItem('peek.estivaId.token') || 'null')
           var picture = JSON.parse(localStorage.getItem('peek-desk-picture') || 'null')
-          if (!picture || picture.owner !== localStorage.getItem('peek-device-copy-owner')) return
+          if (!session || !session.pubkey || !picture || typeof picture.owner !== 'string') return
+          // The copy's owner (`<relay>|<pubkey>`), and the person this session is for.
+          if (picture.owner !== localStorage.getItem('peek-device-copy-owner')) return
+          if (picture.owner.slice(picture.owner.lastIndexOf('|') + 1) !== session.pubkey) return
           var css = document.querySelector('link[rel="stylesheet"][href*="/assets/"]')
           if (!css || css.getAttribute('href') !== picture.css) return
           var cover = document.createElement('div')

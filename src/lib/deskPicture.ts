@@ -42,15 +42,33 @@ function stylesheet(): string | null {
 
 const textOf = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
 
-/** The saved Desk's element under a point: the deepest one whose box holds it (the saved copy is inert, so no hit test). */
+/**
+ * The saved Desk's element under a point, as a hit test would find it (the
+ * saved copy is inert, so the browser's own does not): the deepest visible one
+ * whose box holds it — not a control drawn invisible until hover.
+ */
 function savedElementAt(root: HTMLElement, x: number, y: number): Element | undefined {
   let found: Element | undefined
+  let foundDepth = -1
   for (const el of root.querySelectorAll('*')) {
     const box = el.getBoundingClientRect()
-    if (x >= box.left && x < box.right && y >= box.top && y < box.bottom) found = el
+    if (!(x >= box.left && x < box.right && y >= box.top && y < box.bottom)) continue
+    const style = getComputedStyle(el)
+    if (style.visibility === 'hidden' || style.opacity === '0' || style.pointerEvents === 'none') continue
+    // Opacity is not inherited: a control faded out as a whole hides its children too.
+    let depth = 0
+    let faded = false
+    for (let p = el.parentElement; p && p !== root; p = p.parentElement) {
+      depth++
+      if (getComputedStyle(p).opacity === '0') faded = true
+    }
+    if (!faded && depth >= foundDepth) [found, foundDepth] = [el, depth]
   }
   return found
 }
+
+/** Sent when the saved Desk goes, so a save it held back can run. */
+const GONE = 'peek-desk-picture-gone'
 
 /** What an element under a point reads, with its parent: a row's handler is often on a plain element above the text. */
 const readingOf = (el: Element | null | undefined) => (el ? `${el.tagName}|${textOf(el)}|${textOf(el.parentElement)}` : '')
@@ -70,10 +88,12 @@ export function revealLiveDesk(): void {
   const saved = target && textOf(target.parentElement) ? readingOf(target) : ''
   el.remove()
   if (shown) shown.liveAt = Math.round(performance.now())
+  window.dispatchEvent(new Event(GONE))
   if (!click || !saved) return
+  // Any element, an icon's <svg> or <path> included: the click bubbles to the control that handles it.
   const live = document.elementFromPoint(click.x, click.y)
-  if (live instanceof HTMLElement && readingOf(live) === saved) {
-    live.click()
+  if (live && readingOf(live) === saved) {
+    live.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: click.x, clientY: click.y, view: window }))
     if (shown) shown.clicked = true
   }
 }
@@ -117,7 +137,8 @@ export function revealWhenDeskDrawn(): void {
   const started = performance.now()
   let changedAt = started
   const changes = new MutationObserver(() => (changedAt = performance.now()))
-  changes.observe(root, { subtree: true, childList: true, characterData: true, attributes: true })
+  // What is drawn, not attributes: a live page restyling itself must not hold the saved one up.
+  changes.observe(root, { subtree: true, childList: true, characterData: true })
   const check = () => {
     if (!cover()) return changes.disconnect()
     const now = performance.now()
@@ -137,6 +158,8 @@ export function revealWhenDeskDrawn(): void {
  * for the copy's owner. Element ids are dropped (the live page has its own),
  * and so are pictures this page made for itself, which mean nothing in another.
  */
+let lastKept: string | undefined
+
 export function saveDeskPicture(): void {
   try {
     if (cover() || location.pathname !== '/app/desk' || location.search || !liveDeskDrawn()) return
@@ -144,8 +167,17 @@ export function saveDeskPicture(): void {
     const css = stylesheet()
     const root = document.getElementById('root')
     if (!owner || owner === SIGNED_OUT || !css || !root) return
-    const html = root.innerHTML.replace(/\sid="[^"]*"/g, '').replace(/\ssrc="blob:[^"]*"/g, '')
-    localStorage.setItem(DESK_PICTURE_KEY, JSON.stringify({ owner, css, html }))
+    // On a copy of the elements, never on the markup's text: a name or title reading ` id="` would steer a pattern
+    // into the next element's attributes and turn an attribute's value into markup (peek#492 review).
+    const copy = root.cloneNode(true) as HTMLElement
+    for (const el of copy.querySelectorAll('[id]')) el.removeAttribute('id')
+    for (const img of copy.querySelectorAll('img[src^="blob:"]')) img.removeAttribute('src')
+    const html = copy.innerHTML
+    const value = JSON.stringify({ owner, css, html })
+    // A Desk that settled back to what was kept costs no write.
+    if (value === lastKept) return
+    localStorage.setItem(DESK_PICTURE_KEY, value)
+    lastKept = value
   } catch {
     // Full or blocked storage: the next tab draws as before.
   }
@@ -179,11 +211,14 @@ export function useDeskPicture(loaded: boolean, plain: boolean): void {
     const changes = new MutationObserver(keepSoon)
     changes.observe(root, { subtree: true, childList: true, characterData: true, attributes: true })
     keepSoon()
+    // A save that came while the saved Desk was still shown was skipped: run it once the live one is.
+    window.addEventListener(GONE, keepSoon)
     document.addEventListener('visibilitychange', onHide)
     window.addEventListener('pagehide', saveDeskPicture)
     return () => {
       clearTimeout(timer)
       changes.disconnect()
+      window.removeEventListener(GONE, keepSoon)
       document.removeEventListener('visibilitychange', onHide)
       window.removeEventListener('pagehide', saveDeskPicture)
     }
@@ -192,6 +227,7 @@ export function useDeskPicture(loaded: boolean, plain: boolean): void {
 
 /** Sign-out, or another person's copy: the saved Desk goes with it. */
 export function clearDeskPicture(): void {
+  lastKept = undefined
   try {
     localStorage.removeItem(DESK_PICTURE_KEY)
   } catch {

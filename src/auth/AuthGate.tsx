@@ -3,6 +3,7 @@ import { hasRelay } from '@/api'
 import { useEstivaIdSession } from './useEstivaIdSession'
 import { AuthShell } from './shell/AuthShell'
 import { markEntered, useAuthShell } from './shell/useAuthShell'
+import { revealLiveDesk } from '@/lib/deskPicture'
 
 /**
  * Router-level auth gate.
@@ -49,5 +50,7 @@ function SessionGate({ children }: { children: ReactNode }) {
 /** Mounted only when there is no usable identity — see `useAuthShell`. */
 function AuthShellHost() {
   const { state, onContinue } = useAuthShell()
+  // A saved Desk a new tab showed must not stand over the sign-in screen.
+  useEffect(() => revealLiveDesk(), [])
   return <AuthShell state={state} onContinue={onContinue} />
 }

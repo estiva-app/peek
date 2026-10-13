@@ -25,6 +25,16 @@ describe('the saved Desk', () => {
     expect(saved()).toEqual({ owner: 'relay|pubkey', css: '/assets/index-abc.css', html: '<main><span>Switch probe A</span><img></main>' })
   })
 
+  it('keeps a title that reads like an attribute as text, with the next element intact', () => {
+    drawDesk('<span>Bob id="</span><img class="avatar" alt="&lt;img src=x onerror=alert(1)&gt;">')
+    saveDeskPicture()
+    const parsed = document.createElement('div')
+    parsed.innerHTML = saved().html
+    expect(parsed.querySelector('span')?.textContent).toBe('Bob id="')
+    expect(parsed.querySelector('img.avatar')?.getAttribute('alt')).toBe('<img src=x onerror=alert(1)>')
+    expect(parsed.querySelectorAll('img')).toHaveLength(1)
+  })
+
   it('keeps nothing while Desk is still loading, has something open, or nobody owns the copy', () => {
     drawDesk('<div class="animate-pulse"></div>')
     saveDeskPicture()
