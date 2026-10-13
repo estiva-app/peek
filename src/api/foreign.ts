@@ -44,6 +44,7 @@ import {
   resolveFolderProjectAsViewer,
   referenceFromUrlAsViewer,
   resolveObjectAsViewer,
+  resolveObjectFromCopy,
   resolveObjectsAsViewer,
   searchMessagesAsViewer,
   threadsAsViewer,
@@ -251,8 +252,18 @@ export function useHeldObject(reference: string | null): {
   )
 
   useEffect(() => {
-    if (key) void heldObjects.revalidate(key, load)
-  }, [key, load])
+    if (!key || !reference) return
+    // Never resolved in this tab: the copy on the device draws it until the relay answers (PEE-4).
+    const v = heldObjects.peek(key)?.value === undefined ? viewer() : null
+    if (v) {
+      resolveObjectFromCopy(reference, v.relayUrl, v.token)
+        .then((object) => {
+          if (object && !object.unreachable) heldObjects.seed(key, object)
+        })
+        .catch(() => {})
+    }
+    void heldObjects.revalidate(key, load)
+  }, [key, reference, viewer, load])
 
   const folder = entry?.value && !entry.value.unreachable ? entry.value.folder : undefined
   const address = entry?.value?.address
@@ -273,6 +284,15 @@ export function useForeignObjects() {
     async (naddr: string, options?: ArchiveReadOptions): Promise<ForeignObject | null> => {
       const v = viewer()
       return v ? resolveObjectAsViewer(naddr, v.relayUrl, v.token, options) : null
+    },
+    [viewer],
+  )
+
+  /** {@link resolveObject} from the copy on the device, or undefined where it cannot answer (PEE-4). */
+  const resolveObjectFromDevice = useCallback(
+    async (naddr: string, options?: ArchiveReadOptions): Promise<ForeignObject | undefined> => {
+      const v = viewer()
+      return v ? resolveObjectFromCopy(naddr, v.relayUrl, v.token, options) : undefined
     },
     [viewer],
   )
@@ -373,6 +393,23 @@ export function useForeignObjects() {
     const v = viewer()
     return v ? listFoldersAsViewer(v.relayUrl, v.token) : null
   }, [viewer])
+
+  /**
+   * {@link listFolders} and {@link resolveFolderContents} as the copy on the
+   * device answers them (PEE-4): drawn until the relay answers. Each rejects
+   * where the copy has not seen every read it makes.
+   */
+  const listFoldersFromDevice = useCallback(async (): Promise<FolderSummary[] | null> => {
+    const v = viewer()
+    return v ? listFoldersAsViewer(v.relayUrl, v.token, 'copy') : null
+  }, [viewer])
+  const resolveFolderContentsFromDevice = useCallback(
+    async (folder: string): Promise<FolderContents | undefined> => {
+      const v = viewer()
+      return v ? resolveFolderContentsAsViewer(folder, v.relayUrl, v.token, undefined, 'copy') : undefined
+    },
+    [viewer],
+  )
 
   /** Rename a Folder — its channel's name only, see {@link renameFolderAsViewer}. */
   const renameFolder = useCallback(
@@ -610,13 +647,16 @@ export function useForeignObjects() {
 
   return {
     resolveObject,
+    resolveObjectFromDevice,
     resolveObjects,
     resolveFileAddress,
     resolveFileFolder,
     resolveFolderProject,
     resolveFolderContents,
+    resolveFolderContentsFromDevice,
     conversations,
     listFolders,
+    listFoldersFromDevice,
     createFolder,
     createTopic,
     renameFile,
@@ -700,9 +740,11 @@ export function useResolvedReferences(
       The copy on the device beside the relay (PEE-2): what it can resolve is
       drawn until the relay answers, and only what it found — a file the copy
       cannot place is the relay's to call missing, not the copy's. Nothing from
-      it is held, so the next ask goes to the relay.
+      it is held, so the next ask goes to the relay. Only what this tab never
+      held: a stale one is on screen already (PEE-4).
     */
-    resolveObjects(ask, 'copy')
+    const unheld = ask.filter((ref) => heldObjects.peek(heldKey(pubkey, ref))?.value === undefined)
+    if (unheld.length) resolveObjects(unheld, 'copy')
       .then((objects) => {
         if (cancelled || answered) return
         const found = Object.entries(objects).filter(([, value]) => value)

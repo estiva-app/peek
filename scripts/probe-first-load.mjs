@@ -142,6 +142,31 @@ const legs = {
     ],
     phases: [['Open work topic, first open', 0, 'Open work topic'], ['Starred DM, first open', 0, 'Starred DM'], ['Topics, first open', 0, 'Topics']],
   }),
+  // PEE-4: after a visit, a reload at Topics draws the tree from the copy on the device, and right after a reload
+  // at Desk the Open work topic and the Starred DM draw from it too — the copy answers for 15 s after it opens.
+  again: (w) => ({
+    url: '/app/desk',
+    first: { '/app/desk': w.desk, '/app/folders': TREE },
+    steps: [
+      ...settled('allTextsNoPulse', 30000), '--wait', '3000',
+      ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
+      ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000',
+      ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000', ...report,
+      ...reload(TREE), ...settled(), '--wait', '3000', ...report,
+      '--eval', `(() => { document.querySelector('a[href="/app/desk"]').click(); return 'desk' })()`, '--wait', '2000',
+      // A click on the saved Desk is dropped (the project's Later list): click once the live Desk has taken over.
+      ...reload(w.desk), ...settled(), '--until', '(() => !window.__peekPicture || window.__peekPicture.liveAt !== undefined)()',
+      ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '1000',
+      ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000', ...report,
+      // A new tab at Topics (Miky, 13 Oct: in this ticket); its recorder takes the tree's texts by path.
+      '--tab', '/app/folders', ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
+    ],
+    phases: [
+      ['visit: Topics, first open', 0, 'Topics'], ['reload → Topics', 1, 'load'], ['reload → Desk', 2, 'load'],
+      ['Open work topic, after reload', 2, 'Open work topic'], ['Starred DM, after reload', 2, 'Starred DM', 'messages'],
+      ['new tab → Topics', 3, 'load'],
+    ],
+  }),
   long: (w) => ({
     url: '/app/folders',
     first: TREE,
@@ -235,7 +260,7 @@ function print({ as, leg, run, docs, http429, opened, reads }, phases) {
     // A page's own load, counted from its navigation start rather than the recorder's first script: what the
     // 200 ms new-tab target is measured against.
     if (phaseLabel === 'load' && at !== undefined) extra.push(`from navigation start ${at} ms`)
-    if (phaseLabel === 'load' && doc.picture) extra.push(`saved Desk shown ${doc.picture.shownAt} ms, live ${doc.picture.liveAt ?? 'never'} ms`)
+    if (phaseLabel === 'load' && doc.picture) extra.push(`saved ${doc.picture.page === 'topics' ? 'Topics' : 'Desk'} shown ${doc.picture.shownAt} ms, live ${doc.picture.liveAt ?? 'never'} ms`)
     if (before) extra.push(`sign-in bounce ${before} ms`)
     if (phase.marks.composer !== undefined && markName !== 'composer') extra.push(`composer ${phase.marks.composer - phase.at} ms`)
     if (phase.marks.messages !== undefined) extra.push(`first message ${phase.marks.messages - phase.at} ms`)

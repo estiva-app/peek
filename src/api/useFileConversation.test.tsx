@@ -30,6 +30,11 @@ const relay = vi.hoisted(() => ({
   own: [] as string[],
   composed: 0,
 }))
+/** The same read against the copy on the device (PEE-4): holds nothing unless a case says so. */
+const copy = vi.hoisted(() => ({ read: vi.fn<(container: unknown, rootIds: readonly string[]) => Promise<FileConversation>>() }))
+vi.mock('@/nostr/conversationFromCopy', () => ({
+  conversationFromCopy: (container: unknown, rootIds: readonly string[]) => copy.read(container, rootIds),
+}))
 vi.mock('@/nostr/conversationCatchUp', () => ({
   readConversation: (container: unknown, rootIds: readonly string[]) => relay.read(container, rootIds),
   catchUpConversation: (store: ConversationStore<FileConversation>, key: string, container: unknown, rootIds: readonly string[]) =>
@@ -120,6 +125,7 @@ beforeEach(() => {
   refresh.options = undefined
   relay.read.mockResolvedValue({ value: empty, events: [] })
   relay.catchUp.mockResolvedValue({ changed: false, object: false, mentions: false })
+  copy.read.mockReset().mockRejectedValue(new Error('not in the copy on this device'))
 })
 afterEach(() => {
   relay.read.mockReset()
@@ -319,6 +325,31 @@ describe('useFileConversation — a new root keeps the conversation (SID-1)', ()
     relay.read.mockRejectedValueOnce(new Error('rate-limited: slow down'))
     const { result } = mount({ container, rootIds: ['r1'] })
     await waitFor(() => expect(result.current.state).toEqual({ failed: 'rate_limited' }))
+  })
+
+  it('the copy on the device draws a first open until the relay answers, and only the relay’s is held (PEE-4)', async () => {
+    let answer: () => void = () => {}
+    relay.read.mockImplementationOnce(() => new Promise((resolve) => (answer = () => resolve({ value: two, events: [] }))))
+    copy.read.mockResolvedValueOnce(one)
+    const { result } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(one))
+    await act(async () => answer())
+    expect(result.current.state).toBe(two)
+    expect(relay.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('a first read that fails keeps the copy’s conversation — unless the Folder is no longer the viewer’s', async () => {
+    relay.read.mockRejectedValueOnce(new Error('rate-limited: slow down'))
+    copy.read.mockResolvedValueOnce(one)
+    const { result } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(one))
+    await act(async () => {})
+    expect(result.current.state).toBe(one)
+
+    relay.read.mockRejectedValueOnce(new RelayReadError('relay_membership_required'))
+    copy.read.mockResolvedValueOnce(one)
+    const lost = mount({ container: { kind: 'channel', h: 'gone' }, rootIds: [] })
+    await waitFor(() => expect(lost.result.current.state).toEqual({ failed: 'not_a_member' }))
   })
 
   it('signals while one catch-up is out are folded into one more, with the latest roots', async () => {

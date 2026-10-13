@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
-import { useDeskPicture } from '@/lib/deskPicture'
+import { usePagePicture } from '@/lib/pagePicture'
 import { IconSortDescending } from '@tabler/icons-react'
 import { CollapsibleSection, EmptyState, ListColumn } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
@@ -281,7 +281,7 @@ export function DeskPage() {
   }, [rowClicks, openedTarget, judgedThread, openedDm, openDmThread, setOpenThread, openThreadId])
 
   // A new tab showed the saved Desk until now; a plain Desk is kept for the next one.
-  useDeskPicture(!(deskLoading || starredLoading), !openAddress && !selected)
+  usePagePicture('desk', !(deskLoading || starredLoading), !openAddress && !selected)
 
   const filePane = openAddress ? filePaneParts.pane : null
 

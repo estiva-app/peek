@@ -25,7 +25,9 @@
     fl.first = Number(sessionStorage.getItem('fl.first'))
   } catch {}
   fl.origin = performance.timeOrigin
-  fl.phase('load', saved.length ? saved : (window.__flDefault ?? []))
+  // `__flDefault` is a page's texts, or texts by path for a leg whose new tabs open more than one page.
+  const byPath = window.__flDefault && !Array.isArray(window.__flDefault) ? window.__flDefault : null
+  fl.phase('load', saved.length ? saved : ((byPath ? byPath[location.pathname] : window.__flDefault) ?? []))
 
   const mark = (name) => {
     if (cur && !(name in cur.marks)) cur.marks[name] = now()

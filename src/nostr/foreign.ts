@@ -499,6 +499,38 @@ export async function resolveObjectAsViewer(
 }
 
 /**
+ * The query a read from the copy on the device runs on, with people and
+ * manifest caches of its own: what the copy lacks must not be held as a miss or
+ * a failure the relay's answer would then wait out (PEE-2).
+ */
+function fromCopy(relayUrl: string, token: StoredToken) {
+  const query = copyQuery(relayUrl, token)
+  return { query, people: createPeopleCache().viaRelay(query), cache: createProjectionCache(0) }
+}
+
+/**
+ * {@link resolveObjectAsViewer} for a file or a message, answered by the copy
+ * on the device (PEE-4) — the same reads, so what the relay resolved before
+ * resolves the same way. Undefined when the copy cannot answer it: a link, or
+ * what it does not hold whole, which only the relay can call missing.
+ */
+export async function resolveObjectFromCopy(
+  reference: string,
+  relayUrl: string,
+  token: StoredToken,
+  options?: ArchiveReadOptions,
+): Promise<ForeignObject | undefined> {
+  if (/^https?:\/\//i.test(reference)) return undefined
+  const { query, people, cache } = fromCopy(relayUrl, token)
+  try {
+    if (isEventReference(reference)) return (await resolveForeignEvent(reference, query, people, cache)) ?? undefined
+    return (await resolveForeignObject(reference, query, people, 0, cache, options)) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * `[`'s search tier (PEE-21): the files whose current title holds `text`, as
  * this viewer can read them. Rejects on a refused read, which the search
  * answers as no hits for a while.
@@ -541,9 +573,10 @@ export async function fileCandidatesAsViewer(
  * form answers null. A set re-read on a timer must be able to keep what it held
  * rather than blank every row at once; a caller that wants null catches it.
  *
- * From the copy (`source: 'copy'`), a set answers the files the copy holds
- * whole and leaves the rest out — no key, not null, since the copy not holding
- * a file says nothing about whether it exists. Only a lone file it lacks throws.
+ * From the copy (`source: 'copy'`), a set answers the files and messages the
+ * copy holds whole and leaves the rest out — no key, not null, since the copy
+ * not holding one says nothing about whether it exists. Only a lone file it
+ * lacks, asked alone, throws.
  */
 export async function resolveObjectsAsViewer(
   references: readonly string[],
@@ -552,19 +585,55 @@ export async function resolveObjectsAsViewer(
   source: ReadSource = 'relay',
 ): Promise<Record<string, ForeignObject | null>> {
   const single = (reference: string) => /^https?:\/\//i.test(reference) || isEventReference(reference)
-  // From the copy, only files: a link or an event is drawn from the relay as before.
   const addresses = references.filter((reference) => !single(reference))
   if (source === 'copy') {
-    if (!addresses.length) return {}
+    // From the copy, files and messages: a link is drawn from the relay as before.
+    const messages = references.filter(isEventReference)
+    if (!addresses.length && !messages.length) return {}
     const fromCopy = copyQuery(relayUrl, token)
     // Its own people and manifest caches: what the copy lacks must not be held
     // as a miss or a failure the relay's answer would then wait out.
     const people = createPeopleCache().viaRelay(fromCopy)
     const cache = createProjectionCache(0)
+    // A message the copy holds whole draws, as one in a topic does (PEE-4); the rest wait for the relay.
+    const drawn = await Promise.all(
+      messages.map((reference) =>
+        resolveForeignEvent(reference, fromCopy, people, cache).then(
+          (object) => (object ? { [reference]: object } : {}),
+          () => ({}),
+        ),
+      ),
+    )
+    const found: Record<string, ForeignObject | null> = Object.assign({}, ...drawn)
+    if (!addresses.length) return found
+    return { ...found, ...(await filesFromCopy(fromCopy, people, cache, messages.length > 0)) }
+  }
+  const query = viewerQuery(relayUrl, token)
+  const [pooled, singles] = await Promise.all([
+    addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests) : {},
+    Promise.all(
+      references
+        .filter(single)
+        .map(async (reference) => [reference, await resolveObjectAsViewer(reference, relayUrl, token).catch(() => null)] as const),
+    ),
+  ])
+  return { ...pooled, ...Object.fromEntries(singles) }
+
+  /** The files, from the copy; `quiet` when messages were asked too, so a lone file's miss is no answer rather than a throw. */
+  async function filesFromCopy(
+    fromCopy: QueryFn,
+    people: ReturnType<ReturnType<typeof createPeopleCache>['viaRelay']>,
+    cache: ReturnType<typeof createProjectionCache>,
+    quiet: boolean,
+  ): Promise<Record<string, ForeignObject | null>> {
     try {
       return await resolveForeignObjects(addresses, fromCopy, people, cache)
     } catch (error) {
-      if (!(error instanceof RelayReadError) || addresses.length === 1) throw error
+      if (!(error instanceof RelayReadError)) throw error
+      if (addresses.length === 1) {
+        if (quiet) return {}
+        throw error
+      }
       /*
         One read the copy never saw sinks the whole set: a project's children's
         changes are asked only once the set's own read has answered — 5.6 s into
@@ -583,16 +652,6 @@ export async function resolveObjectsAsViewer(
       return Object.assign({}, ...each) as Record<string, ForeignObject | null>
     }
   }
-  const query = viewerQuery(relayUrl, token)
-  const [pooled, singles] = await Promise.all([
-    addresses.length ? resolveForeignObjects(addresses, query, cachedPeople(query), manifests) : {},
-    Promise.all(
-      references
-        .filter(single)
-        .map(async (reference) => [reference, await resolveObjectAsViewer(reference, relayUrl, token).catch(() => null)] as const),
-    ),
-  ])
-  return { ...pooled, ...Object.fromEntries(singles) }
 }
 
 /**
@@ -954,7 +1013,13 @@ export async function resolveFolderContentsAsViewer(
   token: StoredToken,
   /** `includeArchived` for the listings a move plans from: what is archived beneath a file moves with it. */
   options?: { includeArchived?: boolean },
+  source: ReadSource = 'relay',
 ): Promise<FolderContents> {
+  if (source === 'copy') {
+    // Throws when the copy has not seen every read the listing makes (PEE-4).
+    const copy = fromCopy(relayUrl, token)
+    return resolveFolderContents(folder, copy.query, copy.people, copy.cache, options)
+  }
   const query = viewerQuery(relayUrl, token)
   return resolveFolderContents(folder, query, cachedPeople(query), manifests, options)
 }
@@ -1096,8 +1161,10 @@ export async function replyToCommentAsViewer(
 export async function listFoldersAsViewer(
   relayUrl: string,
   token: StoredToken,
+  source: ReadSource = 'relay',
 ): Promise<FolderSummary[]> {
-  return listFolders(viewerQuery(relayUrl, token))
+  // From the copy, it throws when the copy has not seen the listing's reads (PEE-4).
+  return listFolders(source === 'copy' ? copyQuery(relayUrl, token) : viewerQuery(relayUrl, token))
 }
 
 /**

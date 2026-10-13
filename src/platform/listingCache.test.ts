@@ -89,4 +89,33 @@ describe('listingCache', () => {
     await read
     expect(cache.peek('a')).toBeUndefined()
   })
+
+  it('draws a seed until a read answers; a seed is never fresh, and never replaces an answer (PEE-4)', async () => {
+    const cache = createListingCache<string, 'unreachable'>({ now: () => 1_000 })
+    const pending = deferred()
+    const read = cache.revalidate('a', () => pending.promise)
+    cache.seed('a', 'from the copy')
+    expect(cache.peek('a')).toMatchObject({ value: 'from the copy', seeded: true })
+    pending.answer({ ok: true, value: 'from the relay' })
+    await read
+    expect(cache.peek('a')?.value).toBe('from the relay')
+    expect(cache.peek('a')?.seeded).toBeUndefined()
+    cache.seed('a', 'a late copy')
+    expect(cache.peek('a')?.value).toBe('from the relay')
+
+    // Seeded with no read: the next revalidate asks, however recent the seed.
+    cache.seed('b', 'from the copy')
+    const load = vi.fn(async (): Promise<Load> => ({ ok: true, value: 'from the relay' }))
+    await cache.revalidate('b', load)
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(cache.peek('b')?.value).toBe('from the relay')
+  })
+
+  it('a read that fails after a seed keeps the seed on screen (PEE-4)', async () => {
+    const cache = createListingCache<string, 'unreachable'>()
+    cache.seed('a', 'from the copy')
+    await cache.read('a', async () => ({ ok: false, failure: 'unreachable' }))
+    expect(cache.peek('a')).toMatchObject({ value: 'from the copy', seeded: true })
+    expect(cache.peek('a')?.failure).toBeUndefined()
+  })
 })
