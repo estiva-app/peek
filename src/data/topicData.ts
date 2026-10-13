@@ -1,3 +1,5 @@
+import type { Embed } from '@estiva-app/protocol'
+
 export interface Topic {
   id: string
   title: string
@@ -148,6 +150,11 @@ export interface ConversationData {
    * and, flagged `anchor`, the block of its own file a comment is anchored to (§13.6).
    */
   parts?: { address: string; block: string; anchor?: true }[]
+  /**
+   * The cards its author asked for, after its edits — its `embed` tags, or the
+   * latest edit's that carries any (SPEC §13.6.2). Absent: none.
+   */
+  embeds?: Embed[]
   /** The published event's id — what a mention of this message names (RIC-11).
    *  Absent until it reaches the relay, and for anything never published. */
   nostrEventId?: string

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type ReactElement } from 'react'
 import { AttachmentCard, Avatar, Card, Link, Menu, MenuItem, MenuSeparator, MenuSub, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { useEditor, EditorContent } from '@tiptap/react'
+import type { Embed } from '@estiva-app/protocol'
 import { shareableMessageUrl } from '@/lib/objectUrl'
 import { PEEK_EDITOR_CLASSES, peekEditExtensions } from '@/extensions/peekEditor'
 import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
@@ -139,6 +140,8 @@ interface ReplyCardProps {
   urgentMentions?: string[]
   /** The blocks of other objects the reply shows (SPEC §13.6.1, COM-2). */
   parts?: { address: string; block: string; anchor?: true }[]
+  /** The cards its author asked for (SPEC §13.6.2). */
+  embeds?: readonly Embed[]
   /** The published event's id. When present the timestamp becomes the
    *  message's permalink — see the render below (PEE-17). */
   nostrEventId?: string
@@ -180,6 +183,7 @@ export function ReplyCard({
   nostrReferences,
   urgentMentions,
   parts,
+  embeds,
   nostrEventId,
   nostrBlockId,
   resolvedObjects,
@@ -559,7 +563,7 @@ export function ReplyCard({
               )}
             </div>
             <div className="pl-8 pr-2 pt-1 pb-2 w-full overflow-hidden break-words">
-              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} />
+              <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} resolvedObjects={resolvedObjects} urgentMentions={urgentMentions} parts={parts} embeds={embeds} />
             </div>
             {/* `items-start` because the cards are not the same height: a file
                 row is 48px and an image card is ~150, and stretching left a

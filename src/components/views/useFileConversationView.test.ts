@@ -66,6 +66,20 @@ describe('project', () => {
     expect(view.roots[1].editedAt).toBeUndefined()
   })
 
+  it("draws the cards an edit chose in place of the message's own (SPEC §13.6.2)", () => {
+    const issue = `30851:${CATH}:issue`
+    const asked = { ...rootA, embeds: [{ value: issue, layout: 'detailed' as const }] }
+    const kept = { ...reply, embeds: [{ value: issue, layout: 'compact' as const }] }
+    const view = project(
+      conversation({ roots: [rootB, asked], replies: { [rootA.id]: [kept] }, editedEmbeds: { [rootA.id]: [{ value: issue, layout: 'none' }] } }),
+      ME,
+      people,
+    )
+    expect(view.roots[0].embeds).toEqual([{ value: issue, layout: 'none' }])
+    expect(view.byId[rootA.id].replies[0].embeds).toEqual([{ value: issue, layout: 'compact' }])
+    expect(view.roots[1].embeds).toBeUndefined()
+  })
+
   it("draws an edit's attachment set in place of the comment's own, and an attach-only edit unmarked (CON-5)", () => {
     const own = { name: 'old.png', contentType: 'image/png', size: 1, sha256: 'old', mediaUrl: 'https://m/old' }
     const imeta = (name: string, x: string, size: number) => ({ url: `https://m/${x}`, m: 'image/png', x, size, filename: name })

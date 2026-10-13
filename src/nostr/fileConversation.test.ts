@@ -540,6 +540,19 @@ describe('a channel conversation (REM-1)', () => {
     expect(first).toEqual([{ kinds: [9], '#h': [DM], limit: CHANNEL_PAGE }])
   })
 
+  it('reads the cards a message asks for, and an edit that chooses again replaces them (SPEC §13.6.2)', async () => {
+    const issue = `30851:${CATH}:f0b27d90`
+    const asks = event({ kind: 9, pubkey: MIKY, content: 'see it', tags: [['h', DM], ['embed', issue, 'detailed']] })
+    const keeps = event({ kind: 9, pubkey: MIKY, content: 'and this', tags: [['h', DM], ['embed', issue, 'compact']] })
+    const removed = event({ kind: 40003, pubkey: MIKY, content: 'see it', tags: [['h', DM], ['e', asks.id], ['embed', issue, 'none']] })
+    // An edit with no `embed` leaves the set as it was.
+    const reworded = event({ kind: 40003, pubkey: MIKY, content: 'and that', tags: [['h', DM], ['e', keeps.id]] })
+    queryRelay.mockImplementation(relayOver([asks, keeps, removed, reworded]))
+    const found = await channelConversationAsViewer(DM, 'https://relay.test', token)
+    expect(found.roots.map((r) => r.embeds)).toEqual([[{ value: issue, layout: 'detailed' }], [{ value: issue, layout: 'compact' }]])
+    expect(found.editedEmbeds).toEqual({ [asks.id]: [{ value: issue, layout: 'none' }] })
+  })
+
   it('reads the whole channel: a full page is followed by the next, until a short one', async () => {
     const many = Array.from({ length: CHANNEL_PAGE + 5 }, (_, i) =>
       event({ kind: 9, content: `m${i}`, created_at: 1_600_000_000 + i, tags: [['h', DM]] }),

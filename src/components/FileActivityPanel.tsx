@@ -111,6 +111,7 @@ function mentionItem(m: FileMention, people: ReturnType<typeof useWorkspaceDirec
     resolutionMessage: now?.resolutionMessage,
     nostrReferences: m.references,
     urgentMentions: m.urgent,
+    embeds: now?.embeds ?? m.embeds,
     nostrEventId: m.id,
     // Nothing here edits or deletes (SHI-29): say so, rather than let the card
     // guess ownership from a display name anybody can set to "You".

@@ -1,3 +1,4 @@
+import type { Embed } from '@estiva-app/protocol'
 import type { HighlightType, FileAttachment, ReactionData } from './topicData'
 
 export interface ReplyData {
@@ -29,6 +30,8 @@ export interface ReplyData {
   urgentMentions?: string[]
   /** The blocks of other objects it shows — see `ConversationData.parts`. */
   parts?: { address: string; block: string; anchor?: true }[]
+  /** The cards its author asked for — see `ConversationData.embeds`. */
+  embeds?: Embed[]
   /** The published event's id — what a message link names (PEE-17). Absent
    *  until the reply reaches the relay. */
   nostrEventId?: string

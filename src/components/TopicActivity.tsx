@@ -156,6 +156,7 @@ export function TopicActivity({
             nostrReferences={conv.nostrReferences}
             urgentMentions={conv.urgentMentions}
             parts={conv.parts}
+            embeds={conv.embeds}
             nostrBlockId={conv.nostrBlockId}
             subdued={words.muted}
             isSelected={selectedId === conv.id}

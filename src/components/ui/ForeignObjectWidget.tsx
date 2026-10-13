@@ -313,9 +313,16 @@ export function ForeignObjectCard({
   directory,
   page = false,
   clampDescription = false,
+  layout,
   className,
 }: {
   object: ForeignObject
+  /**
+   * The layout its message's author chose (`embed`, SPEC §13.6.2) — `row` for
+   * compact, `card` for detailed — in place of the one the manifest declares.
+   * Omit to draw the declared one.
+   */
+  layout?: 'card' | 'row'
   /**
    * Cut a long description behind a fade, with "Show more" (Katerina,
    * 7 October): on a side panel the title above and the controls below stay
@@ -353,7 +360,7 @@ export function ForeignObjectCard({
     against an array and this card lost its subtitle. It had never bitten
     because Peek only consumes Ship, whose widgets are bare strings.
   */
-  const widget = pickWidget(object.widget, ['card', 'row', 'table', 'stat'] as const, 'card')
+  const widget = layout ?? pickWidget(object.widget, ['card', 'row', 'table', 'stat'] as const, 'card')
   /** More than one line: a card anywhere, and any object on its own page (MAN-9). */
   const whole = widget === 'card' || page
   /*
@@ -465,6 +472,7 @@ export function ForeignObjectCard({
        */
       fill="inset"
       data-foreign-object={object.address}
+      data-widget-layout={widget}
       className={cn(widget === 'card' ? 'p-3' : 'px-3 py-2', className)}
     >
       {/*
@@ -614,6 +622,7 @@ export function ForeignObjectWidget({
   quiet = false,
   page = false,
   clampDescription = false,
+  layout,
 }: {
   /** An `naddr`, an `nevent`, an address, or a pasted app URL (PRO-15). */
   naddr: string
@@ -621,6 +630,8 @@ export function ForeignObjectWidget({
   page?: boolean
   /** `ForeignObjectCard`'s: a long description cut behind "Show more". */
   clampDescription?: boolean
+  /** `ForeignObjectCard`'s: the layout the message's author chose (SPEC §13.6.2). */
+  layout?: 'card' | 'row'
   /**
    * Draw nothing while resolving, for a reference that might not be one.
    * See the branch below.
@@ -718,6 +729,7 @@ export function ForeignObjectWidget({
       directory={directory}
       page={page}
       clampDescription={clampDescription}
+      layout={layout}
       className="mt-1"
     />
   )

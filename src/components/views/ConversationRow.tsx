@@ -49,6 +49,7 @@ export const ConversationRow = memo(
         nostrReferences={c.nostrReferences}
         urgentMentions={c.urgentMentions}
         parts={c.parts}
+        embeds={c.embeds}
         deleted={c.isDeleted}
         isSelected={isSelected}
         onResolvedChange={(resolved, _by, message) => actions.setResolution(c.id, resolved, message)}

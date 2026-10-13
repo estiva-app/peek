@@ -511,6 +511,21 @@ describe('the body slot', () => {
     expect(container.querySelector('[data-foreign-body]')).toBeNull()
     expect(container.textContent).toContain('Billing entry')
   })
+
+  // SPEC §13.6.2: the author's `embed` layout, not the manifest's widget. Ship
+  // declares an issue a `row` and a project a `card`, so each is asked the other way.
+  it('draws an issue its author asked to see detailed as a card', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const { container } = render(<ForeignObjectCard object={object({ widget: 'row', slots: { title: { value: 'Payments' }, body } })} layout="card" />)
+    expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
+  })
+
+  it('draws a project its author asked to see compact as a row', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    const { container } = render(<ForeignObjectCard object={object({ kind: 30850, widget: 'card', slots: { title: { value: 'Payments' }, body } })} layout="row" />)
+    expect(container.querySelector('[data-foreign-body]')).toBeNull()
+    expect(container.textContent).toContain('Payments')
+  })
 })
 
 /**
