@@ -147,16 +147,18 @@ export function DmsProvider({ children }: { children: ReactNode }) {
   )
 
   const canHideDm = useCallback(
-    (pubkey: string) => visibilityState === 'present' && byPartner.has(pubkey) && !isDmHidden(pubkey),
-    [visibilityState, byPartner, isDmHidden],
+    // The channel as the relay named it, never as the copy on the device remembers it (PEE-2).
+    (pubkey: string) =>
+      visibilityState === 'present' && channelsState === 'present' && byPartner.has(pubkey) && !isDmHidden(pubkey),
+    [visibilityState, channelsState, byPartner, isDmHidden],
   )
 
   const hideDm = useCallback(
     async (pubkey: string) => {
       const current = seam()
       const channel = byPartner.get(pubkey)
-      if (!current || !channel) {
-        console.warn('[dms] not hidden: no channel, no relay origin or no live Estiva ID token in this tab')
+      if (!current || !channel || channelsState !== 'present') {
+        console.warn('[dms] not hidden: no channel the relay has named, no relay origin or no live Estiva ID token in this tab')
         return
       }
       try {
@@ -167,7 +169,7 @@ export function DmsProvider({ children }: { children: ReactNode }) {
         console.warn('[dms] hide threw:', error)
       }
     },
-    [seam, byPartner, applyHidden],
+    [seam, byPartner, channelsState, applyHidden],
   )
 
   const reopenDm = useCallback(

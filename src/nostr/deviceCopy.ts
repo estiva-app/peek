@@ -40,11 +40,12 @@ export const DEVICE_COPY_VERSION = 1
 const DATABASE = 'peek-device-copy'
 
 /**
- * How long a read waits for the stored copy before going without it. The
- * IndexedDB read measured 3–14 ms for 2k–8k events; a browser that takes
- * longer than this is slower than the relay would be.
+ * How long a copy-first read waits for the stored copy. The IndexedDB read
+ * measured 3–14 ms for 2k–8k events, but it queues behind another tab's save;
+ * waiting costs nothing, since the relay's read runs beside it and wins if
+ * it lands first.
  */
-const READY_WAIT_MS = 300
+const READY_WAIT_MS = 3_000
 
 let storage: SnapshotStorage | undefined
 function deviceStorage(): SnapshotStorage {
@@ -55,16 +56,82 @@ function deviceStorage(): SnapshotStorage {
   return storage
 }
 
-let current: { scope: string; snapshot: EventSnapshot } | undefined
+/**
+ * How long after the copy opens it answers reads. It is there for the first
+ * draw; after that the session's own stores hold what was read, and asking the
+ * copy beside every later read would only cost main-thread time.
+ */
+const ANSWERS_FOR_MS = 15_000
+
+/** Whose copy this device last held: somebody else signing in wipes it first. */
+const OWNER_KEY = 'peek-device-copy-owner'
+
+/** Kept as the owner while a sign-out's clear may not have finished: the next copy opened wipes first. */
+const SIGNED_OUT = 'signed-out'
+
+let current: { scope: string; snapshot: EventSnapshot; openedAt: number } | undefined
+/** Set by sign-out: from then on this page keeps nothing, whatever answers still arrive. */
+let leaving = false
+
+function ownerOnDevice(): string | null {
+  try {
+    return localStorage.getItem(OWNER_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberOwner(scope: string): void {
+  try {
+    localStorage.setItem(OWNER_KEY, scope)
+  } catch {
+    // Without storage the copy is this page's alone anyway.
+  }
+}
 
 /** The copy for this person on this relay, opened on first use. One person per tab. */
 function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   const scope = snapshotScope(relayUrl, pubkey)
   if (current?.scope === scope) return current.snapshot
-  current?.snapshot.close()
-  const snapshot = createEventSnapshot({ storage: deviceStorage(), scope, version: DEVICE_COPY_VERSION })
-  current = { scope, snapshot }
+  current?.snapshot.discard()
+  /*
+    Another person's copy on this device — they signed out somewhere other than
+    Peek's menu, or their session ran out — is removed before this one is read:
+    the copy is kept until sign-out, and a different person signing in is one.
+  */
+  const base = deviceStorage()
+  const previous = ownerOnDevice()
+  const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
+  rememberOwner(scope)
+  const storage: SnapshotStorage = {
+    load: (s) => wiped.then(() => base.load(s)),
+    save: (s, change) => base.save(s, change),
+    clear: () => base.clear(),
+  }
+  const snapshot = createEventSnapshot({ storage, scope, version: DEVICE_COPY_VERSION })
+  current = { scope, snapshot, openedAt: Date.now() }
   return snapshot
+}
+
+/** Relay answers waiting to be kept: taken in when the tab is idle, never in front of a click. */
+const toKeep: { snapshot: EventSnapshot; filters: Record<string, unknown>[]; events: SignedEvent[] }[] = []
+let keeping = false
+
+function keepWhenIdle(): void {
+  if (keeping) return
+  keeping = true
+  const run = () => {
+    keeping = false
+    const started = performance.now()
+    // About one frame's work per idle slot, in the order the answers came.
+    while (toKeep.length && performance.now() - started < 12) {
+      const { snapshot, filters, events } = toKeep.shift()!
+      snapshot.absorb(filters, events)
+    }
+    if (toKeep.length) keepWhenIdle()
+  }
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 2_000 })
+  else setTimeout(run, 50)
 }
 
 /**
@@ -72,7 +139,7 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
  * after it: the page's first reads then find it already in memory.
  */
 export function warmDeviceCopy(relayUrl: string | null | undefined, pubkey: string | undefined): void {
-  if (relayUrl && pubkey) copyFor(relayUrl, pubkey)
+  if (relayUrl && pubkey && !leaving) copyFor(relayUrl, pubkey)
 }
 
 function settled<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
@@ -88,8 +155,9 @@ export async function readFromCopy(
   filters: Record<string, unknown>[],
   pubkey: string | undefined,
 ): Promise<SignedEvent[] | null> {
-  if (!pubkey) return null
+  if (!pubkey || leaving) return null
   const snapshot = copyFor(relayUrl, pubkey)
+  if (current && Date.now() - current.openedAt > ANSWERS_FOR_MS) return null
   await settled(snapshot.ready, READY_WAIT_MS)
   return snapshot.answer(filters)
 }
@@ -101,8 +169,9 @@ export function keepRelayAnswer(
   pubkey: string | undefined,
   events: SignedEvent[],
 ): void {
-  if (!pubkey) return
-  copyFor(relayUrl, pubkey).absorb(filters, events)
+  if (!pubkey || leaving) return
+  toKeep.push({ snapshot: copyFor(relayUrl, pubkey), filters, events })
+  keepWhenIdle()
 }
 
 /**
@@ -120,8 +189,12 @@ export function keepPlaintext(ciphertext: string, plaintext: string): void {
 
 /** Sign-out: every copy on this device goes. Never throws, and waits at most `ms`. */
 export async function clearDeviceCopy(ms = 1_000): Promise<void> {
+  leaving = true
   current?.snapshot.discard()
   current = undefined
+  toKeep.length = 0
+  // If the clear below does not finish before the page leaves, the next copy opened wipes first.
+  rememberOwner(SIGNED_OUT)
   await settled(
     deviceStorage()
       .clear()
@@ -134,5 +207,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
 export function resetDeviceCopyForTest(next?: SnapshotStorage): void {
   current?.snapshot.close()
   current = undefined
+  toKeep.length = 0
+  leaving = false
   storage = next
 }
