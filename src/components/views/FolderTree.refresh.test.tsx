@@ -92,7 +92,8 @@ vi.mock('@/api/foreign', () => {
   const objects = {
     listFolders: async () => folders,
     resolveFolderContents: seam.resolveFolderContents,
-    conversations: seam.conversations,
+    // The copy on the device holds nothing here (PEE-2): only the relay's reads are counted.
+    conversations: (files: ForeignObject[], source?: string) => (source === 'copy' ? Promise.resolve({}) : seam.conversations(files)),
     resolveObject: seam.resolveObject,
     resolveFileFolder: async () => null,
   }
