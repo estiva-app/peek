@@ -38,10 +38,8 @@ const view = useFileView({ … })
 - It is a `ToolbarButton`, so it goes inside the header's `Toolbar`.
 - `useFileView` hands back `sidePanel` (from `useSidePanel`) only when the
   column could ever hold something: absent for a read-only file with no card.
-- The state is `useSidePanel`'s: open when the file has something to show,
-  closed when it has nothing, and closed on a file the person closed it on
-  before, remembered per file in this browser. Opening it on an empty file
-  holds for that visit only.
+- The state is `useSidePanel`'s: closed whenever a file is opened, whatever
+  it holds. Opening it holds for that visit only; nothing is remembered.
 
 ## What it owns
 

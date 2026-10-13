@@ -129,7 +129,7 @@ export function useFileView({
   /*
     Activity — the comments elsewhere that name this file (CON-11), read by
     `#a` off the relay for a file Peek's own view draws. It takes the third
-    column when no thread is open and there is something to show; the file's
+    column when no thread is open and the column is shown; the file's
     own conversation is the middle column, and a mention is not part of it
     (`isCommentOn` keeps the two apart on the read).
   */
@@ -148,12 +148,12 @@ export function useFileView({
     its empty line when there are none. A read-only file's are never asked
     for, and an empty line there would claim what nobody looked at.
 
-    Shown when there is something to show, hidden when there is not, and the
-    header's sidebar button says otherwise (`useSidePanel`).
+    Closed whenever a file is opened, whatever it holds; the header's sidebar
+    button opens it (`useSidePanel`, Katerina, 13 October).
   */
   const home = file ? referenceLink(file.naddr ?? file.address ?? file.ref, file) : null
   const cardFile = file && home?.place === 'app' && (file.naddr ?? file.address) ? file : undefined
-  const sidePanel = useSidePanel(file?.address, !!cardFile || mentions.length > 0)
+  const sidePanel = useSidePanel(file?.address)
   const canShow = !!cardFile || ownView
   const aside =
     sidePanel.open && canShow ? (
