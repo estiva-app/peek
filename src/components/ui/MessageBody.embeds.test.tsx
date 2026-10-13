@@ -123,6 +123,11 @@ describe('the card a link on words asks for (OPT-17)', () => {
     expect(drawn).toEqual([{ naddr: ISSUE_URL, layout: undefined }])
   })
 
+  it('a URL written in a link’s label names nothing: the link goes elsewhere', () => {
+    show(`see [${ISSUE_URL}](https://evil.example/login)`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(drawn.filter((d) => d.layout === 'card')).toEqual([])
+  })
+
   it('a link that names nothing by §7.7 carries no card, whatever its embed says', () => {
     const lookalike = 'https://evil.example/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
     show(`see [this](${lookalike})`, [{ value: ISSUE, layout: 'detailed' }])

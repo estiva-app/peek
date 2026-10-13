@@ -41,6 +41,10 @@ export function CardButton({ editor }: { editor: Editor | null }) {
           <IconLayoutBottombar size={16} stroke={1.5} />
         </ToolbarButton>
       }
+      // The menu hands focus back to its button as it closes; the person was writing, so it goes back to the text.
+      onOpenChange={(open) => {
+        if (!open) requestAnimationFrame(() => editor.commands.focus())
+      }}
       className="w-[180px]"
     >
       <MenuSection label="Card">
@@ -49,10 +53,7 @@ export function CardButton({ editor }: { editor: Editor | null }) {
             key={layout}
             label={label}
             selected={at.card === layout}
-            onClick={() => {
-              setCard(editor, at.value, layout)
-              editor.commands.focus()
-            }}
+            onClick={() => setCard(editor, at.value, layout)}
           />
         ))}
       </MenuSection>

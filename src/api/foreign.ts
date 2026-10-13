@@ -115,7 +115,7 @@ export async function referenceFromPastedUrl(url: string): Promise<UrlReference 
 const cardValues = new Map<string, Promise<string | null>>()
 const knownCardValues = new Map<string, string | null>()
 
-/** The `embed` value an app link names, or null — what the composer offers a card for. */
+/** The `embed` value an app link names, or null — what the composer offers a card for. Rejects when the relay could not be asked, so the caller asks again later. */
 export function cardValueOfUrl(url: string): Promise<string | null> {
   const token = validToken()
   if (!RELAY_URL || !token) return Promise.resolve(null)
@@ -126,9 +126,9 @@ export function cardValueOfUrl(url: string): Promise<string | null> {
         knownCardValues.set(url, answer)
         return answer
       },
-      () => {
+      (error: unknown) => {
         cardValues.delete(url)
-        return null
+        throw error
       },
     )
     cardValues.set(url, value)
@@ -148,7 +148,7 @@ export function useLinkResolver(urls: readonly string[]): (url: string) => strin
     let live = true
     const waiting = key ? key.split('\n').filter((url) => !knownCardValues.has(url)) : []
     if (waiting.length === 0) return
-    void Promise.all(waiting.map(cardValueOfUrl)).then(() => {
+    void Promise.all(waiting.map((url) => cardValueOfUrl(url).catch(() => null))).then(() => {
       if (live) setAnswered((n) => n + 1)
     })
     return () => {
