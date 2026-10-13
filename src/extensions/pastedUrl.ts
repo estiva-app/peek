@@ -2,9 +2,7 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import { encodeNaddr, encodeNevent, addressToPointer } from '@estiva-app/protocol'
-import { referenceFromPastedUrl } from '@/api'
-
-type UrlReference = Awaited<ReturnType<typeof referenceFromPastedUrl>>
+import { referenceFromPastedUrl, type UrlReference } from '@/api'
 
 /**
  * A pasted app link becomes its chip while you write — "The composer resolves
@@ -100,10 +98,11 @@ export const PastedUrl = Extension.create<{ resolve: ResolvePastedUrl }>({
 
             const link = schema.marks.link
             const text = schema.text(url, link ? [link.create({ href: url })] : [])
-            const from = selection.from
             const tr = state.tr.replaceSelectionWith(text, false)
+            // Where it landed, which is not always where the caret was.
+            const to = tr.selection.from
             const id = ++nextId
-            tr.setMeta(key, { add: { id, from, to: from + url.length, url } })
+            tr.setMeta(key, { add: { id, from: to - url.length, to, url } })
             view.dispatch(tr.scrollIntoView())
 
             void resolve(url)

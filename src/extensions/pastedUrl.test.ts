@@ -134,6 +134,16 @@ describe('what stays a link', () => {
     expect(editor.state.doc.textContent).toBe('never mind')
   })
 
+  it('sent before the lookup answers: the cleared composer gets no chip', async () => {
+    const { editor, answer } = setup({ address: ISSUE })
+    paste(editor, ISSUE_URL)
+    editor.commands.clearContent(true)
+    editor.commands.insertContent('next message')
+    await answer()
+    expect(chips(editor)).toEqual([])
+    expect(editor.state.doc.textContent).toBe('next message')
+  })
+
   it('a failed lookup leaves the link', async () => {
     editor = new Editor({
       extensions: [peekStarterKit, ObjectMention, PastedUrl.configure({ resolve: () => Promise.reject(new Error('relay down')) })],

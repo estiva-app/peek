@@ -98,6 +98,8 @@ export function useRelayViewer() {
  * (`extensions/pastedUrl.ts`), which runs outside React. Null too without a
  * session or a relay: the link then stays a link.
  */
+export type { UrlReference }
+
 export async function referenceFromPastedUrl(url: string): Promise<UrlReference | null> {
   const token = validToken()
   if (!RELAY_URL || !token) return null
