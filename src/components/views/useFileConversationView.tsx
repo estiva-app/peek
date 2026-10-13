@@ -693,6 +693,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       body: edit?.body ?? event.body,
       editedAt: edit?.editedAt,
       files: (edit?.attachments?.map(relayAttachmentOf) ?? event.files).map(asAttachment),
+      embeds: conversation.editedEmbeds?.[event.id.toLowerCase()] ?? event.embeds,
       reactions: pillsOf(event.id, decoration?.reactions ?? [], viewerPubkey, nameOf),
       resolutions: decoration?.resolutions ?? [],
       canEditAndDelete: offersControls(event),
@@ -714,6 +715,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       nostrReferences: reply.references,
       urgentMentions: reply.urgent,
       parts: reply.parts,
+      embeds: d.embeds,
       nostrEventId: reply.id,
       reactions: d.reactions,
     }
@@ -750,6 +752,7 @@ export function project(conversation: FileConversation, viewerPubkey: string | n
       nostrReferences: root.references,
       urgentMentions: root.urgent,
       parts: root.parts,
+      embeds: d.embeds,
       nostrEventId: root.id,
     }
     byId[root.id] = {

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
+import type { Embed } from '@estiva-app/protocol'
 import { PEEK_EDITOR_CLASSES, peekEditExtensions } from '@/extensions/peekEditor'
 import { SelectionToolbar, isSuggestionActive, isSuggestionOpen } from '@estiva-app/ui/editor'
 import { extractResolution, extractResolutionFromText } from '@/extensions/resolution'
@@ -67,6 +68,8 @@ interface ConversationCardProps {
   urgentMentions?: string[]
   /** The blocks of other objects the message shows (SPEC §13.6.1, COM-2). */
   parts?: { address: string; block: string; anchor?: true }[]
+  /** The cards its author asked for (SPEC §13.6.2). */
+  embeds?: readonly Embed[]
   /** Which block of the referenced object this is about — SPEC §13.6. */
   nostrBlockId?: string
   onHighlightChange?: (type: HighlightType | undefined) => void
@@ -120,6 +123,7 @@ export function ConversationCard({
   nostrReferences,
   urgentMentions,
   parts,
+  embeds,
   nostrBlockId,
   highlightType,
   onHighlightChange,
@@ -622,7 +626,7 @@ export function ConversationCard({
           </div>
 
           <div className="pl-8 pr-2 pt-1 pb-2 w-full">
-            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} parts={parts} />
+            <MessageBody body={bodyState} nostrReferences={nostrReferences} nostrBlockId={nostrBlockId} urgentMentions={urgentMentions} parts={parts} embeds={embeds} />
           </div>
           </>
           )}

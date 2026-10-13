@@ -48,11 +48,13 @@ import {
   buildMessage,
   buildReaction,
   buildResolution,
+  embedsOf,
   imetaOf,
   imetaTag,
   KIND,
   blockAnchorOf,
   partsOf,
+  type Embed,
   type Imeta,
   type NostrTag,
   type PartPointer,
@@ -61,7 +63,7 @@ import {
   type SignedEvent,
   type UnsignedEvent,
 } from '@estiva-app/protocol'
-import { anchorsOf, decorationsOf, groupThreads, isCommentOn, mentionTagsFor, parentOf, quoteTagsFor, referenceTagsFor, URGENT_TAG, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
+import { anchorsOf, decorationsOf, foldEmbeds, groupThreads, isCommentOn, KIND_EDIT, mentionTagsFor, parentOf, quoteTagsFor, referenceTagsFor, URGENT_TAG, urgentTagsFor, type Decorations } from '@estiva-app/conversation'
 import type { QueryFn, Threads } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import type { UnsignedActionEvent } from '@estiva-app/interop'
@@ -109,6 +111,8 @@ export interface ConversationEvent extends FileComment {
   urgent?: string[]
   /** The blocks of other objects it shows — its `part` tags (SPEC §13.6.1, COM-2). Absent: none. */
   parts?: ConversationPart[]
+  /** The cards its author asked for — its `embed` tags (SPEC §13.6.2). Absent: none. */
+  embeds?: Embed[]
   /**
    * A root that was deleted while replies to it stay (PER-24): a stand-in with
    * the deleted event's id, no author and no body, dated by its first reply.
@@ -128,6 +132,12 @@ export interface FileConversation {
    * could not reach (`@estiva-app/conversation`'s `decorationsOf`, CON-5).
    */
   decorations: Decorations
+  /**
+   * The cards an edit chose instead, by lowercase id — the latest edit carrying
+   * an `embed` replaces the message's own set (§6.8, `foldEmbeds`). A message no
+   * edit re-chose is absent, and so is the whole map on a copy saved before it.
+   */
+  editedEmbeds?: Record<string, Embed[]>
 }
 
 /** An attachment the composer uploaded — what `UploadedFile` carries once the blob reached the relay. */
@@ -146,6 +156,7 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
   references: event ? referencesOf(event, address) : [],
   urgent: event ? urgentOf(event) : [],
   parts: event ? partsAndAnchorOf(event) : [],
+  embeds: event ? embedsOf(event) : [],
 })
 
 /**
@@ -419,6 +430,7 @@ async function channelConversationWith(h: string, query: QueryFn): Promise<FileC
     references: referencesOf(event, ''),
     urgent: urgentOf(event),
     parts: partsAndAnchorOf(event),
+    embeds: embedsOf(event),
   })
   const threaded = groupThreads([...messages.values()])
   const roots = threaded.roots.map(asEvent)
@@ -437,8 +449,18 @@ export async function decorate(roots: ConversationEvent[], replies: Record<strin
   // A deleted root's stand-in has nothing done to it that anyone can see.
   // Each target's body goes with it, so "edited" means the body changed (SPEC §6.8).
   const targets = [...roots.filter((r) => !r.deleted), ...Object.values(replies).flat()].map((e) => ({ id: e.id, at: e.createdAt, body: e.body }))
-  const decorations = await decorationsOf(targets, query)
-  return { roots, replies, decorations }
+  // The edits that read fetches carry the cards an edit re-chose too, so they are
+  // kept on the way past rather than asked for a second time.
+  const edits: SignedEvent[] = []
+  const recording: QueryFn = async (filters) => {
+    const answer = await query(filters)
+    for (const event of answer) if (event.kind === KIND_EDIT) edits.push(event)
+    return answer
+  }
+  const decorations = await decorationsOf(targets, recording)
+  const ids = new Set(targets.map((t) => t.id.toLowerCase()))
+  const editedEmbeds = Object.fromEntries(Object.entries(foldEmbeds(edits)).filter(([id]) => ids.has(id)))
+  return { roots, replies, decorations, editedEmbeds }
 }
 
 /** What a write reports: the relay's answer, and the event's id when it took it. */

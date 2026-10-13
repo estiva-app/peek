@@ -41,7 +41,7 @@
  * refused — a dead token, an outage — surfaces as `RelayReadError` so the hook
  * can keep the last answer rather than draw an empty list.
  */
-import { KIND, type SignedEvent } from '@estiva-app/protocol'
+import { embedsOf, KIND, type Embed, type SignedEvent } from '@estiva-app/protocol'
 import type { QueryFn } from '@estiva-app/interop'
 import type { StoredToken } from '@/auth/estivaId'
 import { queryRelay } from './bridge'
@@ -75,6 +75,8 @@ export interface FileMention {
   /** Whom it names urgently — its `urgent` tags (SPEC §13.1, CON-24). */
   urgent: string[]
   files: RelayAttachment[]
+  /** The cards its author asked for — its `embed` tags (SPEC §13.6.2). Absent: none. */
+  embeds?: Embed[]
 }
 
 /**
@@ -130,6 +132,7 @@ export function fileMentionsOf(events: readonly SignedEvent[], address: string, 
       references,
       urgent: urgentOf(event),
       files: attachmentsOf(event),
+      embeds: embedsOf(event),
     })
   }
   return out.sort((a, b) => b.createdAt - a.createdAt)
@@ -229,6 +232,7 @@ export async function mentionConversationWith(mentions: readonly FileMention[], 
     files: attachmentsOf(event),
     references: [],
     urgent: urgentOf(event),
+    embeds: embedsOf(event),
   })
   const roots: ConversationEvent[] = mentions.map((m) => ({
     id: m.id,
@@ -239,6 +243,7 @@ export async function mentionConversationWith(mentions: readonly FileMention[], 
     files: m.files,
     references: m.references,
     urgent: m.urgent,
+    embeds: m.embeds,
   }))
   const threadIds = new Set(mentions.filter((m) => m.threadId === m.id).map((m) => m.id))
   const events = threadIds.size

@@ -16,12 +16,17 @@ import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { PartCard } from './PartCard'
 import { useResolvedReferences } from '@/api'
 import {
+  bech32Decode,
+  cardsIn,
+  convertBits,
+  decodeNevent,
   findNaddrs,
   pointerToAddress,
   referenceToPointer,
   referencesIn,
   standaloneReference,
   toRenderTree,
+  type Embed,
 } from '@estiva-app/protocol'
 
 /**
@@ -109,6 +114,22 @@ function addressOf(ref: string): string {
   }
 }
 
+/** The address or event id a `nostr:` reference names — what an `embed` carries for it. Ship's `valueOfReference`. */
+function valueOfReference(reference: string): string | undefined {
+  try {
+    if (/^nostr:nevent1/i.test(reference)) return decodeNevent(reference).id.toLowerCase()
+    if (/^nostr:naddr1/i.test(reference)) return pointerToAddress(referenceToPointer(reference))
+    if (/^nostr:note1/i.test(reference)) {
+      const { hrp, data } = bech32Decode(reference.slice('nostr:'.length).toLowerCase())
+      const id = convertBits(data, 5, 8, false).map((b) => b.toString(16).padStart(2, '0')).join('')
+      return hrp === 'note' && /^[0-9a-f]{64}$/.test(id) ? id : undefined
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
 function dedupeReferences(refs: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -125,7 +146,7 @@ function dedupeReferences(refs: string[]): string[] {
  * The text of a message or reply, formatted, with its mentions and links, and a
  * card below for each item from another app it mentions.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, follow = true }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`. */ parts?: readonly { address: string; block: string; anchor?: true }[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, follow = true }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`. */ parts?: readonly { address: string; block: string; anchor?: true }[]; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
   // NIP-27: a `nostr:naddr…` anywhere in the body refers to another app's
   // object. Rendered as a block BELOW the text rather than inline, because a
   // widget is not a word.
@@ -167,7 +188,50 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
    * for the same body to render the same way in both.
    */
   const blocks = body ? toRenderTree(body, 'marker') : []
-  const standalone = blocks.map(standaloneReference).filter((ref): ref is string => !!ref)
+  /*
+    A block of another object, shown live (SPEC §13.6.1, COM-2) — only while the
+    body still names that object, because an edit carries no `part` and a person
+    who took the link out meant the card to go with it. The body names it by a
+    `nostr:naddr…` or by a pasted app link, whose path ends in the object's `d`.
+    The part's card stands for the object, so its plain widget is not drawn too.
+  */
+  const urls = findUrls(body)
+  const named = new Set(findNaddrs(body).map(addressOf))
+  // A comment's anchor (§13.6) is what it is about, not something it names, so
+  // it is drawn above the text whatever the body says — with the same card.
+  const anchored = (parts ?? []).filter((part) => part.anchor)
+  const shown = (parts ?? [])
+    .filter(({ address, anchor }) => {
+      if (anchor) return false
+      return named.has(address) || urls.some((url) => urlNames(url, address))
+    })
+    // Each card reads the relay on its own schedule; a message is a remark, not
+    // a dashboard, and one with dozens of links would spend every viewer's quota.
+    .slice(0, MAX_PARTS_PER_MESSAGE)
+  const shownAddresses = new Set(shown.map((part) => part.address))
+  /*
+    The cards its author asked for (SPEC §13.6.2) — the package's rule,
+    `cardsIn`, asked as Ship's `cardsOf` asks it, so the two apps draw the same
+    message the same way. A value with an `embed` is the author's call: alone on
+    its line it stays in the text as its chip instead of becoming the attached
+    card, and the layout they chose draws below — or nothing, for `none`. Each
+    is keyed by the reference the body wrote, which is what resolves. No app
+    link names a card yet: that needs a §7.7 resolver passed to `cardsIn`.
+  */
+  const written = new Map<string, string>()
+  for (const reference of embeds?.length ? referencesIn(blocks) : []) {
+    const value = valueOfReference(reference)
+    if (value && !written.has(value)) written.set(value, reference)
+  }
+  const cards = embeds?.length
+    ? cardsIn(embeds, blocks, shown).flatMap((card) => {
+        const reference = written.get(card.value)
+        return reference ? [{ ...card, reference }] : []
+      })
+    : []
+  const chosen = new Set(cards.map((card) => card.value))
+  const isChosen = (reference: string) => chosen.has(valueOfReference(reference) ?? '')
+  const standalone = blocks.map(standaloneReference).filter((ref): ref is string => !!ref && !isChosen(ref))
   const inline = referencesIn(blocks).filter((ref) => !standalone.includes(ref))
   /*
     What the caller already has, if anything. `resolvedObjects` is the seam for
@@ -217,27 +281,6 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const attachedEvents = standalone
     .filter((ref) => /^nostr:(?:nevent|note)1/i.test(ref))
     .map((ref) => ref.replace(/^nostr:/i, ''))
-  /*
-    A block of another object, shown live (SPEC §13.6.1, COM-2) — only while the
-    body still names that object, because an edit carries no `part` and a person
-    who took the link out meant the card to go with it. The body names it by a
-    `nostr:naddr…` or by a pasted app link, whose path ends in the object's `d`.
-    The part's card stands for the object, so its plain widget is not drawn too.
-  */
-  const urls = findUrls(body)
-  const named = new Set(findNaddrs(body).map(addressOf))
-  // A comment's anchor (§13.6) is what it is about, not something it names, so
-  // it is drawn above the text whatever the body says — with the same card.
-  const anchored = (parts ?? []).filter((part) => part.anchor)
-  const shown = (parts ?? [])
-    .filter(({ address, anchor }) => {
-      if (anchor) return false
-      return named.has(address) || urls.some((url) => urlNames(url, address))
-    })
-    // Each card reads the relay on its own schedule; a message is a remark, not
-    // a dashboard, and one with dozens of links would spend every viewer's quota.
-    .slice(0, MAX_PARTS_PER_MESSAGE)
-  const shownAddresses = new Set(shown.map((part) => part.address))
   const attachments = [
     ...references.filter((ref) => !drawnInline.has(addressOf(ref)) && !shownAddresses.has(addressOf(ref))),
     ...attachedEvents,
@@ -253,15 +296,29 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
       {anchored.length > 0
         ? anchored.map((part) => <PartCard key={part.address} address={part.address} block={part.block} />)
         : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />}
-      {/* A block that is nothing but a reference is drawn below as a card, so it leaves the text. */}
+      {/* A block that is nothing but a reference is drawn below as a card, so it leaves the text — unless its author chose the card. */}
       <RichText
-        blocks={blocks.filter((block) => !standaloneReference(block))}
+        blocks={blocks.filter((block) => {
+          const reference = standaloneReference(block)
+          return !reference || isChosen(reference)
+        })}
         renderText={renderTokens}
         renderReference={(reference) => <Reference uri={reference} object={resolved[reference]} urgent={urgentMentions} />}
       />
       {attachments.map((naddr) => (
         <ForeignObjectWidget key={naddr} naddr={naddr} resolved={supplied(naddr)} />
       ))}
+      {cards
+        .filter((card) => card.layout !== 'none')
+        .map((card) => (
+          <div key={card.value} data-card={card.layout}>
+            <ForeignObjectWidget
+              naddr={card.reference.replace(/^nostr:/i, '')}
+              resolved={supplied(card.reference)}
+              layout={card.layout === 'detailed' ? 'card' : 'row'}
+            />
+          </div>
+        ))}
       {/*
         A pasted app URL, rendered as the object it names — RFC 0.5 §7.5,
         PRO-15. The link stays in the prose: unlike an `naddr`, which PEEK-18
