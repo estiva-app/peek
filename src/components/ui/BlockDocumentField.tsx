@@ -11,7 +11,7 @@ import {
   type EditorDocument,
 } from '@estiva-app/protocol'
 import { richTextClassName } from '@estiva-app/ui'
-import { AttachmentNode, BlockId, CodeBlockColours, ReferenceNode, SelectionToolbar, UnknownBlock } from '@estiva-app/ui/editor'
+import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -58,10 +58,16 @@ export function BlockDocumentField({
   const committing = useRef(false)
   const saved = useRef(value)
   const typed = useRef<EditorDocument | null>(null)
+  const again = useRef(false)
 
   const save = useCallback(
     async (doc: EditorDocument | null) => {
-      if (committing.current || !doc) return
+      if (!doc) return
+      // A change made while a save is out — a second tick right after the first — goes next, not nowhere (Ship's rule).
+      if (committing.current) {
+        again.current = true
+        return
+      }
       const next = publishableFromEditor(doc)
       if (next.value === saved.current) return
       committing.current = true
@@ -69,6 +75,10 @@ export function BlockDocumentField({
         if (await onCommit(next.value, next.contentFormat)) saved.current = next.value
       } finally {
         committing.current = false
+        if (again.current) {
+          again.current = false
+          void latestSave.current(typed.current)
+        }
       }
     },
     [onCommit],
@@ -96,6 +106,9 @@ export function BlockDocumentField({
         CodeBlockColours,
         TableKit.configure({ table: { resizable: false } }),
         BlockId,
+        // A checklist item and a callout (RIC-19), as Ship's; without them a save drops the tick and the tone.
+        Checklist,
+        Callout,
         ReferenceNode,
         UnknownBlock,
         AttachmentNode,
@@ -121,9 +134,11 @@ export function BlockDocumentField({
           return true
         },
       },
-      onUpdate: ({ editor: e }) => {
+      onUpdate: ({ editor: e, transaction }) => {
         typed.current = e.getJSON() as EditorDocument
         setEmpty(e.isEmpty)
+        // A click on a box does not focus the field, so no blur will save it: one click ticks, and is saved (RIC-19, Miky 2026-10-13).
+        if (isChecklistTick(transaction)) void latestSave.current(typed.current)
       },
       onBlur: () => void latestSave.current(typed.current),
     },
