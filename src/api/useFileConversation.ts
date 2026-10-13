@@ -298,6 +298,8 @@ export function useFileConversation(
         if (found.lost) {
           // The Folder is no longer the viewer's: nothing held is drawn again, and the page reads what it may now see.
           conversations.drop(key)
+          // Nor the copy's: it is older still.
+          setFromCopy(undefined)
           const startedAt = Date.now()
           const { value, events } = await readConversation(container, roots, query)
           conversations.replace(key, value, events, startedAt)
@@ -314,7 +316,10 @@ export function useFileConversation(
           error instanceof RelayReadError ? error.kind : classifyRelayFailure((error as Error)?.message ?? '')
         if (isOutage(kind)) recordReadFailure(kind)
         console.warn('[nostr] file conversation read failed:', error)
-        if (kind === 'not_a_member') conversations.drop(key)
+        if (kind === 'not_a_member') {
+          conversations.drop(key)
+          setFromCopy(undefined)
+        }
         if (kind === 'not_a_member' || conversations.value(key) === undefined) setFailure({ key, failed: kind })
       }
     })

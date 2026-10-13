@@ -180,10 +180,11 @@ function useResolvedForeign(naddr: string | null | undefined): {
     { enabled: !!naddr },
   )
 
+  // A file drawn from the copy gives way to the relay refusing it: the Folder is no longer the viewer's.
   const state: ForeignConversationState =
     !naddr || !entry
       ? 'loading'
-      : entry.value !== undefined
+      : entry.value !== undefined && !(entry.seeded && entry.failure === 'not_a_member')
         ? (entry.value ?? 'unresolved')
         : entry.failure
           ? { failed: entry.failure }

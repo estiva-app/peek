@@ -111,11 +111,10 @@ describe('listingCache', () => {
     expect(cache.peek('b')?.value).toBe('from the relay')
   })
 
-  it('a read that fails after a seed keeps the seed on screen (PEE-4)', async () => {
+  it('a read that fails after a seed keeps the seed, and says why beside it (PEE-4)', async () => {
     const cache = createListingCache<string, 'unreachable'>()
     cache.seed('a', 'from the copy')
     await cache.read('a', async () => ({ ok: false, failure: 'unreachable' }))
-    expect(cache.peek('a')).toMatchObject({ value: 'from the copy', seeded: true })
-    expect(cache.peek('a')?.failure).toBeUndefined()
+    expect(cache.peek('a')).toMatchObject({ value: 'from the copy', seeded: true, failure: 'unreachable' })
   })
 })

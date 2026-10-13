@@ -115,6 +115,16 @@ describe('useFolders', () => {
     expect(seam.listFolders).toHaveBeenCalledTimes(1)
   })
 
+  it('a relay that refuses the person outright replaces the copy’s listing with nothing', async () => {
+    seam.listFolders.mockRejectedValue(new RelayReadError('relay_membership_required'))
+    seam.listFoldersFromDevice.mockResolvedValueOnce([TEAM])
+    const { result } = renderHook(() => useFolders())
+    await settle()
+    await settle()
+    expect(result.current.folders).toEqual([])
+    expect(result.current.failed).toBe(true)
+  })
+
   it('negative control: a copy that answers after the relay is not drawn', async () => {
     let copied: (folders: FolderSummary[]) => void = () => {}
     seam.listFolders.mockResolvedValueOnce([TEAM, PLACED])

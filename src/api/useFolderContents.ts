@@ -111,8 +111,8 @@ function loadFolderContents(
 function seedFolderContents(fromDevice: (folder: string) => Promise<FolderContents | undefined>, folder: string): void {
   fromDevice(folder)
     .then((contents) => {
+      // Not into `listedIn`: OPT-9 opens a file as its latest listing holds it, and the copy's may be older.
       if (!contents || folderContentsCache.peek(folder)?.value !== undefined) return
-      listedIn.set(folder, contents.files)
       folderContentsCache.seed(folder, contents)
     })
     .catch(() => {})
@@ -228,7 +228,9 @@ export function useFolderContents(
     if (folder) void reload()
   }, { enabled: !!folder })
 
-  const state: FolderContentsState = entry?.value ?? (entry?.failure ? { failed: entry.failure } : 'loading')
+  // Contents drawn from the copy give way to the relay refusing the Folder.
+  const refused = entry?.seeded && entry.failure === 'not_a_member'
+  const state: FolderContentsState = (!refused && entry?.value) || (entry?.failure ? { failed: entry.failure } : 'loading')
 
   return { state, reload }
 }
@@ -346,8 +348,9 @@ export function useFolders(): {
     void folderListing.ensure(load)
   }, [load, listFoldersFromDevice])
 
-  // The relay's answer, once there is one; until then, the copy's.
-  const held = snapshot.value !== undefined ? snapshot.value : seeded
+  // The relay's answer, once there is one; until then, the copy's — unless the relay refused the person outright.
+  const refused = snapshot.error !== undefined && ['not_a_member', 'refused'].includes(relayFailureKind(snapshot.error))
+  const held = snapshot.value !== undefined ? snapshot.value : refused ? undefined : seeded
   // A first read that failed draws as an empty workspace, as it always has; a signed-out answer is `null`.
   const folders = held !== undefined ? held : snapshot.error !== undefined ? [] : null
   return { folders, signedOut: held === null, failed: held === undefined && snapshot.error !== undefined, reload }

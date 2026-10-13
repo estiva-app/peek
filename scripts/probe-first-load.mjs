@@ -63,6 +63,21 @@ const topicsLink = `document.querySelector('a[href="/app/folders"]')`
 // A reload is no sign-in bounce: the next document starts the count again (the recorder's `fl.first`).
 const reload = (texts) => ['--eval', `(() => { sessionStorage.setItem('fl.texts', ${JSON.stringify(JSON.stringify(texts))}); sessionStorage.removeItem('fl.first'); setTimeout(() => location.reload(), 20); return 'reloading' })()`, '--wait', '1500']
 const report = ['--eval', '__fl.report()']
+// Opening a path as a new document, like a reload: the next document starts the count again.
+const open = (path, texts) => ['--eval', `(() => { sessionStorage.setItem('fl.texts', ${JSON.stringify(JSON.stringify(texts))}); sessionStorage.removeItem('fl.first'); setTimeout(() => location.assign(${JSON.stringify(path)}), 20); return 'opening' })()`, '--wait', '1500']
+const liveDesk = ['--until', '(() => !window.__peekPicture || window.__peekPicture.liveAt !== undefined)()']
+/**
+ * The Topics tree's rows and unread dots (PEE-4): `picture` keeps what is drawn now — the saved picture while it
+ * shows — and any later moment reads the live tree against it, so a row that moved or a dot that went is printed.
+ */
+const treeDrawn = (moment) =>
+  `(() => {
+    const of = (root) => { const m = root?.querySelector('main'); return m ? { text: m.textContent.replace(/\\s+/g, ' ').trim(), dots: m.querySelectorAll('[data-unread]').length } : null }
+    const shown = of(document.getElementById('peek-picture')) ?? of(document.getElementById('root'))
+    if (${JSON.stringify(moment)} === 'picture') { window.__treeFirst = shown; return JSON.stringify({ tree: 'first drawn', dots: shown?.dots }) }
+    const first = window.__treeFirst
+    return JSON.stringify({ tree: ${JSON.stringify(moment)}, dots: shown?.dots, sameRows: first?.text === shown?.text, sameDots: first?.dots === shown?.dots })
+  })()`
 
 /**
  * What a tab holds after signing out (PEE-3): the session in `localStorage`, the copy on the device in IndexedDB
@@ -142,8 +157,9 @@ const legs = {
     ],
     phases: [['Open work topic, first open', 0, 'Open work topic'], ['Starred DM, first open', 0, 'Starred DM'], ['Topics, first open', 0, 'Topics']],
   }),
-  // PEE-4: after a visit, a reload at Topics draws the tree from the copy on the device, and right after a reload
-  // at Desk the Open work topic and the Starred DM draw from it too — the copy answers for 15 s after it opens.
+  // PEE-4: after a visit, a reload at Topics draws the tree at once, with the rows and dots it keeps once the relay
+  // answers; after a reload at Desk the Open work topic and the Starred DM draw from the copy — right away, and a
+  // minute later, since the copy answers at any time.
   again: (w) => ({
     url: '/app/desk',
     first: { '/app/desk': w.desk, '/app/folders': TREE },
@@ -152,10 +168,15 @@ const legs = {
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
       ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000',
       ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000', ...report,
-      ...reload(TREE), ...settled(), '--wait', '3000', ...report,
+      // The tree's rows and unread dots as first drawn (the saved picture), and once the relay has answered: the same.
+      ...reload(TREE), ...settled(), '--eval', treeDrawn('picture'), '--wait', '3000', '--eval', treeDrawn('after the relay'), ...report,
       '--eval', `(() => { document.querySelector('a[href="/app/desk"]').click(); return 'desk' })()`, '--wait', '2000',
       // A click on the saved Desk is dropped (the project's Later list): click once the live Desk has taken over.
-      ...reload(w.desk), ...settled(), '--until', '(() => !window.__peekPicture || window.__peekPicture.liveAt !== undefined)()',
+      ...reload(w.desk), ...settled(), ...liveDesk,
+      ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '1000',
+      ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000', ...report,
+      // A minute after opening Peek: the copy still answers a first open (Miky, 13 Oct).
+      ...open('/app/desk', w.desk), ...settled(), ...liveDesk, '--wait', '60000',
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '1000',
       ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000', ...report,
       // A new tab at Topics (Miky, 13 Oct: in this ticket); its recorder takes the tree's texts by path.
@@ -164,7 +185,8 @@ const legs = {
     phases: [
       ['visit: Topics, first open', 0, 'Topics'], ['reload → Topics', 1, 'load'], ['reload → Desk', 2, 'load'],
       ['Open work topic, after reload', 2, 'Open work topic'], ['Starred DM, after reload', 2, 'Starred DM', 'messages'],
-      ['new tab → Topics', 3, 'load'],
+      ['Open work topic, a minute on', 3, 'Open work topic'], ['Starred DM, a minute on', 3, 'Starred DM', 'messages'],
+      ['new tab → Topics', 4, 'load'],
     ],
   }),
   long: (w) => ({

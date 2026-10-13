@@ -503,6 +503,15 @@ export async function resolveObjectAsViewer(
  * manifest caches of its own: what the copy lacks must not be held as a miss or
  * a failure the relay's answer would then wait out (PEE-2).
  */
+/**
+ * Nothing publishes over the copy (PEE-2): an edit started from it would write
+ * its older value over a newer one. Until the relay's answer replaces it, an
+ * object from the copy offers only a comment, which overwrites nothing.
+ */
+function drawOnly(object: ForeignObject | null): ForeignObject | null {
+  return object ? { ...object, actions: (object.actions ?? []).filter((action) => action.id === 'comment') } : null
+}
+
 function fromCopy(relayUrl: string, token: StoredToken) {
   const query = copyQuery(relayUrl, token)
   return { query, people: createPeopleCache().viaRelay(query), cache: createProjectionCache(0) }
@@ -523,8 +532,8 @@ export async function resolveObjectFromCopy(
   if (/^https?:\/\//i.test(reference)) return undefined
   const { query, people, cache } = fromCopy(relayUrl, token)
   try {
-    if (isEventReference(reference)) return (await resolveForeignEvent(reference, query, people, cache)) ?? undefined
-    return (await resolveForeignObject(reference, query, people, 0, cache, options)) ?? undefined
+    if (isEventReference(reference)) return drawOnly(await resolveForeignEvent(reference, query, people, cache)) ?? undefined
+    return drawOnly(await resolveForeignObject(reference, query, people, 0, cache, options)) ?? undefined
   } catch {
     return undefined
   }
@@ -605,8 +614,8 @@ export async function resolveObjectsAsViewer(
       ),
     )
     const found: Record<string, ForeignObject | null> = Object.assign({}, ...drawn)
-    if (!addresses.length) return found
-    return { ...found, ...(await filesFromCopy(fromCopy, people, cache, messages.length > 0)) }
+    const all = addresses.length ? { ...found, ...(await filesFromCopy(fromCopy, people, cache, messages.length > 0)) } : found
+    return Object.fromEntries(Object.entries(all).map(([reference, object]) => [reference, drawOnly(object)]))
   }
   const query = viewerQuery(relayUrl, token)
   const [pooled, singles] = await Promise.all([
@@ -1018,7 +1027,8 @@ export async function resolveFolderContentsAsViewer(
   if (source === 'copy') {
     // Throws when the copy has not seen every read the listing makes (PEE-4).
     const copy = fromCopy(relayUrl, token)
-    return resolveFolderContents(folder, copy.query, copy.people, copy.cache, options)
+    const contents = await resolveFolderContents(folder, copy.query, copy.people, copy.cache, options)
+    return { ...contents, files: contents.files.map((file) => drawOnly(file)!) }
   }
   const query = viewerQuery(relayUrl, token)
   return resolveFolderContents(folder, query, cachedPeople(query), manifests, options)

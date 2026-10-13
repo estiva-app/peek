@@ -21,6 +21,7 @@ vi.mock('@/api', () => ({ useForeignObjects: () => seam }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
 
 import { useForeignConversation } from './useForeignConversation'
+import { RelayReadError } from '@/nostr/relayRead'
 
 const SHIP = 'b'.repeat(64)
 const PROJECT = `30850:${SHIP}:ef024737-6b8f-4e79-ab16-f56fbf7898f2`
@@ -46,6 +47,13 @@ describe('useForeignConversation draws a file from the copy on the device until 
     await waitFor(() => expect(result.current.state).toMatchObject({ address: ISSUE, slots: { title: { value: 'Copied' } } }))
     await act(async () => answer(foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM, slots: { title: { value: 'Live' } } })))
     expect(result.current.state).toMatchObject({ slots: { title: { value: 'Live' } } })
+  })
+
+  it('a Folder the viewer has lost is said, not drawn from the copy', async () => {
+    seam.resolveObject.mockRejectedValue(new RelayReadError('relay_membership_required'))
+    seam.resolveObjectFromDevice.mockResolvedValue(foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM }))
+    const { result } = renderHook(() => useForeignConversation(ISSUE))
+    await waitFor(() => expect(result.current.state).toEqual({ failed: 'not_a_member' }))
   })
 
   it('a file the relay no longer resolves replaces the copy’s, and a file with no Folder is not drawn from it', async () => {

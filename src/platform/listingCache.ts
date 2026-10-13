@@ -43,7 +43,7 @@ export type ListingLoad<T, F> = { ok: true; value: T } | { ok: false; failure: F
 export interface ListingEntry<T, F> {
   /** The last answer, if any read has succeeded. */
   value?: T
-  /** Why the last read failed — only when there is no value to keep. */
+  /** Why the last read failed — only when there is no value to keep, or the value is a seed. */
   failure?: F
   /** When `value` or `failure` was set; 0 while the first read is in flight. */
   at: number
@@ -111,7 +111,9 @@ export function createListingCache<T, F>(options: ListingCacheOptions = {}): Lis
         if (started !== generation) return
         const before = entries.get(key)
         if (answer?.ok) set(key, { value: answer.value, at: now() })
-        else if (before?.value !== undefined) set(key, { value: before.value, at: before.at, seeded: before.seeded })
+        // A seed is not an answer: the failure is kept beside it, for a reader that must not draw over a refusal.
+        else if (before?.value !== undefined)
+          set(key, { value: before.value, at: before.at, ...(before.seeded ? { seeded: true as const, failure: answer?.failure } : {}) })
         else set(key, { failure: answer?.failure, at: now() })
       })
     set(key, { ...held, at: held?.at ?? 0, inflight })
