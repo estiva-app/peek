@@ -3,7 +3,8 @@
 // A phase is opened by `__fl.phase(label, texts)`; its marks are when its texts, a composer, the first message and
 // a page with no placeholders were first on screen. `__fl.report()` returns everything as JSON.
 ;(() => {
-  if (!location.hostname.startsWith('peek.')) return
+  // localhost: a local build served at the origin Estiva ID accepts, with real HTTP caching.
+  if (!location.hostname.startsWith('peek.') && location.hostname !== 'localhost') return
   const now = () => Math.round(performance.now())
   const fl = (window.__fl = { phases: [], ws: [], subs: [], refusals: [] })
   let cur = null
@@ -150,6 +151,8 @@
       beforeThisDoc: Math.round(fl.origin - (fl.first ?? fl.origin)),
       nav: nav && { responseEnd: Math.round(nav.responseEnd), dcl: Math.round(nav.domContentLoadedEventEnd), load: Math.round(nav.loadEventEnd) },
       paint,
+      // The saved Desk index.html showed, and when the live Desk replaced it (src/lib/deskPicture.ts).
+      picture: window.__peekPicture ?? null,
       phases: fl.phases.map(({ texts, ...p }) => ({ ...p, pulses: p.pulses.slice(0, 12), jumps: p.jumps.slice(0, 20) })),
       ws: fl.ws,
       subs: fl.subs.map((x) => [x.at, x.eose ?? null, x.n, x.what]),

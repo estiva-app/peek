@@ -232,6 +232,10 @@ function print({ as, leg, run, docs, http429, opened, reads }, phases) {
     const at = phase.marks[markName] ?? phase.marks.allTexts
     const took = at === undefined ? 'never' : `${before + at - phase.at} ms${phase.marks[markName] === undefined ? ' (placeholders left)' : ''}`
     const extra = []
+    // A page's own load, counted from its navigation start rather than the recorder's first script: what the
+    // 200 ms new-tab target is measured against.
+    if (phaseLabel === 'load' && at !== undefined) extra.push(`from navigation start ${at} ms`)
+    if (phaseLabel === 'load' && doc.picture) extra.push(`saved Desk shown ${doc.picture.shownAt} ms, live ${doc.picture.liveAt ?? 'never'} ms`)
     if (before) extra.push(`sign-in bounce ${before} ms`)
     if (phase.marks.composer !== undefined && markName !== 'composer') extra.push(`composer ${phase.marks.composer - phase.at} ms`)
     if (phase.marks.messages !== undefined) extra.push(`first message ${phase.marks.messages - phase.at} ms`)
