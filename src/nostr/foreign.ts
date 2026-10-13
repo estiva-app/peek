@@ -540,6 +540,10 @@ export async function fileCandidatesAsViewer(
  * **Throws `RelayReadError` when the pooled read is refused**, where the single
  * form answers null. A set re-read on a timer must be able to keep what it held
  * rather than blank every row at once; a caller that wants null catches it.
+ *
+ * From the copy (`source: 'copy'`), a set answers the files the copy holds
+ * whole and leaves the rest out — no key, not null, since the copy not holding
+ * a file says nothing about whether it exists. Only a lone file it lacks throws.
  */
 export async function resolveObjectsAsViewer(
   references: readonly string[],
@@ -569,7 +573,12 @@ export async function resolveObjectsAsViewer(
         file on its own draws when the copy holds all of it; the rest wait.
       */
       const each = await Promise.all(
-        addresses.map((address) => resolveForeignObjects([address], fromCopy, people, cache).catch(() => ({}))),
+        addresses.map((address) =>
+          resolveForeignObjects([address], fromCopy, people, cache).catch((missed: unknown) => {
+            if (missed instanceof RelayReadError) return {}
+            throw missed
+          }),
+        ),
       )
       return Object.assign({}, ...each) as Record<string, ForeignObject | null>
     }
