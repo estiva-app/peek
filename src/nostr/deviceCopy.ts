@@ -64,10 +64,10 @@ function deviceStorage(): SnapshotStorage {
 const ANSWERS_FOR_MS = 15_000
 
 /** Whose copy this device last held: somebody else signing in wipes it first. */
-const OWNER_KEY = 'peek-device-copy-owner'
+export const OWNER_KEY = 'peek-device-copy-owner'
 
 /** Kept as the owner while a sign-out's clear may not have finished: the next copy opened wipes first. */
-const SIGNED_OUT = 'signed-out'
+export const SIGNED_OUT = 'signed-out'
 
 let current: { scope: string; snapshot: EventSnapshot; openedAt: number } | undefined
 /** Set by sign-out: from then on this page keeps nothing, whatever answers still arrive. */

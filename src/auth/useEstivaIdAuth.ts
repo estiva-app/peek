@@ -44,19 +44,23 @@ export function useEstivaIdAuth() {
   // A session that appears again after this page lost it — somebody signing in
   // in another tab, perhaps somebody else — is entered by reloading, never by
   // re-mounting: this page's stores still hold what the last session read.
+  // The same goes for a token for somebody else replacing this one outright: the
+  // live socket authenticated as the person this page loaded with.
   const lost = useRef(false)
+  const person = useRef(validToken()?.pubkey)
   useEffect(() => {
     const follow = (event: StorageEvent) => {
       if (event.storageArea !== window.localStorage || (event.key !== SESSION_KEY && event.key !== null)) return
-      const next = validToken()?.expiresAt ?? null
-      if (next === null) {
+      const token = validToken()
+      if (token === null) {
         if (!lost.current) stashShellReason('no_session')
         lost.current = true
-      } else if (lost.current) {
+      } else if (lost.current || (person.current !== undefined && token.pubkey !== person.current)) {
         window.location.reload()
         return
       }
-      setExpiresAt(next)
+      person.current ??= token?.pubkey
+      setExpiresAt(token?.expiresAt ?? null)
     }
     window.addEventListener('storage', follow)
     return () => window.removeEventListener('storage', follow)

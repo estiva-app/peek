@@ -22,6 +22,7 @@
  */
 import { createEstivaId } from '@estiva-app/identity'
 import type { StoredToken } from '@estiva-app/identity'
+import { OWNER_KEY as DEVICE_COPY_OWNER_KEY, SIGNED_OUT as DEVICE_COPY_SIGNED_OUT } from '@/nostr/deviceCopy'
 
 export type { StoredToken }
 export { SignInError } from '@estiva-app/identity'
@@ -73,14 +74,17 @@ const client = createEstivaId({
 /**
  * A tab signed in before PEE-3 holds its session in `sessionStorage`. Moved
  * once, on its next load, so the deploy signs nobody out; a session another tab
- * already shares wins, and the tab's own is dropped.
+ * already shares wins, and the tab's own is dropped. So is it after a sign-out on
+ * this device (the copy's owner marker says so): moving it then would sign
+ * every tab back in as the person who just left.
  */
 function adoptTabSession(): void {
   try {
     const own = window.sessionStorage.getItem(SESSION_KEY)
     if (own === null) return
     window.sessionStorage.removeItem(SESSION_KEY)
-    if (window.localStorage.getItem(SESSION_KEY) === null) window.localStorage.setItem(SESSION_KEY, own)
+    const signedOut = window.localStorage.getItem(DEVICE_COPY_OWNER_KEY) === DEVICE_COPY_SIGNED_OUT
+    if (!signedOut && window.localStorage.getItem(SESSION_KEY) === null) window.localStorage.setItem(SESSION_KEY, own)
   } catch {
     // No storage: there is nothing to move.
   }

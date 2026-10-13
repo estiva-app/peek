@@ -177,6 +177,30 @@ describe('one session for every tab (PEE-3)', () => {
     expect(validToken()?.accessToken).toBe('mine')
   })
 
+  it('a tab’s own session is not moved after a sign-out on this device', async () => {
+    localStorage.setItem('peek-device-copy-owner', 'signed-out')
+    sessionStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken: 'mine', expiresAt: Date.now() + 600_000, pubkey: 'a'.repeat(64) }))
+    vi.resetModules()
+    const { validToken } = await import('./estivaId')
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(validToken()).toBeNull()
+  })
+
+  it('somebody else’s session replacing this one is entered by reloading', () => {
+    const reload = vi.fn()
+    const realLocation = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, reload } })
+    try {
+      storeToken()
+      renderHook(() => useEstivaIdAuth())
+      act(() => otherTabWrites(JSON.stringify({ accessToken: 'y', expiresAt: Date.now() + 600_000, pubkey: 'b'.repeat(64) })))
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation })
+    }
+  })
+
   it('a session the tabs already share wins over the tab’s own', async () => {
     storeToken()
     const shared = localStorage.getItem(TOKEN_KEY)
