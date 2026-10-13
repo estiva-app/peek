@@ -19,9 +19,13 @@ import { CALLBACK_PATH } from './estivaId'
 import { GUARD_KEY } from '@estiva-app/identity'
 
 const realFetch = globalThis.fetch
-beforeEach(() => sessionStorage.clear())
+beforeEach(() => {
+  sessionStorage.clear()
+  localStorage.clear()
+})
 afterEach(() => {
   sessionStorage.clear()
+  localStorage.clear()
   globalThis.fetch = realFetch
 })
 
@@ -57,7 +61,8 @@ describe('the Estiva ID callback', () => {
     await waitFor(() => expect(screen.getByText('the app')).toBeInTheDocument())
     // The token is in storage before the handoff, which is what lets
     // `useEstivaIdAuth` seed authenticated on the app's first render.
-    expect(sessionStorage.getItem('peek.estivaId.token')).not.toBeNull()
+    // In `localStorage`, shared by every tab (PEE-3).
+    expect(localStorage.getItem('peek.estivaId.token')).not.toBeNull()
     // And the callback URL is gone, code and all, without a document load.
     expect(window.location.pathname).toBe('/')
   })

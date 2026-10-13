@@ -29,7 +29,7 @@ const RENEWAL_KEY = 'peek.authShell.refusedTokenRenewal'
  * question, and the one that made this a bug.
  */
 function storeLiveToken({ withRefreshToken = true } = {}) {
-  sessionStorage.setItem(
+  localStorage.setItem(
     TOKEN_KEY,
     JSON.stringify({
       accessToken: 'header.payload.sig',
@@ -54,6 +54,7 @@ const reload = vi.fn()
 
 beforeEach(() => {
   sessionStorage.clear()
+  localStorage.clear()
   reload.mockClear()
   // jsdom implements no navigation and will not let `location.reload` be spied
   // directly, so the whole object is replaced — the same reason the package

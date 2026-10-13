@@ -2,7 +2,7 @@
  * How fast Peek opens, on production, as QA-1 and QA-2 — the measure every issue in "Peek opens instantly" proves
  * its Done when with. Run it before and after a change, the same way.
  *
- *   node scripts/probe-first-load.mjs [--as qa1,qa2] [--legs open,first,long,new] [--runs 1] [--json out.json]
+ *   node scripts/probe-first-load.mjs [--as qa1,qa2] [--legs open,first,long,new,tabs] [--runs 1] [--json out.json]
  *
  * Each leg is one headless browser (scripts/probe.mjs), with scripts/first-load-recorder.js running in every page
  * from its first byte (`--init`):
@@ -15,6 +15,9 @@
  * - `long`: Topics, then a 200-message topic never opened in this browser: when its messages show, and how many
  *   times the list jumped while nobody scrolled.
  * - `new`: New topic in the QA Folder, Start → a composer in the new topic; then the topic is deleted again.
+ * - `tabs` (PEE-3, not in the default list): Desk; a second tab and a new window → Desk, with every page each
+ *   loaded on the way in (an Estiva ID `/authorize` is a sign-in it had to do); Sign out in the first tab, then
+ *   what the second shows and holds, before and after a reload. It ends the identity's Estiva ID session.
  *
  * Every leg prints the socket REQs sent in the 5 s after each action (the relay allows 50 per 5 s per connection),
  * the most in any 5 s, and anything the relay refused: a CLOSED, a NOTICE, an OK false or an HTTP 429.
@@ -61,6 +64,31 @@ const topicsLink = `document.querySelector('a[href="/app/folders"]')`
 const reload = (texts) => ['--eval', `(() => { sessionStorage.setItem('fl.texts', ${JSON.stringify(JSON.stringify(texts))}); sessionStorage.removeItem('fl.first'); setTimeout(() => location.reload(), 20); return 'reloading' })()`, '--wait', '1500']
 const report = ['--eval', '__fl.report()']
 
+/**
+ * What a tab holds after signing out (PEE-3): the session in `localStorage`, the copy on the device in IndexedDB
+ * (opened only if it exists, so reading it cannot create it), and whether the sign-in screen is up.
+ */
+const signedOutState = `(async () => {
+  const keys = Object.keys(localStorage).filter((k) => k.startsWith('peek'))
+  const dbs = (await indexedDB.databases()).map((d) => d.name)
+  const records = !dbs.includes('peek-device-copy') ? null : await new Promise((done) => {
+    const open = indexedDB.open('peek-device-copy')
+    open.onerror = () => done('error')
+    open.onsuccess = () => {
+      const db = open.result
+      const names = [...db.objectStoreNames]
+      if (!names.length) return db.close(), done(0)
+      const tx = db.transaction(names)
+      let total = 0, left = names.length
+      for (const name of names) {
+        const count = tx.objectStore(name).count()
+        count.onsuccess = () => { total += count.result; if (--left === 0) db.close(), done(total) }
+      }
+    }
+  })
+  return JSON.stringify({ session: localStorage.getItem('peek.estivaId.token') !== null, keys, dbs, records, signInScreen: /Continue with your passkey/.test(document.body.innerText) })
+})()`
+
 const legs = {
   open: (w) => ({
     url: '/app/desk',
@@ -74,6 +102,26 @@ const legs = {
       '--tab', '/app/desk', ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
     ],
     phases: [['fresh → Desk', 0, 'load'], ['reload → Desk', 1, 'load'], ['reload → Topics', 2, 'load'], ['new tab → Desk', 3, 'load']],
+  }),
+  // PEE-3: a second tab and a new window open signed in, with no Estiva ID `/authorize` on the way; signing out in
+  // one tab drops the other to the sign-in screen without a reload, and leaves no session and no copy behind.
+  // Signing out ends the identity's Estiva ID session, so the next run as it signs in from scratch.
+  tabs: (w) => ({
+    url: '/app/desk',
+    first: w.desk,
+    // Tab A; a window opened from A (`noopener`: nothing of A's sessionStorage); back to A; tab B; back to A to
+    // sign out; then B. `--switch` goes back to the page the last `--also` or `--window` left.
+    steps: [
+      ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
+      '--window', '/app/desk', ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
+      '--switch', '-',
+      '--also', '/app/desk', ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...report,
+      '--switch', '-', '--click', 'Account menu', '--wait', '600', '--click', 'Sign out', '--wait', '6000',
+      '--switch', '-', '--eval', signedOutState,
+      '--eval', `(() => { setTimeout(() => location.reload(), 20); return 'reloading' })()`, '--wait', '8000',
+      '--eval', signedOutState,
+    ],
+    phases: [['fresh → Desk', 0, 'load'], ['new window → Desk', 1, 'load'], ['second tab → Desk', 2, 'load']],
   }),
   first: (w) => ({
     url: '/app/desk',
@@ -139,7 +187,10 @@ for (const name of chosen) {
       const probe = await probeRun([PROBE, '--as', as, '--url', leg.url, '--init', init, '--timeout', '45000', ...leg.steps])
       const docs = probe.steps.filter((s) => s.eval === '__fl.report()' && s.result).map((s) => JSON.parse(s.result))
       const http429 = [...new Set(docs.flatMap((d) => d.res.filter(([, , , status]) => status === 429).map(([, , what]) => what)))]
-      const result = { as, leg: name, run: i + 1, docs, http429, errors: probe.errors }
+      // Every page a `--tab` or `--also` loaded on its way in, and what the leg's own reads returned (PEE-3).
+      const opened = (probe.pages ?? []).slice(1)
+      const reads = probe.steps.filter((s) => s.eval && s.eval !== '__fl.report()' && String(s.result).startsWith('{')).map((s) => s.result)
+      const result = { as, leg: name, run: i + 1, docs, http429, opened, reads, errors: probe.errors }
       results.push(result)
       if (probe.failure || probe.steps.some((s) => s.error)) {
         failed = true
@@ -154,8 +205,14 @@ for (const name of chosen) {
 if (option('json')) writeFileSync(option('json'), JSON.stringify(results))
 process.exit(failed ? 1 : 0)
 
-function print({ as, leg, run, docs, http429 }, phases) {
+function print({ as, leg, run, docs, http429, opened, reads }, phases) {
   console.log(`\n${as} · ${leg}${runs > 1 ? ` · run ${run}` : ''}`)
+  // The first page signs in from nothing; every later tab or window should not have to (PEE-3).
+  opened.forEach((documents, i) => {
+    const authorize = documents.filter((url) => url.endsWith('/authorize')).length
+    console.log(`  tab or window ${i + 2}: /authorize ${authorize}× · loaded ${documents.map((url) => new URL(url).host + new URL(url).pathname).join(' → ')}`)
+  })
+  for (const read of reads) console.log(`  read: ${read}`)
   for (const [label, index, phaseLabel, markName = 'allTextsNoPulse'] of phases) {
     const doc = docs[index]
     const phase = doc?.phases.find((p) => p.label === phaseLabel)
@@ -191,11 +248,11 @@ function print({ as, leg, run, docs, http429 }, phases) {
 
 /** One probe.mjs run's report; a run that printed nothing (the browser never started) is a failure, not a crash. */
 async function probeRun(argv) {
-  const { stdout } = await run(process.execPath, argv, { maxBuffer: 64 << 20 }).catch((e) => ({ stdout: e.stdout }))
+  const { stdout, stderr } = await run(process.execPath, argv, { maxBuffer: 64 << 20 }).catch((e) => ({ stdout: e.stdout, stderr: e.stderr }))
   try {
     return JSON.parse(stdout)
   } catch {
-    return { failure: `probe.mjs printed no report: ${String(stdout ?? '').slice(0, 200)}`, steps: [], errors: [] }
+    return { failure: `probe.mjs printed no report: ${String(stdout ?? '').slice(0, 200)} ${String(stderr ?? '').slice(-400)}`, steps: [], errors: [] }
   }
 }
 

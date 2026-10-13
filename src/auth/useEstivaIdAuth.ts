@@ -27,13 +27,26 @@
  * renewal schedules the next.
  */
 import { useEffect, useState } from 'react'
-import { refreshAccessToken, validToken } from './estivaId'
+import { SESSION_KEY, refreshAccessToken, validToken } from './estivaId'
 
 export function useEstivaIdAuth() {
-  // Seeded synchronously: the token is already in sessionStorage on first
-  // render after the callback redirect, so there is no loading window to show
-  // and no flash of the signed-out screen.
+  // Seeded synchronously: the token is already in storage on first render —
+  // after the callback redirect, or another tab's sign-in — so there is no
+  // loading window to show and no flash of the signed-out screen.
   const [expiresAt, setExpiresAt] = useState<number | null>(() => validToken()?.expiresAt ?? null)
+
+  // Every tab shares the session (PEE-3). Another tab renewing re-arms this
+  // tab's timer from the new expiry instead of renewing again; another tab
+  // signing out, or its renewal being refused, drops this one to the shell at
+  // once rather than at its next read. A `null` key is the store being cleared.
+  useEffect(() => {
+    const follow = (event: StorageEvent) => {
+      if (event.key !== SESSION_KEY && event.key !== null) return
+      setExpiresAt(validToken()?.expiresAt ?? null)
+    }
+    window.addEventListener('storage', follow)
+    return () => window.removeEventListener('storage', follow)
+  }, [])
 
   useEffect(() => {
     if (expiresAt === null) return
@@ -41,7 +54,7 @@ export function useEstivaIdAuth() {
     // notices nothing. `refreshAccessToken` coalesces concurrent calls, so a
     // renewal the auth shell started at the same moment is shared, not spent
     // twice — a refresh token is single-use, and Estiva ID treats a second
-    // presentation as theft.
+    // presentation as theft. Across tabs the package's lock does the same.
     const timer = setTimeout(
       () => {
         void refreshAccessToken().then((next) =>

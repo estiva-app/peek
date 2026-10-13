@@ -12,7 +12,7 @@ import { useEstivaIdAuth } from './useEstivaIdAuth'
 const TOKEN_KEY = 'peek.estivaId.token'
 
 function storeToken({ expiresInMs = 600_000, refreshToken = undefined as string | undefined } = {}) {
-  sessionStorage.setItem(
+  localStorage.setItem(
     TOKEN_KEY,
     JSON.stringify({
       accessToken: 'header.payload.sig',
@@ -37,10 +37,10 @@ function stubTokenEndpoint(response: { ok: boolean; body?: Record<string, unknow
 }
 
 const realFetch = globalThis.fetch
-beforeEach(() => sessionStorage.clear())
+beforeEach(() => localStorage.clear())
 afterEach(() => {
   vi.useRealTimers()
-  sessionStorage.clear()
+  localStorage.clear()
   globalThis.fetch = realFetch
 })
 
@@ -78,7 +78,7 @@ describe('useEstivaIdAuth', () => {
     expect(calls[0]).toMatchObject({ grantType: 'refresh_token', refreshToken: 'r1' })
     // The rotated token replaces the spent one. Keeping the old one alongside
     // it would eventually present a spent token, which Estiva ID reads as theft.
-    expect(JSON.parse(sessionStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r2' })
+    expect(JSON.parse(localStorage.getItem(TOKEN_KEY) as string)).toMatchObject({ refreshToken: 'r2' })
     expect(result.current.isAuthenticated).toBe(true)
 
     // The defect: nothing scheduled a second renewal.
@@ -98,6 +98,70 @@ describe('useEstivaIdAuth', () => {
     expect(result.current.isAuthenticated).toBe(false)
     // Cleared, so the shell starts from nothing rather than retrying a token
     // Estiva ID has already revoked.
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+  })
+})
+
+describe('one session for every tab (PEE-3)', () => {
+  /** What this tab sees when another tab writes the shared session. */
+  function otherTabWrites(value: string | null) {
+    if (value === null) localStorage.removeItem(TOKEN_KEY)
+    else localStorage.setItem(TOKEN_KEY, value)
+    window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY, newValue: value, storageArea: localStorage }))
+  }
+
+  it('another tab signing out drops this one to the shell at once', () => {
+    storeToken()
+    const { result } = renderHook(() => useEstivaIdAuth())
+    expect(result.current.isAuthenticated).toBe(true)
+
+    act(() => otherTabWrites(null))
+    expect(result.current.isAuthenticated).toBe(false)
+  })
+
+  it('another tab renewing re-arms this tab from the new expiry instead of renewing again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    storeToken({ expiresInMs: 60_000, refreshToken: 'r1' })
+    const calls = stubTokenEndpoint({ ok: true, body: { access_token: 'x', expires_in: 600, refresh_token: 'r9' } })
+    const { result } = renderHook(() => useEstivaIdAuth())
+
+    act(() =>
+      otherTabWrites(
+        JSON.stringify({ accessToken: 'theirs', expiresAt: Date.now() + 600_000, pubkey: 'a'.repeat(64), refreshToken: 'r2' }),
+      ),
+    )
+    await act(() => vi.advanceTimersByTimeAsync(60_000))
+    expect(calls).toHaveLength(0)
+    expect(result.current.isAuthenticated).toBe(true)
+  })
+
+  it('a session somebody else in this browser stored is not this tab’s concern', () => {
+    // The control: a storage event for another key changes nothing.
+    storeToken()
+    const { result } = renderHook(() => useEstivaIdAuth())
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ship.estiva-id.token', newValue: null, storageArea: localStorage }))
+    })
+    expect(result.current.isAuthenticated).toBe(true)
+  })
+
+  it('a tab signed in before PEE-3 keeps its session: moved from sessionStorage once', async () => {
+    const own = JSON.stringify({ accessToken: 'mine', expiresAt: Date.now() + 600_000, pubkey: 'a'.repeat(64) })
+    sessionStorage.setItem(TOKEN_KEY, own)
+    vi.resetModules()
+    const { validToken } = await import('./estivaId')
+    expect(localStorage.getItem(TOKEN_KEY)).toBe(own)
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull()
+    expect(validToken()?.accessToken).toBe('mine')
+  })
+
+  it('a session the tabs already share wins over the tab’s own', async () => {
+    storeToken()
+    const shared = localStorage.getItem(TOKEN_KEY)
+    sessionStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken: 'mine', expiresAt: Date.now() + 600_000, pubkey: 'a'.repeat(64) }))
+    vi.resetModules()
+    await import('./estivaId')
+    expect(localStorage.getItem(TOKEN_KEY)).toBe(shared)
     expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull()
   })
 })

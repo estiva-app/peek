@@ -7,6 +7,7 @@ import { memorySnapshotStorage } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import {
   clearDeviceCopy,
+  followSignOutElsewhere,
   keepPlaintext,
   keepRelayAnswer,
   plaintextFromCopy,
@@ -92,5 +93,32 @@ describe('the copy on the device', () => {
     keepRelayAnswer(RELAY, [filter], ME, [blob])
     await new Promise((resolve) => setTimeout(resolve, 1_200))
     expect(storage.records.size).toBe(0)
+  })
+
+  it('signing out in another tab: this one clears too and keeps nothing more (PEE-3)', async () => {
+    const storage = memorySnapshotStorage()
+    resetDeviceCopyForTest(storage)
+    keepRelayAnswer(RELAY, [filter], ME, [blob])
+    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    expect(storage.records.size).toBe(1)
+
+    // What the other tab's clearDeviceCopy writes, as this tab's `storage` event sees it.
+    followSignOutElsewhere({ key: 'peek-device-copy-owner', newValue: 'signed-out' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(storage.records.size).toBe(0)
+    keepRelayAnswer(RELAY, [filter], ME, [blob])
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    expect(storage.records.size).toBe(0)
+  })
+
+  it('another tab opening its copy is not a sign-out', async () => {
+    // The control: the owner key also changes when somebody signs in.
+    const storage = memorySnapshotStorage()
+    resetDeviceCopyForTest(storage)
+    keepRelayAnswer(RELAY, [filter], ME, [blob])
+    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    followSignOutElsewhere({ key: 'peek-device-copy-owner', newValue: 'wss://x|someone' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(storage.records.size).toBe(1)
   })
 })

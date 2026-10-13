@@ -84,10 +84,10 @@ import { chromium } from 'playwright-core'
 const usage = `usage: probe.mjs --as <qa1|qa2|name> [--session file] [--base url] [--id url] [--slot pinned|fresh]
   [--url path] [--click label] [--fill label=text] [--press key] [--hover css] [--drag "from => to"]
   [--wait ms] [--until expr] [--timeout ms] [--eval expr] [--screenshot file] [--cpu start|file] [--net file]
-  [--init file] [--tab path]
+  [--init file] [--tab path] [--also path] [--window path] [--switch -]
   [--refuse text[|text…]] [--refuse-e id[|id…]] [--refuse-kind kind[|kind…]] [--refuse-hold ms]`
 
-const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab'])
+const STEPS = new Set(['--click', '--fill', '--press', '--hover', '--drag', '--wait', '--until', '--eval', '--screenshot', '--cpu', '--tab', '--also', '--window', '--switch'])
 const options = { base: 'https://peek.estiva.app', id: 'https://id.estiva.app', url: '/', timeout: '30000' }
 /** The page's DevTools session, opened by the first `--cpu` step. */
 let cdp = null
@@ -170,7 +170,34 @@ try {
   // --init <file>: a script run in every page before the app's own, on each load — a recorder that must see a
   // reload from its first frame (first-load measurements).
   if (options.init) await context.addInitScript({ path: options.init })
+  /*
+    Every page any tab or window loads, redirects included: a silent sign-in is Peek → Estiva ID `/authorize` →
+    a 302 back, and the `/authorize` hop never commits, so only its request shows it. Origin and path only — the
+    query carries the PKCE state. `report.pages` lists them per tab, a window the page opened among them.
+  */
+  const loaded = new Map()
+  report.pages = []
+  const loadedBy = (p) => {
+    if (!loaded.has(p)) {
+      loaded.set(p, [])
+      report.pages.push(loaded.get(p))
+    }
+    return loaded.get(p)
+  }
+  // On the context, not the page: a window the page opens starts loading before its `page` event.
+  context.on('request', (r) => {
+    if (!r.isNavigationRequest()) return
+    try {
+      const frame = r.frame()
+      if (frame === frame.page().mainFrame()) loadedBy(frame.page()).push(r.url().split(/[?#]/)[0])
+    } catch (error) {
+      // A frame already gone by the time its request is seen: nothing to attribute it to.
+      report.errors.push(`navigation not attributed: ${String(error.message ?? error).slice(0, 120)}`)
+    }
+  })
   let page = await context.newPage()
+  /** The tab `--also` left open, which `--switch` returns to. */
+  let other = null
   // Every WebSocket the tab opens, and whether it closed before the run ended:
   // "one relay connection per tab" is otherwise invisible from the page.
   report.sockets = []
@@ -281,14 +308,30 @@ try {
       // --tab <path>: close this tab and open Peek at <path> in a new one, in the same browser — what is kept on
       // the device survives, and a per-tab session does not. Later steps act in the new tab. Only its errors are
       // watched: `report.sockets`, `--net` and a `--cpu` session stay with the first tab.
-      if (step === 'tab') {
-        const next = await context.newPage()
+      // --also <path>: the same, but the first tab stays open; --switch <any> acts in the other one again. Both
+      // record `documents`, every page the new tab loaded on its way in — an Estiva ID `/authorize` among them is a
+      // sign-in the tab had to do (PEE-3), by origin and path only, since the query carries the PKCE state.
+      // --window <path>: like --also, but the page opens it — `window.open` with `noopener`, so it starts with no
+      // copy of this tab's sessionStorage, as a window the person opens does. Its first page is not in `documents`:
+      // that request is issued before its frame exists.
+      if (step === 'tab' || step === 'also' || step === 'window') {
+        const opened = step === 'window' ? context.waitForEvent('page') : null
+        if (opened) await page.evaluate((path) => void window.open(path, '_blank', 'noopener,popup,width=1280,height=800'), value)
+        const next = opened ? await opened : await context.newPage()
         watchErrors(next)
-        await page.close()
+        const documents = loadedBy(next)
+        if (step === 'tab') await page.close()
+        else other = page
         page = next
-        await page.goto(new URL(value, options.base).href)
+        if (!opened) await page.goto(new URL(value, options.base).href)
         entry.result = await signedIn(page)
+        entry.documents = documents
         if (!entry.result) throw new Error(`not signed in; ended on ${page.url()}`)
+      } else if (step === 'switch') {
+        if (!other) throw new Error('--switch needs a tab opened with --also')
+        ;[page, other] = [other, page]
+        await page.bringToFront()
+        entry.result = page.url()
       } else entry.result = await run(page, step, value)
     } catch (error) {
       entry.error = String(error.message ?? error).split('\n')[0]
@@ -441,8 +484,11 @@ async function signedIn(page) {
       (origin) =>
         location.origin === origin &&
         location.pathname !== '/auth/callback' &&
-        (Object.keys(sessionStorage).some((key) => key.startsWith('peek.estivaId') && /token/i.test(key)) ||
-          Object.keys(localStorage).some((key) => /^[a-z0-9-]+\.estiva-id\b/.test(key) && /token/i.test(key))),
+        // Peek's session moved from sessionStorage to localStorage with PEE-3; either counts, so the probe reads
+        // a build from before it as well.
+        [sessionStorage, localStorage].some((store) =>
+          Object.keys(store).some((key) => /^[a-z0-9-]+\.estiva-?id\b/i.test(key) && /token/i.test(key)),
+        ),
       base,
       { timeout, polling: 250 },
     )

@@ -42,25 +42,50 @@ export const CLIENT_ID = 'estiva-peek'
  */
 export const CALLBACK_PATH = '/auth/callback'
 
+const KEY_PREFIX = 'peek.estivaId'
+
+/** Where the session is kept, in `localStorage`: another tab writing or removing it is a `storage` event on this key. */
+export const SESSION_KEY = `${KEY_PREFIX}.token`
+
 /**
- * Tokens live in `sessionStorage`, not `localStorage`.
+ * The session lives in `localStorage`, shared by every tab, and the in-flight
+ * sign-in in `sessionStorage` — the package's defaults, which Ship and Leaf
+ * use too (PEE-3, Miky, 12 Oct).
  *
- * Neither survives a determined XSS, but sessionStorage is scoped to the tab and
- * dies with it, which keeps a bearer token off a shared machine's disk. The token
- * is short-lived anyway, so persistence buys little.
+ * It used to be per tab, in `sessionStorage`, to keep a bearer token off a
+ * shared machine's disk. That made every new tab sign in again through
+ * Estiva ID's `/authorize`, about half a second before Desk could draw. A
+ * "public computer" choice belongs to the sign-in review, not to a default.
  *
- * **Do not unify this with Ship's `localStorage`.** NIP-RS read-state slots
- * (CRO-4) must survive a restart; an access token must not have to. Different
- * lifetimes, different homes — and the package deliberately refuses to choose.
+ * Sharing it has two consequences handled elsewhere: renewal is locked across
+ * tabs in the package (a refresh token presented twice ends the session
+ * everywhere), and every tab follows the others — `useEstivaIdAuth` re-reads the
+ * session when another tab renews or signs out.
  */
 const client = createEstivaId({
   base: ESTIVA_ID_ORIGIN,
   clientId: CLIENT_ID,
   redirectUri: () => `${window.location.origin}${CALLBACK_PATH}`,
-  storage: () => (typeof window === 'undefined' ? null : window.sessionStorage),
-  keyPrefix: 'peek.estivaId',
+  keyPrefix: KEY_PREFIX,
   navigate: (url) => window.location.assign(url),
 })
+
+/**
+ * A tab signed in before PEE-3 holds its session in `sessionStorage`. Moved
+ * once, on its next load, so the deploy signs nobody out; a session another tab
+ * already shares wins, and the tab's own is dropped.
+ */
+function adoptTabSession(): void {
+  try {
+    const own = window.sessionStorage.getItem(SESSION_KEY)
+    if (own === null) return
+    window.sessionStorage.removeItem(SESSION_KEY)
+    if (window.localStorage.getItem(SESSION_KEY) === null) window.localStorage.setItem(SESSION_KEY, own)
+  } catch {
+    // No storage: there is nothing to move.
+  }
+}
+if (typeof window !== 'undefined') adoptTabSession()
 
 export const {
   codeChallenge,
