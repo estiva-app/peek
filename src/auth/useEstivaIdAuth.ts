@@ -26,8 +26,8 @@
  * once and never rescheduled. It is keyed on the token's expiry now, so each
  * renewal schedules the next.
  */
-import { useEffect, useState } from 'react'
-import { SESSION_KEY, refreshAccessToken, validToken } from './estivaId'
+import { useEffect, useRef, useState } from 'react'
+import { SESSION_KEY, refreshAccessToken, stashShellReason, validToken } from './estivaId'
 
 export function useEstivaIdAuth() {
   // Seeded synchronously: the token is already in storage on first render —
@@ -38,11 +38,25 @@ export function useEstivaIdAuth() {
   // Every tab shares the session (PEE-3). Another tab renewing re-arms this
   // tab's timer from the new expiry instead of renewing again; another tab
   // signing out, or its renewal being refused, drops this one to the shell at
-  // once rather than at its next read. A `null` key is the store being cleared.
+  // once rather than at its next read, on the same plain sign-in screen the
+  // signing-out tab shows. A `null` key is the store being cleared.
+  //
+  // A session that appears again after this page lost it — somebody signing in
+  // in another tab, perhaps somebody else — is entered by reloading, never by
+  // re-mounting: this page's stores still hold what the last session read.
+  const lost = useRef(false)
   useEffect(() => {
     const follow = (event: StorageEvent) => {
-      if (event.key !== SESSION_KEY && event.key !== null) return
-      setExpiresAt(validToken()?.expiresAt ?? null)
+      if (event.storageArea !== window.localStorage || (event.key !== SESSION_KEY && event.key !== null)) return
+      const next = validToken()?.expiresAt ?? null
+      if (next === null) {
+        if (!lost.current) stashShellReason('no_session')
+        lost.current = true
+      } else if (lost.current) {
+        window.location.reload()
+        return
+      }
+      setExpiresAt(next)
     }
     window.addEventListener('storage', follow)
     return () => window.removeEventListener('storage', follow)
@@ -57,11 +71,13 @@ export function useEstivaIdAuth() {
     // presentation as theft. Across tabs the package's lock does the same.
     const timer = setTimeout(
       () => {
-        void refreshAccessToken().then((next) =>
+        void refreshAccessToken().then((next) => {
           // A token that is already out of date is no renewal: taking it would
           // spin this timer at zero delay.
-          setExpiresAt(next && next.expiresAt > Date.now() ? next.expiresAt : null),
-        )
+          const renewed = next && next.expiresAt > Date.now() ? next.expiresAt : null
+          if (renewed === null) lost.current = true
+          setExpiresAt(renewed)
+        })
       },
       Math.max(0, expiresAt - Date.now()),
     )

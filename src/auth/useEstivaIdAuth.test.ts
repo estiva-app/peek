@@ -37,7 +37,10 @@ function stubTokenEndpoint(response: { ok: boolean; body?: Record<string, unknow
 }
 
 const realFetch = globalThis.fetch
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  sessionStorage.clear()
+})
 afterEach(() => {
   vi.useRealTimers()
   localStorage.clear()
@@ -117,6 +120,25 @@ describe('one session for every tab (PEE-3)', () => {
 
     act(() => otherTabWrites(null))
     expect(result.current.isAuthenticated).toBe(false)
+    // The same plain sign-in screen the signing-out tab shows, not "your session ended".
+    expect(sessionStorage.getItem('peek.estivaId.shellReason')).toBe('no_session')
+  })
+
+  it('a session that appears after this tab lost it is entered by reloading, not re-mounting', () => {
+    // This page's stores still hold what the last session read — perhaps somebody else's.
+    const reload = vi.fn()
+    const realLocation = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, reload } })
+    try {
+      storeToken()
+      const { result } = renderHook(() => useEstivaIdAuth())
+      act(() => otherTabWrites(null))
+      act(() => otherTabWrites(JSON.stringify({ accessToken: 'next', expiresAt: Date.now() + 600_000, pubkey: 'b'.repeat(64) })))
+      expect(reload).toHaveBeenCalledTimes(1)
+      expect(result.current.isAuthenticated).toBe(false)
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation })
+    }
   })
 
   it('another tab renewing re-arms this tab from the new expiry instead of renewing again', async () => {
