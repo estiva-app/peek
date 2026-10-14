@@ -170,10 +170,19 @@ export async function queryRelay(
   lane: ReadLane = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
   if (!socketReader && lane === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
-  let answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
-  if (!answer) {
-    const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
-    answer = parseQueryResponse(status, text)
+  if (lane === 'click') clickReads.open += 1
+  let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
+  try {
+    answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
+    if (!answer) {
+      const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
+      answer = parseQueryResponse(status, text)
+    }
+  } finally {
+    if (lane === 'click') {
+      clickReads.open -= 1
+      clickReads.lastAt = Date.now()
+    }
   }
   // Every answer is also the copy a reload draws from, and its correction (PEE-2).
   if (answer.ok) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
@@ -199,6 +208,24 @@ export type SocketReader = ((
 }
 
 let socketReader: SocketReader | null = null
+
+/** The reads in the `click` lane not yet answered, socket or HTTP, and when the last one was (PEE-5). */
+const clickReads = { open: 0, lastAt: 0 }
+
+/**
+ * Resolves once no `click` read has been open for `quietMs`, or after `atMostMs`
+ * (PEE-5): for loader work that is not a read of its own — tracking Folders
+ * opens their live watches, whose frames take the same window a click's reads
+ * need. Desk's cadence reads keep the lane from ever being quiet for long, so
+ * this only lets a click that is under way finish first.
+ */
+export async function whenClickReadsQuiet(quietMs: number, atMostMs: number): Promise<void> {
+  const until = Date.now() + atMostMs
+  while (Date.now() < until) {
+    if (clickReads.open === 0 && Date.now() - clickReads.lastAt >= quietMs) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
 
 /** The reader the app installed, for Desk's loader to promote its reads when the person acts (PEE-5). */
 export function getSocketReader(): SocketReader | null {

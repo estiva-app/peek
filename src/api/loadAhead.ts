@@ -31,7 +31,7 @@ import { loadAhead, type AheadOutcome, type AheadStep } from '@estiva-app/platfo
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
-import { getSocketReader } from '@/nostr/bridge'
+import { getSocketReader, whenClickReadsQuiet } from '@/nostr/bridge'
 import { streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStreams'
 import type { ChannelStore } from '@/platform/channelStore'
 import { placeStreams, teamHasMemberStream, unlistedFiles } from './teamUnread'
@@ -41,7 +41,7 @@ import { useDeskItems, useScreenerItems } from './desk'
 import { useStarred } from './internal/starred'
 import { useDmChannels } from './internal/dms'
 import { useMembership } from './internal/membership'
-import { useHeldChannelEvents, useTabChannelStoreForAhead } from './useChannelStreams'
+import { channelsAskedFor, trackAhead, useHeldChannelEvents, useTabChannelStoreForAhead } from './useChannelStreams'
 import { loadFoldersAhead } from './useFolderContents'
 import { loadForeignObjectAhead } from './useForeignConversation'
 import { loadConversationAhead } from './useFileConversation'
@@ -58,6 +58,14 @@ interface AheadRecord {
 
 /** Once per page load: "then stop until the next open". */
 let started = false
+
+/**
+ * Topics' streams wait until no click read has been open for this long, at most
+ * the second figure: tracking 50 Folders at the moment a click 1 s after Desk
+ * was finishing made it ~500 ms slower (PEE-5).
+ */
+const CLICK_QUIET_MS = 1_000
+const CLICK_QUIET_AT_MOST_MS = 5_000
 
 /** `localStorage['peek.ahead'] = 'off'` turns it off, for the probe's comparison (a URL's query does not survive sign-in). */
 const aheadOff = (() => {
@@ -182,8 +190,11 @@ export function useLoadAhead(drawn: boolean): void {
           const lap = (label: string) => record.steps.push({ label: `Topics: ${label}`, ms: Math.round(performance.now() - began) })
           const folders = await loadFoldersAhead(at, async (folders) => {
             lap('listing')
+            // Tracking opens the Folders' live watches, whose frames share the window: a click under way finishes first.
+            await whenClickReadsQuiet(CLICK_QUIET_MS, CLICK_QUIET_AT_MOST_MS)
+            lap('quiet')
             // The streams Topics judges its dots and its "yours" by; held five minutes after the loader lets go.
-            releaseFolders = store.track(folders.map((folder) => folder.id))
+            releaseFolders = trackAhead(store, folders.map((folder) => folder.id))
             await store.sync('track')
             lap('streams')
             const mine = await foldersTopicsOpens(folders, store, latest.current.membership, at)
@@ -203,6 +214,8 @@ export function useLoadAhead(drawn: boolean): void {
       ),
     ]
 
+    const only = (() => { try { return window.localStorage.getItem('peek.ahead.only') } catch { return null } })()
+    if (only) steps.splice(0, steps.length, ...steps.filter((step) => step.label.startsWith(only)))
     const record: AheadRecord = { startedAt: performance.now(), steps: [] }
     ;(window as unknown as { __loadAhead?: AheadRecord }).__loadAhead = record
     const timed = steps.map((step) => ({
@@ -215,7 +228,10 @@ export function useLoadAhead(drawn: boolean): void {
     }))
 
     // A click goes first, including a click on what the loader has already asked for.
-    const promote = () => getSocketReader()?.promoteAhead?.()
+    const promote = () => {
+      getSocketReader()?.promoteAhead?.()
+      channelsAskedFor()
+    }
     // @estiva-escape(no-rebuilt-behaviour): not a UI behaviour — any press means a click's reads may be on the way, so the loader's waiting reads stop holding them up; nothing is closed or taken
     window.addEventListener('pointerdown', promote, true)
     // @estiva-escape(no-rebuilt-behaviour): as above, for a key that opens something; the key goes on to its target untouched

@@ -182,11 +182,13 @@ const legs = {
     steps: [
       ...settled('allTextsNoPulse', 30000), '--wait', '1000',
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
-      '--eval', 'JSON.stringify(window.__loadAhead ?? null)', ...report,
+      '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null, reads: window.__socketReads?.(1) })', ...report,
     ],
     phases: [['Open work topic, 1 s after Desk', 0, 'Open work topic']],
   }),
   'click1s-off': (w) => ({ ...legs.click1s(w), init: AHEAD_OFF }),
+  'click1s-topics': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Topics') } catch {}\n` }),
+  'click1s-work': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Open work') } catch {}\n` }),
   // PEE-4: after a visit, a reload at Topics draws the tree at once, with the rows and dots it keeps once the relay
   // answers; after a reload at Desk the Open work topic and the Starred DM draw from the copy — right away, and a
   // minute later, since the copy answers at any time.
