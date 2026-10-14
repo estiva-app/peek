@@ -495,6 +495,9 @@ export function serializeInline(node: TiptapNode): string {
     } else if (child.type.name === 'messageMention') {
       // Written back as the URI it was picked or loaded as, verbatim.
       text += child.attrs.uri
+    } else if (child.type.name === 'reference') {
+      // An app URL's chip is the URL it was (OPT-19, SPEC §13.1); a reference with no URL is its URI.
+      text += child.attrs.href || child.attrs.uri || ''
     } else if (child.type.name === 'objectMention') {
       // Written back as the address it was loaded or inserted as, verbatim.
       text += child.attrs.uri
