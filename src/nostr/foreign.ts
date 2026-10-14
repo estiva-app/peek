@@ -322,8 +322,8 @@ export type UrlReference =
  * **Two steps, and the second is why this cannot be a pure function.**
  * `matchObjectUrl` recovers the kind and the `d`; a NIP-33 address also needs
  * the author, and only the relay knows who that is. So a matched URL costs one
- * `#d` query, which §7.4's measurement makes unambiguous: no `(kind, d)` is
- * shared by two authors.
+ * `#d` query. §7.4 measured no `(kind, d)` shared by two authors, but nothing
+ * stops a member publishing one, so a `d` two authors hold names nothing.
  *
  * A URL that names an event — Peek's `/message/<id>`, or a thread's
  * `?thread=<id>` (FOL-38) — costs nothing: the id is the whole identity, and
@@ -342,13 +342,16 @@ export async function referenceFromUrlAsViewer(
     const hit = matchObjectUrl(url, await urlShapes(query))
     if (!hit) return null
     if (hit.by === 'id') return { eventId: hit.identifier }
-    const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 1 }
-    // Narrow by kind when the app named one. Without it the `d` alone is still
-    // unambiguous, but the query is cheaper and the intent is clearer.
+    // Asks for two: a `d` two authors hold names nothing, as `cardValueOfUrlAsViewer` reads it (§13.1's "an identity
+    // two authors hold", OPT-19) — `limit: 1` would tag whichever answered first, so a member who published the same
+    // `(kind, d)` could take a link's mention.
+    const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
+    // Narrow by kind when the app named one: the query is cheaper and the intent is clearer.
     if (hit.kind !== undefined) filter.kinds = [hit.kind]
-    const [found] = await query([filter])
-    if (!found) return null
-    const address = `${found.kind}:${found.pubkey}:${hit.identifier}`
+    const found = await query([filter])
+    const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
+    if (authors.size !== 1) return null
+    const address = `${[...authors][0]}:${hit.identifier}`
     return hit.block === undefined ? { address } : { address, block: hit.block }
   } catch (error) {
     if (error instanceof RelayReadError) return null
