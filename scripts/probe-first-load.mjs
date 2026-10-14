@@ -71,7 +71,7 @@ const liveDesk = ['--until', '(() => !window.__peekPicture || window.__peekPictu
  * once and `allTextsNoPulse` is met before anything starts pulsing — but the page is kept, and the copy written, only
  * once its reads are done.
  */
-const loaded = (ms = 20000) => ['--wait', '500', '--until', `(() => !document.querySelector('main .animate-pulse, main [aria-busy=true]') || performance.now() - __fl.phases.at(-1).at > ${ms})()`]
+const loaded = (ms = 20000) => ['--wait', '500', '--until', `(() => !document.querySelector('main [class*=animate-pulse], main [aria-busy=true]') || performance.now() - __fl.phases.at(-1).at > ${ms})()`]
 /**
  * The Topics tree's rows and unread dots (PEE-4): `picture` keeps what is drawn now — the saved picture while it
  * shows — and any later moment reads the live tree against it, so a row that moved or a dot that went is printed.
