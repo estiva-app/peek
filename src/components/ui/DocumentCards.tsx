@@ -11,6 +11,7 @@
 import { createPortal } from 'react-dom'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { IconCircleOff, IconLayoutCards, IconLayoutList } from '@tabler/icons-react'
+import { blockCards, urlRunsIn, type RenderBlock } from '@estiva-app/protocol'
 import { ToolbarButton } from '@estiva-app/ui'
 import {
   referenceAtSelection,
@@ -41,6 +42,37 @@ function LineCards({ cards }: { cards: readonly ReferenceCard[] }) {
       ))}
     </div>
   )
+}
+
+/** A read description's cards for one block, for `RichText`'s `renderAfter` (`ForeignBody`). */
+export function BlockLineCards({ block }: { block: RenderBlock }) {
+  const cards = blockCards(block).map((card) => ({ uri: card.reference, layout: card.layout }))
+  return cards.length ? <LineCards cards={cards} /> : null
+}
+
+/** How many of a description's URLs are asked what they name — the editor's `LinkChips` limit, and Ship's. */
+export const MAX_LINKS_PER_DESCRIPTION = 24
+
+/**
+ * The URLs a description holds — in its text, and on a link that carries a
+ * card — for `useLinkResolver` to ask what each names (§7.7, Widgets). At most
+ * `MAX_LINKS_PER_DESCRIPTION`, the first ones, as a message's are capped: a
+ * claimed link is a relay query for every viewer. The rest stay links.
+ */
+export function linksInBlocks(blocks: readonly RenderBlock[]): string[] {
+  const out = new Set<string>()
+  const walk = (bs: readonly RenderBlock[]) => {
+    for (const block of bs) {
+      if (block.type === 'codeBlock') continue
+      for (const run of block.inline ?? []) {
+        if (run.href) out.add(run.href)
+        else if (!run.reference && !run.marks.includes('code')) for (const { url } of urlRunsIn(run.text)) out.add(url)
+      }
+      if (block.children) walk(block.children)
+    }
+  }
+  walk(blocks)
+  return [...out].slice(0, MAX_LINKS_PER_DESCRIPTION)
 }
 
 /** The field's cards, each drawn into the slot after its line. */

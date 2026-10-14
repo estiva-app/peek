@@ -6,12 +6,14 @@ import { TextSelection } from '@tiptap/pm/state'
 import {
   documentForEditing,
   publishableFromEditor,
+  referenceOfLink,
   toEditorDocument,
   type ContentFormat,
   type EditorDocument,
 } from '@estiva-app/protocol'
 import { richTextClassName } from '@estiva-app/ui'
-import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, ReferenceCards, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
+import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, LinkChips, ReferenceCards, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
+import { askCardValues, knownCardValue } from '@/api'
 import { DocumentCardChoice, DocumentLineCards, DocumentReference } from './DocumentCards'
 
 /**
@@ -114,6 +116,8 @@ export function BlockDocumentField({
         // A chip, and the card its writer chose after its line (SPEC §13.3, Widgets).
         ReferenceNode.configure({ view: DocumentReference }),
         ReferenceCards,
+        // An app URL reads as the chip of what it names, and saves as the URL (Widgets, Miky 14 Oct).
+        LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues }),
         UnknownBlock,
         AttachmentNode,
       ],

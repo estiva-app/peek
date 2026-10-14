@@ -137,6 +137,16 @@ export function cardValueOfUrl(url: string): Promise<string | null> {
   return value
 }
 
+/** What an app link names, from what has come back: undefined until it has, and for nothing. A `LinkResolver`. */
+export function knownCardValue(url: string): string | undefined {
+  return knownCardValues.get(url) ?? undefined
+}
+
+/** Ask what each of these links names; settles when every answer is in. A description editor's `LinkChips` asks this way. */
+export async function askCardValues(urls: readonly string[]): Promise<void> {
+  await Promise.all(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url).catch(() => null)))
+}
+
 /**
  * What each of these app links names, for a reader's `cardsIn` (SPEC §13.6.2):
  * a `LinkResolver` that answers from what has come back, and is replaced as

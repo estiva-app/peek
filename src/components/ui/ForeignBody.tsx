@@ -1,6 +1,8 @@
 import type { ResolvedSlot } from '@estiva-app/interop'
-import { toRenderTree } from '@estiva-app/protocol'
+import { linksAsReferences, toRenderTree, type RenderBlock } from '@estiva-app/protocol'
 import { RichText } from '@estiva-app/ui'
+import { useLinkResolver } from '@/api'
+import { BlockLineCards, DocumentReference, linksInBlocks } from './DocumentCards'
 
 /**
  * Another app's `body` slot, rendered — PRO-2.
@@ -25,8 +27,8 @@ import { RichText } from '@estiva-app/ui'
  * this repo can produce one — the dependency is `^0.8.0` — so it is a
  * belt-and-braces default rather than a live path.
  *
- * **Marks, not Peek's tokens.** No `renderText`, so §13.1's marks and links
- * arrive and nothing else. Peek's own messages additionally resolve
+ * **Marks and chips, not Peek's tokens.** No `renderText`, so §13.1's marks and
+ * links arrive and nothing else. Peek's own messages additionally resolve
  * `[Topic]` chips and mentions inside a run, and another app's body must not
  * get that layer: a Ship description's `[Title]` is not a topic in Peek.
  *
@@ -36,17 +38,26 @@ import { RichText } from '@estiva-app/ui'
  * repo it was written in, and a chip pointing it at `github.com/peek/peek`
  * is a wrong answer stated confidently.
  *
- * **No nested widgets either.** `MessageBody` renders a `nostr:naddr` in the
- * body as a widget below the text. Doing that here would put a widget inside a
- * widget's body, and two objects that reference each other would render until
- * something ran out — the recursion budget interop keeps for `list` has no
- * equivalent for prose.
+ * **A reference is its chip, and an app URL the chip of what it names**
+ * (Widgets, Miky 14 Oct), as in the field a writer edits: this is the same
+ * description for a reader who cannot write. The card its writer chose is
+ * drawn after its line (SPEC §13.3). It is drawn only here, on the object's own
+ * panel: a card never draws this body, so a card inside a card cannot nest.
  */
 export function ForeignBody({ slot, className }: { slot: ResolvedSlot; className?: string }) {
+  const tree = toRenderTree(slot.value, slot.format ?? 'marker')
+  const resolveLink = useLinkResolver(linksInBlocks(tree))
+  const blocks = linksAsReferences(tree, resolveLink)
   // One step down, with every heading, list, quote and table kept: it sits inside a card (Katerina, 28 September, UIG-30).
   return (
     <div data-foreign-body className={className}>
-      <RichText blocks={toRenderTree(slot.value, slot.format ?? 'marker')} size="small" />
+      <RichText
+        blocks={blocks}
+        size="small"
+        renderReference={(uri) => <DocumentReference uri={uri} />}
+        // The package's block is the protocol's, handed back.
+        renderAfter={(block) => <BlockLineCards block={block as RenderBlock} />}
+      />
     </div>
   )
 }
