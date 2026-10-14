@@ -89,6 +89,9 @@ function renderTokens(text: string): ReactNode {
 /** At most this many blocks are drawn live in one message (SPEC §13.6.1); the rest stay links. */
 const MAX_PARTS_PER_MESSAGE = 6
 
+/** At most this many of a message's links are asked what they name (§7.7) — Ship's `MAX_LINKS_PER_MESSAGE`. */
+const MAX_LINKS_PER_MESSAGE = 8
+
 const FOLLOW = { live: true }
 
 /**
@@ -162,11 +165,14 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
     (`findUrls`); the package's tree has no link mark, so a URL written in a
     link's *label* would otherwise name an object the link does not open
     (OPT-17's security review). A link to a block shown live keeps its words:
-    the block's card already stands for it (COM-2).
+    the block's card already stands for it (COM-2). At most
+    `MAX_LINKS_PER_MESSAGE`, the first ones, as Ship asks: each claimed link is
+    a relay query (OPT-18's security review). The rest stay links.
   */
-  const lookup = useLinkResolver(urls)
+  const asked = urls.slice(0, MAX_LINKS_PER_MESSAGE)
+  const lookup = useLinkResolver(asked)
   const resolveLink = (url: string) =>
-    urls.includes(url) && !shown.some((part) => urlNames(url, part.address)) ? lookup(url) : undefined
+    asked.includes(url) && !shown.some((part) => urlNames(url, part.address)) ? lookup(url) : undefined
   /*
     Every reference is drawn where it was written, as its chip — alone on its
     line too (OPT-18; Katerina, 5 Oct). A bare app link is a reference written
