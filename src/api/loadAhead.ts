@@ -32,6 +32,7 @@ import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
 import { getSocketReader, whenClickReadsQuiet } from '@/nostr/bridge'
+import { RelayReadError } from '@/nostr/relayRead'
 import { streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStreams'
 import type { ChannelStore } from '@/platform/channelStore'
 import { placeStreams, teamHasMemberStream, unlistedFiles } from './teamUnread'
@@ -66,6 +67,22 @@ let started = false
  */
 const CLICK_QUIET_MS = 1_000
 const CLICK_QUIET_AT_MOST_MS = 5_000
+
+/**
+ * A step that failed for a passing reason — the socket paused after a quota
+ * refusal, a REQ never ended, the connection dropped, the relay's own load — is
+ * run again a window later, at most this many times; what it had already read
+ * is held, so only the rest is asked. Stopping on the first such failure left
+ * Topics unloaded for a whole page load (QA-1, 16 s to open).
+ */
+const AHEAD_RETRIES = 2
+const AHEAD_RETRY_MS = 6_000
+const PASSING = /socket paused|not live|no EOSE|rate-limited|quota exceeded|reconnecting|connecting|too many concurrent|database error/i
+
+function passing(error: unknown): boolean {
+  if (error instanceof RelayReadError && (error.kind === 'rate_limited' || error.kind === 'unreachable')) return true
+  return PASSING.test(String(error))
+}
 
 /** `localStorage['peek.ahead'] = 'off'` turns it off, for the probe's comparison (a URL's query does not survive sign-in). */
 const aheadOff = (() => {
@@ -190,6 +207,8 @@ export function useLoadAhead(drawn: boolean): void {
           const lap = (label: string) => record.steps.push({ label: `Topics: ${label}`, ms: Math.round(performance.now() - began) })
           const folders = await loadFoldersAhead(at, async (folders) => {
             lap('listing')
+            const cut = (() => { try { return window.localStorage.getItem('peek.ahead.topics') } catch { return null } })()
+            if (cut === 'listing') return []
             // Tracking opens the Folders' live watches, whose frames share the window: a click under way finishes first.
             await whenClickReadsQuiet(CLICK_QUIET_MS, CLICK_QUIET_AT_MOST_MS)
             lap('quiet')
@@ -197,6 +216,7 @@ export function useLoadAhead(drawn: boolean): void {
             releaseFolders = trackAhead(store, folders.map((folder) => folder.id))
             await store.sync('track')
             lap('streams')
+            if (cut === 'track') return []
             const mine = await foldersTopicsOpens(folders, store, latest.current.membership, at)
             lap('parents')
             opened = mine.length
@@ -222,7 +242,16 @@ export function useLoadAhead(drawn: boolean): void {
       label: step.label,
       run: async () => {
         const began = performance.now()
-        await step.run()
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await step.run()
+            break
+          } catch (error) {
+            if (attempt > AHEAD_RETRIES || !passing(error)) throw error
+            record.steps.push({ label: `${step.label}: again after ${String(error).slice(0, 80)}`, ms: Math.round(performance.now() - began) })
+            await new Promise((resolve) => setTimeout(resolve, AHEAD_RETRY_MS))
+          }
+        }
         record.steps.push({ label: step.label, ms: Math.round(performance.now() - began) })
       },
     }))

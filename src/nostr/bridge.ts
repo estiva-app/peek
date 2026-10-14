@@ -175,8 +175,13 @@ export async function queryRelay(
   try {
     answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
     if (!answer) {
-      const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
-      answer = parseQueryResponse(status, text)
+      const release = lane === 'ahead' ? await aheadPost() : null
+      try {
+        const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
+        answer = parseQueryResponse(status, text)
+      } finally {
+        release?.()
+      }
     }
   } finally {
     if (lane === 'click') {
@@ -208,6 +213,27 @@ export type SocketReader = ((
 }
 
 let socketReader: SocketReader | null = null
+
+/**
+ * One `ahead` read over HTTP at a time (PEE-5). Each is a `/sign` round trip to
+ * Estiva ID and then the POST; a spilled pack of ten sent at once queued ahead
+ * of a click's own spilled reads, and of any write, at `/sign`.
+ */
+let aheadPosting = false
+const aheadPostWaiting: (() => void)[] = []
+
+function aheadPost(): Promise<() => void> {
+  const release = () => {
+    const next = aheadPostWaiting.shift()
+    if (next) next()
+    else aheadPosting = false
+  }
+  if (!aheadPosting) {
+    aheadPosting = true
+    return Promise.resolve(release)
+  }
+  return new Promise((resolve) => aheadPostWaiting.push(() => resolve(release)))
+}
 
 /** The reads in the `click` lane not yet answered, socket or HTTP, and when the last one was (PEE-5). */
 const clickReads = { open: 0, lastAt: 0 }

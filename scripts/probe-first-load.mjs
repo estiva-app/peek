@@ -188,6 +188,8 @@ const legs = {
   }),
   'click1s-off': (w) => ({ ...legs.click1s(w), init: AHEAD_OFF }),
   'click1s-topics': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Topics') } catch {}\n` }),
+  'click1s-listing': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Topics'); localStorage.setItem('peek.ahead.topics', 'listing') } catch {}\n` }),
+  'click1s-track': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Topics'); localStorage.setItem('peek.ahead.topics', 'track') } catch {}\n` }),
   'click1s-work': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Open work') } catch {}\n` }),
   // PEE-4: after a visit, a reload at Topics draws the tree at once, with the rows and dots it keeps once the relay
   // answers; after a reload at Desk the Open work topic and the Starred DM draw from the copy — right away, and a
