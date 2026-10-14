@@ -135,6 +135,14 @@ export interface SocketReaderOptions {
  * no click is waiting (`@estiva-app/platform`'s `createPacer`, lane `ahead`).
  */
 export const AHEAD_RESERVE = 15
+/**
+ * Of {@link HTTP_SPILL_PER_MINUTE}, how many a read loaded ahead may take after
+ * waiting {@link SPILL_AFTER_MS} (PEE-5). Desk's own reads fill the socket's
+ * windows for its first ~7 s, so on the socket alone the loader's first read went
+ * out ~5 s after it was asked; HTTP had room (Desk spilled 5 of 120). A quarter,
+ * so a click's spill always finds the rest.
+ */
+export const AHEAD_HTTP_PER_MINUTE = 30
 
 /** A {@link SocketReader} that can also move the reads loaded ahead into the click lane, and say what waits. */
 export type LanedSocketReader = SocketReader & {
@@ -168,6 +176,23 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
       while (spilled.length > 0 && spilled[0] <= floor) spilled.shift()
       if (spilled.length >= HTTP_SPILL_PER_MINUTE || options.httpBudget.pausedForMs() > 0) return false
       spilled.push(now())
+      return true
+    },
+  }
+  const aheadSpilled: number[] = []
+  /** `extra` more reads going over HTTP with the one asked about: a pack's others. */
+  const aheadSpill = {
+    afterMs: SPILL_AFTER_MS,
+    allowed(extra = 0) {
+      const floor = now() - 60_000
+      while (aheadSpilled.length > 0 && aheadSpilled[0] <= floor) aheadSpilled.shift()
+      while (spilled.length > 0 && spilled[0] <= floor) spilled.shift()
+      if (aheadSpilled.length + 1 + extra > AHEAD_HTTP_PER_MINUTE || spilled.length + 1 + extra > HTTP_SPILL_PER_MINUTE) return false
+      if (options.httpBudget.pausedForMs() > 0) return false
+      for (let i = 0; i <= extra; i++) {
+        aheadSpilled.push(now())
+        spilled.push(now())
+      }
       return true
     },
   }
@@ -233,15 +258,29 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     filters, and each read is handed what its own filters match, at most each
     filter's `limit`, newest first — what the relay would have answered it.
   */
-  type Pack = { client: LiveClient; filters: Record<string, unknown>[]; promoted: boolean; resolve: (outcome: Outcome | 'alone') => void }
+  type Pack = { client: LiveClient; filters: Record<string, unknown>[]; promoted: boolean; resolve: (outcome: Outcome | 'alone' | 'http') => void }
   const packs: Pack[] = []
   let packing = false
 
-  function readPacked(client: LiveClient, filters: Record<string, unknown>[]): Promise<Outcome | 'alone'> {
+  function readPacked(client: LiveClient, filters: Record<string, unknown>[]): Promise<Outcome | 'alone' | 'http'> {
     return new Promise((resolve) => {
       packs.push({ client, filters, promoted: false, resolve })
       void pumpPacks()
     })
+  }
+
+  /** The reads at the front that go out as one REQ, and their filters. */
+  function frontPack(): { pack: Pack[]; merged: Map<string, Record<string, unknown>> } {
+    const client = packs[0].client
+    const merged = new Map<string, Record<string, unknown>>()
+    let count = 0
+    for (; count < packs.length && packs[count].client === client; count++) {
+      const keys = packs[count].filters.map((filter) => JSON.stringify(filter))
+      const fresh = new Set(keys.filter((key) => !merged.has(key))).size
+      if (count > 0 && merged.size + fresh > MAX_FILTERS_PER_REQ) break
+      packs[count].filters.forEach((filter, i) => merged.set(keys[i], filter))
+    }
+    return { pack: packs.slice(0, count), merged }
   }
 
   async function pumpPacks() {
@@ -251,20 +290,25 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
       while (packs.length > 0) {
         // Asked for as the person's own once they have acted: a click may be waiting on one of these.
         const lane: ReadLane = packs[0].promoted ? 'click' : 'ahead'
-        await pacer.take(1, { lane })
-        const release = await inFlight.acquire(lane)
-        const client = packs[0].client
-        const pack: Pack[] = []
-        const merged = new Map<string, Record<string, unknown>>()
-        while (packs.length > 0 && packs[0].client === client) {
-          const keys = packs[0].filters.map((filter) => JSON.stringify(filter))
-          const fresh = new Set(keys.filter((key) => !merged.has(key))).size
-          if (pack.length > 0 && merged.size + fresh > MAX_FILTERS_PER_REQ) break
-          const next = packs.shift()!
-          pack.push(next)
-          next.filters.forEach((filter, i) => merged.set(keys[i], filter))
+        // Over HTTP, each read of the pack goes as its own POST, so each counts against the allowance.
+        let spilling = 0
+        const packSpill = {
+          afterMs: SPILL_AFTER_MS,
+          allowed: () => {
+            const size = frontPack().pack.length
+            const ok = lane === 'click' ? spill.allowed() : aheadSpill.allowed(size - 1)
+            if (ok) spilling = lane === 'click' ? 1 : size
+            return ok
+          },
         }
-        void reqInSlot(client, [...merged.values()], release).then((outcome) => {
+        if ((await pacer.take(1, { lane, spill: packSpill })) === 'http') {
+          for (const read of packs.splice(0, spilling)) read.resolve('http')
+          continue
+        }
+        const release = await inFlight.acquire(lane)
+        const { pack, merged } = frontPack()
+        packs.splice(0, pack.length)
+        void reqInSlot(pack[0].client, [...merged.values()], release).then((outcome) => {
           for (const read of pack) {
             if (outcome.kind === 'events') read.resolve({ kind: 'events', events: answerOf(read.filters, outcome.events) })
             // The relay's verdict on one filter is not the others': each is asked again alone.
@@ -304,10 +348,12 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     const asked = now()
     const note = (via: string, at: Partial<SocketReadRecord> = {}) =>
       recordSocketRead({ at: asked, reqs: 0, liveWaitMs: 0, pacerWaitMs: 0, answerMs: 0, via, lane, ...at })
-    // A read loaded ahead never goes over HTTP, whose meter Ship and every
-    // write share: whatever would send it there fails it, and the loader stops.
+    // A read loaded ahead goes over HTTP, whose meter Ship and every write
+    // share, only when it waited and its own smaller allowance let it
+    // (`AHEAD_HTTP_PER_MINUTE`): whatever else would send it there fails it,
+    // and the loader stops.
     const overHttp = (why: string, at: Partial<SocketReadRecord> = {}): Answer | null => {
-      if (lane === 'ahead') {
+      if (lane === 'ahead' && why !== 'spilled') {
         note(`refused ahead: ${why}`, at)
         return { ok: false, events: [], reason: `ahead: ${why}` }
       }
@@ -333,10 +379,11 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     let pacerWaitMs = 0
     if (lane === 'ahead' && reqs === 1 && packable(filters)) {
       const packed = await readPacked(client, filters)
+      if (packed === 'http') return overHttp('spilled', { reqs, liveWaitMs, pacerWaitMs: now() - asked - liveWaitMs })
       if (packed !== 'alone') outcomes = [packed]
     }
     if (!outcomes) {
-      const via = await pacer.take(reqs, { lane, spill })
+      const via = await pacer.take(reqs, { lane, spill: lane === 'ahead' ? aheadSpill : spill })
       pacerWaitMs = now() - asked - liveWaitMs
       if (via === 'http') {
         log('socket read spilled to HTTP', { reqs })

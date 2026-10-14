@@ -5,7 +5,16 @@ import type { RelayState, SignedEvent } from '@estiva-app/protocol'
 vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
 vi.mock('./liveTopics', () => ({ getLiveClient: () => null }))
 
-import { createSocketReader, EOSE_TIMEOUT_MS, LIVE_WAIT_MS, MAX_REQS_IN_FLIGHT, REQS_PER_WINDOW, WINDOW_MS } from './socketRead'
+import {
+  AHEAD_HTTP_PER_MINUTE,
+  createSocketReader,
+  EOSE_TIMEOUT_MS,
+  LIVE_WAIT_MS,
+  MAX_REQS_IN_FLIGHT,
+  REQS_PER_WINDOW,
+  SPILL_AFTER_MS,
+  WINDOW_MS,
+} from './socketRead'
 import { createFrameShaper, FRAMES_PER_SECOND, FRAMES_PER_WINDOW, otherFramesSince, SHAPED_WINDOW_MS, resetSocketFrames, sendingAsRead } from './socketFrames'
 import { queryRelay, setSocketReader } from './bridge'
 import { relayReads, resetRelayMeter } from './relayMeter'
@@ -186,7 +195,7 @@ describe('socket reads', () => {
 // watches' frames, and the `ahead` lane — is `@estiva-app/platform`'s
 // `createPacer` now, and tested there (PEE-5).
 describe('reads loaded ahead (PEE-5)', () => {
-  it('never go over HTTP: what would send one there fails it instead', async () => {
+  it('go over HTTP only after waiting: anything else that would send one there fails it instead', async () => {
     const paused = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => 1_000) }
     const { client } = fakeClient()
     const { read } = reader(client, paused)
@@ -259,7 +268,7 @@ describe('reads loaded ahead (PEE-5)', () => {
     // Boot asked most of the window.
     await answerAll(read('https://relay', wide(REQS_PER_WINDOW - 20, 'boot'), ME))
     const before = subs.length
-    // Twenty left: an ahead read of ten would reach into the reserve, so it waits.
+    // Twenty left: an ahead read of ten would reach into the reserve, so it waits (and, after a second, goes over HTTP).
     const ahead = read('https://relay', wide(10, 'ahead'), ME, { lane: 'ahead' })
     await vi.advanceTimersByTimeAsync(100)
     expect(subs.length).toBe(before)
@@ -269,7 +278,41 @@ describe('reads loaded ahead (PEE-5)', () => {
     expect(subs.length).toBeGreaterThan(before)
     expect(subs.slice(before).every((sub) => String(sub.filters[0]['#h']).startsWith('click'))).toBe(true)
     expect(await answerAll(click)).toMatchObject({ ok: true })
-    expect(await answerAll(ahead)).toMatchObject({ ok: true })
+    expect(await answerAll(ahead)).toBeNull()
+    expect(subs.slice(before).some((sub) => String(sub.filters[0]['#h']).startsWith('ahead'))).toBe(false)
+  })
+
+  it(`wait ${SPILL_AFTER_MS} ms for the socket, then go over HTTP, at most ${AHEAD_HTTP_PER_MINUTE} a minute`, async () => {
+    vi.useFakeTimers()
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    // The window is full: every read asked now waits.
+    const boot = read('https://relay', Array.from({ length: REQS_PER_WINDOW * 10 }, (_, i) => ({ kinds: [9], '#h': [`boot${i}`] })), ME)
+    await vi.waitFor(() => expect(subs.length).toBeGreaterThan(0))
+    for (let i = 0; i < REQS_PER_WINDOW; i++) {
+      for (const sub of subs) if (!sub.closed) sub.onEose?.()
+      await vi.advanceTimersByTimeAsync(0)
+    }
+    await boot
+    const before = subs.length
+    // Packed reads spill together, each counted; a read of its own once.
+    const packed = Array.from({ length: AHEAD_HTTP_PER_MINUTE - 1 }, (_, i) => read('https://relay', [{ kinds: [9], '#h': [`p${i}`] }], ME, { lane: 'ahead' }))
+    const alone = read('https://relay', Array.from({ length: 11 }, (_, i) => ({ kinds: [9], '#h': [`a${i}`] })), ME, { lane: 'ahead' })
+    let early = false
+    void alone.then(() => (early = true))
+    await vi.advanceTimersByTimeAsync(SPILL_AFTER_MS - 1)
+    expect(early).toBe(false)
+    // Packs of ten, ten and nine, a second apart: 29 POSTs, and the read of its own the 30th.
+    await vi.advanceTimersByTimeAsync(3 * SPILL_AFTER_MS)
+    expect(await Promise.all(packed)).toEqual(packed.map(() => null))
+    expect(await alone).toBeNull()
+    expect(subs.length).toBe(before)
+    // The thirty-first waits for the socket.
+    const over = read('https://relay', Array.from({ length: 11 }, (_, i) => ({ kinds: [9], '#h': [`o${i}`] })), ME, { lane: 'ahead' })
+    let settled = false
+    void over.then(() => (settled = true))
+    await vi.advanceTimersByTimeAsync(SPILL_AFTER_MS)
+    expect(settled).toBe(false)
   })
 })
 
@@ -331,10 +374,10 @@ describe('queryRelay', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('answers a read loaded ahead that the socket would not take with a failure, not over HTTP (PEE-5)', async () => {
+  it('answers a read loaded ahead with a failure, not over HTTP, while no socket reader is installed (PEE-5)', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
-    setSocketReader(async () => null)
+    setSocketReader(null)
     expect(await queryRelay('https://relay', [{ kinds: [9] }], 'token', ME, 'ahead')).toMatchObject({ ok: false })
     expect(fetch).not.toHaveBeenCalled()
   })

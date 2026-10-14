@@ -166,11 +166,11 @@ export async function queryRelay(
   filters: Record<string, unknown>[],
   token: string,
   pubkey?: string,
-  /** `ahead` for what Desk loads before it is asked for (PEE-5): socket only, after every click. */
+  /** `ahead` for what Desk loads before it is asked for (PEE-5): after every click, over HTTP only when the reader lets it. */
   lane: ReadLane = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
+  if (!socketReader && lane === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
   let answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
-  if (!answer && lane === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
   if (!answer) {
     const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
     answer = parseQueryResponse(status, text)
