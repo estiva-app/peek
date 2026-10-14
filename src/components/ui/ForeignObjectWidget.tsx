@@ -522,9 +522,9 @@ export function ForeignObjectCard({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* The title is the way into the owning app. A reference you cannot
               follow is a screenshot. */}
-          {object.openUrl ? (
+          {openInAppUrl(object) ? (
             <span className="contents text-body-2 font-semibold text-text-primary">
-              <Link href={object.openUrl} variant="quiet" external truncate>
+              <Link href={openInAppUrl(object)} variant="quiet" external truncate>
                 {title}
               </Link>
             </span>
