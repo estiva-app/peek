@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { ConversationCard } from '@/components/ConversationCard'
 import type { ConversationData, FileAttachment } from '@/api'
+import type { Embed } from '@estiva-app/protocol'
 
 /** What a card in the list does, by the id of the message it draws. */
 export interface RowHandlers {
@@ -8,6 +9,8 @@ export interface RowHandlers {
   toggleReaction: (id: string, emoji: string) => void
   editBody: (id: string, body: string) => void
   editFiles: (id: string, files: FileAttachment[]) => void
+  /** The card set after an edit, when it changed (OPT-17). */
+  editEmbeds: (id: string, embeds: Embed[]) => void
   onOpenThread: (id: string) => void
   remove: (id: string) => void
 }
@@ -56,6 +59,7 @@ export const ConversationRow = memo(
         onReactionsChange={(_next, emoji) => actions.toggleReaction(c.id, emoji)}
         onBodyChange={(b) => actions.editBody(c.id, b)}
         onFilesChange={(f) => actions.editFiles(c.id, f)}
+        onEmbedsChange={(e) => actions.editEmbeds(c.id, e)}
         readOnly={readOnly}
         onClick={readOnly && !c.replyCount ? undefined : () => actions.onOpenThread(c.id)}
         onReply={() => actions.onOpenThread(c.id)}

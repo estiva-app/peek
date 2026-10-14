@@ -4,8 +4,9 @@
  * Which values get a card is the package's rule (`cardsIn`) and is tested
  * there; what this guards is how Peek draws its answer, the same way Ship does
  * (estiva-app/ship#284): compact as a row, detailed as a card, `none` as
- * nothing, and an `embed` on a reference alone on its line taking the place of
- * the card that line would otherwise attach, leaving the chip in the text.
+ * nothing — and no card at all without an `embed`, for a reference alone on its
+ * line, a bare app link or a link on words: each reads as its chip or its link
+ * (OPT-18).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
@@ -16,18 +17,25 @@ const ISSUE = `30851:${SHIP}:f0b27d90-d5b9-40e7-8078-865ab36a421c`
 const ISSUE_REF = `nostr:${addrToNaddr(ISSUE, [])}`
 const EVENT = 'a1b2c3d4e5f60718293a4b5c6d7e8f9011223344556677889900aabbccddeeff'
 const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
+const ISSUE_URL = 'https://ship.estiva.app/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
 
 const drawn: { naddr: string; layout?: string }[] = []
+// What the relay answers for each reference: the issue, nothing yet, or an object this reader cannot see.
+let answer: 'issue' | 'none' | 'unreachable' = 'issue'
 
 vi.mock('@/api', () => ({
   TOPICS: [],
   APP_FILES: [],
   DOCUMENT_FILES: [],
+  // §7.7 as the reader asks it: Ship's link names the issue; anything else names nothing.
+  useLinkResolver: () => (url: string) => (url === ISSUE_URL ? ISSUE : undefined),
   useResolvedReferences: (refs: string[]) =>
     Object.fromEntries(
       refs.map((ref) => [
         ref,
-        { ref: ISSUE, eventId: 'e'.repeat(64), kind: 30851, widget: 'row', slots: { title: { value: 'Peek draws the card' } }, meta: [], comments: [], actions: [] },
+        answer === 'none'
+          ? null
+          : { ref: ISSUE, eventId: 'e'.repeat(64), kind: 30851, widget: 'row', slots: { title: { value: 'Peek draws the card' } }, meta: [], comments: [], actions: [], ...(answer === 'unreachable' ? { unreachable: true } : {}) },
       ]),
     ),
 }))
@@ -51,6 +59,7 @@ const show = (body: string, embeds?: Embed[]) => render(<MessageBody body={body}
 
 beforeEach(() => {
   drawn.length = 0
+  answer = 'issue'
 })
 
 describe('the card a message asks for', () => {
@@ -71,9 +80,51 @@ describe('the card a message asks for', () => {
     expect(drawn).toEqual([])
   })
 
-  it('draws the lone-line card as before when no embed names it', () => {
-    show(`Look.\n\n${ISSUE_REF}`)
-    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: undefined }])
+  it('draws a reference alone on its line as its chip, with no card, when no embed names it (OPT-18)', () => {
+    const c = show(`Look.\n\n${ISSUE_REF}`)
+    expect(drawn).toEqual([])
+    expect(c.textContent).toContain('Peek draws the card')
+  })
+
+  it('draws a message that is only a reference as that chip, sent before any embed existed (OPT-18)', () => {
+    const c = show(ISSUE_REF)
+    expect(drawn).toEqual([])
+    expect(c.textContent).toBe('Peek draws the card')
+  })
+
+  it('draws a lone message pointer as its chip, not a quote card (OPT-18)', () => {
+    show(`Look.\n\n${NEVENT}`)
+    expect(drawn).toEqual([])
+  })
+
+  it('draws a bare app link as the chip of what it names, alone or mid-sentence, with no card (OPT-18)', () => {
+    const lone = show(ISSUE_URL)
+    expect(drawn).toEqual([])
+    expect(lone.textContent).toBe('Peek draws the card')
+    const mid = show(`see ${ISSUE_URL}, then ship`)
+    expect(drawn).toEqual([])
+    expect(mid.textContent).toContain('see Peek draws the card, then ship')
+  })
+
+  it('keeps a bare app link a link until what it names has come back, and for good when it cannot be read (OPT-18)', () => {
+    for (const state of ['none', 'unreachable'] as const) {
+      answer = state
+      const c = show(`see ${ISSUE_URL}`)
+      expect(c.querySelector(`a[href="${ISSUE_URL}"]`)).not.toBeNull()
+      expect(c.querySelector('[data-reference]')).toBeNull()
+    }
+  })
+
+  it('keeps a link nothing claims as the link it is, with no card under it (OPT-18)', () => {
+    const c = show('https://example.com/a')
+    expect(drawn).toEqual([])
+    expect(c.querySelector('a[href="https://example.com/a"]')).not.toBeNull()
+  })
+
+  it('draws the chosen card under a bare app link, and keeps its chip', () => {
+    const c = show(ISSUE_URL, [{ value: ISSUE, layout: 'compact' }])
+    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'row' }])
+    expect(c.textContent).toContain('Peek draws the card')
   })
 
   it('replaces a lone-line card with the chosen layout, and the line stays as its chip', () => {
@@ -98,5 +149,37 @@ describe('the card a message asks for', () => {
   it('draws nothing for an embed whose value the body no longer names', () => {
     show('the link was taken out', [{ value: ISSUE, layout: 'detailed' }])
     expect(drawn).toEqual([])
+  })
+})
+
+describe('the card a link on words asks for (OPT-17)', () => {
+  // As Peek sends it: the link's object is indexed by an `a` (FOL-38), which alone would attach a row.
+  const tagged = (body: string, embeds?: Embed[]) => render(<MessageBody body={body} embeds={embeds} nostrReferences={[ISSUE]} />)
+
+  it('draws the chosen layout for the object the link names, instead of the link’s own card', () => {
+    tagged(`the plan is [these words](${ISSUE_URL}) for now`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'card' }])
+  })
+
+  it('draws nothing under it for none', () => {
+    tagged(`the plan is [these words](${ISSUE_URL}) for now`, [{ value: ISSUE, layout: 'none' }])
+    expect(drawn).toEqual([])
+  })
+
+  it('draws no card for a link on words with no embed, and its `a` attaches nothing — the words stay a link (OPT-18)', () => {
+    const c = tagged(`the plan is [these words](${ISSUE_URL}) for now`).container
+    expect(drawn).toEqual([])
+    expect(c.querySelector(`a[href="${ISSUE_URL}"]`)?.textContent).toBe('these words')
+  })
+
+  it('a URL written in a link’s label names nothing: the link goes elsewhere', () => {
+    show(`see [${ISSUE_URL}](https://evil.example/login)`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(drawn.filter((d) => d.layout === 'card')).toEqual([])
+  })
+
+  it('a link that names nothing by §7.7 carries no card, whatever its embed says', () => {
+    const lookalike = 'https://evil.example/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
+    show(`see [this](${lookalike})`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(drawn.filter((d) => d.layout === 'card')).toEqual([])
   })
 })

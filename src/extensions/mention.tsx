@@ -2,16 +2,33 @@ import { NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/r
 import Mention from '@tiptap/extension-mention'
 import { CaptionedReference, PersonMention, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
-import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
+import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconLayoutBottombar, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { referenceSections, subscribeReferences, useResolvedReferences } from '@/api'
 import { mentionMessages } from '@/api/mentions'
 import { isObjectAddress } from '@/lib/textParsing'
 import { referenceGlyphOfUri } from '@/lib/fileGlyph'
 import { mentionDirectory } from '@/components/ui/MentionMenu'
-import { KindIcon, inlineChipClassName } from '@estiva-app/ui'
+import { InlineChip, KindIcon, inlineChipClassName } from '@estiva-app/ui'
 import { FILES_MENU_COPY, FILES_MENU_ICON, toReferenceItem } from '@/components/ui/FilesMenu'
 import type { ForeignObject } from '@estiva-app/interop'
+import type { EmbedLayout } from '@estiva-app/protocol'
 import { Reference } from '@/components/ui/Reference'
+import { cardOfDecorations } from './cardChoices'
+
+/**
+ * What a chip with a card chosen wears after it while the message is written
+ * (OPT-17, Miky 13 Oct: a marker, not a preview), so the author sees a card is
+ * coming before they send. Nothing for `none`.
+ */
+function CardMarker({ card }: { card: EmbedLayout }) {
+  if (card === 'none') return null
+  const words = card === 'detailed' ? 'Detailed card' : 'Compact card'
+  return (
+    <span data-card-marker={card} aria-label={words} role="img" className="inline-flex align-top h-[1.4em] items-center text-text-muted">
+      <IconLayoutBottombar size={14} stroke={1.5} />
+    </span>
+  )
+}
 
 // ─── @ and !@ ───
 //
@@ -127,13 +144,39 @@ export const TopicMention = Mention.extend({
  * message has an event id and nothing older to fall back to — there was never
  * a way to write one before this, so `uri` is never null.
  */
-export const MessageMention = CaptionedReference.extend({ name: 'messageMention' }).configure({
-  icon: <IconMessage size={14} stroke={1.5} />,
-  // What it points at, as its row in the list showed it: a topic, a Ship project or issue, a file, a message (7 October).
-  iconFor: (uri) => {
-    const glyph = referenceGlyphOfUri(uri)
-    return glyph ? <KindIcon kind={glyph} size={14} tone="inherit" /> : undefined
+/** What it points at, as its row in the list showed it: a topic, a Ship project or issue, a file, a message (7 October). */
+function messageMentionIcon(uri: string | null) {
+  const glyph = referenceGlyphOfUri(uri)
+  return glyph ? <KindIcon kind={glyph} size={14} tone="inherit" /> : <IconMessage size={14} stroke={1.5} />
+}
+
+/*
+  The package's chip, drawn with its own `InlineChip` instead of its node view,
+  only so the card marker can sit after it (OPT-17): the package's view takes
+  nothing beside the caption. The same icon, the same `label: snippet` caption
+  and the same 24ch cap as `CaptionedReference`'s view.
+*/
+function MessageMentionView({ node, decorations }: NodeViewProps) {
+  const label = String(node.attrs.label ?? '')
+  const snippet = String(node.attrs.snippet ?? '')
+  return (
+    <NodeViewWrapper as="span" className="cursor-default">
+      <InlineChip icon={messageMentionIcon(node.attrs.uri ?? null)} className="max-w-[24ch]">
+        <span className="truncate">{snippet ? `${label}: ${snippet}` : label}</span>
+      </InlineChip>
+      <CardMarker card={cardOfDecorations(decorations)} />
+    </NodeViewWrapper>
+  )
+}
+
+export const MessageMention = CaptionedReference.extend({
+  name: 'messageMention',
+  addNodeView() {
+    return ReactNodeViewRenderer(MessageMentionView, { as: 'span' })
   },
+}).configure({
+  icon: <IconMessage size={14} stroke={1.5} />,
+  iconFor: messageMentionIcon,
 })
 
 /** Each `[` row with the icon of what it is — the chip it inserts wears the same, from its URI (7 October). */
@@ -232,7 +275,7 @@ export const FileMention = Mention.extend({
 /** What a story or a test hands the composer instead of asking the relay: `ComposeBox`'s `resolvedObjects`. */
 type ObjectMentionStorage = { supplied?: Record<string, ForeignObject> }
 
-function ObjectMentionView({ node, editor }: NodeViewProps) {
+function ObjectMentionView({ node, editor, decorations }: NodeViewProps) {
   const uri: string = node.attrs.uri
   const storage = (editor.storage as unknown as { objectMention?: ObjectMentionStorage }).objectMention
   const supplied = storage?.supplied?.[uri] ?? storage?.supplied?.[uri.replace(/^nostr:/, '')]
@@ -241,6 +284,7 @@ function ObjectMentionView({ node, editor }: NodeViewProps) {
   return (
     <NodeViewWrapper as="span">
       <Reference uri={uri} object={supplied ?? fetched[uri]} link={false} />
+      <CardMarker card={cardOfDecorations(decorations)} />
     </NodeViewWrapper>
   )
 }

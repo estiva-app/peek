@@ -10,6 +10,7 @@ import { ComposeBox, type SendPayload, type SendRefused } from '@/components/ui/
 import { SkeletonConversationList } from '@/components/ui/Skeleton'
 import { registerTopicConversation, unregisterTopicConversation, type ConversationMessage } from '@/lib/conversationRegistry'
 import { draftKeys } from '@/lib/drafts'
+import type { Embed } from '@estiva-app/protocol'
 import { newestMessageAt, useMarkThreadRead } from '@/lib/useMarkRead'
 import { registerThreadOpener, unregisterThreadOpener } from '@/lib/threadOpener'
 import { useToast } from '@/lib/toast'
@@ -292,8 +293,9 @@ export function useFileConversationView({
     has returned and published as one event: the new body, and the new set as
     `imeta` (CON-5).
   */
-  const pendingEdits = useRef(new Map<string, { body?: string; files?: FileAttachment[] }>())
-  const queueEdit = (targetEventId: string, change: { body?: string; files?: FileAttachment[] }) => {
+  type PendingEdit = { body?: string; files?: FileAttachment[]; embeds?: Embed[] }
+  const pendingEdits = useRef(new Map<string, PendingEdit>())
+  const queueEdit = (targetEventId: string, change: PendingEdit) => {
     const pending = pendingEdits.current
     const first = !pending.has(targetEventId)
     pending.set(targetEventId, { ...pending.get(targetEventId), ...change })
@@ -314,7 +316,8 @@ export function useFileConversationView({
           if (!files) return
         }
       }
-      void actions.edit(targetEventId, body, files).then((result) => {
+      // The card set rides the same edit, so it cannot race the body either (OPT-17).
+      void actions.edit(targetEventId, body, files, edit?.embeds).then((result) => {
         // The old text is back on the message; what was saved goes back in its edit box (Miky, 9 Oct).
         if (!result.ok) putBackEdit(targetEventId, body)
         notSaved('edit', result)
@@ -323,6 +326,7 @@ export function useFileConversationView({
   }
   const editBody = (targetEventId: string, body: string) => queueEdit(targetEventId, { body })
   const editFiles = (targetEventId: string, files: FileAttachment[]) => queueEdit(targetEventId, { files })
+  const editEmbeds = (targetEventId: string, embeds: Embed[]) => queueEdit(targetEventId, { embeds })
 
   // Gone as it is confirmed, so nothing is said unless it comes back (Miky, 9 Oct).
   const remove = (targetEventId: string) => void actions.remove(targetEventId).then((result) => notSaved('delete', result))
@@ -362,12 +366,12 @@ export function useFileConversationView({
     say: (back) => showToast({ label: notSentNote(where, noteName, reason, back), type: 'error' }),
   })
 
-  const handleSend = async ({ text, resolution, files, urgent }: SendPayload) => {
+  const handleSend = async ({ text, resolution, files, urgent, embeds }: SendPayload) => {
     const attachments = outgoing(files)
     if (!attachments) return false
     // Your own comment always brings you down to it, as it is drawn — before the relay has answered (OPT-6).
     nearBottom.current = true
-    const result = await actions.comment(text, attachments, urgent)
+    const result = await actions.comment(text, attachments, urgent, embeds)
     if (!result.ok) {
       // Nothing was drawn, or it was taken out again: where the reader actually is decides what follows next.
       if (scrollRef.current) nearBottom.current = isNearBottom(scrollRef.current)
@@ -381,11 +385,11 @@ export function useFileConversationView({
   const openRoot = openThreadId && conversation ? conversation.roots.find((r) => r.id === openThreadId) : undefined
   const openView = openThreadId && view ? view.byId[openThreadId] : undefined
 
-  const handleSendReply = async ({ text, resolution, files, urgent }: SendPayload) => {
+  const handleSendReply = async ({ text, resolution, files, urgent, embeds }: SendPayload) => {
     if (!openRoot) return false
     const attachments = outgoing(files)
     if (!attachments) return false
-    const result = await actions.reply(openRoot, text, attachments, urgent)
+    const result = await actions.reply(openRoot, text, attachments, urgent, embeds)
     if (!result.ok) return notSent(openView ? `your reply to ${openView.data.authorName}` : noteName, result.reason)
     membershipAfterWrite()
     // A resolution written in the thread names the reply that carried it (PEEK-128).
@@ -401,13 +405,14 @@ export function useFileConversationView({
   */
   const latestRow = useRef<RowHandlers | null>(null)
   useLayoutEffect(() => {
-    latestRow.current = { setResolution, toggleReaction, editBody, editFiles, onOpenThread, remove }
+    latestRow.current = { setResolution, toggleReaction, editBody, editFiles, editEmbeds, onOpenThread, remove }
   })
   const [rowActions] = useState<RowHandlers>(() => ({
     setResolution: (id, resolved, message) => latestRow.current?.setResolution(id, resolved, message),
     toggleReaction: (id, emoji) => latestRow.current?.toggleReaction(id, emoji),
     editBody: (id, body) => latestRow.current?.editBody(id, body),
     editFiles: (id, files) => latestRow.current?.editFiles(id, files),
+    editEmbeds: (id, embeds) => latestRow.current?.editEmbeds(id, embeds),
     onOpenThread: (id) => latestRow.current?.onOpenThread(id),
     remove: (id) => latestRow.current?.remove(id),
   }))
@@ -628,6 +633,7 @@ export function useFileConversationView({
         onInitialReactionsChange={(_next, emoji) => toggleReaction(openRoot.id, emoji)}
         onInitialBodyChange={(b) => editBody(openRoot.id, b)}
         onInitialFilesChange={(f) => editFiles(openRoot.id, f)}
+        onInitialEmbedsChange={(e) => editEmbeds(openRoot.id, e)}
         onResolutionChange={(resolved, message) => setResolution(openRoot.id, resolved, message)}
         onClose={() => onOpenThread(null)}
         onSendReply={handleSendReply}
@@ -637,6 +643,7 @@ export function useFileConversationView({
         onDeleteReply={(id) => remove(id)}
         onReplyBodyChange={(id, b) => editBody(id, b)}
         onReplyFilesChange={(id, f) => editFiles(id, f)}
+        onReplyEmbedsChange={(id, e) => editEmbeds(id, e)}
         onReplyReactionsChange={(id, _next, _prev, emoji) => toggleReaction(id, emoji)}
       />
     ) : undefined

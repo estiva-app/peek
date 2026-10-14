@@ -357,6 +357,33 @@ export async function referenceFromUrlAsViewer(
 }
 
 /**
+ * What an app link's card is for, as SPEC §13.6.2 lets a link name one: the
+ * `embed` value — an address, or a message's event id — or null (OPT-17).
+ *
+ * §7.7 as `referenceFromUrlAsViewer` reads it, and **stricter in one place**:
+ * the `#d` query asks for two, and a `d` that two authors hold names nothing.
+ * `limit: 1` would hand the card to whichever answered first, so anybody who
+ * publishes the same `(kind, d)` could put their object's card under a link to
+ * somebody else's — §13.6.2's "one author for the identity". A link to one
+ * block names its part (§13.6.1), not a card, so it is null too.
+ *
+ * Throws a `RelayReadError` for an outage, so a caller that remembers answers
+ * does not remember "the relay could not be asked" as "nothing".
+ */
+export async function cardValueOfUrlAsViewer(url: string, relayUrl: string, token: StoredToken): Promise<string | null> {
+  const query = viewerQuery(relayUrl, token)
+  const hit = matchObjectUrl(url, await urlShapes(query))
+  if (!hit || hit.block !== undefined) return null
+  if (hit.by === 'id') return /^[0-9a-f]{64}$/i.test(hit.identifier) ? hit.identifier.toLowerCase() : null
+  const filter: Record<string, unknown> = { '#d': [hit.identifier], limit: 2 }
+  if (hit.kind !== undefined) filter.kinds = [hit.kind]
+  const found = await query([filter])
+  const authors = new Set(found.map((event) => `${event.kind}:${event.pubkey}`))
+  if (authors.size !== 1) return null
+  return `${[...authors][0]}:${hit.identifier}`
+}
+
+/**
  * The tags a comment carries for the app URLs its body names — the index half
  * of a pasted link, as `referenceTagsFor` is for a `nostr:naddr…` (FOL-38).
  *

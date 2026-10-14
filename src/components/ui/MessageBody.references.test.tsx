@@ -4,9 +4,9 @@
  * The rendering is `Reference`'s and is tested there; what this guards is the
  * plumbing around it. An `naddr` and an `nevent` written mid-sentence are
  * handed to the resolver, and the bracket form every older message carries is
- * still drawn from the fixture. And a message alone on its line is attached
- * below the prose rather than hidden from it and then drawn by nothing — the
- * gap `standaloneReference` opened for any pointer that was not an address.
+ * still drawn from the fixture. And a message alone on its line is drawn as its
+ * chip where it was written, like one mid-sentence (OPT-18), rather than hidden
+ * from the prose and then drawn by nothing.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
@@ -25,6 +25,7 @@ vi.mock('@/api', () => ({
   TOPICS: [{ id: '7', title: 'Updates on the new office layout', isResolved: false }],
   APP_FILES: [],
   DOCUMENT_FILES: [],
+  useLinkResolver: () => () => undefined,
   useResolvedReferences: (refs: string[]) => {
     asked.push(refs)
     return Object.fromEntries(
@@ -71,14 +72,14 @@ describe('a topic or a message in a message body', () => {
     expect(c.textContent).not.toContain(NEVENT)
   })
 
-  it('attaches a message that stands alone on its line, rather than losing it', () => {
+  it('draws a message that stands alone on its line as its chip, rather than losing it (OPT-18)', () => {
     attached.length = 0
     const c = show(`Look at this.\n\n${NEVENT}`)
-    // Bare, the way `findNaddrs` hands back an address, so the widget list
-    // has one spelling and a caller's `resolvedObjects` matches either way.
-    expect(attached).toEqual([NEVENT.replace(/^nostr:/, '')])
+    expect(attached).toEqual([])
+    expect(asked.at(-1)).toContain(NEVENT)
     expect(c.textContent).toContain('Look at this.')
-    expect(c.textContent).not.toContain('nevent1')
+    expect(c.querySelector('[data-reference="unresolved"]')).not.toBeNull()
+    expect(c.textContent).not.toContain(NEVENT.replace(/^nostr:/, ''))
   })
 
   it('still draws the old bracket form from the fixture, for ever', () => {

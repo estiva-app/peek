@@ -186,8 +186,8 @@ export const InlineReference: Story = {
 
 /**
  * The same object, the same message, one difference: the pointer is alone on
- * its line. It becomes a card below the text, exactly as it always did — that
- * variant is not replaced, and the position is what chooses between them.
+ * its line. It reads as its chip there too (OPT-18): a card is drawn only when
+ * the author chose one (SPEC §13.6.2), never for where the pointer sits.
  */
 export const StandaloneReference: Story = {
   args: {
@@ -224,7 +224,7 @@ export const InlineMessageMention: Story = {
   },
 }
 
-/** The same message, alone on its line: attached below the prose as a card. */
+/** The same message, alone on its line: its chip, as mid-sentence (OPT-18). */
 export const StandaloneMessageMention: Story = {
   args: {
     body: `This is the one I meant.\n\nnostr:${MESSAGE_NEVENT}`,

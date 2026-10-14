@@ -4,6 +4,7 @@ import { PeekMention, UrgentMention, EditUrgentMention, TopicMention, PeekRefere
 import { ResolutionBlock } from './resolution'
 import { HighlightTag } from './highlight'
 import { PastedUrl } from './pastedUrl'
+import { CardChoices } from './cardChoices'
 import { EditSlashCommands, SlashCommands } from './slashCommands'
 
 /**
@@ -62,6 +63,7 @@ export const peekEditorExtensions = [
   MessageMention,
   ObjectMention,
   PastedUrl,
+  CardChoices,
   ResolutionBlock,
   HighlightTag,
   SlashCommands,
