@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRelayViewer } from './foreign'
 import type { StoredToken } from '@/auth/estivaId'
+import type { QueryFn } from '@estiva-app/interop'
 import { viewerQuery } from '@/nostr/foreign'
 import { conversationFromCopy } from '@/nostr/conversationFromCopy'
 import {
@@ -147,11 +148,15 @@ export async function loadConversationAhead(
   if (conversations.value(key) !== undefined || syncs.has(key)) return
   // Kept, not thrown inside the sync: an open queued behind it must still run.
   let failed: { error: unknown } | undefined
+  // Once an open has joined it, what is left of the read is that click's, and goes in its lane.
+  const ahead = viewerQuery(at.relayUrl, at.token, 'ahead')
+  const click = viewerQuery(at.relayUrl, at.token)
+  const query: QueryFn = (filters) => (syncs.get(key)?.again ? click : ahead)(filters)
   await coalesced(key, async () => {
     if (conversations.value(key) !== undefined) return
     try {
       const startedAt = Date.now()
-      const { value, events } = await readConversation(container, [...rootIds], viewerQuery(at.relayUrl, at.token, 'ahead'))
+      const { value, events } = await readConversation(container, [...rootIds], query)
       if (conversations.value(key) === undefined) conversations.replace(key, value, events, startedAt)
     } catch (error) {
       failed = { error }

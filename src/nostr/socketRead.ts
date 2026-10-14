@@ -135,6 +135,13 @@ export interface SocketReaderOptions {
  * no click is waiting (`@estiva-app/platform`'s `createPacer`, lane `ahead`).
  */
 export const AHEAD_RESERVE = 15
+/**
+ * After a press, no read loaded ahead is sent for this long: what a click sets
+ * off — a topic's resolve, its conversation, the cards it names — comes in
+ * stages over a second or two, and a window the loader had half filled made
+ * the click wait or spill (PEE-5, measured: a DM opened mid-load took 1.7 s).
+ */
+export const AHEAD_HOLD_MS = 3_000
 
 /** A {@link SocketReader} that can also move the reads loaded ahead into the click lane, and say what waits. */
 export type LanedSocketReader = SocketReader & {
@@ -373,7 +380,7 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
   return Object.assign(read, {
     promoteAhead: () => {
       for (const waiting of packs) waiting.promoted = true
-      pacer.promote()
+      pacer.promote(AHEAD_HOLD_MS)
     },
     waiting: () => ({ pacer: pacer.waiting(), ...inFlight.state() }),
   })
