@@ -1,5 +1,5 @@
 import { CollapsibleSection, EmptyState } from '@estiva-app/ui'
-import { PersonRow } from './PersonRow'
+import { PersonItem } from './PersonItem'
 import type { TopicStateType, TopicStateStatus } from './TopicState'
 
 export interface StarredItem {
@@ -50,17 +50,15 @@ export function StarredSection({
         </div>
       ) : (
         items.map((item) => (
-          <PersonRow
+          <PersonItem
             key={item.id}
+            id={item.id}
             name={item.name}
-            type={item.type}
-            topicStatus={item.topicStatus}
-            isUnread={item.isUnread}
-            isUrgent={item.isUrgent}
-            isSelected={selectedId === item.id}
             avatarSrc={item.avatarSrc}
-            memberCount={item.memberCount}
-            onClick={() => onSelect?.(item.id)}
+            unread={item.isUnread}
+            urgent={item.isUrgent}
+            active={selectedId === item.id}
+            onSelect={onSelect}
           />
         ))
       )}

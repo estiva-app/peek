@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
 import { usePagePicture } from '@/lib/pagePicture'
-import { IconSortDescending } from '@tabler/icons-react'
-import { CollapsibleSection, EmptyState, ListColumn } from '@estiva-app/ui'
+import { IconSortDescending, IconX } from '@tabler/icons-react'
+import { isArchived } from '@estiva-app/interop'
+import { Chip, CollapsibleSection, EmptyState, ListColumn, NavItem } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
 import { Divider } from '@/components/ui/Divider'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { PersonRow } from '@/components/ui/PersonRow'
+import { TopicState } from '@/components/ui/TopicState'
 import { ScreenerSection } from '@/components/ScreenerSection'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
 import { useFilePane } from '@/components/views/useFilePane'
@@ -24,6 +25,7 @@ import {
   useStarred,
   useLiveConversationBadges,
   useOpenWorkFiles,
+  useAvatarSrc,
 } from '@/api'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -307,6 +309,7 @@ export function DeskPage() {
               glyph: fileGlyph(item.fileKind),
               isUnread: true,
               isUrgent: true,
+              href: deskFileHref(item.address),
               isSelected: isOpen(item.address, 'urgent'),
               onClick: () => openFile(item.address, item.title, 'urgent'),
             }
@@ -317,6 +320,7 @@ export function DeskPage() {
               avatarSrc: item.avatarSrc,
               isUnread: true,
               isUrgent: true,
+              href: personHref(item.dmId),
               isSelected: isSelectedIn('urgent', item.dmId),
               onClick: () => selectDm(item.dmId, item.name, 'urgent'),
             },
@@ -329,6 +333,9 @@ export function DeskPage() {
               name: item.title,
               glyph: fileGlyph(item.object.kind),
               isUnread: showFileUnreads && fileUnread[item.object.ref] === true,
+              // Archived where it lives, and still here: Open work is the person's own list (Katerina, 14 October).
+              archived: isArchived(item.object),
+              href: deskFileHref(item.address),
               isSelected: isOpen(item.address, 'openWork'),
               onClick: () => openFile(item.address, item.title, 'openWork'),
               onRemove: () => dismissOpenWork(item.id),
@@ -339,6 +346,7 @@ export function DeskPage() {
               name: item.name,
               avatarSrc: item.avatarSrc,
               isUnread: (showPeopleUnreads && dmHasUnread(item.dmId)) || Boolean(item.isUnread),
+              href: personHref(item.dmId),
               isSelected: isSelectedIn('openWork', item.dmId),
               onClick: () => selectDm(item.dmId, item.name, 'openWork'),
               onRemove: () => dismissOpenWork(item.id),
@@ -350,6 +358,7 @@ export function DeskPage() {
         name: entry.name,
         avatarSrc: entry.avatarSrc,
         isUnread: (showPeopleUnreads && dmHasUnread(entry.dmId)) || Boolean(entry.isUnread),
+        href: personHref(entry.dmId),
         isSelected: isSelectedIn('starred', entry.dmId),
         onClick: () => selectDm(entry.dmId, entry.name, 'starred'),
       }))}
@@ -380,26 +389,67 @@ export interface DeskRow {
   isUnread: boolean
   isUrgent?: boolean
   isSelected: boolean
+  /**
+   * Where the row's link goes: a file's Desk address, a DM's People page. A
+   * plain click opens it here instead, beside the lists (`onClick`); the link
+   * is for a new tab, and for what a link says to assistive tech.
+   */
+  href: string
   onClick: () => void
   /** Open work only: the ✕ that takes it off the list. */
   onRemove?: () => void
+  /** Open work only: archived where it lives. The row stays, and says so while it is pointed at. */
+  archived?: boolean
+}
+
+/** A file open on the Desk: the address `openFile` puts in the URL. */
+const deskFileHref = (address: string) => `/app/desk?${new URLSearchParams({ open: address })}`
+/** A DM has no Desk address of its own: its link is the person's page. */
+const personHref = (dmId: string) => `/app/people/${dmId}`
+
+/**
+ * A plain click opens the row on the Desk; a click with a modifier, or not
+ * the main button, is left to the link, so a new tab still opens it.
+ */
+function inPlace(open: () => void) {
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    open()
+  }
+}
+
+/** One Desk row on the package's sidebar row, as the Folders tree's rows are. */
+function DeskRowItem({ row }: { row: DeskRow }) {
+  const avatarSrcFor = useAvatarSrc()
+  const type = row.kind === 'dm' ? 'DM' : (row.glyph ?? 'file')
+  return (
+    <NavItem
+      href={row.href}
+      label={row.name}
+      icon={
+        <TopicState
+          type={type}
+          status={type === 'topic' ? 'unresolved' : 'default'}
+          avatarSrc={row.avatarSrc ?? (row.kind === 'dm' ? avatarSrcFor(row.name) : undefined)}
+          iconClassName={row.isSelected || row.isUnread ? 'text-text-primary' : undefined}
+        />
+      }
+      active={row.isSelected}
+      unread={row.isUnread}
+      urgent={row.isUrgent}
+      onClick={inPlace(row.onClick)}
+      hint={row.archived ? <Chip type="neutral" label="Archived" /> : undefined}
+      action={row.onRemove ? { icon: <IconX size={16} stroke={1.5} />, tooltip: 'Remove from list', onClick: row.onRemove } : undefined}
+    />
+  )
 }
 
 function DeskRows({ rows }: { rows: DeskRow[] }) {
   return (
     <div className="flex flex-col gap-0.5 mt-1">
       {rows.map((row) => (
-        <PersonRow
-          key={row.id}
-          name={row.name}
-          type={row.kind === 'dm' ? 'DM' : (row.glyph ?? 'file')}
-          avatarSrc={row.avatarSrc}
-          isUnread={row.isUnread}
-          isUrgent={row.isUrgent}
-          isSelected={row.isSelected}
-          onClick={row.onClick}
-          onRemove={row.onRemove}
-        />
+        <DeskRowItem key={row.id} row={row} />
       ))}
     </div>
   )
@@ -513,17 +563,7 @@ export function DeskPageView({
                     <EmptyState scope="section" message="Favorite the conversations of People you interact mostly with" />
                   </div>
                 ) : (
-                  starred.map((row) => (
-                    <PersonRow
-                      key={row.id}
-                      name={row.name}
-                      type="DM"
-                      avatarSrc={row.avatarSrc}
-                      isUnread={row.isUnread}
-                      isSelected={row.isSelected}
-                      onClick={row.onClick}
-                    />
-                  ))
+                  starred.map((row) => <DeskRowItem key={row.id} row={row} />)
                 )}
               </CollapsibleSection>
 

@@ -35,7 +35,7 @@ const row = (
   kind: DeskRow['kind'],
   name: string,
   extra: Partial<DeskRow> = {},
-): DeskRow => ({ id, kind, name, isUnread: false, isSelected: false, onClick: noop, ...extra })
+): DeskRow => ({ id, kind, name, href: '#', isUnread: false, isSelected: false, onClick: noop, ...extra })
 
 const URGENT: DeskRow[] = [
   row('u1', 'dm', 'Hallie Pratt', { isUnread: true, isUrgent: true, isSelected: true }),
@@ -47,7 +47,9 @@ const OPEN_WORK: DeskRow[] = [
   // A Ship project and a Ship issue wear Ship's glyphs here too (7 October).
   row('o2', 'file', 'Payments v2', { glyph: 'project', onRemove: noop }),
   row('o4', 'file', 'Card form validation', { isUnread: true, glyph: 'issue', onRemove: noop }),
-  row('o5', 'file', 'Remote work policy clarifications', { onRemove: noop }),
+  // Archived where it lives, still on the list: point at it and the chip says so (Katerina, 14 October).
+  row('o5', 'file', 'Remote work policy clarifications', { glyph: 'topic', archived: true, onRemove: noop }),
+  row('o6', 'file', 'Quarterly planning notes for the design review', { glyph: 'topic', archived: true, onRemove: noop }),
   row('o3', 'dm', 'Daniel Stanton', { onRemove: noop }),
 ]
 

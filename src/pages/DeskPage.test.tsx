@@ -223,9 +223,8 @@ describe('Desk opens a file beside its lists (SID-3)', () => {
 
   it('removing the open file from Open work closes it', () => {
     mount(deskWith(ISSUE))
-    // The ✕ is drawn under the pointer only.
-    fireEvent.mouseEnter(within(screen.getByTestId('left')).getByText('Issue one'))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove from list' }))
+    // The ✕ is NavItem's: always there, shown under the pointer by CSS, and named for its row.
+    fireEvent.click(within(screen.getByTestId('left')).getByRole('button', { name: 'Remove from list: Issue one' }))
     expect(openWork.remove).toHaveBeenCalledWith(ISSUE)
     expect(url()).toBe('/app/desk')
   })

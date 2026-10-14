@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ListColumn, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
 import { useRailClosed } from '@/layouts/railClosed'
-import { PersonRow } from '@/components/ui/PersonRow'
+import { PersonItem } from '@/components/ui/PersonItem'
 import { Divider } from '@/components/ui/Divider'
 import { StarredSection, type StarredItem } from '@/components/ui/StarredSection'
 import { useDmConversationView } from '@/components/views/useDmConversationView'
@@ -225,16 +225,16 @@ export function PeoplePageView({
               {people.length > 0 && <Divider className="my-2" />}
 
               {people.map((dm) => (
-                <PersonRow
+                <PersonItem
                   key={dm.id}
+                  id={dm.id}
                   name={dm.name}
                   avatarSrc={dm.avatarSrc}
-                  type="DM"
-                  isUnread={dm.isUnread}
-                  isUrgent={dm.isUrgent}
-                  isSelected={selectedId === dm.id}
-                  onClick={() => onSelect(dm.id)}
-                  onHideDm={dm.canHide ? () => onHideDm(dm.id) : undefined}
+                  unread={dm.isUnread}
+                  urgent={dm.isUrgent}
+                  active={selectedId === dm.id}
+                  onSelect={onSelect}
+                  onHide={dm.canHide ? () => onHideDm(dm.id) : undefined}
                 />
               ))}
             </>
@@ -246,3 +246,4 @@ export function PeoplePageView({
     />
   )
 }
+
