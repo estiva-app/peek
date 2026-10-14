@@ -35,7 +35,17 @@ const row = (
   kind: DeskRow['kind'],
   name: string,
   extra: Partial<DeskRow> = {},
-): DeskRow => ({ id, kind, name, href: '#', isUnread: false, isSelected: false, onClick: noop, ...extra })
+): DeskRow => ({
+  id,
+  kind,
+  name,
+  // The addresses the live Desk gives its rows: a file opens on the Desk, a DM on the person's page.
+  href: kind === 'file' ? `/app/desk?open=${id}` : `/app/people/${name.split(' ')[0].toLowerCase()}`,
+  isUnread: false,
+  isSelected: false,
+  onClick: noop,
+  ...extra,
+})
 
 const URGENT: DeskRow[] = [
   row('u1', 'dm', 'Hallie Pratt', { isUnread: true, isUrgent: true, isSelected: true }),
