@@ -22,8 +22,8 @@ import { DateDivider } from '@/components/ui/DateDivider'
 const noop = () => {}
 
 const STARRED: StarredItem[] = [
-  { id: 'amie', name: 'Amie Miles', type: 'DM', isUnread: true, isUrgent: false },
-  { id: 'daniel', name: 'Daniel Stanton', type: 'DM', isUnread: false, isUrgent: false },
+  { id: 'amie', name: 'Amie Miles', isUnread: true, isUrgent: false },
+  { id: 'daniel', name: 'Daniel Stanton', isUnread: false, isUrgent: false },
 ]
 
 /** The hover card a Screener row opens, from the one fixture every Screener

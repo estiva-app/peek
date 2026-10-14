@@ -46,7 +46,6 @@ export function PersonItem({
           : undefined
       }
       menu={onHide ? <TopicMenuItems onHideDm={onHide} /> : undefined}
-      menuLabel="More options"
     />
   )
 }

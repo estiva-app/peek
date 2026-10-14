@@ -64,7 +64,6 @@ export function PeoplePage() {
       return {
         id: e.dmId,
         name: e.name,
-        type: 'DM',
         avatarSrc: e.avatarSrc,
         isUnread: (showUnreads && dmHasUnread(e.dmId)) || urgent,
         isUrgent: urgent,
