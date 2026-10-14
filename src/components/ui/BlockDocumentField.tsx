@@ -11,7 +11,8 @@ import {
   type EditorDocument,
 } from '@estiva-app/protocol'
 import { richTextClassName } from '@estiva-app/ui'
-import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
+import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, ReferenceCards, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
+import { DocumentCardChoice, DocumentLineCards, DocumentReference } from './DocumentCards'
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -34,10 +35,11 @@ import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, Referenc
  * text. A refused save keeps the text, and the card says why. Someone else's
  * edit arriving while you are not in it is loaded; while you are, it waits.
  *
- * **References and files draw as text**, not as their widgets: the reason
- * `ForeignBody` gives for not nesting a widget inside a widget's body holds for
- * the editor of that body too. Neither is lost — the atoms keep every attribute
- * — they are only drawn plainly.
+ * **A reference is its chip, and a card only where its writer chose one**
+ * (SPEC §13.3; Miky, 14 Oct: the panel draws the chosen card, as Ship does,
+ * and offers the choice). That card is one level deep: its own body draws its
+ * references as chips (`ForeignBody`), so two objects that card each other do
+ * not nest. A file draws as text; the atom keeps every attribute.
  */
 export function BlockDocumentField({
   value,
@@ -109,7 +111,9 @@ export function BlockDocumentField({
         // A checklist item and a callout (RIC-19), as Ship's; without them a save drops the tick and the tone.
         Checklist,
         Callout,
-        ReferenceNode,
+        // A chip, and the card its writer chose after its line (SPEC §13.3, Widgets).
+        ReferenceNode.configure({ view: DocumentReference }),
+        ReferenceCards,
         UnknownBlock,
         AttachmentNode,
       ],
@@ -171,7 +175,10 @@ export function BlockDocumentField({
           {label}…
         </span>
       )}
-      <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']} />
+      <DocumentLineCards editor={editor} />
+      <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']}>
+        <DocumentCardChoice editor={editor} />
+      </SelectionToolbar>
     </div>
   )
 }
