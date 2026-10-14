@@ -9,18 +9,9 @@
  * own body draws its references as chips, never cards (`ForeignBody`).
  */
 import { createPortal } from 'react-dom'
-import { useEditorState, type Editor } from '@tiptap/react'
-import { IconCircleOff, IconLayoutCards, IconLayoutList } from '@tabler/icons-react'
+import type { Editor } from '@tiptap/react'
 import { blockCards, urlRunsIn, type RenderBlock } from '@estiva-app/protocol'
-import { ToolbarButton } from '@estiva-app/ui'
-import {
-  referenceAtSelection,
-  setReferenceCard,
-  useReferenceCards,
-  type ReferenceCard,
-  type ReferenceCardLayout,
-  type ReferenceViewProps,
-} from '@estiva-app/ui/editor'
+import { useReferenceCards, type ReferenceCard, type ReferenceViewProps } from '@estiva-app/ui/editor'
 import { useResolvedReferences } from '@/api'
 import { ForeignObjectWidget } from './ForeignObjectWidget'
 import { Reference } from './Reference'
@@ -83,44 +74,4 @@ export function DocumentLineCards({ editor }: { editor: Editor | null }) {
   const slots = useReferenceCards(editor)
   // @estiva-escape(no-rebuilt-behaviour): each card goes into the slot ReferenceCards placed after its line, inside the editor's text; no part owns a place there, and a portal keeps Peek's providers around the card
   return <>{slots.map((slot) => createPortal(<LineCards cards={slot.cards} />, slot.element, slot.key))}</>
-}
-
-const CHOICES: { layout: ReferenceCardLayout; label: string; Icon: typeof IconCircleOff }[] = [
-  { layout: 'none', label: 'No card', Icon: IconCircleOff },
-  { layout: 'compact', label: 'Compact card', Icon: IconLayoutList },
-  { layout: 'detailed', label: 'Detailed card', Icon: IconLayoutCards },
-]
-
-/**
- * None, compact or detailed for the selected chip, in the field's selection
- * toolbar. Shown only while one chip is selected. Build first; the look is
- * Katerina's to level up (Miky, 5 Oct).
- */
-export function DocumentCardChoice({ editor }: { editor: Editor | null }) {
-  const at = useEditorState({
-    editor,
-    selector: ({ editor: ed }) => {
-      if (!ed || ed.isDestroyed) return null
-      return referenceAtSelection(ed.state)?.layout ?? null
-    },
-  })
-  if (!editor || !at) return null
-  return (
-    <>
-      {CHOICES.map(({ layout, label, Icon }) => (
-        <ToolbarButton
-          key={layout}
-          aria-label={label}
-          tooltip={label}
-          pressed={at === layout}
-          data-card-choice={layout}
-          // Keep the selection: focus must not leave the editor on press.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setReferenceCard(editor, layout)}
-        >
-          <Icon size={16} stroke={1.5} />
-        </ToolbarButton>
-      ))}
-    </>
-  )
 }

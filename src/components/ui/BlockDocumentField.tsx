@@ -12,9 +12,24 @@ import {
   type EditorDocument,
 } from '@estiva-app/protocol'
 import { richTextClassName } from '@estiva-app/ui'
-import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, LinkChips, ReferenceCards, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
+import {
+  AttachmentNode,
+  BlockId,
+  Callout,
+  Checklist,
+  CodeBlockColours,
+  LinkChips,
+  ReferenceCards,
+  ReferenceMenu,
+  ReferenceMenuView,
+  ReferenceNode,
+  SelectionToolbar,
+  UnknownBlock,
+  isChecklistTick,
+  isReferenceMenuOpen,
+} from '@estiva-app/ui/editor'
 import { askCardValues, knownCardValue } from '@/api'
-import { DocumentCardChoice, DocumentLineCards, DocumentReference, MAX_LINKS_PER_DESCRIPTION } from './DocumentCards'
+import { DocumentLineCards, DocumentReference, MAX_LINKS_PER_DESCRIPTION } from './DocumentCards'
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -122,8 +137,9 @@ export function BlockDocumentField({
         Callout,
         // A chip, and the card its writer chose after its line (SPEC §13.3, Widgets).
         ReferenceNode.configure({ view: DocumentReference }),
-        // The slots exist only where the cards are drawn: inside a card there are none.
-        ...(cards ? [ReferenceCards] : []),
+        // The slots exist only where the cards are drawn: inside a card there are none. A click on a chip, or a
+        // chip just pasted, offers Open and its card (Miky, 14 Oct, at /land); elsewhere a click follows the chip.
+        ...(cards ? [ReferenceCards, ReferenceMenu] : []),
         // An app URL reads as the chip of what it names, and saves as the URL (Widgets, Miky 14 Oct).
         LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues, limit: MAX_LINKS_PER_DESCRIPTION }),
         UnknownBlock,
@@ -140,6 +156,8 @@ export function BlockDocumentField({
         },
         handleKeyDown: (view, event) => {
           if (event.key !== 'Escape') return false
+          // An open chip menu closes first; the next Escape leaves.
+          if (isReferenceMenuOpen(view.state)) return false
           // A selection first collapses, so Escape out of a toolbar pick does not leave.
           const { selection, tr } = view.state
           if (!selection.empty) {
@@ -188,9 +206,8 @@ export function BlockDocumentField({
         </span>
       )}
       {cards && <DocumentLineCards editor={editor} />}
-      <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']}>
-        {cards && <DocumentCardChoice editor={editor} />}
-      </SelectionToolbar>
+      <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']} />
+      {cards && <ReferenceMenuView editor={editor} />}
     </div>
   )
 }

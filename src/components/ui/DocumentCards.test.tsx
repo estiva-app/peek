@@ -38,16 +38,15 @@ describe('a chip\'s card in the panel', () => {
     expect(box.textContent).not.toContain(NADDR)
   })
 
-  it('offers the three cards for a selected chip, and saves the choice on the chip', async () => {
+  it('opens the chip\'s menu on a click, and saves the card chosen there on the chip', async () => {
     const onCommit = vi.fn<(value: string, format?: string) => boolean>(() => true)
     render(<BlockDocumentField value={doc({})} format="blocks" label="Description" onCommit={onCommit} cards />)
     const box = await ready()
     expect(box.querySelector('[data-reference-cards]')).toBeNull()
-    act(() => {
-      box.editor.commands.focus()
-      box.editor.commands.setTextSelection({ from: 1, to: 2 })
-    })
-    fireEvent.click(await screen.findByRole('button', { name: 'Detailed card' }, { timeout: 3000 }))
+    act(() => box.editor.commands.focus())
+    fireEvent.click(box.querySelector('[data-node-view-wrapper]')!)
+    expect((await screen.findByRole('menuitemradio', { name: 'None' }, { timeout: 3000 })).getAttribute('aria-checked')).toBe('true')
+    fireEvent.mouseDown(screen.getByRole('menuitemradio', { name: 'Detailed' }))
     await waitFor(() => expect(box.querySelector('[data-reference-cards] [data-card="detailed"]')).not.toBeNull())
     fireEvent.blur(box)
     await waitFor(() => expect(onCommit).toHaveBeenCalled())
