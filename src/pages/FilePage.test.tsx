@@ -808,6 +808,22 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     expect(view.getAttribute('data-h')).toBe(FOLDER)
   })
 
+  /*
+    A Leaf document (30842): "In Peek you can comment" (Miky, 2026-10-14).
+    Its comments are a kind:1111 at its address, like an issue's. That its
+    text has no editor is the card's test (ForeignObjectWidget.test.tsx).
+  */
+  it('…and a Leaf document, identically', () => {
+    const DOCUMENT_ADDRESS = `30842:${ISSUE_ADDRESS.split(':')[1]}:6f1c9b7e-0d42-4c39-9a1e-1f0e4d7b2c55`
+    objects.byAddress[DOCUMENT_ADDRESS] = commentable({ ...issue, kind: 30842, address: DOCUMENT_ADDRESS, noun: 'document', appName: 'Leaf' } as ForeignObject)
+    mount(`/topic/${DOCUMENT_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    const view = within(middle).getByTestId('peek-view')
+    expect(view.getAttribute('data-address')).toBe(DOCUMENT_ADDRESS)
+    expect(view.getAttribute('data-h')).toBe(FOLDER)
+    expect(within(middle).getByRole('textbox', { name: 'Peek composer' })).toBeInTheDocument()
+  })
+
   it('the open thread is still the URL’s, and closing it drops the parameter', () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
     const rootId = issue.comments[0].id

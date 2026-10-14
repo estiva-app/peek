@@ -463,6 +463,11 @@ describe('links — [label](url) (PEE-19)', () => {
       expect(previewText('see nostr:naddr1broken')).toBe('see File')
     })
 
+    it('previewText names a Leaf document "Document" (30842)', () => {
+      const document = `nostr:${addrToNaddr(`30842:${'a'.repeat(64)}:d1`)}`
+      expect(previewText(`read ${document}`)).toBe('read Document')
+    })
+
     it('previewText reduces a link to its label', () => {
       expect(previewText('**read** the [widgets topic](https://google.com) first')).toBe('read the widgets topic first')
     })
