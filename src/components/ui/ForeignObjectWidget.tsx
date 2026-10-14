@@ -15,6 +15,7 @@ import { ForeignBody } from './ForeignBody'
 import { Avatar, Card, Divider, FieldLine, Form, Link, Person, SectionLabel, ShowMore } from '@estiva-app/ui'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
+import { WithTooltip } from './WithTooltip'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -287,18 +288,34 @@ function Actions({
  * `noopener` because this is a URL a stranger published into a shared relay,
  * and http(s) only for the same reason (`openInAppUrl`).
  *
- * The file page's header draws it too, beside the file's type: there the
- * card is in a column that starts closed, and "Open in <app>" is the one place
- * the app's name belongs (PRO-24).
+ * The file page's header draws it too, `short`: there the card is in a column
+ * that starts closed, and the header says just "Open ↗" — *"I would simplify
+ * and just say Open. Less words is better. it's more clear."* (Miky,
+ * 2026-10-14). Where it goes, "Open in <app>", stays its accessible name and
+ * its tooltip, so a screen reader and a hover still say which app.
  */
-export function OpenInApp({ object }: { object: Pick<ForeignObject, 'openUrl' | 'appName'> }) {
+export function OpenInApp({ object, short = false }: {
+  object: Pick<ForeignObject, 'openUrl' | 'appName'>
+  /** "Open ↗", with "Open in <app>" as its name and tooltip — the file page's header. */
+  short?: boolean
+}) {
   const href = openInAppUrl(object)
   if (!href) return null
+  const where = `Open in ${object.appName ?? 'app'}`
+  if (short) {
+    return (
+      <WithTooltip label={where} inline>
+        <Link href={href} variant="underlined" external aria-label={where}>
+          Open ↗
+        </Link>
+      </WithTooltip>
+    )
+  }
   return (
     // Solid, not dotted: one look for "open it elsewhere" in both apps (Katerina, 2026-09-13).
     // Its size and tone are the words' around it, in the card that could not be read (UIG-9).
     <Link href={href} variant="underlined" external>
-      Open in {object.appName ?? 'app'} ↗
+      {where} ↗
     </Link>
   )
 }

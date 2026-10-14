@@ -391,23 +391,24 @@ describe('FilePage opens a file by address, not against the listing', () => {
     mount(`/topic/${ISSUE_ADDRESS}`)
     const middle = screen.getByTestId('middle')
     expect(within(middle).getByText('The file route')).toBeInTheDocument()
-    // Whose file it is, as a chip beside the name (5 October): its type, or — this fixture's app declares no noun — the app (PRO-24).
-    expect(within(middle).getByText('Estiva Ship')).toBeInTheDocument()
+    // No chip beside the name (Miky, 14 October): the way into its app is "Open", tested below.
+    expect(within(middle).queryByText('Estiva Ship')).toBeNull()
     expect(middle.querySelectorAll('[data-comment]')).toHaveLength(2)
   })
 
   /*
-    PRO-24 (Miky, 2 October): a file is labelled by its type, and an app's name
-    appears only in "Open in <app>". And for a Leaf document (Miky, 14 October):
-    you comment on it in Peek, and you can open it easily in Leaf — its text is
-    never edited here. The header is where both are said.
+    For a Leaf document (Miky, 14 October): you comment on it in Peek, and you
+    can open it easily in Leaf — its text is never edited here. And how the
+    header says it: *"I would simplify and just say Open. Less words is better.
+    it's more clear."* (Miky, 14 October) — one "Open" link, no chip, the app
+    named only in the link's accessible name and tooltip (PRO-24).
   */
-  describe('labels another app’s file by its type, and offers to open it in that app (PRO-24)', () => {
+  describe('another app’s file: one "Open" link into that app, no chip (Miky, 14 October)', () => {
     const DOCUMENT_ADDRESS = `30842:${CATH}:6f1c9b7e-0d42-4c39-9a1e-1f0e4d7b2c55`
     const LEAF_URL = 'https://leaf.estiva.app/f/naddr1leafdoc'
     const header = () => within(screen.getByTestId('middle'))
 
-    it('a Leaf document says "Document", and "Open in Leaf" goes to the URL Leaf’s manifest gave, in a new tab', () => {
+    it('a Leaf document: "Open" goes to the URL Leaf’s manifest gave, in a new tab, and is named "Open in Leaf"', () => {
       objects.byAddress[DOCUMENT_ADDRESS] = foreign({
         ref: DOCUMENT_ADDRESS,
         address: DOCUMENT_ADDRESS,
@@ -419,33 +420,37 @@ describe('FilePage opens a file by address, not against the listing', () => {
       })
       mount(`/topic/${DOCUMENT_ADDRESS}`)
       expect(header().getByText('Leaf 1 notes')).toBeInTheDocument()
-      expect(header().getByText('Document')).toBeInTheDocument()
-      // The app's name only where it opens the app — never as the file's label.
+      // No chip: neither the app's name nor the file's type.
       expect(header().queryByText('Leaf')).toBeNull()
-      const open = header().getByRole('link', { name: /^Open in Leaf/ })
+      expect(header().queryByText('Document')).toBeNull()
+      const open = header().getByRole('link', { name: 'Open in Leaf' })
+      expect(open.textContent).toBe('Open ↗')
       expect(open.getAttribute('href')).toBe(LEAF_URL)
       expect(open.getAttribute('target')).toBe('_blank')
       expect(open.getAttribute('rel')).toContain('noopener')
+      expect(open.getAttribute('rel')).toContain('noreferrer')
     })
 
-    it('a Ship issue says "Issue", and opens in Estiva Ship the same way', () => {
+    it('a Ship issue: "Open" goes to Ship, named "Open in Estiva Ship", and no chip', () => {
       const ISSUE_URL = 'https://ship.estiva.app/o/naddr1issue'
       objects.byAddress[ISSUE_ADDRESS] = { ...issue, noun: 'issue', openUrl: ISSUE_URL }
       mount(`/topic/${ISSUE_ADDRESS}`)
-      expect(header().getByText('Issue')).toBeInTheDocument()
       expect(header().queryByText('Estiva Ship')).toBeNull()
-      expect(header().getByRole('link', { name: /^Open in Estiva Ship/ }).getAttribute('href')).toBe(ISSUE_URL)
+      expect(header().queryByText('Issue')).toBeNull()
+      const open = header().getByRole('link', { name: 'Open in Estiva Ship' })
+      expect(open.textContent).toBe('Open ↗')
+      expect(open.getAttribute('href')).toBe(ISSUE_URL)
     })
 
-    it('a topic — Peek’s own file — gets no label and no "Open in"', () => {
+    it('a topic — Peek’s own file — is unchanged: no chip and no "Open"', () => {
       objects.byAddress[TOPIC_ADDRESS] = { ...topic, appName: 'Peek', noun: 'topic', openUrl: 'https://peek.estiva.app/o/naddr1x' }
       mount(`/topic/${TOPIC_ADDRESS}`)
       expect(header().getByText('FOL-15 test topic 2')).toBeInTheDocument()
       expect(header().queryByText('Topic')).toBeNull()
-      expect(header().queryByRole('link', { name: /^Open in/ })).toBeNull()
+      expect(header().queryByRole('link', { name: /^Open/ })).toBeNull()
     })
 
-    it('offers no "Open in" for a manifest URL that is not a web page', () => {
+    it('offers no "Open" for a manifest URL that is not a web page', () => {
       objects.byAddress[DOCUMENT_ADDRESS] = foreign({
         ref: DOCUMENT_ADDRESS,
         address: DOCUMENT_ADDRESS,
@@ -456,8 +461,8 @@ describe('FilePage opens a file by address, not against the listing', () => {
         slots: { title: { value: 'Leaf 1 notes' } },
       })
       mount(`/topic/${DOCUMENT_ADDRESS}`)
-      expect(header().getByText('Document')).toBeInTheDocument()
-      expect(header().queryByRole('link', { name: /^Open in/ })).toBeNull()
+      expect(header().getByText('Leaf 1 notes')).toBeInTheDocument()
+      expect(header().queryByRole('link', { name: /^Open/ })).toBeNull()
     })
   })
 
