@@ -1,8 +1,9 @@
 import type { ResolvedSlot } from '@estiva-app/interop'
-import { linksAsReferences, toRenderTree, type RenderBlock } from '@estiva-app/protocol'
+import { linksAsReferences, referencesIn, toRenderTree, type RenderBlock } from '@estiva-app/protocol'
 import { RichText } from '@estiva-app/ui'
-import { useLinkResolver } from '@/api'
-import { BlockLineCards, DocumentReference, linksInBlocks } from './DocumentCards'
+import { useLinkResolver, useResolvedReferences } from '@/api'
+import { BlockLineCards, linksInBlocks } from './DocumentCards'
+import { Reference } from './Reference'
 
 /**
  * Another app's `body` slot, rendered — PRO-2.
@@ -48,13 +49,15 @@ export function ForeignBody({ slot, className }: { slot: ResolvedSlot; className
   const tree = toRenderTree(slot.value, slot.format ?? 'marker')
   const resolveLink = useLinkResolver(linksInBlocks(tree))
   const blocks = linksAsReferences(tree, resolveLink)
+  // Every chip's object in one read; a person's key is named by `Reference` itself.
+  const resolved = useResolvedReferences(referencesIn(blocks).filter((uri) => !/^nostr:npub1/i.test(uri)))
   // One step down, with every heading, list, quote and table kept: it sits inside a card (Katerina, 28 September, UIG-30).
   return (
     <div data-foreign-body className={className}>
       <RichText
         blocks={blocks}
         size="small"
-        renderReference={(uri) => <DocumentReference uri={uri} />}
+        renderReference={(uri) => <Reference uri={uri} object={resolved[uri]} />}
         // The package's block is the protocol's, handed back.
         renderAfter={(block) => <BlockLineCards block={block as RenderBlock} />}
       />
