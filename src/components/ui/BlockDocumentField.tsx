@@ -14,7 +14,7 @@ import {
 import { richTextClassName } from '@estiva-app/ui'
 import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, LinkChips, ReferenceCards, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
 import { askCardValues, knownCardValue } from '@/api'
-import { DocumentCardChoice, DocumentLineCards, DocumentReference } from './DocumentCards'
+import { DocumentCardChoice, DocumentLineCards, DocumentReference, MAX_LINKS_PER_DESCRIPTION } from './DocumentCards'
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -125,7 +125,7 @@ export function BlockDocumentField({
         // The slots exist only where the cards are drawn: inside a card there are none.
         ...(cards ? [ReferenceCards] : []),
         // An app URL reads as the chip of what it names, and saves as the URL (Widgets, Miky 14 Oct).
-        LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues }),
+        LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues, limit: MAX_LINKS_PER_DESCRIPTION }),
         UnknownBlock,
         AttachmentNode,
       ],

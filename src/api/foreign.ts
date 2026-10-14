@@ -142,9 +142,14 @@ export function knownCardValue(url: string): string | undefined {
   return knownCardValues.get(url) ?? undefined
 }
 
-/** Ask what each of these links names; settles when every answer is in. A description editor's `LinkChips` asks this way. */
+/**
+ * Ask what each of these links names; settles when every answer is in. A
+ * description editor's `LinkChips` asks this way. Rejects when a read failed
+ * (the relay or the token), so the editor forgets those links and asks again.
+ */
 export async function askCardValues(urls: readonly string[]): Promise<void> {
-  await Promise.all(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url).catch(() => null)))
+  const answers = await Promise.allSettled(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url)))
+  if (answers.some((answer) => answer.status === 'rejected')) throw new Error('A link could not be asked about; asked again later.')
 }
 
 /**

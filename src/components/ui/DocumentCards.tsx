@@ -65,7 +65,10 @@ export function linksInBlocks(blocks: readonly RenderBlock[]): string[] {
     for (const block of bs) {
       if (block.type === 'codeBlock') continue
       for (const run of block.inline ?? []) {
-        if (run.href) out.add(run.href)
+        // A link on words never becomes a chip, so it spends none of the budget.
+        if (run.href) {
+          if (run.text === run.href) out.add(run.href)
+        }
         else if (!run.reference && !run.marks.includes('code')) for (const { url } of urlRunsIn(run.text)) out.add(url)
       }
       if (block.children) walk(block.children)
