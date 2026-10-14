@@ -1,12 +1,16 @@
 import '@testing-library/jest-dom/vitest'
 import { configure } from '@testing-library/react'
-import { beforeEach } from 'vitest'
+import { beforeEach, vi } from 'vitest'
 import { clearListingCaches } from '@/platform/listingCache'
 import { resetConversationsForTests } from '@/api/conversations'
 
-// `findBy…` and `waitFor` give up after 1 s by default, which a starved worker
-// on a busy box misses with nothing wrong (2164b3d5). A real miss still fails.
+// `findBy…`, `waitFor` and `vi.waitFor` give up after 1 s by default, which a
+// starved worker on a busy box misses with nothing wrong (2164b3d5). A real
+// miss still fails. `vi.waitFor` has no config option, so its default is set here.
 configure({ asyncUtilTimeout: 5_000 })
+const waitFor = vi.waitFor
+vi.waitFor = ((callback, options = {}) =>
+  waitFor(callback, typeof options === 'number' ? options : { timeout: 5_000, ...options })) as typeof vi.waitFor
 
 // The listing caches are module state (SID-2); one case's answers must not be the next one's.
 beforeEach(() => {
