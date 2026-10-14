@@ -67,6 +67,12 @@ const report = ['--eval', '__fl.report()']
 const open = (path, texts) => ['--eval', `(() => { sessionStorage.setItem('fl.texts', ${JSON.stringify(JSON.stringify(texts))}); sessionStorage.removeItem('fl.first'); setTimeout(() => location.assign(${JSON.stringify(path)}), 20); return 'opening' })()`, '--wait', '1500']
 const liveDesk = ['--until', '(() => !window.__peekPicture || window.__peekPicture.liveAt !== undefined)()']
 /**
+ * The page has finished loading: nothing in it pulses (PEE-4). Drawn from the copy, the tree's texts are there at
+ * once and `allTextsNoPulse` is met before anything starts pulsing — but the page is kept, and the copy written, only
+ * once its reads are done.
+ */
+const loaded = (ms = 20000) => ['--wait', '500', '--until', `(() => !document.querySelector('main [class*=animate-pulse], main [aria-busy=true]') || performance.now() - __fl.phases.at(-1).at > ${ms})()`]
+/**
  * The Topics tree's rows and unread dots (PEE-4): `picture` keeps what is drawn now — the saved picture while it
  * shows — and any later moment reads the live tree against it, so a row that moved or a dot that went is printed.
  */
@@ -167,7 +173,7 @@ const legs = {
       ...settled('allTextsNoPulse', 30000), '--wait', '3000',
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
       ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('messages'), '--wait', '3000',
-      ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000', ...report,
+      ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), ...loaded(), '--wait', '3000', ...report,
       // The tree's rows and unread dots as first drawn (the saved picture), and once the relay has answered: the same.
       ...reload(TREE), ...settled(), '--eval', treeDrawn('picture'), '--wait', '3000', '--eval', treeDrawn('after the relay'), ...report,
       '--eval', `(() => { document.querySelector('a[href="/app/desk"]').click(); return 'desk' })()`, '--wait', '2000',
