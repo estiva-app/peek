@@ -42,10 +42,12 @@ import { Reference } from './Reference'
  * **A reference is its chip, and an app URL the chip of what it names**
  * (Widgets, Miky 14 Oct), as in the field a writer edits: this is the same
  * description for a reader who cannot write. The card its writer chose is
- * drawn after its line (SPEC §13.3). It is drawn only here, on the object's own
- * panel: a card never draws this body, so a card inside a card cannot nest.
+ * drawn after its line (SPEC §13.3) only with `cards`, which the object's own
+ * page passes. A card draws this body too, and there every reference is its
+ * chip and never a card: two objects that card each other would nest forever
+ * (security review).
  */
-export function ForeignBody({ slot, className }: { slot: ResolvedSlot; className?: string }) {
+export function ForeignBody({ slot, className, cards = false }: { slot: ResolvedSlot; className?: string; cards?: boolean }) {
   const tree = toRenderTree(slot.value, slot.format ?? 'marker')
   const resolveLink = useLinkResolver(linksInBlocks(tree))
   const blocks = linksAsReferences(tree, resolveLink)
@@ -59,7 +61,7 @@ export function ForeignBody({ slot, className }: { slot: ResolvedSlot; className
         size="small"
         renderReference={(uri) => <Reference uri={uri} object={resolved[uri]} />}
         // The package's block is the protocol's, handed back.
-        renderAfter={(block) => <BlockLineCards block={block as RenderBlock} />}
+        renderAfter={cards ? (block) => <BlockLineCards block={block as RenderBlock} /> : undefined}
       />
     </div>
   )

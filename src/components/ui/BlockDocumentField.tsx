@@ -48,6 +48,7 @@ export function BlockDocumentField({
   format,
   label,
   onCommit,
+  cards = false,
 }: {
   /** The folded current value, as the object resolved it. */
   value: string
@@ -57,6 +58,12 @@ export function BlockDocumentField({
   label: string
   /** Publishes the edit; resolves false when it was refused, so the next leave retries. */
   onCommit: (value: string, contentFormat?: string) => Promise<boolean> | boolean
+  /**
+   * Draw the cards its chips chose, and offer the choice: on the object's own
+   * page only. Inside a card every chip stays a chip, or two objects that card
+   * each other nest forever (security review). The choice is kept either way.
+   */
+  cards?: boolean
 }) {
   const [empty, setEmpty] = useState(value.trim() === '')
   const committing = useRef(false)
@@ -115,7 +122,8 @@ export function BlockDocumentField({
         Callout,
         // A chip, and the card its writer chose after its line (SPEC §13.3, Widgets).
         ReferenceNode.configure({ view: DocumentReference }),
-        ReferenceCards,
+        // The slots exist only where the cards are drawn: inside a card there are none.
+        ...(cards ? [ReferenceCards] : []),
         // An app URL reads as the chip of what it names, and saves as the URL (Widgets, Miky 14 Oct).
         LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues }),
         UnknownBlock,
@@ -179,9 +187,9 @@ export function BlockDocumentField({
           {label}…
         </span>
       )}
-      <DocumentLineCards editor={editor} />
+      {cards && <DocumentLineCards editor={editor} />}
       <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']}>
-        <DocumentCardChoice editor={editor} />
+        {cards && <DocumentCardChoice editor={editor} />}
       </SelectionToolbar>
     </div>
   )

@@ -32,7 +32,7 @@ const doc = (attrs: Record<string, unknown>) =>
 
 describe('a chip\'s card in the panel', () => {
   it('draws the reference as its chip, not its URI, with the card its writer chose after the line', async () => {
-    render(<BlockDocumentField value={doc({ embed: 'compact' })} format="blocks" label="Description" onCommit={() => true} />)
+    render(<BlockDocumentField value={doc({ embed: 'compact' })} format="blocks" label="Description" onCommit={() => true} cards />)
     const box = await ready()
     await waitFor(() => expect(box.querySelector('[data-reference-cards] [data-card="compact"]')).not.toBeNull())
     expect(box.textContent).not.toContain(NADDR)
@@ -40,7 +40,7 @@ describe('a chip\'s card in the panel', () => {
 
   it('offers the three cards for a selected chip, and saves the choice on the chip', async () => {
     const onCommit = vi.fn<(value: string, format?: string) => boolean>(() => true)
-    render(<BlockDocumentField value={doc({})} format="blocks" label="Description" onCommit={onCommit} />)
+    render(<BlockDocumentField value={doc({})} format="blocks" label="Description" onCommit={onCommit} cards />)
     const box = await ready()
     expect(box.querySelector('[data-reference-cards]')).toBeNull()
     act(() => {

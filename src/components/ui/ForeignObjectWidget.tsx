@@ -550,12 +550,14 @@ export function ForeignObjectCard({
                 format={slots.body?.format ?? 'marker'}
                 label={prose.label}
                 onCommit={async (value, contentFormat) => (await onAct(prose.id, value, contentFormat)) !== false}
+                // The chosen cards on the object's own page only: a card inside a card never draws its own (SPEC §13.3).
+                cards={page}
               />
               {/* The refusal, where the write was made, when no action row is drawn to carry it. */}
               {error && !actions.length && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
             </div>
           ) : (
-            whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" />
+            whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" cards={page} />
           )}
           </>
         )
