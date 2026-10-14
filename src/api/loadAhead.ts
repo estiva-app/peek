@@ -31,7 +31,7 @@ import { loadAhead, type AheadOutcome, type AheadStep } from '@estiva-app/platfo
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
-import { getSocketReader, whenClickReadsQuiet } from '@/nostr/bridge'
+import { getSocketReader, notePress, whenClickReadsQuiet } from '@/nostr/bridge'
 import { RelayReadError } from '@/nostr/relayRead'
 import { streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStreams'
 import type { ChannelStore } from '@/platform/channelStore'
@@ -259,6 +259,7 @@ export function useLoadAhead(drawn: boolean): void {
     // A click goes first, including a click on what the loader has already asked for.
     const promote = () => {
       getSocketReader()?.promoteAhead?.()
+      notePress()
       channelsAskedFor()
     }
     // @estiva-escape(no-rebuilt-behaviour): not a UI behaviour — any press means a click's reads may be on the way, so the loader's waiting reads stop holding them up; nothing is closed or taken

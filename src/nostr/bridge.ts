@@ -170,12 +170,13 @@ export async function queryRelay(
   lane: ReadLane = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
   if (!socketReader && lane === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
+  const askedAt = Date.now()
   if (lane === 'click') clickReads.open += 1
   let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
   try {
     answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
     if (!answer) {
-      const release = lane === 'ahead' ? await aheadPost() : null
+      const release = lane === 'ahead' ? await aheadPost(askedAt) : null
       try {
         const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
         answer = parseQueryResponse(status, text)
@@ -222,17 +223,30 @@ let socketReader: SocketReader | null = null
 let aheadPosting = false
 const aheadPostWaiting: (() => void)[] = []
 
-function aheadPost(): Promise<() => void> {
+async function aheadPost(askedAt: number): Promise<() => void> {
   const release = () => {
     const next = aheadPostWaiting.shift()
     if (next) next()
     else aheadPosting = false
   }
-  if (!aheadPosting) {
-    aheadPosting = true
-    return Promise.resolve(release)
+  if (aheadPosting) await new Promise<void>((resolve) => aheadPostWaiting.push(resolve))
+  else aheadPosting = true
+  // Asked after a press, not while the click's own reads are still open: QA-1's click 1 s after Desk took
+  // 0.8–2.3 s longer in the runs where the loader's reads went out beside it. One asked before the press
+  // was promoted, and the click may be waiting on it.
+  while (askedAt >= pressedAt && Date.now() - pressedAt < PRESS_PAUSE_MS && clickReads.open > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  return new Promise((resolve) => aheadPostWaiting.push(() => resolve(release)))
+  return release
+}
+
+/** The longest a press holds the loader's HTTP reads back (PEE-5). */
+const PRESS_PAUSE_MS = 8_000
+let pressedAt = 0
+
+/** The person pressed something (PEE-5): the loader's HTTP reads wait for the click's reads to be answered. */
+export function notePress(): void {
+  pressedAt = Date.now()
 }
 
 /** The reads in the `click` lane not yet answered, socket or HTTP, and when the last one was (PEE-5). */
