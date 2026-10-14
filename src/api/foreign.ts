@@ -137,6 +137,21 @@ export function cardValueOfUrl(url: string): Promise<string | null> {
   return value
 }
 
+/** What an app link names, from what has come back: undefined until it has, and for nothing. A `LinkResolver`. */
+export function knownCardValue(url: string): string | undefined {
+  return knownCardValues.get(url) ?? undefined
+}
+
+/**
+ * Ask what each of these links names; settles when every answer is in. A
+ * description editor's `LinkChips` asks this way. Rejects when a read failed
+ * (the relay or the token), so the editor forgets those links and asks again.
+ */
+export async function askCardValues(urls: readonly string[]): Promise<void> {
+  const answers = await Promise.allSettled(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url)))
+  if (answers.some((answer) => answer.status === 'rejected')) throw new Error('A link could not be asked about; asked again later.')
+}
+
 /**
  * What each of these app links names, for a reader's `cardsIn` (SPEC §13.6.2):
  * a `LinkResolver` that answers from what has come back, and is replaced as

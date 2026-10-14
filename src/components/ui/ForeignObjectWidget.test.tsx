@@ -42,6 +42,12 @@ vi.mock('@/api', async () => {
   }),
   // `Avatar` resolves portraits through the seam, and a person now has a face.
   useAvatarSrc: () => () => undefined,
+  // A description's URL becomes its chip once answered (Widgets); here none names anything.
+  knownCardValue: () => undefined,
+  askCardValues: async () => undefined,
+  useLinkResolver: () => () => undefined,
+  // A chip in the body resolves through the seam; here nothing answers, so it draws as it loads.
+  useResolvedReferences: () => ({}),
   }
 })
 
@@ -722,6 +728,27 @@ describe('a block-document body', () => {
     )
     expect(container.querySelector('.ProseMirror')).toBeNull()
     expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
+  })
+
+  it('draws a chip and the card its writer chose after its line, for a reader who cannot write (Widgets)', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    // The card's own object is read by the card; what it draws is the card's business, not this test's.
+    resolveObject.mockResolvedValue(null)
+    const uri = `nostr:${NADDR}`
+    const body = JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: uri, marks: [{ type: 'reference', attrs: { uri, embed: 'detailed' } }] }] }],
+    })
+    const object = described({ slots: { title: { value: 'Payments' }, body: { value: body, format: 'blocks' } } })
+    const { container, rerender } = render(<ForeignObjectCard object={object} page />)
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    // The chip (still resolving here), and one detailed card after the paragraph.
+    expect(container.querySelector('[data-foreign-body] [data-reference="pending"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-foreign-body] [data-line-cards] [data-card="detailed"]')).toHaveLength(1)
+    // As a card (in a message, or under another description's line) the chip stays a chip: cards never nest.
+    rerender(<ForeignObjectCard object={object} />)
+    expect(container.querySelector('[data-foreign-body] [data-reference="pending"]')).not.toBeNull()
+    expect(container.querySelector('[data-foreign-body] [data-line-cards]')).toBeNull()
   })
 })
 
