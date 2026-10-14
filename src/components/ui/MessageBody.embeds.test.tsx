@@ -20,6 +20,8 @@ const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
 const ISSUE_URL = 'https://ship.estiva.app/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
 
 const drawn: { naddr: string; layout?: string }[] = []
+// What the relay answers for each reference: the issue, nothing yet, or an object this reader cannot see.
+let answer: 'issue' | 'none' | 'unreachable' = 'issue'
 
 vi.mock('@/api', () => ({
   TOPICS: [],
@@ -31,7 +33,9 @@ vi.mock('@/api', () => ({
     Object.fromEntries(
       refs.map((ref) => [
         ref,
-        { ref: ISSUE, eventId: 'e'.repeat(64), kind: 30851, widget: 'row', slots: { title: { value: 'Peek draws the card' } }, meta: [], comments: [], actions: [] },
+        answer === 'none'
+          ? null
+          : { ref: ISSUE, eventId: 'e'.repeat(64), kind: 30851, widget: 'row', slots: { title: { value: 'Peek draws the card' } }, meta: [], comments: [], actions: [], ...(answer === 'unreachable' ? { unreachable: true } : {}) },
       ]),
     ),
 }))
@@ -55,6 +59,7 @@ const show = (body: string, embeds?: Embed[]) => render(<MessageBody body={body}
 
 beforeEach(() => {
   drawn.length = 0
+  answer = 'issue'
 })
 
 describe('the card a message asks for', () => {
@@ -99,6 +104,15 @@ describe('the card a message asks for', () => {
     const mid = show(`see ${ISSUE_URL}, then ship`)
     expect(drawn).toEqual([])
     expect(mid.textContent).toContain('see Peek draws the card, then ship')
+  })
+
+  it('keeps a bare app link a link until what it names has come back, and for good when it cannot be read (OPT-18)', () => {
+    for (const state of ['none', 'unreachable'] as const) {
+      answer = state
+      const c = show(`see ${ISSUE_URL}`)
+      expect(c.querySelector(`a[href="${ISSUE_URL}"]`)).not.toBeNull()
+      expect(c.querySelector('[data-reference]')).toBeNull()
+    }
   })
 
   it('keeps a link nothing claims as the link it is, with no card under it (OPT-18)', () => {

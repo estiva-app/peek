@@ -171,35 +171,9 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   */
   const asked = urls.slice(0, MAX_LINKS_PER_MESSAGE)
   const lookup = useLinkResolver(asked)
-  const resolveLink = (url: string) =>
+  const claimed = (url: string) =>
     asked.includes(url) && !shown.some((part) => urlNames(url, part.address)) ? lookup(url) : undefined
-  /*
-    Every reference is drawn where it was written, as its chip — alone on its
-    line too (OPT-18; Katerina, 5 Oct). A bare app link is a reference written
-    as a URL, so it reads as one: the package turns each it can name into a
-    reference run, by the rule Ship uses, so one body reads the same in both
-    (§13.5). A link on words stays a link.
-  */
-  const blocks = body ? linksAsReferences(toRenderTree(body, 'marker'), resolveLink) : []
-  /*
-    The cards its author asked for (SPEC §13.6.2) — the only cards a message
-    draws. The package's rule, `cardsIn`, asked as Ship's `cardsOf` asks it, so
-    the two apps draw the same message the same way: the layout they chose, or
-    nothing for `none`. Each is keyed by the reference the body wrote, which is
-    what resolves; a link's card by the reference its value spells.
-  */
-  const written = new Map<string, string>()
-  for (const reference of embeds?.length ? referencesIn(blocks) : []) {
-    const value = valueOfReference(reference)
-    if (value && !written.has(value)) written.set(value, reference)
-  }
-  const cards = embeds?.length
-    ? cardsIn(embeds, blocks, shown, resolveLink).flatMap((card) => {
-        const reference = written.get(card.value) ?? referenceOfValue(card.value)
-        return reference ? [{ ...card, reference }] : []
-      })
-    : []
-  const inline = referencesIn(blocks)
+  const tree = body ? toRenderTree(body, 'marker') : []
   /*
     What the caller already has, if anything. `resolvedObjects` is the seam for
     a surface with no relay to ask — a story, a test — and the widget below
@@ -214,17 +188,60 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
   const supplied = (ref: string) =>
     resolvedObjects?.[ref] ?? resolvedObjects?.[ref.replace(/^nostr:/, '')]
   /*
-    Only what is left, and only what a widget could be drawn for. A person
-    resolves synchronously from the directory, so asking the relay about an
-    `npub` would be a round trip with nothing at the end of it.
+    Only what a widget could be drawn for: the references the body wrote, and
+    what each claimed link names. A person resolves synchronously from the
+    directory, so asking the relay about an `npub` would be a round trip with
+    nothing at the end of it.
   */
+  const linked = asked.flatMap((url) => {
+    const value = claimed(url)
+    const reference = value ? referenceOfValue(value) : undefined
+    return reference ? [reference] : []
+  })
   const fetched = useResolvedReferences(
-    inline.filter((ref) => !/^nostr:npub1/i.test(ref) && !supplied(ref)),
+    [...new Set([...referencesIn(tree), ...linked])].filter((ref) => !/^nostr:npub1/i.test(ref) && !supplied(ref)),
     // A chip draws its file's title and status, so it follows them while shown, as a widget does.
     follow ? FOLLOW : undefined,
   )
   const resolved: Record<string, ForeignObject | null> = { ...fetched }
-  for (const ref of inline) {
+  const reachable = (ref: string) => {
+    const object = supplied(ref) ?? resolved[ref]
+    return !!object && !object.unreachable
+  }
+  /*
+    Every reference is drawn where it was written, as its chip — alone on its
+    line too (OPT-18; Katerina, 5 Oct). A bare app link is a reference written
+    as a URL, so it reads as one: the package turns each it can name into a
+    reference run, by the rule Ship uses, so one body reads the same in both
+    (§13.5). Only once what it names has come back and can be read: until then,
+    and for good when it cannot, it stays the link it was written as, rather
+    than a chip with nothing in it. A link on words stays a link.
+  */
+  const resolveLink = (url: string) => {
+    const value = claimed(url)
+    const reference = value ? referenceOfValue(value) : undefined
+    return reference && reachable(reference) ? value : undefined
+  }
+  const blocks = linksAsReferences(tree, resolveLink)
+  /*
+    The cards its author asked for (SPEC §13.6.2) — the only cards a message
+    draws. The package's rule, `cardsIn`, asked as Ship's `cardsOf` asks it, so
+    the two apps draw the same message the same way: the layout they chose, or
+    nothing for `none`. Each is keyed by the reference the body wrote, which is
+    what resolves; a link's card by the reference its value spells.
+  */
+  const written = new Map<string, string>()
+  for (const reference of embeds?.length ? referencesIn(blocks) : []) {
+    const value = valueOfReference(reference)
+    if (value && !written.has(value)) written.set(value, reference)
+  }
+  const cards = embeds?.length
+    ? cardsIn(embeds, blocks, shown, claimed).flatMap((card) => {
+        const reference = written.get(card.value) ?? referenceOfValue(card.value)
+        return reference ? [{ ...card, reference }] : []
+      })
+    : []
+  for (const ref of referencesIn(blocks)) {
     const known = supplied(ref)
     if (known) resolved[ref] = known
   }
