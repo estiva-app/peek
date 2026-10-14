@@ -9,8 +9,9 @@
  * nodes: a node attribute could say two different things for one value, and
  * the message could only send one of them.
  *
- * **What offers a card.** A chip for an object or a message (`objectMention`,
- * `messageMention`), and a link on words whose URL names one by §7.7 — looked
+ * **What offers a card.** A chip for an object, a message or an app URL
+ * (`objectMention`, `messageMention`, `reference`), and a link on words whose
+ * URL names one by §7.7 — looked
  * up once per link (`cardValueOfUrl`), so a link is offered a card only after
  * the relay has said what it names. A person, a link to one block (it draws
  * that block, §13.6.1) and a URL no app claims are not.
@@ -27,8 +28,8 @@ import type { Embed, EmbedLayout } from '@estiva-app/protocol'
 import { cardValueOfUrl } from '@/api'
 import { valueOfReference } from '@/lib/embedValue'
 
-/** The chips that offer a card: every reference chip but a person's. */
-const CHIP_NODES = new Set(['objectMention', 'messageMention'])
+/** The chips that offer a card: every reference chip but a person's, and an app URL's (OPT-19). */
+const CHIP_NODES = new Set(['objectMention', 'messageMention', 'reference'])
 
 /** A reference in the message as written: what it names, and where it is. */
 export interface WrittenReference {
