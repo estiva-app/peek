@@ -7,9 +7,10 @@
  * Folder and, on "Widgets probe" (`seed-widgets-fixture.ts`: a compact card, two detailed cards, a chip and an
  * image on its last screen):
  *
- *   1. **open** — clicks it in the Folder: the first open, nothing resolved yet;
- *   2. **return** — goes to "Switch probe A", waits, and comes back: what this tab already holds;
- *   3. **live** — sits at the bottom while QA-2 sends a message with a detailed card (`--live` of the seed
+ *   1. **open** — loads its URL in a fresh browser: the first open on a device, nothing resolved yet;
+ *   2. **reload** — reloads it: the copy on the device kept, nothing held in the tab (OPT-10's first leg);
+ *   3. **return** — goes to "Switch probe A", waits, and comes back: what this tab already holds;
+ *   4. **live** — sits at the bottom while QA-2 sends a message with a detailed card (`--live` of the seed
  *      script, from node). The run deletes that message again afterwards (`--clean`).
  *
  * From the first frame with messages on screen until a second with nothing loading and nothing changing, it
@@ -47,9 +48,13 @@ const base = option('base', 'https://peek.estiva.app')
 const live = !args.includes('--no-live')
 
 /** Runs in the page. */
-async function legs({ W, A, live, trace }) {
+async function legs({ W, A, live, trace, quietMs }) {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-  const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()))
+  /*
+    After the frame is painted, not inside it: an animation-frame callback runs before the frame's layout and its
+    ResizeObservers, so reading there sees a card grown before the view has kept its place — a state never drawn.
+  */
+  const frame = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)))
   // From before the app's first script: there may be no <main>, or no <body>, yet.
   const main = () => document.querySelector('main') ?? document.documentElement
   const waitFor = async (find, ms) => {
@@ -93,7 +98,7 @@ async function legs({ W, A, live, trace }) {
     let lastTop = null
     let quietSince = null
     let signature = ''
-    while (performance.now() - t0 < 25000) {
+    while (performance.now() - t0 < 40000) {
       await frame()
       const now = performance.now()
       const box = scroller()
@@ -138,17 +143,31 @@ async function legs({ W, A, live, trace }) {
       if (sig !== signature) {
         signature = sig
         quietSince = now
-      } else if (!busy.length && counting && now - quietSince > 1000) break
+      } else if (!busy.length && counting && now - quietSince > quietMs) break
     }
     const box = scroller()
     result.settled = Math.round(performance.now() - t0)
     result.fromBottom = box ? Math.round(box.scrollHeight - box.scrollTop - box.clientHeight) : null
-    result.cards = [...main().querySelectorAll('[data-card]')].map((c) => c.getAttribute('data-card'))
+    // Each chosen card's layout, the kind it names and its height: what a placeholder should hold.
+    result.cards = [...main().querySelectorAll('[data-card]')].map((c) => {
+      const kind = c.querySelector('[data-foreign-object]')?.getAttribute('data-foreign-object')?.split(':')[0] ?? 'gone'
+      return `${c.getAttribute('data-card')}:${kind}=${Math.round(c.getBoundingClientRect().height)}`
+    })
     result.images = main().querySelectorAll('img[alt$=".png"], img[alt$=".jpg"]').length
     return result
   }
 
-  const out = []
+  /*
+    The first open is this tab's first page; then a reload, which keeps the copy on the device (the Done when's
+    "after a reload"); the rest runs on the reloaded page. The tab's sessionStorage carries the first result over.
+  */
+  const carried = sessionStorage.getItem('probe-steady')
+  const out = carried ? JSON.parse(carried) : []
+  const finish = () => {
+    sessionStorage.removeItem('probe-steady')
+    window.__steadyDone = out
+    return out
+  }
   const open = async (prefix) => {
     const link = await waitFor(() => document.querySelector(`a[href^="${prefix}"]`), 20000)
     if (!link) throw new Error(`no link to ${prefix}`)
@@ -158,7 +177,14 @@ async function legs({ W, A, live, trace }) {
   }
   try {
     // From the navigation: performance.now() counts from it.
-    out.push(await watch('open', { t0: 0 }))
+    if (!carried) {
+      out.push(await watch('open', { t0: 0 }))
+      await sleep(3000)
+      sessionStorage.setItem('probe-steady', JSON.stringify(out))
+      location.reload()
+      return out
+    }
+    out.push(await watch('reload', { t0: 0 }))
     await sleep(3000)
     await open(A)
     await waitFor(() => location.pathname.startsWith(A) && roots().length, 20000)
@@ -181,7 +207,7 @@ async function legs({ W, A, live, trace }) {
   } catch (error) {
     out.push({ error: error.message })
   }
-  return out
+  return finish()
 }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -212,14 +238,14 @@ const noAnchoring = args.includes('--no-anchoring')
   : ''
 writeFileSync(
   initFile,
-  `if (location.origin === ${JSON.stringify(new URL(base).origin)} && !window.__steady) { ${noAnchoring} window.__steady = (${legs.toString()})(${JSON.stringify({ W, A, live, trace: args.includes('--trace') })}) }`,
+  `if (location.origin === ${JSON.stringify(new URL(base).origin)} && !window.__steady) { ${noAnchoring} window.__steady = (${legs.toString()})(${JSON.stringify({ W, A, live, trace: args.includes("--trace"), quietMs: Number(option("quiet", 4000)) })}) }`,
 )
 let report
 try {
   const { stdout } = await runNode(
     process.execPath,
     [join(here, 'probe.mjs'), '--as', as, '--base', base, '--url', W_PATH, '--timeout', '150000', '--init', initFile,
-      '--eval', 'window.__steady'],
+      '--until', 'window.__steadyDone', '--eval', 'window.__steadyDone'],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PROBE_HOOK: `http://127.0.0.1:${server.address().port}/post` } },
   )
   report = JSON.parse(stdout)

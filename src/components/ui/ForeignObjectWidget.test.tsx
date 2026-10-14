@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '@estiva-app/interop'
-import { markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
+import { encodeNaddr, markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 
 /**
  * The widget renders whatever the manifest said, and nothing else.
@@ -819,6 +819,39 @@ describe('a person-titled object', () => {
     const { container } = render(<ForeignObjectCard object={{ ...message(), people: {} }} />)
     expect(container.textContent).not.toContain('a'.repeat(64))
     expect(container.textContent).toContain('—')
+  })
+})
+
+describe('a chosen card keeps its size while it loads (OPT-10)', () => {
+  const issue = encodeNaddr({ kind: 30851, pubkey: 'a'.repeat(64), identifier: 'issue-1', relays: [] })
+  const topic = encodeNaddr({ kind: 30840, pubkey: 'a'.repeat(64), identifier: 'topic-1', relays: [] })
+  const heightOf = (container: HTMLElement) => (container.querySelector('[data-skeleton-layout]') as HTMLElement | null)?.style.height
+
+  it('holds the height of the card it will become, by layout and kind', () => {
+    resolveObject.mockReturnValue(new Promise(() => {}))
+    expect(heightOf(render(<ForeignObjectWidget naddr={issue} layout="row" />).container)).toBe('97px')
+    expect(heightOf(render(<ForeignObjectWidget naddr={issue} layout="card" />).container)).toBe('229px')
+    expect(heightOf(render(<ForeignObjectWidget naddr={topic} layout="card" />).container)).toBe('46px')
+  })
+
+  it('says a chosen card whose file is gone is gone, in its place, rather than closing up', async () => {
+    resolveObject.mockResolvedValue(null)
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.textContent).toBe('Issue — no longer available'))
+  })
+
+  it('still draws nothing for a reference no author chose a card for', async () => {
+    resolveObject.mockResolvedValue(null)
+    const { container } = render(<ForeignObjectWidget naddr={issue} />)
+    await waitFor(() => expect(resolveObject).toHaveBeenCalled())
+    await waitFor(() => expect(container.textContent).toBe(''))
+  })
+
+  it('never draws a chosen card shorter than its kind is measured at', async () => {
+    resolveObject.mockResolvedValue(object({ address: `30851:${'a'.repeat(64)}:issue-1`, naddr: issue }))
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="row" />)
+    await waitFor(() => expect(container.querySelector('[data-foreign-object]')).not.toBeNull())
+    expect((container.querySelector('[data-foreign-object]') as HTMLElement).style.minHeight).toBe('97px')
   })
 })
 

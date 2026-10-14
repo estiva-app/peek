@@ -200,6 +200,16 @@ function previewReference(uri: string): string {
     }
     return `@${(pubkey && personByPubkey(pubkey)?.name) || shortUri(uri)}`
   }
+  return referenceTypeWord(uri) ?? `@${shortUri(uri)}`
+}
+
+/**
+ * What a `nostr:` reference names, by its kind alone — "Issue", "Message", or
+ * "File" for an address of a kind Peek has no word for — with nothing
+ * resolved; `undefined` for anything else. What a preview line and a card
+ * that cannot be found say (OPT-10).
+ */
+export function referenceTypeWord(uri: string): string | undefined {
   if (/^nostr:naddr1/i.test(uri)) {
     try {
       return REFERENCE_TYPE_WORDS[referenceToPointer(uri).kind] ?? 'File'
@@ -208,7 +218,7 @@ function previewReference(uri: string): string {
     }
   }
   if (/^nostr:(?:nevent1|note1)/i.test(uri)) return 'Message'
-  return `@${shortUri(uri)}`
+  return undefined
 }
 
 /**
