@@ -9,7 +9,7 @@ import type {
 import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
 import { objectLabel } from '@/lib/appName'
-import { peekEditsTextOf } from '@/lib/readOnlyText'
+import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
 import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
 import { Avatar, Card, Divider, FieldLine, Form, Link, Person, SectionLabel, ShowMore } from '@estiva-app/ui'
@@ -412,8 +412,9 @@ export function ForeignObjectCard({
       */
       !action.format &&
       // Nor, on a file whose text Peek never edits, whatever sets that text —
-      // even declared without a format this version knows (Miky, 2026-10-14).
-      (peekEditsTextOf(object) || !slots.body?.field || action.field !== slots.body.field) &&
+      // even declared without a format this version knows, and even when
+      // interop dropped an empty body slot (Miky, 2026-10-14).
+      (peekEditsTextOf(object) || (action.field !== TEXT_FIELD && action.field !== slots.body?.field)) &&
       // Nor the archive (FOL-46): as a select it would archive the file and
       // everything under it in one click, with no count of what it hides and
       // no resolution. The file's own menu offers it, through its dialog.

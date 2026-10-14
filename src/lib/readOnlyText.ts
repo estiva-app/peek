@@ -1,5 +1,14 @@
 import { KIND_BARE_FILE, type ForeignObject } from '@estiva-app/interop'
-import { KIND } from '@estiva-app/protocol'
+
+/**
+ * A Leaf document — protocol 0.34's `KIND.DOCUMENT`.
+ *
+ * A local number until Peek takes protocol 0.34, which it takes together with
+ * `@estiva-app/ui` 0.68: protocol 0.33 changed what a reference node must
+ * declare, and ui 0.67's editor does not, so taking the protocol alone turns a
+ * URL in a Ship description into an empty reference on save.
+ */
+export const KIND_DOCUMENT = 30842
 
 /**
  * The kinds whose text Peek shows and never edits: a bare file (a page or a
@@ -20,7 +29,14 @@ import { KIND } from '@estiva-app/protocol'
  * where Peek offers them for any file, and a Ship issue's or project's
  * description keeps its editor (MAN-9).
  */
-const READ_ONLY_TEXT_KINDS: ReadonlySet<number> = new Set([KIND_BARE_FILE, KIND.DOCUMENT])
+const READ_ONLY_TEXT_KINDS: ReadonlySet<number> = new Set([KIND_BARE_FILE, KIND_DOCUMENT])
+
+/**
+ * The field a bare file's and a Leaf document's text is folded from (a
+ * `kind:1851` `description`) — what their `describe` sets. Matched as well as
+ * the body slot's field, because interop drops an empty body slot.
+ */
+export const TEXT_FIELD = 'description'
 
 /** Whether Peek may draw an editor over this object's text (its body). */
 export function peekEditsTextOf(object: Pick<ForeignObject, 'kind'>): boolean {

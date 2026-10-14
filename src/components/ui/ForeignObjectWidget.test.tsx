@@ -596,8 +596,15 @@ describe('a block-document body', () => {
     unmount()
 
     resolveObject.mockResolvedValue(described({ ...leaf, actions: [bare] }))
-    render(<ForeignObjectWidget naddr={NADDR} />)
+    const second = render(<ForeignObjectWidget naddr={NADDR} />)
     expect(await screen.findByText('Goal')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    second.unmount()
+
+    // An empty document: interop drops its body slot, and the format-less action still draws nothing.
+    resolveObject.mockResolvedValue(described({ ...leaf, slots: { title: { value: 'Payments', field: 'title' } }, actions: [bare] }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Document')).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
