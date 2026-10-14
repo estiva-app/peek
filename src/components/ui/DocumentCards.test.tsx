@@ -45,7 +45,7 @@ describe('a chip\'s card in the panel', () => {
     expect(box.querySelector('[data-reference-cards]')).toBeNull()
     act(() => box.editor.commands.focus())
     fireEvent.click(box.querySelector('[data-node-view-wrapper]')!)
-    expect((await screen.findByRole('menuitemradio', { name: 'None' }, { timeout: 3000 })).getAttribute('aria-checked')).toBe('true')
+    expect((await screen.findByRole('menuitemradio', { name: 'None' })).getAttribute('aria-checked')).toBe('true')
     fireEvent.mouseDown(screen.getByRole('menuitemradio', { name: 'Detailed' }))
     await waitFor(() => expect(box.querySelector('[data-reference-cards] [data-card="detailed"]')).not.toBeNull())
     fireEvent.blur(box)

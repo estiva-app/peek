@@ -112,6 +112,6 @@ describe('the conversation view reads top-level messages, and threads only when 
   it('an open thread is marked up to its newest reply', async () => {
     relay.read.mockResolvedValue(conversation)
     render(<View openThreadId={root.id} />)
-    await waitFor(() => expect(marks.thread).toHaveBeenCalledWith(root.id, T + 120), { timeout: 3000 })
+    await waitFor(() => expect(marks.thread).toHaveBeenCalledWith(root.id, T + 120))
   })
 })

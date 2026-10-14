@@ -143,7 +143,7 @@ describe('the rest of the composer, in the edit box', () => {
     editor.focus()
     await userEvent.keyboard('{Control>}a{/Control}')
 
-    expect(await screen.findByRole('button', { name: 'Bold' }, { timeout: 3000 })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Bold' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Italic' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Underline' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Link' })).toBeTruthy()

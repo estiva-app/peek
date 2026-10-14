@@ -167,7 +167,9 @@ describe('changing an object the conversation already refers to (PEE-3)', () => 
     // first entry over a status somebody set is not.
     open()
     await userEvent.click(await screen.findByText('Set status'))
-    expect(await screen.findByText('Todo')).toBeInTheDocument()
+    // Asked of the select, not of any "Todo" on the page: its closed list can
+    // stay mounted, option and all, on a busy box (2164b3d5).
+    expect(await screen.findByRole('combobox', { name: 'Status' })).toHaveTextContent('Todo')
   })
 
   it('offers nothing when the launcher was not invoked from a thread', async () => {
