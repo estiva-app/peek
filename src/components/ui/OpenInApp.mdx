@@ -1,0 +1,52 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/ForeignObject/OpenInApp" />
+
+# OpenInApp
+
+"Open in Leaf ↗": the way out of Peek to the app that owns a file, at the URL
+that app's manifest gave for it. The one place an app's name is written
+(PRO-24, Miky 2 October).
+
+`short` draws just "Open ↗", with `Open in {app}` as its accessible name and its
+tooltip: *"I would simplify and just say Open. Less words is better. it's more
+clear."* (Miky, 14 October).
+
+**Seen in**: a file's page from another app, `short`, beside the title in the
+header; and a card that could not be read, after "you may not have access to
+this Folder", in full.
+
+## When
+
+- A file or object of another app's, where nothing else on screen leads into
+  that app: the file page's header (the Overview's card, whose title is the
+  link, starts closed), or a card with no title to click.
+
+## When not
+
+- A card that resolved: **ForeignObjectCard**'s title is already the link into
+  the app, and both on one card is the same destination twice (PEEK-18).
+- A file of Peek's own (a topic): it is already open here.
+
+## How
+
+```tsx
+import { OpenInApp } from '@/components/ui/ForeignObjectWidget'
+
+<span className="text-caption text-text-secondary">
+  <OpenInApp object={file} short />
+</span>
+```
+
+In a sentence that already says what could not be read, leave `short` off: the
+words "Open in Leaf" are the sentence's end.
+
+It takes the size and colour of the text around it, so the caller sets them.
+
+## What it owns
+
+- **The URL is the manifest's, and only a web page.** `openUrl` comes from the
+  owning app's NIP-89 `web` template; anything not http(s) draws nothing
+  (`openInAppUrl`), since a manifest is a stranger's text on a shared relay.
+- **A new tab, with `noopener noreferrer`**, through the package's `Link`.
+- **Drawing nothing** when there is no URL, so a caller need not check first.

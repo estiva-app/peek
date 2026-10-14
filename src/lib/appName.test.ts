@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { elsewhereAppName, fileHeading, objectLabel } from './appName'
+import { elsewhereAppName, fileHeading, objectLabel, openInAppUrl } from './appName'
 
 // A bare file is named by the app that opens it since interop 0.44 — Peek, for a topic (MAN-17, PRO-24).
 describe('elsewhereAppName', () => {
@@ -15,6 +15,16 @@ describe('objectLabel', () => {
     expect(objectLabel({ noun: 'issue', appName: 'Estiva Ship' })).toBe('Issue')
     expect(objectLabel({ appName: 'Estiva Ship' })).toBe('Estiva Ship')
     expect(objectLabel({ appName: 'Peek' })).toBeUndefined()
+  })
+})
+
+describe('openInAppUrl', () => {
+  it('is the manifest’s URL when it is a web page, and nothing otherwise', () => {
+    expect(openInAppUrl({ openUrl: 'https://leaf.estiva.app/f/naddr1x' })).toBe('https://leaf.estiva.app/f/naddr1x')
+    expect(openInAppUrl({ openUrl: 'HTTP://example.com/x' })).toBe('HTTP://example.com/x')
+    expect(openInAppUrl({ openUrl: 'javascript:alert(1)' })).toBeUndefined()
+    expect(openInAppUrl({ openUrl: 'data:text/html,hi' })).toBeUndefined()
+    expect(openInAppUrl({})).toBeUndefined()
   })
 })
 

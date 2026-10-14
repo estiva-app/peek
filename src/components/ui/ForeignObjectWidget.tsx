@@ -8,13 +8,14 @@ import type {
 } from '@estiva-app/interop'
 import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
-import { objectLabel } from '@/lib/appName'
+import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
 import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
 import { Avatar, Card, Divider, FieldLine, Form, Link, Person, SectionLabel, ShowMore } from '@estiva-app/ui'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
+import { WithTooltip } from './WithTooltip'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -284,15 +285,37 @@ function Actions({
  * there would be no link, because there is nothing in an naddr that says where
  * a human should go to see the thing.
  *
- * `noopener` because this is a URL a stranger published into a shared relay.
+ * `noopener` because this is a URL a stranger published into a shared relay,
+ * and http(s) only for the same reason (`openInAppUrl`).
+ *
+ * The file page's header draws it too, `short`: there the card is in a column
+ * that starts closed, and the header says just "Open ↗" — *"I would simplify
+ * and just say Open. Less words is better. it's more clear."* (Miky,
+ * 2026-10-14). Where it goes, "Open in <app>", stays its accessible name and
+ * its tooltip, so a screen reader and a hover still say which app.
  */
-function OpenInApp({ object }: { object: ForeignObject }) {
-  if (!object.openUrl) return null
+export function OpenInApp({ object, short = false }: {
+  object: Pick<ForeignObject, 'openUrl' | 'appName'>
+  /** "Open ↗", with "Open in <app>" as its name and tooltip — the file page's header. */
+  short?: boolean
+}) {
+  const href = openInAppUrl(object)
+  if (!href) return null
+  const where = `Open in ${object.appName ?? 'app'}`
+  if (short) {
+    return (
+      <WithTooltip label={where} inline>
+        <Link href={href} variant="underlined" external aria-label={where}>
+          Open ↗
+        </Link>
+      </WithTooltip>
+    )
+  }
   return (
     // Solid, not dotted: one look for "open it elsewhere" in both apps (Katerina, 2026-09-13).
     // Its size and tone are the words' around it, in the card that could not be read (UIG-9).
-    <Link href={object.openUrl} variant="underlined" external>
-      Open in {object.appName ?? 'app'} ↗
+    <Link href={href} variant="underlined" external>
+      {where} ↗
     </Link>
   )
 }
@@ -370,6 +393,7 @@ export function ForeignObjectCard({
     rule the meta line already keeps (FEE-1): a key is never on screen, so
     the title draws the face and the name, or the em dash for a stranger.
   */
+  const openUrl = openInAppUrl(object)
   const title = slots.title?.isPubkey ? (
     // Weight and colour come from the title's box, below, whichever way it is drawn (UIG-9).
     <Person name={object.people?.[slots.title.value]?.displayName} picture={object.people?.[slots.title.value]?.picture} size={16} />
@@ -499,9 +523,9 @@ export function ForeignObjectCard({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* The title is the way into the owning app. A reference you cannot
               follow is a screenshot. */}
-          {object.openUrl ? (
+          {openUrl ? (
             <span className="contents text-body-2 font-semibold text-text-primary">
-              <Link href={object.openUrl} variant="quiet" external truncate>
+              <Link href={openUrl} variant="quiet" external truncate>
                 {title}
               </Link>
             </span>
