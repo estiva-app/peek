@@ -261,7 +261,7 @@ describe('deleting a folder', () => {
     await deleteFolderAsViewer(FOLDER, 'https://relay.test', token)
 
     const filters = queryRelay.mock.calls[0]![1] as { kinds: number[]; '#h'?: string[] }[]
-    expect(filters.find((f) => f['#h'])).toMatchObject({ kinds: [30840, 30850, 30851], '#h': [FOLDER] })
+    expect(filters.find((f) => f['#h'])).toMatchObject({ kinds: [30840, 30842, 30850, 30851], '#h': [FOLDER] })
   })
 
   it.each([
@@ -269,6 +269,7 @@ describe('deleting a folder', () => {
     ["it is a Ship project's record channel", [metadata('project-85db5b59'), admins(), roster()], /Ship project/],
     ['an issue is filed in it', [metadata(), admins(), roster(), event(30851, [['h', FOLDER]])], /filed/],
     ['a topic is filed in it', [metadata(), admins(), roster(), event(30840, [['h', FOLDER]])], /filed/],
+    ['a Leaf document is filed in it — the relay refuses the delete since buzz#27', [metadata(), admins(), roster(), event(30842, [['h', FOLDER]])], /filed/],
     ['it is a DM, which names no owner — even for a steward', [event(39000, [['d', FOLDER], ['name', 'DM'], ['t', 'dm']]), event(39001, [['d', FOLDER]]), roster('admin')], /not a folder/],
     ['the viewer is neither its owner nor a steward', [metadata(), admins(OTHER_PERSON), roster('member')], /made this folder/],
     ['the relay does not answer for it', [], /could not be read/],

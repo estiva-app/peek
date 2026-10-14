@@ -808,6 +808,27 @@ describe('FilePage gives a file the viewer may comment on Peek’s own view', ()
     expect(view.getAttribute('data-h')).toBe(FOLDER)
   })
 
+  /*
+    A Leaf document (30842): comment, yes; edit its text, no (Miky,
+    2026-10-14). Its manifest declares `describe` beside `comment`, and the
+    page offers only the conversation.
+  */
+  it('…and a Leaf document: its conversation, and no editor over its text', () => {
+    const DOCUMENT_ADDRESS = `30842:${ISSUE_ADDRESS.split(':')[1]}:6f1c9b7e-0d42-4c39-9a1e-1f0e4d7b2c55`
+    const describe = { id: 'describe', label: 'Edit', control: 'text', field: 'description', format: 'estiva-blocks-1' }
+    objects.byAddress[DOCUMENT_ADDRESS] = {
+      ...commentable({ ...issue, kind: 30842, address: DOCUMENT_ADDRESS, noun: 'document', appName: 'Leaf' }),
+      actions: [{ id: 'comment', label: 'Comment' }, describe],
+    } as unknown as ForeignObject
+    mount(`/topic/${DOCUMENT_ADDRESS}`)
+    const middle = screen.getByTestId('middle')
+    const view = within(middle).getByTestId('peek-view')
+    expect(view.getAttribute('data-address')).toBe(DOCUMENT_ADDRESS)
+    expect(view.getAttribute('data-h')).toBe(FOLDER)
+    expect(within(middle).getByRole('textbox', { name: 'Peek composer' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Edit' })).toBeNull()
+  })
+
   it('the open thread is still the URL’s, and closing it drops the parameter', () => {
     objects.byAddress[ISSUE_ADDRESS] = commentable(issue)
     const rootId = issue.comments[0].id

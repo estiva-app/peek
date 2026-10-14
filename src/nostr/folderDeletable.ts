@@ -33,9 +33,13 @@
  * runs this very function over production's Folders.
  */
 import { KIND_BARE_FILE, KIND_CHANNEL_METADATA, KIND_FOLDER_STATE, type QueryFn } from '@estiva-app/interop'
+import { KIND } from '@estiva-app/protocol'
 
-/** The kinds a Folder *files*: the relay refuses a `9008` while any carries its `h`. */
-const FILED_KINDS = [KIND_BARE_FILE, 30850, 30851]
+/**
+ * The kinds a Folder *files*: the relay refuses a `9008` while any carries its
+ * `h`. A Leaf document (`30842`) is one since buzz#27.
+ */
+const FILED_KINDS = [KIND_BARE_FILE, KIND.DOCUMENT, 30850, 30851]
 /** NIP-29 channel admins — the channel's owner is its `p … owner` tag. */
 const KIND_CHANNEL_ADMINS = 39001
 /** The relay's roster, one `["member", pubkey, role]` per member (NIP-43). */

@@ -580,6 +580,27 @@ describe('a block-document body', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
+  it('keeps a Leaf document’s text read-only, and draws no Edit box for it either', async () => {
+    // Miky, 2026-10-14: "You should not be able to edit Leaf document (the description) in Peek."
+    const edit = { ...describeIssue, id: 'describe', label: 'Edit' } as ForeignObject['actions'][number]
+    // The same action declared without a format this version knows: no one-line box over the text either.
+    const bare = { ...describeIssue, id: 'describe', label: 'Edit', format: undefined } as unknown as ForeignObject['actions'][number]
+    const leaf = { kind: 30842, noun: 'document', appName: 'Leaf', openUrl: 'https://leaf.estiva.app/d/x' }
+    resolveObject.mockResolvedValue(described({ ...leaf, actions: [edit] }))
+    const { unmount } = render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Goal')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    // The card says what it is and is the way into Leaf.
+    expect(screen.getByText('Document')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Payments/ }).getAttribute('href')).toBe(leaf.openUrl)
+    unmount()
+
+    resolveObject.mockResolvedValue(described({ ...leaf, actions: [bare] }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Goal')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
   it('opens the stored document, its ids on its blocks', async () => {
     resolveObject.mockResolvedValue(described())
     render(<ForeignObjectWidget naddr={NADDR} />)

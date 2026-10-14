@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, KIND_BARE_FILE, pickWidget } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
 import type {
   ForeignObject,
   People,
@@ -9,6 +9,7 @@ import type {
 import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
 import { objectLabel } from '@/lib/appName'
+import { peekEditsTextOf } from '@/lib/readOnlyText'
 import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
 import { Avatar, Card, Divider, FieldLine, Form, Link, Person, SectionLabel, ShowMore } from '@estiva-app/ui'
@@ -410,6 +411,9 @@ export function ForeignObjectCard({
         sentence. The body is its control instead — `prose`, below (MAN-9).
       */
       !action.format &&
+      // Nor, on a file whose text Peek never edits, whatever sets that text —
+      // even declared without a format this version knows (Miky, 2026-10-14).
+      (peekEditsTextOf(object) || !slots.body?.field || action.field !== slots.body.field) &&
       // Nor the archive (FOL-46): as a select it would archive the file and
       // everything under it in one click, with no count of what it hides and
       // no resolution. The file's own menu offers it, through its dialog.
@@ -448,14 +452,13 @@ export function ForeignObjectCard({
    * and every id in it — on the first save. Wherever the body is drawn: a
    * card, or the object's own page.
    *
-   * Not a bare file's (Leaf 1): interop 0.55 declares `describe` on every
-   * `30840`, and here it would make a page's or topic's text editable from a
-   * message card by anyone in the Folder, last save wins. Peek shows it
-   * read-only; people edit in Leaf (Miky, 2026-10-13). "Edit a page from Peek"
-   * is on Leaf 1's Later list.
+   * Not a bare file's nor a Leaf document's (Leaf 1; Miky, 2026-10-13 and
+   * 2026-10-14): both declare `describe`, and here it would make their text
+   * editable from a message card by anyone in the Folder, last save wins. Peek
+   * shows it read-only; people edit in Leaf — `peekEditsTextOf` says which.
    */
   const prose =
-    onAct && whole && object.kind !== KIND_BARE_FILE
+    onAct && whole && peekEditsTextOf(object)
       ? object.actions.find(
           (action) =>
             action.format === BLOCK_DOCUMENT_FORMAT &&

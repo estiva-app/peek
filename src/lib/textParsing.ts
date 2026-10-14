@@ -188,7 +188,7 @@ export function serializeTextChild(child: TiptapInlineChild): string {
 /** A `nostr:` reference in a body, as a preview line names it. */
 const NOSTR_REFERENCE_RE = /nostr:(?:npub1|nprofile1|nevent1|note1|naddr1)[a-z0-9]+/gi
 /** What a referenced address is, by its kind — the type word its chip wears. */
-const REFERENCE_TYPE_WORDS: Record<number, string> = { 30850: 'Project', 30851: 'Issue', 30840: 'Topic' }
+const REFERENCE_TYPE_WORDS: Record<number, string> = { 30850: 'Project', 30851: 'Issue', 30840: 'Topic', 30842: 'Document' }
 
 function previewReference(uri: string): string {
   if (/^nostr:npub1/i.test(uri)) {
