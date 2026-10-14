@@ -11,7 +11,7 @@ import {
   type EditorDocument,
 } from '@estiva-app/protocol'
 import { richTextClassName } from '@estiva-app/ui'
-import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
+import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, EditorTableControls, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -164,7 +164,10 @@ export function BlockDocumentField({
   return (
     <div className="relative">
       {/* No box and no fill: the text reads as the body it is, and the cursor is the only sign it is editable. */}
-      <EditorContent editor={editor} className="cursor-text" data-foreign-body="editing" />
+      {/* A table's handles and ➕ bars while you point at it (RIC-21). */}
+      <EditorTableControls editor={editor}>
+        <EditorContent editor={editor} className="cursor-text" data-foreign-body="editing" />
+      </EditorTableControls>
       {/* Muted words over an empty editor, as the composer does — the action's own label, as a text action's box has. */}
       {empty && (
         <span aria-hidden className="pointer-events-none absolute left-0 top-0 text-caption text-text-muted">
