@@ -32,6 +32,8 @@ const PACE_MS = Number(process.env.PACE_MS ?? 1500)
 /** OPT-10, a Ship issue, and the Widgets project it is in. */
 const SHIP_ISSUE = '30851:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:79130ca5-b4bc-48fb-9f70-85d62576ca23'
 const SHIP_PROJECT = '30850:f3a38fa646debd4162125e0aed87b6d2393fb1ed9702b6875dcbc0c6529d64d1:4fdb6017-d6ae-4827-8b9f-23a18c9272c0'
+/** An issue address in Ship's namespace that nothing was ever published at. */
+const GONE_ISSUE = '30851:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:00000000-0000-4000-8000-0000000a0010'
 /** OPT-20, for the live message's card. */
 const LIVE_ISSUE = '30851:b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46:0ce67ecf-1fe3-42c1-9ce6-a36746cda190'
 
@@ -154,6 +156,8 @@ export default async function main() {
     { body: `Message 47: plain, below everything that loads.` },
     { body: `Message 48: plain, below everything that loads.` },
     { body: `Message 49: the last one.` },
+    // A card whose file is not there (OPT-10's "no longer available"): an issue address nobody ever published.
+    { body: `Message 50: a card whose issue is gone — ${naddrOf(GONE_ISSUE)}`, embeds: [{ value: GONE_ISSUE, layout: 'detailed' }] },
   )
 
   const read = await queryRelay(RELAY_URL, [{ kinds: [1111], '#A': [address], limit: 500 }], qa1.accessToken, qa1.pubkey)
