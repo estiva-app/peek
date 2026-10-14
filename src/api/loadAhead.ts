@@ -231,8 +231,6 @@ export function useLoadAhead(drawn: boolean): void {
           const lap = (label: string) => record.steps.push({ label: `Topics: ${label}`, ms: Math.round(performance.now() - began) })
           const folders = await loadFoldersAhead(at, async (folders) => {
             lap('listing')
-            const cut = (() => { try { return window.localStorage.getItem('peek.ahead.topics') } catch { return null } })()
-            if (cut === 'listing') return []
             // Tracking opens the Folders' live watches, whose frames share the window: a click under way finishes first.
             await whenClickReadsQuiet(CLICK_QUIET_MS, CLICK_QUIET_AT_MOST_MS)
             lap('quiet')
@@ -240,7 +238,6 @@ export function useLoadAhead(drawn: boolean): void {
             releaseFolders = trackAhead(store, folders.map((folder) => folder.id))
             await store.sync('track')
             lap('streams')
-            if (cut === 'track') return []
             const mine = await foldersTopicsOpens(folders, store, latest.current.membership, at)
             lap('parents')
             opened = mine.length
@@ -258,8 +255,6 @@ export function useLoadAhead(drawn: boolean): void {
       ),
     ]
 
-    const only = (() => { try { return window.localStorage.getItem('peek.ahead.only') } catch { return null } })()
-    if (only) steps.splice(0, steps.length, ...steps.filter((step) => step.label.startsWith(only)))
     const record: AheadRecord = { startedAt: performance.now(), steps: [] }
     ;(window as unknown as { __loadAhead?: AheadRecord }).__loadAhead = record
     const timed = steps.map((step) => ({

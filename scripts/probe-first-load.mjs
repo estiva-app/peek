@@ -15,6 +15,7 @@
  * - `first-off` (PEE-5): `first` with Desk's loader turned off (`localStorage['peek.ahead']`), the same build's before.
  * - `click1s`, `click1s-off` (PEE-5): Desk, then the Open work topic 1 s after it drew — while the loader is busiest —
  *   with the loader on and off. Run with `--runs 5` and compare the medians. Prints `window.__loadAhead`.
+ * - `topics10`, `topics10-off` (PEE-5): Desk, then Topics 10 s after it drew, with the loader on and off.
  * - `long`: Topics, then a 200-message topic never opened in this browser: when its messages show, and how many
  *   times the list jumped while nobody scrolled.
  * - `new`: New topic in the QA Folder, Start → a composer in the new topic; then the topic is deleted again.
@@ -187,10 +188,18 @@ const legs = {
     phases: [['Open work topic, 1 s after Desk', 0, 'Open work topic']],
   }),
   'click1s-off': (w) => ({ ...legs.click1s(w), init: AHEAD_OFF }),
-  'click1s-topics': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Topics') } catch {}\n` }),
-  'click1s-listing': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Topics'); localStorage.setItem('peek.ahead.topics', 'listing') } catch {}\n` }),
-  'click1s-track': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Topics'); localStorage.setItem('peek.ahead.topics', 'track') } catch {}\n` }),
-  'click1s-work': (w) => ({ ...legs.click1s(w), init: `try { localStorage.setItem('peek.ahead.only', 'Open work') } catch {}\n` }),
+  // PEE-5: Topics first, 10 s after Desk drew — in `first` it opens third, ~20 s in.
+  topics10: (w) => ({
+    url: '/app/desk',
+    first: w.desk,
+    steps: [
+      ...settled('allTextsNoPulse', 30000), '--wait', '10000',
+      ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000',
+      '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null })', ...report,
+    ],
+    phases: [['Topics, 10 s after Desk', 0, 'Topics']],
+  }),
+  'topics10-off': (w) => ({ ...legs.topics10(w), init: AHEAD_OFF }),
   // PEE-4: after a visit, a reload at Topics draws the tree at once, with the rows and dots it keeps once the relay
   // answers; after a reload at Desk the Open work topic and the Starred DM draw from the copy — right away, and a
   // minute later, since the copy answers at any time.
