@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useLastSelection } from '@/lib/lastSelection'
+import { usePagePicture } from '@/lib/pagePicture'
 import { IconTrash } from '@tabler/icons-react'
 import { EmptyState, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { PeekFrame } from '@/layouts/PeekFrame'
@@ -46,6 +47,8 @@ export function FoldersPage() {
   useEffect(() => {
     setLastTopicsPath(`${location.pathname}${location.search}`)
   }, [location.pathname, location.search, setLastTopicsPath])
+  // A new tab or a reload showed the saved Topics until now; a plain Topics is kept for the next one (PEE-4).
+  usePagePicture('topics', folders !== null, !id && !location.search)
   const { archiveFolder, dmForChannel, folderDeletable, deleteFolder, resolveFolderProject } = useForeignObjects()
   const { showToast } = useToast()
   const people = useWorkspaceDirectory()

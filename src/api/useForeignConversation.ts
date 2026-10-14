@@ -81,7 +81,7 @@ function useResolvedForeign(naddr: string | null | undefined): {
    */
   previous: ForeignObject | null
 } {
-  const { resolveObject, resolveFileFolder } = useForeignObjects()
+  const { resolveObject, resolveObjectFromDevice, resolveFileFolder } = useForeignObjects()
 
   const load = useCallback(
     (target: string): Promise<ListingLoad<ForeignObject | null, RelayFailureKind>> =>
@@ -158,8 +158,20 @@ function useResolvedForeign(naddr: string | null | undefined): {
     if (!naddr) return
     const held = resolvedCache.peek(naddr)
     if (held?.value && Date.now() - held.at < HELD_OBJECT_FRESH_MS && isConversationHeld(naddr)) return
+    /*
+      Nothing held in this tab: the copy on the device draws the file — its
+      title, its Folder, its comments — until the relay's resolve answers
+      (PEE-4). Only a file the copy holds whole; a miss is no answer.
+    */
+    if (held?.value === undefined) {
+      resolveObjectFromDevice(naddr, { archivedWith: true })
+        .then((object) => {
+          if (object && object.folder) resolvedCache.seed(naddr, object)
+        })
+        .catch(() => {})
+    }
     void resolvedCache.revalidate(naddr, () => load(naddr))
-  }, [naddr, load])
+  }, [naddr, load, resolveObjectFromDevice])
 
   useRefreshTriggers(
     () => {
@@ -168,10 +180,11 @@ function useResolvedForeign(naddr: string | null | undefined): {
     { enabled: !!naddr },
   )
 
+  // A file drawn from the copy gives way to the relay refusing it: the Folder is no longer the viewer's.
   const state: ForeignConversationState =
     !naddr || !entry
       ? 'loading'
-      : entry.value !== undefined
+      : entry.value !== undefined && !(entry.seeded && entry.failure === 'not_a_member')
         ? (entry.value ?? 'unresolved')
         : entry.failure
           ? { failed: entry.failure }

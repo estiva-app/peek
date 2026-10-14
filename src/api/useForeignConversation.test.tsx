@@ -7,18 +7,21 @@
  * for that Folder once, only for such a file, and that a record naming none
  * comes back as it resolved rather than with a guess.
  */
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const seam = vi.hoisted(() => ({
   resolveObject: vi.fn<(naddr: string) => Promise<ForeignObject | null>>(),
   resolveFileFolder: vi.fn<(address: string) => Promise<string | null>>(),
+  // The copy on the device holds no file unless a case says so (PEE-4).
+  resolveObjectFromDevice: vi.fn<(naddr: string) => Promise<ForeignObject | undefined>>(async () => undefined),
 }))
 vi.mock('@/api', () => ({ useForeignObjects: () => seam }))
 vi.mock('@/lib/useRefreshTriggers', () => ({ useRefreshTriggers: () => {} }))
 
 import { useForeignConversation } from './useForeignConversation'
+import { RelayReadError } from '@/nostr/relayRead'
 
 const SHIP = 'b'.repeat(64)
 const PROJECT = `30850:${SHIP}:ef024737-6b8f-4e79-ab16-f56fbf7898f2`
@@ -32,6 +35,37 @@ const foreign = (over: Partial<ForeignObject>): ForeignObject =>
 beforeEach(() => {
   seam.resolveObject.mockReset()
   seam.resolveFileFolder.mockReset()
+  seam.resolveObjectFromDevice.mockReset().mockResolvedValue(undefined)
+})
+
+describe('useForeignConversation draws a file from the copy on the device until the relay answers (PEE-4)', () => {
+  it('the copy’s file first, then the relay’s', async () => {
+    let answer: (object: ForeignObject | null) => void = () => {}
+    seam.resolveObject.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    seam.resolveObjectFromDevice.mockResolvedValue(foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM, slots: { title: { value: 'Copied' } } }))
+    const { result } = renderHook(() => useForeignConversation(ISSUE))
+    await waitFor(() => expect(result.current.state).toMatchObject({ address: ISSUE, slots: { title: { value: 'Copied' } } }))
+    await act(async () => answer(foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM, slots: { title: { value: 'Live' } } })))
+    expect(result.current.state).toMatchObject({ slots: { title: { value: 'Live' } } })
+  })
+
+  it('a Folder the viewer has lost is said, not drawn from the copy', async () => {
+    seam.resolveObject.mockRejectedValue(new RelayReadError('relay_membership_required'))
+    seam.resolveObjectFromDevice.mockResolvedValue(foreign({ ref: ISSUE, address: ISSUE, kind: 30851, folder: TEAM }))
+    const { result } = renderHook(() => useForeignConversation(ISSUE))
+    await waitFor(() => expect(result.current.state).toEqual({ failed: 'not_a_member' }))
+  })
+
+  it('a file the relay no longer resolves replaces the copy’s, and a file with no Folder is not drawn from it', async () => {
+    let answer: (object: ForeignObject | null) => void = () => {}
+    seam.resolveObject.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    seam.resolveObjectFromDevice.mockResolvedValue(foreign({ ref: PROJECT, address: PROJECT, kind: 30850 }))
+    const { result } = renderHook(() => useForeignConversation(PROJECT))
+    await act(async () => {})
+    expect(result.current.state).toBe('loading')
+    await act(async () => answer(null))
+    expect(result.current.state).toBe('unresolved')
+  })
 })
 
 describe('useForeignConversation fills the Folder of a record that carries no h', () => {

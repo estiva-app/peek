@@ -7,7 +7,7 @@ import { EstivaIdCallback } from './auth/EstivaIdCallback'
 import { CALLBACK_PATH, storedToken } from './auth/estivaId'
 import { RELAY_URL } from './api/relayUrl'
 import { warmDeviceCopy } from './nostr/deviceCopy'
-import { watchDeskPicture } from './lib/deskPicture'
+import { watchPagePicture } from './lib/pagePicture'
 import { LastSelectionProvider } from './lib/lastSelection'
 import { ToastProvider } from './lib/toast'
 import { PeekSetup } from './lib/PeekSetup'
@@ -28,7 +28,7 @@ installSocketReadsDiagnostic()
 // The copy on the device Desk draws from (PEE-2), read while React renders.
 warmDeviceCopy(RELAY_URL, storedToken()?.pubkey)
 // The saved Desk index.html may have shown: it goes when anything but Desk draws (Desk replaces it itself).
-watchDeskPicture()
+watchPagePicture()
 
 createRoot(document.getElementById('root')!).render(
   <BrowserRouter>

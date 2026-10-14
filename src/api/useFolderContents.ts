@@ -102,6 +102,22 @@ function loadFolderContents(
     })
 }
 
+/**
+ * A Folder's files as the copy on the device answers them (PEE-4), drawn while
+ * the relay's read is out. The copy answers only a listing whose every read the
+ * relay answered on this device before; anything less is no answer, and the
+ * Folder waits for the relay as it always has.
+ */
+function seedFolderContents(fromDevice: (folder: string) => Promise<FolderContents | undefined>, folder: string): void {
+  fromDevice(folder)
+    .then((contents) => {
+      // Not into `listedIn`: OPT-9 opens a file as its latest listing holds it, and the copy's may be older.
+      if (!contents || folderContentsCache.peek(folder)?.value !== undefined) return
+      folderContentsCache.seed(folder, contents)
+    })
+    .catch(() => {})
+}
+
 /** Each Folder's files as its last listing read them (OPT-9). */
 const listedIn = new Map<string, readonly ForeignObject[]>()
 
@@ -164,7 +180,7 @@ export function useFolderContents(
   state: FolderContentsState
   reload: () => Promise<void>
 } {
-  const { resolveFolderContents } = useForeignObjects()
+  const { resolveFolderContents, resolveFolderContentsFromDevice } = useForeignObjects()
   const load = useCallback(
     (target: string) =>
       archived ? loadArchivedContents(resolveFolderContents, target, folderArchived) : loadFolderContents(resolveFolderContents, target),
@@ -192,8 +208,11 @@ export function useFolderContents(
   }, [folder, load, cache])
 
   useEffect(() => {
-    if (folder) void cache.revalidate(folder, () => load(folder))
-  }, [folder, load, cache])
+    if (!folder) return
+    // Nothing held yet in this tab: the copy on the device draws it until the relay answers (PEE-4).
+    if (!archived && !cache.peek(folder)?.value) seedFolderContents(resolveFolderContentsFromDevice, folder)
+    void cache.revalidate(folder, () => load(folder))
+  }, [folder, load, cache, archived, resolveFolderContentsFromDevice])
 
   useEffect(() => {
     if (!folder || !screenKey) return
@@ -209,7 +228,9 @@ export function useFolderContents(
     if (folder) void reload()
   }, { enabled: !!folder })
 
-  const state: FolderContentsState = entry?.value ?? (entry?.failure ? { failed: entry.failure } : 'loading')
+  // Contents drawn from the copy give way to the relay refusing the Folder.
+  const refused = entry?.seeded && entry.failure === 'not_a_member'
+  const state: FolderContentsState = (!refused && entry?.value) || (entry?.failure ? { failed: entry.failure } : 'loading')
 
   return { state, reload }
 }
@@ -245,9 +266,23 @@ const folderListing = createRetryingRead<FolderSummary[] | null>({
   freshMs: 5_000,
 })
 
+/** The listing as the copy on the device answered it, drawn only until `folderListing` holds the relay's (PEE-4). */
+let listingFromCopy: FolderSummary[] | undefined
+const listingFromCopyListeners = new Set<() => void>()
+function setListingFromCopy(next: FolderSummary[] | undefined): void {
+  listingFromCopy = next
+  for (const listener of listingFromCopyListeners) listener()
+}
+function subscribeListingFromCopy(listener: () => void): () => void {
+  listingFromCopyListeners.add(listener)
+  return () => listingFromCopyListeners.delete(listener)
+}
+const listingFromCopySnapshot = () => listingFromCopy
+
 /** Empty the held listing — what `clearListingCaches` does for the others. Tests call it between cases. */
 export function clearFolderListing(): void {
   folderListing.clear()
+  setListingFromCopy(undefined)
   listedIn.clear()
 }
 
@@ -283,7 +318,7 @@ export function useFolders(): {
   failed: boolean
   reload: () => Promise<void>
 } {
-  const { listFolders } = useForeignObjects()
+  const { listFolders, listFoldersFromDevice } = useForeignObjects()
 
   const load = useCallback(async (): Promise<FolderSummary[] | null> => {
     try {
@@ -298,13 +333,24 @@ export function useFolders(): {
   }, [listFolders])
 
   const snapshot = useSyncExternalStore(folderListing.subscribe, folderListing.snapshot, folderListing.snapshot)
+  const seeded = useSyncExternalStore(subscribeListingFromCopy, listingFromCopySnapshot, listingFromCopySnapshot)
   const reload = useCallback(() => folderListing.reload(load), [load])
 
   useEffect(() => {
+    // Nothing held yet in this tab: the copy on the device draws the listing until the relay answers (PEE-4).
+    if (folderListing.snapshot().value === undefined && listingFromCopy === undefined) {
+      listFoldersFromDevice()
+        .then((folders) => {
+          if (folders && folderListing.snapshot().value === undefined) setListingFromCopy(folders)
+        })
+        .catch(() => {})
+    }
     void folderListing.ensure(load)
-  }, [load])
+  }, [load, listFoldersFromDevice])
 
-  const held = snapshot.value
+  // The relay's answer, once there is one; until then, the copy's — unless the relay refused the person outright.
+  const refused = snapshot.error !== undefined && ['not_a_member', 'refused'].includes(relayFailureKind(snapshot.error))
+  const held = snapshot.value !== undefined ? snapshot.value : refused ? undefined : seeded
   // A first read that failed draws as an empty workspace, as it always has; a signed-out answer is `null`.
   const folders = held !== undefined ? held : snapshot.error !== undefined ? [] : null
   return { folders, signedOut: held === null, failed: held === undefined && snapshot.error !== undefined, reload }

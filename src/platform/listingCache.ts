@@ -43,12 +43,14 @@ export type ListingLoad<T, F> = { ok: true; value: T } | { ok: false; failure: F
 export interface ListingEntry<T, F> {
   /** The last answer, if any read has succeeded. */
   value?: T
-  /** Why the last read failed — only when there is no value to keep. */
+  /** Why the last read failed — only when there is no value to keep, or the value is a seed. */
   failure?: F
   /** When `value` or `failure` was set; 0 while the first read is in flight. */
   at: number
   /** The read in flight, shared by everyone who asks meanwhile. */
   inflight?: Promise<void>
+  /** `value` is the copy on the device's, not yet the relay's (PEE-4). */
+  seeded?: true
 }
 
 export interface ListingCacheOptions {
@@ -64,6 +66,12 @@ export interface ListingCache<T, F> {
   /** Ask unless the held answer is fresh or a read is in flight. */
   revalidate(key: string, load: () => Promise<ListingLoad<T, F>>): Promise<void>
   subscribe(key: string, listener: () => void): () => void
+  /**
+   * Draw `value` until a read answers (PEE-4): the copy on the device's answer,
+   * taken only while nothing is held. It is never fresh, so the next revalidate
+   * asks; a read that fails after it keeps it, as after any answer.
+   */
+  seed(key: string, value: T): void
   /** Drop everything held — for a viewer who is no longer there, and for tests. */
   clear(): void
 }
@@ -103,7 +111,9 @@ export function createListingCache<T, F>(options: ListingCacheOptions = {}): Lis
         if (started !== generation) return
         const before = entries.get(key)
         if (answer?.ok) set(key, { value: answer.value, at: now() })
-        else if (before?.value !== undefined) set(key, { value: before.value, at: before.at })
+        // A seed is not an answer: the failure is kept beside it, for a reader that must not draw over a refusal.
+        else if (before?.value !== undefined)
+          set(key, { value: before.value, at: before.at, ...(before.seeded ? { seeded: true as const, failure: answer?.failure } : {}) })
         else set(key, { failure: answer?.failure, at: now() })
       })
     set(key, { ...held, at: held?.at ?? 0, inflight })
@@ -116,8 +126,13 @@ export function createListingCache<T, F>(options: ListingCacheOptions = {}): Lis
     revalidate(key, load) {
       const held = entries.get(key)
       if (held?.inflight) return held.inflight
-      if (held?.value !== undefined && now() - held.at < freshMs) return Promise.resolve()
+      if (held?.value !== undefined && !held.seeded && now() - held.at < freshMs) return Promise.resolve()
       return read(key, load)
+    },
+    seed(key, value) {
+      const held = entries.get(key)
+      if (held?.value !== undefined || held?.failure !== undefined) return
+      set(key, { ...held, value, at: held?.at ?? 0, seeded: true })
     },
     subscribe(key, listener) {
       const set = listeners.get(key) ?? new Set()

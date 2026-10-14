@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRelayViewer } from './foreign'
 import { viewerQuery } from '@/nostr/foreign'
+import { conversationFromCopy } from '@/nostr/conversationFromCopy'
 import {
   applyLiveEvents,
   catchUpConversation,
@@ -242,6 +243,13 @@ export function useFileConversation(
     dropped and the view says so.
   */
   const [failure, setFailure] = useState<{ key: string; failed: RelayFailureKind }>()
+  /*
+    The conversation as the copy on the device answers the same read (PEE-4),
+    drawn while the first read from the relay is out and never held: the store
+    holds only what the relay answered, so the catch-ups after it start from
+    the relay's word.
+  */
+  const [fromCopy, setFromCopy] = useState<{ key: string; value: FileConversation }>()
 
   // Written in an effect rather than during render; read from a socket frame or a timer.
   const latestActivity = useRef(onActivity)
@@ -273,6 +281,11 @@ export function useFileConversation(
           // What the socket delivered before this read began, the read finds.
           const startedAt = Date.now()
           const sent = sentBeforeRead.get(key) ?? []
+          conversationFromCopy(container, roots, at.relayUrl, at.token)
+            .then((value) => {
+              if (conversations.value(key) === undefined) setFromCopy({ key, value })
+            })
+            .catch(() => {})
           const { value, events } = await readConversation(container, [...new Set([...roots, ...sent])], query)
           sentBeforeRead.delete(key)
           // A catch-up that settled meanwhile is newer than this.
@@ -285,6 +298,8 @@ export function useFileConversation(
         if (found.lost) {
           // The Folder is no longer the viewer's: nothing held is drawn again, and the page reads what it may now see.
           conversations.drop(key)
+          // Nor the copy's: it is older still.
+          setFromCopy(undefined)
           const startedAt = Date.now()
           const { value, events } = await readConversation(container, roots, query)
           conversations.replace(key, value, events, startedAt)
@@ -301,7 +316,10 @@ export function useFileConversation(
           error instanceof RelayReadError ? error.kind : classifyRelayFailure((error as Error)?.message ?? '')
         if (isOutage(kind)) recordReadFailure(kind)
         console.warn('[nostr] file conversation read failed:', error)
-        if (kind === 'not_a_member') conversations.drop(key)
+        if (kind === 'not_a_member') {
+          conversations.drop(key)
+          setFromCopy(undefined)
+        }
         if (kind === 'not_a_member' || conversations.value(key) === undefined) setFailure({ key, failed: kind })
       }
     })
@@ -474,13 +492,15 @@ export function useFileConversation(
         : Promise.resolve(SIGNED_OUT),
   }
 
+  // A first read that failed keeps the copy's conversation on screen, unless the Folder is no longer the viewer's.
+  const copied = fromCopy?.key === key ? fromCopy.value : undefined
   const state: FileConversationState = !key
     ? 'loading'
     : held
       ? held
-      : failure?.key === key
+      : failure?.key === key && (failure.failed === 'not_a_member' || !copied)
         ? { failed: failure.failed }
-        : 'loading'
+        : (copied ?? 'loading')
 
   return { state, reload, actions, viewerPubkey: v?.token.pubkey ?? null }
 }

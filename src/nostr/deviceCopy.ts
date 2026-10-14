@@ -30,7 +30,7 @@ import {
   type SnapshotStorage,
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
-import { clearDeskPicture } from '@/lib/deskPicture'
+import { clearPagePictures } from '@/lib/pagePicture'
 
 /**
  * Bump when what Peek folds from the copy changes meaning: a copy written
@@ -57,20 +57,13 @@ function deviceStorage(): SnapshotStorage {
   return storage
 }
 
-/**
- * How long after the copy opens it answers reads. It is there for the first
- * draw; after that the session's own stores hold what was read, and asking the
- * copy beside every later read would only cost main-thread time.
- */
-const ANSWERS_FOR_MS = 15_000
-
 /** Whose copy this device last held: somebody else signing in wipes it first. */
 export const OWNER_KEY = 'peek-device-copy-owner'
 
 /** Kept as the owner while a sign-out's clear may not have finished: the next copy opened wipes first. */
 export const SIGNED_OUT = 'signed-out'
 
-let current: { scope: string; snapshot: EventSnapshot; openedAt: number } | undefined
+let current: { scope: string; snapshot: EventSnapshot } | undefined
 /** Set by sign-out: from then on this page keeps nothing, whatever answers still arrive. */
 let leaving = false
 
@@ -102,7 +95,7 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   */
   const base = deviceStorage()
   const previous = ownerOnDevice()
-  if (previous && previous !== scope) clearDeskPicture()
+  if (previous && previous !== scope) clearPagePictures()
   const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
   rememberOwner(scope)
   const storage: SnapshotStorage = {
@@ -111,7 +104,7 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
     clear: () => base.clear(),
   }
   const snapshot = createEventSnapshot({ storage, scope, version: DEVICE_COPY_VERSION })
-  current = { scope, snapshot, openedAt: Date.now() }
+  current = { scope, snapshot }
   return snapshot
 }
 
@@ -159,7 +152,6 @@ export async function readFromCopy(
 ): Promise<SignedEvent[] | null> {
   if (!pubkey || leaving) return null
   const snapshot = copyFor(relayUrl, pubkey)
-  if (current && Date.now() - current.openedAt > ANSWERS_FOR_MS) return null
   await settled(snapshot.ready, READY_WAIT_MS)
   return snapshot.answer(filters)
 }
@@ -195,7 +187,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   current?.snapshot.discard()
   current = undefined
   toKeep.length = 0
-  clearDeskPicture()
+  clearPagePictures()
   // If the clear below does not finish before the page leaves, the next copy opened wipes first.
   rememberOwner(SIGNED_OUT)
   await settled(

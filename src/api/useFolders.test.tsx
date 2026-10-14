@@ -15,7 +15,11 @@ import { RelayReadError } from '@/nostr/relayRead'
 
 /* One seam object, the same on every render, so `load` keeps its identity
    and the mount effect runs once (mock-use-relay-viewer-stably). */
-const seam = vi.hoisted(() => ({ listFolders: vi.fn<() => Promise<FolderSummary[] | null>>() }))
+const seam = vi.hoisted(() => ({
+  listFolders: vi.fn<() => Promise<FolderSummary[] | null>>(),
+  // The copy on the device holds no listing unless a case says so (PEE-4).
+  listFoldersFromDevice: vi.fn<() => Promise<FolderSummary[] | null>>(async () => null),
+}))
 vi.mock('@/api', () => ({ useForeignObjects: () => seam }))
 vi.mock('@/nostr/freshness', () => ({ recordReadFailure: vi.fn() }))
 
@@ -97,5 +101,37 @@ describe('useFolders', () => {
     await act(() => vi.advanceTimersByTimeAsync(FOLDERS_RETRY_FIRST_MS))
     await act(() => vi.advanceTimersByTimeAsync(FOLDERS_RETRY_MAX_MS * 2))
     expect(seam.listFolders).toHaveBeenCalledTimes(2)
+  })
+
+  it('draws the copy’s listing until the relay answers, then the relay’s (PEE-4)', async () => {
+    let answer: (folders: FolderSummary[]) => void = () => {}
+    seam.listFolders.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    seam.listFoldersFromDevice.mockResolvedValueOnce([TEAM])
+    const { result } = renderHook(() => useFolders())
+    await settle()
+    expect(result.current.folders).toEqual([TEAM])
+    await act(async () => answer([TEAM, PLACED]))
+    expect(result.current.folders).toEqual([TEAM, PLACED])
+    expect(seam.listFolders).toHaveBeenCalledTimes(1)
+  })
+
+  it('a relay that refuses the person outright replaces the copy’s listing with nothing', async () => {
+    seam.listFolders.mockRejectedValue(new RelayReadError('relay_membership_required'))
+    seam.listFoldersFromDevice.mockResolvedValueOnce([TEAM])
+    const { result } = renderHook(() => useFolders())
+    await settle()
+    await settle()
+    expect(result.current.folders).toEqual([])
+    expect(result.current.failed).toBe(true)
+  })
+
+  it('negative control: a copy that answers after the relay is not drawn', async () => {
+    let copied: (folders: FolderSummary[]) => void = () => {}
+    seam.listFolders.mockResolvedValueOnce([TEAM, PLACED])
+    seam.listFoldersFromDevice.mockReturnValueOnce(new Promise((resolve) => (copied = resolve)))
+    const { result } = renderHook(() => useFolders())
+    await settle()
+    await act(async () => copied([TEAM]))
+    expect(result.current.folders).toEqual([TEAM, PLACED])
   })
 })
