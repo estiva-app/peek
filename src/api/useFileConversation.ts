@@ -142,10 +142,11 @@ export async function loadConversationAhead(
   container: ConversationContainer,
   rootIds: readonly string[],
   at: { relayUrl: string; token: StoredToken },
-): Promise<void> {
+): Promise<'read' | 'held' | 'syncing'> {
   const conversations = conversationsFor(at.relayUrl, at.token.pubkey)
   const key = conversationKey(container)
-  if (conversations.value(key) !== undefined || syncs.has(key)) return
+  if (conversations.value(key) !== undefined) return 'held'
+  if (syncs.has(key)) return 'syncing'
   // Kept, not thrown inside the sync: an open queued behind it must still run.
   let failed: { error: unknown } | undefined
   // Once an open has joined it, what is left of the read is that click's, and goes in its lane.
@@ -163,6 +164,7 @@ export async function loadConversationAhead(
     }
   })
   if (failed) throw failed.error
+  return 'read'
 }
 
 /**

@@ -31,7 +31,7 @@ import { loadAhead, type AheadOutcome, type AheadStep } from '@estiva-app/platfo
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
 import type { StoredToken } from '@/auth/estivaId'
-import { getSocketReader, notePress, whenClickReadsQuiet } from '@/nostr/bridge'
+import { getSocketReader, whenClickReadsQuiet } from '@/nostr/bridge'
 import { RelayReadError } from '@/nostr/relayRead'
 import { streamMessagesByFolder, type StreamMessage } from '@/nostr/channelStreams'
 import type { ChannelStore } from '@/platform/channelStore'
@@ -75,6 +75,14 @@ const CLICK_QUIET_AT_MOST_MS = 5_000
  * is held, so only the rest is asked. Stopping on the first such failure left
  * Topics unloaded for a whole page load (QA-1, 16 s to open).
  */
+/**
+ * A DM's step waits at most this long for the relay to say which channels this
+ * person has. On a browser with nothing stored that read can land after the
+ * step starts, and a step that found no channel loaded nothing (QA-1's Starred
+ * DM, 6 runs of 7).
+ */
+const DM_CHANNELS_AT_MOST_MS = 10_000
+
 const AHEAD_RETRIES = 2
 const AHEAD_RETRY_MS = 6_000
 const PASSING = /socket paused|not live|no EOSE|rate-limited|quota exceeded|reconnecting|connecting|too many concurrent|database error/i
@@ -158,10 +166,20 @@ export function useLoadAhead(drawn: boolean): void {
   const { openWork } = useDeskItems()
   const { entries: starred } = useStarred()
   const screener = useScreenerItems()
-  const { channelOf } = useDmChannels()
+  const { channelOf, state: channelsState } = useDmChannels()
   const held = useHeldChannelEvents()
   const store = useTabChannelStoreForAhead()
   const membership = useMembership()
+
+  // Settles once the relay has said which DM channels this person has.
+  const channels = useRef<{ known: Promise<void>; settle: () => void } | null>(null)
+  if (!channels.current) {
+    let settle = () => {}
+    channels.current = { known: new Promise<void>((resolve) => (settle = resolve)), settle }
+  }
+  useEffect(() => {
+    if (channelsState === 'present') channels.current?.settle()
+  }, [channelsState])
 
   // Desk's lists are read when Desk has drawn, not on every change after it; a DM's channel when its step runs.
   const latest = useRef({ openWork, starred, screener, channelOf, held, store, membership })
@@ -183,8 +201,14 @@ export function useLoadAhead(drawn: boolean): void {
       if (container) await loadConversationAhead(container, (file?.comments ?? []).map((comment) => comment.id), at)
     }
     const dmOf = async (dmId: string) => {
+      if (!channelOf(dmId)) {
+        await Promise.race([channels.current?.known, new Promise((resolve) => setTimeout(resolve, DM_CHANNELS_AT_MOST_MS))])
+      }
+      // No channel yet with someone never written to: nothing to load, and no reason to stop the rest.
       const h = channelOf(dmId)
-      if (h) await loadConversationAhead({ kind: 'channel', h }, [], at)
+      const how = h ? await loadConversationAhead({ kind: 'channel', h }, [], at) : null
+      if (how && how !== 'read') record.steps.push({ label: `DM ${dmId.slice(0, 8)} was ${how}`, ms: Math.round(performance.now() - record.startedAt) })
+      if (!h) record.steps.push({ label: `no DM channel for ${dmId.slice(0, 8)}`, ms: Math.round(performance.now() - record.startedAt) })
     }
 
     const byFile = newestBy(held, (event) =>
@@ -259,7 +283,6 @@ export function useLoadAhead(drawn: boolean): void {
     // A click goes first, including a click on what the loader has already asked for.
     const promote = () => {
       getSocketReader()?.promoteAhead?.()
-      notePress()
       channelsAskedFor()
     }
     // @estiva-escape(no-rebuilt-behaviour): not a UI behaviour — any press means a click's reads may be on the way, so the loader's waiting reads stop holding them up; nothing is closed or taken

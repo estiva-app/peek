@@ -170,13 +170,12 @@ export async function queryRelay(
   lane: ReadLane = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
   if (!socketReader && lane === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
-  const askedAt = Date.now()
   if (lane === 'click') clickReads.open += 1
   let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
   try {
     answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
     if (!answer) {
-      const release = lane === 'ahead' ? await aheadPost(askedAt) : null
+      const release = lane === 'ahead' ? await aheadPost() : null
       try {
         const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
         answer = parseQueryResponse(status, text)
@@ -223,7 +222,7 @@ let socketReader: SocketReader | null = null
 let aheadPosting = false
 const aheadPostWaiting: (() => void)[] = []
 
-async function aheadPost(askedAt: number): Promise<() => void> {
+async function aheadPost(): Promise<() => void> {
   const release = () => {
     const next = aheadPostWaiting.shift()
     if (next) next()
@@ -231,23 +230,15 @@ async function aheadPost(askedAt: number): Promise<() => void> {
   }
   if (aheadPosting) await new Promise<void>((resolve) => aheadPostWaiting.push(resolve))
   else aheadPosting = true
-  // Asked after a press, not while the click's own reads are still open: QA-1's click 1 s after Desk took
-  // 0.8–2.3 s longer in the runs where the loader's reads went out beside it. One asked before the press
-  // was promoted, and the click may be waiting on it.
-  while (askedAt >= pressedAt && Date.now() - pressedAt < PRESS_PAUSE_MS && clickReads.open > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
+  // Only once the person's reads have been quiet a while, not merely after a press: one on the wire cannot be
+  // taken back, and a click 1 s after Desk that found one there drew 200–300 ms later (QA-1 and QA-2, 7 runs).
+  await whenClickReadsQuiet(AHEAD_HTTP_QUIET_MS, AHEAD_HTTP_WAIT_AT_MOST_MS)
   return release
 }
 
-/** The longest a press holds the loader's HTTP reads back (PEE-5). */
-const PRESS_PAUSE_MS = 8_000
-let pressedAt = 0
-
-/** The person pressed something (PEE-5): the loader's HTTP reads wait for the click's reads to be answered. */
-export function notePress(): void {
-  pressedAt = Date.now()
-}
+/** How long the `click` lane is quiet before the loader's next HTTP read goes, and the longest it waits for that (PEE-5). */
+const AHEAD_HTTP_QUIET_MS = 2_000
+const AHEAD_HTTP_WAIT_AT_MOST_MS = 8_000
 
 /** The reads in the `click` lane not yet answered, socket or HTTP, and when the last one was (PEE-5). */
 const clickReads = { open: 0, lastAt: 0 }
