@@ -1,0 +1,44 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Messages/ForeignObject/OpenInApp" />
+
+# OpenInApp
+
+"Open in Leaf ↗": the way out of Peek to the app that owns a file, at the URL
+that app's manifest gave for it. The one place an app's name is written
+(PRO-24, Miky 2 October: a file is labelled by its type, "Document", "Issue").
+
+**Seen in**: a file's page from another app, beside its type in the header; and
+a card that could not be read, after "you may not have access to this Folder".
+
+## When
+
+- A file or object of another app's, where nothing else on screen leads into
+  that app: the file page's header (the Overview's card, whose title is the
+  link, starts closed), or a card with no title to click.
+
+## When not
+
+- A card that resolved: **ForeignObjectCard**'s title is already the link into
+  the app, and both on one card is the same destination twice (PEEK-18).
+- A file of Peek's own (a topic): it is already open here.
+
+## How
+
+```tsx
+import { OpenInApp } from '@/components/ui/ForeignObjectWidget'
+
+<span className="text-caption text-text-secondary">
+  <OpenInApp object={file} />
+</span>
+```
+
+It takes the size and colour of the text around it, so the caller sets them.
+
+## What it owns
+
+- **The URL is the manifest's, and only a web page.** `openUrl` comes from the
+  owning app's NIP-89 `web` template; anything not http(s) draws nothing
+  (`openInAppUrl`), since a manifest is a stranger's text on a shared relay.
+- **A new tab, with `noopener noreferrer`**, through the package's `Link`.
+- **Drawing nothing** when there is no URL, so a caller need not check first.

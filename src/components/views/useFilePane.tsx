@@ -12,7 +12,8 @@ import { useFileMembers, useMembership, useOpenWorkFiles, useWorkspaceDirectory 
 import { kindNoun } from '@/lib/archiveWords'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
-import { elsewhereAppName } from '@/lib/appName'
+import { elsewhereAppName, objectLabel, openInAppUrl } from '@/lib/appName'
+import { OpenInApp } from '@/components/ui/ForeignObjectWidget'
 
 /**
  * A file's middle column with its header — the title, whose file it is, the
@@ -210,9 +211,23 @@ export function useFilePane(
             Whose file this is, said plainly: the pane draws another app's
             conversation in Peek's own language, which is the point and is
             also exactly what could mislead — without it the discussion
-            reads as something in Peek. A chip, never cut short.
+            reads as something in Peek. Said as PRO-24 says it (Miky, 2
+            October): the chip is the file's type ("Issue", "Document"), and
+            the app's name is only in "Open in <app>" beside it — the way to
+            the file's text, which Peek shows and never edits for a Leaf
+            document (Miky, 14 October). A file of Peek's own gets neither.
+            Never cut short.
           */}
-          {elsewhereAppName(file) && <Chip type="neutral" label={elsewhereAppName(file)!} className="shrink-0" />}
+          {file && elsewhereAppName(file) && (
+            <>
+              <Chip type="neutral" label={objectLabel(file)!} className="shrink-0" />
+              {openInAppUrl(file) && (
+                <span className="shrink-0 whitespace-nowrap text-caption text-text-secondary">
+                  <OpenInApp object={file} />
+                </span>
+              )}
+            </>
+          )}
         </div>
       }
       actions={

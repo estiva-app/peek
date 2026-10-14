@@ -8,7 +8,7 @@ import type {
 } from '@estiva-app/interop'
 import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
-import { objectLabel } from '@/lib/appName'
+import { objectLabel, openInAppUrl } from '@/lib/appName'
 import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
 import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
@@ -284,14 +284,20 @@ function Actions({
  * there would be no link, because there is nothing in an naddr that says where
  * a human should go to see the thing.
  *
- * `noopener` because this is a URL a stranger published into a shared relay.
+ * `noopener` because this is a URL a stranger published into a shared relay,
+ * and http(s) only for the same reason (`openInAppUrl`).
+ *
+ * The file page's header draws it too, beside the file's type: there the
+ * card is in a column that starts closed, and "Open in <app>" is the one place
+ * the app's name belongs (PRO-24).
  */
-function OpenInApp({ object }: { object: ForeignObject }) {
-  if (!object.openUrl) return null
+export function OpenInApp({ object }: { object: Pick<ForeignObject, 'openUrl' | 'appName'> }) {
+  const href = openInAppUrl(object)
+  if (!href) return null
   return (
     // Solid, not dotted: one look for "open it elsewhere" in both apps (Katerina, 2026-09-13).
     // Its size and tone are the words' around it, in the card that could not be read (UIG-9).
-    <Link href={object.openUrl} variant="underlined" external>
+    <Link href={href} variant="underlined" external>
       Open in {object.appName ?? 'app'} ↗
     </Link>
   )
