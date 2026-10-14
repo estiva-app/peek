@@ -571,6 +571,15 @@ describe('a block-document body', () => {
     return box
   }
 
+  it('keeps a bare file’s text read-only although interop declares describe on it (Leaf 1)', async () => {
+    // Decided by Miky, 2026-10-13: a page is edited in Leaf, never from a card in Peek.
+    const describe = { ...describeIssue, id: 'describe', label: 'Edit text' } as ForeignObject['actions'][number]
+    resolveObject.mockResolvedValue(described({ kind: 30840, actions: [describe] }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Goal')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
   it('opens the stored document, its ids on its blocks', async () => {
     resolveObject.mockResolvedValue(described())
     render(<ForeignObjectWidget naddr={NADDR} />)

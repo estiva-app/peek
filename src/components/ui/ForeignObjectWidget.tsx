@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
+import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, KIND_BARE_FILE, pickWidget } from '@estiva-app/interop'
 import type {
   ForeignObject,
   People,
@@ -447,9 +447,15 @@ export function ForeignObjectCard({
    * an empty editor over a value it never showed would replace that value —
    * and every id in it — on the first save. Wherever the body is drawn: a
    * card, or the object's own page.
+   *
+   * Not a bare file's (Leaf 1): interop 0.55 declares `describe` on every
+   * `30840`, and here it would make a page's or topic's text editable from a
+   * message card by anyone in the Folder, last save wins. Peek shows it
+   * read-only; people edit in Leaf (Miky, 2026-10-13). "Edit a page from Peek"
+   * is on Leaf 1's Later list.
    */
   const prose =
-    onAct && whole
+    onAct && whole && object.kind !== KIND_BARE_FILE
       ? object.actions.find(
           (action) =>
             action.format === BLOCK_DOCUMENT_FORMAT &&
