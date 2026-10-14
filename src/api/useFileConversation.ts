@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRelayViewer } from './foreign'
+import type { StoredToken } from '@/auth/estivaId'
 import { viewerQuery } from '@/nostr/foreign'
 import { conversationFromCopy } from '@/nostr/conversationFromCopy'
 import {
@@ -122,6 +123,41 @@ function coalesced(key: string, run: () => Promise<void>): Promise<void> {
   })()
   syncs.set(key, entry)
   return entry.promise
+}
+
+/**
+ * A conversation nobody has opened yet, read as its first open reads it but on
+ * the `ahead` lane (PEE-5, Desk's loader), and held so that open draws it at
+ * once and asks only what changed since. Nothing is held when the read fails;
+ * it throws, which stops the loader.
+ *
+ * It runs as the conversation's sync (`coalesced`), so an open that arrives
+ * meanwhile waits for it and then only catches up, rather than reading the
+ * whole conversation a second time beside it; the press that opened it has
+ * moved its waiting reads into the click lane. Not while a sync of it runs:
+ * that one is the open's.
+ */
+export async function loadConversationAhead(
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  at: { relayUrl: string; token: StoredToken },
+): Promise<void> {
+  const conversations = conversationsFor(at.relayUrl, at.token.pubkey)
+  const key = conversationKey(container)
+  if (conversations.value(key) !== undefined || syncs.has(key)) return
+  // Kept, not thrown inside the sync: an open queued behind it must still run.
+  let failed: { error: unknown } | undefined
+  await coalesced(key, async () => {
+    if (conversations.value(key) !== undefined) return
+    try {
+      const startedAt = Date.now()
+      const { value, events } = await readConversation(container, [...rootIds], viewerQuery(at.relayUrl, at.token, 'ahead'))
+      if (conversations.value(key) === undefined) conversations.replace(key, value, events, startedAt)
+    } catch (error) {
+      failed = { error }
+    }
+  })
+  if (failed) throw failed.error
 }
 
 /**

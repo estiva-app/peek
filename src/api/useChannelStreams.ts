@@ -209,6 +209,11 @@ export function useChannelStreams(channels: readonly string[]): {
   }, [held, ids, snapshot])
 }
 
+/** The tab's store, for Desk's loader to read Topics' Folders into before Topics tracks them (PEE-5); null until connected. */
+export function useTabChannelStoreForAhead(): ChannelStore | null {
+  return useTabChannelStore()?.store ?? null
+}
+
 /** The tab's store and the viewer it is for (urgency is per reader, CON-17); null until signed in and connected. */
 function useTabChannelStore(): { store: ChannelStore; me: string } | null {
   const { live } = useLiveClient()

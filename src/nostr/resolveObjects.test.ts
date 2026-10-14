@@ -114,7 +114,7 @@ describe('resolveObjectsAsViewer', () => {
     const objects = await resolveObjectsAsViewer([addresses[0], message], 'https://relay.test', token)
     expect(objects[message]).toBeNull()
     expect(objects[addresses[0]]?.slots.title?.value).toBe('File 0')
-    expect(queryRelay).toHaveBeenCalledWith('https://relay.test', [{ ids: ['c'.repeat(64)], limit: 1 }], 't', VIEWER)
+    expect(queryRelay).toHaveBeenCalledWith('https://relay.test', [{ ids: ['c'.repeat(64)], limit: 1 }], 't', VIEWER, 'click')
   })
 
   it('from the copy, a file it never fully saw waits for the relay without holding back the rest (PEE-2)', async () => {

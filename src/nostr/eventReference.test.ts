@@ -43,7 +43,7 @@ describe('resolveObjectAsViewer, handed a message', () => {
     queryRelay.mockResolvedValue({ ok: true, events: [] })
     const result = await resolveObjectAsViewer(`nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`, 'https://relay.test', token)
     expect(result).toBeNull()
-    expect(queryRelay).toHaveBeenCalledWith('https://relay.test', [{ ids: [EVENT], limit: 1 }], 't', VIEWER)
+    expect(queryRelay).toHaveBeenCalledWith('https://relay.test', [{ ids: [EVENT], limit: 1 }], 't', VIEWER, 'click')
   })
 })
 
@@ -51,7 +51,7 @@ describe('relaySigningKeyAsViewer', () => {
   it('reads the key off any one channel record', async () => {
     queryRelay.mockResolvedValue({ ok: true, events: [{ kind: 39000, pubkey: RELAY, tags: [['d', 'uuid']] }] })
     expect(await relaySigningKeyAsViewer('https://relay.test', token)).toBe(RELAY)
-    expect(queryRelay).toHaveBeenLastCalledWith('https://relay.test', [{ kinds: [39000], limit: 1 }], 't', VIEWER)
+    expect(queryRelay).toHaveBeenLastCalledWith('https://relay.test', [{ kinds: [39000], limit: 1 }], 't', VIEWER, 'click')
   })
 
   it('answers null, not a throw, when the read is refused or empty', async () => {

@@ -5,7 +5,7 @@ import type { RelayState, SignedEvent } from '@estiva-app/protocol'
 vi.mock('@/auth/estivaId', () => ({ validToken: () => null }))
 vi.mock('./liveTopics', () => ({ getLiveClient: () => null }))
 
-import { createPacer, createSocketReader, EOSE_TIMEOUT_MS, LIVE_WAIT_MS, MAX_REQS_IN_FLIGHT, REQS_PER_WINDOW, WINDOW_MS } from './socketRead'
+import { createSocketReader, EOSE_TIMEOUT_MS, LIVE_WAIT_MS, MAX_REQS_IN_FLIGHT, REQS_PER_WINDOW, WINDOW_MS } from './socketRead'
 import { createFrameShaper, FRAMES_PER_SECOND, FRAMES_PER_WINDOW, otherFramesSince, SHAPED_WINDOW_MS, resetSocketFrames, sendingAsRead } from './socketFrames'
 import { queryRelay, setSocketReader } from './bridge'
 import { relayReads, resetRelayMeter } from './relayMeter'
@@ -182,74 +182,94 @@ describe('socket reads', () => {
   })
 })
 
-describe('createPacer', () => {
-  const fakeClock = () => {
+// The pacer itself — newest click first, the starved rule, spilling, the live
+// watches' frames, and the `ahead` lane — is `@estiva-app/platform`'s
+// `createPacer` now, and tested there (PEE-5).
+describe('reads loaded ahead (PEE-5)', () => {
+  it('never go over HTTP: what would send one there fails it instead', async () => {
+    const paused = { noteRateLimited: vi.fn(() => 0), pausedForMs: vi.fn(() => 1_000) }
+    const { client } = fakeClient()
+    const { read } = reader(client, paused)
+    expect(await read('https://relay', [{ kinds: [9] }], ME, { lane: 'ahead' })).toEqual({
+      ok: false,
+      events: [],
+      reason: 'ahead: socket paused',
+    })
+    const elsewhere = createSocketReader({ getClient: () => null, currentPubkey: () => ME, budget: paused, httpBudget: { pausedForMs: () => 0 } })
+    expect(await elsewhere('https://elsewhere', [{ kinds: [9] }], ME, { lane: 'ahead' })).toMatchObject({ ok: false })
+  })
+
+  it('share a REQ, and each is handed what its own filters match, at most their limit', async () => {
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    const old = { ...event('old'), kind: 0, created_at: 1 }
+    const profile = { ...event('p'), kind: 0, created_at: 5 }
+    const manifest = { ...event('m'), kind: 31990, created_at: 2 }
+    const a = read('https://relay', [{ kinds: [0], authors: [ME], limit: 1 }], ME, { lane: 'ahead' })
+    const b = read('https://relay', [{ kinds: [31990], limit: 20 }], ME, { lane: 'ahead' })
+    const c = read('https://relay', [{ kinds: [31990], limit: 20 }], ME, { lane: 'ahead' })
+    // Asked in the same moment: one REQ, the filter two of them share sent once.
+    await vi.waitFor(() => expect(subs).toHaveLength(1))
+    expect(subs[0].filters).toEqual([{ kinds: [0], authors: [ME], limit: 1 }, { kinds: [31990], limit: 20 }])
+    for (const e of [old, profile, manifest]) subs[0].onEvent(e as SignedEvent)
+    subs[0].onEose?.()
+    expect(await a).toEqual({ ok: true, events: [profile] })
+    expect(await b).toEqual({ ok: true, events: [manifest] })
+    expect(await c).toEqual({ ok: true, events: [manifest] })
+  })
+
+  it('asked together, share one REQ; a refusal of the REQ asks each again alone', async () => {
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    // A read of eleven filters is two REQs of its own, and holds both ahead slots on the wire.
+    const held = read('https://relay', Array.from({ length: 11 }, (_, i) => ({ kinds: [9], '#h': [`held${i}`] })), ME, { lane: 'ahead' })
+    await vi.waitFor(() => expect(subs).toHaveLength(2))
+    const one = read('https://relay', [{ kinds: [9], '#h': ['one'] }], ME, { lane: 'ahead' })
+    const two = read('https://relay', [{ kinds: [9], '#h': ['two'] }], ME, { lane: 'ahead' })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    subs[0].onEose?.()
+    subs[1].onEose?.()
+    await held
+    await vi.waitFor(() => expect(subs).toHaveLength(3))
+    expect(subs[2].filters).toEqual([{ kinds: [9], '#h': ['one'] }, { kinds: [9], '#h': ['two'] }])
+    subs[2].onClosed?.('blocked: one of these')
+    await vi.waitFor(() => expect(subs).toHaveLength(5))
+    expect(subs.slice(3).map((s) => s.filters)).toEqual([[{ kinds: [9], '#h': ['one'] }], [{ kinds: [9], '#h': ['two'] }]])
+    subs[3].onClosed?.('blocked: one of these')
+    subs[4].onEose?.()
+    expect(await one).toMatchObject({ ok: false, reason: 'blocked: one of these' })
+    expect(await two).toEqual({ ok: true, events: [] })
+  })
+
+  it(`take only what a window leaves over: a click still finds room at once`, async () => {
     vi.useFakeTimers()
-    return createPacer(REQS_PER_WINDOW, WINDOW_MS, Date.now, (fn, ms) => setTimeout(fn, ms), (h) => clearTimeout(h as ReturnType<typeof setTimeout>))
-  }
-
-  it(`hands out ${REQS_PER_WINDOW} slots per window and makes the next read wait for the oldest to age out`, async () => {
-    const pacer = fakeClock()
-    expect(await pacer.take(REQS_PER_WINDOW)).toBe('socket')
-    let granted = false
-    void pacer.take(1).then(() => (granted = true))
-    await vi.advanceTimersByTimeAsync(WINDOW_MS - 1)
-    expect(granted).toBe(false)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(granted).toBe(true)
-  })
-
-  it('serves the newest read first, so what is on screen does not queue behind what was left', async () => {
-    const pacer = fakeClock()
-    await pacer.take(REQS_PER_WINDOW)
-    await vi.advanceTimersByTimeAsync(WINDOW_MS - 1_000)
-    const order: string[] = []
-    void pacer.take(REQS_PER_WINDOW).then(() => order.push('left'))
-    void pacer.take(REQS_PER_WINDOW).then(() => order.push('on screen'))
-    await vi.advanceTimersByTimeAsync(1_000)
-    expect(order).toEqual(['on screen'])
-    await vi.advanceTimersByTimeAsync(WINDOW_MS)
-    expect(order).toEqual(['on screen', 'left'])
-  })
-
-  it('serves a read that has waited too long before newer ones, so none waits for ever', async () => {
-    const pacer = fakeClock()
-    await pacer.take(REQS_PER_WINDOW)
-    const order: string[] = []
-    void pacer.take(REQS_PER_WINDOW).then(() => order.push('side tree'))
-    // Someone keeps clicking: a newer full-window read arrives every window.
-    for (let i = 0; i < 3; i++) {
-      void pacer.take(REQS_PER_WINDOW).then(() => order.push(`click ${i}`))
-      await vi.advanceTimersByTimeAsync(WINDOW_MS)
+    const { client, subs } = fakeClient()
+    const { read } = reader(client)
+    const wide = (n: number, tag: string) => Array.from({ length: n * 10 }, (_, i) => ({ kinds: [9], '#h': [`${tag}${i}`] }))
+    // Ends every REQ sent, as they come (four at a time), until `read` has its answer.
+    const answerAll = async (answer: Promise<unknown>) => {
+      let done = false
+      void answer.then(() => (done = true))
+      while (!done) {
+        for (const sub of subs) if (!sub.closed) sub.onEose?.()
+        await vi.advanceTimersByTimeAsync(10)
+      }
+      return answer
     }
-    expect(order[0]).toBe('side tree')
-  })
-
-  it('sends a read that waited past the spill time over HTTP when HTTP may take it, and keeps one waiting when not', async () => {
-    const pacer = fakeClock()
-    await pacer.take(REQS_PER_WINDOW)
-    const spilled = pacer.take(1, { afterMs: 1_000, allowed: () => true })
-    let room = false
-    const later = pacer.take(1, { afterMs: 1_000, allowed: () => room })
-    await vi.advanceTimersByTimeAsync(1_000)
-    expect(await spilled).toBe('http')
-    room = true
-    await vi.advanceTimersByTimeAsync(1_000)
-    expect(await later).toBe('http')
-  })
-
-  it('counts the frames the live watches sent against the same window', async () => {
-    vi.useFakeTimers()
-    const watches: number[] = []
-    const others = (floor: number) => watches.filter((at) => at > floor)
-    const pacer = createPacer(REQS_PER_WINDOW, WINDOW_MS, Date.now, (fn, ms) => setTimeout(fn, ms), (h) => clearTimeout(h as ReturnType<typeof setTimeout>), others)
-    for (let i = 0; i < 5; i++) watches.push(Date.now())
-    let granted = false
-    void pacer.take(REQS_PER_WINDOW - 4).then(() => (granted = true))
-    await vi.advanceTimersByTimeAsync(WINDOW_MS - 1)
-    expect(granted).toBe(false)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(granted).toBe(true)
+    // Boot asked most of the window.
+    await answerAll(read('https://relay', wide(REQS_PER_WINDOW - 20, 'boot'), ME))
+    const before = subs.length
+    // Twenty left: an ahead read of ten would reach into the reserve, so it waits.
+    const ahead = read('https://relay', wide(10, 'ahead'), ME, { lane: 'ahead' })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(subs.length).toBe(before)
+    // A click of ten is sent at once.
+    const click = read('https://relay', wide(10, 'click'), ME)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(subs.length).toBeGreaterThan(before)
+    expect(subs.slice(before).every((sub) => String(sub.filters[0]['#h']).startsWith('click'))).toBe(true)
+    expect(await answerAll(click)).toMatchObject({ ok: true })
+    expect(await answerAll(ahead)).toMatchObject({ ok: true })
   })
 })
 
@@ -308,6 +328,14 @@ describe('queryRelay', () => {
     vi.stubGlobal('fetch', fetch)
     setSocketReader(async () => ({ ok: true, events: [event('z')] }))
     expect(await queryRelay('https://relay', [{ kinds: [9] }], 'token', ME)).toEqual({ ok: true, events: [event('z')] })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('answers a read loaded ahead that the socket would not take with a failure, not over HTTP (PEE-5)', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    setSocketReader(async () => null)
+    expect(await queryRelay('https://relay', [{ kinds: [9] }], 'token', ME, 'ahead')).toMatchObject({ ok: false })
     expect(fetch).not.toHaveBeenCalled()
   })
 })

@@ -12,6 +12,9 @@
  *   first open is what it cannot.
  * - `first`: a browser with nothing stored opens Desk, waits 10 s, then opens for the first time an Open work topic,
  *   a Starred DM and Topics, back to Desk between each — what loading ahead from Desk speeds up.
+ * - `first-off` (PEE-5): `first` with Desk's loader turned off (`localStorage['peek.ahead']`), the same build's before.
+ * - `click1s`, `click1s-off` (PEE-5): Desk, then the Open work topic 1 s after it drew — while the loader is busiest —
+ *   with the loader on and off. Run with `--runs 5` and compare the medians. Prints `window.__loadAhead`.
  * - `long`: Topics, then a 200-message topic never opened in this browser: when its messages show, and how many
  *   times the list jumped while nobody scrolled.
  * - `new`: New topic in the QA Folder, Start → a composer in the new topic; then the topic is deleted again.
@@ -54,8 +57,9 @@ const newest = (title) => `200 of 200 in ${title}`
 // Steps, as probe.mjs arguments.
 const settled = (mark = 'allTextsNoPulse', ms = 20000) => ['--until', `(() => { const p = __fl.phases.at(-1); return !!p.marks[${JSON.stringify(mark)}] || performance.now() - p.at > ${ms} })()`]
 const leaf = (text) => `[...document.querySelectorAll('main *')].find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)})`
+// A press, then the click, as a person's click arrives: Desk's loader gives way on the press (PEE-5).
 const act = (label, texts, find, path = null) =>
-  ['--eval', `(() => { const el = ${find}; if (!el) throw new Error('nothing to click for ${label}'); __fl.phase(${JSON.stringify(label)}, ${JSON.stringify(texts)}, ${JSON.stringify(path)}); el.click(); return 'clicked' })()`]
+  ['--eval', `(() => { const el = ${find}; if (!el) throw new Error('nothing to click for ${label}'); __fl.phase(${JSON.stringify(label)}, ${JSON.stringify(texts)}, ${JSON.stringify(path)}); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); el.click(); return 'clicked' })()`]
 // The row under one of Desk's headings: QA-2's "QA-1" is in the Screener as well as in Starred.
 const under = (heading, text) =>
   `[...document.querySelectorAll('main *')].find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)} && ${leaf(heading)}?.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)`
@@ -116,6 +120,9 @@ const signedOutState = `(async () => {
   return JSON.stringify({ session: localStorage.getItem('peek.estivaId.token') !== null, keys, dbs, records, signInScreen: /Continue with your passkey/.test(document.body.innerText) })
 })()`
 
+// Desk's loader off from the page's first byte, on every page the leg loads: a URL's query does not survive sign-in (PEE-5).
+const AHEAD_OFF = `try { localStorage.setItem('peek.ahead', 'off') } catch {}\n`
+
 const legs = {
   open: (w) => ({
     url: '/app/desk',
@@ -155,14 +162,31 @@ const legs = {
     first: w.desk,
     steps: [
       ...settled('allTextsNoPulse', 30000), '--wait', '10000',
+      // What Desk's loader had done by now (PEE-5); null with it off.
+      '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null, reads: window.__socketReads?.(1) })',
       // Desk's rows open in Desk's own pane since OPT-12, and stay on screen beside it.
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
       ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('composer'), '--wait', '3000',
       ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000',
+      '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null })',
       ...report,
     ],
     phases: [['Open work topic, first open', 0, 'Open work topic'], ['Starred DM, first open', 0, 'Starred DM'], ['Topics, first open', 0, 'Topics']],
   }),
+  // PEE-5: `first` with Desk's loader off — the same build, for the before.
+  'first-off': (w) => ({ ...legs.first(w), init: AHEAD_OFF }),
+  // PEE-5: a click 1 s after Desk draws, while the loader is at its busiest, against the same click with it off.
+  click1s: (w) => ({
+    url: '/app/desk',
+    first: w.desk,
+    steps: [
+      ...settled('allTextsNoPulse', 30000), '--wait', '1000',
+      ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
+      '--eval', 'JSON.stringify(window.__loadAhead ?? null)', ...report,
+    ],
+    phases: [['Open work topic, 1 s after Desk', 0, 'Open work topic']],
+  }),
+  'click1s-off': (w) => ({ ...legs.click1s(w), init: AHEAD_OFF }),
   // PEE-4: after a visit, a reload at Topics draws the tree at once, with the rows and dots it keeps once the relay
   // answers; after a reload at Desk the Open work topic and the Starred DM draw from the copy — right away, and a
   // minute later, since the copy answers at any time.
@@ -242,7 +266,7 @@ for (const name of chosen) {
       const title = name === 'new' ? `First-load probe ${as} ${new Date().toISOString().slice(0, 19)}` : null
       const leg = legs[name](w, title)
       const init = join(scratch, `${as}-${name}.js`)
-      writeFileSync(init, `window.__flDefault = ${JSON.stringify(leg.first)};\n${readFileSync(RECORDER, 'utf8')}`)
+      writeFileSync(init, `${leg.init ?? ''}window.__flDefault = ${JSON.stringify(leg.first)};\n${readFileSync(RECORDER, 'utf8')}`)
       const probe = await probeRun([PROBE, '--as', as, '--url', leg.url, '--init', init, '--timeout', '45000', ...leg.steps])
       const docs = probe.steps.filter((s) => s.eval === '__fl.report()' && s.result).map((s) => JSON.parse(s.result))
       const http429 = [...new Set(docs.flatMap((d) => d.res.filter(([, , , status]) => status === 429).map(([, , what]) => what)))]

@@ -46,6 +46,7 @@ import {
   parsePublishResponse,
   parseQueryResponse,
 } from '@estiva-app/protocol'
+import type { ReadLane } from '@estiva-app/platform'
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
@@ -165,8 +166,11 @@ export async function queryRelay(
   filters: Record<string, unknown>[],
   token: string,
   pubkey?: string,
+  /** `ahead` for what Desk loads before it is asked for (PEE-5): socket only, after every click. */
+  lane: ReadLane = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  let answer = socketReader ? await socketReader(relayUrl, filters, pubkey) : null
+  let answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
+  if (!answer && lane === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
   if (!answer) {
     const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
     answer = parseQueryResponse(status, text)
@@ -184,13 +188,22 @@ export async function queryRelay(
  * `signViaEstivaId` from here, and the app installs it at boot (`main.tsx`) so
  * a test that reads through this file keeps the HTTP path it was written for.
  */
-export type SocketReader = (
+export type SocketReader = ((
   relayUrl: string,
   filters: Record<string, unknown>[],
   pubkey?: string,
-) => Promise<{ ok: boolean; events: SignedEvent[]; reason?: string } | null>
+  options?: { lane?: ReadLane },
+) => Promise<{ ok: boolean; events: SignedEvent[]; reason?: string } | null>) & {
+  /** Move the `ahead` reads still waiting into the click lane (PEE-5): the person just acted. */
+  promoteAhead?(): void
+}
 
 let socketReader: SocketReader | null = null
+
+/** The reader the app installed, for Desk's loader to promote its reads when the person acts (PEE-5). */
+export function getSocketReader(): SocketReader | null {
+  return socketReader
+}
 
 export function setSocketReader(reader: SocketReader | null): void {
   socketReader = reader

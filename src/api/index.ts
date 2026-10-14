@@ -58,6 +58,7 @@ export { useMembership, type MembershipSeam } from '@/api/internal/membership'
 export { useFileMembers } from '@/api/internal/fileMembers'
 export type { StreamTerms } from '@/api/streamUnread'
 export { PeekDataProvider } from './store'
+export { useLoadAhead } from './loadAhead'
 export { RELAY_URL, hasRelay } from './relayUrl'
 export {
   listedFile,

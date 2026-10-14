@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
 import { useForeignObjects } from '@/api'
-import type { FileThreads } from '@/nostr/foreign'
+import type { StoredToken } from '@/auth/estivaId'
+import { fileFolderAsViewer, resolveObjectAsViewer, type FileThreads } from '@/nostr/foreign'
 import {
   RelayReadError,
   classifyRelayFailure,
@@ -203,6 +204,32 @@ function useResolvedForeign(naddr: string | null | undefined): {
 
 /** Every reference this tab has resolved, by the reference asked (SID-2). */
 const resolvedCache = createListingCache<ForeignObject | null, RelayFailureKind>()
+
+/**
+ * A file resolved as its page resolves it, on the `ahead` lane, before it is
+ * opened (PEE-5, Desk's loader). Held only when it answered, so a refused read
+ * leaves nothing for the click to draw as a failure; throws instead, which
+ * stops the loader. What is already held is not read again.
+ */
+export async function loadForeignObjectAhead(
+  address: string,
+  at: { relayUrl: string; token: StoredToken },
+): Promise<ForeignObject | null> {
+  const held = resolvedCache.peek(address)
+  if (held?.value !== undefined && !held.seeded) return held.value
+  let object = await resolveObjectAsViewer(address, at.relayUrl, at.token, { archivedWith: true }, 'ahead')
+  // As the page does (PEE-33): a record with no `h` names its Folder another way.
+  if (object?.address && !object.folder) {
+    const folder = await fileFolderAsViewer(object.address, at.relayUrl, at.token, 'ahead')
+    if (folder) object = { ...object, folder }
+  }
+  const now = resolvedCache.peek(address)
+  if (!now?.inflight && (now?.value === undefined || now.seeded)) {
+    const value = object
+    await resolvedCache.read(address, async () => ({ ok: true, value }))
+  }
+  return object
+}
 
 /**
  * One file's conversation — the panel's read.

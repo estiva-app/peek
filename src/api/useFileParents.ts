@@ -3,6 +3,7 @@ import { resolveParentsAsViewer } from '@/nostr/foreign'
 import { relayLog } from '@/nostr/liveTopics'
 import { withRateLimitRetry } from '@/nostr/relayRead'
 import { useRelayViewer } from './foreign'
+import type { StoredToken } from '@/auth/estivaId'
 
 /**
  * The parent each file sits under, read once per file per tab — FOL-50.
@@ -71,6 +72,32 @@ export function resetFileParentsForTests(): void {
   cache = null
   version = 0
   retries = 0
+}
+
+/**
+ * The parents of `addresses` not asked about yet, read on the `ahead` lane
+ * before Topics is opened (PEE-5, Desk's loader), into the same once-per-tab
+ * cache. Throws a refused read, which stops the loader; nothing is held then,
+ * and Topics asks for itself. Answers every parent held, asked now or before.
+ */
+export async function loadFileParentsAhead(
+  addresses: readonly string[],
+  at: { relayUrl: string; token: StoredToken },
+): Promise<ReadonlyMap<string, string | null>> {
+  const held = cacheFor(`${at.relayUrl}|${at.token.pubkey}`)
+  const missing = [...new Set(addresses)].filter((address) => !held.asked.has(address))
+  if (missing.length > 0) {
+    const parents = await resolveParentsAsViewer(missing, at.relayUrl, at.token, 'ahead')
+    if (cache === held) {
+      for (const address of missing) {
+        if (!(address in parents) || held.asked.has(address)) continue
+        held.asked.add(address)
+        held.parents.set(address, parents[address])
+      }
+      changed()
+    }
+  }
+  return held.parents
 }
 
 /**

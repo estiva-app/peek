@@ -19,6 +19,7 @@
  * the only identity guaranteed to see it. There is no fallback: Peek holds no
  * keys, and a service credential would be a member of nothing.
  */
+import type { ReadLane } from '@estiva-app/platform'
 import type { StoredToken } from '@/auth/estivaId'
 import { declaredKinds, rememberRouteWords, routeWordsOf, type RouteWords } from '@/lib/objectUrl'
 import type { CreatableKindRead } from '@/lib/liveAction'
@@ -116,13 +117,16 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
  *  means refused" in this app started here, one layer below where it was
  *  visible. Callers that must degrade quietly catch it explicitly, which is
  *  better than the information never existing. */
-export function viewerQuery(relayUrl: string, token: StoredToken): QueryFn {
+export function viewerQuery(relayUrl: string, token: StoredToken, lane: ReadLane = 'click'): QueryFn {
   return async (filters) => {
-    const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
+    const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
     return result.events
   }
 }
+
+/** The pacer lane a read from `source` waits in: `ahead` for Desk's loader (PEE-5), every other relay read a click's. */
+const laneOf = (source: ReadSource): ReadLane => (source === 'ahead' ? 'ahead' : 'click')
 
 /**
  * {@link viewerQuery} against the copy on the device (PEE-2). A read the copy
@@ -293,8 +297,8 @@ export async function fileAddressAsViewer(
  * Folder has nowhere for a comment to go, and the page falls back to the
  * read-only view rather than guessing.
  */
-export async function fileFolderAsViewer(address: string, relayUrl: string, token: StoredToken): Promise<string | null> {
-  const query = viewerQuery(relayUrl, token)
+export async function fileFolderAsViewer(address: string, relayUrl: string, token: StoredToken, lane: ReadLane = 'click'): Promise<string | null> {
+  const query = viewerQuery(relayUrl, token, lane)
   const pointer = referenceToPointer(address)
   const [root] = await query([
     { kinds: [pointer.kind], authors: [pointer.pubkey], '#d': [pointer.identifier], limit: 1 },
@@ -484,8 +488,13 @@ export async function resolveObjectAsViewer(
    * resolve leaves it off, so a refresh tick pays nothing new.
    */
   options?: ArchiveReadOptions,
+  /**
+   * `ahead` for Desk's loader (PEE-5). A refused read then throws rather than
+   * answering `null`: held, a `null` would draw the click as "not found".
+   */
+  lane: ReadLane = 'click',
 ): Promise<ForeignObject | null> {
-  const query = viewerQuery(relayUrl, token)
+  const query = viewerQuery(relayUrl, token, lane)
   try {
     /*
       A pasted app URL is a reference too (PRO-15).
@@ -523,7 +532,7 @@ export async function resolveObjectAsViewer(
     }
     return await resolveForeignObject(reference, query, cachedPeople(query), 0, manifests, options)
   } catch (error) {
-    if (error instanceof RelayReadError) return null
+    if (error instanceof RelayReadError && lane !== 'ahead') return null
     throw error
   }
 }
@@ -708,8 +717,9 @@ export async function resolveParentsAsViewer(
   references: readonly string[],
   relayUrl: string,
   token: StoredToken,
+  lane: ReadLane = 'click',
 ): Promise<Record<string, string | null>> {
-  return resolveParents(references, viewerQuery(relayUrl, token), manifests)
+  return resolveParents(references, viewerQuery(relayUrl, token, lane), manifests)
 }
 
 /** `nostr:nevent1…`, `nostr:note1…`, or a bare 64-hex event id. */
@@ -1060,7 +1070,7 @@ export async function resolveFolderContentsAsViewer(
     const contents = await resolveFolderContents(folder, copy.query, copy.people, copy.cache, options)
     return { ...contents, files: contents.files.map((file) => drawOnly(file)!) }
   }
-  const query = viewerQuery(relayUrl, token)
+  const query = viewerQuery(relayUrl, token, laneOf(source))
   return resolveFolderContents(folder, query, cachedPeople(query), manifests, options)
 }
 
@@ -1204,7 +1214,7 @@ export async function listFoldersAsViewer(
   source: ReadSource = 'relay',
 ): Promise<FolderSummary[]> {
   // From the copy, it throws when the copy has not seen the listing's reads (PEE-4).
-  return listFolders(source === 'copy' ? copyQuery(relayUrl, token) : viewerQuery(relayUrl, token))
+  return listFolders(source === 'copy' ? copyQuery(relayUrl, token) : viewerQuery(relayUrl, token, laneOf(source)))
 }
 
 /**
