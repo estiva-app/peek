@@ -393,6 +393,7 @@ export function ForeignObjectCard({
     rule the meta line already keeps (FEE-1): a key is never on screen, so
     the title draws the face and the name, or the em dash for a stranger.
   */
+  const openUrl = openInAppUrl(object)
   const title = slots.title?.isPubkey ? (
     // Weight and colour come from the title's box, below, whichever way it is drawn (UIG-9).
     <Person name={object.people?.[slots.title.value]?.displayName} picture={object.people?.[slots.title.value]?.picture} size={16} />
@@ -522,9 +523,9 @@ export function ForeignObjectCard({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* The title is the way into the owning app. A reference you cannot
               follow is a screenshot. */}
-          {openInAppUrl(object) ? (
+          {openUrl ? (
             <span className="contents text-body-2 font-semibold text-text-primary">
-              <Link href={openInAppUrl(object)} variant="quiet" external truncate>
+              <Link href={openUrl} variant="quiet" external truncate>
                 {title}
               </Link>
             </span>
