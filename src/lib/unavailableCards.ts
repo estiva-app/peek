@@ -14,38 +14,47 @@
 const KEY = 'peek.unavailable-cards'
 const LIMIT = 300
 
-function read(): string[] {
+/** Read once per page: a card's first paint asks it, and a screen of cards asks it many times. */
+let held: Set<string> | undefined
+
+function list(): Set<string> {
+  if (held) return held
   try {
-    const list = JSON.parse(localStorage.getItem(KEY) ?? '[]')
-    return Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string') : []
+    const stored = JSON.parse(localStorage.getItem(KEY) ?? '[]')
+    held = new Set(Array.isArray(stored) ? stored.filter((item): item is string => typeof item === 'string') : [])
   } catch {
-    return []
+    held = new Set()
   }
+  return held
 }
 
-function write(list: string[]): void {
+function write(next: Set<string>): void {
+  held = new Set([...next].slice(-LIMIT))
   try {
-    localStorage.setItem(KEY, JSON.stringify(list.slice(-LIMIT)))
+    localStorage.setItem(KEY, JSON.stringify([...held]))
   } catch {
-    // Full or blocked storage: the card draws as if never seen, which is only the first-open jump.
+    // Full or blocked storage: the next page draws the card as if never seen, which is only the first-open jump.
   }
 }
 
 /** Whether this device last found the card for `reference` not available. */
 export function rememberedUnavailable(reference: string): boolean {
-  return read().includes(reference)
+  return list().has(reference)
 }
 
 /** The relay's answer for a chosen card: remembered when it is not available, forgotten when it is. */
 export function noteCardAvailability(reference: string, available: boolean): void {
-  const list = read()
-  const known = list.includes(reference)
-  if (available === !known) return
-  write(available ? list.filter((item) => item !== reference) : [...list, reference])
+  const current = list()
+  if (available !== current.has(reference)) return
+  const next = new Set(current)
+  if (available) next.delete(reference)
+  else next.add(reference)
+  write(next)
 }
 
 /** Sign-out: what this device remembered about the person's cards goes with the rest of the copy. */
 export function clearUnavailableCards(): void {
+  held = undefined
   try {
     localStorage.removeItem(KEY)
   } catch {
