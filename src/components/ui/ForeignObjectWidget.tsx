@@ -575,9 +575,11 @@ export function ForeignObjectCard({
         const description = (
           <>
           {/* A card shows the subtitle; a row is a single line by definition —
-              except on the object's own page, where it is the subject (MAN-9). */}
+              except on the object's own page, where it is the subject (MAN-9).
+              Clamped to two lines, as Ship's card is: interop cuts a summary at
+              280 characters, still more than this card has room for (SPEC §6.12). */}
           {whole && slots.subtitle && (
-            <p className="mt-1 text-caption text-text-secondary">{slots.subtitle.value}</p>
+            <p className="mt-1 line-clamp-2 text-caption text-text-secondary">{slots.subtitle.value}</p>
           )}
           {/* The description, in whichever content model its own app writes —
               PRO-2. Where the subtitle is, for its reason: a row in a message is a
