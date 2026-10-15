@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { noteCardAvailability, rememberedUnavailable } from '@/lib/unavailableCards'
 import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
 import { referenceToPointer } from '@estiva-app/protocol'
 import { referenceTypeWord } from '@/lib/textParsing'
@@ -696,6 +697,15 @@ function kindOf(reference: string): number | undefined {
   }
 }
 
+/** A chosen card that cannot be shown: the unreadable row's shape and words (Miky, 15 Oct), named by its kind alone. */
+function NotAvailableRow({ naddr }: { naddr: string }) {
+  return (
+    <Card fill="none" unreadable className="mt-1 px-3 py-2" data-card-gone>
+      <div className="text-caption text-text-secondary">{referenceTypeWord(`nostr:${naddr}`) ?? 'Link'} — not available.</div>
+    </Card>
+  )
+}
+
 /**
  * The card a message shows for an item from another app that it mentions, such
  * as an issue: its title, status and people, with controls to change it.
@@ -740,6 +750,15 @@ export function ForeignObjectWidget({
   const object: ForeignObject | null | 'loading' = resolved ?? (hasRelay ? held.object : null)
   // Returned, so an action's `await reload()` waits for the re-read it names.
   const reload = held.reload
+  /*
+    A chosen card's answer, remembered on this device: not available (nothing, or
+    not readable), so the next open draws its one-line row at once; or available
+    again. A failed read says neither.
+  */
+  const availability = object === 'loading' || (object === null && !held.gone) ? undefined : !!object && !object.unreachable
+  useEffect(() => {
+    if (layout && !resolved && availability !== undefined) noteCardAvailability(naddr, availability)
+  }, [layout, resolved, availability, naddr])
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>()
 
@@ -785,7 +804,12 @@ export function ForeignObjectWidget({
     skeleton under every one of those and then removing it is the same flicker
     FEE-3 fixed, pointed the other way.
   */
-  if (object === 'loading') return quiet ? null : <ForeignObjectSkeleton layout={layout} kind={kindOf(naddr)} className="mt-1" />
+  if (object === 'loading') {
+    if (quiet) return null
+    // Found not available the last time this device asked: its one-line row from the first paint, not a whole card's height.
+    if (layout && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
+    return <ForeignObjectSkeleton layout={layout} kind={kindOf(naddr)} className="mt-1" />
+  }
 
   /*
     A reference we cannot resolve degrades to nothing, leaving the message text
@@ -796,12 +820,10 @@ export function ForeignObjectWidget({
   */
   if (object === null) {
     // Only an answer of nothing: a read that failed (a 429, the network) is not news that the file is gone.
+    // A failed read keeps what this device remembered, rather than taking away the row it drew at first paint.
+    if (layout && !held.gone && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
     if (!layout || !held.gone) return null
-    return (
-      <Card fill="none" unreadable className="mt-1 px-3 py-2" data-card-gone>
-        <div className="text-caption text-text-secondary">{referenceTypeWord(`nostr:${naddr}`) ?? 'Link'} — not available.</div>
-      </Card>
-    )
+    return <NotAvailableRow naddr={naddr} />
   }
 
   if (object.unreachable) {

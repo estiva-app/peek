@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '@estiva-app/interop'
+import { clearUnavailableCards, noteCardAvailability } from '@/lib/unavailableCards'
 import { encodeNaddr, markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 
 /**
@@ -90,6 +91,8 @@ function object(overrides: Partial<ForeignObject> = {}): ForeignObject {
 beforeEach(() => {
   resolveObject.mockReset()
   applyAction.mockReset()
+  // What a device remembers of unavailable cards (OPT-10) would otherwise carry from one test into the next.
+  clearUnavailableCards()
 })
 
 describe('ForeignObjectWidget', () => {
@@ -852,6 +855,25 @@ describe('a chosen card keeps its size while it loads (OPT-10)', () => {
     const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
     await waitFor(() => expect(container.querySelector('[data-skeleton-layout]')).toBeNull())
     expect(container.textContent).not.toContain('not available')
+  })
+
+  it('remembers a card that was not available, and draws its one-line row from the first paint next time (Miky, 15 Oct)', async () => {
+    resolveObject.mockResolvedValue({ ...object(), unreachable: true, noun: 'issue' })
+    const first = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(first.container.textContent).toContain('not available'))
+    first.unmount()
+    resolveObject.mockReturnValue(new Promise(() => {}))
+    const again = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    expect(again.container.querySelector('[data-skeleton-layout]')).toBeNull()
+    expect(again.container.textContent).toBe('Issue — not available.')
+  })
+
+  it('forgets it once the card can be shown again', async () => {
+    noteCardAvailability(issue, false)
+    resolveObject.mockResolvedValue(object())
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.querySelector('[data-foreign-object]')).not.toBeNull())
+    expect(JSON.parse(localStorage.getItem('peek.unavailable-cards') ?? '[]')).toEqual([])
   })
 
   it('still draws nothing for a reference no author chose a card for', async () => {
