@@ -191,7 +191,8 @@ export function useLoadAhead(drawn: boolean): void {
   useEffect(() => {
     if (!drawn || started || aheadOff) return
     const at = viewer()
-    const { openWork, starred, screener, held, store } = latest.current
+    // The store arrives once the socket is live, which can be after Desk draws from the copy: it is a dependency.
+    const { openWork, starred, screener, held } = latest.current
     if (!at || !store) return
     started = true
     const channelOf = (dmId: string) => latest.current.channelOf(dmId)
@@ -236,6 +237,8 @@ export function useLoadAhead(drawn: boolean): void {
             await whenClickReadsQuiet(CLICK_QUIET_MS, CLICK_QUIET_AT_MOST_MS)
             lap('quiet')
             // The streams Topics judges its dots and its "yours" by; held five minutes after the loader lets go.
+            // A retried step tracks again: let go of the first hold, or it is never released.
+            ;(releaseFolders as (() => void) | null)?.()
             releaseFolders = trackAhead(store, folders.map((folder) => folder.id))
             await store.sync('track')
             lap('streams')
@@ -290,9 +293,11 @@ export function useLoadAhead(drawn: boolean): void {
       window.removeEventListener('pointerdown', promote, true)
       window.removeEventListener('keydown', promote, true)
       ;(releaseFolders as (() => void) | null)?.()
+      // Done loading ahead: a later read of what it tracked is the person's, in the click lane (and over HTTP when it must).
+      channelsAskedFor()
       const stoppedBy = outcome.stoppedBy === 'stopped' ? 'stopped' : outcome.stoppedBy ? `${outcome.stoppedBy.label}: ${String(outcome.stoppedBy.error)}` : undefined
       record.outcome = { loaded: outcome.loaded, stoppedBy }
       if (stoppedBy) console.warn('[loadAhead] stopped:', stoppedBy)
     })
-  }, [drawn, viewer])
+  }, [drawn, viewer, store])
 }
