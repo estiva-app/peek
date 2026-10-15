@@ -103,8 +103,10 @@ export function useWarmEditor(options: Options): Editor {
   const [{ held, warm }] = useState(() => {
     const taken = take(options)
     const held = taken ?? build(options)
-    // A render thrown away never mounts: what it built goes with it.
-    held.destroyAt = setTimeout(() => held.editor.destroy(), 1000)
+    // A render thrown away never mounts: what it built goes with it. Later than
+    // React lets a transition run before it finishes it at once (5 s), so a
+    // slow render that does commit never mounts a destroyed editor.
+    held.destroyAt = setTimeout(() => held.editor.destroy(), 10_000)
     scheduleSpare()
     return { held, warm: !!taken }
   })

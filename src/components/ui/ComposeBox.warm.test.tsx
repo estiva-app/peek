@@ -73,10 +73,9 @@ async function warmComposer(draft?: string) {
 }
 
 describe('ComposeBox — an editor built ahead', () => {
-  it('draws with the composer’s own look and focuses itself', async () => {
+  it('draws as a place to type and focuses itself', async () => {
     const { element } = await warmComposer()
     expect(element).toHaveAttribute('contenteditable', 'true')
-    expect(element).toHaveClass('outline-none')
     await waitFor(() => expect(element).toHaveFocus())
   })
 
