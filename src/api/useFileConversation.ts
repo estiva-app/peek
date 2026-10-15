@@ -342,15 +342,18 @@ export function useFileConversation(
           /*
             A long file's newest comments first (PEE-7): asking replies and decorations over every comment is
             what kept a 200-message topic on its placeholder for 2–3 s. Its failure is left to the whole read.
+            What the placeholder waits on goes ahead of every other read the page asks (`first`).
           */
-          if (container.kind === 'file' && toRead.length > FIRST_PAGE) {
-            await firstPageWith(container, toRead, query)
+          const first = viewerQuery(at.relayUrl, at.token, 'first')
+          const paged = container.kind === 'file' && toRead.length > FIRST_PAGE
+          if (paged) {
+            await firstPageWith(container, toRead, first)
               .then((value) => {
                 if (conversations.value(key) === undefined) drawFirst(key, value)
               })
               .catch(() => {})
           }
-          const { value, events } = await readConversation(container, toRead, query)
+          const { value, events } = await readConversation(container, toRead, paged ? query : first)
           sentBeforeRead.delete(key)
           // A catch-up that settled meanwhile is newer than this.
           if (conversations.value(key) === before) conversations.replace(key, value, events, startedAt)

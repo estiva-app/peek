@@ -32,11 +32,11 @@ import {
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { validToken } from '@/auth/estivaId'
-import type { SocketReader } from './bridge'
+import type { QueryLane, SocketReader } from './bridge'
 import { getLiveClient } from './liveTopics'
 import { recordRelayRequest, refusalOf } from './relayMeter'
 import { RATE_LIMIT_DEFAULT_MS, relayBudget } from './relayBudget'
-import { otherFramesSince, sendingAsRead, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
+import { otherFramesSince, readingFirst, sendingAsRead, sendingFirst, SHAPED_WINDOW_MS, WINDOW_MS } from './socketFrames'
 
 /** Buzz parses a REQ with more and answers a bare NOTICE — no CLOSED, so the read would only time out. */
 export const MAX_FILTERS_PER_REQ = 10
@@ -216,7 +216,7 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
   }
 
   /** One REQ, closed at EOSE. A subscription left open would be re-sent on every reconnect. */
-  function reqOnce(client: LiveClient, filters: Record<string, unknown>[]): Promise<Outcome> {
+  function reqOnce(client: LiveClient, filters: Record<string, unknown>[], first = false): Promise<Outcome> {
     return new Promise((resolve) => {
       const events: SignedEvent[] = []
       let done = false
@@ -235,17 +235,22 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
       const stopState = client.onState((state) => {
         if (state !== 'live') finish({ kind: 'lost', why: state })
       })
-      sub = sendingAsRead(() =>
-        client.relay.subscribe(filters, (event) => events.push(event), {
-          onEose: () => finish({ kind: 'events', events }),
-          onClosed: (reason) => finish({ kind: 'closed', reason }),
-        }),
-      )
+      const subscribe = () =>
+        sendingAsRead(() =>
+          client.relay.subscribe(filters, (event) => events.push(event), {
+            onEose: () => finish({ kind: 'events', events }),
+            onClosed: (reason) => finish({ kind: 'closed', reason }),
+          }),
+        )
+      sub = first ? sendingFirst(subscribe) : subscribe()
       if (done) sub.close()
     })
   }
 
-  async function readChunk(client: LiveClient, filters: Record<string, unknown>[], lane: ReadLane): Promise<Outcome> {
+  async function readChunk(client: LiveClient, filters: Record<string, unknown>[], lane: QueryLane): Promise<Outcome> {
+    // A first page takes no slot (PEE-7): it is two or three REQs, and the slots are held by reads the frame shaper
+    // keeps waiting for it.
+    if (lane === 'first') return reqInSlot(client, filters, () => {}, true)
     return reqInSlot(client, filters, await inFlight.acquire(lane))
   }
 
@@ -322,11 +327,11 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
     }
   }
 
-  async function reqInSlot(client: LiveClient, filters: Record<string, unknown>[], release: () => void): Promise<Outcome> {
+  async function reqInSlot(client: LiveClient, filters: Record<string, unknown>[], release: () => void, first = false): Promise<Outcome> {
     let outcome: Outcome
     try {
       if (client.state() !== 'live') return { kind: 'lost', why: client.state() }
-      outcome = await reqOnce(client, filters)
+      outcome = await reqOnce(client, filters, first)
     } finally {
       release()
     }
@@ -383,13 +388,23 @@ export function createSocketReader(options: SocketReaderOptions): LanedSocketRea
       if (packed !== 'alone') outcomes = [packed]
     }
     if (!outcomes) {
-      const via = await pacer.take(reqs, { lane, spill: lane === 'ahead' ? aheadSpill : spill })
-      pacerWaitMs = now() - asked - liveWaitMs
-      if (via === 'http') {
-        log('socket read spilled to HTTP', { reqs })
-        return overHttp('spilled', { reqs, liveWaitMs, pacerWaitMs })
+      if (lane === 'first') {
+        // Past the pacer, which counts its frames as others' (PEE-7): the shaper keeps it room, and the cap is the shaper's.
+        const answered = readingFirst(now)
+        try {
+          outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk, lane)))
+        } finally {
+          answered()
+        }
+      } else {
+        const via = await pacer.take(reqs, { lane, spill: lane === 'ahead' ? aheadSpill : spill })
+        pacerWaitMs = now() - asked - liveWaitMs
+        if (via === 'http') {
+          log('socket read spilled to HTTP', { reqs })
+          return overHttp('spilled', { reqs, liveWaitMs, pacerWaitMs })
+        }
+        outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk, lane)))
       }
-      outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk, lane)))
     }
     const timing = { reqs, liveWaitMs, pacerWaitMs, answerMs: now() - asked - liveWaitMs - pacerWaitMs }
 
@@ -463,7 +478,7 @@ export interface SocketReadRecord {
   /** `socket`, `http: <why>`, or `refused ahead: <why>`. */
   via: string
   /** `ahead` for a read Desk loaded before it was asked for (PEE-5). */
-  lane?: ReadLane
+  lane?: QueryLane
 }
 
 const reads: SocketReadRecord[] = []

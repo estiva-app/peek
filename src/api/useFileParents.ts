@@ -29,9 +29,8 @@ import type { StoredToken } from '@/auth/estivaId'
  *
  * A refused read is logged, forgotten and asked again `FILE_PARENTS_RETRY_MS`
  * later, even when the dots name nothing new. A file the relay could say
- * nothing about is asked again with the next file the dots name. Until then
- * those files stay where they are talked about, which is what they did before
- * this existed.
+ * nothing about is asked again as long after. Until then those files stay
+ * where they are talked about, which is what they did before this existed.
  */
 let cache: { viewer: string; parents: Map<string, string | null>; asked: Set<string> } | null = null
 let version = 0
@@ -67,6 +66,21 @@ function retryLater(): void {
   }, FILE_PARENTS_RETRY_MS)
 }
 
+/**
+ * Files the relay could say nothing about are asked again `FILE_PARENTS_RETRY_MS` later, not with the next file
+ * named (PEE-7): QA-1's dots name ~60 of them, and opening a topic, which names one more, sent all of them again —
+ * six REQs ahead of the topic's own first page.
+ */
+function askAgainLater(held: NonNullable<typeof cache>, addresses: readonly string[]): void {
+  if (addresses.length === 0) return
+  setTimeout(() => {
+    if (cache !== held) return
+    for (const address of addresses) if (!held.parents.has(address)) held.asked.delete(address)
+    retries += 1
+    for (const listener of listeners) listener()
+  }, FILE_PARENTS_RETRY_MS)
+}
+
 /** Tests only: forget every parent, so each test starts with none asked. */
 export function resetFileParentsForTests(): void {
   cache = null
@@ -89,11 +103,14 @@ export async function loadFileParentsAhead(
   if (missing.length > 0) {
     const parents = await resolveParentsAsViewer(missing, at.relayUrl, at.token, 'ahead')
     if (cache === held) {
+      const unanswered: string[] = []
       for (const address of missing) {
-        if (!(address in parents) || held.asked.has(address)) continue
+        if (held.asked.has(address)) continue
         held.asked.add(address)
-        held.parents.set(address, parents[address])
+        if (address in parents) held.parents.set(address, parents[address])
+        else unanswered.push(address)
       }
+      askAgainLater(held, unanswered)
       changed()
     }
   }
@@ -123,12 +140,9 @@ export function useFileParents(addresses: readonly string[]): Readonly<Record<st
     withRateLimitRetry(() => resolveParentsAsViewer(missing, v.relayUrl, v.token)).then(
       (parents) => {
         if (cache !== held) return
-        for (const address of missing) {
-          // Nothing to tell yet — a root not indexed, a manifest missed — is
-          // asked again with the next file the dots name, not never.
-          if (address in parents) held.parents.set(address, parents[address])
-          else held.asked.delete(address)
-        }
+        for (const address of missing) if (address in parents) held.parents.set(address, parents[address])
+        // Nothing to tell yet — a root not indexed, a manifest missed — is asked again a while later, not never.
+        askAgainLater(held, missing.filter((address) => !(address in parents)))
         changed()
       },
       (error) => {

@@ -65,19 +65,28 @@ describe('useFileParents', () => {
     expect(relay.asked).toEqual([[I1], [I2]])
   })
 
-  it('keeps a file the relay could tell nothing about out of the answer, and asks again with the next file', async () => {
-    relay.answer = () => ({})
-    const { result, rerender } = renderHook(({ addresses }) => useFileParents(addresses), {
-      initialProps: { addresses: [I1] },
-    })
-    await waitFor(() => expect(relay.asked).toEqual([[I1]]))
-    rerender({ addresses: [I1] })
-    expect(result.current).toEqual({})
-    expect(relay.asked).toEqual([[I1]])
-    relay.answer = (references) => Object.fromEntries(references.map((reference) => [reference, PROJECT]))
-    rerender({ addresses: [I1, I2] })
-    await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT, [I2]: PROJECT }))
-    expect(relay.asked).toEqual([[I1], [I1, I2]])
+  it('keeps a file the relay could tell nothing about out of the answer, and asks again a while later, not with the next file', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      relay.answer = () => ({})
+      const { result, rerender } = renderHook(({ addresses }) => useFileParents(addresses), {
+        initialProps: { addresses: [I1] },
+      })
+      await waitFor(() => expect(relay.asked).toEqual([[I1]]))
+      rerender({ addresses: [I1] })
+      expect(result.current).toEqual({})
+      relay.answer = (references) => Object.fromEntries(references.map((reference) => [reference, PROJECT]))
+      rerender({ addresses: [I1, I2] })
+      await waitFor(() => expect(result.current).toEqual({ [I2]: PROJECT }))
+      expect(relay.asked).toEqual([[I1], [I2]])
+      act(() => {
+        vi.advanceTimersByTime(FILE_PARENTS_RETRY_MS)
+      })
+      await waitFor(() => expect(result.current).toEqual({ [I1]: PROJECT, [I2]: PROJECT }))
+      expect(relay.asked).toEqual([[I1], [I2], [I1]])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('asks again after a refused read, on the next change in what is named', async () => {
