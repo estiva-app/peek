@@ -263,19 +263,19 @@ export function useLoadAhead(drawn: boolean): void {
       },
       ...topics.map((item) => ({ label: `Open work: ${item.title}`, run: () => conversationOf(item.address) })),
       ...people.map((entry) => ({ label: `Starred: ${entry.name}`, run: () => dmOf(entry.dmId) })),
-      {
-        label: 'Screener',
-        // Read when the loader reaches it, not when Desk draws: its DM rows fold from the channel store once the
-        // socket is live, and on a browser with nothing stored that is after Desk has drawn — the list was empty.
+      // Each Screener item is read when its step runs, not when Desk draws: the DM rows fold from the channel store
+      // once the socket is live, and on a browser with nothing stored that is after Desk has drawn — the list the
+      // loader took then was empty. One step per item, so each keeps the loader's order, retries and stop.
+      ...Array.from({ length: AHEAD_EACH }, (_, i) => ({
+        label: `Screener ${i + 1}`,
         run: async () => {
-          for (const item of latest.current.screener.slice(0, AHEAD_EACH)) {
-            const began = performance.now()
-            await (item.kind === 'file' ? conversationOf(item.address) : dmOf(item.dmId))
-            const name = item.kind === 'file' ? item.title : item.authorName
-            record.steps.push({ label: `Screener: ${name}`, ms: Math.round(performance.now() - began) })
-          }
+          await knownOrLater(channelsKnown)
+          const item = latest.current.screener[i]
+          if (!item) return
+          await (item.kind === 'file' ? conversationOf(item.address) : dmOf(item.dmId))
+          record.steps.push({ label: `Screener: ${item.kind === 'file' ? item.title : item.authorName}`, ms: Math.round(performance.now() - record.startedAt) })
         },
-      },
+      })),
     ]
 
     const record: AheadRecord = { startedAt: performance.now(), steps: [] }

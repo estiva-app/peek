@@ -214,7 +214,8 @@ const legs = {
     first: w.desk,
     steps: [
       ...settled('allTextsNoPulse', 30000), ...reached('Screener'),
-      '--eval', `(() => { const b = [...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Open' && ${leaf('Screener')}?.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING); if (!b) throw new Error('no Open on a Screener row'); b.click(); return 'moved to Open work' })()`, '--wait', '1500',
+      // The Open on `w.dm`'s own row: the nearest ancestor of its name that holds an Open button.
+      '--eval', `(() => { let n = ${under('Screener', w.dm)}; const open = (e) => [...e.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Open'); while (n && !open(n)) n = n.parentElement; if (!n) throw new Error('no Open on ${w.dm}\\'s Screener row'); open(n).click(); return 'moved to Open work' })()`, '--wait', '1500',
       ...act('Screener item', [process.env.SCREENER_TEXT ?? w.dm], under('Open work', w.dm)), ...settled('messages'), '--wait', '3000',
       '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null })', ...report,
     ],
