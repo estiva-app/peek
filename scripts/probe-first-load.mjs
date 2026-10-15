@@ -395,7 +395,9 @@ for (const name of chosen) {
       if (page && !refusing) await seenBy(as === 'qa1' ? 'qa2' : 'qa1', page, title, name === 'new' ? FIRST : null, name === 'new-inside' ? w.long : null)
       // Whatever the leg's outcome: a run that failed after Start may still have published the topic. A refused
       // one is looked for too, so a refusal that did not happen is not left behind.
-      await deleteTopic(as, title, name === 'new-inside' ? w.long : null, refusing)
+      // `--keep`: leave it, to look at by hand; `--delete` removes it after.
+      if (args.includes('--keep')) console.log(`  kept "${title}"`)
+      else await deleteTopic(as, title, name === 'new-inside' ? w.long : null, refusing)
     }
   }
 }
