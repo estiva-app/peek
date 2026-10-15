@@ -99,6 +99,8 @@ const preview: Preview = {
           'Folders',
           'Screener & Desk',
           'Overlays',
+          // The Widgets 2 prototype, on `concept/widgets-2` only (WID-3).
+          'Widgets 2',
           /* Parked, so a story that is going is visible instead of vanishing in
              someone else's pull request (Katerina, 22 September). Nothing goes
              in without a ticket number and the date it went in. */
