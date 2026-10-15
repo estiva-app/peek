@@ -28,6 +28,8 @@ export const KIND_DOCUMENT = 30842
  * Only the text. A rename, a move, an archive or a delete is still offered
  * where Peek offers them for any file, and a Ship issue's or project's
  * description keeps its editor (MAN-9).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-document-is-its-own-type-of-file.md
  */
 const READ_ONLY_TEXT_KINDS: ReadonlySet<number> = new Set([KIND_BARE_FILE, KIND_DOCUMENT])
 
