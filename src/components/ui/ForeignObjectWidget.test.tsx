@@ -28,12 +28,19 @@ vi.mock('@/api', async () => {
   // The tab's held answer (OPT-3), reduced to a resolve on mount and on `reload`.
   useHeldObject: (reference: string | null) => {
     const [object, setObject] = useState<unknown>(reference ? 'loading' : null)
+    const [failed, setFailed] = useState(false)
     const reload = useCallback(
-      () => (reference ? resolveObject(reference).then(setObject, () => setObject(null)) : Promise.resolve()),
+      () =>
+        reference
+          ? resolveObject(reference).then(setObject, () => {
+              setFailed(true)
+              setObject(null)
+            })
+          : Promise.resolve(),
       [reference],
     )
     useEffect(() => void reload(), [reload])
-    return { object, reload }
+    return { object, reload, gone: !!reference && object === null && !failed }
   },
   // The assignee picker's option list (PEE-1) — two known people.
   useWorkspaceDirectory: () => ({
@@ -196,13 +203,13 @@ describe('ForeignObjectWidget', () => {
   it('says so when the object is unreachable rather than rendering nothing', async () => {
     resolveObject.mockResolvedValue(object({ unreachable: true }))
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText(/may not have access/)).toBeInTheDocument()
+    expect(await screen.findByText(/not available/)).toBeInTheDocument()
   })
 
   it('names an unreachable object by its type when the app declares one', async () => {
     resolveObject.mockResolvedValue(object({ unreachable: true, noun: 'issue' }))
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText(/^Issue — you may not have access/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Issue — not available/)).toBeInTheDocument()
   })
 
   it('degrades to nothing when the reference cannot be resolved', async () => {
@@ -837,7 +844,14 @@ describe('a chosen card keeps its size while it loads (OPT-10)', () => {
   it('says a chosen card whose file is gone is gone, in its place, rather than closing up', async () => {
     resolveObject.mockResolvedValue(null)
     const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
-    await waitFor(() => expect(container.textContent).toBe('Issue — no longer available'))
+    await waitFor(() => expect(container.textContent).toBe('Issue — not available.'))
+  })
+
+  it('does not call a card gone when the read failed', async () => {
+    resolveObject.mockRejectedValue(new Error('429'))
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.querySelector('[data-skeleton-layout]')).toBeNull())
+    expect(container.textContent).not.toContain('not available')
   })
 
   it('still draws nothing for a reference no author chose a card for', async () => {

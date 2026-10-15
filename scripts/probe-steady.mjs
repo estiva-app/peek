@@ -26,6 +26,7 @@
  * Against an unmerged build, `PROBE_SERVE=dist` as for probe.mjs.
  */
 import { execFile } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import { promisify } from 'node:util'
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -217,8 +218,15 @@ const seed = (...more) =>
     .then(({ stdout }) => stdout.trim().split('\n').pop())
     .catch((error) => `seed failed: ${(error.stderr || error.message).slice(0, 300)}`)
 
+/*
+  Only this run's page may ask QA-2 to post, and only the probe's own kind of message: the path carries a token
+  nothing else on the box knows, and the text must be what `--clean` deletes by (security review of peek#507).
+*/
+const hookToken = randomBytes(16).toString('hex')
 const server = createServer(async (request, response) => {
-  const text = new URL(request.url, 'http://127.0.0.1').searchParams.get('text')
+  const url = new URL(request.url, 'http://127.0.0.1')
+  const text = url.searchParams.get('text') ?? ''
+  if (url.pathname !== `/${hookToken}` || !/^Live card \d{4}-\d\d-\d\dT[\d:.]+Z$/.test(text)) return response.writeHead(403).end('refused')
   response.writeHead(200).end(await seed('--live', text))
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -246,7 +254,7 @@ try {
     process.execPath,
     [join(here, 'probe.mjs'), '--as', as, '--base', base, '--url', W_PATH, '--timeout', '150000', '--init', initFile,
       '--until', 'window.__steadyDone', '--eval', 'window.__steadyDone'],
-    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PROBE_HOOK: `http://127.0.0.1:${server.address().port}/post` } },
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PROBE_HOOK: `http://127.0.0.1:${server.address().port}/${hookToken}` } },
   )
   report = JSON.parse(stdout)
 } catch (error) {

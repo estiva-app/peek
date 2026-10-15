@@ -370,7 +370,8 @@ export function ThreadPanel({
     }
   }, [allReplies.length])
   // And stays there while the replies' cards, chips and images fill in (OPT-10).
-  useSteadyScroll(scrollRef, undefined, always, conversation.id)
+  // Keyed on the replies too: the panel's rows are the scroller's children, and a new one is observed only from then.
+  useSteadyScroll(scrollRef, undefined, always, `${conversation.id}:${allReplies.length}`)
 
   return (
     // The package's Panel (0.37.0): the replies scroll, the compose box stays under them.

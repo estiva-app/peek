@@ -790,15 +790,16 @@ export function ForeignObjectWidget({
   /*
     A reference we cannot resolve degrades to nothing, leaving the message text
     intact: never break a message because an attachment failed. Except a card
-    its author chose (`layout`): it says its file is gone, in the place held
-    for it, so nothing closes up as it loads and the reader can tell something
-    was attached (OPT-10; Miky, 14 Oct). The no-access row's shape.
+    its author chose (`layout`): it says so, in the place held for it, so
+    nothing closes up as it loads and the reader can tell something was
+    attached (OPT-10; Miky, 14 Oct). The unreadable row's shape and words.
   */
   if (object === null) {
-    if (!layout) return null
+    // Only an answer of nothing: a read that failed (a 429, the network) is not news that the file is gone.
+    if (!layout || !held.gone) return null
     return (
       <Card fill="none" unreadable className="mt-1 px-3 py-2" data-card-gone>
-        <div className="text-caption text-text-secondary">{referenceTypeWord(`nostr:${naddr}`) ?? 'Link'} — no longer available</div>
+        <div className="text-caption text-text-secondary">{referenceTypeWord(`nostr:${naddr}`) ?? 'Link'} — not available.</div>
       </Card>
     )
   }
@@ -806,10 +807,11 @@ export function ForeignObjectWidget({
   if (object.unreachable) {
     return (
       // A card that cannot be read: dashed, in both apps (Katerina, 2026-09-14).
+      // "Not available", not "you may not have access": the relay answers a deleted or never-published file the
+      // same way as one you cannot read, so only words true of both (Miky, 15 Oct, OPT-10's /land).
       <Card fill="none" unreadable className="mt-1 px-3 py-2">
         <div className="text-caption text-text-secondary">
-          {object.noun ? objectLabel(object) : `${object.appName ?? 'Another app'} object`} — you may not have access to
-          this Folder.{' '}
+          {object.noun ? objectLabel(object) : `${object.appName ?? 'Another app'} object`} — not available.{' '}
           {object.openUrl && <OpenInApp object={object} />}
         </div>
       </Card>

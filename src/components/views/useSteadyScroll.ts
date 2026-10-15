@@ -45,11 +45,13 @@ export function useSteadyScroll(
     const el = scrollRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     let fromBottom = 0
+    let lastTop = 0
     let anchor: ReturnType<typeof anchorIn>
     let scrolledToBottom = true
     const bottom = () => (atBottom ? atBottom.current : scrolledToBottom)
     const remember = () => {
       fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      lastTop = el.scrollTop
       anchor = bottom() ? undefined : anchorIn(el)
     }
     remember()
@@ -60,7 +62,14 @@ export function useSteadyScroll(
     const keep = () => {
       if (!ready()) return remember()
       if (bottom()) {
-        const top = el.scrollHeight - el.clientHeight - Math.max(0, fromBottom)
+        /*
+          The distance it was left at — unless the view was moved down to the
+          live edge since (a new message followed, before its scroll event):
+          that move stands, rather than being put back.
+        */
+        const now = el.scrollHeight - el.scrollTop - el.clientHeight
+        const keepAt = el.scrollTop > lastTop && now < fromBottom ? now : fromBottom
+        const top = el.scrollHeight - el.clientHeight - Math.max(0, keepAt)
         if (Math.abs(el.scrollTop - top) >= 1) el.scrollTop = top
       } else if (anchor) {
         const card = el.querySelector(`[data-root="${CSS.escape(anchor.id)}"]`)?.firstElementChild
