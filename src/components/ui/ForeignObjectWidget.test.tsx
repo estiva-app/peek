@@ -854,6 +854,26 @@ describe('a chosen card keeps its size while it loads (OPT-10)', () => {
     expect(container.textContent).not.toContain('not available')
   })
 
+  it('remembers a card that was not available, and draws its one-line row from the first paint next time (Miky, 15 Oct)', async () => {
+    localStorage.clear()
+    resolveObject.mockResolvedValue({ ...object(), unreachable: true, noun: 'issue' })
+    const first = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(first.container.textContent).toContain('not available'))
+    first.unmount()
+    resolveObject.mockReturnValue(new Promise(() => {}))
+    const again = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    expect(again.container.querySelector('[data-skeleton-layout]')).toBeNull()
+    expect(again.container.textContent).toBe('Issue — not available.')
+  })
+
+  it('forgets it once the card can be shown again', async () => {
+    localStorage.setItem('peek.unavailable-cards', JSON.stringify([issue]))
+    resolveObject.mockResolvedValue(object())
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.querySelector('[data-foreign-object]')).not.toBeNull())
+    expect(JSON.parse(localStorage.getItem('peek.unavailable-cards') ?? '[]')).toEqual([])
+  })
+
   it('still draws nothing for a reference no author chose a card for', async () => {
     resolveObject.mockResolvedValue(null)
     const { container } = render(<ForeignObjectWidget naddr={issue} />)

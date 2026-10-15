@@ -31,6 +31,7 @@ import {
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { clearPagePictures } from '@/lib/pagePicture'
+import { clearUnavailableCards } from '@/lib/unavailableCards'
 
 /**
  * Bump when what Peek folds from the copy changes meaning: a copy written
@@ -188,6 +189,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   current = undefined
   toKeep.length = 0
   clearPagePictures()
+  clearUnavailableCards()
   // If the clear below does not finish before the page leaves, the next copy opened wipes first.
   rememberOwner(SIGNED_OUT)
   await settled(
