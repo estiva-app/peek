@@ -202,7 +202,7 @@ export function useLoadAhead(drawn: boolean): void {
     if (!drawn || started || aheadOff) return
     const at = viewer()
     // The store arrives once the socket is live, which can be after Desk draws from the copy: it is a dependency.
-    const { openWork, starred, screener, held } = latest.current
+    const { openWork, starred, held } = latest.current
     if (!at || !store) return
     started = true
     const channelOf = (dmId: string) => latest.current.channelOf(dmId)
@@ -263,11 +263,19 @@ export function useLoadAhead(drawn: boolean): void {
       },
       ...topics.map((item) => ({ label: `Open work: ${item.title}`, run: () => conversationOf(item.address) })),
       ...people.map((entry) => ({ label: `Starred: ${entry.name}`, run: () => dmOf(entry.dmId) })),
-      ...screener.slice(0, AHEAD_EACH).map((item) =>
-        item.kind === 'file'
-          ? { label: `Screener: ${item.title}`, run: () => conversationOf(item.address) }
-          : { label: `Screener: ${item.authorName}`, run: () => dmOf(item.dmId) },
-      ),
+      {
+        label: 'Screener',
+        // Read when the loader reaches it, not when Desk draws: its DM rows fold from the channel store once the
+        // socket is live, and on a browser with nothing stored that is after Desk has drawn — the list was empty.
+        run: async () => {
+          for (const item of latest.current.screener.slice(0, AHEAD_EACH)) {
+            const began = performance.now()
+            await (item.kind === 'file' ? conversationOf(item.address) : dmOf(item.dmId))
+            const name = item.kind === 'file' ? item.title : item.authorName
+            record.steps.push({ label: `Screener: ${name}`, ms: Math.round(performance.now() - began) })
+          }
+        },
+      },
     ]
 
     const record: AheadRecord = { startedAt: performance.now(), steps: [] }

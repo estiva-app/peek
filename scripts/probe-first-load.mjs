@@ -206,6 +206,20 @@ const legs = {
     phases: [['Topics, 10 s after Desk', 0, 'Topics']],
   }),
   'topics10-off': (w) => ({ ...legs.topics10(w), init: AHEAD_OFF }),
+  // PEE-5: a Screener row (an unread DM from `w.dm`, sent first with SCREENER_TEXT), once the loader reached it: Open on
+  // the row moves it to Open work, and the click on it there is what is timed. Each run needs a fresh DM (opening marks
+  // it read) and the row taken out of Open work again after (hover it → "Remove from list"), or it no longer screens.
+  screener: (w) => ({
+    url: '/app/desk',
+    first: w.desk,
+    steps: [
+      ...settled('allTextsNoPulse', 30000), ...reached('Screener'),
+      '--eval', `(() => { const b = [...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Open' && ${leaf('Screener')}?.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING); if (!b) throw new Error('no Open on a Screener row'); b.click(); return 'moved to Open work' })()`, '--wait', '1500',
+      ...act('Screener item', [process.env.SCREENER_TEXT ?? w.dm], under('Open work', w.dm)), ...settled('messages'), '--wait', '3000',
+      '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null })', ...report,
+    ],
+    phases: [['Screener item, once loaded', 0, 'Screener item']],
+  }),
   // PEE-4: after a visit, a reload at Topics draws the tree at once, with the rows and dots it keeps once the relay
   // answers; after a reload at Desk the Open work topic and the Starred DM draw from the copy — right away, and a
   // minute later, since the copy answers at any time.
