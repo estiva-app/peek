@@ -23,7 +23,8 @@
  *   identity then looks for it in Topics and for the message in it; then the topic is deleted again.
  * - `new-folder`, `new-inside` (PEE-6): the same from the QA Folder's menu and from a topic's "New topic inside".
  * - `new-refuse` (PEE-6): the relay refuses the new topic while text is typed in it; where Peek lands, its note,
- *   Start's field and the stored draft are printed, and the topic is looked for after a fresh load.
+ *   Start's field and the stored draft are printed, and the topic is looked for after a fresh load. `new-refuse-sent`
+ *   sends what it typed while the topic is pending, and prints how many messages the tab posted (none, if it works).
  * - `tabs` (PEE-3, not in the default list): Desk; a second tab and a new window → Desk, with every page each
  *   loaded on the way in (an Estiva ID `/authorize` is a sign-in it had to do); Sign out in the first tab, then
  *   what the second shows and holds, before and after a reload. It ends the identity's Estiva ID session.
@@ -161,6 +162,30 @@ const at = ['--eval', 'JSON.stringify({ at: location.pathname })']
 
 // Desk's loader off from the page's first byte, on every page the leg loads: a URL's query does not survive sign-in (PEE-5).
 const AHEAD_OFF = `try { localStorage.setItem('peek.ahead', 'off') } catch {}\n`
+
+/*
+  PEE-6: the relay refuses the new topic's file (probe.mjs `--refuse-kind`, a broken signature, so the refusal is
+  the relay's own), held 1.5 s so there is time to type in the topic while it is pending — and, with `send`, to send
+  it. What it ends on: where the page is, the note, Start's field, which stored draft holds the typed text, and how
+  many messages (`events 1111`) this tab posted — beside the refused topic's own `events 30840`, the control that
+  the meter saw the writes at all.
+*/
+const refuseLeg = (title, send) => ({
+  url: '/app/folders',
+  first: TREE,
+  probe: ['--refuse-kind', String(KIND_BARE_FILE), '--refuse-hold', '1500'],
+  steps: [
+    ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...fromHeader, ...start(title),
+    ...settled('composer', 5000),
+    ...type(TYPED),
+    ...(send ? ['--press', 'Enter'] : []),
+    '--until', `(() => /^\\/app\\/folders(\\/[^/]+)?$/.test(location.pathname) && performance.now() - __fl.phases.at(-1).at > 3000 || performance.now() - __fl.phases.at(-1).at > 15000)()`,
+    '--wait', '500',
+    '--eval', `JSON.stringify({ refused: location.pathname, note: [...document.querySelectorAll('[role=status],[role=alert],[data-sonner-toast],li[data-type]')].map((e) => e.textContent.trim()).filter(Boolean), field: document.querySelector('input[aria-label="Topic title"]')?.value ?? null, draft: Object.keys(localStorage).filter((k) => (localStorage.getItem(k) ?? '').includes(${JSON.stringify(TYPED)})), posted: JSON.stringify(window.__relayReads?.(5)?.byShape ?? 'no meter').match(/events (30840|1111)[^}\\]]*/g) ?? [] })`,
+    ...report,
+  ],
+  phases: [[send ? 'Refused, sent while pending' : 'Refused, Start → composer', 0, 'start', 'composer']],
+})
 
 const legs = {
   open: (w) => ({
@@ -321,21 +346,9 @@ const legs = {
     the relay's own), held 1.5 s so there is time to type in the topic while it is pending. What it ends on: where the
     page is, the note, Start's field, and which stored draft holds the typed text.
   */
-  'new-refuse': (w, title) => ({
-    url: '/app/folders',
-    first: TREE,
-    probe: ['--refuse-kind', String(KIND_BARE_FILE), '--refuse-hold', '1500'],
-    steps: [
-      ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...fromHeader, ...start(title),
-      ...settled('composer', 5000),
-      ...type(TYPED),
-      '--until', `(() => /^\\/app\\/folders(\\/[^/]+)?$/.test(location.pathname) && performance.now() - __fl.phases.at(-1).at > 3000 || performance.now() - __fl.phases.at(-1).at > 15000)()`,
-      '--wait', '500',
-      '--eval', `JSON.stringify({ refused: location.pathname, note: [...document.querySelectorAll('[role=status],[role=alert],[data-sonner-toast],li[data-type]')].map((e) => e.textContent.trim()).filter(Boolean), field: document.querySelector('input[aria-label="Topic title"]')?.value ?? null, draft: Object.keys(localStorage).filter((k) => (localStorage.getItem(k) ?? '').includes(${JSON.stringify(TYPED)})) })`,
-      ...report,
-    ],
-    phases: [['Refused, Start → composer', 0, 'start', 'composer']],
-  }),
+  'new-refuse': (w, title) => refuseLeg(title, false),
+  // The same, with what was typed sent while the topic is pending: it must not be posted (no `events 1111`).
+  'new-refuse-sent': (w, title) => refuseLeg(title, true),
 }
 
 const ALL_VIEW = join(scratch, 'all-view.js')
@@ -378,10 +391,11 @@ for (const name of chosen) {
       if (!title || !probe.steps.some((s) => s.result === 'started')) continue
       const page = reads.map((r) => JSON.parse(r)).find((r) => r.at)?.at
       // PEE-6: someone else in the Folder sees the topic, from its own link.
-      if (page && name !== 'new-refuse') await seenBy(as === 'qa1' ? 'qa2' : 'qa1', page, title, name === 'new' ? FIRST : null)
+      const refusing = name.startsWith('new-refuse')
+      if (page && !refusing) await seenBy(as === 'qa1' ? 'qa2' : 'qa1', page, title, name === 'new' ? FIRST : null, name === 'new-inside' ? w.long : null)
       // Whatever the leg's outcome: a run that failed after Start may still have published the topic. A refused
       // one is looked for too, so a refusal that did not happen is not left behind.
-      await deleteTopic(as, title, name === 'new-inside' ? w.long : null, name === 'new-refuse')
+      await deleteTopic(as, title, name === 'new-inside' ? w.long : null, refusing)
     }
   }
 }
@@ -457,10 +471,12 @@ function mostIn5s(times) {
  * PEE-6's "QA-2 sees the topic": listed in the Topics tree (so the Folder's list took it, not only the relay), and,
  * for `new`, the message sent while it was pending is in it.
  */
-async function seenBy(as, page, title, message) {
+async function seenBy(as, page, title, message, parent = null) {
   const steps = [
     // "All" lists the Folders; the QA Folder's topics are under it.
     '--until', `!!${leaf('QA')}`, '--eval', `(() => { ${leaf('QA')}.click(); return 'opening QA' })()`,
+    // A sub-topic shows once its parent is open, as in `deleteTopic`.
+    ...(parent ? ['--until', `!!${leaf(parent)} || performance.now() > 15000`, '--eval', `(() => { ${leaf(parent)}?.click(); return 'opening parent' })()`, '--wait', '1500'] : []),
     '--until', `!!${leaf(title)} || performance.now() > 15000`, '--eval', `${leaf(title)} ? 'listed' : 'not listed'`,
     ...(message ? ['--eval', `(() => { location.assign(${JSON.stringify(page)}); return 'opening' })()`, '--wait', '1500', '--until', `document.body.innerText.includes(${JSON.stringify(message)}) || performance.now() > 15000`, '--eval', `document.body.innerText.includes(${JSON.stringify(message)}) ? 'message there' : 'no message'`] : []),
   ]

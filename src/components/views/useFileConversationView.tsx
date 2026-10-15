@@ -37,6 +37,8 @@ import {
   type ResolutionEvent,
   type ThreadReply,
   type WriteResult,
+  TOPIC_NOT_CREATED,
+  topicTextBack,
 } from '@/api'
 import { groupReactions, offersEditAndDelete, type ReactionEvent } from '@estiva-app/conversation'
 import type { People } from '@estiva-app/interop'
@@ -349,9 +351,14 @@ export function useFileConversationView({
     the send goes out, so the note names this conversation even when the
     person has moved to another by the time the relay answers.
   */
-  const notSent = (where: string, reason: string): SendRefused => ({
-    say: (back) => showToast({ label: notSentNote(where, noteName, reason, back), type: 'error' }),
-  })
+  const notSent = (where: string, reason: string): SendRefused => {
+    // Not posted because its topic was refused (PEE-6): the topic's own note says what came back, once.
+    const topic = reason === TOPIC_NOT_CREATED && container?.kind === 'file' ? container.address : null
+    return {
+      say: (back) =>
+        topic ? topicTextBack(topic, back.text) : showToast({ label: notSentNote(where, noteName, reason, back), type: 'error' }),
+    }
+  }
 
   const handleSend = async ({ text, resolution, files, urgent, embeds }: SendPayload) => {
     const attachments = outgoing(files)
@@ -528,14 +535,18 @@ export function useFileConversationView({
     return unregisterThreadOpener
   }, [address, onOpenThread])
 
-  // Close the thread when the file changes.
-  const prevAddress = useRef(address)
+  /*
+    Close the thread when the file changes to another — not when it is gone
+    or still loading, and only when one is open. Closing writes the URL, and a
+    refused new topic's file goes as the person is sent back to its Folder:
+    the write, against the page being left, undid that (PEE-6).
+  */
+  const lastAddress = useRef(address)
   useEffect(() => {
-    if (prevAddress.current !== address) {
-      if (prevAddress.current != null) onOpenThread(null)
-      prevAddress.current = address
-    }
-  }, [address, onOpenThread])
+    if (!address) return
+    if (lastAddress.current && lastAddress.current !== address && openThreadId) onOpenThread(null)
+    lastAddress.current = address
+  }, [address, onOpenThread, openThreadId])
 
   // The stream and its composer, as a Panel's body and footer (estiva-ui 0.37.0): the
   // Panel scrolls the stream and keeps the composer under it. A page with a header of

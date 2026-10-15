@@ -405,6 +405,7 @@ export function useFileControls({
     parent: ForeignObject,
     team: string,
     hasState: boolean,
+    teamName: string,
     title: string,
   ): Promise<boolean> => {
     /*
@@ -412,7 +413,7 @@ export function useFileControls({
       exactly its parent's readers. For a bare parent that is its `h`, which is
       `team` here; any other kind reached this dialog only with an `h` of its own.
     */
-    const result = await createTopic({ folder: team, title, parent: parent.address, hasState })
+    const result = await createTopic({ folder: team, title, parent: parent.address, hasState, folderName: teamName, parentFile: parent })
     if (!result.ok) {
       showToast({ label: result.reason, type: 'error' })
       return false
@@ -498,7 +499,7 @@ export function useFileControls({
       <StartTopicDialog
         folderName={dialog.teamName}
         parent={dialog.file}
-        onCreate={(title) => startInside(dialog.file, dialog.team, dialog.hasState, title)}
+        onCreate={(title) => startInside(dialog.file, dialog.team, dialog.hasState, dialog.teamName, title)}
         onClose={() => setDialog(null)}
       />
     ) : (

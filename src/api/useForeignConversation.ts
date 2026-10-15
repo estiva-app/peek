@@ -15,6 +15,7 @@ import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
 import { isConversationHeld } from './conversations'
 import { HELD_OBJECT_FRESH_MS } from './foreign'
+import { topicSettled } from './pendingTopics'
 
 /**
  * One file's conversation, whichever app owns the file — RFC 0.5 §10.
@@ -85,14 +86,17 @@ function useResolvedForeign(naddr: string | null | undefined): {
   const { resolveObject, resolveObjectFromDevice, resolveFileFolder } = useForeignObjects()
 
   const load = useCallback(
-    (target: string): Promise<ListingLoad<ForeignObject | null, RelayFailureKind>> =>
+    async (target: string): Promise<ListingLoad<ForeignObject | null, RelayFailureKind>> => {
+      // A topic just started is read once the relay has it: before, it would answer "not found" (PEE-6).
+      const started = topicSettled(target)
+      if (started && !(await started).ok) return { ok: true, value: null }
       /*
         The page a link opens says "Archived with its project" (FOL-46), which
         costs a read of the parent — paid here, and by no card or widget. An
         archived child is already left out of `children` (interop 0.38.0), so
         the tree's expanded project lists no archived issue.
       */
-      resolveObject(target, { archivedWith: true })
+      return resolveObject(target, { archivedWith: true })
         .then(async (object) => {
           /*
             A record with no `h` still has a Folder its conversation is written
@@ -124,7 +128,8 @@ function useResolvedForeign(naddr: string | null | undefined): {
           if (isOutage(kind)) recordReadFailure(kind)
           console.warn('[nostr] foreign conversation read failed:', error)
           return { ok: false as const, failure: kind as RelayFailureKind }
-        }),
+        })
+    },
     [resolveObject, resolveFileFolder],
   )
 
@@ -266,6 +271,21 @@ const knownAddresses = new Map<string, string>()
 export function rememberFileAddress(address: string): void {
   const identifier = address.split(':')[2]
   if (identifier) knownAddresses.set(identifier.toLowerCase(), address)
+}
+
+/**
+ * Draw a topic just started as its page's answer (PEE-6), before the relay has
+ * it: its short link opens without a read, and the resolve waits for the
+ * write rather than reading the file as missing.
+ */
+export function holdStartedFile(file: ForeignObject & { address: string }): Promise<void> {
+  rememberFileAddress(file.address)
+  return resolvedCache.read(file.address, async () => ({ ok: true, value: file }))
+}
+
+/** A started topic the relay refused is no file at all. */
+export function forgetStartedFile(address: string): Promise<void> {
+  return resolvedCache.read(address, async () => ({ ok: true, value: null }))
 }
 
 /** Forget every remembered address — for tests. */

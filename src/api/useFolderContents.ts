@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { isArchived, type FolderContents, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { RETRY_FIRST_MS, RETRY_MAX_MS, createRetryingRead } from '@estiva-app/platform'
 import { useForeignObjects } from '@/api'
@@ -14,6 +14,7 @@ import { recordReadFailure } from '@/nostr/freshness'
 import { useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
+import { listedNow, startedFilesIn, useStartedTopicsVersion } from './pendingTopics'
 
 /**
  * Navigation by Folder — RFC 0.4 §4 and §5.
@@ -90,6 +91,7 @@ function loadFolderContents(
   return withRateLimitRetry(() => resolveFolderContents(folder))
     .then((contents) => {
       listedIn.set(folder, contents.files)
+      listedNow(folder, contents.files)
       return { ok: true as const, value: contents }
     })
     .catch((error: unknown) => {
@@ -178,6 +180,7 @@ export async function loadFoldersAhead(
       if (folderContentsCache.peek(folder.id)?.inflight) return
       await folderContentsCache.read(folder.id, async () => {
         listedIn.set(folder.id, contents.files)
+        listedNow(folder.id, contents.files)
         return { ok: true, value: contents }
       })
     }),
@@ -268,7 +271,19 @@ export function useFolderContents(
 
   // Contents drawn from the copy give way to the relay refusing the Folder.
   const refused = entry?.seeded && entry.failure === 'not_a_member'
-  const state: FolderContentsState = (!refused && entry?.value) || (entry?.failure ? { failed: entry.failure } : 'loading')
+  const contents = !refused ? entry?.value : undefined
+  /*
+    A topic just started is listed from Start on (PEE-6), until a listing of
+    its Folder holds it: drawn after what the Folder holds, as a new file is.
+  */
+  const started = useStartedTopicsVersion()
+  const withStarted = useMemo(() => {
+    if (!contents || archived || !folder) return contents
+    const more = startedFilesIn(folder, contents.files)
+    return more.length ? { ...contents, files: [...contents.files, ...more] } : contents
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `started` is the store's version: what it holds changed
+  }, [contents, archived, folder, started])
+  const state: FolderContentsState = withStarted || (entry?.failure ? { failed: entry.failure } : 'loading')
 
   return { state, reload }
 }

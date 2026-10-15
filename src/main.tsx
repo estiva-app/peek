@@ -17,6 +17,7 @@ import { PeekSetup } from './lib/PeekSetup'
 import { ErrorBoundary, TooltipProvider } from '@estiva-app/ui'
 import './index.css'
 import App from './App.tsx'
+import { StartedTopicRefusals } from './components/StartedTopicRefusals'
 import { setSocketReader } from './nostr/bridge'
 import { relayLog } from './nostr/liveTopics'
 import { createAppSocketReader, installSocketReadsDiagnostic } from './nostr/socketRead'
@@ -54,6 +55,7 @@ createRoot(document.getElementById('root')!).render(
                       <TooltipProvider>
                         <PeekSetup>
                           <App />
+                          <StartedTopicRefusals />
                         </PeekSetup>
                       </TooltipProvider>
                     </ToastProvider>

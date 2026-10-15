@@ -32,7 +32,6 @@ import {
   directoryAsViewer,
   conversationsAsViewer,
   createFolderAsViewer,
-  createTopicAsViewer,
   deleteFileAsViewer,
   deleteFolderAsViewer,
   folderDeletableAsViewer,
@@ -64,6 +63,7 @@ import type { StoredToken } from '@/auth/estivaId'
 import { createListingCache, type ListingLoad } from '@/platform/listingCache'
 import { useListing } from '@/platform/useListing'
 import { joinFolderWatch } from '@/nostr/useLiveFile'
+import { startTopicAsViewer, type StartTopicArgs } from './startTopic'
 import type {
   ArchiveImpact,
   ArchiveReadOptions,
@@ -564,13 +564,14 @@ export function useForeignObjects() {
   /**
    * Start a topic in a Folder — a bare file, SPEC §6.7. `parent` is the
    * address of the file it sits under, of any kind. `hasState` comes from the
-   * Folder read on the page, never from a guess; see `createTopicAsViewer`.
+   * Folder read on the page, never from a guess; see `publishTopicAsViewer`.
+   * Answers as soon as the topic can be opened, before it is written (PEE-6).
    */
   const createTopic = useCallback(
-    async (args: { folder: string; title: string; parent?: string; hasState: boolean }) => {
+    async (args: StartTopicArgs) => {
       const v = viewer()
       if (!v) return { ok: false as const, reason: 'Sign in to start a topic.' }
-      return createTopicAsViewer(args, v.relayUrl, v.token)
+      return startTopicAsViewer(args, v.relayUrl, v.token)
     },
     [viewer],
   )
