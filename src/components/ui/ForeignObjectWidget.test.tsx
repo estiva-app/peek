@@ -392,6 +392,22 @@ describe('ForeignObjectWidget', () => {
       expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
     })
 
+    it("draws no summary box on a topic's card — the summary is written in Details (SPEC §6.12)", async () => {
+      resolveObject.mockResolvedValue(
+        object({
+          // What interop 0.57.0 resolves for a bare file: its summary and the
+          // action that sets it, a text change with no format.
+          kind: 30840,
+          slots: { title: { value: 'Billing entry + add payment method' }, subtitle: { value: 'Card first, then the invoice.' } },
+          actions: [{ id: 'summarize', label: 'Summary', control: 'text', field: 'summary' }],
+        }),
+      )
+      render(<ForeignObjectWidget naddr={NADDR} layout="card" />)
+
+      expect(await screen.findByText('Card first, then the invoice.')).toBeInTheDocument()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
     // A row: on a card the prose field is the body's own editor (MAN-9), tested below.
     it('draws no one-line box in the action row for a prose field, nor for a move (MAN-4)', async () => {
       resolveObject.mockResolvedValue(
