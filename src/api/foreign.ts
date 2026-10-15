@@ -276,11 +276,46 @@ function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>):
     const v = viewer()
     if (!v) return { ok: true, value: null }
     try {
-      return { ok: true, value: await resolveObjectAsViewer(reference, v.relayUrl, v.token) }
+      return { ok: true, value: await pooledResolve(reference, v.relayUrl, v.token) }
     } catch {
       return { ok: false, failure: true }
     }
   }
+}
+
+/**
+ * The widgets a conversation draws, asked in one read (OPT-10; Miky, 12 Oct:
+ * "one batched load"): every reference asked in the same tick, by the same
+ * viewer, goes to `resolveObjectsAsViewer` together — one POST for a screen of
+ * cards rather than one each, against the 300-a-minute meter the tab shares.
+ * A refused pooled read fails each of them, as a failed single read did.
+ */
+const pools = new Map<string, { relayUrl: string; token: StoredToken; asked: Map<string, { resolve: (value: ForeignObject | null) => void; reject: (error: unknown) => void }[]> }>()
+
+function pooledResolve(reference: string, relayUrl: string, token: StoredToken): Promise<ForeignObject | null> {
+  const key = `${relayUrl}\u0000${token.pubkey}`
+  let pool = pools.get(key)
+  if (!pool) {
+    const fresh = { relayUrl, token, asked: new Map<string, { resolve: (value: ForeignObject | null) => void; reject: (error: unknown) => void }[]>() }
+    pools.set(key, fresh)
+    pool = fresh
+    setTimeout(() => {
+      pools.delete(key)
+      const refs = [...fresh.asked.keys()]
+      resolveObjectsAsViewer(refs, fresh.relayUrl, fresh.token).then(
+        (objects) => {
+          for (const [ref, waiting] of fresh.asked) for (const w of waiting) w.resolve(objects[ref] ?? null)
+        },
+        (error) => {
+          for (const waiting of fresh.asked.values()) for (const w of waiting) w.reject(error)
+        },
+      )
+    }, 0)
+  }
+  const asked = pool.asked
+  return new Promise((resolve, reject) => {
+    asked.set(reference, [...(asked.get(reference) ?? []), { resolve, reject }])
+  })
 }
 
 /**
@@ -292,6 +327,8 @@ function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>):
 export function useHeldObject(reference: string | null): {
   object: ForeignObject | null | 'loading'
   reload: () => Promise<void>
+  /** `object` is null because the relay answered with nothing — not because the read failed (OPT-10). */
+  gone: boolean
 } {
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey
@@ -326,7 +363,7 @@ export function useHeldObject(reference: string | null): {
   }, [key, load])
 
   const object = !key ? null : entry?.value !== undefined ? entry.value : entry?.failure ? null : 'loading'
-  return { object, reload }
+  return { object, reload, gone: !!key && entry?.value === null }
 }
 
 export function useForeignObjects() {

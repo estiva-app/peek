@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type UIEventHandler } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type UIEventHandler } from 'react'
 import { Divider, EmptyState, ScrollArea } from '@estiva-app/ui'
 import { isNearBottom } from './scrollPolicy'
+import { anchorIn, useSteadyScroll } from './useSteadyScroll'
 import { ConversationRow, type RowHandlers } from './ConversationRow'
 import { ReactionHorizon } from '@/components/ReactionHorizon'
 import { ThreadPanel } from '@/components/ThreadPanel'
@@ -139,20 +140,6 @@ const positions = new Map<
   string,
   { atBottom: boolean; offset: number; anchor?: { id: string; top: number }; leftAt: number }
 >()
-
-/** The message at the top of a scroller, by its `data-root` marker, and its card's distance from the top. */
-function anchorIn(el: HTMLElement): { id: string; top: number } | undefined {
-  // jsdom has no layout: no anchor, and the restore keeps the plain offset.
-  if (typeof document.elementFromPoint !== 'function') return undefined
-  const box = el.getBoundingClientRect()
-  // A gap between cards, or a date line, is passed over a few pixels at a time.
-  for (let y = box.top + 1; y < box.top + 96; y += 8) {
-    const marker = document.elementFromPoint(box.left + box.width / 2, y)?.closest<HTMLElement>('[data-root]')
-    const card = marker?.firstElementChild
-    if (marker?.dataset.root && card) return { id: marker.dataset.root, top: card.getBoundingClientRect().top - box.top }
-  }
-  return undefined
-}
 
 const nowSeconds = () => Math.floor(Date.now() / 1000)
 
@@ -473,6 +460,10 @@ export function useFileConversationView({
     }
     pinnedFor.current = address
   }, [address, isLoading])
+
+  // From there, it stays where the reader is while its cards, chips and images fill in (OPT-10).
+  const placed = useCallback(() => !!address && pinnedFor.current === address, [address])
+  useSteadyScroll(scrollRef, nearBottom, placed, isLoading)
 
   // Leaving: the moment it was left is when "New" starts on the way back.
   useEffect(() => {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '@estiva-app/interop'
-import { markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
+import { encodeNaddr, markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 
 /**
  * The widget renders whatever the manifest said, and nothing else.
@@ -28,12 +28,19 @@ vi.mock('@/api', async () => {
   // The tab's held answer (OPT-3), reduced to a resolve on mount and on `reload`.
   useHeldObject: (reference: string | null) => {
     const [object, setObject] = useState<unknown>(reference ? 'loading' : null)
+    const [failed, setFailed] = useState(false)
     const reload = useCallback(
-      () => (reference ? resolveObject(reference).then(setObject, () => setObject(null)) : Promise.resolve()),
+      () =>
+        reference
+          ? resolveObject(reference).then(setObject, () => {
+              setFailed(true)
+              setObject(null)
+            })
+          : Promise.resolve(),
       [reference],
     )
     useEffect(() => void reload(), [reload])
-    return { object, reload }
+    return { object, reload, gone: !!reference && object === null && !failed }
   },
   // The assignee picker's option list (PEE-1) — two known people.
   useWorkspaceDirectory: () => ({
@@ -196,13 +203,13 @@ describe('ForeignObjectWidget', () => {
   it('says so when the object is unreachable rather than rendering nothing', async () => {
     resolveObject.mockResolvedValue(object({ unreachable: true }))
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText(/may not have access/)).toBeInTheDocument()
+    expect(await screen.findByText(/not available/)).toBeInTheDocument()
   })
 
   it('names an unreachable object by its type when the app declares one', async () => {
     resolveObject.mockResolvedValue(object({ unreachable: true, noun: 'issue' }))
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText(/^Issue — you may not have access/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Issue — not available/)).toBeInTheDocument()
   })
 
   it('degrades to nothing when the reference cannot be resolved', async () => {
@@ -819,6 +826,46 @@ describe('a person-titled object', () => {
     const { container } = render(<ForeignObjectCard object={{ ...message(), people: {} }} />)
     expect(container.textContent).not.toContain('a'.repeat(64))
     expect(container.textContent).toContain('—')
+  })
+})
+
+describe('a chosen card keeps its size while it loads (OPT-10)', () => {
+  const issue = encodeNaddr({ kind: 30851, pubkey: 'a'.repeat(64), identifier: 'issue-1', relays: [] })
+  const topic = encodeNaddr({ kind: 30840, pubkey: 'a'.repeat(64), identifier: 'topic-1', relays: [] })
+  const heightOf = (container: HTMLElement) => (container.querySelector('[data-skeleton-layout]') as HTMLElement | null)?.style.height
+
+  it('holds the height of the card it will become, by layout and kind', () => {
+    resolveObject.mockReturnValue(new Promise(() => {}))
+    expect(heightOf(render(<ForeignObjectWidget naddr={issue} layout="row" />).container)).toBe('97px')
+    expect(heightOf(render(<ForeignObjectWidget naddr={issue} layout="card" />).container)).toBe('229px')
+    expect(heightOf(render(<ForeignObjectWidget naddr={topic} layout="card" />).container)).toBe('46px')
+  })
+
+  it('says a chosen card whose file is gone is gone, in its place, rather than closing up', async () => {
+    resolveObject.mockResolvedValue(null)
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.textContent).toBe('Issue — not available.'))
+  })
+
+  it('does not call a card gone when the read failed', async () => {
+    resolveObject.mockRejectedValue(new Error('429'))
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.querySelector('[data-skeleton-layout]')).toBeNull())
+    expect(container.textContent).not.toContain('not available')
+  })
+
+  it('still draws nothing for a reference no author chose a card for', async () => {
+    resolveObject.mockResolvedValue(null)
+    const { container } = render(<ForeignObjectWidget naddr={issue} />)
+    await waitFor(() => expect(resolveObject).toHaveBeenCalled())
+    await waitFor(() => expect(container.textContent).toBe(''))
+  })
+
+  it('never draws a chosen card shorter than its kind is measured at', async () => {
+    resolveObject.mockResolvedValue(object({ address: `30851:${'a'.repeat(64)}:issue-1`, naddr: issue }))
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="row" />)
+    await waitFor(() => expect(container.querySelector('[data-foreign-object]')).not.toBeNull())
+    expect((container.querySelector('[data-foreign-object]') as HTMLElement).style.minHeight).toBe('97px')
   })
 })
 

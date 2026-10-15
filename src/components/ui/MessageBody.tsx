@@ -266,6 +266,8 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
               naddr={card.reference.replace(/^nostr:/i, '')}
               resolved={supplied(card.reference)}
               layout={card.layout === 'detailed' ? 'card' : 'row'}
+              // A detailed card is cut behind "Show more", so its height is known before it loads (OPT-10; Miky, 14 Oct).
+              clampDescription={card.layout === 'detailed'}
             />
           </div>
         ))}
