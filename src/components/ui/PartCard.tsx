@@ -118,7 +118,7 @@ export function PartCardView({
           the page said, since the relay does not check a quote (Miky, LEAF-7
           /land). The look is Katerina's to set. */}
       {view.state === 'reworded' && (
-        <span data-part-quote className="text-caption italic text-text-muted">
+        <span data-part-quote className="line-clamp-2 text-caption italic text-text-muted">
           {quotedBy ? `${quotedBy} quoted` : 'Quoted'}: “{quoteText(view.quote)}” · No longer in the text
         </span>
       )}
