@@ -36,9 +36,7 @@ import { rootOf } from './channelStreams'
 import { dmChannelsOf, KIND_CHANNEL_MEMBERS } from './dms'
 import { folderDeletableOf, type FolderDeletable } from './folderDeletable'
 import {
-  buildBareFile,
   decodeNevent,
-  encodeNaddr,
   pointerToAddress,
   referenceToPointer,
   type AddressPointer,
@@ -64,6 +62,7 @@ import {
   resolveForeignObject,
   resolveForeignObjects,
   resolveManifest,
+  projectEvents,
   resolveActingManifest,
   resolveParents,
   topLevelFolders,
@@ -85,7 +84,6 @@ import {
   type MovableFile,
   planMoveFromFolders,
   listedBeneath,
-  planPlaceFile,
   planRenameFolder,
   planUnlistFile,
   planArchiveFolder,
@@ -271,6 +269,20 @@ export async function fileAddressAsViewer(
   const kinds = words.byWord[word.toLowerCase()] ?? declaredKinds(words)
   const [found] = await query([{ kinds: [...kinds], '#d': [identifier], limit: 1 }])
   return found ? `${found.kind}:${found.pubkey}:${identifier}` : null
+}
+
+/**
+ * A file the viewer is publishing, drawn as its resolve will answer once the
+ * relay holds it (PEE-6): the same manifest and the same projection, from the
+ * event in hand rather than from a read — so its title, Folder and actions are
+ * there before the write is. The manifest is memoised, so this usually reads
+ * nothing; with no comments, children or people, as `projectEvents` says.
+ */
+export async function projectOwnFileAsViewer(event: SignedEvent, relayUrl: string, token: StoredToken): Promise<ForeignObject | null> {
+  const identifier = event.tags.find((tag) => tag[0] === 'd')?.[1] ?? ''
+  const manifest = await resolveManifest({ kind: event.kind, pubkey: event.pubkey, identifier, relays: [] }, viewerQuery(relayUrl, token), manifests)
+  if (!manifest) return null
+  return projectEvents([event], () => manifest)[0] ?? null
 }
 
 /**
@@ -986,60 +998,6 @@ export async function moveFileAsViewer(
   const stillIn: string[] = []
   for (const { folder, event } of plan.removes) if (!(await publishInOrder([event], relayUrl, token)).ok) stillIn.push(folder)
   return stillIn.length ? { ok: false, reason: 'Added to the new Folder, but the Folder it came from still lists it too. Try moving it again.', stillIn } : { ok: true }
-}
-
-/**
- * Start a topic — a bare file inside a team, SPEC §6.7 (RFC 0.5 §10.7).
- *
- * A new topic is no longer a channel. It is a `kind:30840` carrying the team's
- * channel as `h`, optionally naming the file it sits under with one `a` of any
- * kind, and its conversation is `kind:1111` comments on it — which is what
- * `applyActionAsViewer` already publishes through the bare file's built-in
- * `comment` action. Existing topics stay channels; nothing here touches them.
- *
- * **Two writes when the Folder has state, one when it does not, and the
- * caller says which.** A Folder read by containment lists the new file the
- * moment its `h` is stored. A Folder with a `kind:30890` lists only what its
- * state names, so it also needs a `kind:1852` `add` — and a `1852` against a
- * Folder with *no* state emits state listing nothing, which empties the Folder
- * on every surface (peek#192). `hasState` is required rather than guessed for
- * exactly the reason `renameFolderAsViewer` requires it: the page has just
- * read it, and getting it wrong is silent loss.
- *
- * The file is published before the `add`, so a refused `add` leaves a topic
- * that exists and is reachable by its address, reported as partial — the same
- * order and the same reasoning as a move.
- */
-export async function createTopicAsViewer(
-  args: { folder: string; title: string; parent?: string; hasState: boolean },
-  relayUrl: string,
-  token: StoredToken,
-): Promise<{ ok: true; address: string; naddr: string } | { ok: false; reason: string }> {
-  const fileId = crypto.randomUUID()
-  const unsigned = buildBareFile(token.pubkey, Date.now(), {
-    fileId,
-    title: args.title,
-    channelUuid: args.folder,
-    ...(args.parent ? { parent: args.parent } : {}),
-  })
-  const signed = await signViaEstivaId(unsigned, token.accessToken, token.pubkey)
-  const result = await publishSigned(relayUrl, signed, token.accessToken, token.pubkey)
-  // Never the status code: the relay refuses as 200 with `accepted: false`.
-  if (!result.ok) return { ok: false, reason: result.reason ?? 'The relay refused to create the topic.' }
-  const address = `${KIND_BARE_FILE}:${token.pubkey}:${fileId}`
-  const naddr = encodeNaddr({ kind: KIND_BARE_FILE, pubkey: token.pubkey, identifier: fileId, relays: [] })
-  const placed = await publishInOrder(
-    planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address, hasState: args.hasState }),
-    relayUrl,
-    token,
-  )
-  if (!placed.ok) {
-    return {
-      ok: false,
-      reason: 'The topic was created but could not be added to this folder’s list. Reload and try adding it again.',
-    }
-  }
-  return { ok: true, address, naddr }
 }
 
 /**

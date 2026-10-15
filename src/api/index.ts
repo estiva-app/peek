@@ -69,6 +69,8 @@ export {
   useFolders,
   type FolderContentsState,
 } from './useFolderContents'
+export { TOPIC_NOT_CREATED, onTopicRefused, topicTextBack, type RefusedTopic } from './pendingTopics'
+export type { StartTopicArgs } from './startTopic'
 export {
   useForeignConversation,
   useFileAddress,

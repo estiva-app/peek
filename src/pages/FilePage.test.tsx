@@ -1858,12 +1858,14 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), { target: { value: 'Transcripts' } })
     fireEvent.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
-    expect(writes.createTopic).toHaveBeenCalledWith({
-      folder: FOLDER,
-      title: 'Transcripts',
-      parent: TOPIC_ADDRESS,
-      hasState: true,
-    })
+    expect(writes.createTopic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folder: FOLDER,
+        title: 'Transcripts',
+        parent: TOPIC_ADDRESS,
+        hasState: true,
+      }),
+    )
     // Membership of what you create is the address's: nothing is written for it (§11.8).
     expect(follows.setMember).not.toHaveBeenCalled()
   })
@@ -1883,6 +1885,6 @@ describe('A file may name a parent file — the tree, Move and New topic inside 
     fireEvent.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() => expect(writes.createTopic).toHaveBeenCalledTimes(1))
     expect(writes.resolveFolderContents).toHaveBeenCalledWith(FOLDER)
-    expect(writes.createTopic).toHaveBeenCalledWith({ folder: FOLDER, title: 'Sub A', parent: PROJECT_ADDRESS, hasState: true })
+    expect(writes.createTopic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Sub A', parent: PROJECT_ADDRESS, hasState: true }))
   })
 })

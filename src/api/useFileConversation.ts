@@ -38,6 +38,7 @@ import {
 import { recordReadFailure } from '@/nostr/freshness'
 import { REFRESH_INTERVAL_MS, useRefreshTriggers } from '@/lib/useRefreshTriggers'
 import { useLiveFile } from '@/nostr/useLiveFile'
+import { TOPIC_NOT_CREATED, waitOnTopic } from './pendingTopics'
 
 export type { ConversationContainer, ConversationEvent, FileConversation, OutgoingAttachment, WriteResult }
 export { conversationKeyOf, relayAttachmentOf } from '@/nostr/fileConversation'
@@ -495,7 +496,17 @@ export function useFileConversation(
     const conversations = conversationsFor(v.relayUrl, v.token.pubkey)
     const roots = ids ? ids.split(',') : []
     const query = viewerQuery(v.relayUrl, v.token)
-    const flight = publishConfirmed(event, v.relayUrl, v.token, refusal)
+    /*
+      Into a topic just started (PEE-6): drawn now, sent once the topic is
+      written, and not sent at all if it is refused — its text goes back to
+      the topic's draft (Miky, PEE-6 kickoff).
+    */
+    const topic = container.kind === 'file' ? waitOnTopic(container.address) : undefined
+    const flight = topic
+      ? topic.then((outcome): Promise<WriteResult> | WriteResult =>
+          outcome.ok ? publishConfirmed(event, v.relayUrl, v.token, refusal) : { ok: false, reason: TOPIC_NOT_CREATED },
+        )
+      : publishConfirmed(event, v.relayUrl, v.token, refusal)
     sending.set(id, flight)
     const drawn = await showOwnEvent(conversations, key, container, roots, { ...event, id, sig: '' }, query).catch((error: unknown) => {
       console.warn('[nostr] drawing your own event failed:', error)

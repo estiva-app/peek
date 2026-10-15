@@ -43,6 +43,7 @@ export function StartTopicDialog({
   folders,
   defaultFolder,
   parent,
+  initialTitle = '',
   onCreate,
   onClose,
 }: {
@@ -57,11 +58,13 @@ export function StartTopicDialog({
   /** Which of `folders` starts chosen — the open Folder, when there is one. */
   defaultFolder?: string
   parent?: ForeignObject
+  /** The title it opens with: a refused topic's, restored (PEE-6). */
+  initialTitle?: string
   /** `folder` is the chosen Folder's id, and is absent unless `folders` was passed. */
   onCreate: (title: string, folder?: string) => Promise<boolean>
   onClose: () => void
 }) {
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(initialTitle)
   const [folder, setFolder] = useState(
     () => (defaultFolder && folders?.some((f) => f.id === defaultFolder) ? defaultFolder : folders?.[0]?.id) ?? '',
   )

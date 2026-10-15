@@ -643,7 +643,7 @@ describe('FoldersPage starts a topic from the header', () => {
     await user.click(screen.getByRole('button', { name: 'New topic' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
-    expect(created.topic).toHaveBeenCalledWith({ folder: FOLDER, title: 'Launch plan', hasState: true })
+    expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: FOLDER, title: 'Launch plan', hasState: true }))
   })
 
   it('starts it in the Folder that was chosen', async () => {
@@ -654,7 +654,7 @@ describe('FoldersPage starts a topic from the header', () => {
     await user.click(await screen.findByRole('option', { name: 'For testing' }))
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Launch plan')
     await user.click(screen.getByRole('button', { name: 'Start' }))
-    expect(created.topic).toHaveBeenCalledWith({ folder: TOPIC_CHANNEL, title: 'Launch plan', hasState: true })
+    expect(created.topic).toHaveBeenCalledWith(expect.objectContaining({ folder: TOPIC_CHANNEL, title: 'Launch plan', hasState: true }))
   })
 
   /*

@@ -95,7 +95,7 @@ export function FolderActionDialog({
         defaultFolder={folder.id}
         onClose={onClose}
         onCreate={async (title) => {
-          const result = await createTopic({ folder: folder.id, title, hasState: folder.hasState })
+          const result = await createTopic({ folder: folder.id, title, hasState: folder.hasState, folderName: name })
           if (!result.ok) {
             showToast({ label: result.reason, type: 'error' })
             return false

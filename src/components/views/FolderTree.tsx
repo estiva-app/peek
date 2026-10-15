@@ -374,8 +374,8 @@ function HeaderDialog({
         const folder = chosen ?? section
         if (!folder) return false
         // `hasState` from the summary `listFolders` answered, never guessed: a `kind:1852` against a Folder with no state empties it.
-        const hasState = folders?.find((candidate) => candidate.id === folder)?.hasState ?? false
-        const result = await createTopic({ folder, title, hasState })
+        const summary = folders?.find((candidate) => candidate.id === folder)
+        const result = await createTopic({ folder, title, hasState: summary?.hasState ?? false, folderName: summary?.name })
         if (!result.ok) {
           showToast({ label: result.reason, type: 'error' })
           return false
