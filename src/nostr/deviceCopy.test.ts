@@ -2,7 +2,7 @@
  * The copy on the device a reload draws Desk from (PEE-2): what it keeps, what
  * it answers, and that signing out leaves nothing.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { memorySnapshotStorage } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import {
@@ -28,8 +28,10 @@ const blob: SignedEvent = {
   sig: '0'.repeat(128),
 }
 const filter = { kinds: [30078], authors: [ME], '#d': ['estiva-peek:open-work:v1'] }
+/** Moves the fake clock on, letting every timer and promise due by then run. */
+const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms)
 /** Past the idle slot a relay answer is kept in. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 100))
+const settle = () => wait(100)
 
 // The page's localStorage, which this environment lacks: where the device remembers whose copy it holds.
 const kept = new Map<string, string>()
@@ -39,7 +41,12 @@ vi.stubGlobal('localStorage', {
   removeItem: (key: string) => void kept.delete(key),
 })
 
+beforeEach(() => {
+  vi.useFakeTimers()
+})
+
 afterEach(() => {
+  vi.useRealTimers()
   resetDeviceCopyForTest()
   kept.clear()
 })
@@ -58,7 +65,7 @@ describe('the copy on the device', () => {
     const storage = memorySnapshotStorage()
     resetDeviceCopyForTest(storage)
     keepRelayAnswer(RELAY, [filter], ME, [blob])
-    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await wait(1_200)
     expect(storage.records.size).toBe(1)
 
     resetDeviceCopyForTest(storage) // a new page, signed in as somebody else
@@ -73,7 +80,7 @@ describe('the copy on the device', () => {
     await settle()
     keepPlaintext('ciphertext', '{"v":1}')
     // Past the save delay, then the page goes away.
-    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    await wait(1_100)
 
     resetDeviceCopyForTest(storage)
     expect(await readFromCopy(RELAY, [filter], ME)).toEqual([blob])
@@ -84,14 +91,14 @@ describe('the copy on the device', () => {
     const storage = memorySnapshotStorage()
     resetDeviceCopyForTest(storage)
     keepRelayAnswer(RELAY, [filter], ME, [blob])
-    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    await wait(1_100)
     expect(storage.records.size).toBe(1)
     await clearDeviceCopy()
     expect(storage.records.size).toBe(0)
     expect(await readFromCopy(RELAY, [filter], ME)).toBeNull()
     // An answer still arriving while the page leaves is not kept.
     keepRelayAnswer(RELAY, [filter], ME, [blob])
-    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await wait(1_200)
     expect(storage.records.size).toBe(0)
   })
 
@@ -99,15 +106,15 @@ describe('the copy on the device', () => {
     const storage = memorySnapshotStorage()
     resetDeviceCopyForTest(storage)
     keepRelayAnswer(RELAY, [filter], ME, [blob])
-    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    await wait(1_100)
     expect(storage.records.size).toBe(1)
 
     // What the other tab's clearDeviceCopy writes, as this tab's `storage` event sees it.
     followSignOutElsewhere({ key: 'peek-device-copy-owner', newValue: 'signed-out' })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wait(0)
     expect(storage.records.size).toBe(0)
     keepRelayAnswer(RELAY, [filter], ME, [blob])
-    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await wait(1_200)
     expect(storage.records.size).toBe(0)
   })
 
@@ -116,9 +123,9 @@ describe('the copy on the device', () => {
     const storage = memorySnapshotStorage()
     resetDeviceCopyForTest(storage)
     keepRelayAnswer(RELAY, [filter], ME, [blob])
-    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    await wait(1_100)
     followSignOutElsewhere({ key: 'peek-device-copy-owner', newValue: 'wss://x|someone' })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wait(0)
     expect(storage.records.size).toBe(1)
   })
 })

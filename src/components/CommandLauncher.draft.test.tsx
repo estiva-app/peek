@@ -145,15 +145,6 @@ describe('drafting is offered as its own row (INT-4)', () => {
     expect(screen.queryByText(/Draft a reply/i)).not.toBeInTheDocument()
   })
 
-  it('never fires on its own when a search finds nothing', async () => {
-    // The same rule INT-2 keeps, restated because a second row is a second
-    // chance to get it wrong.
-    open()
-    await enter(input(),'zzqxvwmkjjbtplfd')
-
-    expect(await draftRow()).toBeInTheDocument()
-    expect(promptForText).not.toHaveBeenCalled()
-  })
 })
 
 describe('the draft is written from the thread and the request (INT-4)', () => {

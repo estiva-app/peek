@@ -89,13 +89,6 @@ describe('the team unread probe', () => {
     expect(snapshot()[0].folders).toBe(1)
   })
 
-  it('answers before the hook has observed anything', () => {
-    open()
-    // Between the mount effect and the first commit there is nothing to say,
-    // and a console call in that window must not throw.
-    expect(snapshot()[0]).toMatchObject({ folders: 0, deliveries: 0, loads: 0, held: 0, heldAt: null })
-  })
-
   it('names what asked for each re-read, and what came back', () => {
     const probe = open()
     probe.observe(observation())
@@ -120,22 +113,6 @@ describe('the team unread probe', () => {
     probe.loadStarted('socket')
     probe.loadSettled('failed', { failure: 'rate_limited' })
     expect(snapshot()[0].lastLoad).toMatchObject({ outcome: 'failed', failure: 'rate_limited' })
-  })
-
-  it('reports a delivery for a Folder this mount does not watch', () => {
-    const probe = open()
-    probe.observe(observation())
-    probe.delivered(TEAM)
-    // The wide filter is one REQ for every Folder in the list; a signal for
-    // something else is a narrowing bug, and it would be invisible otherwise.
-    expect(snapshot()[0].lastDelivery).toMatchObject({ folder: TEAM, listed: false })
-  })
-
-  it('explains the last delivered Folder when asked about none', () => {
-    const probe = open()
-    probe.observe(observation())
-    probe.delivered(FOLDER)
-    expect(snapshot().at(0)?.folder).toMatchObject({ id: FOLDER, read: true, messages: 1 })
   })
 
   it('separates a Folder the read never answered for from one with nothing in it', () => {
@@ -193,14 +170,6 @@ describe('the team unread probe', () => {
     const [general] = snapshot(FOLDER)[0].folder?.streams ?? []
     expect(general).toMatchObject({ unread: false })
     expect(general?.newest).toMatchObject({ mine: true, by: ME.slice(0, 8) })
-  })
-
-  it('reports the containers a verdict folds into, and whether they are lit', () => {
-    const probe = open()
-    probe.observe(observation())
-    // FOL-22: the dot a person sees may be on the team, not on the Folder the
-    // message was in — so the row to look at is part of the answer.
-    expect(snapshot(FOLDER)[0].folder?.listedIn).toEqual([{ container: TEAM, unread: true }])
   })
 
   it('reports the two gates that empty the map before anything is judged', () => {

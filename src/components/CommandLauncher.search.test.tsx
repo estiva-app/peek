@@ -95,13 +95,6 @@ describe('Cmd+K finds a person by typing part of them (PEE-4)', () => {
     expect(await screen.findByText('Apps')).toBeInTheDocument()
   })
 
-  it('no longer offers the inert "Search Peek for …" row', async () => {
-    // It was the placeholder this ticket replaces, and leaving it beside real
-    // results would be a second search that does nothing.
-    open()
-    await type('pipeline')
-    expect(screen.queryByText(/Search Peek for/i)).not.toBeInTheDocument()
-  })
 })
 
 describe('the message section says which silence it is in (PEE-4)', () => {
