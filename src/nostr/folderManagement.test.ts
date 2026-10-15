@@ -125,6 +125,15 @@ describe('moving a file', () => {
     expect(tag(add!, 'a')).toEqual([ADDRESS])
   })
 
+  it('moves a file its Folder lists by address in its state even when the listing read left it out', async () => {
+    await moveFileAsViewer(file, new Map([[FOLDER, []]]), [{ ...here, addresses: [ADDRESS] }], there, 'https://relay.test', token)
+
+    expect(sent().map((e) => [tag(e, 'op')[0], tag(e, 'h')[0], tag(e, 'a')])).toEqual([
+      ['add', OTHER, [ADDRESS]],
+      ['remove', FOLDER, [ADDRESS]],
+    ])
+  })
+
   it('leaves the file in both folders when the remove fails, and says so', async () => {
     publishSigned.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false })
 
