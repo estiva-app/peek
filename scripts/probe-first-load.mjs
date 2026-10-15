@@ -11,7 +11,8 @@
  *   tab → Desk, in the same browser — the reloads and the new tab are what a copy on the device speeds up, the
  *   first open is what it cannot.
  * - `first`: a browser with nothing stored opens Desk, waits 10 s, then opens for the first time an Open work topic,
- *   a Starred DM and Topics, back to Desk between each — what loading ahead from Desk speeds up.
+ *   a Starred DM and Topics, back to Desk between each — what loading ahead from Desk speeds up. The Starred DM and
+ *   Topics wait until Desk's loader has reached them (PEE-5's Done when), at most 30 s.
  * - `first-off` (PEE-5): `first` with Desk's loader turned off (`localStorage['peek.ahead']`), the same build's before.
  * - `click1s`, `click1s-off` (PEE-5): Desk, then the Open work topic 1 s after it drew — while the loader is busiest —
  *   with the loader on and off. Run with `--runs 5` and compare the medians. Prints `window.__loadAhead`.
@@ -56,6 +57,11 @@ const TREE = ['Switch probe A', 'Switch probe B']
 const newest = (title) => `200 of 200 in ${title}`
 
 // Steps, as probe.mjs arguments.
+// PEE-5: until Desk's loader has done the step whose label starts so (or has finished, or is off), at most `ms` — the
+// Done when times a Starred DM and Topics "once the loader has reached them", not at a fixed moment.
+// A step's record is pushed when it ends ("Starred: QA-2"); Topics also records laps ("Topics: listing"), so it is
+// matched by its exact label.
+const reached = (prefix, ms = 30000) => ['--until', `(() => { const a = window.__loadAhead; return !a || !!a.outcome || a.steps.some((s) => ${prefix === 'Topics' ? `s.label === 'Topics'` : `s.label.startsWith(${JSON.stringify(prefix + ':')})`}) || performance.now() - a.startedAt > ${ms} })()`]
 const settled = (mark = 'allTextsNoPulse', ms = 20000) => ['--until', `(() => { const p = __fl.phases.at(-1); return !!p.marks[${JSON.stringify(mark)}] || performance.now() - p.at > ${ms} })()`]
 const leaf = (text) => `[...document.querySelectorAll('main *')].find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)})`
 // A press, then the click, as a person's click arrives: Desk's loader gives way on the press (PEE-5).
@@ -167,8 +173,8 @@ const legs = {
       '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null, reads: window.__socketReads?.(1) })',
       // Desk's rows open in Desk's own pane since OPT-12, and stay on screen beside it.
       ...act('Open work topic', [newest(w.openWork)], under('Open work', w.openWork)), ...settled(), '--wait', '3000',
-      ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('composer'), '--wait', '3000',
-      ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000',
+      ...reached('Starred'), ...act('Starred DM', [w.dm], under('Starred', w.dm)), ...settled('composer'), '--wait', '3000',
+      ...reached('Topics'), ...act('Topics', TREE, topicsLink, '/app/folders'), ...settled(), '--wait', '3000',
       '--eval', 'JSON.stringify({ ahead: window.__loadAhead ?? null })',
       ...report,
     ],
