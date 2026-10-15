@@ -820,6 +820,8 @@ export function ForeignObjectWidget({
   */
   if (object === null) {
     // Only an answer of nothing: a read that failed (a 429, the network) is not news that the file is gone.
+    // A failed read keeps what this device remembered, rather than taking away the row it drew at first paint.
+    if (layout && !held.gone && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
     if (!layout || !held.gone) return null
     return <NotAvailableRow naddr={naddr} />
   }

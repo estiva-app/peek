@@ -96,7 +96,10 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   */
   const base = deviceStorage()
   const previous = ownerOnDevice()
-  if (previous && previous !== scope) clearPagePictures()
+  if (previous && previous !== scope) {
+    clearPagePictures()
+    clearUnavailableCards()
+  }
   const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
   rememberOwner(scope)
   const storage: SnapshotStorage = {
