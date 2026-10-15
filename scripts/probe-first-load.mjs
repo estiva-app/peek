@@ -19,7 +19,11 @@
  * - `topics10`, `topics10-off` (PEE-5): Desk, then Topics 10 s after it drew, with the loader on and off.
  * - `long`: Topics, then a 200-message topic never opened in this browser: when its messages show, and how many
  *   times the list jumped while nobody scrolled.
- * - `new`: New topic in the QA Folder, Start → a composer in the new topic; then the topic is deleted again.
+ * - `new`: New topic in the QA Folder, Start → a composer in the new topic, and a message sent at once; the other
+ *   identity then looks for it in Topics and for the message in it; then the topic is deleted again.
+ * - `new-folder`, `new-inside` (PEE-6): the same from the QA Folder's menu and from a topic's "New topic inside".
+ * - `new-refuse` (PEE-6): the relay refuses the new topic while text is typed in it; where Peek lands, its note,
+ *   Start's field and the stored draft are printed, and the topic is looked for after a fresh load.
  * - `tabs` (PEE-3, not in the default list): Desk; a second tab and a new window → Desk, with every page each
  *   loaded on the way in (an Estiva ID `/authorize` is a sign-in it had to do); Sign out in the first tab, then
  *   what the second shows and holds, before and after a reload. It ends the identity's Estiva ID session.
@@ -126,6 +130,34 @@ const signedOutState = `(async () => {
   })
   return JSON.stringify({ session: localStorage.getItem('peek.estivaId.token') !== null, keys, dbs, records, signInScreen: /Continue with your passkey/.test(document.body.innerText) })
 })()`
+
+/** A new topic's file (`@estiva-app/interop`'s KIND_BARE_FILE): the write `new-refuse` has the relay refuse. */
+const KIND_BARE_FILE = 30840
+/** What `new-refuse` types into the topic while it is pending, to find again in a stored draft. */
+const TYPED = 'Typed while the topic was pending'
+/** What `new` sends in the topic the moment its composer is there, for QA-2 to find. */
+const FIRST = 'First message, sent while the topic was new'
+const type = (text) => ['--eval', `(() => { const el = document.querySelector('main [contenteditable=true]'); if (!el) return 'no composer'; el.focus(); document.execCommand('insertText', false, ${JSON.stringify(text)}); return 'typed' })()`]
+const fromHeader = ['--click', 'New topic', '--wait', '600']
+// A Folder heading's or a row's own ⋮, found from its text: the nearest ancestor that holds one.
+const menuOf = (text) => [
+  '--eval', `(() => { let el = ${leaf(text)}; while (el && !el.querySelector('button[aria-label^="More options"]')) el = el.parentElement; const b = el?.querySelector('button[aria-label^="More options"]'); if (!b) throw new Error('no menu for ${text}'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); b.click(); return 'menu' })()`,
+  '--wait', '600',
+]
+/**
+ * Start's dialog, from wherever it opened: the title, the QA Folder when the dialog asks for one, then Start, which
+ * opens the phase. probe's --fill times out on this dialog's field; the value is set the way React expects instead.
+ */
+const start = (title) => [
+  '--eval', `(() => { const el = document.querySelector('input[aria-label="Topic title"]'); if (!el) throw new Error('no Start dialog'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(title)}); el.dispatchEvent(new Event('input', { bubbles: true })); return el.value })()`,
+  '--wait', '300',
+  '--eval', `(async () => { const box = document.querySelector('[role=combobox][aria-label=Folder]'); if (!box) return 'no choice'; box.click(); await new Promise((r) => setTimeout(r, 600)); const o = [...document.querySelectorAll('[role=option]')].find((e) => e.textContent.trim() === 'QA'); if (!o) throw new Error('no QA Folder to start a topic in'); o.click(); await new Promise((r) => setTimeout(r, 600)); const f = box.textContent.replace('▼', '').trim(); if (f !== 'QA') throw new Error('Folder is ' + f); return f })()`,
+  '--eval', `(() => { __fl.phase('start', [${JSON.stringify(title)}]); document.querySelector('button[type=submit][form]').click(); return 'started' })()`,
+]
+// Long enough after the composer for a redraw to show as a second composer or a second path.
+const startSettled = ['--until', `(() => { const p = __fl.phases.at(-1); return (p.marks.allTextsNoPulse && p.marks.composer && performance.now() - p.at > 6000) || performance.now() - p.at > 20000 })()`]
+// Where the leg ended — the new topic's page — for QA-2's read and the clean-up.
+const at = ['--eval', 'JSON.stringify({ at: location.pathname })']
 
 // Desk's loader off from the page's first byte, on every page the leg loads: a URL's query does not survive sign-in (PEE-5).
 const AHEAD_OFF = `try { localStorage.setItem('peek.ahead', 'off') } catch {}\n`
@@ -266,30 +298,59 @@ const legs = {
   new: (w, title) => ({
     url: '/app/folders',
     first: TREE,
-    steps: [
-      ...settled('allTextsNoPulse', 30000), '--wait', '3000',
-      '--click', 'New topic', '--wait', '600',
-      // probe's --fill times out on this dialog's field; set it the way React expects instead.
-      '--eval', `(() => { const el = document.querySelector('input[aria-label="Topic title"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(title)}); el.dispatchEvent(new Event('input', { bubbles: true })); return el.value })()`,
-      '--wait', '300',
-      '--eval', `(() => { document.querySelector('[role=combobox][aria-label=Folder]').click(); return 'open' })()`,
-      '--wait', '600',
-      '--eval', `(() => { const o = [...document.querySelectorAll('[role=option]')].find((e) => e.textContent.trim() === 'QA'); if (!o) throw new Error('no QA Folder to start a topic in'); o.click(); return 'QA' })()`,
-      '--wait', '600',
-      '--eval', `(() => { const f = document.querySelector('[role=combobox][aria-label=Folder]').textContent.replace('▼', '').trim(); if (f !== 'QA') throw new Error('Folder is ' + f); return f })()`,
-      '--eval', `(() => { __fl.phase('start', [${JSON.stringify(title)}]); document.querySelector('button[type=submit][form]').click(); return 'started' })()`,
-      '--until', `(() => { const p = __fl.phases.at(-1); return (p.marks.allTextsNoPulse && p.marks.composer && performance.now() - p.at > 6000) || performance.now() - p.at > 20000 })()`,
-      ...report,
-    ],
+    // PEE-6: a message sent as soon as the composer is there, while the topic may still be publishing.
+    steps: [...settled('allTextsNoPulse', 30000), '--wait', '3000', ...fromHeader, ...start(title), ...settled('composer', 5000), ...type(FIRST), '--press', 'Enter', ...startSettled, ...at, ...report],
     phases: [['New topic, Start → composer', 0, 'start', 'composer']],
   }),
+  // PEE-6: the same, from the QA Folder's own menu.
+  'new-folder': (w, title) => ({
+    url: '/app/folders',
+    first: TREE,
+    steps: [...settled('allTextsNoPulse', 30000), '--wait', '3000', ...menuOf('QA'), '--click', 'Start a topic', '--wait', '600', ...start(title), ...startSettled, ...at, ...report],
+    phases: [['Folder menu, Start → composer', 0, 'start', 'composer']],
+  }),
+  // PEE-6: "New topic inside" a fixture topic; its dialog read the team first before PEE-6.
+  'new-inside': (w, title) => ({
+    url: '/app/folders',
+    first: TREE,
+    steps: [...settled('allTextsNoPulse', 30000), '--wait', '3000', ...menuOf(w.long), '--click', 'New topic inside', '--until', `!!document.querySelector('input[aria-label="Topic title"]') || performance.now() > 60000`, ...start(title), ...startSettled, ...at, ...report],
+    phases: [['Inside a topic, Start → composer', 0, 'start', 'composer']],
+  }),
+  /*
+    PEE-6: the relay refuses the new topic's file (probe.mjs `--refuse-kind`, a broken signature, so the refusal is
+    the relay's own), held 1.5 s so there is time to type in the topic while it is pending. What it ends on: where the
+    page is, the note, Start's field, and which stored draft holds the typed text.
+  */
+  'new-refuse': (w, title) => ({
+    url: '/app/folders',
+    first: TREE,
+    probe: ['--refuse-kind', String(KIND_BARE_FILE), '--refuse-hold', '1500'],
+    steps: [
+      ...settled('allTextsNoPulse', 30000), '--wait', '3000', ...fromHeader, ...start(title),
+      ...settled('composer', 5000),
+      ...type(TYPED),
+      '--until', `(() => /^\\/app\\/folders(\\/[^/]+)?$/.test(location.pathname) && performance.now() - __fl.phases.at(-1).at > 3000 || performance.now() - __fl.phases.at(-1).at > 15000)()`,
+      '--wait', '500',
+      '--eval', `JSON.stringify({ refused: location.pathname, note: [...document.querySelectorAll('[role=status],[role=alert],[data-sonner-toast],li[data-type]')].map((e) => e.textContent.trim()).filter(Boolean), field: document.querySelector('input[aria-label="Topic title"]')?.value ?? null, draft: Object.keys(localStorage).filter((k) => (localStorage.getItem(k) ?? '').includes(${JSON.stringify(TYPED)})) })`,
+      ...report,
+    ],
+    phases: [['Refused, Start → composer', 0, 'start', 'composer']],
+  }),
 }
+
+const ALL_VIEW = join(scratch, 'all-view.js')
+writeFileSync(ALL_VIEW, `try { localStorage.setItem('peek.tree.view', 'all') } catch {}\n`)
 
 const identities = option('as', 'qa1,qa2').split(',')
 const chosen = option('legs', 'open,first,long,new').split(',')
 const runs = Number(option('runs', '1'))
 const results = []
 let failed = false
+// `--delete "<title>"` [--parent "<title>"]: only remove a topic a run left behind, as the first identity in `--as`.
+if (option('delete')) {
+  await deleteTopic(identities[0], option('delete'), option('parent', null))
+  process.exit(failed ? 1 : 0)
+}
 for (const as of identities) if (!WORKSPACES[as]) throw new Error(`no workspace described for ${as}: add it to WORKSPACES`)
 // Identities take turns, leg by leg: about three runs in a row as one identity trip Estiva ID's /nip44/decrypt
 // limit, and a Desk whose lists cannot be decrypted is not a number worth keeping.
@@ -297,11 +358,11 @@ for (const name of chosen) {
   for (let i = 0; i < runs; i++) {
     for (const as of identities) {
       const w = WORKSPACES[as]
-      const title = name === 'new' ? `First-load probe ${as} ${new Date().toISOString().slice(0, 19)}` : null
+      const title = name.startsWith('new') ? `First-load probe ${as} ${new Date().toISOString().slice(0, 19)}` : null
       const leg = legs[name](w, title)
       const init = join(scratch, `${as}-${name}.js`)
       writeFileSync(init, `${leg.init ?? ''}window.__flDefault = ${JSON.stringify(leg.first)};\n${readFileSync(RECORDER, 'utf8')}`)
-      const probe = await probeRun([PROBE, '--as', as, '--url', leg.url, '--init', init, '--timeout', '45000', ...leg.steps])
+      const probe = await probeRun([PROBE, '--as', as, '--url', leg.url, '--init', init, '--timeout', '45000', ...(leg.probe ?? []), ...leg.steps])
       const docs = probe.steps.filter((s) => s.eval === '__fl.report()' && s.result).map((s) => JSON.parse(s.result))
       const http429 = [...new Set(docs.flatMap((d) => d.res.filter(([, , , status]) => status === 429).map(([, , what]) => what)))]
       // Every page a `--tab` or `--also` loaded on its way in, and what the leg's own reads returned (PEE-3).
@@ -314,8 +375,13 @@ for (const name of chosen) {
         console.log(`${as} ${name}: failed — ${probe.failure ?? ''} ${JSON.stringify(probe.steps.filter((s) => s.error).map((s) => s.error))}`)
       }
       print(result, leg.phases)
-      // Whatever the leg's outcome: a run that failed after Start may still have published the topic.
-      if (title && probe.steps.some((s) => s.result === 'started')) await deleteTopic(as, title)
+      if (!title || !probe.steps.some((s) => s.result === 'started')) continue
+      const page = reads.map((r) => JSON.parse(r)).find((r) => r.at)?.at
+      // PEE-6: someone else in the Folder sees the topic, from its own link.
+      if (page && name !== 'new-refuse') await seenBy(as === 'qa1' ? 'qa2' : 'qa1', page, title, name === 'new' ? FIRST : null)
+      // Whatever the leg's outcome: a run that failed after Start may still have published the topic. A refused
+      // one is looked for too, so a refusal that did not happen is not left behind.
+      await deleteTopic(as, title, name === 'new-inside' ? w.long : null, name === 'new-refuse')
     }
   }
 }
@@ -387,8 +453,37 @@ function mostIn5s(times) {
   return most
 }
 
-/** Deletes the topic `new` created, from its row's menu in Topics, and says whether it is gone. */
-async function deleteTopic(as, title) {
+/**
+ * PEE-6's "QA-2 sees the topic": listed in the Topics tree (so the Folder's list took it, not only the relay), and,
+ * for `new`, the message sent while it was pending is in it.
+ */
+async function seenBy(as, page, title, message) {
+  const steps = [
+    // "All" lists the Folders; the QA Folder's topics are under it.
+    '--until', `!!${leaf('QA')}`, '--eval', `(() => { ${leaf('QA')}.click(); return 'opening QA' })()`,
+    '--until', `!!${leaf(title)} || performance.now() > 15000`, '--eval', `${leaf(title)} ? 'listed' : 'not listed'`,
+    ...(message ? ['--eval', `(() => { location.assign(${JSON.stringify(page)}); return 'opening' })()`, '--wait', '1500', '--until', `document.body.innerText.includes(${JSON.stringify(message)}) || performance.now() > 15000`, '--eval', `document.body.innerText.includes(${JSON.stringify(message)}) ? 'message there' : 'no message'`] : []),
+  ]
+  // Topics in "All": a fresh browser opens on "Mine", which lists only the topics this identity has joined.
+  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--init', ALL_VIEW, '--timeout', '45000', ...steps])
+  const outcomes = probe.steps.filter((s) => s.eval && !String(s.result).startsWith('opening')).map((s) => s.result ?? s.error)
+  console.log(`  ${as} in Topics: ${outcomes.join(', ') || probe.failure}`)
+  if (outcomes[0] !== 'listed' || (message && outcomes[1] !== 'message there')) failed = true
+}
+
+/**
+ * Deletes the topic a `new` leg created, from its row's menu in Topics, and says whether it is gone. `parent`: the
+ * topic it was started inside, whose row is opened first. `absent`: the relay should have refused it, so not finding
+ * it within 8 s is the outcome wanted.
+ */
+async function deleteTopic(as, title, parent = null, absent = false) {
+  if (absent) {
+    const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', '--until', `!!${leaf(title)} || performance.now() > 8000`, '--eval', `${leaf(title)} ? 'listed' : 'absent'`])
+    const outcome = probe.steps.at(-1)?.result ?? probe.failure
+    console.log(`  refused "${title}" after a fresh load: ${outcome}`)
+    if (outcome === 'absent') return
+    failed = true
+  }
   const steps = [
     '--until', `!!${leaf(title)}`,
     '--eval', `(() => { let el = ${leaf(title)}; while (el && !el.querySelector('button[aria-label^="More options"]')) el = el.parentElement; const b = el?.querySelector('button[aria-label^="More options"]'); if (!b) throw new Error('no row menu'); b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); b.click(); return 'menu' })()`,
@@ -397,8 +492,10 @@ async function deleteTopic(as, title) {
     '--wait', '3000',
     '--eval', `${leaf(title)} ? 'still listed' : 'gone'`,
   ]
-  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', ...steps])
+  // A sub-topic shows once its parent is open: the parent's row is clicked, which opens it and unfolds it.
+  const unfold = parent ? ['--until', `!!${leaf(parent)}`, '--eval', `(() => { ${leaf(parent)}.click(); return 'parent' })()`, '--wait', '1500'] : []
+  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', ...unfold, ...steps])
   const outcome = probe.steps.at(-1)?.result ?? probe.failure ?? probe.steps.find((s) => s.error)?.error
-  console.log(`  deleted "${title}": ${outcome}`)
+  console.log(`  deleted "${title}": ${outcome}${outcome === 'gone' ? '' : ` ${JSON.stringify(probe.steps.filter((s) => s.eval).map((s) => s.result ?? s.error))}`}`)
   if (outcome !== 'gone') failed = true
 }
