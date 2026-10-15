@@ -19,6 +19,8 @@
  *
  * A member with no profile is left out: there is nothing to call them, and a
  * key is not a name. So is the viewer — you do not DM yourself.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/an-agent-says-it-is-a-bot-in-its-profile.md
  */
 import type { SignedEvent } from '@estiva-app/protocol'
 

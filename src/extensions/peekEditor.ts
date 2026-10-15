@@ -66,6 +66,7 @@ export const peekEditorExtensions = [
   ObjectMention,
   // Every app link reads as its chip — pasted, typed once the caret leaves it, or inside a pasted passage — and is
   // sent as the URL it was (OPT-19, Miky 14 Oct), as a description's is. A URL over selected words is the link mark's.
+  // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-link-is-stored-as-the-url-a-person-wrote.md
   UrlChip,
   LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues }),
   CardChoices,
