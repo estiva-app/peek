@@ -32,6 +32,8 @@ const LIVE = { live: true }
  * takes the column while it is open. The column is closed whenever a file
  * is opened, and the header's sidebar button shows it, with this section's
  * empty line when nothing names the file (`useSidePanel`).
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/activity-lists-only-mentions-from-elsewhere.md
  */
 export function FileActivityPanel({ address, mentions }: { address?: string; mentions: FileMention[] }) {
   const people = useWorkspaceDirectory()

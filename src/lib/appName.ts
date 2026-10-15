@@ -16,6 +16,8 @@ export function elsewhereAppName(file: { appName?: string } | null | undefined):
  * What an object is, for a label: its noun ("Topic", "Issue"), or the app it is
  * in when that app names none — and nothing for a noun-less object of Peek's
  * own (a message), which is neither "Peek" nor a file.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-file-is-labelled-by-its-type-not-its-app.md
  */
 export function objectLabel(object: { noun?: string; appName?: string }): string | undefined {
   if (object.noun) return object.noun.charAt(0).toUpperCase() + object.noun.slice(1)

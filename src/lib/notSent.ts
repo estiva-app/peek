@@ -12,6 +12,8 @@
  * `where` is where it went back ("Design review", "your reply to Ana", "your
  * conversation with Ana"); `conversation` is what can no longer be posted in,
  * the topic or the DM, never a thread.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-refused-action-is-undone-and-your-text-comes-back.md
  */
 export function notSentNote(
   where: string,
