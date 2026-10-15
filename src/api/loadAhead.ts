@@ -17,7 +17,8 @@
  * listing and contents, the resolved file, the conversation store — so the
  * click draws from memory and asks only what changed since. The reads wait in
  * the socket pacer's `ahead` lane (`@estiva-app/platform`): only what a window
- * leaves over, never while a click waits, never over HTTP. A press of a key or
+ * leaves over, never while a click waits; over HTTP only once the person's own
+ * reads have been quiet for 2 s (`bridge.ts`). A press of a key or
  * a pointer moves the ones still waiting into the click lane, since the caches
  * hand a click the read already out for the same thing. The first refused or
  * failed read stops the loader for good; what loaded stays.
