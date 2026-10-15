@@ -19,6 +19,8 @@
  *
  * A direct message is kept as the relay sends it, in plain text like a topic
  * message (Miky, 13 Oct). Signing out removes every copy.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/peek-keeps-a-plain-copy-on-the-device-until-sign-out.md
  */
 import {
   createEventSnapshot,
