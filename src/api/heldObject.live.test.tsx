@@ -88,6 +88,22 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('a screen of widgets', () => {
+  it('is asked in one read, not one per card (OPT-10)', async () => {
+    const batches: string[][] = []
+    const nostr = await import('@/nostr/foreign')
+    const spy = vi.spyOn(nostr, 'resolveObjectsAsViewer').mockImplementation(async (references) => {
+      batches.push([...references])
+      return Object.fromEntries(references.map((reference) => [reference, objectFor(reference)]))
+    })
+    const { result } = renderHook(() => [useHeldObject(ISSUE), useHeldObject(OTHER_ISSUE)])
+    await settle()
+    expect(batches).toEqual([[ISSUE, OTHER_ISSUE]])
+    expect(result.current.map((held) => titleOf(held.object))).toEqual(['Old title', 'Another'])
+    spy.mockRestore()
+  })
+})
+
 describe('a widget follows its file', () => {
   it('joins its file’s Folder for field changes, and draws a rename from one read of that object', async () => {
     const { result } = renderHook(() => useHeldObject(ISSUE))

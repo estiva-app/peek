@@ -105,6 +105,14 @@ describe('referenceFromUrlAsViewer', () => {
     expect(await referenceFromUrlAsViewer(`https://ship.estiva.app/issue/x-${gone}`, 'https://relay', TOKEN)).toBe(null)
   })
 
+  it('names nothing when two authors hold the `d`: a member publishing the same identity cannot take the mention', async () => {
+    queryRelay.mockImplementation(async (_url: string, filters: Record<string, unknown>[]) => {
+      if ((filters[0]?.kinds as number[] | undefined)?.includes(31990)) return { ok: true, events: [manifest, peekManifest] }
+      return { ok: true, events: [issue, { ...issue, id: 'e2', pubkey: 'c'.repeat(64) }] }
+    })
+    expect(await referenceFromUrlAsViewer(`https://ship.estiva.app/issue/x-${UUID}`, 'https://relay', TOKEN)).toBe(null)
+  })
+
   it('reads the published shapes once for the whole session', async () => {
     for (let i = 0; i < 3; i++) {
       await referenceFromUrlAsViewer(`https://ship.estiva.app/issue/a-${UUID}`, 'https://relay', TOKEN)

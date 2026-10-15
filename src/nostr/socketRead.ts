@@ -20,7 +20,16 @@
  * quota paused, or a REQ that never finishes. Returning `null` says so.
  */
 import type { LiveClient } from '@estiva-app/platform'
-import { createRelayBudget, type BudgetChannel, type RelayBudget } from '@estiva-app/platform'
+import {
+  createInFlight,
+  createPacer,
+  createRelayBudget,
+  matchesSnapshotFilter,
+  type BudgetChannel,
+  type ReadLane,
+  type RelayBudget,
+  type SnapshotFilter,
+} from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { validToken } from '@/auth/estivaId'
 import type { SocketReader } from './bridge'
@@ -71,6 +80,34 @@ export const EOSE_TIMEOUT_MS = 10_000
 export const MAX_REQS_IN_FLIGHT = 4
 
 type Answer = { ok: boolean; events: SignedEvent[]; reason?: string }
+
+/** A CLOSED that says nothing about the filters — the socket's state, or the relay's — so it is retried over HTTP. */
+const TRANSIENT = /^(rate-limited|auth-required|error):/
+
+/** NIP-01's fields that `matchesSnapshotFilter` judges exactly: a read asking only these can share a REQ (PEE-5). */
+const PACKABLE = new Set(['ids', 'kinds', 'authors', 'since', 'until', 'limit'])
+
+function packable(filters: Record<string, unknown>[]): boolean {
+  return filters.every((filter) => Object.keys(filter).every((key) => PACKABLE.has(key) || /^#.$/.test(key)))
+}
+
+/** What the relay would have answered `filters` alone, out of a shared REQ's events: per filter, its matches, newest first, at most its `limit`. */
+export function answerOf(filters: Record<string, unknown>[], events: SignedEvent[]): SignedEvent[] {
+  const seen = new Set<string>()
+  const answer: SignedEvent[] = []
+  for (const filter of filters) {
+    const matching = events
+      .filter((event) => matchesSnapshotFilter(filter as SnapshotFilter, event))
+      .sort((a, b) => b.created_at - a.created_at)
+    const limit = typeof filter.limit === 'number' ? filter.limit : matching.length
+    for (const event of matching.slice(0, limit)) {
+      if (seen.has(event.id)) continue
+      seen.add(event.id)
+      answer.push(event)
+    }
+  }
+  return answer
+}
 type Outcome =
   | { kind: 'events'; events: SignedEvent[] }
   | { kind: 'closed'; reason: string }
@@ -92,104 +129,45 @@ export interface SocketReaderOptions {
   log?: (message: string, detail?: Record<string, unknown>) => void
 }
 
-export interface Pacer {
-  /**
-   * `n` slots at once (one read's REQs), or `'http'` when the read waited
-   * `spill.afterMs` and `spill.allowed()` said HTTP may take it. `n` must not
-   * exceed the window.
-   */
-  take(n: number, spill?: { afterMs: number; allowed(): boolean }): Promise<'socket' | 'http'>
-}
-
 /**
- * A read waiting longer than this goes ahead of newer ones. Newest-first alone
- * starved the read that draws the side tree through a whole `--hammer` minute:
- * its topic links never came back.
+ * Slots of each window a read loaded ahead leaves for clicks (PEE-5): Peek's
+ * loader from Desk takes at most `REQS_PER_WINDOW` less this, and only while
+ * no click is waiting (`@estiva-app/platform`'s `createPacer`, lane `ahead`).
  */
-export const STARVED_AFTER_MS = 3_000
-
+export const AHEAD_RESERVE = 15
 /**
- * At most `perWindow` slots in any `windowMs`, newest asker first — the reads
- * still waiting while someone clicks on are for what they have left, and the
- * ones for what is on screen should not queue behind them — except that a read
- * waiting past {@link STARVED_AFTER_MS} goes first, oldest of those first.
+ * Of {@link HTTP_SPILL_PER_MINUTE}, how many a read loaded ahead may take after
+ * waiting {@link SPILL_AFTER_MS} (PEE-5). Desk's own reads fill the socket's
+ * windows for its first ~7 s, so on the socket alone the loader's first read went
+ * out ~5 s after it was asked; HTTP had room (Desk spilled 5 of 120). A quarter,
+ * so a click's spill always finds the rest.
  */
-export function createPacer(
-  perWindow: number,
-  windowMs: number,
-  now: () => number,
-  setTimer: (fn: () => void, ms: number) => unknown,
-  clearTimer: (handle: unknown) => void,
-  /** Metered frames sent outside the pacer since `floor`, oldest first (the live watches). */
-  others: (floor: number) => number[] = () => [],
-): Pacer {
-  const sent: number[] = []
-  const waiting: { n: number; at: number; resolve: (via: 'socket' | 'http') => void; spillTimer: unknown }[] = []
-  let pumpTimer: unknown = null
+export const AHEAD_HTTP_PER_MINUTE = 30
 
-  function pump() {
-    if (pumpTimer !== null) clearTimer(pumpTimer)
-    pumpTimer = null
-    const floor = now() - windowMs
-    while (sent.length > 0 && sent[0] <= floor) sent.shift()
-    const outside = others(floor)
-    while (waiting.length > 0) {
-      const starved = waiting.findIndex((w) => now() - w.at >= STARVED_AFTER_MS)
-      const index = starved === -1 ? waiting.length - 1 : starved
-      const next = waiting[index]
-      if (sent.length + outside.length + next.n > perWindow) break
-      waiting.splice(index, 1)
-      if (next.spillTimer !== null) clearTimer(next.spillTimer)
-      const at = now()
-      for (let i = 0; i < next.n; i++) sent.push(at)
-      next.resolve('socket')
-    }
-    // Wake when the oldest counted frame leaves the window.
-    const oldest = Math.min(sent[0] ?? Infinity, outside[0] ?? Infinity)
-    if (waiting.length > 0 && oldest !== Infinity) {
-      pumpTimer = setTimer(pump, Math.max(0, oldest + windowMs - now()))
-    }
-  }
-
-  return {
-    take(n, spill) {
-      return new Promise((resolve) => {
-        const waiter = { n, at: now(), resolve, spillTimer: null as unknown }
-        // Asked again every `afterMs` while it waits: HTTP may have room later.
-        const trySpill = () => {
-          const i = waiting.indexOf(waiter)
-          if (i === -1 || !spill) return
-          if (!spill.allowed()) {
-            waiter.spillTimer = setTimer(trySpill, spill.afterMs)
-            return
-          }
-          waiting.splice(i, 1)
-          resolve('http')
-        }
-        if (spill) waiter.spillTimer = setTimer(trySpill, spill.afterMs)
-        waiting.push(waiter)
-        pump()
-      })
-    },
+/** A {@link SocketReader} that can also move the reads loaded ahead into the click lane, and say what waits. */
+export type LanedSocketReader = SocketReader & {
+  promoteAhead(): void
+  waiting(): {
+    pacer: { click: number; ahead: number }
+    inFlight: { click: number; ahead: number }
+    waiting: { click: number; ahead: number }
   }
 }
 
-export function createSocketReader(options: SocketReaderOptions): SocketReader {
+export function createSocketReader(options: SocketReaderOptions): LanedSocketReader {
   const now = options.now ?? Date.now
   const setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
   const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>))
   const log = options.log ?? (() => {})
-  const pacer = createPacer(REQS_PER_WINDOW, SHAPED_WINDOW_MS, now, setTimer, clearTimer, options.otherFrames)
-  let inFlight = 0
-  const slotFreed: (() => void)[] = []
-  async function inFlightSlot(): Promise<() => void> {
-    while (inFlight >= MAX_REQS_IN_FLIGHT) await new Promise<void>((resolve) => slotFreed.push(resolve))
-    inFlight += 1
-    return () => {
-      inFlight -= 1
-      slotFreed.shift()?.()
-    }
-  }
+  const pacer = createPacer({
+    perWindow: REQS_PER_WINDOW,
+    windowMs: SHAPED_WINDOW_MS,
+    reserve: AHEAD_RESERVE,
+    now,
+    timers: { setTimeout: setTimer, clearTimeout: clearTimer },
+    others: options.otherFrames,
+  })
+  const inFlight = createInFlight(MAX_REQS_IN_FLIGHT)
   const spilled: number[] = []
   const spill = {
     afterMs: SPILL_AFTER_MS,
@@ -198,6 +176,23 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
       while (spilled.length > 0 && spilled[0] <= floor) spilled.shift()
       if (spilled.length >= HTTP_SPILL_PER_MINUTE || options.httpBudget.pausedForMs() > 0) return false
       spilled.push(now())
+      return true
+    },
+  }
+  const aheadSpilled: number[] = []
+  /** `extra` more reads going over HTTP with the one asked about: a pack's others. */
+  const aheadSpill = {
+    afterMs: SPILL_AFTER_MS,
+    allowed(extra = 0) {
+      const floor = now() - 60_000
+      while (aheadSpilled.length > 0 && aheadSpilled[0] <= floor) aheadSpilled.shift()
+      while (spilled.length > 0 && spilled[0] <= floor) spilled.shift()
+      if (aheadSpilled.length + 1 + extra > AHEAD_HTTP_PER_MINUTE || spilled.length + 1 + extra > HTTP_SPILL_PER_MINUTE) return false
+      if (options.httpBudget.pausedForMs() > 0) return false
+      for (let i = 0; i <= extra; i++) {
+        aheadSpilled.push(now())
+        spilled.push(now())
+      }
       return true
     },
   }
@@ -250,8 +245,84 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
     })
   }
 
-  async function readChunk(client: LiveClient, filters: Record<string, unknown>[]): Promise<Outcome> {
-    const release = await inFlightSlot()
+  async function readChunk(client: LiveClient, filters: Record<string, unknown>[], lane: ReadLane): Promise<Outcome> {
+    return reqInSlot(client, filters, await inFlight.acquire(lane))
+  }
+
+  /*
+    Reads loaded ahead share REQs (PEE-5). The relay meters frames, not
+    filters, and what Desk's loader asks is mostly one-filter reads — a
+    profile, an app's manifest — that a REQ of their own would spend a whole
+    slot on. Each waits here; when the pacer grants the `ahead` lane a slot,
+    everything waiting then goes out as one REQ of at most ten distinct
+    filters, and each read is handed what its own filters match, at most each
+    filter's `limit`, newest first — what the relay would have answered it.
+  */
+  type Pack = { client: LiveClient; filters: Record<string, unknown>[]; promoted: boolean; resolve: (outcome: Outcome | 'alone' | 'http') => void }
+  const packs: Pack[] = []
+  let packing = false
+
+  function readPacked(client: LiveClient, filters: Record<string, unknown>[]): Promise<Outcome | 'alone' | 'http'> {
+    return new Promise((resolve) => {
+      packs.push({ client, filters, promoted: false, resolve })
+      void pumpPacks()
+    })
+  }
+
+  /** The reads at the front that go out as one REQ, and their filters. */
+  function frontPack(): { pack: Pack[]; merged: Map<string, Record<string, unknown>> } {
+    const client = packs[0].client
+    const merged = new Map<string, Record<string, unknown>>()
+    let count = 0
+    for (; count < packs.length && packs[count].client === client; count++) {
+      const keys = packs[count].filters.map((filter) => JSON.stringify(filter))
+      const fresh = new Set(keys.filter((key) => !merged.has(key))).size
+      if (count > 0 && merged.size + fresh > MAX_FILTERS_PER_REQ) break
+      packs[count].filters.forEach((filter, i) => merged.set(keys[i], filter))
+    }
+    return { pack: packs.slice(0, count), merged }
+  }
+
+  async function pumpPacks() {
+    if (packing) return
+    packing = true
+    try {
+      while (packs.length > 0) {
+        // Asked for as the person's own once they have acted: a click may be waiting on one of these.
+        const lane: ReadLane = packs[0].promoted ? 'click' : 'ahead'
+        // Over HTTP, each read of the pack goes as its own POST, so each counts against the allowance.
+        let spilling = 0
+        const packSpill = {
+          afterMs: SPILL_AFTER_MS,
+          allowed: () => {
+            const size = frontPack().pack.length
+            const ok = lane === 'click' ? spill.allowed() : aheadSpill.allowed(size - 1)
+            if (ok) spilling = lane === 'click' ? 1 : size
+            return ok
+          },
+        }
+        if ((await pacer.take(1, { lane, spill: packSpill })) === 'http') {
+          for (const read of packs.splice(0, spilling)) read.resolve('http')
+          continue
+        }
+        const release = await inFlight.acquire(lane)
+        const { pack, merged } = frontPack()
+        packs.splice(0, pack.length)
+        void reqInSlot(pack[0].client, [...merged.values()], release).then((outcome) => {
+          for (const read of pack) {
+            if (outcome.kind === 'events') read.resolve({ kind: 'events', events: answerOf(read.filters, outcome.events) })
+            // The relay's verdict on one filter is not the others': each is asked again alone.
+            else if (pack.length > 1 && outcome.kind === 'closed' && !TRANSIENT.test(outcome.reason)) read.resolve('alone')
+            else read.resolve(outcome)
+          }
+        })
+      }
+    } finally {
+      packing = false
+    }
+  }
+
+  async function reqInSlot(client: LiveClient, filters: Record<string, unknown>[], release: () => void): Promise<Outcome> {
     let outcome: Outcome
     try {
       if (client.state() !== 'live') return { kind: 'lost', why: client.state() }
@@ -273,15 +344,23 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
     return outcome
   }
 
-  return async (relayUrl, filters, pubkey) => {
+  const read: SocketReader = async (relayUrl, filters, pubkey, { lane = 'click' } = {}) => {
     const asked = now()
     const note = (via: string, at: Partial<SocketReadRecord> = {}) =>
-      recordSocketRead({ at: asked, reqs: 0, liveWaitMs: 0, pacerWaitMs: 0, answerMs: 0, via, ...at })
-    const overHttp = (why: string, at: Partial<SocketReadRecord> = {}) => {
+      recordSocketRead({ at: asked, reqs: 0, liveWaitMs: 0, pacerWaitMs: 0, answerMs: 0, via, lane, ...at })
+    // A read loaded ahead goes over HTTP, whose meter Ship and every write
+    // share, only when it waited and its own smaller allowance let it
+    // (`AHEAD_HTTP_PER_MINUTE`): whatever else would send it there fails it,
+    // and the loader stops.
+    const overHttp = (why: string, at: Partial<SocketReadRecord> = {}): Answer | null => {
+      if (lane === 'ahead' && why !== 'spilled') {
+        note(`refused ahead: ${why}`, at)
+        return { ok: false, events: [], reason: `ahead: ${why}` }
+      }
       note(`http: ${why}`, at)
       return null
     }
-    if (filters.length === 0) return null
+    if (filters.length === 0) return lane === 'ahead' ? { ok: true, events: [] } : null
     if (options.budget.pausedForMs() > 0) return overHttp('socket paused')
     const socketPubkey = options.currentPubkey()
     if (!socketPubkey || (pubkey && pubkey !== socketPubkey)) return overHttp('other pubkey')
@@ -295,17 +374,26 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
     for (let i = 0; i < filters.length; i += MAX_FILTERS_PER_REQ) chunks.push(filters.slice(i, i + MAX_FILTERS_PER_REQ))
     const reqs = chunks.length
     // One POST beats a whole window of REQs for a read this wide.
-    if (reqs > REQS_PER_WINDOW) return overHttp('too wide', { reqs, liveWaitMs })
-    const via = await pacer.take(reqs, spill)
-    const pacerWaitMs = now() - asked - liveWaitMs
-    if (via === 'http') {
-      log('socket read spilled to HTTP', { reqs })
-      return overHttp('spilled', { reqs, liveWaitMs, pacerWaitMs })
+    if (reqs > (lane === 'ahead' ? REQS_PER_WINDOW - AHEAD_RESERVE : REQS_PER_WINDOW)) return overHttp('too wide', { reqs, liveWaitMs })
+    let outcomes: Outcome[] | null = null
+    let pacerWaitMs = 0
+    if (lane === 'ahead' && reqs === 1 && packable(filters)) {
+      const packed = await readPacked(client, filters)
+      if (packed === 'http') return overHttp('spilled', { reqs, liveWaitMs, pacerWaitMs: now() - asked - liveWaitMs })
+      if (packed !== 'alone') outcomes = [packed]
     }
-    const outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk)))
+    if (!outcomes) {
+      const via = await pacer.take(reqs, { lane, spill: lane === 'ahead' ? aheadSpill : spill })
+      pacerWaitMs = now() - asked - liveWaitMs
+      if (via === 'http') {
+        log('socket read spilled to HTTP', { reqs })
+        return overHttp('spilled', { reqs, liveWaitMs, pacerWaitMs })
+      }
+      outcomes = await Promise.all(chunks.map((chunk) => readChunk(client, chunk, lane)))
+    }
     const timing = { reqs, liveWaitMs, pacerWaitMs, answerMs: now() - asked - liveWaitMs - pacerWaitMs }
 
-    const unanswered = outcomes.find((o) => o.kind === 'lost' || (o.kind === 'closed' && /^(rate-limited|auth-required|error):/.test(o.reason)))
+    const unanswered = outcomes.find((o) => o.kind === 'lost' || (o.kind === 'closed' && TRANSIENT.test(o.reason)))
     if (unanswered) {
       const why = 'why' in unanswered ? unanswered.why : 'reason' in unanswered ? unanswered.reason : ''
       log('socket read went over HTTP', { why })
@@ -329,7 +417,17 @@ export function createSocketReader(options: SocketReaderOptions): SocketReader {
     }
     return { ok: true, events } satisfies Answer
   }
+  return Object.assign(read, {
+    promoteAhead: () => {
+      for (const waiting of packs) waiting.promoted = true
+      pacer.promote()
+    },
+    waiting: () => ({ pacer: pacer.waiting(), ...inFlight.state() }),
+  })
 }
+
+/** The reader `main.tsx` installed, for `window.__socketReads` to say what is waiting. */
+let appReader: LanedSocketReader | null = null
 
 function otherTabs(): BudgetChannel | undefined {
   if (typeof window === 'undefined' || typeof window.BroadcastChannel !== 'function') return undefined
@@ -344,15 +442,15 @@ function otherTabs(): BudgetChannel | undefined {
 export const socketBudget = createRelayBudget({ defaultBackoffMs: RATE_LIMIT_DEFAULT_MS, channel: otherTabs() })
 
 /** Called once at boot (`main.tsx`). */
-export function createAppSocketReader(log?: SocketReaderOptions['log']): SocketReader {
-  return createSocketReader({
+export function createAppSocketReader(log?: SocketReaderOptions['log']): LanedSocketReader {
+  return (appReader = createSocketReader({
     getClient: getLiveClient,
     currentPubkey: () => validToken()?.pubkey ?? null,
     budget: socketBudget,
     httpBudget: relayBudget,
     otherFrames: otherFramesSince,
     log,
-  })
+  }))
 }
 
 /** One read the reader was asked for: where it waited, and how it was answered. */
@@ -362,8 +460,10 @@ export interface SocketReadRecord {
   liveWaitMs: number
   pacerWaitMs: number
   answerMs: number
-  /** `socket`, or `http: <why>`. */
+  /** `socket`, `http: <why>`, or `refused ahead: <why>`. */
   via: string
+  /** `ahead` for a read Desk loaded before it was asked for (PEE-5). */
+  lane?: ReadLane
 }
 
 const reads: SocketReadRecord[] = []
@@ -398,6 +498,8 @@ export function socketReads(minutes = 1, at: number = Date.now()) {
     pacerWaitMs: waits((r) => r.pacerWaitMs),
     answerMs: waits((r) => r.answerMs, overSocket),
     recent: recent.slice(-40),
+    /** What waits now, in the pacer and for a slot on the wire, by lane (PEE-5). */
+    now: appReader?.waiting(),
   }
 }
 

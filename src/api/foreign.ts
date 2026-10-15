@@ -42,7 +42,6 @@ import {
   resolveFolderContentsAsViewer,
   listFoldersAsViewer,
   resolveFolderProjectAsViewer,
-  referenceFromUrlAsViewer,
   cardValueOfUrlAsViewer,
   resolveObjectAsViewer,
   resolveObjectFromCopy,
@@ -53,7 +52,6 @@ import {
   type ActResult,
   type FileComment,
   type FileThreads,
-  type UrlReference,
 } from '@/nostr/foreign'
 import { relayFailureKind } from '@/nostr/relayRead'
 import type { ReadSource } from '@/nostr/readFrom'
@@ -95,19 +93,6 @@ export function useRelayViewer() {
   }, [])
 }
 
-/**
- * The reference a pasted app URL names, or null — for the composer's paste
- * (`extensions/pastedUrl.ts`), which runs outside React. Null too without a
- * session or a relay: the link then stays a link.
- */
-export type { UrlReference }
-
-export async function referenceFromPastedUrl(url: string): Promise<UrlReference | null> {
-  const token = validToken()
-  if (!RELAY_URL || !token) return null
-  return referenceFromUrlAsViewer(url, RELAY_URL, token)
-}
-
 /*
   An app link's card value (SPEC §13.6.2, OPT-17), once per link for the tab:
   a link names the same object for as long as its owner's manifest does. A
@@ -135,6 +120,21 @@ export function cardValueOfUrl(url: string): Promise<string | null> {
     cardValues.set(url, value)
   }
   return value
+}
+
+/** What an app link names, from what has come back: undefined until it has, and for nothing. A `LinkResolver`. */
+export function knownCardValue(url: string): string | undefined {
+  return knownCardValues.get(url) ?? undefined
+}
+
+/**
+ * Ask what each of these links names; settles when every answer is in. A
+ * description editor's `LinkChips` asks this way. Rejects when a read failed
+ * (the relay or the token), so the editor forgets those links and asks again.
+ */
+export async function askCardValues(urls: readonly string[]): Promise<void> {
+  const answers = await Promise.allSettled(urls.filter((url) => !knownCardValues.has(url)).map((url) => cardValueOfUrl(url)))
+  if (answers.some((answer) => answer.status === 'rejected')) throw new Error('A link could not be asked about; asked again later.')
 }
 
 /**
@@ -276,11 +276,46 @@ function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>):
     const v = viewer()
     if (!v) return { ok: true, value: null }
     try {
-      return { ok: true, value: await resolveObjectAsViewer(reference, v.relayUrl, v.token) }
+      return { ok: true, value: await pooledResolve(reference, v.relayUrl, v.token) }
     } catch {
       return { ok: false, failure: true }
     }
   }
+}
+
+/**
+ * The widgets a conversation draws, asked in one read (OPT-10; Miky, 12 Oct:
+ * "one batched load"): every reference asked in the same tick, by the same
+ * viewer, goes to `resolveObjectsAsViewer` together — one POST for a screen of
+ * cards rather than one each, against the 300-a-minute meter the tab shares.
+ * A refused pooled read fails each of them, as a failed single read did.
+ */
+const pools = new Map<string, { relayUrl: string; token: StoredToken; asked: Map<string, { resolve: (value: ForeignObject | null) => void; reject: (error: unknown) => void }[]> }>()
+
+function pooledResolve(reference: string, relayUrl: string, token: StoredToken): Promise<ForeignObject | null> {
+  const key = `${relayUrl}\u0000${token.pubkey}`
+  let pool = pools.get(key)
+  if (!pool) {
+    const fresh = { relayUrl, token, asked: new Map<string, { resolve: (value: ForeignObject | null) => void; reject: (error: unknown) => void }[]>() }
+    pools.set(key, fresh)
+    pool = fresh
+    setTimeout(() => {
+      pools.delete(key)
+      const refs = [...fresh.asked.keys()]
+      resolveObjectsAsViewer(refs, fresh.relayUrl, fresh.token).then(
+        (objects) => {
+          for (const [ref, waiting] of fresh.asked) for (const w of waiting) w.resolve(objects[ref] ?? null)
+        },
+        (error) => {
+          for (const waiting of fresh.asked.values()) for (const w of waiting) w.reject(error)
+        },
+      )
+    }, 0)
+  }
+  const asked = pool.asked
+  return new Promise((resolve, reject) => {
+    asked.set(reference, [...(asked.get(reference) ?? []), { resolve, reject }])
+  })
 }
 
 /**
@@ -292,6 +327,8 @@ function heldLoad(reference: string, viewer: ReturnType<typeof useRelayViewer>):
 export function useHeldObject(reference: string | null): {
   object: ForeignObject | null | 'loading'
   reload: () => Promise<void>
+  /** `object` is null because the relay answered with nothing — not because the read failed (OPT-10). */
+  gone: boolean
 } {
   const viewer = useRelayViewer()
   const pubkey = viewer()?.token.pubkey
@@ -326,7 +363,7 @@ export function useHeldObject(reference: string | null): {
   }, [key, load])
 
   const object = !key ? null : entry?.value !== undefined ? entry.value : entry?.failure ? null : 'loading'
-  return { object, reload }
+  return { object, reload, gone: !!key && entry?.value === null }
 }
 
 export function useForeignObjects() {

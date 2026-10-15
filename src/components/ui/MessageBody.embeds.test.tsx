@@ -20,6 +20,8 @@ const NEVENT = `nostr:${encodeNevent({ id: EVENT, relays: [], kind: 9 })}`
 const ISSUE_URL = 'https://ship.estiva.app/issue/peek-draws-the-card-f0b27d90-d5b9-40e7-8078-865ab36a421c'
 
 const drawn: { naddr: string; layout?: string }[] = []
+// The cards drawn with their description cut behind "Show more" (OPT-10).
+const clamped: string[] = []
 // What the relay answers for each reference: the issue, nothing yet, or an object this reader cannot see.
 let answer: 'issue' | 'none' | 'unreachable' = 'issue'
 
@@ -40,8 +42,9 @@ vi.mock('@/api', () => ({
     ),
 }))
 vi.mock('./ForeignObjectWidget', () => ({
-  ForeignObjectWidget: ({ naddr, layout }: { naddr: string; layout?: string }) => {
+  ForeignObjectWidget: ({ naddr, layout, clampDescription }: { naddr: string; layout?: string; clampDescription?: boolean }) => {
     drawn.push({ naddr, layout })
+    if (clampDescription) clamped.push(naddr)
     return <div data-widget={naddr} />
   },
   StatusPill: () => null,
@@ -59,6 +62,7 @@ const show = (body: string, embeds?: Embed[]) => render(<MessageBody body={body}
 
 beforeEach(() => {
   drawn.length = 0
+  clamped.length = 0
   answer = 'issue'
 })
 
@@ -73,6 +77,14 @@ describe('the card a message asks for', () => {
   it('draws a compact one as a row', () => {
     show(`see ${ISSUE_REF} please`, [{ value: ISSUE, layout: 'compact' }])
     expect(drawn).toEqual([{ naddr: bare(ISSUE_REF), layout: 'row' }])
+  })
+
+  it('cuts a detailed card behind "Show more", so its height is known before it loads; a row needs no cut (OPT-10)', () => {
+    show(`see ${ISSUE_REF} please`, [{ value: ISSUE, layout: 'detailed' }])
+    expect(clamped).toEqual([bare(ISSUE_REF)])
+    clamped.length = 0
+    show(`see ${ISSUE_REF} please`, [{ value: ISSUE, layout: 'compact' }])
+    expect(clamped).toEqual([])
   })
 
   it('draws no card without an embed, as before', () => {

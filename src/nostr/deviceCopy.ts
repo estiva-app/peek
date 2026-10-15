@@ -19,6 +19,8 @@
  *
  * A direct message is kept as the relay sends it, in plain text like a topic
  * message (Miky, 13 Oct). Signing out removes every copy.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/peek-keeps-a-plain-copy-on-the-device-until-sign-out.md
  */
 import {
   createEventSnapshot,
@@ -31,6 +33,7 @@ import {
 } from '@estiva-app/platform'
 import type { SignedEvent } from '@estiva-app/protocol'
 import { clearPagePictures } from '@/lib/pagePicture'
+import { clearUnavailableCards } from '@/lib/unavailableCards'
 
 /**
  * Bump when what Peek folds from the copy changes meaning: a copy written
@@ -95,7 +98,10 @@ function copyFor(relayUrl: string, pubkey: string): EventSnapshot {
   */
   const base = deviceStorage()
   const previous = ownerOnDevice()
-  if (previous && previous !== scope) clearPagePictures()
+  if (previous && previous !== scope) {
+    clearPagePictures()
+    clearUnavailableCards()
+  }
   const wiped = previous && previous !== scope ? base.clear().catch(() => undefined) : Promise.resolve()
   rememberOwner(scope)
   const storage: SnapshotStorage = {
@@ -188,6 +194,7 @@ export async function clearDeviceCopy(ms = 1_000): Promise<void> {
   current = undefined
   toKeep.length = 0
   clearPagePictures()
+  clearUnavailableCards()
   // If the clear below does not finish before the page leaves, the next copy opened wipes first.
   rememberOwner(SIGNED_OUT)
   await settled(

@@ -5,14 +5,15 @@ import { NodeSelection } from '@tiptap/pm/state'
 import { DecorationSet } from '@tiptap/pm/view'
 import { peekStarterKit } from './editorKit'
 import { MessageMention, ObjectMention } from './mention'
-import { PastedUrl, chipUriOf } from './pastedUrl'
+import { LinkChips, ReferenceNode } from '@estiva-app/ui/editor'
+import { addressToPointer, encodeNaddr, encodeNevent } from '@estiva-app/protocol'
 import { CardChoices, cardOf, cardOfDecorations, cardsToEdit, cardsToSend, knownLinks, loadCards, referenceAtSelection, setCard, type LinkCardValue } from './cardChoices'
 import { serializeTiptapToText } from '@/lib/textParsing'
 
 /**
  * Which card each reference gets, as the message box holds it (OPT-17,
  * SPEC §13.6.2). A paste goes through `view.pasteText`, ProseMirror's own
- * paste path, as `pastedUrl.test.ts` does: a test that inserted the result
+ * paste path, as a person's paste does: a test that inserted the result
  * passed while production failed (UIG-40's wrap).
  */
 
@@ -20,10 +21,11 @@ const PUBKEY = 'b38fd2687b17bbde2e8079577cba601936acfe1b731d2d2ba7cdef29a063db46
 const ISSUE = `30851:${PUBKEY}:b389d20f-b741-4ba8-a28f-97cac351c4c9`
 const PROJECT = `30850:${PUBKEY}:ccd30c24-549a-44d0-922d-00f75d84a65e`
 const ISSUE_URL = 'https://ship.estiva.app/issue/live-widget-probe-marker-b389d20f-b741-4ba8-a28f-97cac351c4c9'
-const ISSUE_URI = chipUriOf({ address: ISSUE })!
-const PROJECT_URI = chipUriOf({ address: PROJECT })!
+const naddr = (address: string) => `nostr:${encodeNaddr(addressToPointer(address))}`
+const ISSUE_URI = naddr(ISSUE)
+const PROJECT_URI = naddr(PROJECT)
 const MESSAGE = 'c070bf7ce4433b83ac5988352720fccd2f6527fcd956aca356b010831d1e6742'
-const MESSAGE_URI = chipUriOf({ eventId: MESSAGE })!
+const MESSAGE_URI = `nostr:${encodeNevent({ id: MESSAGE, relays: [] })}`
 
 let editor: Editor | undefined
 afterEach(() => editor?.destroy())
@@ -42,7 +44,9 @@ function setup(links: Record<string, string | null> = { [ISSUE_URL]: ISSUE }) {
       peekStarterKit,
       ObjectMention,
       MessageMention,
-      PastedUrl.configure({ resolve: async (url) => (url === ISSUE_URL ? { address: ISSUE } : null) }),
+      // The composer's URL chip (OPT-19): a pasted app URL becomes it, and is sent as the URL.
+      ReferenceNode,
+      LinkChips.configure({ referenceOf: (url) => (url === ISSUE_URL ? ISSUE_URI : undefined), ask: null }),
       CardChoices.configure({ cardValue }),
     ],
     content: '<p></p>',
@@ -52,7 +56,7 @@ function setup(links: Record<string, string | null> = { [ISSUE_URL]: ISSUE }) {
 
 const at = (ed: Editor) => referenceAtSelection(ed.state, knownLinks(ed))
 
-/** A plain-text paste, as a browser hands it over; jsdom has no `ClipboardEvent` (`pastedUrl.test.ts`'s helper). */
+/** A plain-text paste, as a browser hands it over; jsdom has no `ClipboardEvent` . */
 function paste(e: Editor, text: string) {
   const clipboardData = { getData: (type: string) => (type === 'text/plain' ? text : ''), files: [] }
   e.view.pasteText(text, { clipboardData, preventDefault() {} } as unknown as ClipboardEvent)
@@ -72,7 +76,7 @@ describe('a pasted chip', () => {
     setCard(editor, ISSUE, 'detailed')
     expect(cardsToSend(editor)).toEqual([{ value: ISSUE, layout: 'detailed' }])
     // The text is untouched: the choice is a tag, never the body.
-    expect(serializeTiptapToText(editor)).toBe(`see ${ISSUE_URI}`)
+    expect(serializeTiptapToText(editor)).toBe(`see ${ISSUE_URL}`)
   })
 
   it('puts its card on the chip for the view to draw its marker, and nothing at none', async () => {
@@ -82,7 +86,7 @@ describe('a pasted chip', () => {
     // What the chip's node view is handed: the decorations on the chip. (React views do not draw in a bare `Editor`.)
     const marked = () => {
       const chip = editor.state.doc.firstChild!.firstChild!
-      expect(chip.type.name).toBe('objectMention')
+      expect(chip.type.name).toBe('reference')
       const decorations = editor.state.plugins.flatMap((plugin) => {
         const set = plugin.props.decorations?.call(plugin, editor.state) as DecorationSet | null | undefined
         return set instanceof DecorationSet ? set.find(1, 1 + chip.nodeSize) : []

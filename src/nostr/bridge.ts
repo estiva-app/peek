@@ -46,6 +46,7 @@ import {
   parsePublishResponse,
   parseQueryResponse,
 } from '@estiva-app/protocol'
+import type { ReadLane } from '@estiva-app/platform'
 import type { PublishResult, SignedEvent, UnsignedEvent } from '@estiva-app/protocol'
 import { signViaEstivaId as signViaPackage } from '@estiva-app/identity'
 import { ESTIVA_ID_ORIGIN } from '@/auth/estivaId'
@@ -165,11 +166,33 @@ export async function queryRelay(
   filters: Record<string, unknown>[],
   token: string,
   pubkey?: string,
+  /**
+   * `ahead` for what Desk loads before it is asked for (PEE-5): after every click, over HTTP only when the reader lets
+   * it. A function when the person may join the read while it waits: asked again then, and `click` sends it at once.
+   */
+  lane: ReadLane | (() => ReadLane) = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  let answer = socketReader ? await socketReader(relayUrl, filters, pubkey) : null
-  if (!answer) {
-    const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
-    answer = parseQueryResponse(status, text)
+  const laneNow = typeof lane === 'function' ? lane : () => lane
+  const asked = laneNow()
+  if (!socketReader && asked === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
+  if (asked === 'click') clickReads.open += 1
+  let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
+  try {
+    answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane: asked }) : null
+    if (!answer) {
+      const release = asked === 'ahead' ? await aheadPost(() => laneNow() === 'click') : null
+      try {
+        const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
+        answer = parseQueryResponse(status, text)
+      } finally {
+        release?.()
+      }
+    }
+  } finally {
+    if (asked === 'click') {
+      clickReads.open -= 1
+      clickReads.lastAt = Date.now()
+    }
   }
   // Every answer is also the copy a reload draws from, and its correction (PEE-2).
   if (answer.ok) keepRelayAnswer(relayUrl, filters, pubkey, answer.events)
@@ -184,13 +207,68 @@ export async function queryRelay(
  * `signViaEstivaId` from here, and the app installs it at boot (`main.tsx`) so
  * a test that reads through this file keeps the HTTP path it was written for.
  */
-export type SocketReader = (
+export type SocketReader = ((
   relayUrl: string,
   filters: Record<string, unknown>[],
   pubkey?: string,
-) => Promise<{ ok: boolean; events: SignedEvent[]; reason?: string } | null>
+  options?: { lane?: ReadLane },
+) => Promise<{ ok: boolean; events: SignedEvent[]; reason?: string } | null>) & {
+  /** Move the `ahead` reads still waiting into the click lane (PEE-5): the person just acted. */
+  promoteAhead?(): void
+}
 
 let socketReader: SocketReader | null = null
+
+/**
+ * One `ahead` read over HTTP at a time (PEE-5). Each is a `/sign` round trip to
+ * Estiva ID and then the POST; a spilled pack of ten sent at once queued ahead
+ * of a click's own spilled reads, and of any write, at `/sign`.
+ */
+let aheadPosting = false
+
+async function aheadPost(joined: () => boolean): Promise<() => void> {
+  const until = Date.now() + AHEAD_HTTP_WAIT_AT_MOST_MS
+  for (;;) {
+    // The person has since asked for this very read and waits on it: it is theirs, and goes now.
+    if (joined()) return () => {}
+    // Otherwise only once the person's reads have been quiet a while, not merely after a press: one on the wire
+    // cannot be taken back, and a click 1 s after Desk that found one there drew 200–300 ms later (QA-1 and QA-2).
+    const quiet = clickReads.open === 0 && Date.now() - clickReads.lastAt >= AHEAD_HTTP_QUIET_MS
+    if (!aheadPosting && (quiet || Date.now() >= until)) break
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  aheadPosting = true
+  return () => {
+    aheadPosting = false
+  }
+}
+
+/** How long the `click` lane is quiet before the loader's next HTTP read goes, and the longest it waits for that (PEE-5). */
+const AHEAD_HTTP_QUIET_MS = 2_000
+const AHEAD_HTTP_WAIT_AT_MOST_MS = 8_000
+
+/** The reads in the `click` lane not yet answered, socket or HTTP, and when the last one was (PEE-5). */
+const clickReads = { open: 0, lastAt: 0 }
+
+/**
+ * Resolves once no `click` read has been open for `quietMs`, or after `atMostMs`
+ * (PEE-5): for loader work that is not a read of its own — tracking Folders
+ * opens their live watches, whose frames take the same window a click's reads
+ * need. Desk's cadence reads keep the lane from ever being quiet for long, so
+ * this only lets a click that is under way finish first.
+ */
+export async function whenClickReadsQuiet(quietMs: number, atMostMs: number): Promise<void> {
+  const until = Date.now() + atMostMs
+  while (Date.now() < until) {
+    if (clickReads.open === 0 && Date.now() - clickReads.lastAt >= quietMs) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
+/** The reader the app installed, for Desk's loader to promote its reads when the person acts (PEE-5). */
+export function getSocketReader(): SocketReader | null {
+  return socketReader
+}
 
 export function setSocketReader(reader: SocketReader | null): void {
   socketReader = reader

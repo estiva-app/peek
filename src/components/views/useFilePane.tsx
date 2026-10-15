@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { IconDotsVertical, IconUserCheck, IconUserPlus } from '@tabler/icons-react'
 import type { ForeignObject } from '@estiva-app/interop'
-import { Chip, Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
+import { Panel, Toolbar, ToolbarButton } from '@estiva-app/ui'
 import { TopicMoreMenu } from '@/components/ui/TopicMoreMenu'
 import { useFileControls } from '@/components/views/useFileControls'
 import type { useFileView } from '@/components/views/useFileView'
@@ -12,7 +12,8 @@ import { useFileMembers, useMembership, useOpenWorkFiles, useWorkspaceDirectory 
 import { kindNoun } from '@/lib/archiveWords'
 import { canMove, canStartInside, fileControlsOf, hasFileControls } from '@/lib/fileControls'
 import { filePath, shareableFileUrl } from '@/lib/objectUrl'
-import { elsewhereAppName } from '@/lib/appName'
+import { elsewhereAppName, openInAppUrl } from '@/lib/appName'
+import { OpenInApp } from '@/components/ui/ForeignObjectWidget'
 
 /**
  * A file's middle column with its header — the title, whose file it is, the
@@ -207,12 +208,20 @@ export function useFilePane(
         <div className="flex min-w-0 items-center gap-2">
           <p className="truncate text-body-2-strong text-text-primary">{title}</p>
           {/*
-            Whose file this is, said plainly: the pane draws another app's
-            conversation in Peek's own language, which is the point and is
-            also exactly what could mislead — without it the discussion
-            reads as something in Peek. A chip, never cut short.
+            Another app's file: one link, "Open ↗", into the app that owns
+            it — the way to its text, which Peek shows and never edits for a
+            Leaf document (Miky, 14 October). No chip: *"I would simplify and
+            just say Open. Less words is better. it's more clear."* (Miky,
+            14 October), in place of the app-name chip that said whose file
+            it was (Katerina, 5 October). Which app is in the link's name
+            and tooltip ("Open in Leaf"), the one place an app is named
+            (PRO-24). A file of Peek's own gets nothing. Never cut short.
           */}
-          {elsewhereAppName(file) && <Chip type="neutral" label={elsewhereAppName(file)!} className="shrink-0" />}
+          {file && elsewhereAppName(file) && openInAppUrl(file) && (
+            <span className="shrink-0 whitespace-nowrap text-caption text-text-secondary">
+              <OpenInApp object={file} short />
+            </span>
+          )}
         </div>
       }
       actions={

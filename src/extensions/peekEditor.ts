@@ -1,9 +1,11 @@
 import { richTextClassName } from '@estiva-app/ui'
 import { peekStarterKit } from './editorKit'
-import { PeekMention, UrgentMention, EditUrgentMention, TopicMention, PeekReferenceTrigger, FileMention, MessageMention, ObjectMention } from './mention'
+import { LinkChips } from '@estiva-app/ui/editor'
+import { referenceOfLink } from '@estiva-app/protocol'
+import { askCardValues, knownCardValue } from '@/api'
+import { PeekMention, UrgentMention, EditUrgentMention, TopicMention, PeekReferenceTrigger, FileMention, MessageMention, ObjectMention, UrlChip } from './mention'
 import { ResolutionBlock } from './resolution'
 import { HighlightTag } from './highlight'
-import { PastedUrl } from './pastedUrl'
 import { CardChoices } from './cardChoices'
 import { EditSlashCommands, SlashCommands } from './slashCommands'
 
@@ -62,7 +64,10 @@ export const peekEditorExtensions = [
   FileMention,
   MessageMention,
   ObjectMention,
-  PastedUrl,
+  // Every app link reads as its chip — pasted, typed once the caret leaves it, or inside a pasted passage — and is
+  // sent as the URL it was (OPT-19, Miky 14 Oct), as a description's is. A URL over selected words is the link mark's.
+  UrlChip,
+  LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues }),
   CardChoices,
   ResolutionBlock,
   HighlightTag,

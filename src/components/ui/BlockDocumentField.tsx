@@ -6,12 +6,31 @@ import { TextSelection } from '@tiptap/pm/state'
 import {
   documentForEditing,
   publishableFromEditor,
+  referenceOfLink,
   toEditorDocument,
   type ContentFormat,
   type EditorDocument,
 } from '@estiva-app/protocol'
 import { richTextClassName } from '@estiva-app/ui'
-import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, ReferenceNode, SelectionToolbar, UnknownBlock, isChecklistTick } from '@estiva-app/ui/editor'
+import {
+  AttachmentNode,
+  BlockId,
+  Callout,
+  Checklist,
+  CodeBlockColours,
+  EditorTableControls,
+  LinkChips,
+  ReferenceCards,
+  ReferenceMenu,
+  ReferenceMenuView,
+  ReferenceNode,
+  SelectionToolbar,
+  UnknownBlock,
+  isChecklistTick,
+  isReferenceMenuOpen,
+} from '@estiva-app/ui/editor'
+import { askCardValues, knownCardValue } from '@/api'
+import { DocumentLineCards, DocumentReference, MAX_LINKS_PER_DESCRIPTION } from './DocumentCards'
 
 /**
  * Another app's block-document field, edited where it is read (MAN-9).
@@ -34,16 +53,18 @@ import { AttachmentNode, BlockId, Callout, Checklist, CodeBlockColours, Referenc
  * text. A refused save keeps the text, and the card says why. Someone else's
  * edit arriving while you are not in it is loaded; while you are, it waits.
  *
- * **References and files draw as text**, not as their widgets: the reason
- * `ForeignBody` gives for not nesting a widget inside a widget's body holds for
- * the editor of that body too. Neither is lost — the atoms keep every attribute
- * — they are only drawn plainly.
+ * **A reference is its chip, and a card only where its writer chose one**
+ * (SPEC §13.3; Miky, 14 Oct: the panel draws the chosen card, as Ship does,
+ * and offers the choice). That card is one level deep: its own body draws its
+ * references as chips (`ForeignBody`), so two objects that card each other do
+ * not nest. A file draws as text; the atom keeps every attribute.
  */
 export function BlockDocumentField({
   value,
   format,
   label,
   onCommit,
+  cards = false,
 }: {
   /** The folded current value, as the object resolved it. */
   value: string
@@ -53,6 +74,12 @@ export function BlockDocumentField({
   label: string
   /** Publishes the edit; resolves false when it was refused, so the next leave retries. */
   onCommit: (value: string, contentFormat?: string) => Promise<boolean> | boolean
+  /**
+   * Draw the cards its chips chose, and offer the choice: on the object's own
+   * page only. Inside a card every chip stays a chip, or two objects that card
+   * each other nest forever (security review). The choice is kept either way.
+   */
+  cards?: boolean
 }) {
   const [empty, setEmpty] = useState(value.trim() === '')
   const committing = useRef(false)
@@ -109,7 +136,13 @@ export function BlockDocumentField({
         // A checklist item and a callout (RIC-19), as Ship's; without them a save drops the tick and the tone.
         Checklist,
         Callout,
-        ReferenceNode,
+        // A chip, and the card its writer chose after its line (SPEC §13.3, Widgets).
+        ReferenceNode.configure({ view: DocumentReference }),
+        // The slots exist only where the cards are drawn: inside a card there are none. A click on a chip, or a
+        // chip just pasted, offers Open and its card (Miky, 14 Oct, at /land); elsewhere a click follows the chip.
+        ...(cards ? [ReferenceCards, ReferenceMenu] : []),
+        // An app URL reads as the chip of what it names, and saves as the URL (Widgets, Miky 14 Oct).
+        LinkChips.configure({ referenceOf: (url) => referenceOfLink(url, knownCardValue), ask: askCardValues, limit: MAX_LINKS_PER_DESCRIPTION }),
         UnknownBlock,
         AttachmentNode,
       ],
@@ -124,6 +157,8 @@ export function BlockDocumentField({
         },
         handleKeyDown: (view, event) => {
           if (event.key !== 'Escape') return false
+          // An open chip menu closes first; the next Escape leaves.
+          if (isReferenceMenuOpen(view.state)) return false
           // A selection first collapses, so Escape out of a toolbar pick does not leave.
           const { selection, tr } = view.state
           if (!selection.empty) {
@@ -164,14 +199,19 @@ export function BlockDocumentField({
   return (
     <div className="relative">
       {/* No box and no fill: the text reads as the body it is, and the cursor is the only sign it is editable. */}
-      <EditorContent editor={editor} className="cursor-text" data-foreign-body="editing" />
+      {/* A table's handles and ➕ bars while you point at it (RIC-21). */}
+      <EditorTableControls editor={editor}>
+        <EditorContent editor={editor} className="cursor-text" data-foreign-body="editing" />
+      </EditorTableControls>
       {/* Muted words over an empty editor, as the composer does — the action's own label, as a text action's box has. */}
       {empty && (
         <span aria-hidden className="pointer-events-none absolute left-0 top-0 text-caption text-text-muted">
           {label}…
         </span>
       )}
+      {cards && <DocumentLineCards editor={editor} />}
       <SelectionToolbar editor={editor} marks={['bold', 'italic', 'underline', 'code']} />
+      {cards && <ReferenceMenuView editor={editor} />}
     </div>
   )
 }

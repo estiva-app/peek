@@ -9,8 +9,12 @@ import { queryRelay } from './bridge'
 import { decryptBlob } from './appData'
 import { plaintextFromCopy, readFromCopy } from './deviceCopy'
 
-/** Where a read is answered from: the relay, or the copy on the device. */
-export type ReadSource = 'relay' | 'copy'
+/**
+ * Where a read is answered from: the relay, the copy on the device, or the
+ * relay for a read Desk loads before it is asked for — over the socket only,
+ * after every click (`ahead`, PEE-5).
+ */
+export type ReadSource = 'relay' | 'copy' | 'ahead'
 
 /**
  * {@link queryRelay}, or the same filters against the copy on the device. A
@@ -25,6 +29,7 @@ export async function readFrom(
   pubkey?: string,
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
   if (source === 'relay') return queryRelay(relayUrl, filters, token, pubkey)
+  if (source === 'ahead') return queryRelay(relayUrl, filters, token, pubkey, 'ahead')
   const events = await readFromCopy(relayUrl, filters, pubkey)
   return events ? { ok: true, events } : { ok: false, events: [], reason: 'not in the copy on this device' }
 }

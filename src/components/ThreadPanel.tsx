@@ -15,6 +15,10 @@ import { findNaddrs, type Embed } from '@estiva-app/protocol'
 import { cn } from '@/lib/utils'
 import { followInApp } from '@/lib/followInApp'
 import { MetaText } from '@/components/ui/MetaText'
+import { useSteadyScroll } from '@/components/views/useSteadyScroll'
+
+/** A thread is placed as it opens, at its bottom: the keeper may act from the first resize. */
+const always = () => true
 
 // ── Thread Panel ──
 
@@ -365,6 +369,9 @@ export function ThreadPanel({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [allReplies.length])
+  // And stays there while the replies' cards, chips and images fill in (OPT-10).
+  // Keyed on the replies too: the panel's rows are the scroller's children, and a new one is observed only from then.
+  useSteadyScroll(scrollRef, undefined, always, `${conversation.id}:${allReplies.length}`)
 
   return (
     // The package's Panel (0.37.0): the replies scroll, the compose box stays under them.

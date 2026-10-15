@@ -145,6 +145,16 @@ export const WithDescription: Story = {
 }
 
 /**
+ * **On its own page** — the file panel (`FileWidgetPanel`), where the object is
+ * the page: no type label over it, and its description draws the cards its
+ * chips chose (Widgets). In a message a card stays one level deep: its chips
+ * draw no cards.
+ */
+export const OnItsPage: Story = {
+  args: { ...WithDescription.args, object: WithDescription.args!.object!, page: true },
+}
+
+/**
  * **The fix for FEE-3.** While the relay is being asked, the card's shell is
  * drawn at the size the answer will take, so the message does not grow under
  * you when it lands.

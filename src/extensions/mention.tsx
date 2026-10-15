@@ -1,6 +1,6 @@
 import { NodeViewWrapper, ReactNodeViewRenderer, nodePasteRule } from '@tiptap/react'
 import Mention from '@tiptap/extension-mention'
-import { CaptionedReference, PersonMention, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
+import { CaptionedReference, PersonMention, ReferenceNode, ReferenceTrigger, UrgentPersonMention, urgentPubkeys } from '@estiva-app/ui/editor'
 import { type NodeViewProps } from '@tiptap/react'
 import { IconCircleDashed, IconCircleCheck, IconFile, IconFileTypePdf, IconLayoutBottombar, IconMessage, IconPhoto, IconTable, IconPresentation } from '@tabler/icons-react'
 import { referenceSections, subscribeReferences, useResolvedReferences } from '@/api'
@@ -288,6 +288,26 @@ function ObjectMentionView({ node, editor, decorations }: NodeViewProps) {
     </NodeViewWrapper>
   )
 }
+
+/**
+ * An app URL in the composer, as the chip of what it names — OPT-19 (Miky,
+ * 14 Oct: a message keeps the link as pasted, and every app link in the box
+ * reads as its chip). The package's URL chip (`ReferenceNode` with `href`),
+ * which `LinkChips` makes from a pasted, typed or passage URL and
+ * `serializeInline` writes back as the URL; drawn as `objectMention` is, with
+ * its card's marker. Until the URL is answered it reads as the URL.
+ */
+function UrlChipView(props: NodeViewProps) {
+  const href = typeof props.node.attrs.href === 'string' ? props.node.attrs.href : ''
+  if (props.node.attrs.uri) return <ObjectMentionView {...props} />
+  return <NodeViewWrapper as="span">{href}</NodeViewWrapper>
+}
+
+export const UrlChip = ReferenceNode.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(UrlChipView, { as: 'span' })
+  },
+})
 
 /**
  * Another app's object in the composer — an issue the launcher just created, a

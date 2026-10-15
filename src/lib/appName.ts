@@ -22,6 +22,15 @@ export function objectLabel(object: { noun?: string; appName?: string }): string
   return elsewhereAppName(object)
 }
 
+/**
+ * Where "Open in <app>" goes: the owning app's URL off its manifest's `web`
+ * template, when that is a web page. http(s) only — a manifest is a stranger's
+ * text on a shared relay, and a `javascript:` URL behind a link is a script.
+ */
+export function openInAppUrl(object: { openUrl?: string }): string | undefined {
+  return object.openUrl && /^https?:\/\//i.test(object.openUrl) ? object.openUrl : undefined
+}
+
 /** What a file is, for a heading: its noun ("Topic", "Issue"), or the app it is in, or "File". */
 export function fileHeading(file: { noun?: string; appName?: string }): string {
   return objectLabel(file) ?? 'File'

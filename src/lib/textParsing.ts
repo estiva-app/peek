@@ -188,7 +188,7 @@ export function serializeTextChild(child: TiptapInlineChild): string {
 /** A `nostr:` reference in a body, as a preview line names it. */
 const NOSTR_REFERENCE_RE = /nostr:(?:npub1|nprofile1|nevent1|note1|naddr1)[a-z0-9]+/gi
 /** What a referenced address is, by its kind — the type word its chip wears. */
-const REFERENCE_TYPE_WORDS: Record<number, string> = { 30850: 'Project', 30851: 'Issue', 30840: 'Topic' }
+const REFERENCE_TYPE_WORDS: Record<number, string> = { 30850: 'Project', 30851: 'Issue', 30840: 'Topic', 30842: 'Document' }
 
 function previewReference(uri: string): string {
   if (/^nostr:npub1/i.test(uri)) {
@@ -200,6 +200,16 @@ function previewReference(uri: string): string {
     }
     return `@${(pubkey && personByPubkey(pubkey)?.name) || shortUri(uri)}`
   }
+  return referenceTypeWord(uri) ?? `@${shortUri(uri)}`
+}
+
+/**
+ * What a `nostr:` reference names, by its kind alone — "Issue", "Message", or
+ * "File" for an address of a kind Peek has no word for — with nothing
+ * resolved; `undefined` for anything else. What a preview line and a card
+ * that cannot be found say (OPT-10).
+ */
+export function referenceTypeWord(uri: string): string | undefined {
   if (/^nostr:naddr1/i.test(uri)) {
     try {
       return REFERENCE_TYPE_WORDS[referenceToPointer(uri).kind] ?? 'File'
@@ -208,7 +218,7 @@ function previewReference(uri: string): string {
     }
   }
   if (/^nostr:(?:nevent1|note1)/i.test(uri)) return 'Message'
-  return `@${shortUri(uri)}`
+  return undefined
 }
 
 /**
@@ -495,6 +505,9 @@ export function serializeInline(node: TiptapNode): string {
     } else if (child.type.name === 'messageMention') {
       // Written back as the URI it was picked or loaded as, verbatim.
       text += child.attrs.uri
+    } else if (child.type.name === 'reference') {
+      // An app URL's chip is the URL it was (OPT-19, SPEC §13.1); a reference with no URL is its URI.
+      text += child.attrs.href || child.attrs.uri || ''
     } else if (child.type.name === 'objectMention') {
       // Written back as the address it was loaded or inserted as, verbatim.
       text += child.attrs.uri

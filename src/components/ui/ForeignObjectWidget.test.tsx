@@ -2,7 +2,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ForeignObject } from '@estiva-app/interop'
-import { markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
+import { clearUnavailableCards, noteCardAvailability } from '@/lib/unavailableCards'
+import { encodeNaddr, markerTextToBlockDocument, parseBlockDocument, serializeBlockDocument } from '@estiva-app/protocol'
 
 /**
  * The widget renders whatever the manifest said, and nothing else.
@@ -28,12 +29,19 @@ vi.mock('@/api', async () => {
   // The tab's held answer (OPT-3), reduced to a resolve on mount and on `reload`.
   useHeldObject: (reference: string | null) => {
     const [object, setObject] = useState<unknown>(reference ? 'loading' : null)
+    const [failed, setFailed] = useState(false)
     const reload = useCallback(
-      () => (reference ? resolveObject(reference).then(setObject, () => setObject(null)) : Promise.resolve()),
+      () =>
+        reference
+          ? resolveObject(reference).then(setObject, () => {
+              setFailed(true)
+              setObject(null)
+            })
+          : Promise.resolve(),
       [reference],
     )
     useEffect(() => void reload(), [reload])
-    return { object, reload }
+    return { object, reload, gone: !!reference && object === null && !failed }
   },
   // The assignee picker's option list (PEE-1) — two known people.
   useWorkspaceDirectory: () => ({
@@ -42,6 +50,12 @@ vi.mock('@/api', async () => {
   }),
   // `Avatar` resolves portraits through the seam, and a person now has a face.
   useAvatarSrc: () => () => undefined,
+  // A description's URL becomes its chip once answered (Widgets); here none names anything.
+  knownCardValue: () => undefined,
+  askCardValues: async () => undefined,
+  useLinkResolver: () => () => undefined,
+  // A chip in the body resolves through the seam; here nothing answers, so it draws as it loads.
+  useResolvedReferences: () => ({}),
   }
 })
 
@@ -77,6 +91,8 @@ function object(overrides: Partial<ForeignObject> = {}): ForeignObject {
 beforeEach(() => {
   resolveObject.mockReset()
   applyAction.mockReset()
+  // What a device remembers of unavailable cards (OPT-10) would otherwise carry from one test into the next.
+  clearUnavailableCards()
 })
 
 describe('ForeignObjectWidget', () => {
@@ -190,13 +206,13 @@ describe('ForeignObjectWidget', () => {
   it('says so when the object is unreachable rather than rendering nothing', async () => {
     resolveObject.mockResolvedValue(object({ unreachable: true }))
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText(/may not have access/)).toBeInTheDocument()
+    expect(await screen.findByText(/not available/)).toBeInTheDocument()
   })
 
   it('names an unreachable object by its type when the app declares one', async () => {
     resolveObject.mockResolvedValue(object({ unreachable: true, noun: 'issue' }))
     render(<ForeignObjectWidget naddr={NADDR} />)
-    expect(await screen.findByText(/^Issue — you may not have access/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Issue — not available/)).toBeInTheDocument()
   })
 
   it('degrades to nothing when the reference cannot be resolved', async () => {
@@ -580,6 +596,34 @@ describe('a block-document body', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
+  it('keeps a Leaf document’s text read-only, and draws no Edit box for it either', async () => {
+    // Miky, 2026-10-14: "You should not be able to edit Leaf document (the description) in Peek."
+    const edit = { ...describeIssue, id: 'describe', label: 'Edit' } as ForeignObject['actions'][number]
+    // The same action declared without a format this version knows: no one-line box over the text either.
+    const bare = { ...describeIssue, id: 'describe', label: 'Edit', format: undefined } as unknown as ForeignObject['actions'][number]
+    const leaf = { kind: 30842, noun: 'document', appName: 'Leaf', openUrl: 'https://leaf.estiva.app/d/x' }
+    resolveObject.mockResolvedValue(described({ ...leaf, actions: [edit] }))
+    const { unmount } = render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Goal')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    // The card says what it is and is the way into Leaf.
+    expect(screen.getByText('Document')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Payments/ }).getAttribute('href')).toBe(leaf.openUrl)
+    unmount()
+
+    resolveObject.mockResolvedValue(described({ ...leaf, actions: [bare] }))
+    const second = render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Goal')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    second.unmount()
+
+    // An empty document: interop drops its body slot, and the format-less action still draws nothing.
+    resolveObject.mockResolvedValue(described({ ...leaf, slots: { title: { value: 'Payments', field: 'title' } }, actions: [bare] }))
+    render(<ForeignObjectWidget naddr={NADDR} />)
+    expect(await screen.findByText('Document')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
   it('opens the stored document, its ids on its blocks', async () => {
     resolveObject.mockResolvedValue(described())
     render(<ForeignObjectWidget naddr={NADDR} />)
@@ -723,6 +767,27 @@ describe('a block-document body', () => {
     expect(container.querySelector('.ProseMirror')).toBeNull()
     expect(container.querySelector('[data-foreign-body] h1')?.textContent).toBe('Goal')
   })
+
+  it('draws a chip and the card its writer chose after its line, for a reader who cannot write (Widgets)', async () => {
+    const { ForeignObjectCard } = await import('./ForeignObjectWidget')
+    // The card's own object is read by the card; what it draws is the card's business, not this test's.
+    resolveObject.mockResolvedValue(null)
+    const uri = `nostr:${NADDR}`
+    const body = JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', id: 'p1', content: [{ type: 'text', text: uri, marks: [{ type: 'reference', attrs: { uri, embed: 'detailed' } }] }] }],
+    })
+    const object = described({ slots: { title: { value: 'Payments' }, body: { value: body, format: 'blocks' } } })
+    const { container, rerender } = render(<ForeignObjectCard object={object} page />)
+    expect(container.querySelector('.ProseMirror')).toBeNull()
+    // The chip (still resolving here), and one detailed card after the paragraph.
+    expect(container.querySelector('[data-foreign-body] [data-reference="pending"]')).not.toBeNull()
+    expect(container.querySelectorAll('[data-foreign-body] [data-line-cards] [data-card="detailed"]')).toHaveLength(1)
+    // As a card (in a message, or under another description's line) the chip stays a chip: cards never nest.
+    rerender(<ForeignObjectCard object={object} />)
+    expect(container.querySelector('[data-foreign-body] [data-reference="pending"]')).not.toBeNull()
+    expect(container.querySelector('[data-foreign-body] [data-line-cards]')).toBeNull()
+  })
 })
 
 /**
@@ -764,6 +829,65 @@ describe('a person-titled object', () => {
     const { container } = render(<ForeignObjectCard object={{ ...message(), people: {} }} />)
     expect(container.textContent).not.toContain('a'.repeat(64))
     expect(container.textContent).toContain('—')
+  })
+})
+
+describe('a chosen card keeps its size while it loads (OPT-10)', () => {
+  const issue = encodeNaddr({ kind: 30851, pubkey: 'a'.repeat(64), identifier: 'issue-1', relays: [] })
+  const topic = encodeNaddr({ kind: 30840, pubkey: 'a'.repeat(64), identifier: 'topic-1', relays: [] })
+  const heightOf = (container: HTMLElement) => (container.querySelector('[data-skeleton-layout]') as HTMLElement | null)?.style.height
+
+  it('holds the height of the card it will become, by layout and kind', () => {
+    resolveObject.mockReturnValue(new Promise(() => {}))
+    expect(heightOf(render(<ForeignObjectWidget naddr={issue} layout="row" />).container)).toBe('97px')
+    expect(heightOf(render(<ForeignObjectWidget naddr={issue} layout="card" />).container)).toBe('229px')
+    expect(heightOf(render(<ForeignObjectWidget naddr={topic} layout="card" />).container)).toBe('46px')
+  })
+
+  it('says a chosen card whose file is gone is gone, in its place, rather than closing up', async () => {
+    resolveObject.mockResolvedValue(null)
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.textContent).toBe('Issue — not available.'))
+  })
+
+  it('does not call a card gone when the read failed', async () => {
+    resolveObject.mockRejectedValue(new Error('429'))
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.querySelector('[data-skeleton-layout]')).toBeNull())
+    expect(container.textContent).not.toContain('not available')
+  })
+
+  it('remembers a card that was not available, and draws its one-line row from the first paint next time (Miky, 15 Oct)', async () => {
+    resolveObject.mockResolvedValue({ ...object(), unreachable: true, noun: 'issue' })
+    const first = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(first.container.textContent).toContain('not available'))
+    first.unmount()
+    resolveObject.mockReturnValue(new Promise(() => {}))
+    const again = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    expect(again.container.querySelector('[data-skeleton-layout]')).toBeNull()
+    expect(again.container.textContent).toBe('Issue — not available.')
+  })
+
+  it('forgets it once the card can be shown again', async () => {
+    noteCardAvailability(issue, false)
+    resolveObject.mockResolvedValue(object())
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="card" />)
+    await waitFor(() => expect(container.querySelector('[data-foreign-object]')).not.toBeNull())
+    expect(JSON.parse(localStorage.getItem('peek.unavailable-cards') ?? '[]')).toEqual([])
+  })
+
+  it('still draws nothing for a reference no author chose a card for', async () => {
+    resolveObject.mockResolvedValue(null)
+    const { container } = render(<ForeignObjectWidget naddr={issue} />)
+    await waitFor(() => expect(resolveObject).toHaveBeenCalled())
+    await waitFor(() => expect(container.textContent).toBe(''))
+  })
+
+  it('never draws a chosen card shorter than its kind is measured at', async () => {
+    resolveObject.mockResolvedValue(object({ address: `30851:${'a'.repeat(64)}:issue-1`, naddr: issue }))
+    const { container } = render(<ForeignObjectWidget naddr={issue} layout="row" />)
+    await waitFor(() => expect(container.querySelector('[data-foreign-object]')).not.toBeNull())
+    expect((container.querySelector('[data-foreign-object]') as HTMLElement).style.minHeight).toBe('97px')
   })
 })
 

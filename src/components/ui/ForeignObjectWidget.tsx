@@ -1,5 +1,8 @@
-import { useCallback, useState } from 'react'
-import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, KIND_BARE_FILE, pickWidget } from '@estiva-app/interop'
+import { useCallback, useEffect, useState } from 'react'
+import { noteCardAvailability, rememberedUnavailable } from '@/lib/unavailableCards'
+import { ARCHIVED_FIELD, BLOCK_DOCUMENT_FORMAT, pickWidget } from '@estiva-app/interop'
+import { referenceToPointer } from '@estiva-app/protocol'
+import { referenceTypeWord } from '@/lib/textParsing'
 import type {
   ForeignObject,
   People,
@@ -8,12 +11,14 @@ import type {
 } from '@estiva-app/interop'
 import { hasRelay, useForeignObjects, useHeldObject, useWorkspaceDirectory } from '@/api'
 import { cn } from '@/lib/utils'
-import { objectLabel } from '@/lib/appName'
+import { objectLabel, openInAppUrl } from '@/lib/appName'
+import { peekEditsTextOf, TEXT_FIELD } from '@/lib/readOnlyText'
 import { BlockDocumentField } from './BlockDocumentField'
 import { ForeignBody } from './ForeignBody'
 import { Avatar, Card, Divider, FieldLine, Form, Link, Person, SectionLabel, ShowMore } from '@estiva-app/ui'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
+import { WithTooltip } from './WithTooltip'
 import { SkeletonBar } from './Skeleton'
 
 /**
@@ -283,15 +288,37 @@ function Actions({
  * there would be no link, because there is nothing in an naddr that says where
  * a human should go to see the thing.
  *
- * `noopener` because this is a URL a stranger published into a shared relay.
+ * `noopener` because this is a URL a stranger published into a shared relay,
+ * and http(s) only for the same reason (`openInAppUrl`).
+ *
+ * The file page's header draws it too, `short`: there the card is in a column
+ * that starts closed, and the header says just "Open ↗" — *"I would simplify
+ * and just say Open. Less words is better. it's more clear."* (Miky,
+ * 2026-10-14). Where it goes, "Open in <app>", stays its accessible name and
+ * its tooltip, so a screen reader and a hover still say which app.
  */
-function OpenInApp({ object }: { object: ForeignObject }) {
-  if (!object.openUrl) return null
+export function OpenInApp({ object, short = false }: {
+  object: Pick<ForeignObject, 'openUrl' | 'appName'>
+  /** "Open ↗", with "Open in <app>" as its name and tooltip — the file page's header. */
+  short?: boolean
+}) {
+  const href = openInAppUrl(object)
+  if (!href) return null
+  const where = `Open in ${object.appName ?? 'app'}`
+  if (short) {
+    return (
+      <WithTooltip label={where} inline>
+        <Link href={href} variant="underlined" external aria-label={where}>
+          Open ↗
+        </Link>
+      </WithTooltip>
+    )
+  }
   return (
     // Solid, not dotted: one look for "open it elsewhere" in both apps (Katerina, 2026-09-13).
     // Its size and tone are the words' around it, in the card that could not be read (UIG-9).
-    <Link href={object.openUrl} variant="underlined" external>
-      Open in {object.appName ?? 'app'} ↗
+    <Link href={href} variant="underlined" external>
+      {where} ↗
     </Link>
   )
 }
@@ -314,9 +341,16 @@ export function ForeignObjectCard({
   page = false,
   clampDescription = false,
   layout,
+  holdHeight,
   className,
 }: {
   object: ForeignObject
+  /**
+   * The height, in px, it never draws shorter than — a chosen card's, so the
+   * read-only card the copy on the device draws first is not shorter than the
+   * one with controls the relay's answer brings (OPT-10).
+   */
+  holdHeight?: number
   /**
    * The layout its message's author chose (`embed`, SPEC §13.6.2) — `row` for
    * compact, `card` for detailed — in place of the one the manifest declares.
@@ -369,6 +403,7 @@ export function ForeignObjectCard({
     rule the meta line already keeps (FEE-1): a key is never on screen, so
     the title draws the face and the name, or the em dash for a stranger.
   */
+  const openUrl = openInAppUrl(object)
   const title = slots.title?.isPubkey ? (
     // Weight and colour come from the title's box, below, whichever way it is drawn (UIG-9).
     <Person name={object.people?.[slots.title.value]?.displayName} picture={object.people?.[slots.title.value]?.picture} size={16} />
@@ -410,6 +445,10 @@ export function ForeignObjectCard({
         sentence. The body is its control instead — `prose`, below (MAN-9).
       */
       !action.format &&
+      // Nor, on a file whose text Peek never edits, whatever sets that text —
+      // even declared without a format this version knows, and even when
+      // interop dropped an empty body slot (Miky, 2026-10-14).
+      (peekEditsTextOf(object) || (action.field !== TEXT_FIELD && action.field !== slots.body?.field)) &&
       // Nor the archive (FOL-46): as a select it would archive the file and
       // everything under it in one click, with no count of what it hides and
       // no resolution. The file's own menu offers it, through its dialog.
@@ -448,14 +487,13 @@ export function ForeignObjectCard({
    * and every id in it — on the first save. Wherever the body is drawn: a
    * card, or the object's own page.
    *
-   * Not a bare file's (Leaf 1): interop 0.55 declares `describe` on every
-   * `30840`, and here it would make a page's or topic's text editable from a
-   * message card by anyone in the Folder, last save wins. Peek shows it
-   * read-only; people edit in Leaf (Miky, 2026-10-13). "Edit a page from Peek"
-   * is on Leaf 1's Later list.
+   * Not a bare file's nor a Leaf document's (Leaf 1; Miky, 2026-10-13 and
+   * 2026-10-14): both declare `describe`, and here it would make their text
+   * editable from a message card by anyone in the Folder, last save wins. Peek
+   * shows it read-only; people edit in Leaf — `peekEditsTextOf` says which.
    */
   const prose =
-    onAct && whole && object.kind !== KIND_BARE_FILE
+    onAct && whole && peekEditsTextOf(object)
       ? object.actions.find(
           (action) =>
             action.format === BLOCK_DOCUMENT_FORMAT &&
@@ -479,6 +517,7 @@ export function ForeignObjectCard({
       fill="inset"
       data-foreign-object={object.address}
       data-widget-layout={widget}
+      style={holdHeight ? { minHeight: holdHeight } : undefined}
       className={cn(widget === 'card' ? 'p-3' : 'px-3 py-2', className)}
     >
       {/*
@@ -495,9 +534,9 @@ export function ForeignObjectCard({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* The title is the way into the owning app. A reference you cannot
               follow is a screenshot. */}
-          {object.openUrl ? (
+          {openUrl ? (
             <span className="contents text-body-2 font-semibold text-text-primary">
-              <Link href={object.openUrl} variant="quiet" external truncate>
+              <Link href={openUrl} variant="quiet" external truncate>
                 {title}
               </Link>
             </span>
@@ -550,12 +589,14 @@ export function ForeignObjectCard({
                 format={slots.body?.format ?? 'marker'}
                 label={prose.label}
                 onCommit={async (value, contentFormat) => (await onAct(prose.id, value, contentFormat)) !== false}
+                // The chosen cards on the object's own page only: a card inside a card never draws its own (SPEC §13.3).
+                cards={page}
               />
               {/* The refusal, where the write was made, when no action row is drawn to carry it. */}
               {error && !actions.length && <FieldLine tone="error" className="mt-1">{error}</FieldLine>}
             </div>
           ) : (
-            whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" />
+            whole && slots.body && <ForeignBody slot={slots.body} className="mt-1" cards={page} />
           )}
           </>
         )
@@ -598,14 +639,18 @@ export function ForeignObjectCard({
  * `animate-skeleton-in` holds it invisible for 150ms, so a reference that
  * resolves quickly — the common case — never flashes a placeholder at all.
  */
-export function ForeignObjectSkeleton({ className }: { className?: string }) {
+export function ForeignObjectSkeleton({ layout, kind, className }: { layout?: 'card' | 'row'; kind?: number; className?: string }) {
   return (
     <div
       aria-hidden
+      data-skeleton-layout={layout}
+      // The height the card it stands in for draws at, where its author chose the layout (OPT-10).
+      style={layout ? { height: placeholderHeight(layout, kind) } : undefined}
       className={cn(
         // The same surface as the card it stands in for, or the placeholder
         // and the thing it becomes are two different shapes.
-        'rounded-lg border border-border-subtle bg-bg-inset p-3 animate-skeleton-in',
+        'rounded-lg border border-border-subtle bg-bg-inset animate-skeleton-in overflow-hidden',
+        layout === 'row' ? 'px-3 py-2' : 'p-3',
         className,
       )}
     >
@@ -615,6 +660,49 @@ export function ForeignObjectSkeleton({ className }: { className?: string }) {
         <SkeletonBar className="h-3 w-24" />
       </div>
     </div>
+  )
+}
+
+/**
+ * What a chosen card's placeholder holds, in px: the height the card draws at
+ * once it has loaded, by its layout and the kind its address names — known
+ * from the message before anything resolves (SPEC §13.6.2). A detailed card's
+ * description is cut at `ShowMore`'s height, so its card is near one height
+ * whatever the description (Miky, 14 Oct). Measured on production cards
+ * (`scripts/probe-steady.mjs`); a kind not listed takes its layout's default.
+ */
+const PLACEHOLDER_HEIGHTS: Record<'card' | 'row', Record<number | 'default', number>> = {
+  // An issue's row carries its pickers (status, assignee) on a second line.
+  row: { 30851: 97, default: 97 },
+  // A topic has no description; an issue's and a project's are cut at the same height.
+  card: { 30840: 46, 30850: 229, 30851: 229, default: 229 },
+}
+
+function placeholderHeight(layout: 'card' | 'row', kind: number | undefined): number {
+  return measuredHeight(layout, kind) ?? PLACEHOLDER_HEIGHTS[layout].default
+}
+
+/** The height measured for this kind in this layout, and only that: a kind not measured holds no height of its own. */
+function measuredHeight(layout: 'card' | 'row', kind: number | undefined): number | undefined {
+  return kind !== undefined ? PLACEHOLDER_HEIGHTS[layout][kind] : undefined
+}
+
+/** The kind an `naddr` names, or `undefined` for an `nevent`, a URL, anything else. */
+function kindOf(reference: string): number | undefined {
+  if (!/^naddr1/i.test(reference)) return undefined
+  try {
+    return referenceToPointer(`nostr:${reference}`).kind
+  } catch {
+    return undefined
+  }
+}
+
+/** A chosen card that cannot be shown: the unreadable row's shape and words (Miky, 15 Oct), named by its kind alone. */
+function NotAvailableRow({ naddr }: { naddr: string }) {
+  return (
+    <Card fill="none" unreadable className="mt-1 px-3 py-2" data-card-gone>
+      <div className="text-caption text-text-secondary">{referenceTypeWord(`nostr:${naddr}`) ?? 'Link'} — not available.</div>
+    </Card>
   )
 }
 
@@ -662,6 +750,15 @@ export function ForeignObjectWidget({
   const object: ForeignObject | null | 'loading' = resolved ?? (hasRelay ? held.object : null)
   // Returned, so an action's `await reload()` waits for the re-read it names.
   const reload = held.reload
+  /*
+    A chosen card's answer, remembered on this device: not available (nothing, or
+    not readable), so the next open draws its one-line row at once; or available
+    again. A failed read says neither.
+  */
+  const availability = object === 'loading' || (object === null && !held.gone) ? undefined : !!object && !object.unreachable
+  useEffect(() => {
+    if (layout && !resolved && availability !== undefined) noteCardAvailability(naddr, availability)
+  }, [layout, resolved, availability, naddr])
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | undefined>()
 
@@ -707,19 +804,36 @@ export function ForeignObjectWidget({
     skeleton under every one of those and then removing it is the same flicker
     FEE-3 fixed, pointed the other way.
   */
-  if (object === 'loading') return quiet ? null : <ForeignObjectSkeleton className="mt-1" />
+  if (object === 'loading') {
+    if (quiet) return null
+    // Found not available the last time this device asked: its one-line row from the first paint, not a whole card's height.
+    if (layout && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
+    return <ForeignObjectSkeleton layout={layout} kind={kindOf(naddr)} className="mt-1" />
+  }
 
-  // A reference we cannot resolve degrades to nothing, leaving the message text
-  // intact. Never break a message because an attachment failed.
-  if (object === null) return null
+  /*
+    A reference we cannot resolve degrades to nothing, leaving the message text
+    intact: never break a message because an attachment failed. Except a card
+    its author chose (`layout`): it says so, in the place held for it, so
+    nothing closes up as it loads and the reader can tell something was
+    attached (OPT-10; Miky, 14 Oct). The unreadable row's shape and words.
+  */
+  if (object === null) {
+    // Only an answer of nothing: a read that failed (a 429, the network) is not news that the file is gone.
+    // A failed read keeps what this device remembered, rather than taking away the row it drew at first paint.
+    if (layout && !held.gone && rememberedUnavailable(naddr)) return <NotAvailableRow naddr={naddr} />
+    if (!layout || !held.gone) return null
+    return <NotAvailableRow naddr={naddr} />
+  }
 
   if (object.unreachable) {
     return (
       // A card that cannot be read: dashed, in both apps (Katerina, 2026-09-14).
+      // "Not available", not "you may not have access": the relay answers a deleted or never-published file the
+      // same way as one you cannot read, so only words true of both (Miky, 15 Oct, OPT-10's /land).
       <Card fill="none" unreadable className="mt-1 px-3 py-2">
         <div className="text-caption text-text-secondary">
-          {object.noun ? objectLabel(object) : `${object.appName ?? 'Another app'} object`} — you may not have access to
-          this Folder.{' '}
+          {object.noun ? objectLabel(object) : `${object.appName ?? 'Another app'} object`} — not available.{' '}
           {object.openUrl && <OpenInApp object={object} />}
         </div>
       </Card>
@@ -736,6 +850,7 @@ export function ForeignObjectWidget({
       page={page}
       clampDescription={clampDescription}
       layout={layout}
+      holdHeight={layout && measuredHeight(layout, kindOf(naddr))}
       className="mt-1"
     />
   )
