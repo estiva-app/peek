@@ -69,6 +69,16 @@ const newest = (title) => `200 of 200 in ${title}`
 const reached = (prefix, ms = 30000) => ['--until', `(() => { const a = window.__loadAhead; return !a || !!a.outcome || a.steps.some((s) => ${prefix === 'Topics' ? `s.label === 'Topics'` : `s.label.startsWith(${JSON.stringify(prefix + ':')})`}) || performance.now() - a.startedAt > ${ms} })()`]
 const settled = (mark = 'allTextsNoPulse', ms = 20000) => ['--until', `(() => { const p = __fl.phases.at(-1); return !!p.marks[${JSON.stringify(mark)}] || performance.now() - p.at > ${ms} })()`]
 const leaf = (text) => `[...document.querySelectorAll('main *')].find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)})`
+/*
+  Unfolds a topic's row so what is under it is drawn: its chevron, not its title. The title is a link that opens the
+  topic and leaves its row closed (PEE-55: clicking it read as "not listed" while the sub-topic was there). Topics
+  draws an author's sub-topic flat, with no chevron on its parent, so there is nothing to press.
+*/
+const unfold = (title) => [
+  '--until', `!!${leaf(title)} || performance.now() > 15000`,
+  '--eval', `(() => { const b = document.querySelector(${JSON.stringify(`[aria-label="Show what is under ${title}"]`)}); if (!b) return 'opening parent: no chevron'; if (b.getAttribute('aria-expanded') !== 'true') b.click(); return 'opening parent' })()`,
+  '--wait', '1500',
+]
 // A press, then the click, as a person's click arrives: Desk's loader gives way on the press (PEE-5).
 const act = (label, texts, find, path = null) =>
   ['--eval', `(() => { const el = ${find}; if (!el) throw new Error('nothing to click for ${label}'); __fl.phase(${JSON.stringify(label)}, ${JSON.stringify(texts)}, ${JSON.stringify(path)}); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); el.click(); return 'clicked' })()`]
@@ -477,8 +487,8 @@ async function seenBy(as, page, title, message, parent = null) {
   const steps = [
     // "All" lists the Folders; the QA Folder's topics are under it.
     '--until', `!!${leaf('QA')}`, '--eval', `(() => { ${leaf('QA')}.click(); return 'opening QA' })()`,
-    // A sub-topic shows once its parent is open, as in `deleteTopic`.
-    ...(parent ? ['--until', `!!${leaf(parent)} || performance.now() > 15000`, '--eval', `(() => { ${leaf(parent)}?.click(); return 'opening parent' })()`, '--wait', '1500'] : []),
+    // A sub-topic shows once its parent's row is unfolded, as in `deleteTopic`.
+    ...(parent ? unfold(parent) : []),
     '--until', `!!${leaf(title)} || performance.now() > 15000`, '--eval', `${leaf(title)} ? 'listed' : 'not listed'`,
     ...(message ? ['--eval', `(() => { location.assign(${JSON.stringify(page)}); return 'opening' })()`, '--wait', '1500', '--until', `document.body.innerText.includes(${JSON.stringify(message)}) || performance.now() > 15000`, '--eval', `document.body.innerText.includes(${JSON.stringify(message)}) ? 'message there' : 'no message'`] : []),
   ]
@@ -510,9 +520,8 @@ async function deleteTopic(as, title, parent = null, absent = false) {
     '--wait', '3000',
     '--eval', `${leaf(title)} ? 'still listed' : 'gone'`,
   ]
-  // A sub-topic shows once its parent is open: the parent's row is clicked, which opens it and unfolds it.
-  const unfold = parent ? ['--until', `!!${leaf(parent)}`, '--eval', `(() => { ${leaf(parent)}.click(); return 'parent' })()`, '--wait', '1500'] : []
-  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', ...unfold, ...steps])
+  // A sub-topic shows once its parent's row is unfolded.
+  const probe = await probeRun([PROBE, '--as', as, '--url', '/app/folders', '--timeout', '45000', ...(parent ? unfold(parent) : []), ...steps])
   const outcome = probe.steps.at(-1)?.result ?? probe.failure ?? probe.steps.find((s) => s.error)?.error
   console.log(`  deleted "${title}": ${outcome}${outcome === 'gone' ? '' : ` ${JSON.stringify(probe.steps.filter((s) => s.eval).map((s) => s.result ?? s.error))}`}`)
   if (outcome !== 'gone') failed = true
