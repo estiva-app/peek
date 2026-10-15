@@ -195,7 +195,7 @@ const DESCRIPTION: Line[] = [
 ]
 
 /** OverviewPanel: the file's card with its description, then Activity. */
-function Overview({ children, activity }: { children: ReactNode; activity?: ReactNode }) {
+function Overview({ title = 'Item two', children, activity }: { title?: string; children: ReactNode; activity?: ReactNode }) {
   return (
     <div className="flex h-screen justify-end">
       <div className="flex w-[420px] flex-col border-l border-border-default">
@@ -204,7 +204,7 @@ function Overview({ children, activity }: { children: ReactNode; activity?: Reac
             <Card fill="surface" className="flex flex-col gap-3 p-3">
               <div className="flex items-center gap-2">
                 <ThingIcon kind="issue" />
-                <span className="truncate text-body-2-strong text-text-primary">Item two</span>
+                <span className="truncate text-body-2-strong text-text-primary">{title}</span>
               </div>
               {children}
             </Card>
@@ -245,10 +245,11 @@ export const InThePanelChipMenu: Story = {
   ),
 }
 
-/** "Mentioned in", the panel's Activity: TopicActivity's mention row, its card subdued, its links drawn the same way. */
+/** "Mentioned in", the panel's Activity: TopicActivity's mention row, its card subdued, its links drawn the same way, except no card for this file: you are already on it (Miky, 15 Oct). */
 export const MentionedIn: Story = {
   render: () => (
     <Overview
+      title={ISSUE.title}
       activity={
         <div className="flex flex-col">
           <div className="px-2 pt-4">
@@ -261,7 +262,7 @@ export const MentionedIn: Story = {
                 <span className="truncate text-caption text-text-muted">Group one</span>
               </div>
               <Message subdued>
-                <PlacedMessage lines={[['Some words before a link to ', ISSUE, ', and the sentence goes on after it.']]} />
+                <PlacedMessage lines={[['Some words before a link to ', ISSUE, ', and the sentence goes on after it.']]} here={ISSUE} />
               </Message>
             </div>
             <div className="flex flex-col gap-1">
@@ -270,7 +271,7 @@ export const MentionedIn: Story = {
                 <span className="truncate text-caption text-text-muted">Place one</span>
               </div>
               <Message name="Person One" at="Yesterday" subdued>
-                <PlacedMessage lines={[['Two links: ', ISSUE, ' and'], PAGE]} />
+                <PlacedMessage lines={[['Two links: ', ISSUE, ' and'], PAGE]} here={ISSUE} />
               </Message>
             </div>
           </div>
