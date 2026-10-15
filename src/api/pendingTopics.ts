@@ -15,7 +15,8 @@ import type { ForeignObject } from '@estiva-app/interop'
  * has had its text put back, so the one note can say whether text came back.
  */
 
-export type TopicOutcome = { ok: true } | { ok: false; reason: string }
+/** `deleted`: it was saved, and deleted when its Folder refused it — its `d` is spent. */
+export type TopicOutcome = { ok: true } | { ok: false; reason: string; deleted?: true }
 
 /** What Start opened, and what starting it again needs. */
 export interface StartedTopic {
@@ -37,6 +38,8 @@ export interface StartedTopic {
 /** A refused topic, once what was waiting on it has been put back. */
 export interface RefusedTopic extends StartedTopic {
   reason: string
+  /** It was saved and deleted again: started again, it takes a new `d`, and its draft moves with it. */
+  deleted: boolean
   /** A message sent into it came back as text. */
   textBack: boolean
 }
@@ -57,9 +60,11 @@ const pending = new Map<string, Pending>()
 /**
  * Started topics a listing of their Folder has not yet read back — pending, or
  * accepted since that listing was read — so the row is there from Start on
- * and is not dropped in between.
+ * and is not dropped in between. A listing read after the topic was accepted
+ * is the relay's word on it, whether or not it holds it: a topic deleted or
+ * moved meanwhile is not drawn back in.
  */
-const unlisted = new Map<string, { folder: string; file: ForeignObject }>()
+const unlisted = new Map<string, { folder: string; file: ForeignObject; acceptedAt?: number }>()
 const listeners = new Set<() => void>()
 const refusalListeners = new Set<(refused: RefusedTopic) => void>()
 let version = 0
@@ -87,12 +92,21 @@ export function holdStartedTopic(started: StartedTopic, settled: Promise<TopicOu
         await putBack(entry)
         forget()
         unlisted.delete(started.address)
+      } else {
+        const drawn = unlisted.get(started.address)
+        if (drawn) drawn.acceptedAt = Date.now()
       }
       if (pending.get(started.address) === entry) pending.delete(started.address)
       changed()
       if (outcome.ok) return
-      const refused: RefusedTopic = { ...started, reason: outcome.reason, textBack: entry.textBack }
-      for (const listener of refusalListeners) listener(refused)
+      const refused: RefusedTopic = { ...started, reason: outcome.reason, deleted: !!outcome.deleted, textBack: entry.textBack }
+      for (const listener of refusalListeners) {
+        try {
+          listener(refused)
+        } catch (error) {
+          console.warn('[nostr] a refused topic’s listener failed:', error)
+        }
+      }
     })
 }
 
@@ -160,11 +174,16 @@ export function startedFilesIn(folder: string, listed: readonly ForeignObject[])
     .map(([, entry]) => entry.file)
 }
 
-/** A listing of this Folder was read: what it holds no longer needs drawing in. */
-export function listedNow(folder: string, listed: readonly ForeignObject[]): void {
+/**
+ * A listing of this Folder was read, asked at `askedAt` (ms): what it holds no
+ * longer needs drawing in, and neither does a topic accepted before it was asked.
+ */
+export function listedNow(folder: string, listed: readonly ForeignObject[], askedAt: number): void {
   let dropped = false
   for (const [address, entry] of unlisted) {
-    if (entry.folder === folder && listed.some((file) => file.address === address)) dropped = unlisted.delete(address) || dropped
+    if (entry.folder !== folder) continue
+    const answered = listed.some((file) => file.address === address) || (entry.acceptedAt !== undefined && askedAt >= entry.acceptedAt)
+    if (answered) dropped = unlisted.delete(address) || dropped
   }
   if (dropped) changed()
 }

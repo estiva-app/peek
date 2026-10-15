@@ -14,7 +14,7 @@ export interface StartTopicArgs {
   /** The address of the file it sits under, of any kind. */
   parent?: string
   hasState: boolean
-  /** Given when a refused topic is started again: the same `d`, so its draft comes back with it. */
+  /** Given when a topic the relay refused is started again: the same `d`, so its draft comes back with it. Never one that was saved and deleted. */
   fileId?: string
   /** For Start's dialog, should the relay refuse it: the Folder's name and the file it was started under. */
   folderName?: string
@@ -44,7 +44,11 @@ export async function startTopicAsViewer(
     console.warn('[nostr] drawing a new topic failed:', error)
     file = null
   }
-  if (!file) return { ok: false, reason: 'The topic could not be prepared. Try again.' }
+  // Not drawable ahead (its manifest could not be read): written first and opened after, as before PEE-6.
+  if (!file) {
+    const written = await publishTopicAsViewer(planned, args, relayUrl, token)
+    return written.ok ? { ok: true, address: planned.address, naddr: planned.naddr } : { ok: false, reason: written.reason }
+  }
   // Its Folder is its `h`, which is the team it was written in.
   const drawn = { ...file, address: planned.address, folder: file.folder ?? args.folder }
   const container = { kind: 'file' as const, address: planned.address, h: drawn.folder }

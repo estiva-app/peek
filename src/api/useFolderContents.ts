@@ -88,10 +88,11 @@ function loadFolderContents(
     a relay that answered promptly and will answer again in eight seconds
     is the wrong sentence twice over.
   */
+  const askedAt = Date.now()
   return withRateLimitRetry(() => resolveFolderContents(folder))
     .then((contents) => {
       listedIn.set(folder, contents.files)
-      listedNow(folder, contents.files)
+      listedNow(folder, contents.files, askedAt)
       return { ok: true as const, value: contents }
     })
     .catch((error: unknown) => {
@@ -176,11 +177,12 @@ export async function loadFoldersAhead(
     (await opens(folders)).slice(0, FOLDERS_AHEAD).map(async (folder) => {
       const held = folderContentsCache.peek(folder.id)
       if ((held?.value !== undefined && !held.seeded) || held?.inflight) return
+      const askedAt = Date.now()
       const contents = await resolveFolderContentsAsViewer(folder.id, at.relayUrl, at.token, undefined, 'ahead')
       if (folderContentsCache.peek(folder.id)?.inflight) return
       await folderContentsCache.read(folder.id, async () => {
         listedIn.set(folder.id, contents.files)
-        listedNow(folder.id, contents.files)
+        listedNow(folder.id, contents.files, askedAt)
         return { ok: true, value: contents }
       })
     }),

@@ -98,11 +98,19 @@ describe('an accepted new topic', () => {
     await flush()
     expect(heard).toEqual([])
     expect(forget).not.toHaveBeenCalled()
-    // A listing read before the relay had it does not hold it: still drawn.
-    listedNow(FOLDER, [])
+    // A listing asked before the relay had it does not hold it: still drawn.
+    listedNow(FOLDER, [], Date.now() - 60_000)
     expect(startedFilesIn(FOLDER, [])).toEqual([file])
-    // Once one does, the listing's own row is the one drawn.
-    listedNow(FOLDER, [file])
+    // Once one holds it, the listing's own row is the one drawn.
+    listedNow(FOLDER, [file], Date.now() - 60_000)
+    expect(startedFilesIn(FOLDER, [])).toEqual([])
+  })
+
+  it('is not drawn back in once a listing asked after it was accepted leaves it out — it was deleted or moved meanwhile', async () => {
+    const { answer } = start()
+    answer({ ok: true })
+    await flush()
+    listedNow(FOLDER, [], Date.now())
     expect(startedFilesIn(FOLDER, [])).toEqual([])
   })
 

@@ -98,7 +98,8 @@ describe('starting a topic', () => {
       .mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
       .mockResolvedValue({ ok: true })
     const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
-    expect(result).toEqual({ ok: false, reason: 'restricted: not a channel member' })
+    // `deleted`: its `d` is spent, so starting it again takes a new one.
+    expect(result).toEqual({ ok: false, reason: 'restricted: not a channel member', deleted: true })
     const [, , deletion] = sent()
     expect(deletion.kind).toBe(5)
     // By the event, not the address: the same `d` started again is a new version nothing deleted.

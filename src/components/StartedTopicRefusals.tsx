@@ -22,16 +22,16 @@ import { StartTopicDialog } from './StartTopicDialog'
  */
 export function StartedTopicRefusals() {
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const { showToast } = useToast()
   const { createTopic } = useForeignObjects()
   const [again, setAgain] = useState<RefusedTopic | null>(null)
 
-  // Where the person is when the relay answers, not where they were at Start.
-  const at = useRef(pathname)
+  // Where the person is when the relay answers, not where they were at Start — a page, or Desk's open pane (`?open=`).
+  const at = useRef(pathname + search)
   useEffect(() => {
-    at.current = pathname
-  }, [pathname])
+    at.current = pathname + search
+  }, [pathname, search])
 
   useEffect(
     () =>
@@ -58,13 +58,21 @@ export function StartedTopicRefusals() {
           title,
           parent: again.parent?.address,
           hasState: again.hasState,
-          fileId: again.fileId,
+          // why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-id-is-unique-across-every-kind.md
+          fileId: again.deleted ? undefined : again.fileId,
           folderName: again.folderName,
           parentFile: again.parent,
         })
         if (!result.ok) {
           showToast({ label: result.reason, type: 'error' })
           return false
+        }
+        // A new `d` for one that was saved and deleted: what was written in it moves to the new topic's draft.
+        if (result.address !== again.address) {
+          const drafts = browserDrafts()
+          const draft = drafts.readDraft(draftKeys.object(again.address))
+          if (draft?.text.trim()) drafts.write(draftKeys.object(result.address), draft.text, draft.urgent)
+          drafts.clear(draftKeys.object(again.address))
         }
         navigate(filePath(result.address, title))
         return true

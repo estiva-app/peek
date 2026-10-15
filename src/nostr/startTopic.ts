@@ -57,8 +57,9 @@ export function planTopic(args: { folder: string; title: string; parent?: string
  * just read it, and getting it wrong is silent loss.
  *
  * **A topic its Folder refuses to list was not created** (Miky, PEE-6 kickoff):
- * the saved file is deleted again — by its event id, so starting it again at
- * the same `d` is a new version the deletion does not name — and the refusal
+ * the saved file is deleted again and the answer says so (`deleted`): its `d`
+ * was used, so starting it again takes a new one — why:
+ * https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-files-id-is-unique-across-every-kind.md — and the refusal
  * is reported as the file's would be. Each write is retried on a transient
  * failure, as a message is; an HTTP refusal and `accepted: false` both come
  * back as a refusal.
@@ -68,7 +69,7 @@ export async function publishTopicAsViewer(
   args: { folder: string; hasState: boolean },
   relayUrl: string,
   token: StoredToken,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | { ok: false; reason: string; deleted?: true }> {
   const file = await publishConfirmed(planned.event, relayUrl, token, 'The relay refused to create the topic.')
   if (!file.ok) return file
   for (const command of planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address: planned.address, hasState: args.hasState })) {
@@ -78,7 +79,8 @@ export async function publishTopicAsViewer(
       const deleted = await publishConfirmed(buildDeletion(token.pubkey, Date.now(), { targetEventId: file.id }), relayUrl, token, '')
       if (!deleted.ok) console.warn('[nostr] deleting a topic its Folder refused failed:', deleted.reason)
     }
-    return placed
+    // Its `d` was used: started again, it is a new file (a file's id is never reused, deleted files included).
+    return { ...placed, deleted: true }
   }
   return { ok: true }
 }
