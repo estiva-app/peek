@@ -106,4 +106,15 @@ describe('starting a topic', () => {
     expect(deletion.tags.find((t) => t[0] === 'e')?.[1]).toBe(idOf(30840))
     expect(deletion.tags.some((t) => t[0] === 'a')).toBe(false)
   })
+
+  it('keeps the same d to start again when the deletion is refused too, since the file is still there unlisted', async () => {
+    signViaEstivaId.mockImplementation(async (event: { kind: number }) => ({ ...event, id: String(event.kind).padStart(64, 'a'), sig: 's' }))
+    publishSigned
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
+      .mockResolvedValueOnce({ ok: false, reason: 'restricted: not a channel member' })
+    const result = await createTopicAsViewer({ folder: TEAM, title: 'T', hasState: true }, RELAY, token)
+    expect(result).toEqual({ ok: false, reason: 'restricted: not a channel member' })
+    expect(sent().map((e) => e.kind)).toEqual([30840, 1852, 5])
+  })
 })

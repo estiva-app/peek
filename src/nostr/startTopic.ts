@@ -75,12 +75,14 @@ export async function publishTopicAsViewer(
   for (const command of planPlaceFile(token.pubkey, Date.now(), { folder: args.folder, address: planned.address, hasState: args.hasState })) {
     const placed = await publishConfirmed(command, relayUrl, token, 'The Folder refused to list the topic.')
     if (placed.ok) continue
-    if (file.id) {
-      const deleted = await publishConfirmed(buildDeletion(token.pubkey, Date.now(), { targetEventId: file.id }), relayUrl, token, '')
-      if (!deleted.ok) console.warn('[nostr] deleting a topic its Folder refused failed:', deleted.reason)
-    }
-    // Its `d` was used: started again, it is a new file (a file's id is never reused, deleted files included).
-    return { ...placed, deleted: true }
+    const deleted = file.id
+      ? await publishConfirmed(buildDeletion(token.pubkey, Date.now(), { targetEventId: file.id }), relayUrl, token, '')
+      : { ok: false as const, reason: 'no event id' }
+    // Deleted, its `d` is spent: started again, it is a new file (a file's id is never reused, deleted files included).
+    if (deleted.ok) return { ...placed, deleted: true }
+    // Not deleted, it is still there unlisted: started again at the same `d`, it is replaced and listed after all.
+    console.warn('[nostr] deleting a topic its Folder refused failed:', deleted.reason)
+    return placed
   }
   return { ok: true }
 }
