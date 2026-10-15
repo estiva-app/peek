@@ -31,8 +31,7 @@ const AT = 1_760_000_000_000
 
 let relay: WireRelay
 beforeEach(() => {
-  relay ??= installWireRelay()
-  relay.reset()
+  relay = installWireRelay()
   resetReadStateQueueForTests()
   window.localStorage.clear()
 })

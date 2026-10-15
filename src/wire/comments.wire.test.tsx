@@ -20,8 +20,9 @@ vi.mock('@/auth/estivaId', async (importOriginal) => ({
 
 /*
   The copy on the device draws a conversation while the relay is asked (PEE-4);
-  it is a read, not part of any write, and `useFileConversation.test.tsx`
-  covers what it draws. Here there is no copy. Left in, its read
+  it is a read, not part of any write. Here there is no copy. Nothing tests
+  the module itself yet (`useFileConversation.test.tsx` mocks it too); that
+  is on the Unit tests project's Later list. Left in, its read
   shares interop's in-flight manifest sweep with the relay's, so a copy that
   cannot answer it fails the relay's read too — a finding of UNI-7, in its PR.
 */
@@ -64,8 +65,7 @@ const cathsMessage = signed({ kind: 9, created_at: 1_700_000_100, content: 'Morn
 
 let relay: WireRelay
 beforeEach(() => {
-  relay ??= installWireRelay()
-  relay.reset()
+  relay = installWireRelay()
   relay.seed(manifest, theFile, cathsComment, cathsMessage)
 })
 afterAll(() => vi.unstubAllGlobals())

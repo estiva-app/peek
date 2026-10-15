@@ -31,16 +31,16 @@ const D = '4f9d2c1e-7b3a-4e5f-9a1b-2c3d4e5f6a7b'
 const ADDRESS = `${BARE_FILE}:${ME}:${D}`
 const NADDR = encodeNaddr({ kind: BARE_FILE, pubkey: ME, identifier: D, relays: [] })
 
-const folder = (id: string, name: string, files: string[]): SignedEvent[] => [
-  signed({ kind: 39000, tags: [['d', id], ['name', name]] }, RELAY_KEY),
-  signed({ kind: 30890, tags: [['d', id], ...files.map((a) => ['a', a])] }, RELAY_KEY),
+/** A Folder's name and its state listing `files`; a later `at` replaces an earlier state. */
+const folder = (id: string, name: string, files: string[], at = 1_700_000_000): SignedEvent[] => [
+  signed({ kind: 39000, created_at: at, tags: [['d', id], ['name', name]] }, RELAY_KEY),
+  signed({ kind: 30890, created_at: at, tags: [['d', id], ...files.map((a) => ['a', a])] }, RELAY_KEY),
 ]
 const brief = signed({ kind: BARE_FILE, tags: [['d', D], ['title', 'Brief'], ['h', HQ]] })
 
 let relay: WireRelay
 beforeEach(() => {
-  relay ??= installWireRelay()
-  relay.reset()
+  relay = installWireRelay()
   relay.seed(brief, ...folder(HQ, 'HQ', [ADDRESS]), ...folder(STEER, 'Steer', []))
 })
 afterAll(() => vi.unstubAllGlobals())
@@ -74,7 +74,6 @@ async function moveTo(to: string, onMoved = vi.fn()) {
   await userEvent.click(await screen.findByRole('combobox', { name: 'Folder' }))
   await userEvent.click(await screen.findByRole('option', { name: to }))
   await userEvent.click(screen.getByRole('button', { name: 'Move' }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: /^Mov/ })?.textContent ?? 'gone').not.toBe('Moving…'))
   return onMoved
 }
 
@@ -99,7 +98,7 @@ describe('moving a file at the wire', () => {
     const SUB = `${BARE_FILE}:${ME}:${SUB_D}`
     relay.seed(
       signed({ kind: BARE_FILE, tags: [['d', SUB_D], ['title', 'Notes'], ['h', HQ], ['a', ADDRESS]] }),
-      ...folder(HQ, 'HQ', [ADDRESS, SUB]).slice(1).map((state) => ({ ...state, created_at: state.created_at + 1, id: 'f'.repeat(64) })),
+      ...folder(HQ, 'HQ', [ADDRESS, SUB], 1_700_000_001),
     )
     const onMoved = await moveTo('Steer')
 

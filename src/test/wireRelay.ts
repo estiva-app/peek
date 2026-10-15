@@ -59,6 +59,7 @@ export interface WireRelay {
   reset: () => void
 }
 
+/** NIP-01's id, as `eventIdOf` in `src/nostr/fileConversation.ts` computes it; sync here, for fixtures. */
 export function eventId(event: { pubkey: string; created_at: number; kind: number; tags: string[][]; content: string }): string {
   return createHash('sha256')
     .update(JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]))
@@ -83,9 +84,12 @@ function matches(filter: Filter, event: SignedEvent): boolean {
     if (key === 'since' && event.created_at < (value as number)) return false
     if (key === 'until' && event.created_at > (value as number)) return false
     if (key.startsWith('#')) {
+      if (!Array.isArray(value)) throw new Error(`wireRelay: ${key} is not a list`)
       const name = key.slice(1)
-      const wanted = value as string[]
-      if (!event.tags.some((t) => t[0] === name && wanted.includes(t[1]))) return false
+      if (!event.tags.some((t) => t[0] === name && (value as string[]).includes(t[1]))) return false
+    } else if (!['ids', 'authors', 'kinds', 'since', 'until'].includes(key)) {
+      // A filter the fake cannot evaluate must not match everything.
+      throw new Error(`wireRelay: cannot evaluate filter key ${key}`)
     }
   }
   return true
@@ -94,7 +98,7 @@ function matches(filter: Filter, event: SignedEvent): boolean {
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-/** Stub `fetch` with the fake for the rest of the test file; `reset` it in a `beforeEach`. */
+/** Stub `fetch` and `WebSocket` with a fresh fake; call it in each `beforeEach`, so no stub outlives a test. */
 export function installWireRelay(): WireRelay {
   const sent: SignedEvent[] = []
   let held: SignedEvent[] = []
