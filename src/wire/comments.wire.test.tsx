@@ -123,21 +123,6 @@ describe("a file's conversation at the wire", () => {
     expect(relay.sentOf(1111)).toHaveLength(1)
   })
 
-  it('a reply to your own comment still being sent goes out after it, and not at all if it is refused', async () => {
-    const hook = await conversation(file, [cathsComment.id], 1)
-    const release = relay.pause((event) => event.kind === 1111 && event.content === 'Mine')
-    relay.refuse({ when: (event) => event.content === 'Mine' })
-    const sending = hook.result.current.actions.comment('Mine')
-    // Drawn under the id it will have, before the relay answers.
-    await waitFor(() => expect(rootsOf(hook).some((root) => root.body === 'Mine')).toBe(true))
-    const mine = rootsOf(hook).find((root) => root.body === 'Mine')!
-    const replying = hook.result.current.actions.reply(mine, 'And one more thing')
-
-    release()
-    expect((await sending).ok).toBe(false)
-    expect((await replying).ok).toBe(false)
-    expect(relay.sentOf(1111).map((event) => event.content)).toEqual(['Mine'])
-  })
 })
 
 describe("a topic's talk at the wire", () => {

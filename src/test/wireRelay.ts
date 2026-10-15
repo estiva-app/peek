@@ -51,8 +51,6 @@ export interface WireRelay {
   seed: (...events: SignedEvent[]) => void
   /** Refuse matching events with `200 {accepted:false}`. */
   refuse: (rule: Refusal) => void
-  /** Hold the relay's answer to the next matching event until the returned function is called. */
-  pause: (when: (event: SignedEvent) => boolean) => () => void
   /** The sent events of these kinds, NIP-98 auth excluded (it is never sent as an event). */
   sentOf: (...kinds: number[]) => SignedEvent[]
   /** The plaintext of a {@link WireRelay} ciphertext. */
@@ -101,7 +99,6 @@ export function installWireRelay(): WireRelay {
   const sent: SignedEvent[] = []
   let held: SignedEvent[] = []
   let refusals: Refusal[] = []
-  let pauses: { when: (event: SignedEvent) => boolean; released: Promise<void> }[] = []
 
   const hold = (event: SignedEvent) => {
     if (replaceable(event.kind)) {
@@ -146,8 +143,6 @@ export function installWireRelay(): WireRelay {
       if (path === '/events') {
         const event = JSON.parse(body) as SignedEvent
         sent.push(event)
-        const paused = pauses.findIndex((p) => p.when(event))
-        if (paused >= 0) await pauses.splice(paused, 1)[0].released
         const rule = refusals.find((r) => r.when(event) && (r.times === undefined || r.times > 0))
         if (rule) {
           if (rule.times !== undefined) rule.times -= 1
@@ -200,18 +195,12 @@ export function installWireRelay(): WireRelay {
     sent,
     seed: (...events) => events.forEach(hold),
     refuse: (rule) => void refusals.push({ ...rule }),
-    pause: (when) => {
-      let release = () => {}
-      pauses.push({ when, released: new Promise<void>((resolve) => (release = resolve)) })
-      return () => release()
-    },
     sentOf: (...kinds) => sent.filter((event) => kinds.includes(event.kind)),
     decrypt,
     reset: () => {
       sent.length = 0
       held = []
       refusals = []
-      pauses = []
     },
   }
 }
