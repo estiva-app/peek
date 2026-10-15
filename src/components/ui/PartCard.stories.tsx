@@ -127,6 +127,38 @@ export const Loading: Story = { args: { view: { state: 'loading' } } }
 /** The block was taken out of a description the reader can still read. */
 export const PartDeleted: Story = { args: { view: { state: 'detached', object: issue, link: LINK } } }
 
+/** A comment on several paragraphs (§13.6, LEAF-7): the card draws every one of them. */
+export const CommentOnARun: Story = {
+  args: {
+    view: {
+      state: 'resolved',
+      block: paragraph('We ship the new onboarding on Friday.'),
+      run: [paragraph('We ship the new onboarding on Friday.'), paragraph('QA signs off on Thursday.')],
+      object: issue,
+      link: LINK,
+    },
+  },
+}
+
+/**
+ * The words a comment quoted are no longer in its paragraphs (§13.6 `reworded`):
+ * the card stays beside them and says what the commenter quoted, never as
+ * deleted. The look is Katerina's to set.
+ */
+export const WordsChanged: Story = {
+  args: {
+    view: {
+      state: 'reworded',
+      block: paragraph('We ship the new onboarding next week.'),
+      run: [paragraph('We ship the new onboarding next week.'), paragraph('QA signs off on Thursday.')],
+      quote: { start: 'on Friday.', end: 'QA signs' },
+      object: issue,
+      link: LINK,
+    },
+    quotedBy: 'QA-1',
+  },
+}
+
 /** The object's body is not written in blocks, so no block of it can be shown. */
 export const CantBeShown: Story = { args: { view: { state: 'unaddressable', object: issue, link: LINK } } }
 

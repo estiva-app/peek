@@ -1,4 +1,4 @@
-import { serializeBlockDocument, toRenderTree } from '@estiva-app/protocol'
+import { serializeBlockDocument, toRenderTree, type Quote } from '@estiva-app/protocol'
 import type { ForeignObject } from '@estiva-app/interop'
 import { AttachmentCard, Button, Card, Link, RichText, ShowMore, type RichTextBlock } from '@estiva-app/ui'
 import { IconExternalLink } from '@tabler/icons-react'
@@ -19,8 +19,8 @@ const CUT_AT = 160
  * One block of another object, live inside a message — SPEC §13.6.1, COM-2.
  * This one reads it (`usePart`); `PartCardView` draws what the read gave.
  */
-export function PartCard({ address, block }: { address: string; block: string }) {
-  return <PartCardView view={usePart({ address, block })} address={address} block={block} />
+export function PartCard({ address, block, anchorTags, quotedBy }: { address: string; block: string; /** A comment's `block` and `quote` tags, when this is its anchor (§13.6). */ anchorTags?: string[][]; /** Who wrote the comment, for its quote once the words have changed. */ quotedBy?: string }) {
+  return <PartCardView view={usePart({ address, block, anchorTags })} address={address} block={block} quotedBy={quotedBy} />
 }
 
 /**
@@ -43,10 +43,13 @@ export function PartCardView({
   address,
   block,
   fetchImage = blobObjectUrl,
+  quotedBy,
 }: {
   view: PartView
   address: string
   block: string
+  /** Who quoted the words a `reworded` anchor no longer finds. */
+  quotedBy?: string
   /** How a picture in the block is fetched: Peek's authenticated fetch, unless a story hands it a picture it already has. */
   fetchImage?: (mediaUrl: string) => Promise<string>
 }) {
@@ -81,7 +84,7 @@ export function PartCardView({
     </span>
   )
 
-  if (view.state !== 'resolved') {
+  if (view.state !== 'resolved' && view.state !== 'reworded') {
     return (
       <Card fill="inset" data-part={view.state} data-part-address={address} className="mt-1 flex flex-col gap-3 px-3 py-2">
         {source}
@@ -90,7 +93,8 @@ export function PartCardView({
     )
   }
 
-  const blocks = toRenderTree(serializeBlockDocument({ type: 'doc', content: [view.block] }), 'blocks')
+  const run = view.run ?? [view.block]
+  const blocks = toRenderTree(serializeBlockDocument({ type: 'doc', content: run }), 'blocks')
   const content = <RichText blocks={blocks} size="small" renderBlock={(b) => renderAttachment(b, fetchImage)} />
   const link = view.link
   // A Button, not a Link, by Katerina's call (2026-10-08): the way out of Peek
@@ -101,14 +105,23 @@ export function PartCardView({
     </Button>
   ) : undefined
   return (
-    <Card fill="inset" data-part="resolved" data-part-address={address} data-part-block={block} className="mt-1 flex flex-col gap-3 p-3">
+    <Card fill="inset" data-part={view.state} data-part-address={address} data-part-block={block} className="mt-1 flex flex-col gap-3 p-3">
       {source}
       {/* An attachment is never cut (no height reaches Infinity): its card is
           already the thumbnail, and a click on it opens the full picture as it
           does on a message's own. ShowMore still draws the row for Open in. */}
-      <ShowMore surface="inset" maxHeight={view.block.type === 'attachment' ? Infinity : CUT_AT} action={openIn}>
+      <ShowMore surface="inset" maxHeight={run.length === 1 && view.block.type === 'attachment' ? Infinity : CUT_AT} action={openIn}>
         {content}
       </ShowMore>
+      {/* The words a comment quoted, once they are no longer in its blocks
+          (§13.6 `reworded`): said as what the commenter quoted, never as what
+          the page said, since the relay does not check a quote (Miky, LEAF-7
+          /land). The look is Katerina's to set. */}
+      {view.state === 'reworded' && (
+        <span data-part-quote className="line-clamp-2 text-caption italic text-text-muted">
+          {quotedBy ? `${quotedBy} quoted` : 'Quoted'}: “{quoteText(view.quote)}” · No longer in the text
+        </span>
+      )}
     </Card>
   )
 }
@@ -129,6 +142,11 @@ function renderAttachment(block: RichTextBlock, fetchImage: (mediaUrl: string) =
       download
     />
   )
+}
+
+/** A quote as the commenter selected it: its words, or the words at each end of a long or cross-block one. */
+function quoteText(quote: Quote): string {
+  return quote.end ? `${quote.start} … ${quote.end}` : quote.start
 }
 
 /** "Issue · Plan the launch": what it is, then which one (label objects by type). */

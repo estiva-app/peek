@@ -132,7 +132,7 @@ function dedupeReferences(refs: string[]): string[] {
  * item from another app it names drawn as its chip, and below it the cards its
  * author chose.
  */
-export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, follow = true }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`. */ parts?: readonly { address: string; block: string; anchor?: true }[]; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
+export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjects, urgentMentions, parts, embeds, authorName, follow = true }: { body: string; nostrReferences?: string[]; nostrBlockId?: string; resolvedObjects?: Record<string, ForeignObject>; /** The event's urgent keys (SPEC §13.1, CON-24). */ urgentMentions?: readonly string[]; /** The event's `part` tags (SPEC §13.6.1, COM-2), and a comment's own anchor flagged `anchor`, with its `block` and `quote` tags (LEAF-7). */ parts?: readonly { address: string; block: string; anchor?: true; anchorTags?: string[][] }[]; /** Who wrote it, for a quote its anchor no longer finds. */ authorName?: string; /** The cards its author asked for, after edits (SPEC §13.6.2). */ embeds?: readonly Embed[]; /** Chips follow their files' changes while shown — a conversation's; off for a list of previews, where each Folder named would cost a watch. */ follow?: boolean }) {
   /*
     What the message is about, for its anchor's card: its `a` tags (sync stores
     them in `nostrReferences`) and the addresses its body names, deduplicated by
@@ -251,7 +251,7 @@ export function MessageBody({ body, nostrReferences, nostrBlockId, resolvedObjec
           Above the text, because it is the subject of the remark rather than
           part of it — the same reason a quoted line goes above a reply. */}
       {anchored.length > 0
-        ? anchored.map((part) => <PartCard key={part.address} address={part.address} block={part.block} />)
+        ? anchored.map((part) => <PartCard key={part.address} address={part.address} block={part.block} anchorTags={part.anchorTags} quotedBy={authorName} />)
         : <CommentAnchor blockId={nostrBlockId} object={resolvedObjects?.[references[0]]} />}
       <RichText
         blocks={blocks}

@@ -53,8 +53,10 @@ import {
   imetaOf,
   imetaTag,
   KIND,
-  blockAnchorOf,
+  blockRunOf,
+  blockRunTag,
   partsOf,
+  QUOTE_TAG,
   type Embed,
   type Imeta,
   type NostrTag,
@@ -162,19 +164,28 @@ const withTags = (comment: FileComment, event: SignedEvent | undefined, address:
 
 /**
  * The blocks a message shows (`part`, SPEC §13.6.1) and, for a comment anchored
- * to one block of the file it is on (§13.6), that block flagged `anchor` — drawn
- * with the same card (Miky, COM-2 kickoff). Only a `kind:1111` anchors, against
- * its `A`; `blockAnchorOf` refuses any other kind.
+ * to the file it is on (§13.6), its anchor flagged `anchor` — drawn with the
+ * same card (Miky, COM-2 kickoff). Only a `kind:1111` anchors, against its `A`;
+ * `blockRunOf` refuses any other kind.
+ *
+ * The anchor is a run of blocks and the words its selection starts and ends
+ * with (LEAF-7), so it keeps its `block` and `quote` tags as written, for
+ * `resolveCommentAnchor` to read against the file as it is now; `block` is the
+ * run's first, which is all a one-block anchor ever had.
+ *
+ * why: https://github.com/estiva-app/estiva-docs/blob/main/decisions/a-comment-remembers-where-its-selection-starts-and-ends.md
  */
 export function partsAndAnchorOf(event: Pick<SignedEvent, 'kind' | 'tags'>): ConversationPart[] {
-  const block = blockAnchorOf(event)
+  const run = blockRunOf(event)
   const about = event.tags.find((t) => t[0] === 'A')?.[1]
-  const anchor: ConversationPart[] = block && about ? [{ address: about, block, anchor: true }] : []
+  const quote = event.tags.find((t) => t[0] === QUOTE_TAG)
+  const anchor: ConversationPart[] =
+    run && about ? [{ address: about, block: run[0], anchor: true, anchorTags: [blockRunTag(run), ...(quote ? [quote] : [])] }] : []
   return [...anchor, ...partsOf(event)]
 }
 
-/** A block a message shows, or the one a comment is anchored to. */
-export type ConversationPart = PartPointer & { anchor?: true }
+/** A block a message shows, or the run and words a comment is anchored to. */
+export type ConversationPart = PartPointer & { anchor?: true; anchorTags?: string[][] }
 
 /** The `imeta` attachments of an event, as {@link RelayAttachment}. Mirrors `convex/nostr/sync.ts`'s `attachmentsOf`. */
 export function attachmentsOf(event: { tags: NostrTag[] }): RelayAttachment[] {
