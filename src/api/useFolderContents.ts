@@ -2,6 +2,8 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { isArchived, type FolderContents, type FolderSummary, type ForeignObject } from '@estiva-app/interop'
 import { RETRY_FIRST_MS, RETRY_MAX_MS, createRetryingRead } from '@estiva-app/platform'
 import { useForeignObjects } from '@/api'
+import type { StoredToken } from '@/auth/estivaId'
+import { listFoldersAsViewer, resolveFolderContentsAsViewer } from '@/nostr/foreign'
 import {
   isOutage,
   relayFailureKind,
@@ -145,6 +147,42 @@ export function listedFile(address: string): ForeignObject | undefined {
 export function prefetchFolderContents(resolveFolderContents: ResolveFolderContents, folder: string): void {
   if (folderContentsCache.peek(folder)) return
   void folderContentsCache.read(folder, () => loadFolderContents(resolveFolderContents, folder))
+}
+
+/** At most this many Folders' contents are loaded ahead of Topics (PEE-5). */
+export const FOLDERS_AHEAD = 10
+
+/**
+ * What Topics draws first — the listing, then the files of the Folders
+ * `opens` picks from it — read on the `ahead` lane before Topics is opened
+ * (PEE-5, Desk's loader). Only an answer is held: a refused read writes
+ * nothing, so a later open reads for itself instead of drawing a failure
+ * nobody was shown. Throws the first failure, which stops the loader.
+ */
+export async function loadFoldersAhead(
+  at: { relayUrl: string; token: StoredToken },
+  opens: (folders: readonly FolderSummary[]) => Promise<readonly FolderSummary[]>,
+): Promise<FolderSummary[]> {
+  let folders = folderListing.snapshot().value ?? undefined
+  if (folders === undefined) {
+    const read = await listFoldersAsViewer(at.relayUrl, at.token, 'ahead')
+    folders = read
+    if (folderListing.snapshot().value === undefined) await folderListing.ensure(async () => read)
+  }
+  // Asked together: the pacer serves the `ahead` lane in order, two REQs on the wire at a time.
+  await Promise.all(
+    (await opens(folders)).slice(0, FOLDERS_AHEAD).map(async (folder) => {
+      const held = folderContentsCache.peek(folder.id)
+      if ((held?.value !== undefined && !held.seeded) || held?.inflight) return
+      const contents = await resolveFolderContentsAsViewer(folder.id, at.relayUrl, at.token, undefined, 'ahead')
+      if (folderContentsCache.peek(folder.id)?.inflight) return
+      await folderContentsCache.read(folder.id, async () => {
+        listedIn.set(folder.id, contents.files)
+        return { ok: true, value: contents }
+      })
+    }),
+  )
+  return folders
 }
 
 /**

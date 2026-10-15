@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRelayViewer } from './foreign'
+import type { StoredToken } from '@/auth/estivaId'
+import type { QueryFn } from '@estiva-app/interop'
 import { viewerQuery } from '@/nostr/foreign'
 import { conversationFromCopy } from '@/nostr/conversationFromCopy'
 import {
@@ -122,6 +124,46 @@ function coalesced(key: string, run: () => Promise<void>): Promise<void> {
   })()
   syncs.set(key, entry)
   return entry.promise
+}
+
+/**
+ * A conversation nobody has opened yet, read as its first open reads it but on
+ * the `ahead` lane (PEE-5, Desk's loader), and held so that open draws it at
+ * once and asks only what changed since. Nothing is held when the read fails;
+ * it throws, which stops the loader.
+ *
+ * It runs as the conversation's sync (`coalesced`), so an open that arrives
+ * meanwhile waits for it and then only catches up, rather than reading the
+ * whole conversation a second time beside it; the press that opened it has
+ * moved its waiting reads into the click lane. Not while a sync of it runs:
+ * that one is the open's.
+ */
+export async function loadConversationAhead(
+  container: ConversationContainer,
+  rootIds: readonly string[],
+  at: { relayUrl: string; token: StoredToken },
+): Promise<'read' | 'held' | 'syncing'> {
+  const conversations = conversationsFor(at.relayUrl, at.token.pubkey)
+  const key = conversationKey(container)
+  if (conversations.value(key) !== undefined) return 'held'
+  if (syncs.has(key)) return 'syncing'
+  // Kept, not thrown inside the sync: an open queued behind it must still run.
+  let failed: { error: unknown } | undefined
+  // Once an open has joined it, what is left of the read is that click's, and goes in its lane — including a read
+  // already waiting to go over HTTP, which goes at once rather than waiting for the click's reads to go quiet.
+  const query: QueryFn = viewerQuery(at.relayUrl, at.token, () => (syncs.get(key)?.again ? 'click' : 'ahead'))
+  await coalesced(key, async () => {
+    if (conversations.value(key) !== undefined) return
+    try {
+      const startedAt = Date.now()
+      const { value, events } = await readConversation(container, [...rootIds], query)
+      if (conversations.value(key) === undefined) conversations.replace(key, value, events, startedAt)
+    } catch (error) {
+      failed = { error }
+    }
+  })
+  if (failed) throw failed.error
+  return 'read'
 }
 
 /**

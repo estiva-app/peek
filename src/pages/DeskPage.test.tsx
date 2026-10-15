@@ -84,6 +84,9 @@ const desk = vi.hoisted(() => ({
 }))
 vi.mock('@/api', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('@/api')),
+  // Desk's loader reads the providers this file stands in for (PEE-5). Its pacing and HTTP wait are tested in
+  // platform and bridge.test.ts; the hook itself is proven by scripts/probe-first-load.mjs on production.
+  useLoadAhead: () => {},
   useUnread: () => ({ dmHasUnread: () => false }),
   useStarred: () => ({
     entries: [{ id: 'star-dm', kind: 'dm', dmId: 'dm-1', name: 'Ana' }],

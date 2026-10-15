@@ -77,12 +77,22 @@ export function onChannelStoreDelivery(listener: (channel: string) => void): () 
  * captured — a silent renewal must not leave the store asking with a dead one —
  * and a quota refusal waited out at the second the relay names.
  */
+/**
+ * Channels Desk's loader tracked for Topics and nobody else has asked for yet
+ * (PEE-5): a read of only these goes in the `ahead` lane. Syncing 50 Folders'
+ * streams in the click lane made a click landing beside it ~500 ms slower.
+ */
+const aheadOnly = new Set<string>()
+
+const onlyAhead = (filters: Record<string, unknown>[]) =>
+  aheadOnly.size > 0 && filters.every((filter) => Array.isArray(filter['#h']) && filter['#h'].every((h) => aheadOnly.has(h as string)))
+
 function queryAsViewer(relayUrl: string) {
   return (filters: Record<string, unknown>[]) =>
     withRateLimitRetry(async () => {
       const token = validToken()
       if (!token) throw new RelayReadError('auth-required: no Estiva ID token in this tab')
-      const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey)
+      const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, onlyAhead(filters) ? 'ahead' : 'click')
       if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')
       return result.events
     })
@@ -207,6 +217,25 @@ export function useChannelStreams(channels: readonly string[]): {
     }
     return { at: snapshot.at, streams }
   }, [held, ids, snapshot])
+}
+
+/** The tab's store, for Desk's loader to read Topics' Folders into before Topics tracks them (PEE-5); null until connected. */
+export function useTabChannelStoreForAhead(): ChannelStore | null {
+  return useTabChannelStore()?.store ?? null
+}
+
+/**
+ * Track `channels` for Desk's loader, their first read in the `ahead` lane until
+ * {@link channelsAskedFor}. Returns the release, as `track` does.
+ */
+export function trackAhead(store: ChannelStore, channels: readonly string[]): () => void {
+  for (const channel of channels) aheadOnly.add(channel)
+  return store.track([...channels])
+}
+
+/** The person acted: whatever the loader tracked may be what they now wait for, so its reads go in the click lane. */
+export function channelsAskedFor(): void {
+  aheadOnly.clear()
 }
 
 /** The tab's store and the viewer it is for (urgency is per reader, CON-17); null until signed in and connected. */

@@ -24,6 +24,7 @@ import {
   useStarred,
   useLiveConversationBadges,
   useOpenWorkFiles,
+  useLoadAhead,
 } from '@/api'
 import { fileGlyph, type FileGlyph } from '@/lib/fileGlyph'
 import { SkeletonSidebarList } from '@/components/ui/Skeleton'
@@ -282,6 +283,8 @@ export function DeskPage() {
 
   // A new tab showed the saved Desk until now; a plain Desk is kept for the next one.
   usePagePicture('desk', !(deskLoading || starredLoading), !openAddress && !selected)
+  // Once Desk has drawn, what is opened next from it loads in the background (PEE-5).
+  useLoadAhead(!(deskLoading || starredLoading))
 
   const filePane = openAddress ? filePaneParts.pane : null
 
