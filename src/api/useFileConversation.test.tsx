@@ -265,7 +265,7 @@ describe('useFileConversation — before the file resolves (OPT-9)', () => {
     await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
 
     const drawn = withRoots('r1', idOf(1))
-    act(() => conversationsFor('https://relay.test', 'c'.repeat(64)).replace(conversationKey(fresh), drawn, [], Date.now()))
+    act(() => conversationsFor(viewer().relayUrl, viewer().token.pubkey).replace(conversationKey(fresh), drawn, [], Date.now()))
     expect(result.current.state).toBe(drawn)
 
     await act(async () => land({ value: one, events: [] }))
