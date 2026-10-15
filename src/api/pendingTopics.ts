@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 import type { ForeignObject } from '@estiva-app/interop'
 
 /**
@@ -190,12 +190,24 @@ export function listedNow(folder: string, listed: readonly ForeignObject[], aske
 
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
-/** Changes whenever a topic is started or answered. */
+/**
+ * Changes whenever a topic is started or answered — as a transition: Start
+ * announces the topic before its caller opens it, and the Folder's row is
+ * not worth drawing ahead of the page that opens (4ef41d41).
+ */
 export function useStartedTopicsVersion(): number {
-  return useSyncExternalStore(subscribe, () => version)
+  const [seen, setSeen] = useState(version)
+  useEffect(() => {
+    const update = () => startTransition(() => setSeen(version))
+    update()
+    return subscribe(update)
+  }, [])
+  return seen
 }
 
 /** For tests. */

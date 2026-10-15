@@ -7,6 +7,8 @@ import { EstivaIdCallback } from './auth/EstivaIdCallback'
 import { CALLBACK_PATH, storedToken } from './auth/estivaId'
 import { RELAY_URL } from './api/relayUrl'
 import { warmDeviceCopy } from './nostr/deviceCopy'
+import { keepWarmEditor } from './extensions/warmEditor'
+import { peekEditorExtensions } from './extensions/peekEditor'
 import { watchPagePicture } from './lib/pagePicture'
 import { LastSelectionProvider } from './lib/lastSelection'
 import { ToastProvider } from './lib/toast'
@@ -28,11 +30,19 @@ setSocketReader(createAppSocketReader(relayLog))
 installSocketReadsDiagnostic()
 // The copy on the device Desk draws from (PEE-2), read while React renders.
 warmDeviceCopy(RELAY_URL, storedToken()?.pubkey)
+// The next composer's editor, built while the page is idle (4ef41d41).
+keepWarmEditor(peekEditorExtensions)
 // The saved Desk index.html may have shown: it goes when anything but Desk draws (Desk replaces it itself).
 watchPagePicture()
 
 createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
+  /* A page opens in one go, not as a transition (4ef41d41). React Router 7
+     wraps each navigation in startTransition by default, and a transition's
+     render starts over whenever a relay message lands in a store mid-render:
+     Start → a new topic's composer built the page and its editor twice in two
+     runs of three, 350–460 ms instead of about 100. Nothing here suspends,
+     so a transition bought nothing to show while it waited. */
+  <BrowserRouter unstable_useTransitions={false}>
     {/* Root boundary: the last line of defense — providers or a whole page
         crashing degrades to the fallback instead of a white screen. The
         fallback's colour is the page's own (`body`, --bg-base in index.css):

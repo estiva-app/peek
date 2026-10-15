@@ -3,8 +3,9 @@ import type { ForeignObject } from '@estiva-app/interop'
 import { registerActiveComposer, unregisterComposer } from '@/lib/composerRegistry'
 import { browserDrafts, type DraftStore } from '@/lib/drafts'
 import { serializeTiptapToText, textToTiptapContent, withUrgentMentions } from '@/lib/textParsing'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { EditorContent, type Editor } from '@tiptap/react'
 import { PEEK_EDITOR_CLASSES, peekEditorExtensions } from '@/extensions/peekEditor'
+import { useWarmEditor } from '@/extensions/warmEditor'
 import { SelectionToolbar, isSuggestionActive } from '@estiva-app/ui/editor'
 import { extractResolution } from '@/extensions/resolution'
 import { extractHighlightType } from '@/extensions/highlight'
@@ -118,7 +119,7 @@ const serializeToText = serializeTiptapToText
 
 const DEFAULT_DRAFTS = browserDrafts()
 
-type ComposerEditor = NonNullable<ReturnType<typeof useEditor>>
+type ComposerEditor = Editor
 
 /**
  * The composer showing each conversation now, by draft key (OPT-7). A refused
@@ -157,7 +158,7 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
   const uploadsRef = useRef(uploads)
   uploadsRef.current = uploads
 
-  const editorRef = useRef<ReturnType<typeof useEditor>>(null)
+  const editorRef = useRef<Editor | null>(null)
 
   /*
     Send what is written — Enter and the Send button alike (OPT-7). Read
@@ -234,7 +235,8 @@ export function ComposeBox({ onSend, placeholder = 'default', contextLabel, draf
     return { text: true, files: false, filesLost }
   }
 
-  const editor = useEditor({
+  // Built ahead while the page was idle, when one is ready (4ef41d41).
+  const editor = useWarmEditor({
     extensions: peekEditorExtensions,
     editorProps: {
       attributes: {
