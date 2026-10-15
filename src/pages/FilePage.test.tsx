@@ -106,7 +106,6 @@ const threads = vi.hoisted(() => ({
   reload: vi.fn(async () => {}),
 }))
 const writes = vi.hoisted(() => ({
-  replyToComment: vi.fn(async () => ({ ok: true })),
   applyAction: vi.fn(async () => ({ ok: true })),
   moveFile: vi.fn<(...args: unknown[]) => Promise<{ ok: true } | { ok: false; reason: string }>>(async () => ({ ok: true })),
   // The reference widget's own read (FOL-29) — never made for the file the page has already resolved.
@@ -364,7 +363,6 @@ beforeEach(() => {
   marks.file.mockClear()
   marks.container.mockClear()
   marks.thread.mockClear()
-  writes.replyToComment.mockClear()
   writes.renameFile.mockClear()
   writes.deleteFile.mockClear()
   writes.resolveFolderContents.mockClear()

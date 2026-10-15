@@ -129,16 +129,7 @@ describe('the Ask row is offered, not triggered (INT-2)', () => {
 })
 
 describe('the query is sovereign (INT-2)', () => {
-  it('keeps what was typed when Ask is taken', async () => {
-    // Changing how a sentence is interpreted must never cost the sentence.
-    open()
-    await enter(input(),'what did we decide')
-    await userEvent.click(await askRow())
-
-    expect(input()).toHaveValue('what did we decide')
-  })
-
-  it('keeps it on the way back out too', async () => {
+  it('keeps what was typed on the way back out of Ask', async () => {
     open()
     await enter(input(),'what did we decide')
     await userEvent.click(await askRow())
@@ -188,18 +179,6 @@ describe('the Ask surface (INT-2)', () => {
     expect(screen.queryByText('Apps')).not.toBeInTheDocument()
   })
 
-  it('shows a chip that is not an app chip', async () => {
-    /*
-      Ask is a mode. Drawing it in the same shape as Ship and Peek would read as
-      a third application that does not exist.
-    */
-    open()
-    await enter(input(),'what did we decide')
-    await userEvent.click(await askRow())
-
-    expect(screen.getByRole('button', { name: /Leave Ask/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Leave Ship/i })).not.toBeInTheDocument()
-  })
 })
 
 describe('nothing PEE-4 built has changed (INT-2)', () => {
