@@ -62,7 +62,8 @@ export function useFileView({
   const file = typeof conversation === 'object' && 'ref' in conversation ? conversation : null
 
   const comments = file?.comments ?? []
-  const rootIds = comments.map((comment) => comment.id)
+  // Oldest first, which the resolve does not promise: a long file's first open draws the last ones first (PEE-7).
+  const rootIds = [...comments].sort((a, b) => a.createdAt - b.createdAt).map((comment) => comment.id)
   /*
     Which view, decided by the manifest and not by the kind (FOL-31). A file
     the viewer may comment on — a bare file's built-in manifest declares
