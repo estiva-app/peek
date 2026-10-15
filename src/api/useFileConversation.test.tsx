@@ -105,6 +105,7 @@ vi.mock('@/lib/useRefreshTriggers', () => ({
 }))
 
 import { useFileConversation } from './useFileConversation'
+import { conversationKey, conversationsFor } from './conversations'
 
 const FOLDER = '11111111-1111-4111-8111-111111111111'
 const container = { kind: 'file' as const, address: '30850:abc:d', h: FOLDER }
@@ -248,6 +249,27 @@ describe('useFileConversation — before the file resolves (OPT-9)', () => {
     rerender({ container, rootIds: ['r1'] })
     await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
     expect(relay.read.mock.calls[0][1]).toEqual(['r1', '1'.repeat(64)])
+  })
+
+  it('a comment drawn while the first read is out stays when that read lands without it', async () => {
+    /*
+      The first read began before the comment was sent, so its answer does not
+      have it. The conversation was held meanwhile with the comment drawn in it
+      (a topic just started holds its conversation, PEE-6): that is newer than
+      the read, which must not land over it.
+    */
+    const fresh = { ...container, address: '30850:abc:first-read' }
+    let land!: (answer: { value: FileConversation; events: [] }) => void
+    relay.read.mockReturnValueOnce(new Promise((resolve) => (land = resolve)))
+    const { result } = mount({ container: fresh, rootIds: ['r1'] })
+    await waitFor(() => expect(relay.read).toHaveBeenCalledTimes(1))
+
+    const drawn = withRoots('r1', idOf(1))
+    act(() => conversationsFor(viewer().relayUrl, viewer().token.pubkey).replace(conversationKey(fresh), drawn, [], Date.now()))
+    expect(result.current.state).toBe(drawn)
+
+    await act(async () => land({ value: one, events: [] }))
+    expect(result.current.state).toBe(drawn)
   })
 })
 

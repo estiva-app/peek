@@ -33,6 +33,18 @@ describe('fetchMutes — the private list, and the follow list it replaces (§11
     expect(await fetchMutes(seam)).toEqual({ state: 'present', keys: [FILE] })
   })
 
+  it.each([
+    ['an older one first', ['mute-old', 'mute-new']],
+    ['the newest one first', ['mute-new', 'mute-old']],
+  ])('reads the newest mute list when the relay returns %s', async (_case, order) => {
+    const OTHER = `30851:${'d'.repeat(64)}:other`
+    const at: Record<string, number> = { 'mute-old': 1, 'mute-new': 2 }
+    relay.answers = [{ ok: true, events: order.map((id) => ({ id, content: id, created_at: at[id] })) }]
+    relay.plaintexts['mute-old'] = JSON.stringify({ v: 1, updatedAt: 1, keys: [OTHER] })
+    relay.plaintexts['mute-new'] = JSON.stringify({ v: 1, updatedAt: 2, keys: [FILE] })
+    expect(await fetchMutes(seam)).toEqual({ state: 'present', keys: [FILE] })
+  })
+
   it('takes the retired list’s mutes as the mute list while none exists, and nothing else of it', async () => {
     relay.answers = [
       { ok: true, events: [] },
