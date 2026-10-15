@@ -166,16 +166,21 @@ export async function queryRelay(
   filters: Record<string, unknown>[],
   token: string,
   pubkey?: string,
-  /** `ahead` for what Desk loads before it is asked for (PEE-5): after every click, over HTTP only when the reader lets it. */
-  lane: ReadLane = 'click',
+  /**
+   * `ahead` for what Desk loads before it is asked for (PEE-5): after every click, over HTTP only when the reader lets
+   * it. A function when the person may join the read while it waits: asked again then, and `click` sends it at once.
+   */
+  lane: ReadLane | (() => ReadLane) = 'click',
 ): Promise<{ ok: boolean; events: SignedEvent[]; reason?: string }> {
-  if (!socketReader && lane === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
-  if (lane === 'click') clickReads.open += 1
+  const laneNow = typeof lane === 'function' ? lane : () => lane
+  const asked = laneNow()
+  if (!socketReader && asked === 'ahead') return { ok: false, events: [], reason: 'ahead: no socket reader' }
+  if (asked === 'click') clickReads.open += 1
   let answer: { ok: boolean; events: SignedEvent[]; reason?: string } | null
   try {
-    answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane }) : null
+    answer = socketReader ? await socketReader(relayUrl, filters, pubkey, { lane: asked }) : null
     if (!answer) {
-      const release = lane === 'ahead' ? await aheadPost() : null
+      const release = asked === 'ahead' ? await aheadPost(() => laneNow() === 'click') : null
       try {
         const { status, text } = await bridgePost(relayUrl, '/query', filters, token, pubkey)
         answer = parseQueryResponse(status, text)
@@ -184,7 +189,7 @@ export async function queryRelay(
       }
     }
   } finally {
-    if (lane === 'click') {
+    if (asked === 'click') {
       clickReads.open -= 1
       clickReads.lastAt = Date.now()
     }
@@ -220,20 +225,22 @@ let socketReader: SocketReader | null = null
  * of a click's own spilled reads, and of any write, at `/sign`.
  */
 let aheadPosting = false
-const aheadPostWaiting: (() => void)[] = []
 
-async function aheadPost(): Promise<() => void> {
-  const release = () => {
-    const next = aheadPostWaiting.shift()
-    if (next) next()
-    else aheadPosting = false
+async function aheadPost(joined: () => boolean): Promise<() => void> {
+  const until = Date.now() + AHEAD_HTTP_WAIT_AT_MOST_MS
+  for (;;) {
+    // The person has since asked for this very read and waits on it: it is theirs, and goes now.
+    if (joined()) return () => {}
+    // Otherwise only once the person's reads have been quiet a while, not merely after a press: one on the wire
+    // cannot be taken back, and a click 1 s after Desk that found one there drew 200–300 ms later (QA-1 and QA-2).
+    const quiet = clickReads.open === 0 && Date.now() - clickReads.lastAt >= AHEAD_HTTP_QUIET_MS
+    if (!aheadPosting && (quiet || Date.now() >= until)) break
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  if (aheadPosting) await new Promise<void>((resolve) => aheadPostWaiting.push(resolve))
-  else aheadPosting = true
-  // Only once the person's reads have been quiet a while, not merely after a press: one on the wire cannot be
-  // taken back, and a click 1 s after Desk that found one there drew 200–300 ms later (QA-1 and QA-2, 7 runs).
-  await whenClickReadsQuiet(AHEAD_HTTP_QUIET_MS, AHEAD_HTTP_WAIT_AT_MOST_MS)
-  return release
+  aheadPosting = true
+  return () => {
+    aheadPosting = false
+  }
 }
 
 /** How long the `click` lane is quiet before the loader's next HTTP read goes, and the longest it waits for that (PEE-5). */

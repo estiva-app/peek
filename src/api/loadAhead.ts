@@ -27,7 +27,7 @@
  *
  * `localStorage['peek.ahead'] = 'off'` turns it off, for the probe's comparison.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { loadAhead, type AheadOutcome, type AheadStep } from '@estiva-app/platform'
 import type { FolderSummary, ForeignObject } from '@estiva-app/interop'
 import type { SignedEvent } from '@estiva-app/protocol'
@@ -70,20 +70,37 @@ const CLICK_QUIET_MS = 1_000
 const CLICK_QUIET_AT_MOST_MS = 5_000
 
 /**
+ * A step waits at most this long for what it judges by to be known: a DM's step
+ * for the relay to say which channels this person has, Topics for which files
+ * they are a member of. On a browser with nothing stored either can land after
+ * the step starts, and a DM step that found no channel loaded nothing (QA-1's
+ * Starred DM, 6 runs of 7); Topics judged before membership opens no Folder, a
+ * rule `useTeamUnread` keeps too.
+ */
+const KNOWN_AT_MOST_MS = 10_000
+
+/** Settles the first time `ready` is true. */
+function useOnceTrue(ready: boolean): Promise<void> {
+  const [once] = useState(() => {
+    let settle = () => {}
+    const promise = new Promise<void>((resolve) => (settle = resolve))
+    return { promise, settle }
+  })
+  useEffect(() => {
+    if (ready) once.settle()
+  }, [ready, once])
+  return once.promise
+}
+
+const knownOrLater = (known: Promise<void>) => Promise.race([known, new Promise((resolve) => setTimeout(resolve, KNOWN_AT_MOST_MS))])
+
+/**
  * A step that failed for a passing reason — the socket paused after a quota
  * refusal, a REQ never ended, the connection dropped, the relay's own load — is
  * run again a window later, at most this many times; what it had already read
  * is held, so only the rest is asked. Stopping on the first such failure left
  * Topics unloaded for a whole page load (QA-1, 16 s to open).
  */
-/**
- * A DM's step waits at most this long for the relay to say which channels this
- * person has. On a browser with nothing stored that read can land after the
- * step starts, and a step that found no channel loaded nothing (QA-1's Starred
- * DM, 6 runs of 7).
- */
-const DM_CHANNELS_AT_MOST_MS = 10_000
-
 const AHEAD_RETRIES = 2
 const AHEAD_RETRY_MS = 6_000
 const PASSING = /socket paused|not live|no EOSE|rate-limited|quota exceeded|reconnecting|connecting|too many concurrent|database error/i
@@ -172,15 +189,8 @@ export function useLoadAhead(drawn: boolean): void {
   const store = useTabChannelStoreForAhead()
   const membership = useMembership()
 
-  // Settles once the relay has said which DM channels this person has.
-  const channels = useRef<{ known: Promise<void>; settle: () => void } | null>(null)
-  if (!channels.current) {
-    let settle = () => {}
-    channels.current = { known: new Promise<void>((resolve) => (settle = resolve)), settle }
-  }
-  useEffect(() => {
-    if (channelsState === 'present') channels.current?.settle()
-  }, [channelsState])
+  const channelsKnown = useOnceTrue(channelsState === 'present')
+  const membershipKnown = useOnceTrue(membership.state !== 'unknown')
 
   // Desk's lists are read when Desk has drawn, not on every change after it; a DM's channel when its step runs.
   const latest = useRef({ openWork, starred, screener, channelOf, held, store, membership })
@@ -204,7 +214,7 @@ export function useLoadAhead(drawn: boolean): void {
     }
     const dmOf = async (dmId: string) => {
       if (!channelOf(dmId)) {
-        await Promise.race([channels.current?.known, new Promise((resolve) => setTimeout(resolve, DM_CHANNELS_AT_MOST_MS))])
+        await knownOrLater(channelsKnown)
       }
       // No channel yet with someone never written to: nothing to load, and no reason to stop the rest.
       const h = channelOf(dmId)
@@ -242,6 +252,7 @@ export function useLoadAhead(drawn: boolean): void {
             releaseFolders = trackAhead(store, folders.map((folder) => folder.id))
             await store.sync('track')
             lap('streams')
+            await knownOrLater(membershipKnown)
             const mine = await foldersTopicsOpens(folders, store, latest.current.membership, at)
             lap('parents')
             opened = mine.length
@@ -299,5 +310,5 @@ export function useLoadAhead(drawn: boolean): void {
       record.outcome = { loaded: outcome.loaded, stoppedBy }
       if (stoppedBy) console.warn('[loadAhead] stopped:', stoppedBy)
     })
-  }, [drawn, viewer, store])
+  }, [drawn, viewer, store, channelsKnown, membershipKnown])
 }

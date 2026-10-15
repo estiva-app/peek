@@ -149,10 +149,9 @@ export async function loadConversationAhead(
   if (syncs.has(key)) return 'syncing'
   // Kept, not thrown inside the sync: an open queued behind it must still run.
   let failed: { error: unknown } | undefined
-  // Once an open has joined it, what is left of the read is that click's, and goes in its lane.
-  const ahead = viewerQuery(at.relayUrl, at.token, 'ahead')
-  const click = viewerQuery(at.relayUrl, at.token)
-  const query: QueryFn = (filters) => (syncs.get(key)?.again ? click : ahead)(filters)
+  // Once an open has joined it, what is left of the read is that click's, and goes in its lane — including a read
+  // already waiting to go over HTTP, which goes at once rather than waiting for the click's reads to go quiet.
+  const query: QueryFn = viewerQuery(at.relayUrl, at.token, () => (syncs.get(key)?.again ? 'click' : 'ahead'))
   await coalesced(key, async () => {
     if (conversations.value(key) !== undefined) return
     try {

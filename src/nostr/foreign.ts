@@ -117,7 +117,7 @@ const fail = (reason: string): ActResult => ({ ok: false, reason })
  *  means refused" in this app started here, one layer below where it was
  *  visible. Callers that must degrade quietly catch it explicitly, which is
  *  better than the information never existing. */
-export function viewerQuery(relayUrl: string, token: StoredToken, lane: ReadLane = 'click'): QueryFn {
+export function viewerQuery(relayUrl: string, token: StoredToken, lane: ReadLane | (() => ReadLane) = 'click'): QueryFn {
   return async (filters) => {
     const result = await queryRelay(relayUrl, filters, token.accessToken, token.pubkey, lane)
     if (!result.ok) throw new RelayReadError(result.reason ?? 'unknown')

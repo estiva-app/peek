@@ -76,6 +76,22 @@ describe("the loader's HTTP reads (PEE-5)", () => {
     await click
   })
 
+  it('goes at once when the person joins it while it waits', async () => {
+    const socket = socketHoldingClicks()
+    const click = queryRelay('https://relay', [{ kinds: [9] }], 'token', ME)
+    let lane: 'ahead' | 'click' = 'ahead'
+    const ahead = queryRelay('https://relay', [{ kinds: [1] }], 'token', ME, () => lane)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(posts).toHaveLength(0)
+    lane = 'click'
+    await vi.advanceTimersByTimeAsync(200)
+    expect(posts).toHaveLength(1)
+    await expect(ahead).resolves.toMatchObject({ ok: true })
+    socket.answerClicks()
+    await click
+  })
+
   it("never holds a click's own HTTP read", async () => {
     socketHoldingClicks()
     const busy = queryRelay('https://relay', [{ kinds: [9] }], 'token', ME)
