@@ -26,6 +26,8 @@ const relay = vi.hoisted(() => ({
   apply: vi.fn<Apply>(),
   publish: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
   react: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
+  /** A resolution's write: it is not drawn ahead, so the conversation is re-read once the relay has taken it. */
+  resolve: vi.fn<() => Promise<{ ok: true; id: string } | { ok: false; reason: string }>>(),
   /** What happened to your own events, in order (OPT-6). */
   own: [] as string[],
   composed: 0,
@@ -73,6 +75,7 @@ vi.mock('@/nostr/fileConversation', () => ({
     relay.composed += 1
     return { kind: 5, content: '', tags: [], created_at: relay.composed, pubkey: 'c'.repeat(64) }
   },
+  resolveAsViewer: () => relay.resolve(),
 }))
 vi.mock('@/nostr/foreign', () => ({ viewerQuery: () => async () => [] }))
 // Stable across renders, as the real one is (`useCallback`).
@@ -133,6 +136,7 @@ afterEach(() => {
   relay.apply.mockReset()
   relay.publish.mockReset()
   relay.react.mockReset()
+  relay.resolve.mockReset()
   relay.own = []
   relay.composed = 0
 })
@@ -535,5 +539,40 @@ describe('useFileConversation — a channel (REM-1)', () => {
     await answer({ ok: true, id: idOf(1) })
     expect(await reply).toEqual({ ok: true, id: idOf(2) })
     expect(relay.own).toEqual([`shown ${idOf(1)}`, `confirmed ${idOf(1)}`, `shown ${idOf(2)}`, `confirmed ${idOf(2)}`])
+  })
+})
+
+describe('useFileConversation — a resolution re-reads only after the relay took it (UNI-5)', () => {
+  /*
+    A resolution is not drawn ahead as a message is: the re-read is what shows
+    it. Asked before the relay holds it, the catch-up draws the comment as it
+    was, and the person's resolve seems undone until the next one (PEE-50's
+    planted bug, which nothing caught).
+  */
+  it('asks nothing while the resolution is out, and catches up once it is accepted', async () => {
+    let answer!: (result: { ok: true; id: string }) => void
+    relay.resolve.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    const { result } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    let resolved: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      resolved = result.current.actions.resolve('r1', 'resolved')
+    })
+    expect(relay.catchUp).not.toHaveBeenCalled()
+    await act(async () => answer({ ok: true, id: idOf(9) }))
+    expect(await resolved).toEqual({ ok: true, id: idOf(9) })
+    expect(relay.catchUp).toHaveBeenCalledTimes(1)
+  })
+
+  it('a resolution the relay refused is reported, and nothing is re-read', async () => {
+    relay.resolve.mockResolvedValueOnce({ ok: false, reason: 'restricted: not a member' })
+    const { result } = mount({ container, rootIds: ['r1'] })
+    await waitFor(() => expect(result.current.state).toBe(empty))
+    let resolved: unknown
+    await act(async () => {
+      resolved = await result.current.actions.resolve('r1', 'resolved')
+    })
+    expect(resolved).toEqual({ ok: false, reason: 'restricted: not a member' })
+    expect(relay.catchUp).not.toHaveBeenCalled()
   })
 })
